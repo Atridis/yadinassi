@@ -94,8 +94,8 @@ class RouteTests(unittest.TestCase):
             with self.subTest(changed=changed[:50]),self.assertRaises(ValueError):route.parse_wire(changed,NONCE)
     def test_full_wrapped_program_executes_on_real_owned_sqlite(self):
         from yadinassi import Interpreter
-        from yadinassi.configuration_xml import import_configuration
-        from yadinassi.database_context import SQLiteDBContext
+        from yadinassi.configuration.configuration_xml import import_configuration
+        from yadinassi.db.database_context import SQLiteDBContext
         from catalog_object_behavior.replay import logical_model_files,replay
         setup,_=fixture.load_saved();messages=[]
         with tempfile.TemporaryDirectory() as td:

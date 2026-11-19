@@ -3,9 +3,9 @@ import unittest
 from decimal import Decimal
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.values import Reference, HostFunction
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.types.values import Reference, HostFunction
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
 
 class LiveModuleStateTests(unittest.TestCase):
 
@@ -128,7 +128,7 @@ class LiveModuleStateTests(unittest.TestCase):
 class LiveReferenceSpoofTests(unittest.TestCase):
 
     def test_reference_binding_does_not_consult_host_class_property(self):
-        from yadinassi.experimental_naked_live_state import source_reference, host_reference
+        from yadinassi.execution.codegen.experimental_naked_live_state import source_reference, host_reference
         events = []
 
         class Host:

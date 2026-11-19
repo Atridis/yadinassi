@@ -4,7 +4,7 @@ from unittest import mock
 from uuid import UUID, uuid4
 import test_catalog_editor as scalar
 import test_catalog_section_editor as section
-from yadinassi.catalog_backend import CatalogDraft, CatalogKey
+from yadinassi.db.catalog.catalog_backend import CatalogDraft, CatalogKey
 from yadinassi.ui.protocol import UIError, CatalogRef
 
 

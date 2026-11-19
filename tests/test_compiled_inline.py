@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 
 class DirectHostValueTests(unittest.TestCase):
     def test_for_nan_nontrapping_comparison_keeps_oracle_condition(self):
@@ -24,7 +24,7 @@ class DirectHostValueTests(unittest.TestCase):
             self.assertEqual(vm.variables['r'], 0)
 
     def test_exact_existing_host_metaclass_date_regression(self):
-        from yadinassi.execution_policy import execution_backend_policy
+        from yadinassi.execution.execution_policy import execution_backend_policy
         from tests.test_dates import DateDefensiveTests
         with execution_backend_policy('python-direct'):
             case = DateDefensiveTests('test_arbitrary_host_metaclass_is_not_mistaken_for_a_date')
@@ -33,8 +33,8 @@ class DirectHostValueTests(unittest.TestCase):
 
     def test_type_admission_never_calls_host_metaclass_eq_or_hash(self):
         from decimal import Decimal
-        from yadinassi.errors import BSLRuntimeError
-        from yadinassi.values import BSLObject
+        from yadinassi.types.errors import BSLRuntimeError
+        from yadinassi.types.values import BSLObject
         calls=[]
         class PoisonMeta(type):
             def __eq__(cls, other): raise AssertionError('metaclass equality')

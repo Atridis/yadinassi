@@ -69,7 +69,7 @@ class BinaryStreamFamilyMeasurementTests(unittest.TestCase):
         with self.assertRaises(wire.AvailabilityError): wire.require_available(emit(missing=True))
 
     def test_action_failure_still_cleans_owned_paths(self):
-        from yadinassi.binary_streams import BSLFileStream
+        from yadinassi.streams.binary_streams import BSLFileStream
         with mock.patch.object(BSLFileStream, 'write', side_effect=ValueError('injected')):
             raw = emit()
         records = wire.validate_output(raw)
@@ -77,7 +77,7 @@ class BinaryStreamFamilyMeasurementTests(unittest.TestCase):
         self.assertFalse(any(row['status'] == 'observer-error' for row in records))
 
     def test_unexpected_children_are_not_recursively_swept(self):
-        import yadinassi.file_io as files
+        import yadinassi.streams.file_io as files
         original = files.create_directory
         def create_with_sentinel(path):
             original(path)

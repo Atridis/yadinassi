@@ -4,10 +4,10 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.queries import BSLQuery
-from yadinassi.query_parser import parse_query
-from yadinassi.sqlite_catalog import _View
-from yadinassi.values import NULL
+from yadinassi.db.query.queries import BSLQuery
+from yadinassi.db.query.query_parser import parse_query
+from yadinassi.db.sqlite.sqlite_catalog import _View
+from yadinassi.types.values import NULL
 import test_catalog_queries as fixtures
 
 
@@ -167,7 +167,7 @@ R=Q.Execute();S=R.Select();S.Next();Message(S.Total);Message(S.Mean);T=R.Unload(
         self.context.backend.begin_read().close()
 
     def test_snapshot_detached_and_reopen(self):
-        from yadinassi.database_context import SQLiteDBContext
+        from yadinassi.db.database_context import SQLiteDBContext
         query='SELECT SUM(Amount*2) AS Total FROM Catalog.Products'
         result=self.query(query).execute()
         from pathlib import Path

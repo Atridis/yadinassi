@@ -1,8 +1,8 @@
 import unittest
 from test_source_global_modules import configuration
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_global_declarations import exported_names
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.source_global_declarations import exported_names
+from yadinassi.types.errors import BSLError
 
 
 class SourceGlobalDeclarationTests(unittest.TestCase):

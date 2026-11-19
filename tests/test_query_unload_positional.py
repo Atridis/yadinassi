@@ -4,11 +4,11 @@ import unittest
 from unittest.mock import patch
 
 import test_catalog_queries as fixtures
-from yadinassi.queries import BSLQuery
-from yadinassi.values import NULL
-from yadinassi.structures import BSLStructure
-from yadinassi.plain_table_storage import validate_row
-from yadinassi.plain_value_table_runtime import BSLValueTableRow
+from yadinassi.db.query.queries import BSLQuery
+from yadinassi.types.values import NULL
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.collections.plain_table_storage import validate_row
+from yadinassi.collections.plain_value_table_runtime import BSLValueTableRow
 
 
 class QueryUnloadPositionalTests(unittest.TestCase):
@@ -45,12 +45,12 @@ class QueryUnloadPositionalTests(unittest.TestCase):
 
     def test_result_wide_growth_preflight_precedes_rows(self):
         result=BSLQuery(self.vm._catalogs,'SELECT Ref AS Item,Amount FROM Catalog.Products').execute()
-        with patch('yadinassi.plain_value_table_runtime._MAX_CELLS',5),patch.object(BSLValueTableRow,'__init__',side_effect=AssertionError('no rows before preflight')):
+        with patch('yadinassi.collections.plain_value_table_runtime._MAX_CELLS',5),patch.object(BSLValueTableRow,'__init__',side_effect=AssertionError('no rows before preflight')):
             with self.assertRaisesRegex(ValueError,'growth limit'):result.unload()
 
     def test_duplicate_casefold_and_nontext_names_refused_before_rows(self):
         from dataclasses import replace
-        from yadinassi.queries import BSLQueryResult
+        from yadinassi.db.query.queries import BSLQueryResult
         result=BSLQuery(self.vm._catalogs,'SELECT Amount AS N FROM Catalog.Products').execute()
         column=result._columns[0]
         duplicate=BSLQueryResult((column,replace(column,name='n')),

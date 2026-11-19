@@ -2,8 +2,8 @@
 import unittest
 from decimal import Decimal
 from recovered_bare_fixture import Interpreter
-from yadinassi.native_bare_collections import BareArray
-from yadinassi.python_direct import PythonDirectUnsupported
+from yadinassi.execution.codegen.native_bare_collections import BareArray
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 
 class RecoveredBareCompilerTests(unittest.TestCase):
     def run_source(self, source, prepared=False):

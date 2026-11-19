@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter,BSLRuntimeError
-from yadinassi.experimental_direct_ast import compile_owned
+from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
 from yadinassi.syntax.parser import parse
 import test_document_posting_runtime as fixture
 
@@ -43,7 +43,7 @@ class PostingNamesTests(unittest.TestCase):
         self.assertEqual(props.get_member('N'),5)
         self.assertIs(props.get_member('Caught'),True)
     def test_default_compiler_does_not_admit_callable_field(self):
-        from yadinassi.python_direct import PythonDirectUnsupported
+        from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
         source='Number("3");'
         with self.assertRaises(PythonDirectUnsupported):
             compile_owned(parse(source),source_text=source,source_name='posting.bsl',external_names=('number',))

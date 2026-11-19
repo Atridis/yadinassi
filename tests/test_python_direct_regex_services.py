@@ -1,8 +1,8 @@
 """Closed constructor and optional regex service boundaries."""
 import unittest
 from yadinassi import Interpreter
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi import regex_functions
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.formats.regex import regex_functions
 
 
 class DirectRegexServicesTests(unittest.TestCase):
@@ -82,7 +82,7 @@ class DirectRegexServicesTests(unittest.TestCase):
         import gc
         import weakref
         from unittest.mock import patch
-        from yadinassi.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
         original=BoundaryContext.resolve_service;references=[]
         def capture(context,*args,**kwargs):
             bound=original(context,*args,**kwargs)

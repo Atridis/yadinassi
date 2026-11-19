@@ -11,14 +11,14 @@ from decimal import (Clamped, Decimal, Inexact, Overflow, ROUND_UP, Rounded,
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.type_qualifiers import (
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.types.type_qualifiers import (
     ALLOWED_LENGTHS, ALLOWED_SIGNS, DATE_FRACTIONS,
     BSLAllowedLength, BSLAllowedLengths, BSLAllowedSign, BSLAllowedSigns,
     BSLBinaryDataQualifiers, BSLDateFractions, BSLDateFractionsNamespace,
     BSLDateQualifiers, BSLNumberQualifiers, BSLStringQualifiers,
 )
-from yadinassi.values import NULL, equal, to_string
+from yadinassi.types.values import NULL, equal, to_string
 
 
 ENUM_CASES = (

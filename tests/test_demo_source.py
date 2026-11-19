@@ -4,7 +4,7 @@ import unittest
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1] / 'examples/demo'
-from yadinassi.main_demo_source import SOURCE_SHA256
+from yadinassi.configuration.demos.main_demo_source import SOURCE_SHA256
 FILES = tuple(sorted(SOURCE_SHA256))
 
 

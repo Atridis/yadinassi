@@ -2,8 +2,8 @@
 import unittest
 from unittest.mock import patch
 import test_source_common_templates as existing
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.common_templates import SourceTemplateCall, SourceCommonTemplates
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.configuration.common_templates import SourceTemplateCall, SourceCommonTemplates
 from yadinassi.runtime import Interpreter
 
 
@@ -39,7 +39,7 @@ class SourceTemplateSecurity(unittest.TestCase):
                 self.assertEqual(calls,[])
 
     def test_factory_and_store_hook_rejected_before_callback(self):
-        from yadinassi.text_documents import BSLTextDocument
+        from yadinassi.streams.text_documents import BSLTextDocument
         for cls,name in ((BSLTextDocument,'__init__'),(SourceCommonTemplates,'get')):
             with self.subTest(name=name):
                 app=self.app()
@@ -54,7 +54,7 @@ class SourceTemplateSecurity(unittest.TestCase):
         vm.register_function('GetCommonTemplate',SourceTemplateCall(app.common_templates))
         vm.variables['saved']=vm.functions['getcommontemplate']
         vm.execute('Function Touch() Raise "wrong"; EndFunction')
-        from yadinassi.errors import BSLError
+        from yadinassi.types.errors import BSLError
         with self.assertRaisesRegex(BSLError,'foreign or inactive'):
             vm.execute('Saved(Touch())')
 

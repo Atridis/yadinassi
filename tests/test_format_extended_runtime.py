@@ -6,7 +6,7 @@ import sys
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.formatting import format_value
+from yadinassi.text.formatting import format_value
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))

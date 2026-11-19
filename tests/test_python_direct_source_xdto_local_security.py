@@ -4,9 +4,9 @@ from unittest.mock import patch
 import test_python_direct_source_xdto as basic
 import test_python_direct_source_xdto_local as local
 from test_configuration_source_runtime import source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi import xdto_io,xdto_values
-from yadinassi.values import HostFunction
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.formats.xml import xdto_io,xdto_values
+from yadinassi.types.values import HostFunction
 
 class LocalXDTOSecurity(unittest.TestCase):
     setUp=local.LocalXDTOTests.setUp
@@ -36,7 +36,7 @@ class LocalXDTOSecurity(unittest.TestCase):
         factory._direct_local_xdto.nodes=0;factory._direct_local_xdto.units=0
         with self.assertRaises(basic.DENIED):vm.execute('F.Create(T,"x");')
     def test_mutable_marker_cannot_authorize_replaced_graph(self):
-        from yadinassi import python_direct_source_xdto_local as helper
+        from yadinassi.execution.direct.source import python_direct_source_xdto_local as helper
         app=self.prepared();vm=app.interpreter;factory=vm.variables['f'];seal=factory._direct_local_xdto
         factory._types=dict(factory._types);seal.types=factory._types;seal.graph=helper._graph(factory)
         with self.assertRaises(basic.DENIED):vm.execute('F.Type("'+local.XS+'","string");')
@@ -142,7 +142,7 @@ EndProcedure'''
             with self.assertRaises(basic.DENIED):app.start()
             self.assertEqual(out,[])
     def test_raw_bound_callback_cannot_outlive_activation(self):
-        from yadinassi import python_direct_source_xdto_local as helper
+        from yadinassi.execution.direct.source import python_direct_source_xdto_local as helper
         app=self.prepared();vm=app.interpreter;callbacks=[];original=helper.captured
         def capture(*args,**kwargs):
             result=original(*args,**kwargs)

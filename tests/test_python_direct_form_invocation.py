@@ -4,8 +4,8 @@ from unittest.mock import patch
 from decimal import Decimal
 import test_main_demo_host as fixture
 from yadinassi.ui.configuration_app import PROTOCOL
-from yadinassi.python_direct_forms import FormBoundary
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.direct.python_direct_forms import FormBoundary
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class FormInvocationTests(TestCase):
     def setUp(self):
@@ -65,7 +65,7 @@ class FormInvocationTests(TestCase):
 
 class StandaloneServerCallTests(TestCase):
     def session(self,body='Set(); Message(Read());',server=None,**kwargs):
-        from yadinassi.form_runtime import FormSession
+        from yadinassi.forms.form_runtime import FormSession
         if server is None:
             server=('&AtServer\nProcedure Set() ThisObject.Title="server"; EndProcedure\n'
                     '&AtServer\nFunction Read() Return ThisObject.Title; EndFunction')
@@ -101,7 +101,7 @@ class StandaloneServerCallTests(TestCase):
         self.assertEqual(session.form.title,'')
 
     def test_parameterized_routine_and_custom_factory_not_auto_enrolled(self):
-        from yadinassi.form_runtime import _FormInterpreter
+        from yadinassi.forms.form_runtime import _FormInterpreter
         session=self.session('X=Read(1);','&AtServer\nFunction Read(Val X) Return X; EndFunction')
         with self.assertRaisesRegex(BoundaryViolation,'unregistered host service'):session.open()
         session=self.session(interpreter_factory=_FormInterpreter)
@@ -138,7 +138,7 @@ class StandaloneServerCallTests(TestCase):
 
     def test_server_transaction_activation_remains_denied(self):
         session=self.session('Set();','&AtServer\nProcedure Set() BeginTransaction(); EndProcedure')
-        with patch('yadinassi.database_transactions.begin',side_effect=AssertionError('transaction effect')) as begin:
+        with patch('yadinassi.db.database_transactions.begin',side_effect=AssertionError('transaction effect')) as begin:
             with self.assertRaises(Exception):session.open()
             begin.assert_not_called()
         self.assertTrue(session.interpreter._transaction_activation_allowed)

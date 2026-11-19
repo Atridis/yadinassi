@@ -4,7 +4,7 @@ import sys,unittest,json,subprocess,tempfile,os
 from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1];sys.path[:0]=[str(ROOT),str(ROOT/'scripts')]
 from catalog_object_behavior import replay as model,fixture
-from yadinassi.configuration_xml import import_configuration
+from yadinassi.configuration.configuration_xml import import_configuration
 
 class CatalogObjectReplayTests(unittest.TestCase):
     def test_model_schema_matches_owned_catalog_but_not_full_import_claim(self):

@@ -1,8 +1,8 @@
 import unittest
-from yadinassi.form_runtime import FormSession
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.form_dialogs import QuestionDialogMode,DialogReturnCode
+from yadinassi.forms.form_runtime import FormSession
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.forms.form_dialogs import QuestionDialogMode,DialogReturnCode
 
 class DirectDialogNameTests(unittest.TestCase):
     def run_source(self,body):

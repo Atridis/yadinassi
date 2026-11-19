@@ -2,8 +2,8 @@ import unittest
 from unittest.mock import patch
 from pathlib import Path
 from yadinassi import Interpreter, BSLError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.values import Reference, HostFunction
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.types.values import Reference, HostFunction
 
 class DirectExecuteTests(unittest.TestCase):
     def test_source_ast_prepared_with_no_vm_dispatch(self):
@@ -115,7 +115,7 @@ X=1;Execute("SetX(X);");''');self.assertEqual(v.variables['x'],9)
             owner.vm.execute('R=Undefined;Execute("Q=New Query(""SELECT COUNT(*) AS N FROM Catalog.Номенклатура"");S=Q.Execute().Select();S.Next();R=S.N;");')
             self.assertEqual(owner.vm.variables['r'],0);self.assertNotIn('q',owner.vm.variables)
             owner.vm._transaction_activation_allowed=False
-            with patch('yadinassi.database_transactions.begin',side_effect=AssertionError('transaction effect')) as begin:
+            with patch('yadinassi.db.database_transactions.begin',side_effect=AssertionError('transaction effect')) as begin:
                 with self.assertRaises(BSLError):owner.vm.execute('Execute("BeginTransaction();");')
                 begin.assert_not_called()
         finally:owner.doCleanups()
@@ -195,7 +195,7 @@ class ExecutePreparationReuseTests(unittest.TestCase):
 
     def test_cached_unit_does_not_keep_scope_or_vm_alive(self):
         import weakref,gc
-        import yadinassi.python_direct_execute as fragments
+        import yadinassi.execution.direct.python_direct_execute as fragments
         refs=[];contexts=[];units=[];original=fragments.FragmentScope.__init__
         def track(scope,*args):
             original(scope,*args);refs.append(weakref.ref(scope))

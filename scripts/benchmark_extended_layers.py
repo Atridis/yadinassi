@@ -21,17 +21,17 @@ ROOT = next(parent for parent in Path(__file__).resolve().parents
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from yadinassi import Interpreter
-from yadinassi.experimental_naked_collections import UnsupportedNakedSyntax
-from yadinassi.python_direct import PythonDirectUnsupported
+from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.syntax.parser import parse
-from yadinassi.structures import BSLStructure
-from yadinassi.values import BSLArray
-from yadinassi.value_tables import BSLValueTable
-from yadinassi.value_lists import BSLValueList
-from yadinassi.json_processing import BSLJSONWriter, BSLJSONReader, read_json
-from yadinassi.file_io import BSLFile, BSLBinaryData
-from yadinassi.xml_io import BSLXMLReader, BSLXMLNodeType
-from yadinassi.xml_writer import BSLXMLWriter
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.types.values import BSLArray
+from yadinassi.collections.value_tables import BSLValueTable
+from yadinassi.collections.value_lists import BSLValueList
+from yadinassi.formats.json.json_processing import BSLJSONWriter, BSLJSONReader, read_json
+from yadinassi.streams.file_io import BSLFile, BSLBinaryData
+from yadinassi.formats.xml.xml_io import BSLXMLReader, BSLXMLNodeType
+from yadinassi.formats.xml.xml_writer import BSLXMLWriter
 from scripts.benchmark_execution_layers import metadata
 from scripts.benchmark_summary import ratio_cell
 from scripts import performance_summary_labels as labels
@@ -97,8 +97,8 @@ def attach_bsl(case, source, route, stack, context=None):
 
 
 def database(stack):
-    from yadinassi.configuration_main_demo import PROFILE, import_main_demo_configuration
-    from yadinassi.database_context import SQLiteDBContext
+    from yadinassi.configuration.configuration_main_demo import PROFILE, import_main_demo_configuration
+    from yadinassi.db.database_context import SQLiteDBContext
     root = ROOT / 'examples/demo'
     files = {p.relative_to(root).as_posix(): p.read_bytes()
              for p in root.rglob('*') if p.is_file()}
@@ -169,8 +169,8 @@ def make_case(name, n, route, stack, *, catalog_rows=32):
                 return sum((values.get(D(i)).get_member('Value') for i in range(n)), D(0))
             source = f'T=New ValueList;For I=0 To {n-1} Do T.Add(I);EndDo;R=0;For I=0 To {n-1} Do R=R+T.Get(I).Value;EndDo;'
     elif name == 'types.adjust_value':
-        from yadinassi.type_descriptions import BSLTypeDescription
-        from yadinassi.type_qualifiers import BSLNumberQualifiers
+        from yadinassi.types.type_descriptions import BSLTypeDescription
+        from yadinassi.types.type_qualifiers import BSLNumberQualifiers
         case.expected = total + D('0.13')*n
         def native():
             return sum(((D(i)+D('0.125')).quantize(D('0.01'),rounding=ROUND_HALF_UP) for i in range(n)),D(0))
@@ -179,8 +179,8 @@ def make_case(name, n, route, stack, *, catalog_rows=32):
             return sum((kind.adjust_value(D(i)+D('0.125')) for i in range(n)),D(0))
         source=f'K=New TypeDescription("Number",New NumberQualifiers(10,2));R=0;For I=0 To {n-1} Do R=R+K.AdjustValue(I+0.125);EndDo;'
     elif name == 'xml.scalar_codec':
-        from yadinassi.xml_values import xml_string,xml_value
-        from yadinassi.values import BSLType
+        from yadinassi.formats.xml.xml_values import xml_string,xml_value
+        from yadinassi.types.values import BSLType
         def native():
             return sum((D(format(D(i),'f')) for i in range(n)),D(0))
         def classes():
@@ -295,13 +295,13 @@ def make_case(name, n, route, stack, *, catalog_rows=32):
         case.checks['python_classes'] = check_class_xml
         case.notes = 'Host XML classes supported; all paths retain consumed numeric attributes for ordered validation. Current direct constructor may be unsupported. No legacy fallback.'
     elif name.startswith('db.'):
-        from yadinassi.queries import BSLQuery
+        from yadinassi.db.query.queries import BSLQuery
         path, context, owner, manager = database(stack)
         if name == 'db.count':
             for i in range(catalog_rows):
                 item = manager.create_item(); item.set_member('Description', 'Bench '+str(i)); item.write()
             connection = sqlite3.connect(path); stack.callback(connection.close)
-            from yadinassi.sqlite_query_indexes import register_query_collations
+            from yadinassi.db.sqlite.sqlite_query_indexes import register_query_collations
             register_query_collations(connection)
             schema_id = str(manager._schema.identity)
             table = connection.execute('SELECT physical_name FROM catalog_storage_map WHERE catalog_id=?', (schema_id,)).fetchone()[0]
@@ -337,7 +337,7 @@ def make_case(name, n, route, stack, *, catalog_rows=32):
                 value=ref.get_object(ref);value.set_member('Description','Before sample');value.write()
             case.before={'python_classes':reset,'bsl':reset}
             vm = attach_bsl(case, source, route, stack, context); 
-            from yadinassi.unique_identifiers import BSLUUID
+            from yadinassi.types.unique_identifiers import BSLUUID
             vm.variables['ref'] = vm._catalogs.get_member('Склады').get_ref(BSLUUID(str(ref.reference_uuid)))
             case.runs['python_classes'] = classes
             case.notes = 'Read/modify/write one existing catalog item; canonical persisted-value readback after every sample; no raw-SQL speed ratio.'
@@ -346,9 +346,9 @@ def make_case(name, n, route, stack, *, catalog_rows=32):
         attach_bsl(case, source, route, stack, context)
         return case
     elif name.startswith('form.'):
-        from yadinassi.form_runtime import FormSession
-        from yadinassi.form_model import BSLFormAttribute
-        from yadinassi.type_descriptions import BSLTypeDescription
+        from yadinassi.forms.form_runtime import FormSession
+        from yadinassi.forms.form_model import BSLFormAttribute
+        from yadinassi.types.type_descriptions import BSLTypeDescription
         code = form_source(n)
         def session():
             return FormSession(code, attributes=(BSLFormAttribute('Counter', BSLTypeDescription('Number')),), bindings={'OnCreateAtServer': 'Created'})

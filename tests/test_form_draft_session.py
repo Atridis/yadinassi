@@ -4,9 +4,9 @@ from hashlib import sha256
 import unittest
 from unittest.mock import patch
 
-from yadinassi import form_event_simulation as sim
-from yadinassi.errors import BSLError
-from yadinassi.form_module_analysis import FormModuleAnalysisError
+from yadinassi.forms import form_event_simulation as sim
+from yadinassi.types.errors import BSLError
+from yadinassi.forms.form_module_analysis import FormModuleAnalysisError
 from test_form_module_analysis import SOURCE, CATALOG, FORM, DEFINITION, binding
 
 
@@ -216,7 +216,7 @@ class FormDraftSessionTests(unittest.TestCase):
         source = b'\xef\xbb\xbf' + SOURCE.replace(b'\n', b'\r\n')
         bound = binding(source)
         before_hash = sha256(source).hexdigest()
-        from yadinassi import form_module_analysis as analysis
+        from yadinassi.forms import form_module_analysis as analysis
         with patch.object(analysis, '_input_key', wraps=analysis._input_key) as analyze, \
              patch.object(analysis, '_parse', wraps=analysis._parse) as parse:
             session = self.make(source=source, binding=bound)

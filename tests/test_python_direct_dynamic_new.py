@@ -5,11 +5,11 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
-from yadinassi.values import BSLArray, BSLType
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.types.values import BSLArray, BSLType
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.syntax.parser import parse
-from yadinassi.experimental_naked_structure import _DirectStructure
-from yadinassi.python_direct_plain_map import PlainMap as _TypedMap
+from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
+from yadinassi.execution.direct.python_direct_plain_map import PlainMap as _TypedMap
 
 
 class DirectDynamicNewTests(unittest.TestCase):
@@ -60,7 +60,7 @@ class DirectDynamicNewTests(unittest.TestCase):
         with self.assertRaises(BSLError):vm.execute('New("FixedArray",hostile)')
 
     def test_exact_argument_array_storage_and_budget_before_factory(self):
-        from yadinassi import python_direct_dynamic_new as dynamic
+        from yadinassi.execution.direct import python_direct_dynamic_new as dynamic
         class Hostile:
             def __iter__(self):raise AssertionError('storage iterator')
         vm=self.vm();args=BSLArray();args.items=Hostile();vm.variables['args']=args
@@ -157,8 +157,8 @@ class DirectDynamicNewTests(unittest.TestCase):
         import subprocess,sys,textwrap
         script=textwrap.dedent('''
             from yadinassi import Interpreter
-            from yadinassi.values import BSLArray
-            from yadinassi.experimental_naked_boundaries import BoundaryViolation
+            from yadinassi.types.values import BSLArray
+            from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
             from unittest.mock import patch
             vm=Interpreter();vm.variables['args']=BSLArray();effects=[]
             def getter(value):effects.append('getter');return []
@@ -175,7 +175,7 @@ class DirectDynamicNewTests(unittest.TestCase):
 class DirectDynamicCopyOrderTests(unittest.TestCase):
     def test_copy_does_not_mutate_definition_time_collection_classes(self):
         from copy import copy, deepcopy
-        from yadinassi.values import _DIRECT_COLLECTION_CLASS_ABI
+        from yadinassi.types.values import _DIRECT_COLLECTION_CLASS_ABI
         for cls,mro,fields in _DIRECT_COLLECTION_CLASS_ABI:
             self.assertTrue(all('__slots__' not in vars(base) for base in mro))
             value=BSLArray() if cls is BSLArray else object.__new__(cls)
@@ -190,7 +190,7 @@ class DirectDynamicCopyOrderTests(unittest.TestCase):
             from copy import copy,deepcopy
             from decimal import Decimal
             from yadinassi import Interpreter
-            from yadinassi.values import BSLArray
+            from yadinassi.types.values import BSLArray
             vm=Interpreter()
             for copier in (copy,deepcopy):
                 args=BSLArray();args.items=[Decimal(2)]
@@ -202,7 +202,7 @@ class DirectDynamicCopyOrderTests(unittest.TestCase):
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
     def test_mutated_or_replaced_copy_cache_is_not_accepted(self):
-        from yadinassi.values import _DIRECT_COLLECTION_CLASS_ABI
+        from yadinassi.types.values import _DIRECT_COLLECTION_CLASS_ABI
         for cls,mro,fields in _DIRECT_COLLECTION_CLASS_ABI:
             for change in ('replace','append','delete','foreign'):
                 with self.subTest(cls=cls.__name__,change=change):
@@ -222,7 +222,7 @@ class DirectDynamicCopyOrderTests(unittest.TestCase):
 
     def test_legacy_slotted_subclass_keeps_its_own_copy_cache(self):
         from copy import copy, deepcopy
-        from yadinassi.values import _DIRECT_COLLECTION_CLASS_ABI
+        from yadinassi.types.values import _DIRECT_COLLECTION_CLASS_ABI
         class Slotted(BSLArray):
             __slots__=('extra',)
         source=Slotted();source.items=['items'];source.extra=['extra']

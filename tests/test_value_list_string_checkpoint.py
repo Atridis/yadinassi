@@ -20,12 +20,13 @@ if __package__:
 else:
     from native_observations import read_observation
 
-from yadinassi import Interpreter, serialization
+from yadinassi import Interpreter
+from yadinassi.formats.storage import serialization
 from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse
-from yadinassi.structures import BSLStructure
-from yadinassi.value_lists import BSLValueList, BSLValueListItem
-from yadinassi.values import BSLArray, HostFunction, NULL
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.types.values import BSLArray, HostFunction, NULL
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/collections.bsl'

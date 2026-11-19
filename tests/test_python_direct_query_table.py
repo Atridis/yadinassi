@@ -5,10 +5,10 @@ import json
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.value_tables import BSLValueTable, BSLValueTableRow
-from yadinassi.type_descriptions import BSLTypeDescription
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.collections.value_tables import BSLValueTable, BSLValueTableRow
+from yadinassi.types.type_descriptions import BSLTypeDescription
 
 class QueryTableTests(unittest.TestCase):
     def table(self):
@@ -67,8 +67,8 @@ class QueryTableTests(unittest.TestCase):
     def test_table_cell_does_not_grant_foreign_catalog_authority(self):
         from pathlib import Path
         from tempfile import TemporaryDirectory
-        from yadinassi.configuration_main_demo import PROFILE,import_main_demo_configuration
-        from yadinassi.database_context import SQLiteDBContext
+        from yadinassi.configuration.configuration_main_demo import PROFILE,import_main_demo_configuration
+        from yadinassi.db.database_context import SQLiteDBContext
         from test_main_demo_configuration import source
         with TemporaryDirectory() as folder:
             context=SQLiteDBContext.create_main_demo(Path(folder)/'db.sqlite',import_main_demo_configuration(source(),profile=PROFILE))

@@ -6,10 +6,10 @@ import sqlite3
 import unittest
 from test_source_constant_store import configuration
 from test_source_constants_runtime import package
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_constant_store import SourceConstantStore
-from yadinassi.source_constants_runtime import SourceConstants, SourceConstantSet, ConstantSetCall
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.metadata.source_constant_store import SourceConstantStore
+from yadinassi.db.metadata.source_constants_runtime import SourceConstants, SourceConstantSet, ConstantSetCall
+from yadinassi.types.errors import BSLError
 
 
 class SourceConstantSetTests(unittest.TestCase):
@@ -146,7 +146,7 @@ class SourceConstantSetTests(unittest.TestCase):
         with self.assertRaisesRegex(BSLError, 'owning synchronous server'): app.interpreter.execute('X=SavedSet.Flag;')
 
     def test_createset_name_conflict_refused_for_direct_call(self):
-        from yadinassi.configuration_source import import_source
+        from yadinassi.configuration.configuration_source import import_source
         original = package('S=Constants.CreateSet("CreateSet");')
         files = {item.path.replace('Flag', 'CreateSet'): item.content.replace(b'Flag', b'CreateSet') for item in original.files}
         app = SourceApplication(import_source(files), scratch_database=self.path)

@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.execution_policy import execution_backend_policy
+from yadinassi.execution.execution_policy import execution_backend_policy
 
 
 class StrictContextTests(unittest.TestCase):
@@ -72,7 +72,7 @@ class StrictContextTests(unittest.TestCase):
         ],('_EventInterpreter',))
 
     def test_known_event_adapter_budget_not_unregistered_subclass(self):
-        from yadinassi.form_event_simulation import _EventInterpreter
+        from yadinassi.forms.form_event_simulation import _EventInterpreter
         with execution_backend_policy('python-direct'):
             vm=_EventInterpreter(lambda value: None)
             vm._remaining=0

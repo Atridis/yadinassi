@@ -139,7 +139,7 @@ class NumericPackageTests(unittest.TestCase):
         self.run_python("""
             import sys
             import yadinassi
-            from yadinassi.errors import BSLError, BSLRuntimeError
+            from yadinassi.types.errors import BSLError, BSLRuntimeError
             from yadinassi.runtime import Interpreter
             assert yadinassi.__all__ == ["BSLError", "BSLRuntimeError", "Interpreter"]
             assert yadinassi.Interpreter is Interpreter
@@ -165,7 +165,7 @@ class NumericPackageTests(unittest.TestCase):
         from types import ModuleType
         from yadinassi import runtime
         from yadinassi.numeric import binary_exp, elementary, math_conversion, powers
-        from yadinassi.values import divide, number
+        from yadinassi.types.values import divide, number
 
         self.assertIsInstance(binary_exp, ModuleType)
         self.assertIs(runtime.elementary, elementary)
@@ -181,7 +181,9 @@ class NumericPackageTests(unittest.TestCase):
         self.assertIs(binary_exp.binary_exp.__globals__, vars(binary_exp))
 
     def test_canonical_numeric_globals_and_runtime_builtins(self):
-        from yadinassi import collation, runtime, type_descriptions, values
+        from yadinassi.text import collation
+        from yadinassi import runtime
+        from yadinassi.types import type_descriptions, values
         from yadinassi.numeric import bits, elementary, numbers, round_modes
 
         self.assertIs(runtime.bits, bits)
@@ -211,16 +213,17 @@ class NumericPackageTests(unittest.TestCase):
     def test_fresh_consumer_first_imports_preserve_round_mode_registries_and_codec(self):
         # Importing any submodule runs the eager package initializer first. These
         # are requested-import orders, not claims about class creation order.
-        for consumer in ("runtime", "serialization", "type_values", "value_checks",
-                         "type_descriptions"):
+        for consumer in ("runtime", "formats.storage.serialization", "types.type_values",
+                         "types.value_checks", "types.type_descriptions"):
             with self.subTest(consumer=consumer):
                 self.run_python(f"""
                     import importlib
                     importlib.import_module("yadinassi." + {consumer!r})
                     from yadinassi.numeric.round_modes import BSLRoundMode, BSLRoundModes, ROUND_MODES
-                    from yadinassi import serialization, type_values, value_checks
+                    from yadinassi.formats.storage import serialization
+                    from yadinassi.types import type_values, value_checks
                     from yadinassi.numeric import numbers, round_modes as canonical
-                    from yadinassi.values import BSLType
+                    from yadinassi.types.values import BSLType
 
                     assert BSLRoundMode is canonical.BSLRoundMode
                     assert BSLRoundModes is canonical.BSLRoundModes

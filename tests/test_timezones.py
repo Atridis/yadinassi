@@ -19,8 +19,8 @@ import zoneinfo
 
 import tzdata
 
-from yadinassi import timezones
-from yadinassi.timezones import (
+from yadinassi.temporal import timezones
+from yadinassi.temporal.timezones import (
     MAX_ZONE_NAME_LENGTH, TIMEZONE_ENV, TimezoneConfigurationError, local_parts,
 )
 

@@ -3,7 +3,7 @@ from unittest.mock import patch
 from decimal import Decimal
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.python_direct_definite import definite_module_reads
+from yadinassi.execution.direct.python_direct_definite import definite_module_reads
 
 
 class DefiniteReadsTests(unittest.TestCase):
@@ -13,7 +13,7 @@ class DefiniteReadsTests(unittest.TestCase):
             vm=Interpreter()
             if install: install(vm)
             error=None
-            with patch('yadinassi.python_direct_definite.definite_module_reads',
+            with patch('yadinassi.execution.direct.python_direct_definite.definite_module_reads',
                        definite_module_reads if optimize else lambda _,**kwargs: frozenset()):
                 try: vm.execute(source)
                 except Exception as exc: error=(type(exc).__name__,str(exc))
@@ -68,7 +68,7 @@ class DefiniteReadsTests(unittest.TestCase):
         # Compare effects/errors, not the per-run host object identity.
         for optimize in (False,True):
             vm=Interpreter();install(vm)
-            with patch('yadinassi.python_direct_definite.definite_module_reads',definite_module_reads if optimize else lambda _,**kwargs:frozenset()):
+            with patch('yadinassi.execution.direct.python_direct_definite.definite_module_reads',definite_module_reads if optimize else lambda _,**kwargs:frozenset()):
                 with self.assertRaisesRegex(Exception,'не определена'):vm.execute('x=1;y=host+1;z=x;')
             self.assertNotIn('x',vm.variables);self.assertNotIn('z',vm.variables)
 

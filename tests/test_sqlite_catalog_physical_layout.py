@@ -5,9 +5,9 @@ import unittest
 from pathlib import Path
 from uuid import uuid4
 
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_catalog_layout import quote_identifier
-from yadinassi.catalog_backend import BackendError
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
+from yadinassi.db.catalog.catalog_backend import BackendError
 from test_sqlite_catalog_backend import configuration
 
 
@@ -75,7 +75,7 @@ class PhysicalCatalogLayoutTests(unittest.TestCase):
 
     def test_name_normalization_and_reserved_collision_are_stable(self):
         from dataclasses import replace
-        from yadinassi.sqlite_catalog_layout import build_layout
+        from yadinassi.db.sqlite.sqlite_catalog_layout import build_layout
         config = configuration()
         a, b = config.catalogs
         # These differ in code points but normalize to the same identifier.
@@ -114,7 +114,7 @@ class PhysicalCatalogLayoutTests(unittest.TestCase):
 
     def test_hundreds_of_distinct_catalog_tables(self):
         from dataclasses import replace
-        from yadinassi.catalog_backend import CatalogSchema
+        from yadinassi.db.catalog.catalog_backend import CatalogSchema
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'owned.sqlite'
             config = replace(configuration(), catalogs=tuple(CatalogSchema(uuid4(), 'Catalog%d' % i, 8, 32) for i in range(200)))

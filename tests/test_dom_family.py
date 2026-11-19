@@ -5,12 +5,12 @@ import tempfile
 import unittest
 from unittest import mock
 from yadinassi import Interpreter
-from yadinassi import dom_nodes as n
-from yadinassi.dom_io import BSLDOMBuilder, BSLDOMWriter
-from yadinassi.xml_io import BSLXMLReader, BSLXMLReaderSettings
-from yadinassi.xml_writer import BSLXMLWriter, BSLXMLWriterSettings
-from yadinassi.type_values import type_of
-from yadinassi.values import BSLType
+from yadinassi.formats.xml import dom_nodes as n
+from yadinassi.formats.xml.dom_io import BSLDOMBuilder, BSLDOMWriter
+from yadinassi.formats.xml.xml_io import BSLXMLReader, BSLXMLReaderSettings
+from yadinassi.formats.xml.xml_writer import BSLXMLWriter, BSLXMLWriterSettings
+from yadinassi.types.type_values import type_of
+from yadinassi.types.values import BSLType
 
 
 class DOMFamilyTests(unittest.TestCase):
@@ -128,7 +128,7 @@ class DOMFamilyTests(unittest.TestCase):
         self.assertIs(reader._settings,settings);self.assertTrue(settings.ignore_comments);self.assertFalse(reader.read())
         regular=BSLXMLReader();regular.set_string('<r><!--c--></r>');kinds=[]
         while regular.read():kinds.append(regular._current['kind'])
-        from yadinassi.xml_io import T
+        from yadinassi.formats.xml.xml_io import T
         self.assertNotIn(T.COMMENT,kinds)
         declaration=BSLXMLReader();declaration.set_string('<?xml version="1.0" encoding="UTF-8"?><r/>')
         BSLDOMBuilder().read(declaration)

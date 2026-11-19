@@ -7,9 +7,9 @@ import unittest
 
 from test_main_demo_configuration import source, ROOT
 from test_main_demo_runtime import SEED
-from yadinassi.configuration_main_demo import PROFILE, import_main_demo_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.inventory_application_reports import InventoryReports
+from yadinassi.configuration.configuration_main_demo import PROFILE, import_main_demo_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.configuration.demos.inventory_application_reports import InventoryReports
 from yadinassi.runtime import Interpreter
 from yadinassi.ui.configuration_app import ConfigurationBroker, ConfigurationController, ConfigurationHandler, load_application, PROTOCOL
 from yadinassi.ui.protocol import encode_line, decode_line

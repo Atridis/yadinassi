@@ -5,10 +5,10 @@ from pathlib import Path
 import unittest
 from unittest import mock
 from test_source_server_call import configuration
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 from yadinassi.runtime import Interpreter
-from yadinassi import temporary_storage as storage
+from yadinassi.application import temporary_storage as storage
 
 BODY='''Function Put(Val V, Val Owner=Undefined) Export If Owner=Undefined Then Owner=New UUID; EndIf; Return PutToTempStorage(V,Owner); EndFunction
 Function Get(Val Address) Export Return GetFromTempStorage(Address); EndFunction

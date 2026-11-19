@@ -3,9 +3,9 @@ from decimal import Decimal
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.python_direct_collection_regions import analyze
-from yadinassi.value_tables import BSLValueTable, BSLValueTableRow
-from yadinassi.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.execution.direct.python_direct_collection_regions import analyze
+from yadinassi.collections.value_tables import BSLValueTable, BSLValueTableRow
+from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
 
 
 def snapshot(vm):
@@ -28,7 +28,7 @@ class CollectionRegionsTests(unittest.TestCase):
         for enabled in (False,True):
             vm=Interpreter();self.addCleanup(vm.close)
             if install:install(vm)
-            with patch('yadinassi.python_direct_collection_regions.analyze',analyze if enabled else lambda *a,**k:(0,{},frozenset())):
+            with patch('yadinassi.execution.direct.python_direct_collection_regions.analyze',analyze if enabled else lambda *a,**k:(0,{},frozenset())):
                 plan=vm.prepare(source)
             error=None
             try:vm.execute_prepared(plan)
@@ -91,13 +91,13 @@ class CollectionRegionsTests(unittest.TestCase):
         vm.execute_prepared(plan);self.assertEqual(len(vm.variables['t'].items),3)
 
     def test_descriptor_dependency_callback_stops_at_same_source_boundary(self):
-        from yadinassi import type_descriptions as td
+        from yadinassi.types import type_descriptions as td
         original=td._reference_description_kind
         outputs=[]
         source='T=New ValueTable;T.Columns.Add("N");For I=0 To 2 Do Row=T.Add();Row.N=I;EndDo;'
         for enabled in (False,True):
             vm=Interpreter();self.addCleanup(vm.close)
-            with patch('yadinassi.python_direct_collection_regions.analyze',analyze if enabled else lambda *a,**k:(0,{},frozenset())):
+            with patch('yadinassi.execution.direct.python_direct_collection_regions.analyze',analyze if enabled else lambda *a,**k:(0,{},frozenset())):
                 plan=vm.prepare(source)
             def hook(x):
                 vm.close();return original(x)
@@ -110,7 +110,7 @@ class CollectionRegionsTests(unittest.TestCase):
         self.assertNotIn('i',outputs[-1][0])
 
     def test_fast_gate_is_reached_and_enabled(self):
-        from yadinassi import python_direct_collection_regions as region
+        from yadinassi.execution.direct import python_direct_collection_regions as region
         seen=[];original=region.admitted
         def gate(*args):
             result=original(*args);seen.append(result);return result
@@ -128,11 +128,11 @@ class CollectionRegionsTests(unittest.TestCase):
         self.paired('Data=New ValueTable;Data.Columns.Add("Price");Items=New ValueList;For A=1 To 3 Do For B=1 To 4 Do Entry=Data.Add();Entry.Price=A*B;Items.Add(Entry.Price);EndDo;EndDo;')
 
     def test_old_global_len_injection_selects_normal_boundary(self):
-        from yadinassi import value_tables as table
+        from yadinassi.collections import value_tables as table
         outputs=[]
         for enabled in (False,True):
             vm=Interpreter();self.addCleanup(vm.close)
-            with patch('yadinassi.python_direct_collection_regions.analyze',analyze if enabled else lambda *a,**k:(0,{},{})):
+            with patch('yadinassi.execution.direct.python_direct_collection_regions.analyze',analyze if enabled else lambda *a,**k:(0,{},{})):
                 plan=vm.prepare('T=New ValueTable;T.Columns.Add("N");For I=0 To 2 Do Row=T.Add();Row.N=I;EndDo;')
             def injected(value):vm.close();return len(value)
             error=None
@@ -147,7 +147,7 @@ class CollectionRegionsTests(unittest.TestCase):
         original=weakref.ref;outputs=[]
         for enabled in (False,True):
             vm=Interpreter();self.addCleanup(vm.close)
-            with patch('yadinassi.python_direct_collection_regions.analyze',analyze if enabled else lambda *a,**k:(0,{},{})):
+            with patch('yadinassi.execution.direct.python_direct_collection_regions.analyze',analyze if enabled else lambda *a,**k:(0,{},{})):
                 plan=vm.prepare('T=New ValueList;For I=0 To 2 Do T.Add(I);EndDo;')
             def injected(value,*args):
                 if type(value) is BSLValueList:vm.close()
@@ -160,7 +160,7 @@ class CollectionRegionsTests(unittest.TestCase):
         self.assertEqual(*outputs);self.assertEqual(len(outputs[1][0]['t'][1]),1)
 
     def test_budget_limit_override_keeps_partial_state(self):
-        from yadinassi import value_lists as lists,value_tables as tables
+        from yadinassi.collections import value_lists as lists,value_tables as tables
         with patch.object(lists,'_MAX_ITEMS',3):
             values,error=self.paired('T=New ValueList;For I=0 To 5 Do T.Add(I);EndDo;')
             self.assertIsNotNone(error);self.assertEqual(len(values['t'][1]),3)
@@ -170,17 +170,17 @@ class CollectionRegionsTests(unittest.TestCase):
 
     def test_mutated_registration_never_becomes_raw_receiver(self):
         def install(vm):
-            from yadinassi.values import HostFunction
+            from yadinassi.types.values import HostFunction
             vm.types['valuelist']=HostFunction('ValueList',lambda:object())
         values,error=self.paired('T=New ValueList;For I=0 To 3 Do T.Add(I);EndDo;',install=install)
         self.assertIsNotNone(error);self.assertNotIn('t',values)
 
     def test_instance_shadow_self_restoring_hook_uses_normal_dispatch(self):
-        from yadinassi import type_descriptions as td
+        from yadinassi.types import type_descriptions as td
         original=td._reference_description_kind;outputs=[]
         for enabled in (False,True):
             vm=Interpreter();self.addCleanup(vm.close)
-            with patch('yadinassi.python_direct_collection_regions.analyze',analyze if enabled else lambda *a,**k:(0,{},{})):
+            with patch('yadinassi.execution.direct.python_direct_collection_regions.analyze',analyze if enabled else lambda *a,**k:(0,{},{})):
                 plan=vm.prepare('T=New ValueTable;T.Columns.Add("N");For I=0 To 2 Do Row=T.Add();Row.N=I;EndDo;')
             def hook(description):
                 td._reference_description_kind=original
@@ -196,8 +196,8 @@ class CollectionRegionsTests(unittest.TestCase):
         self.assertEqual(*outputs);self.assertEqual(len(outputs[-1][0]['t'][2]),1)
 
     def test_detached_aliases_decline_guard(self):
-        from yadinassi.python_direct_collection_regions import admitted
-        from yadinassi.python_direct import make_boundary
+        from yadinassi.execution.direct.python_direct_collection_regions import admitted
+        from yadinassi.execution.direct.python_direct import make_boundary
         vm=Interpreter();self.addCleanup(vm.close);context=make_boundary(vm);context.start()
         table=BSLValueTable();table.columns.add('N');row=table.add();table.delete(row)
         self.assertFalse(admitted(context,{'t':table,'row':row},{'t':'table','row':'row'}))
@@ -205,8 +205,8 @@ class CollectionRegionsTests(unittest.TestCase):
         self.assertFalse(admitted(context,{'t':values,'item':item},{'t':'list','item':'item'}))
 
     def test_graph_guard_rejects_hostile_keys_without_equality(self):
-        from yadinassi.python_direct_collection_regions import admitted
-        from yadinassi.python_direct import make_boundary
+        from yadinassi.execution.direct.python_direct_collection_regions import admitted
+        from yadinassi.execution.direct.python_direct import make_boundary
         vm=Interpreter();self.addCleanup(vm.close);context=make_boundary(vm);context.start()
         table=BSLValueTable()
         class Key:
@@ -226,8 +226,8 @@ class CollectionRegionsTests(unittest.TestCase):
         finally:BSLValueList.add.__defaults__=old
 
     def test_each_leaf_has_entry_and_exit_liveness_even_baseexception(self):
-        from yadinassi.python_direct_collection_regions import helpers
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.direct.python_direct_collection_regions import helpers
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         operations=helpers();table=BSLValueTable();table.columns.add('N')
         class Context:
             def __init__(self,fail):self.calls=0;self.fail=fail
@@ -253,7 +253,7 @@ class CollectionRegionsTests(unittest.TestCase):
         self.assertIsNotNone(error);self.assertEqual(len(values['t'][1]),0)
 
     def test_leaf_resource_limits_checked_before_allocation(self):
-        from yadinassi.python_direct_collection_regions import helpers
+        from yadinassi.execution.direct.python_direct_collection_regions import helpers
         class Context:
             def _check(self):pass
         functions=helpers();table=BSLValueTable();table.rows=[None]*100000
@@ -275,7 +275,7 @@ class CollectionRegionsTests(unittest.TestCase):
                     def changed():vm.close();return add()
                     table.add=changed
             vm.variables['row']=Previous()
-            with patch('yadinassi.python_direct_collection_regions.analyze',analyze if enabled else lambda *a,**k:(0,{},{})):
+            with patch('yadinassi.execution.direct.python_direct_collection_regions.analyze',analyze if enabled else lambda *a,**k:(0,{},{})):
                 plan=vm.prepare('T=New ValueTable;T.Columns.Add("N");For I=0 To 2 Do Row=T.Add();Row.N=I;EndDo;')
             error=None
             try:vm.execute_prepared(plan)
@@ -293,7 +293,7 @@ class CollectionRegionsTests(unittest.TestCase):
                     def changed():vm.close();return add()
                     table.add=changed
             vm.variables['r']=Previous()
-            with patch('yadinassi.python_direct_collection_regions.analyze',analyze if enabled else lambda *a,**k:(0,{},{})):
+            with patch('yadinassi.execution.direct.python_direct_collection_regions.analyze',analyze if enabled else lambda *a,**k:(0,{},{})):
                 plan=vm.prepare('T=New ValueTable;T.Columns.Add("N");For I=0 To 2 Do Row=T.Add();Row.N=I;EndDo;R=0;Row=T.Add();')
             error=None
             try:vm.execute_prepared(plan)
@@ -313,7 +313,7 @@ class CollectionRegionsTests(unittest.TestCase):
                 def changed(*args):vm.close();return add(*args)
                 collection.add=changed
             watch=weakref.ref(item,callback);del item
-            with patch('yadinassi.python_direct_collection_regions.analyze',analyze if enabled else lambda *a,**k:(0,{},{})):
+            with patch('yadinassi.execution.direct.python_direct_collection_regions.analyze',analyze if enabled else lambda *a,**k:(0,{},{})):
                 plan=vm.prepare('T=New ValueList;For I=0 To 2 Do Item=T.Add(I);EndDo;')
             error=None
             try:vm.execute_prepared(plan)
@@ -323,8 +323,8 @@ class CollectionRegionsTests(unittest.TestCase):
         self.assertEqual(*outputs);self.assertEqual(len(outputs[-1][0]['t'][1]),2)
 
     def test_old_graph_qualifier_payload_and_oversized_rows_decline(self):
-        from yadinassi.python_direct_collection_regions import admitted
-        from yadinassi.python_direct import make_boundary
+        from yadinassi.execution.direct.python_direct_collection_regions import admitted
+        from yadinassi.execution.direct.python_direct import make_boundary
         vm=Interpreter();self.addCleanup(vm.close);context=make_boundary(vm);context.start()
         table=BSLValueTable();column=table.columns.add('N')
         class Host:

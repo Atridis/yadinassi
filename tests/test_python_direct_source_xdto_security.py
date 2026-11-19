@@ -6,8 +6,8 @@ from decimal import Decimal
 from types import MethodType
 from unittest.mock import patch
 import test_python_direct_source_xdto as basic
-from yadinassi import xdto_io,xdto_values,source_xdto_packages
-from yadinassi.values import HostFunction
+from yadinassi.formats.xml import xdto_io,xdto_values,source_xdto_packages
+from yadinassi.types.values import HostFunction
 
 
 class SourceScalarXDTOSecurity(unittest.TestCase):
@@ -93,7 +93,7 @@ class SourceScalarXDTOSecurity(unittest.TestCase):
         self.assertEqual(effects,[])
 
     def test_private_seals_do_not_keep_application_alive(self):
-        from yadinassi.configuration_source_runtime import SourceApplication
+        from yadinassi.configuration.configuration_source_runtime import SourceApplication
         from test_configuration_source_runtime import source
         app=SourceApplication(source(b''),output=lambda _:None);app.start()
         app.interpreter.execute('T=XDTOFactory.Type("http://www.w3.org/2001/XMLSchema","string");')
@@ -119,14 +119,15 @@ class SourceScalarXDTOSecurity(unittest.TestCase):
                 with self.assertRaises(basic.DENIED):app.interpreter.execute('XDTOFactory.Type("x","y");')
 
     def test_lowered_package_cap_does_not_publish(self):
-        from yadinassi import xdto_packages
+        from yadinassi.formats.xml import xdto_packages
         app=self.app();factory=app.xdto.factory;before=factory._types
         with patch.object(xdto_packages,'MAX_PACKAGES',1):
             with self.assertRaises(basic.DENIED):app.interpreter.execute('XDTOFactory.Type("urn:owned:records","Code");')
         self.assertIs(factory._types,before);self.assertEqual(app.xdto._loaded,set())
 
     def test_reachable_parser_helpers_rejected_before_callbacks(self):
-        from yadinassi import xml_writer,xml_io,configuration_xml
+        from yadinassi.formats.xml import xml_writer, xml_io
+        from yadinassi.configuration import configuration_xml
         effects=[]
         for module,name in ((xml_writer,'_text'),(xdto_values.re,'fullmatch')):
             app=self.app()
@@ -141,7 +142,7 @@ class SourceScalarXDTOSecurity(unittest.TestCase):
         self.assertEqual(effects,[])
 
     def test_foreign_metaclass_cannot_run_from_type_admission(self):
-        from yadinassi import python_direct_source_xdto as direct
+        from yadinassi.execution.direct.source import python_direct_source_xdto as direct
         effects=[]
         class Meta(type):
             def __eq__(self,other):effects.append('eq');return False

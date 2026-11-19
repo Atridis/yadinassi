@@ -205,8 +205,8 @@ class ObjectFormPreflightBrowserContractTests(unittest.TestCase):
         self.assertIn('timeout-minutes: 5', self.workflow)
 
     def test_source_manifest_and_fixed_diagnostics(self):
-        self.contains("'yadinassi/configuration_document.py'", "'yadinassi/inventory_application_sessions.py'",
-            "'yadinassi/configuration_posting_document.py'", "'tests/test_document_open_preflight.py'",
+        self.contains("'yadinassi/configuration/configuration_document.py'", "'yadinassi/configuration/demos/inventory_application_sessions.py'",
+            "'yadinassi/configuration/configuration_posting_document.py'", "'tests/test_document_open_preflight.py'",
             "'docs/object-form-preflight-browser-qa.md'", "'tracked_checkout_dirty'", "'source_binding_changed'",
             'const wireStages=', 'const wireReasons=', 'report.wire={stage:', 'requestBytes:byteCount(',
             'const diagnosticPhases=', 'const diagnosticReasons=', 'report.failureClass=', 'report.observerFailure=')

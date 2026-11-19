@@ -8,10 +8,10 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from ..catalog_backend import (BackendError, Capabilities, CatalogCard, CatalogKey,
+from yadinassi.db.catalog.catalog_backend import (BackendError, Capabilities, CatalogCard, CatalogKey,
                                CatalogSchema, CatalogSelection, FieldSchema, Revision,
                                CatalogScanRequest, CatalogOrder, CatalogValuePage, CatalogValueRow)
-from ..dates import BSLDate, TICKS_PER_SECOND
+from yadinassi.temporal.dates import BSLDate, TICKS_PER_SECOND
 from .protocol import CatalogRef, MAX_PAGE, UIError, bounded_text, encode_value, uuid_text
 
 

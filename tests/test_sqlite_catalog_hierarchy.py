@@ -11,13 +11,13 @@ import unittest
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
-from yadinassi.catalog_backend import (BackendError, CatalogSchema, CatalogKey,
+from yadinassi.db.catalog.catalog_backend import (BackendError, CatalogSchema, CatalogKey,
     CatalogDraft, CatalogScanRequest, CatalogComparison, CatalogOrder,
     CatalogWriteRequest, FieldSchema, TabularSectionSchema, TabularSectionRows, TabularRow)
-from yadinassi.configuration_xml import ConfigurationImport, ConfigurationFile
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _schema, _schema_data, _json, _View
-from yadinassi.document_backend import DocumentSchema, DocumentKey, DocumentDraft
-from yadinassi.register_backend import InformationRegisterSchema, RegisterKey, RegisterDraft
+from yadinassi.configuration.configuration_xml import ConfigurationImport, ConfigurationFile
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _schema, _schema_data, _json, _View
+from yadinassi.db.document.document_backend import DocumentSchema, DocumentKey, DocumentDraft
+from yadinassi.db.registers.register_backend import InformationRegisterSchema, RegisterKey, RegisterDraft
 from test_catalog_commit_cleanup_recovery import FaultConnection
 
 

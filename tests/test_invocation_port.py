@@ -9,11 +9,11 @@ import unittest
 from unittest import mock
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.dates import BSLDate, TICKS_PER_SECOND
-from yadinassi.invocation import (InvocationBinding, InvocationError,
+from yadinassi.temporal.dates import BSLDate, TICKS_PER_SECOND
+from yadinassi.execution.invocation import (InvocationBinding, InvocationError,
     InvocationPort, InvocationServer, MAX_CALLS, PROTOCOL)
 from yadinassi.ui.protocol import decode_line, encode_line
-from yadinassi.values import BSLArray, NULL
+from yadinassi.types.values import BSLArray, NULL
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = '''&AtServerNoContext
@@ -210,7 +210,7 @@ X=3; Message(Total(X,Change(X))); Message(X);''')
                 cancellation = kind('cancelled')
                 client, server, port, seen, messages = self.setup_port()
                 binding = InvocationBinding('Echo', 2, ('Value',))
-                with mock.patch('yadinassi.invocation._encode_scalar', side_effect=cancellation):
+                with mock.patch('yadinassi.execution.invocation._encode_scalar', side_effect=cancellation):
                     with self.assertRaises(kind) as raised:
                         port.invoke(binding, [Decimal(7)])
                 self.assertIs(raised.exception, cancellation)
@@ -270,7 +270,7 @@ Function LocalServer() Return Echo(Effect()); EndFunction''')
 
     def test_real_separate_process_returns_result_without_loading_server_body_on_client(self):
         child = '''import sys
-from yadinassi.invocation import InvocationServer
+from yadinassi.execution.invocation import InvocationServer
 server=InvocationServer("&AtServerNoContext\\nFunction Calculate(Val X) Return X * 3; EndFunction", {1:"Calculate"})
 sys.stdout.buffer.write(server.exchange(sys.stdin.buffer.readline(131073)))
 '''

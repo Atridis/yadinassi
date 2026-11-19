@@ -2,9 +2,9 @@
 import unittest
 
 from test_configuration_source_runtime import source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
-from yadinassi.safe_mode import require_external_access
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
+from yadinassi.execution.safe_mode import require_external_access
 
 
 class SourceSafeModeTests(unittest.TestCase):

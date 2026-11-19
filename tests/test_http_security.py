@@ -8,11 +8,11 @@ import unittest
 from unittest import mock
 
 from yadinassi import Interpreter, BSLError
-from yadinassi import http_client as http
-from yadinassi import http_security as api
-from yadinassi.maps import BSLMap
-from yadinassi.type_values import type_of
-from yadinassi.values import BSLType
+from yadinassi.http import http_client as http
+from yadinassi.http import http_security as api
+from yadinassi.collections.maps import BSLMap
+from yadinassi.types.type_values import type_of
+from yadinassi.types.values import BSLType
 
 
 class SecurityObjectTests(unittest.TestCase):

@@ -1,9 +1,9 @@
 """Empty Date is local form state, not generic Invocation/native evidence."""
 import unittest
-from yadinassi.configuration_forms import load_configuration_forms
-from yadinassi.dates import BSLDate, MAX_TICKS
-from yadinassi.form_replication import _encode_form_scalar, _decode_form_scalar
-from yadinassi.invocation import _encode_scalar, _decode_scalar, InvocationServer, PROTOCOL
+from yadinassi.configuration.configuration_forms import load_configuration_forms
+from yadinassi.temporal.dates import BSLDate, MAX_TICKS
+from yadinassi.forms.form_replication import _encode_form_scalar, _decode_form_scalar
+from yadinassi.execution.invocation import _encode_scalar, _decode_scalar, InvocationServer, PROTOCOL
 from yadinassi.ui.form_app import FormController, PROTOCOL as FORM_PROTOCOL
 from yadinassi.ui.protocol import encode_line, decode_line, UIError
 from test_configuration_forms import sources, pair

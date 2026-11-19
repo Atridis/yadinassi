@@ -33,7 +33,7 @@ interrupts remain available.
 
 ```python
 from tests.retired_text_compiler import prepare, REPAIRS
-from yadinassi.experimental_naked_boundaries import BoundaryContext
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
 state = {}
 program = prepare(source, repairs=REPAIRS - {'resource_bounds', 'authority_checkpoints'})
 program.run(state, context=BoundaryContext(services=services))

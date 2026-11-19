@@ -4,13 +4,13 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter,BSLError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.syntax.parser import parse
-from yadinassi.values import BSLFixedArray,BSLArray,HostFunction
-from yadinassi.experimental_naked_structure import _DirectStructure
-from yadinassi.experimental_naked_collections import _TypedMap
-from yadinassi.python_direct import make_boundary
-from yadinassi.python_direct_fixed_find import captured
+from yadinassi.types.values import BSLFixedArray,BSLArray,HostFunction
+from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
+from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
+from yadinassi.execution.direct.python_direct import make_boundary
+from yadinassi.execution.direct.python_direct_fixed_find import captured
 
 SETUP='S=New Structure("X",1);M=New Map;M["X"]=1;A=New Array;A.Add(S);A.Add(M);A.Add(S);F=New FixedArray(A);'
 BODY='R=F.Find(S);Q=F.Найти(M);U=F.Find(New Structure("X",1));N=New Map;N["X"]=1;V=F.Find(N);'
@@ -78,7 +78,7 @@ class DirectFixedReceiverFindTests(unittest.TestCase):
         self.assertEqual(seen,[])
 
     def test_policy_distinguishes_named_and_captured_after_arguments(self):
-        from yadinassi.python_direct_fixed_find import resolve
+        from yadinassi.execution.direct.python_direct_fixed_find import resolve
         for operation in ('call_member','call_value'):
             vm=Interpreter();vm.execute(SETUP);context=make_boundary(vm);context.start();fixed=vm.variables['f'];seen=[]
             invoke=(resolve(context,fixed,'Find') if operation=='call_member'
@@ -113,7 +113,7 @@ class DirectFixedReceiverFindTests(unittest.TestCase):
         self.assertEqual(vm.variables['r'],0)
         vm.execute('A=New Array;A.Add(True);A.Add(1);A.Add("1");F=New FixedArray(A);')
         self.assertEqual([vm.execute('F.Find('+text+')') for text in ('True','1','"1"')],[0,1,2])
-        from yadinassi.dates import BSLDate,MAX_TICKS,UnsupportedDateRange
+        from yadinassi.temporal.dates import BSLDate,MAX_TICKS,UnsupportedDateRange
         vm.variables['date']=BSLDate(MAX_TICKS,boundary=True)
         with self.assertRaises(BSLError):vm.execute('F.Find(date);')
 

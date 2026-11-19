@@ -7,15 +7,15 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.errors import BSLError
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_profile_import import (
+from yadinassi.types.errors import BSLError
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_profile_import import (
     LEGACY, POSTING, POSTING_FORMS, ACCUMULATION, PROFILES,
     prepare_files, prepare_directory, create_prepared,
 )
-from yadinassi.configuration_diagnostics import ImportRefusal
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.configuration_xml import import_configuration
+from yadinassi.configuration.configuration_diagnostics import ImportRefusal
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.configuration.configuration_xml import import_configuration
 from sqlite_catalog_fixture import configuration_files
 from test_configuration_posting import source as posting_source
 from test_configuration_accumulation import source as accumulation_source
@@ -182,10 +182,10 @@ class ConfigurationProfileImportTests(unittest.TestCase):
             finally:vm.close()
 
     def test_deterministic_storage_budget_checked_before_file_creation(self):
-        from yadinassi import sqlite_catalog
+        from yadinassi.db.sqlite import sqlite_catalog
         with patch.object(sqlite_catalog, '_MAX_CONFIG_BYTES', 1):
             with self.assertRaises(ValueError): prepare_files(configuration_files())
-        from yadinassi import sqlite_documents
+        from yadinassi.db.sqlite import sqlite_documents
         for profile, files, _ in self.sources()[1:]:
             with self.subTest(profile=profile), patch.object(sqlite_documents, '_MAX_TOTAL', 1):
                 with self.assertRaises(ImportRefusal) as caught: prepare_files(files, profile=profile)

@@ -4,7 +4,7 @@ from decimal import Decimal
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.errors import IncompleteInput
+from yadinassi.types.errors import IncompleteInput
 from yadinassi.syntax.parser import parse
 
 

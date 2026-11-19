@@ -157,9 +157,9 @@ const fixtureCode=String.raw`
 import json,sqlite3,sys
 from pathlib import Path
 from contextlib import closing
-from yadinassi.configuration_import import read_configuration_directory
-from yadinassi.configuration_posting_application import import_posting_application, PROFILE
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.configuration.configuration_import import read_configuration_directory
+from yadinassi.configuration.configuration_posting_application import import_posting_application, PROFILE
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 root=Path(sys.argv[2]); source=Path(sys.argv[3]); database=root/'documents.sqlite'
 try:
  if sys.argv[1]=='create':

@@ -4,10 +4,10 @@ import tempfile
 import unittest
 from unittest import mock
 from yadinassi import BSLRuntimeError, Interpreter
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342
 from sqlite_catalog_fixture import configuration_files
 
 ALIASES = ("InfoBaseConnectionString", "СтрокаСоединенияИнформационнойБазы")

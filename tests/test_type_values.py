@@ -5,8 +5,8 @@ import tempfile
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.values import BSLArray, BSLObject, BSLType
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.types.values import BSLArray, BSLObject, BSLType
 
 
 class TypeValueTests(unittest.TestCase):

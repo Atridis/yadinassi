@@ -2,12 +2,12 @@
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.values import BSLType
-from yadinassi.type_values import type_of
-from yadinassi.experimental_naked_collections import _MapEntry
-from yadinassi.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
-from yadinassi.python_direct_services import ServicesBoundary
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.types.values import BSLType
+from yadinassi.types.type_values import type_of
+from yadinassi.execution.codegen.experimental_naked_collections import _MapEntry
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.direct.python_direct_services import ServicesBoundary
 
 
 class DirectEntryTypeOfTests(unittest.TestCase):
@@ -82,7 +82,7 @@ For Each P In S Do ST=ТипЗнч(P);SR=(ST=Тип("КлючИЗначение"
     def test_late_module_class_rebinding_is_not_blessed(self):
         vm=self.vm();pair=_MapEntry('K',1)
         class Fake:pass
-        with patch('yadinassi.experimental_naked_collections._MapEntry',Fake):
+        with patch('yadinassi.execution.codegen.experimental_naked_collections._MapEntry',Fake):
             vm.variables['p']=pair
             self.assertIs(vm.execute('TypeOf(P)'),BSLType.KEY_AND_VALUE)
             vm.variables['p']=Fake()
@@ -94,12 +94,12 @@ For Each P In S Do ST=ТипЗнч(P);SR=(ST=Тип("КлючИЗначение"
             import sys
             from unittest.mock import patch
             from yadinassi import Interpreter
-            from yadinassi import experimental_naked_collections as compiler
-            from yadinassi.errors import BSLRuntimeError
-            from yadinassi.values import BSLType
+            from yadinassi.execution.codegen import experimental_naked_collections as compiler
+            from yadinassi.types.errors import BSLRuntimeError
+            from yadinassi.types.values import BSLType
             pair=compiler._MapEntry('K',1)
             class Fake:pass
-            if 'yadinassi.python_direct_services' in sys.modules:raise AssertionError('services imported early')
+            if 'yadinassi.execution.direct.python_direct_services' in sys.modules:raise AssertionError('services imported early')
             with patch.object(compiler,'_MapEntry',Fake):
                 vm=Interpreter();vm.variables['p']=Fake()
                 try:vm.execute('TypeOf(P)')

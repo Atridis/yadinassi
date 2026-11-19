@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.python_direct import PythonDirectUnsupported
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 
 NAMES=('ValueTableRow','СтрокаТаблицыЗначений','ValueTableColumn','КолонкаТаблицыЗначений',
        'ValueTableColumnCollection','КоллекцияКолонокТаблицыЗначений')

@@ -4,8 +4,8 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.python_direct import PythonDirectUnsupported
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.syntax.parser import parse
 import test_python_direct_database as database_fixture
 
@@ -89,7 +89,7 @@ class DirectManagedDatabaseTests(unittest.TestCase):
         vm.execute('A=Catalogs.Склады.CreateItem(); A.Description="managed"; A.Write(); R=A.Ref.GetObject().Description;')
         self.assertEqual(vm.variables['r'],'managed')
         vm._transaction_activation_allowed=False
-        with patch('yadinassi.database_transactions.begin',side_effect=AssertionError('effect')) as begin:
+        with patch('yadinassi.db.database_transactions.begin',side_effect=AssertionError('effect')) as begin:
             with self.assertRaises(BSLRuntimeError):vm.execute('BeginTransaction();')
             begin.assert_not_called()
         self.assertFalse(vm._transaction_activation_allowed)

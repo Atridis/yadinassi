@@ -3,10 +3,10 @@ from decimal import Decimal
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.python_direct import PythonDirectUnsupported
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+from yadinassi.types.errors import BSLError
 from yadinassi.syntax import ast
 from configuration_runtime_fixture import module_files
 
@@ -104,8 +104,8 @@ class ConfigurationDefaultTests(unittest.TestCase):
         self.assertEqual(app.execute('Tools.F()'),Decimal(7))
 
     def test_captured_optional_callable_checks_lifetime_and_default_identity(self):
-        from yadinassi.python_direct_configuration_commands import _Scope
-        from yadinassi.python_direct_configuration import ConfigurationBoundary
+        from yadinassi.execution.direct.python_direct_configuration_commands import _Scope
+        from yadinassi.execution.direct.python_direct_configuration import ConfigurationBoundary
         app=self.app();scope=_Scope(app);scope.enter()
         try:
             context=ConfigurationBoundary(app,app.interpreter);context.enter()
@@ -131,7 +131,7 @@ class ConfigurationDefaultTests(unittest.TestCase):
         self.assertEqual(app.execute('Tools.F()'),Decimal(7))
 
     def test_noncommand_boundary_does_not_gain_default_or_hole_binding(self):
-        from yadinassi.python_direct_configuration import ConfigurationBoundary
+        from yadinassi.execution.direct.python_direct_configuration import ConfigurationBoundary
         app=self.app();context=ConfigurationBoundary(app,app.interpreter);context.enter()
         try:
             module=context.external_get('Tools');call=context.resolve_member(module,'F')
@@ -184,7 +184,7 @@ class ConfigurationDefaultTests(unittest.TestCase):
         app.execute('Tools.P();')
 
     def test_configuration_count_hook_is_inert_outside_command_scope(self):
-        from yadinassi.python_direct_configuration import ConfigurationBoundary
+        from yadinassi.execution.direct.python_direct_configuration import ConfigurationBoundary
         app=self.app();context=ConfigurationBoundary(app,app.interpreter);context.enter()
         try:
             module=context.external_get('Tools')

@@ -3,9 +3,9 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.values import BSLArray, BSLFixedArray
-from yadinassi.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
-from yadinassi.experimental_naked_scalar_semantics import presentation, concatenate, typed_find
+from yadinassi.types.values import BSLArray, BSLFixedArray
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_scalar_semantics import presentation, concatenate, typed_find
 
 
 class ArrayPresentationSecurityTests(unittest.TestCase):
@@ -41,7 +41,7 @@ class ArrayPresentationSecurityTests(unittest.TestCase):
             def __str__(self):raise AssertionError('host str')
         for value in (Fake(),BSLFixedArray(BSLArray())):
             with self.assertRaises(BoundaryViolation):presentation(value)
-        with patch('yadinassi.values.BSLArray',Fake):
+        with patch('yadinassi.types.values.BSLArray',Fake):
             with self.assertRaises(BoundaryViolation):presentation(Fake())
 
     def test_display_label_does_not_grant_fields_find_or_receiver_authority(self):

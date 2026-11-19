@@ -4,8 +4,9 @@ from unittest.mock import patch
 import test_python_direct_source_xdto as basic
 import test_python_direct_source_xdto_graphs as graphs
 import test_source_xdto_packages as existing
-from yadinassi import json_processing as codec,xdto_io
-from yadinassi.values import HostFunction
+from yadinassi.formats.json import json_processing as codec
+from yadinassi.formats.xml import xdto_io
+from yadinassi.types.values import HostFunction
 
 class SourceXDTOJSONTests(unittest.TestCase):
     setUp=basic.SourceScalarXDTOTests.setUp
@@ -150,8 +151,8 @@ class SourceXDTOJSONTests(unittest.TestCase):
             self.write(vm);vm.execute('Copy=XDTOFactory.ReadJSON(R,T);')
         self.assertEqual(effects,[])
     def test_post_decode_admission_failure_atomic(self):
-        from yadinassi import python_direct_source_xdto_objects as objects
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.direct.source import python_direct_source_xdto_objects as objects
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         app=self.ready();vm=app.interpreter;vm.execute('P.Label="late";');self.write(vm)
         before=(app.xdto.factory._nodes,app.xdto.factory._units);reader=dict(vm.variables['r'].__dict__);records=objects._RECORDS[app]
         with patch.object(objects,'stage_xml_result',side_effect=BoundaryViolation('admission fault injection')):
@@ -179,8 +180,8 @@ class SourceXDTOJSONTests(unittest.TestCase):
         self.assertEqual(vm.variables['w'].__dict__,before)
         vm.execute('S=W.Close();');self.assertIn('long JSON output',vm.variables['s'])
     def test_internal_map_and_array_class_hooks_no_callbacks(self):
-        from yadinassi.maps import BSLMap
-        from yadinassi.values import BSLArray
+        from yadinassi.collections.maps import BSLMap
+        from yadinassi.types.values import BSLArray
         app=self.ready();vm=app.interpreter;effects=[]
         for cls,name in ((BSLMap,'insert'),(BSLMap,'__iter__'),(BSLArray,'__init__')):
             with patch.object(cls,name,lambda *a,**k:effects.append('collection')):
@@ -209,7 +210,7 @@ class SourceXDTOJSONTests(unittest.TestCase):
         app=self.app();vm=app.interpreter;vm.execute('For I=1 To 32 Do W=New JSONWriter;EndDo;')
         with self.assertRaises(basic.DENIED):vm.execute('W=New JSONWriter;')
     def test_forged_scalar_type_field_keys_no_callbacks_json_and_xml(self):
-        from yadinassi import xdto_values
+        from yadinassi.formats.xml import xdto_values
         app=self.ready();vm=app.interpreter
         vm.execute('SType=XDTOFactory.Type("http://www.w3.org/2001/XMLSchema","string");R.SetString("null");XR=New XMLReader;XR.SetString("<V/>");')
         effects=[]

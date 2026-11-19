@@ -3,7 +3,7 @@ from dataclasses import replace
 from unittest.mock import patch
 import unittest
 from test_main_demo_configuration import source
-from yadinassi import configuration_main_demo as main
+from yadinassi.configuration import configuration_main_demo as main
 
 class MainDemoParseWitnessTests(unittest.TestCase):
     def setUp(self):
@@ -78,7 +78,7 @@ class MainDemoParseWitnessTests(unittest.TestCase):
         main.canonical(self.config)
         with patch.object(main,'deepcopy',side_effect=AssertionError('discarded copy')):
             self.assertIsNone(main.validate_canonical(self.config))
-            from yadinassi.sqlite_main_demo_profile import _require_config
+            from yadinassi.db.sqlite.sqlite_main_demo_profile import _require_config
             self.assertIsNone(_require_config(self.config))
             for bad in (replace(self.config,name='forged'),replace(self.config,catalogs=()),
                         replace(self.config,files=self.config.files[:-1])):

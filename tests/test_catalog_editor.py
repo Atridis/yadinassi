@@ -5,9 +5,9 @@ import unittest
 from uuid import UUID, uuid4
 
 from ui_catalog_fixture import repository
-from yadinassi.catalog_backend import BackendError, CatalogDraft, CatalogKey
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import _View
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogDraft, CatalogKey
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import _View
 from yadinassi.ui.catalog_editor import CatalogEditorApplication, _reference_label
 from yadinassi.ui.protocol import UIError, CatalogRef
 

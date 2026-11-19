@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 import sys
 import unittest
-from yadinassi import experimental_naked_collections as runtime
+from yadinassi.execution.codegen import experimental_naked_collections as runtime
 
 class RetiredCompilerTests(unittest.TestCase):
     def test_runtime_has_no_old_generator_entrypoints(self):

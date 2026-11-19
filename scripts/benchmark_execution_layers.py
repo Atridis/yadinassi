@@ -16,10 +16,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from yadinassi import Interpreter
-from yadinassi.maps import BSLMap
+from yadinassi.collections.maps import BSLMap
 from yadinassi.runtime import binary_values
 from yadinassi.syntax.parser import parse
-from yadinassi.values import BSLArray, HostFunction, Reference
+from yadinassi.types.values import BSLArray, HostFunction, Reference
 
 D = Decimal
 LAYERS = ('python', 'python_classes', 'bsl')

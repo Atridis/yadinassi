@@ -4,9 +4,9 @@ from unittest.mock import patch
 from decimal import Decimal
 import test_source_server_call as existing
 from yadinassi.runtime import Interpreter
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 DENIED=(BSLError,BoundaryViolation,ValueError,TypeError)
 

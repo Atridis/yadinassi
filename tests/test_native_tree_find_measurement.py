@@ -11,8 +11,8 @@ from unittest import mock
 
 from yadinassi import BSLError, Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.value_trees import BSLValueTree, BSLValueTreeRow, BSLValueTreeRowCollection
-from yadinassi.values import BSLArray, HostFunction
+from yadinassi.collections.value_trees import BSLValueTree, BSLValueTreeRow, BSLValueTreeRowCollection
+from yadinassi.types.values import BSLArray, HostFunction
 from scripts.native_historical_replay import without_tree_find_probes, without_tree_unload_probes
 import test_native_1c_full_stage as fixtures
 from test_native_tree_findrows_measurement import fragments as old_fragments, PRESENT

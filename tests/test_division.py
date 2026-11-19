@@ -19,8 +19,8 @@ import sys
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.values import divide, number, to_string
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.types.values import divide, number, to_string
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -362,8 +362,8 @@ class DivisionRuntimeRegressionTests(unittest.TestCase):
         program = '''
 from decimal import Decimal, localcontext
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.values import divide, to_string
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.types.values import divide, to_string
 pairs = [('1e1000000000', '3'), ('1e-1000000000', '3'),
          ('1', '3e1000000000'), ('1', '3e-1000000000'),
          ('1e1000000000', '1e1000000000')]

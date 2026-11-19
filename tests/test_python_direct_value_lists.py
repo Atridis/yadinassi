@@ -4,8 +4,8 @@ from decimal import Decimal
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.syntax.parser import parse
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
 
 class DirectValueListTests(unittest.TestCase):
     def test_source_ast_prepared_and_persistent_references(self):

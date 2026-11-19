@@ -4,11 +4,11 @@ from decimal import Decimal
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.syntax.parser import parse
-from yadinassi.maps import BSLMap, BSLFixedMap
-from yadinassi.unique_identifiers import BSLUUID
-from yadinassi.experimental_naked_collections import _TypedMap
-from yadinassi.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
-from yadinassi.python_direct_services import ServicesBoundary
+from yadinassi.collections.maps import BSLMap, BSLFixedMap
+from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.direct.python_direct_services import ServicesBoundary
 
 class DirectFixedMapTests(unittest.TestCase):
     def test_routes_typed_keys_snapshot_and_missing_index(self):

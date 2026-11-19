@@ -5,10 +5,10 @@ import tempfile
 import unittest
 from test_source_constant_store import configuration
 from test_source_session_parameters import declaration
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_constants import source_constant_definitions
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_constant_store import SourceConstantStore
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_constants import source_constant_definitions
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.metadata.source_constant_store import SourceConstantStore
 
 BOOL='<v8:Type>xs:boolean</v8:Type>'
 STRING='<v8:Type>xs:string</v8:Type><v8:StringQualifiers><v8:Length>64</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers>'
@@ -118,11 +118,11 @@ class DefinedTypeConstantTests(unittest.TestCase):
         store=self.store();store.set('Choice',True);store.begin_transaction();store.set('Choice',False);store.rollback_transaction();self.assertIs(store.get('Choice'),True)
 
     def test_uuid_alias(self):
-        from yadinassi.unique_identifiers import BSLUUID
+        from yadinassi.types.unique_identifiers import BSLUUID
         store=self.store(package({'Setting':'<v8:Type>v8:UUID</v8:Type>'}));v=BSLUUID('01234567-89ab-cdef-0123-456789abcdef');store.set('Choice',v);self.assertEqual(store.get('Choice').text,v.text)
 
     def test_storage_alias(self):
-        from yadinassi.value_storage import BSLValueStorage
+        from yadinassi.formats.storage.value_storage import BSLValueStorage
         store=self.store(package({'Setting':'<v8:Type>v8:ValueStorage</v8:Type>'}));store.set('Choice',BSLValueStorage('text'));self.assertEqual(store.get('Choice').get(),'text')
 
     def test_enum_alias_uses_application_namespace(self):

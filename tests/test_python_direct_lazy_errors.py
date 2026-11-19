@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi import experimental_naked_errors as errors
+from yadinassi.execution.codegen import experimental_naked_errors as errors
 
 
 class LazyErrorTests(unittest.TestCase):
@@ -48,7 +48,7 @@ class LazyErrorTests(unittest.TestCase):
     def test_completed_handlers_release_tracebacks_without_gc(self):
         import gc,weakref
         contexts=[]
-        from yadinassi.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
         original=BoundaryContext.__init__
         def capture(context,*args,**kwargs):
             original(context,*args,**kwargs);contexts.append(weakref.ref(context))
@@ -63,7 +63,7 @@ class LazyErrorTests(unittest.TestCase):
             if enabled:gc.enable()
 
     def test_arithmetic_reraise_preserves_original_source(self):
-        from yadinassi.errors import BSLRuntimeError
+        from yadinassi.types.errors import BSLRuntimeError
         vm=Interpreter()
         with self.assertRaises(BSLRuntimeError) as raised:
             vm.execute('Try\n X=1/0;\nExcept\n Raise;\nEndTry;','reraise.bsl')

@@ -6,11 +6,11 @@ import sqlite3
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import BackendError
-from yadinassi.queries import BSLQuery
-from yadinassi.relational_queries import _Plan
-from yadinassi.sqlite_catalog import _View
-from yadinassi.sqlite_catalog_layout import quote_identifier
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.query.queries import BSLQuery
+from yadinassi.db.query.relational_queries import _Plan
+from yadinassi.db.sqlite.sqlite_catalog import _View
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
 import test_main_demo_runtime as fixtures
 
 class EnumCountPushdownTests(unittest.TestCase):
@@ -66,7 +66,7 @@ class EnumCountPushdownTests(unittest.TestCase):
             self.vm.execute('BeginTransaction();Q=New Query("SELECT COUNT(*) AS N FROM Catalog.Номенклатура");S=Q.Execute().Select();S.Next();Message(S.N);RollbackTransaction();')
         self.assertEqual(seen,[1]);self.assertEqual(self.output,['2'])
     def test_same_owned_readonly_snapshot_and_post_provider_revocation(self):
-        from yadinassi.inventory_enum_runtime import _POINT_READ
+        from yadinassi.configuration.demos.inventory_enum_runtime import _POINT_READ
         original=_View.aggregate_catalog;observed=[]
         def provider(view,*args):
             witness=_POINT_READ.get();self.assertIsNotNone(witness)
@@ -84,7 +84,7 @@ class EnumCountPushdownTests(unittest.TestCase):
         finally:scope.generation=generation
         self.assertIsNone(self.backend._active)
     def test_missing_physical_capability_is_explicit_relational_residual(self):
-        from yadinassi.sqlite_documents import DocumentView
+        from yadinassi.db.sqlite.sqlite_documents import DocumentView
         load=_Plan.load;seen=[]
         def observe(plan,*args):seen.append(1);return load(plan,*args)
         with patch.object(DocumentView,'aggregate_catalog',None),patch.object(_Plan,'load',observe):

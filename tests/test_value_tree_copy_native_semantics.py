@@ -8,7 +8,7 @@ from decimal import Decimal as D
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
-from yadinassi.value_trees import BSLValueTree
+from yadinassi.collections.value_trees import BSLValueTree
 
 FIXTURE = '''
 t=New ValueTree;
@@ -147,7 +147,7 @@ class CopyLocalSafetyTests(unittest.TestCase):
     def test_local_existing_budgets_reject_over_limit_without_mutation(self):
         for name,limit in [('_MAX_ROWS',3),('_MAX_COLUMNS',2),('_MAX_CELLS',11),('_MAX_DEPTH',1)]:
             tree=self.fixture(); rows=tuple(tree.rows.items); registry=dict(tree._all_rows)
-            with self.subTest(name=name),patch('yadinassi.value_trees.'+name,limit):
+            with self.subTest(name=name),patch('yadinassi.collections.value_trees.'+name,limit):
                 with self.assertRaises((ValueError,TypeError)):tree.copy()
             self.assertEqual(tuple(tree.rows.items),rows)
             self.assertEqual(tree._all_rows,registry)

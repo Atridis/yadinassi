@@ -4,9 +4,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from test_source_constant_queries import package
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_constant_store import SourceConstantStore
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.metadata.source_constant_store import SourceConstantStore
+from yadinassi.types.errors import BSLError
 
 
 class ConstantQueryPackageTests(unittest.TestCase):

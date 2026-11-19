@@ -4,8 +4,8 @@ import unittest
 from unittest.mock import patch
 import test_python_direct_source_xdto as basic
 import test_python_direct_source_xdto_graphs as graphs
-from yadinassi import xml_io,xml_writer,xdto_io,xdto_values
-from yadinassi.values import HostFunction
+from yadinassi.formats.xml import xml_io,xml_writer,xdto_io,xdto_values
+from yadinassi.types.values import HostFunction
 
 class SourceXDTOXMLTests(unittest.TestCase):
     setUp=basic.SourceScalarXDTOTests.setUp
@@ -209,8 +209,8 @@ class SourceXDTOXMLTests(unittest.TestCase):
             with self.assertRaises(basic.DENIED):vm.execute('Set("<Root/>");')
         self.assertEqual(effects,[])
     def test_post_native_adoption_refusal_is_atomic(self):
-        from yadinassi import python_direct_source_xdto_objects as objects
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.direct.source import python_direct_source_xdto_objects as objects
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         app=self.ready();vm=app.interpreter;vm.execute('P.Label="late";');self.write(vm)
         factory=app.xdto.factory;before=(factory._nodes,factory._units);reader=dict(vm.variables['r'].__dict__)
         records=objects._RECORDS[app];identities=tuple(records)

@@ -5,11 +5,11 @@ from contextlib import closing
 from pathlib import Path
 from uuid import uuid4
 from test_source_catalog_definitions import config, attribute, BASE
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_catalog_store import SourceCatalogStore
-from yadinassi.source_constant_store import SourceConstantStore
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.catalog.source_catalog_store import SourceCatalogStore
+from yadinassi.db.metadata.source_constant_store import SourceConstantStore
+from yadinassi.types.errors import BSLError
 
 
 def package(body='', **kwargs):
@@ -120,6 +120,6 @@ class SourceCatalogRecordTests(unittest.TestCase):
     def test_aggregate_payload_budget_rolls_back(self):
         from unittest.mock import patch
         store=self.store()
-        with patch('yadinassi.source_catalog_store._MAX_RECORD_BYTES',1):
+        with patch('yadinassi.db.catalog.source_catalog_store._MAX_RECORD_BYTES',1):
             with self.assertRaisesRegex(ValueError,'bounds'):store.write_record('Items',uuid4(),0,self.values())
         self.assertEqual(store.read_records('Items'),[])

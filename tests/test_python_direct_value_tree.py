@@ -4,10 +4,10 @@ import copy
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
-from yadinassi import value_trees as trees
-from yadinassi.values import BSLObject
+from yadinassi.collections import value_trees as trees
+from yadinassi.types.values import BSLObject
 from yadinassi.syntax.parser import parse
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class DirectValueTreeTests(unittest.TestCase):
     def vm(self):
@@ -112,7 +112,7 @@ class DirectValueTreeTests(unittest.TestCase):
         self.assertEqual(vm.execute('R.Name'),'new')
 
     def test_retained_method_expires_after_activation(self):
-        from yadinassi.python_direct import make_boundary
+        from yadinassi.execution.direct.python_direct import make_boundary
         vm=self.vm();tree,row=self.setup_tree(vm)
         context=make_boundary(vm);context.enter()
         try:method=context.resolve_member(tree.rows,'Count');self.assertEqual(method(),1)
@@ -178,7 +178,7 @@ class DirectValueTreeTests(unittest.TestCase):
         self.assertEqual(events,[])
 
     def test_retained_write_reference_and_iterator_do_not_revive(self):
-        from yadinassi.python_direct import make_boundary
+        from yadinassi.execution.direct.python_direct import make_boundary
         vm=self.vm();tree,row=self.setup_tree(vm);context=make_boundary(vm);context.enter()
         try:
             write=context.resolve_set_member(row,'Name')
@@ -250,9 +250,9 @@ class DirectValueTreeTests(unittest.TestCase):
         tree.rows.clear();self.assertEqual(tree._all_rows,{})
 
     def test_dependency_callbacks_are_denied_before_native_effects(self):
-        from yadinassi.values import BSLArray,BSLType
-        from yadinassi.dates import BSLDate
-        from yadinassi.type_qualifiers import BSLAllowedSign
+        from yadinassi.types.values import BSLArray,BSLType
+        from yadinassi.temporal.dates import BSLDate
+        from yadinassi.types.type_qualifiers import BSLAllowedSign
         vm=self.vm();vm.execute('T=New ValueTree;T.Columns.Add("D",New TypeDescription("Date"));S=New Structure;T.Rows.Add();')
         events=[]
         for cls,name,source in ((BSLArray,'__init__','T.Rows.FindRows(S)'),
@@ -296,8 +296,8 @@ class DirectValueTreeTests(unittest.TestCase):
         self.assertGreater(totals[0][0],0);self.assertEqual(totals[1][0],2*totals[0][0])
 
     def test_scalar_copy_bookkeeping_does_not_poison_tree_dispatch(self):
-        from yadinassi.dates import BSLDate
-        from yadinassi.unique_identifiers import BSLUUID
+        from yadinassi.temporal.dates import BSLDate
+        from yadinassi.types.unique_identifiers import BSLUUID
         vm=self.vm();self.setup_tree(vm)
         for scalar in (BSLDate(0),BSLUUID('00000000-0000-0000-0000-000000000000')):
             copy.copy(scalar);copy.deepcopy(scalar)
@@ -309,13 +309,13 @@ class DirectValueTreeTests(unittest.TestCase):
             import sys
             from unittest.mock import patch
             from yadinassi import Interpreter
-            from yadinassi.value_trees import BSLValueTree
-            from yadinassi.type_descriptions import BSLTypeDescription
-            from yadinassi.dates import BSLDate
-            from yadinassi.experimental_naked_boundaries import BoundaryViolation
+            from yadinassi.collections.value_trees import BSLValueTree
+            from yadinassi.types.type_descriptions import BSLTypeDescription
+            from yadinassi.temporal.dates import BSLDate
+            from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
             tree=BSLValueTree();tree.columns.add('D',BSLTypeDescription('Date'))
             vm=Interpreter();vm.variables['t']=tree;events=[]
-            if 'yadinassi.python_direct_value_tree' in sys.modules:raise AssertionError('helper imported early')
+            if 'yadinassi.execution.direct.python_direct_value_tree' in sys.modules:raise AssertionError('helper imported early')
             with patch.object(BSLDate,'__init__',lambda *args:events.append('callback')):
                 try:vm.execute('T.Rows.Add()')
                 except BoundaryViolation:pass
@@ -328,8 +328,8 @@ class DirectValueTreeTests(unittest.TestCase):
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
     def test_enum_member_state_and_foreign_field_keys_are_sealed(self):
-        from yadinassi.values import BSLType
-        from yadinassi.type_qualifiers import BSLAllowedSign,BSLAllowedLength,BSLDateFractions
+        from yadinassi.types.values import BSLType
+        from yadinassi.types.type_qualifiers import BSLAllowedSign,BSLAllowedLength,BSLDateFractions
         vm=self.vm();vm.execute('T=New ValueTree;T.Columns.Add("S",New TypeDescription("String"));')
         events=[]
         class Evil:
@@ -354,13 +354,13 @@ class DirectValueTreeTests(unittest.TestCase):
             import sys
             from unittest.mock import patch
             from yadinassi import Interpreter
-            from yadinassi.value_trees import BSLValueTree
-            from yadinassi.type_descriptions import BSLTypeDescription
-            from yadinassi.values import BSLType
-            from yadinassi.experimental_naked_boundaries import BoundaryViolation
+            from yadinassi.collections.value_trees import BSLValueTree
+            from yadinassi.types.type_descriptions import BSLTypeDescription
+            from yadinassi.types.values import BSLType
+            from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
             tree=BSLValueTree();tree.columns.add('S',BSLTypeDescription('String'))
             vm=Interpreter();vm.variables['t']=tree;events=[]
-            if 'yadinassi.python_direct_value_tree' in sys.modules:raise AssertionError('helper imported early')
+            if 'yadinassi.execution.direct.python_direct_value_tree' in sys.modules:raise AssertionError('helper imported early')
             class Evil:
                 def __hash__(self):events.append('hash');return 0
             with patch.object(BSLType.STRING,'_name_',Evil()):

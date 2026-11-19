@@ -3,8 +3,8 @@ from dataclasses import replace
 from unittest import TestCase
 from unittest.mock import patch
 from yadinassi.syntax import parser
-from yadinassi.form_event_simulation import simulate_product_form_event
-from yadinassi.catalog_backend import BackendError
+from yadinassi.forms.form_event_simulation import simulate_product_form_event
+from yadinassi.db.catalog.catalog_backend import BackendError
 import test_product_form_events as fixture
 
 class ProductParseTests(TestCase):

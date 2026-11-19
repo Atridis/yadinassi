@@ -5,9 +5,9 @@ import unittest
 from unittest.mock import patch
 from uuid import UUID
 
-from yadinassi.catalog_backend import CatalogSchema, FieldSchema, TabularSectionSchema
-from yadinassi.configuration_xml import import_configuration
-from yadinassi import object_module_analysis as om
+from yadinassi.db.catalog.catalog_backend import CatalogSchema, FieldSchema, TabularSectionSchema
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.execution import object_module_analysis as om
 from yadinassi.syntax import ast
 from yadinassi.syntax.lexer import Token
 from sqlite_catalog_fixture import configuration_files
@@ -353,8 +353,8 @@ class ObjectModuleAnalysisTests(unittest.TestCase):
         self.assertNotIn('sensitive-value', str(caught.exception))
 
     def test_zero_calls_into_database_or_configuration_activation(self):
-        with patch('yadinassi.database_context.SQLiteDBContext', side_effect=AssertionError('database')), \
-             patch('yadinassi.sqlite_catalog.SQLiteCatalogBackend', side_effect=AssertionError('database')):
+        with patch('yadinassi.db.database_context.SQLiteDBContext', side_effect=AssertionError('database')), \
+             patch('yadinassi.db.sqlite.sqlite_catalog.SQLiteCatalogBackend', side_effect=AssertionError('database')):
             self.analyze()
 
 

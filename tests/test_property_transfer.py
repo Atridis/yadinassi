@@ -6,20 +6,20 @@ import unittest
 from unittest import mock
 
 from yadinassi import Interpreter, BSLError
-from yadinassi import property_transfer as policy
-from yadinassi.catalog_backend import BackendError
-from yadinassi.catalogs import BSLCatalogObject
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.dates import date
-from yadinassi.documents import BSLDocumentObject
-from yadinassi.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, target_context
-from yadinassi.structures import BSLStructure, BSLFixedStructure, fill_property_values
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers, BSLAllowedLength
-from yadinassi.value_tables import BSLValueTable, BSLValueTableRow
-from yadinassi.value_trees import BSLValueTree
-from yadinassi.values import BSLArray
+from yadinassi.collections import property_transfer as policy
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.catalog.catalogs import BSLCatalogObject
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.temporal.dates import date
+from yadinassi.db.document.documents import BSLDocumentObject
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, target_context
+from yadinassi.collections.structures import BSLStructure, BSLFixedStructure, fill_property_values
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers, BSLAllowedLength
+from yadinassi.collections.value_tables import BSLValueTable, BSLValueTableRow
+from yadinassi.collections.value_trees import BSLValueTree
+from yadinassi.types.values import BSLArray
 from catalog_sections_fixture import configuration_files_with_sections
 from test_document_configuration_xml import document_files
 

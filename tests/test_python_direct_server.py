@@ -3,9 +3,9 @@ from decimal import Decimal
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.python_direct import PythonDirectUnsupported
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 SOURCE='''
 Var Client;
@@ -76,8 +76,8 @@ A=New Array; A.Add(1); X=New Structure("A",A); R=S(X); R.A.Add(3);
         vm.execute('R=S(42);');self.assertEqual(vm.variables['r'],42)
 
     def test_transfer_limits_share_one_budget_across_native_and_host_containers(self):
-        from yadinassi.python_direct_server import transfer
-        from yadinassi.values import BSLArray
+        from yadinassi.execution.direct.python_direct_server import transfer
+        from yadinassi.types.values import BSLArray
         first=BSLArray();first.items=[None]*6000
         with self.assertRaises(ValueError):transfer([first,first])
         root=[];child=BSLArray();root.append(child);child.items=[root]

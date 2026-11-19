@@ -2,11 +2,11 @@
 from dataclasses import replace
 import unittest
 from uuid import UUID
-from yadinassi.catalog_backend import BackendError
-from yadinassi.enum_storage_binding import EnumStorageBinding
-from yadinassi.enum_storage_values import EnumKey, EnumValueDomain
-from yadinassi.enumerations import BSLEnumerations
-from yadinassi.enum_types import BSLEnumReference
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.metadata.enum_storage_binding import EnumStorageBinding
+from yadinassi.db.metadata.enum_storage_values import EnumKey, EnumValueDomain
+from yadinassi.db.metadata.enumerations import BSLEnumerations
+from yadinassi.db.metadata.enum_types import BSLEnumReference
 from test_enum_storage_values import DB, OTHER_DB, UNITS, STATES, PIECE, definitions, Hostile
 
 class Lifetime:
@@ -74,7 +74,7 @@ class EnumStorageBindingTests(unittest.TestCase):
 
     def test_unmeasured_assignment_kinds_remain_closed(self):
         from decimal import Decimal
-        from yadinassi.dates import BSLDate
+        from yadinassi.temporal.dates import BSLDate
         for value in (True,BSLDate(0),[],{},Hostile(),Decimal('NaN'),'x'*4097):
             self.denied(self.binding.assigned,value,UNITS)
 

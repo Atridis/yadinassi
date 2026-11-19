@@ -5,7 +5,7 @@ import unittest
 from unittest import mock
 
 from yadinassi import Interpreter
-from yadinassi.value_trees import BSLValueTree, BSLValueTreeRowCollection
+from yadinassi.collections.value_trees import BSLValueTree, BSLValueTreeRowCollection
 from direct_equality_fixture import direct_equality
 from scripts import native_historical_replay as replay
 
@@ -79,7 +79,7 @@ class RowsDiagnosticTests(unittest.TestCase):
         self.assertTrue(all('1?D0FFTT!' in line for line in output))
 
     def test_class_hook_changes_fail_closed_not_synthetic_observations(self):
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         vm, _ = self.vm()
         self.addCleanup(vm.close)
         with mock.patch.object(BSLValueTree, '__init__', side_effect=AssertionError('must not run')) as hook:

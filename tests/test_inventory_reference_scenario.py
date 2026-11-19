@@ -12,15 +12,15 @@ import unittest
 from uuid import uuid4
 
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.accumulation_movements import validate_schema
-from yadinassi.catalog_backend import BackendError
-from yadinassi.catalog_types import BSLCatalogReference
-from yadinassi.configuration_accumulation_references import PROFILE
-from yadinassi.configuration_profile_import import prepare_directory, create_prepared
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.db.registers.accumulation_movements import validate_schema
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.catalog.catalog_types import BSLCatalogReference
+from yadinassi.configuration.configuration_accumulation_references import PROFILE
+from yadinassi.configuration.configuration_profile_import import prepare_directory, create_prepared
+from yadinassi.db.database_context import SQLiteDBContext
 from test_inventory_reference_profile import imported
 from test_main_demo_configuration import source as main_demo_source
-from yadinassi.configuration_main_demo import import_main_demo_configuration
+from yadinassi.configuration.configuration_main_demo import import_main_demo_configuration
 
 ROOT=Path(__file__).resolve().parents[1]
 ASSETS=ROOT/'scripts/inventory_reference_behavior'
@@ -134,7 +134,7 @@ class InventoryScenarioTests(unittest.TestCase):
         self.assertFalse(vm.execute('C.IsNew()'))
     def test_staged_reference_never_bypasses_owner_or_uncertain_state(self):
         context,vm,_=self.make(ASSETS/'runtime_source')
-        from yadinassi import database_transactions as transactions
+        from yadinassi.db import database_transactions as transactions
         def inspect():
             obj=vm.execute('C')
             transaction=transactions.current(context.backend)

@@ -10,13 +10,13 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.json_processing import (
+from yadinassi.formats.json.json_processing import (
     BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings, BSLJSONLineBreak,
     BSLJSONValueType as T, read_json, write_json,
 )
-from yadinassi.values import BSLArray, BSLFixedArray, NULL
-from yadinassi.structures import BSLStructure, BSLFixedStructure
-from yadinassi.maps import BSLMap, BSLFixedMap
+from yadinassi.types.values import BSLArray, BSLFixedArray, NULL
+from yadinassi.collections.structures import BSLStructure, BSLFixedStructure
+from yadinassi.collections.maps import BSLMap, BSLFixedMap
 
 
 class JSONFamilyTests(unittest.TestCase):
@@ -205,7 +205,7 @@ class JSONFamilyTests(unittest.TestCase):
         class Hostile:
             def __str__(self): raise AssertionError('host hook')
         with self.assertRaises(TypeError): self.write(Hostile())
-        with patch('yadinassi.json_processing.MAX_TEXT', 100):
+        with patch('yadinassi.formats.json.json_processing.MAX_TEXT', 100):
             a = BSLArray(); a.add('x' * 80); a.add('x' * 80)
             with self.assertRaises(ValueError): self.write(a)
             with self.assertRaises(ValueError): BSLJSONReader().set_string(' ' * 101)
@@ -222,7 +222,7 @@ class JSONFamilyTests(unittest.TestCase):
     def test_auto_layout_preserves_host_separator_and_quoted_newlines(self):
         import os
         from unittest import mock
-        import yadinassi.json_processing as json_processing
+        import yadinassi.formats.json.json_processing as json_processing
         for separator in ('\n', '\r\n'):
             with self.subTest(separator=repr(separator)):
                 host_os = SimpleNamespace(**vars(os))

@@ -3,9 +3,9 @@ import unittest
 from uuid import uuid4
 import test_source_document_records as document
 import test_source_document_sections as section
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_document_definitions import source_document_definitions
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.document.source_document_definitions import source_document_definitions
+from yadinassi.types.errors import BSLError
 
 CREATE='D=Documents.Invoice.CreateDocument(); D.Number="A"; D.Date=Date(2026,1,1); '
 def package(module,body='',sections=False):
@@ -88,7 +88,7 @@ class SourceDocumentModuleTests(unittest.TestCase):
     def test_explicit_transaction_uncommitted(self):
         app,out=self.run_body('Procedure OnWrite(Cancel) EndProcedure',CREATE+'BeginTransaction(); D.Write(); Message(TransactionActive()); RollbackTransaction();');self.assertEqual(out,['Да']);self.assertFalse(app.constant_store.read_documents('Invoice'))
     def test_moduleless_schema_unchanged(self):
-        from yadinassi.source_document_definitions import document_definition_record
+        from yadinassi.db.document.source_document_definitions import document_definition_record
         defs,_=source_document_definitions(document.package());self.assertEqual(len(document_definition_record(defs['invoice'])),3)
     def test_onread_never_silently_skipped(self):
         module='Procedure OnRead() Message("bad"); EndProcedure'

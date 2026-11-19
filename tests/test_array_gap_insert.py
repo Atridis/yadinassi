@@ -6,8 +6,8 @@ from unittest.mock import patch
 from array_backend_contract import ArrayBackendContract
 
 from yadinassi import BSLError
-from yadinassi.values import BSLArray
-from yadinassi.serialization import value_to_string_internal, value_from_string_internal
+from yadinassi.types.values import BSLArray
+from yadinassi.formats.storage.serialization import value_to_string_internal, value_from_string_internal
 
 
 class _ArrayGapInsertTests(ArrayBackendContract):
@@ -74,7 +74,7 @@ class _ArrayGapInsertTests(ArrayBackendContract):
                 self.assertEqual(self.array_items(self.vm.execute('a')), ['old', None, 'recovered'])
 
     def test_growth_boundary_before_mutation(self):
-        with patch('yadinassi.values._MAX_INSERT_GROWTH', 4):
+        with patch('yadinassi.types.values._MAX_INSERT_GROWTH', 4):
             a = BSLArray(); a.add('old')
             a.insert(Decimal(4), 'tail')
             self.assertEqual(a.items, ['old', None, None, None, 'tail'])

@@ -16,8 +16,8 @@ CAPTURE = ROOT / 'tests/fixtures/metadata_catalog_runtime/native_observations.js
 
 
 def create_database(directory, *, payload_length=32):
-    from yadinassi.configuration_xml import import_configuration
-    from yadinassi.database_context import SQLiteDBContext
+    from yadinassi.configuration.configuration_xml import import_configuration
+    from yadinassi.db.database_context import SQLiteDBContext
     prefix = '<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xs="http://www.w3.org/2001/XMLSchema" version="2.20">'
     files = {
         'Configuration.xml': (prefix + '<Configuration uuid="20000000-0000-4000-8000-000000000001"><Properties><Name>ReferenceReplay</Name></Properties><ChildObjects><Catalog>NativeOracleItems</Catalog></ChildObjects></Configuration></MetaDataObject>').encode(),
@@ -61,7 +61,7 @@ class MetadataRuntimeReplayTests(unittest.TestCase):
         for capture in captures:
             with self.subTest(snapshot=capture['snapshot'], context=capture['context']):
                 # Authored configuration is independent of the captured result.
-                from yadinassi.database_context import SQLiteDBContext
+                from yadinassi.db.database_context import SQLiteDBContext
                 with tempfile.TemporaryDirectory() as directory:
                     path = create_database(Path(directory), payload_length=64 if capture['snapshot']=='applied' else 32)
                     with SQLiteDBContext(path) as context:

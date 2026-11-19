@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import unittest
 from yadinassi import Interpreter
-from yadinassi.values import divide
+from yadinassi.types.values import divide
 from test_division_tie_checkpoint import probes
 ROOT = Path(__file__).resolve().parents[1]
 

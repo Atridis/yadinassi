@@ -1,6 +1,6 @@
 import unittest
 from decimal import Decimal as D
-from yadinassi.plain_value_list import PlainValueList, PlainValueListItem
+from yadinassi.collections.plain_value_list import PlainValueList, PlainValueListItem
 
 
 class PlainValueListTests(unittest.TestCase):
@@ -74,7 +74,7 @@ class PlainValueListTests(unittest.TestCase):
 
     def test_growth_cap_does_not_constrain_reads_or_reordering(self):
         from unittest.mock import patch
-        with patch('yadinassi.plain_value_list._MAX_ITEMS', 2):
+        with patch('yadinassi.collections.plain_value_list._MAX_ITEMS', 2):
             values = PlainValueList(); values.add(1); values.add(2)
             with self.assertRaises(ValueError): values.add(3)
             with self.assertRaises(ValueError): values.insert(0, 3)

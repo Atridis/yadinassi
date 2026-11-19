@@ -10,7 +10,7 @@ from scripts.native_historical_replay import (
     without_fill_exclude_order_probes,
 )
 from yadinassi import Interpreter
-from yadinassi.native_targets import (
+from yadinassi.execution.codegen.native_targets import (
     WINDOWS_8_3_27_2342, LINUX_8_3_27_1508, current_native_target,
 )
 from test_fill_include_checkpoint import CASES as INCLUDE_CASES

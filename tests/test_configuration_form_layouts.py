@@ -12,19 +12,19 @@ from test_configuration_catalog_profile import catalog_form_sources
 from document_form_fixture import sources as document_sources
 from test_form_tables import active
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.type_values import type_by_name, type_of
-from yadinassi.serialization import value_to_string_internal
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_forms import load_configuration_forms
-from yadinassi.configuration_xml import import_catalog_forms_configuration
-from yadinassi.configuration_document_profile import import_document_forms_configuration
-from yadinassi.form_layout import effective_state, install_layout
-from yadinassi.form_model import BSLFormGroup
-from yadinassi.form_replication import _pack_state, _unpack_state
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.types.type_values import type_by_name, type_of
+from yadinassi.formats.storage.serialization import value_to_string_internal
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_forms import load_configuration_forms
+from yadinassi.configuration.configuration_xml import import_catalog_forms_configuration
+from yadinassi.configuration.configuration_document_profile import import_document_forms_configuration
+from yadinassi.forms.form_layout import effective_state, install_layout
+from yadinassi.forms.form_model import BSLFormGroup
+from yadinassi.forms.form_replication import _pack_state, _unpack_state
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from yadinassi.ui.form_app import FormController
-from yadinassi.values import BSLType
+from yadinassi.types.values import BSLType
 
 PATH = 'CommonForms/Layout/Ext/Form.xml'
 MODULE = 'CommonForms/Layout/Ext/Form/Module.bsl'

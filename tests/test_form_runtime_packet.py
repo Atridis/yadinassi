@@ -5,7 +5,7 @@ import unittest
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT));sys.path.insert(0,str(ROOT/'scripts'))
 import form_runtime_packet as packet
-from yadinassi.form_runtime import FormSession
+from yadinassi.forms.form_runtime import FormSession
 
 
 class FormPacketTests(unittest.TestCase):

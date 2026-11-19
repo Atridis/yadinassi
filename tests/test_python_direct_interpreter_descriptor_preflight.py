@@ -3,8 +3,8 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.values import HostFunction, InterpreterCall
-from yadinassi.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.types.values import HostFunction, InterpreterCall
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
 
 
 class InterpreterDescriptorPreflightTests(unittest.TestCase):
@@ -59,7 +59,7 @@ class InterpreterDescriptorPreflightTests(unittest.TestCase):
             def __call__(self,value):return value
         vm=Interpreter(output=lambda _:None);self.addCleanup(vm.close)
         vm.register_function('Custom',Custom(0,1,lambda *_:None,lambda *_:None))
-        with patch('yadinassi.values.InterpreterCall',Custom):
+        with patch('yadinassi.types.values.InterpreterCall',Custom):
             self.assertEqual(vm.execute('Custom(8)'),8)
             vm.register_function('Denied',InterpreterCall(0,1,lambda *_:None,lambda *_:None))
             with self.assertRaisesRegex(BSLError,'explicit interpreter dispatch'):

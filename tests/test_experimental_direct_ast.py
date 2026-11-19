@@ -8,10 +8,11 @@ import sys
 import unittest
 from decimal import Decimal
 from unittest.mock import patch
-from yadinassi import Interpreter, python_direct, BSLError
-from yadinassi import experimental_direct_ast as direct
-from yadinassi.python_direct import PythonDirectUnsupported
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi import Interpreter, BSLError
+from yadinassi.execution.direct import python_direct
+from yadinassi.execution.codegen import experimental_direct_ast as direct
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.syntax.parser import parse
 
 class DirectASTResearchTests(unittest.TestCase):
@@ -47,8 +48,9 @@ class DirectASTResearchTests(unittest.TestCase):
         self.child(r'''
 import ast,sys
 from unittest.mock import patch
-from yadinassi import Interpreter,python_direct
-from yadinassi.experimental_direct_ast import compile_module
+from yadinassi import Interpreter
+from yadinassi.execution.direct import python_direct
+from yadinassi.execution.codegen.experimental_direct_ast import compile_module
 python_direct._compile=compile_module
 vm=Interpreter();vm.execute('X=1;','audit.bsl');events=[]
 def observe(event,args):
@@ -71,8 +73,9 @@ else:raise AssertionError('compiler policy bypassed')
         # Pure AST alone lacks the filename gate retained by the default source lane.
         self.child(r"""
 import sys
-from yadinassi import Interpreter,python_direct
-from yadinassi.experimental_direct_ast import compile_module
+from yadinassi import Interpreter
+from yadinassi.execution.direct import python_direct
+from yadinassi.execution.codegen.experimental_direct_ast import compile_module
 vm=Interpreter();vm.execute('X=1;','warm.bsl');vm.variables.clear()
 def deny_filename(event,args):
     if event=='compile' and args[1]=='blocked.bsl':raise RuntimeError('filename denied')
@@ -188,7 +191,7 @@ if vm.variables.get('x')!=1:raise AssertionError('expected migration incompatibi
             self.assertTrue(events);self.assertTrue(all(line==2 for line in events))
 
     def test_constant_fold_source_visitation(self):
-        from yadinassi import experimental_naked_scalar_semantics as scalar
+        from yadinassi.execution.codegen import experimental_naked_scalar_semantics as scalar
         original=scalar.concatenate
         for source in ('If True Then X="a"+1;Else X="b"+2;EndIf;', 'While ("a"+1) Do X="b"+2;EndDo;', 'Try X="a"+1;Except X="b"+2;EndTry;'):
             for compiler in (direct.compile_module,direct.compile_module_whole_source):
@@ -233,7 +236,7 @@ if vm.variables.get('x')!=1:raise AssertionError('expected migration incompatibi
             self.assertEqual(seen,['released'])
 
     def test_host_reference_getter_errors_and_revocation(self):
-        from yadinassi.values import HostFunction,Reference
+        from yadinassi.types.values import HostFunction,Reference
         for mode in ('raise','close','normal'):
             vm=Interpreter();self.addCleanup(vm.close);events=[]
             def get():

@@ -12,7 +12,7 @@ import unittest
 from decimal import Decimal, localcontext
 
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.syntax.parser import parse
 
 

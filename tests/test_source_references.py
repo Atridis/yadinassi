@@ -5,12 +5,12 @@ from pathlib import Path
 from uuid import UUID
 from test_source_manager_modules import configuration
 from test_source_defined_type_constants import xml
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_constant_store import SourceConstantStore
-from yadinassi.source_references import SourceReferenceManager, SourceReferenceCall
-from yadinassi.unique_identifiers import BSLUUID
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.metadata.source_constant_store import SourceConstantStore
+from yadinassi.db.metadata.source_references import SourceReferenceManager, SourceReferenceCall
+from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.types.errors import BSLError
 
 ID='01234567-89ab-cdef-0123-456789abcdef'
 
@@ -130,7 +130,7 @@ class SourceReferenceTests(unittest.TestCase):
             self.assertEqual(app.constant_store.get('Choice'),value)
 
     def test_wire_integrity(self):
-        from yadinassi.source_constant_store import _decode
+        from yadinassi.db.metadata.source_constant_store import _decode
         app,_=self.app();definition=app.constant_store._definition('Choice')
         for raw in ('["object_ref",["Document","bad","'+ID+'"]]',
                     '["object_ref",["Catalog","00000000-0000-0000-0000-000000000002","notuuid"]]'):

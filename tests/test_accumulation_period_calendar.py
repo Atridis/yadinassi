@@ -3,9 +3,9 @@ from dataclasses import FrozenInstanceError
 from datetime import datetime, timezone
 import unittest
 
-from yadinassi.accumulation_periods import CalendarSpan, bind_dates
-from yadinassi.dates import BSLDate, MAX_TICKS, _from_parts
-from yadinassi.query_parser import Parameter
+from yadinassi.db.registers.accumulation_periods import CalendarSpan, bind_dates
+from yadinassi.temporal.dates import BSLDate, MAX_TICKS, _from_parts
+from yadinassi.db.query.query_parser import Parameter
 
 
 class AccumulationPeriodCalendarTests(unittest.TestCase):

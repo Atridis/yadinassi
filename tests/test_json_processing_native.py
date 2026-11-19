@@ -7,7 +7,7 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-import yadinassi.json_processing as json_processing
+import yadinassi.formats.json.json_processing as json_processing
 
 from test_native_json_family_measurement import emit
 from native_1c_json_family_contract import require_available

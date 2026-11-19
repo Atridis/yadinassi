@@ -3,13 +3,13 @@ from decimal import Decimal
 import unittest
 from unittest.mock import patch
 
-from yadinassi import value_storage as snapshot
-from yadinassi.dates import BSLDate
-from yadinassi.file_io import BSLBinaryData
-from yadinassi.maps import BSLFixedMap, BSLMap
-from yadinassi.structures import BSLFixedStructure, BSLStructure
-from yadinassi.unique_identifiers import BSLUUID
-from yadinassi.values import BSLArray, BSLFixedArray, NULL
+from yadinassi.formats.storage import value_storage as snapshot
+from yadinassi.temporal.dates import BSLDate
+from yadinassi.streams.file_io import BSLBinaryData
+from yadinassi.collections.maps import BSLFixedMap, BSLMap
+from yadinassi.collections.structures import BSLFixedStructure, BSLStructure
+from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.types.values import BSLArray, BSLFixedArray, NULL
 
 def array(*values):
     result = BSLArray()

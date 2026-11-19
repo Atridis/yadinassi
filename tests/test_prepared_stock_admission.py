@@ -12,9 +12,9 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
-from yadinassi.catalog_backend import BackendError
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_accumulation_movements import AccumulationMovementPort
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_accumulation_movements import AccumulationMovementPort
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -58,7 +58,7 @@ class StockAdmissionChecks:
 
     def test_twenty_three_snapshots_reuse_exact_import_without_compilation(self):
         with patch(self.module + '.' + self.import_name) as importer, \
-                patch('yadinassi.document_posting_program.compile_handlers') as compiler:
+                patch('yadinassi.db.document.document_posting_program.compile_handlers') as compiler:
             for _ in range(23): self.read()
             importer.assert_not_called(); compiler.assert_not_called()
         self.assertIs(self.backend._prepared_source._entry.value, self.config)
@@ -225,7 +225,7 @@ class StockAdmissionChecks:
 
     def test_explicit_row_validation_still_runs_on_cache_hit(self):
         with closing(self.backend.begin_read()) as view:
-            with patch('yadinassi.sqlite_accumulation_movements.validate_database_budget', side_effect=BackendError('integrity')):
+            with patch('yadinassi.db.sqlite.sqlite_accumulation_movements.validate_database_budget', side_effect=BackendError('integrity')):
                 with self.assertRaises(BackendError):
                     self.admit(view._connection, validate_rows=True, _prepared=self.backend._prepared_source)
 
@@ -254,7 +254,7 @@ class StockAdmissionChecks:
 class PreparedScalarStockTests(StockAdmissionChecks, unittest.TestCase):
     version = 14
     marker = 'accumulation_profile'
-    module = 'yadinassi.sqlite_accumulation_profile'
+    module = 'yadinassi.db.sqlite.sqlite_accumulation_profile'
     import_name = 'import_accumulation_configuration'
     create = staticmethod(SQLiteCatalogBackend.create_accumulation)
 
@@ -268,7 +268,7 @@ class PreparedScalarStockTests(StockAdmissionChecks, unittest.TestCase):
 class PreparedReferenceStockTests(StockAdmissionChecks, unittest.TestCase):
     version = 15
     marker = 'inventory_profile'
-    module = 'yadinassi.sqlite_inventory_profile'
+    module = 'yadinassi.db.sqlite.sqlite_inventory_profile'
     import_name = 'import_inventory_configuration'
     create = staticmethod(SQLiteCatalogBackend.create_inventory)
 
@@ -306,7 +306,7 @@ class PreparedStockTransactionTests(unittest.TestCase):
     def test_staged_balance_uses_owned_transaction_and_rollback_not_cached_rows(self):
         from decimal import Decimal
         self.new()
-        with patch('yadinassi.sqlite_accumulation_profile.import_accumulation_configuration') as importer:
+        with patch('yadinassi.db.sqlite.sqlite_accumulation_profile.import_accumulation_configuration') as importer:
             self.vm.execute('Q=New Query("SELECT AmountBalance AS N FROM AccumulationRegister.Rows.Balance(&At)");'
                 'Q.SetParameter("At",Date(2024,1,2));BeginTransaction();O.Write(DocumentWriteMode.Posting);'
                 'S=Q.Execute().Select();S.Next();Inside=S.N;RollbackTransaction();'
@@ -320,7 +320,7 @@ class PreparedStockTransactionTests(unittest.TestCase):
         with closing(sqlite3.connect(self.path)) as db:
             original = db.execute('SELECT values_json FROM accumulation_movement').fetchone()[0]
             db.execute("UPDATE accumulation_movement SET values_json='[]'"); db.commit()
-        with patch('yadinassi.sqlite_accumulation_profile.import_accumulation_configuration') as importer:
+        with patch('yadinassi.db.sqlite.sqlite_accumulation_profile.import_accumulation_configuration') as importer:
             with self.assertRaises(BackendError): self.rows(obj)
             with closing(sqlite3.connect(self.path)) as db:
                 db.execute('UPDATE accumulation_movement SET values_json=?', (original,)); db.commit()
@@ -328,8 +328,8 @@ class PreparedStockTransactionTests(unittest.TestCase):
             importer.assert_not_called()
 
     def test_new_read_lease_cannot_gain_commit_rollback_authority(self):
-        from yadinassi.database_transactions import begin, current, execution
-        with patch('yadinassi.sqlite_accumulation_profile.import_accumulation_configuration') as importer:
+        from yadinassi.db.database_transactions import begin, current, execution
+        with patch('yadinassi.db.sqlite.sqlite_accumulation_profile.import_accumulation_configuration') as importer:
             with execution(self.backend):
                 begin(self.backend)
                 owner = current(self.backend)
@@ -355,7 +355,7 @@ class PreparedStockTransactionTests(unittest.TestCase):
 class PreparedInventoryTransactionTests(unittest.TestCase):
     def test_staged_reference_stock_query_uses_owner_and_repair_is_not_a_source_change(self):
         from yadinassi import Interpreter
-        from yadinassi.database_context import SQLiteDBContext
+        from yadinassi.db.database_context import SQLiteDBContext
         from test_inventory_reference_profile import imported
         temporary = tempfile.TemporaryDirectory(dir=ROOT.parent); self.addCleanup(temporary.cleanup)
         path = Path(temporary.name) / 'inventory.sqlite'
@@ -367,7 +367,7 @@ class PreparedInventoryTransactionTests(unittest.TestCase):
             'L=D.Lines.Add();L.Product=P.Ref;L.Quantity=2;L.Amount=3;'
             'Q=New Query("SELECT QuantityBalance AS N FROM AccumulationRegister.Stock.Balance(&At)");'
             'Q.SetParameter("At",Date(2024,1,2));')
-        with patch('yadinassi.sqlite_inventory_profile.import_inventory_configuration') as importer:
+        with patch('yadinassi.db.sqlite.sqlite_inventory_profile.import_inventory_configuration') as importer:
             vm.execute('BeginTransaction();D.Write(DocumentWriteMode.Posting);'
                 'S=Q.Execute().Select();S.Next();Inside=S.N;RollbackTransaction();'
                 'S=Q.Execute().Select();HasAfter=S.Next();')

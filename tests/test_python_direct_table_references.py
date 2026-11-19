@@ -4,9 +4,9 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.syntax.parser import parse
-from yadinassi.value_tables import BSLValueTable,BSLValueTableRow
+from yadinassi.collections.value_tables import BSLValueTable,BSLValueTableRow
 
 SETUP='T=New ValueTable;C=T.Columns.Add("A");R=T.Add();R.A=1;'
 

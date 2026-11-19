@@ -2,12 +2,12 @@
 from decimal import Decimal
 import unittest
 from unittest.mock import patch
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.python_direct_configuration import ConfigurationBoundary
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.direct.python_direct_configuration import ConfigurationBoundary
 from yadinassi.runtime import Interpreter
-from yadinassi.python_direct import PythonDirectUnsupported
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+from yadinassi.types.errors import BSLRuntimeError
 from configuration_runtime_fixture import CLIENT, SERVER, module_files
 
 
@@ -96,7 +96,7 @@ class DirectConfigurationCommandTests(unittest.TestCase):
             self.assertEqual(events,['1'])
 
     def test_database_scheduler_restricted_and_nested_execution_stay_denied(self):
-        from yadinassi import safe_mode
+        from yadinassi.execution import safe_mode
         app=self.app()
         with patch.object(Interpreter,'database_context',property(lambda self:object())):
             self.assertEqual(app.execute('Tools.Double(2)'),Decimal(4))
@@ -154,9 +154,9 @@ class DirectConfigurationCommandTests(unittest.TestCase):
         self.assertEqual(calls,[])
 
     def test_captured_host_callable_cannot_bypass_scope_service_gate(self):
-        from yadinassi.python_direct_configuration import _COMMAND_SCOPE
-        from yadinassi.python_direct_configuration_commands import _Scope
-        from yadinassi.values import HostFunction
+        from yadinassi.execution.direct.python_direct_configuration import _COMMAND_SCOPE
+        from yadinassi.execution.direct.python_direct_configuration_commands import _Scope
+        from yadinassi.types.values import HostFunction
         app=self.app();effects=[]
         scope=_Scope(app);scope.enter()
         try:
@@ -169,7 +169,7 @@ class DirectConfigurationCommandTests(unittest.TestCase):
 
     def test_pre_lazy_message_class_override_is_not_canonical(self):
         import importlib
-        from yadinassi import python_direct_configuration_commands as commands
+        from yadinassi.execution.direct import python_direct_configuration_commands as commands
         effects=[]
         with patch.object(Interpreter,'_message',lambda *args:effects.append(args)):
             importlib.reload(commands)
@@ -180,7 +180,7 @@ class DirectConfigurationCommandTests(unittest.TestCase):
     def test_active_boundary_pins_origin_thread_and_exact_context(self):
         import contextvars
         import threading
-        from yadinassi.python_direct_configuration_commands import _Scope
+        from yadinassi.execution.direct.python_direct_configuration_commands import _Scope
         output=[];app=self.app(output=output.append)
         scope=_Scope(app);scope.enter()
         try:
@@ -201,7 +201,7 @@ class DirectConfigurationCommandTests(unittest.TestCase):
         self.assertEqual(output,['3'])
 
     def test_captured_callable_revalidates_after_policy_mutates_implementation(self):
-        from yadinassi.python_direct_configuration_commands import _Scope
+        from yadinassi.execution.direct.python_direct_configuration_commands import _Scope
         app=self.app();effects=[];scope=_Scope(app);scope.enter()
         try:
             context=ConfigurationBoundary(app,app.interpreter);context.enter()
@@ -222,9 +222,9 @@ class DirectConfigurationCommandTests(unittest.TestCase):
         self.assertEqual(output,['3'])
 
     def test_scalar_command_scope_cannot_enter_existing_form_boundary(self):
-        from yadinassi.form_runtime import FormSession
-        from yadinassi.python_direct_forms import FormBoundary
-        from yadinassi.python_direct_configuration_commands import _Scope
+        from yadinassi.forms.form_runtime import FormSession
+        from yadinassi.execution.direct.python_direct_forms import FormBoundary
+        from yadinassi.execution.direct.python_direct_configuration_commands import _Scope
         session=FormSession('Procedure Event() EndProcedure')
         session._begin(session.revision)
         try:
@@ -259,7 +259,7 @@ class LazyConfigurationCommandTests(unittest.TestCase):
 
     def test_plain_command_does_not_read_module_definitions_or_metadata(self):
         app=self.app([CLIENT,('Remote','Function F() Export Return 1;EndFunction',SERVER)])
-        from yadinassi import python_direct_configuration_metadata as metadata
+        from yadinassi.execution.direct import python_direct_configuration_metadata as metadata
         with patch.object(metadata,'validate_definition',side_effect=AssertionError('unused module inspected')):
             self.assertEqual(app.execute('1+2'),Decimal(3))
 

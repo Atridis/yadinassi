@@ -49,7 +49,7 @@ still be valid. No native-only success bypass is added.
 
 ## Local implementation and limits
 
-`yadinassi/value_trees.py` validates the complete source graph iteratively before
+`yadinassi/collections/value_trees.py` validates the complete source graph iteratively before
 allocating the result. It checks exact internal collection/row/column shapes,
 ownership, parent/depth links, live objects, unique membership, cell keys and the
 whole-tree row registry. It then constructs new columns and rows in hierarchy

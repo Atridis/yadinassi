@@ -4,10 +4,10 @@ import unittest
 from unittest.mock import patch
 
 from test_configuration_source_runtime import source
-from yadinassi.configuration_source_runtime import SourceApplication, _SourceInterpreter
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.configuration.configuration_source_runtime import SourceApplication, _SourceInterpreter
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.runtime import Interpreter
-from yadinassi.errors import BSLError
+from yadinassi.types.errors import BSLError
 
 
 def common_module(code,*,global_module=False):
@@ -93,7 +93,7 @@ Procedure OnStart() Outer();Message(SafeMode());EndProcedure''')
         self.assertEqual(out,[])
 
     def test_retained_host_reference_cannot_read_or_write_after_activation(self):
-        from yadinassi.values import HostFunction
+        from yadinassi.types.values import HostFunction
         app,_=self.app();app.start();vm=app.interpreter;retained=[]
         vm.functions['keep']=HostFunction('Keep',lambda ref:retained.append(ref),reference_parameters=(0,))
         vm.execute('X=1;Keep(X);')
@@ -166,7 +166,7 @@ Procedure OnStart() Outer();Message(SafeMode());EndProcedure''')
         self.assertEqual(app.interpreter.variables['x'],5)
 
     def test_exact_type_rejection_does_not_access_hostile_application_property(self):
-        from yadinassi.python_direct_source import check_owner
+        from yadinassi.execution.direct.python_direct_source import check_owner
         class ForgedSource(_SourceInterpreter):
             @property
             def application(self):raise AssertionError('hostile application property')

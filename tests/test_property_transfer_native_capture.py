@@ -6,7 +6,7 @@ import sys
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / 'tests/fixtures/property_transfer'

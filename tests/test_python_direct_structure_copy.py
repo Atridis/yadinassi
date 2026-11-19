@@ -4,8 +4,8 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.experimental_naked_structure import new_structure, structure_items, _DirectStructure
-from yadinassi.structures import BSLFixedStructure
+from yadinassi.execution.codegen.experimental_naked_structure import new_structure, structure_items, _DirectStructure
+from yadinassi.collections.structures import BSLFixedStructure
 from yadinassi.syntax.parser import parse
 
 
@@ -89,7 +89,7 @@ Empty=New Structure(New FixedStructure);E=Empty.Count();'''
             result=new_structure(fixed)
         self.assertEqual(result['X'],1);self.assertEqual(events,[])
         class Fake:pass
-        with patch('yadinassi.structures.BSLFixedStructure',Fake):
+        with patch('yadinassi.collections.structures.BSLFixedStructure',Fake):
             self.assertEqual(new_structure(fixed)['X'],1)
             with self.assertRaises(TypeError):new_structure(Fake())
 
@@ -97,11 +97,11 @@ Empty=New Structure(New FixedStructure);E=Empty.Count();'''
         import subprocess,sys,textwrap
         script=textwrap.dedent('''
             from unittest.mock import patch
-            from yadinassi import structures
+            from yadinassi.collections import structures
             source=structures.BSLFixedStructure('X',1)
             class Fake:pass
             with patch.object(structures,'BSLFixedStructure',Fake):
-                from yadinassi.experimental_naked_structure import new_structure
+                from yadinassi.execution.codegen.experimental_naked_structure import new_structure
                 if new_structure(source)['X']!=1:raise AssertionError('lost canonical copy')
                 try:new_structure(Fake())
                 except TypeError:pass

@@ -4,9 +4,9 @@ from contextlib import ExitStack
 from decimal import Decimal, localcontext
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.syntax.parser import parse
-from yadinassi.experimental_naked_scalar_semantics import decimal_divide, decimal_sign
+from yadinassi.execution.codegen.experimental_naked_scalar_semantics import decimal_divide, decimal_sign
 
 class DirectDecimalDivisionTests(unittest.TestCase):
     def vm(self):

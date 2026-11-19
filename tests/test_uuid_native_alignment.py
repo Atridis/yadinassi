@@ -4,11 +4,11 @@ Typed extension is covered separately by the source-bound native16 replay.
 """
 import unittest
 from yadinassi import Interpreter, BSLError
-from yadinassi.unique_identifiers import BSLUUID
-from yadinassi.serialization import value_to_string_internal, value_from_string_internal
-from yadinassi.xml_values import xml_string, xml_value
-from yadinassi.values import BSLType, BSLArray
-from yadinassi.type_descriptions import BSLTypeDescription
+from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.formats.storage.serialization import value_to_string_internal, value_from_string_internal
+from yadinassi.formats.xml.xml_values import xml_string, xml_value
+from yadinassi.types.values import BSLType, BSLArray
+from yadinassi.types.type_descriptions import BSLTypeDescription
 
 FIXED = "01234567-89ab-4cde-8f01-23456789abcd"
 ZERO = "00000000-0000-0000-0000-000000000000"

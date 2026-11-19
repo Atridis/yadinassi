@@ -31,8 +31,8 @@ maintenance in effect until apply or recovery has been resolved.
 
 ```python
 from pathlib import Path
-from yadinassi.configuration_import import load_configuration_directory
-from yadinassi.sqlite_configuration_update import (
+from yadinassi.configuration.configuration_import import load_configuration_directory
+from yadinassi.db.sqlite.sqlite_configuration_update import (
     prepare, dump_plan, load_plan, apply, resolve,
 )
 

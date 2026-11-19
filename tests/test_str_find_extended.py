@@ -4,8 +4,8 @@ import itertools
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.search_directions import BSLSearchDirection as Direction
-from yadinassi.strings import str_find
+from yadinassi.collections.search_directions import BSLSearchDirection as Direction
+from yadinassi.text.strings import str_find
 
 BEGIN = Direction.FROM_BEGIN
 END = Direction.FROM_END

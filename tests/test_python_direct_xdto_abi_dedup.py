@@ -1,8 +1,8 @@
 """ABI dedup retains all requirements and revalidates mutable classes."""
 import unittest
 from unittest.mock import patch
-from yadinassi import python_direct_source_xdto as shared
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.direct.source import python_direct_source_xdto as shared
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class XDTOABIDedupTests(unittest.TestCase):
     def test_exact_requirement_union_and_module_checks_preserved(self):

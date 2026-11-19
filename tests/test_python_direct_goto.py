@@ -4,7 +4,7 @@ from contextlib import closing
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
-from yadinassi.python_direct import PythonDirectUnsupported
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.syntax.parser import parse
 
 
@@ -103,7 +103,7 @@ class DirectGotoTests(unittest.TestCase):
             self.run_code('Function F() ~again: x=F; F=1; Goto ~again; EndFunction')
 
     def test_ordinary_program_has_no_extra_loop(self):
-        with patch('yadinassi.experimental_direct_ast._goto_lists',side_effect=AssertionError('unexpected Goto preflight')):
+        with patch('yadinassi.execution.codegen.experimental_direct_ast._goto_lists',side_effect=AssertionError('unexpected Goto preflight')):
             source=self.run_code('x=1; x=x+2;')[3]
         self.assertFalse(any(isinstance(n,ast.While) for n in ast.walk(ast.parse(source))))
 

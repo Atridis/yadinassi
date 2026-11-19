@@ -65,7 +65,7 @@ class XMLWorkflowFamilyMeasurementTests(unittest.TestCase):
         with self.assertRaises(wire.AvailabilityError): wire.require_available(emit(missing=True))
 
     def test_action_failure_still_cleans_owned_paths(self):
-        from yadinassi.xml_writer import BSLXMLWriter
+        from yadinassi.formats.xml.xml_writer import BSLXMLWriter
         with mock.patch.object(BSLXMLWriter, 'write_text', side_effect=ValueError('injected')):
             raw = emit()
         records = wire.validate_output(raw)
@@ -73,7 +73,7 @@ class XMLWorkflowFamilyMeasurementTests(unittest.TestCase):
         self.assertFalse(any(row['status'] == 'observer-error' for row in records))
 
     def test_unexpected_children_are_not_recursively_swept(self):
-        import yadinassi.file_io as files
+        import yadinassi.streams.file_io as files
         original = files.create_directory
         def create_with_sentinel(path):
             original(path)

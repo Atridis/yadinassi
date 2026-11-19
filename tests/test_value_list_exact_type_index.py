@@ -2,8 +2,8 @@
 import unittest
 from decimal import Decimal
 from unittest.mock import patch
-from yadinassi.value_lists import BSLValueList, _value
-from yadinassi import type_values
+from yadinassi.collections.value_lists import BSLValueList, _value
+from yadinassi.types import type_values
 
 class ValueListExactTypeIndexTests(unittest.TestCase):
     def test_every_registered_exact_type_preserves_old_classification(self):

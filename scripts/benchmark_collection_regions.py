@@ -18,7 +18,7 @@ from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:sys.path.insert(0,str(ROOT))
 from scripts import benchmark_extended_layers as reference
-from yadinassi.python_direct_collection_regions import analyze
+from yadinassi.execution.direct.python_direct_collection_regions import analyze
 
 
 def run(iterations=512,rounds=15):
@@ -30,13 +30,13 @@ def run(iterations=512,rounds=15):
             with ExitStack() as stack:
                 cases=[]
                 for enabled in (False,True):
-                    with patch('yadinassi.python_direct_collection_regions.analyze',analyze if enabled else disabled):
+                    with patch('yadinassi.execution.direct.python_direct_collection_regions.analyze',analyze if enabled else disabled):
                         cases.append(reference.make_case(name,iterations,route,stack))
                 samples=[[],[]];cpu=[[],[]]
                 for index in range(rounds+4):
                     for enabled in ((0,1) if index%2 else (1,0)):
                         case=cases[enabled]
-                        with patch('yadinassi.python_direct_collection_regions.analyze',analyze if enabled else disabled):
+                        with patch('yadinassi.execution.direct.python_direct_collection_regions.analyze',analyze if enabled else disabled):
                             start=perf_counter_ns();start_cpu=process_time_ns()
                             result=case.runs['bsl']()
                             elapsed_cpu=process_time_ns()-start_cpu;elapsed=perf_counter_ns()-start

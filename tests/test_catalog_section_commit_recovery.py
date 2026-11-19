@@ -10,11 +10,11 @@ from uuid import uuid4
 from catalog_sections_fixture import configuration_files_with_sections
 from test_catalog_commit_cleanup_recovery import FaultConnection
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import BackendError
-from yadinassi.catalog_sections import BSLCatalogSection
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import _View
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.catalog.catalog_sections import BSLCatalogSection
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import _View
 
 
 class CatalogSectionCommitRecoveryTests(unittest.TestCase):
@@ -230,7 +230,7 @@ N=O.Notes.Add(); N.Text="note";''' % self.sequence)
 
     def test_multi_record_commit_close_failure_keeps_owner_rows_and_receipt_atomic(self):
         first, second = self.new_object(), self.new_object()
-        from yadinassi.catalog_backend import CatalogDraft
+        from yadinassi.db.catalog.catalog_backend import CatalogDraft
         def draft(obj):
             manager = obj._manager
             return CatalogDraft(obj._key, obj._values['code'], obj._values['description'], False,

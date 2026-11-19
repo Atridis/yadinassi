@@ -10,7 +10,7 @@ SCRIPTS=Path(__file__).resolve().parents[1]/'scripts'
 sys.path.insert(0,str(SCRIPTS))
 from server_module_reuse_packet import packet, parse_records, PACKET_HASHES, SOURCE_SHA256, FORM_SHA256, MODULES_SHA256
 from server_module_reuse_packet import route
-from yadinassi.configuration_modules import compile_module
+from yadinassi.configuration.configuration_modules import compile_module
 
 class PacketTests(unittest.TestCase):
     def test_inventory(self):

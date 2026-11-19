@@ -3,7 +3,7 @@ from decimal import Decimal, localcontext, Rounded, Inexact
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.dates import BSLDate, MAX_TICKS, UnsupportedDateRange, shift_date, date_difference
+from yadinassi.temporal.dates import BSLDate, MAX_TICKS, UnsupportedDateRange, shift_date, date_difference
 
 class DirectDateArithmeticTests(unittest.TestCase):
     def test_python_ticks_match_existing_algorithms(self):

@@ -1,8 +1,8 @@
 import unittest
 from decimal import Decimal
 from yadinassi import Interpreter
-from yadinassi.values import HostFunction,Reference
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.values import HostFunction,Reference
+from yadinassi.types.errors import BSLRuntimeError
 
 class DynamicRefsTests(unittest.TestCase):
     def execute_case(self, source, expected, signature=(0,), reference_flags=None):

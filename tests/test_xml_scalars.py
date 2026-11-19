@@ -10,11 +10,11 @@ import re
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.dates import BSLDate, MAX_TICKS, UnsupportedDateRange, date, shift_date
-from yadinassi.serialization import value_from_string_internal, value_to_string_internal
-from yadinassi.values import BSLType, NULL
-from yadinassi import xml_values
-from yadinassi.xml_values import xml_string, xml_value
+from yadinassi.temporal.dates import BSLDate, MAX_TICKS, UnsupportedDateRange, date, shift_date
+from yadinassi.formats.storage.serialization import value_from_string_internal, value_to_string_internal
+from yadinassi.types.values import BSLType, NULL
+from yadinassi.formats.xml import xml_values
+from yadinassi.formats.xml.xml_values import xml_string, xml_value
 
 
 ROOT = Path(__file__).resolve().parents[1]

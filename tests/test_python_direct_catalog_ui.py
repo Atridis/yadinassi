@@ -4,10 +4,10 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from yadinassi.runtime import Interpreter
-from yadinassi.form_runtime import FormSession
-from yadinassi.form_model import BSLFormField
-from yadinassi.python_direct_form_objects import get,setter
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.forms.form_runtime import FormSession
+from yadinassi.forms.form_model import BSLFormField
+from yadinassi.execution.direct.python_direct_form_objects import get,setter
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 import test_main_demo_host as host_tests
 
 class DirectCatalogUITests(unittest.TestCase):

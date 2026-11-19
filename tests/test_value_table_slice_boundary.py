@@ -2,9 +2,9 @@
 from decimal import Decimal
 import unittest
 
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.value_tables import BSLValueTable, BSLValueTableColumn
-from yadinassi.value_trees import BSLValueTree
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.collections.value_tables import BSLValueTable, BSLValueTableColumn
+from yadinassi.collections.value_trees import BSLValueTree
 
 
 class SliceOwnerBoundaryTests(unittest.TestCase):

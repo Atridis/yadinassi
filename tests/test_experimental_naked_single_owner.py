@@ -1,11 +1,11 @@
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 import os
 import threading
 import unittest
 from unittest.mock import patch
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from tests.direct_boundary_compile import compile_boundary
-from yadinassi.experimental_naked_control import SingleOwnerBoundaryContext
+from yadinassi.execution.codegen.experimental_naked_control import SingleOwnerBoundaryContext
 
 class SingleOwnerTests(unittest.TestCase):
 
@@ -147,7 +147,7 @@ class SingleOwnerTests(unittest.TestCase):
 
     def test_context_backed_reference_cannot_be_used_by_foreign_thread(self):
         from types import SimpleNamespace
-        from yadinassi.experimental_naked_boundaries import HostMembers
+        from yadinassi.execution.codegen.experimental_naked_boundaries import HostMembers
         obj = SimpleNamespace(value=1)
         ctx = SingleOwnerBoundaryContext(members=(HostMembers(obj, readable=('value',), writable=('value',)),))
         ctx.enter()

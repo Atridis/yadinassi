@@ -1,5 +1,5 @@
 import unittest
-from yadinassi import python_direct_detached_metadata as metadata
+from yadinassi.execution.direct import python_direct_detached_metadata as metadata
 
 class MetadataDispatchTests(unittest.TestCase):
     def test_only_three_exact_receiver_classes_are_owned(self):

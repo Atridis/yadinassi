@@ -1,9 +1,9 @@
 import unittest
 from decimal import Decimal
 from yadinassi import Interpreter
-from yadinassi.experimental_naked_scalar_semantics import truth, typed_find, presentation, concatenate, order, UnsupportedScalarSemantics
-from yadinassi.experimental_naked_collections import _NakedMap, _TypedMap
-from yadinassi.experimental_naked_structure import _DirectStructure
+from yadinassi.execution.codegen.experimental_naked_scalar_semantics import truth, typed_find, presentation, concatenate, order, UnsupportedScalarSemantics
+from yadinassi.execution.codegen.experimental_naked_collections import _NakedMap, _TypedMap
+from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
 
 class ScalarSemanticsTests(unittest.TestCase):
 

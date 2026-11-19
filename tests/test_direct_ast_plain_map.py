@@ -1,7 +1,7 @@
 import unittest
 from decimal import Decimal
 from yadinassi import Interpreter
-from yadinassi.python_direct_plain_map import PlainMap
+from yadinassi.execution.direct.python_direct_plain_map import PlainMap
 
 class PlainMapTests(unittest.TestCase):
     def test_default_and_prepared_use_plain_dict(self):
@@ -31,7 +31,7 @@ class PlainMapTests(unittest.TestCase):
         finally:vm.close()
 
     def test_opaque_key_does_not_invoke_hash_or_eq(self):
-        from yadinassi.values import HostFunction
+        from yadinassi.types.values import HostFunction
         for operation in ('M.Insert(K,1);','R=M.Get(K);','R=M[K];','M[K]=1;','M.Delete(K);'):
             vm=Interpreter();events=[]
             class Key:
@@ -55,7 +55,7 @@ class PlainMapTests(unittest.TestCase):
             self.assertEqual(len(m),0)
 
     def test_map_equality_never_compares_opaque_values_or_foreign_receiver(self):
-        from yadinassi.values import HostFunction
+        from yadinassi.types.values import HostFunction
         vm=Interpreter();events=[]
         class Opaque:
             def __eq__(self,other):events.append('eq');vm.close();return False
@@ -68,7 +68,7 @@ class PlainMapTests(unittest.TestCase):
         finally:vm.close()
 
     def test_fixed_copy_rejects_opaque_before_hash(self):
-        from yadinassi.maps import BSLMap,BSLFixedMap
+        from yadinassi.collections.maps import BSLMap,BSLFixedMap
         events=[]
         class Key:
             def __hash__(self):events.append('hash');return 1

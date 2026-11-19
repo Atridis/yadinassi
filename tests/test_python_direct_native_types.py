@@ -3,11 +3,11 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.values import BSLType, Reference
-from yadinassi.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
-from yadinassi.python_direct_services import ServicesBoundary
-from yadinassi.type_values import type_of
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.types.values import BSLType, Reference
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.direct.python_direct_services import ServicesBoundary
+from yadinassi.types.type_values import type_of
 
 class DirectNativeTypeTests(unittest.TestCase):
     def test_native_collections_source_ast_prepared_without_vm(self):
@@ -26,8 +26,8 @@ class DirectNativeTypeTests(unittest.TestCase):
         self.assertIs(vm.execute('Alias(New Structure)'),BSLType.STRUCTURE)
         vm.register_function('TypeOf',lambda value:'custom')
         self.assertEqual(vm.execute('TypeOf(New Structure)'),'custom')
-        with patch('yadinassi.type_values.type_of',lambda value:'patched'):
-            from yadinassi import type_values
+        with patch('yadinassi.types.type_values.type_of',lambda value:'patched'):
+            from yadinassi.types import type_values
             other=Interpreter();other.register_function('Alias',type_values.type_of)
             self.assertEqual(other.execute('Alias(New Array)'),'patched')
 

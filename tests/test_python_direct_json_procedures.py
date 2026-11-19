@@ -3,8 +3,8 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.syntax.parser import parse
-from yadinassi.json_processing import BSLJSONWriter
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.formats.json.json_processing import BSLJSONWriter
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class DirectJSONProceduresTests(unittest.TestCase):
     def test_routes_reject_without_mutation_or_vm(self):
@@ -55,7 +55,7 @@ class DirectJSONProceduresTests(unittest.TestCase):
                 self.assertEqual(seen,[])
 
     def test_revocation_closed_owner_and_captured_policy_remain_fatal(self):
-        from yadinassi.python_direct import make_boundary
+        from yadinassi.execution.direct.python_direct import make_boundary
         for mode in ('revoked','closed','context'):
             vm=Interpreter();vm.execute('W=New JSONWriter;W.SetString();')
             context=make_boundary(vm);context.start();writer=vm.variables['w']
@@ -82,7 +82,7 @@ class DirectJSONProceduresTests(unittest.TestCase):
             vm.execute('W.WriteValue(1);');self.assertEqual(vm.execute('W.Close()'),'1')
 
     def test_foreign_metaclass_not_consulted_by_new_callsite_gate(self):
-        from yadinassi.python_direct_database import CatalogBoundary
+        from yadinassi.execution.direct.python_direct_database import CatalogBoundary
         seen=[]
         class HostileMeta(type):
             def __eq__(self,other):seen.append('eq');raise AssertionError('eq')

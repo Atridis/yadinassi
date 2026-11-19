@@ -5,12 +5,12 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
-from yadinassi.configuration_xml import ConfigurationImport, ConfigurationFile
+from yadinassi.configuration.configuration_xml import ConfigurationImport, ConfigurationFile
 from uuid import UUID, uuid4
 
-from yadinassi.catalog_backend import (BackendError,CatalogSchema,FieldSchema,CatalogKey,
+from yadinassi.db.catalog.catalog_backend import (BackendError,CatalogSchema,FieldSchema,CatalogKey,
                                       CatalogDraft,CatalogSelection)
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 
 
 def configuration():
@@ -39,7 +39,7 @@ class BackendTests(unittest.TestCase):
     def test_path_leaf_reparse_and_untrusted_ancestor_stay_closed(self):
         from unittest import mock
         from types import SimpleNamespace
-        import yadinassi.sqlite_catalog as storage
+        import yadinassi.db.sqlite.sqlite_catalog as storage
         original = os.lstat
         def fake(path):
             info = original(path)
@@ -142,7 +142,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(error.exception.code,'schema_changed')
     def test_exact_transaction_change_limit_can_commit(self):
         from unittest.mock import patch
-        with patch('yadinassi.sqlite_catalog._MAX_ROWS',2):
+        with patch('yadinassi.db.sqlite.sqlite_catalog._MAX_ROWS',2):
             tx=self.backend.begin_write(uuid4());tx.create(self.draft(code='10'));tx.create(self.draft(code='20'))
             with self.assertRaisesRegex(BackendError,'unsupported'):tx.create(self.draft(code='30'))
             self.assertEqual(len(tx.commit()),2)
@@ -187,8 +187,8 @@ class RecoveryTests(BackendTests):
         record,operation=uuid4(),uuid4()
         code = '''import os,sys
 from uuid import UUID
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.catalog_backend import CatalogKey,CatalogDraft
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import CatalogKey,CatalogDraft
 b=SQLiteCatalogBackend(sys.argv[1]); t=b.begin_write(UUID(sys.argv[4]))
 t.create(CatalogDraft(CatalogKey(b.database_id,UUID(sys.argv[2]),UUID(sys.argv[3])),"20","Crash",False,()))
 if sys.argv[5]=="commit": t.commit()

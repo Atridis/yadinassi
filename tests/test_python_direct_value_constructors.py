@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class DirectValueConstructorTests(unittest.TestCase):
     def test_source_ast_prepared_bilingual_family(self):

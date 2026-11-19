@@ -5,9 +5,9 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 from test_source_forms import files,request,CODE
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_forms import SourceFormController
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.forms.source_forms import SourceFormController
 from yadinassi.runtime import Interpreter
 
 
@@ -54,16 +54,16 @@ class DirectSourceForms(unittest.TestCase):
 
     def test_nocontext_server_factory_replacement_rejected_before_callback(self):
         code=CODE+b'\n&AtServerNoContext\nFunction Remote(Val X) Return X; EndFunction'
-        with self.no_vm(),patch('yadinassi.source_forms._SourceNoContextServer',side_effect=AssertionError('wrong NoContext server factory callback')):
+        with self.no_vm(),patch('yadinassi.forms.source_forms._SourceNoContextServer',side_effect=AssertionError('wrong NoContext server factory callback')):
             with self.assertRaisesRegex(ValueError,'NoContext server factory changed'):self.controller(code)
 
     def test_failed_validation_releases_exact_source_child(self):
-        from yadinassi.source_forms import _SourceFormInterpreter,source_form_definition
+        from yadinassi.forms.source_forms import _SourceFormInterpreter,source_form_definition
         app=SourceApplication(import_source(files()));self.addCleanup(app.close);app.start()
         children=[];original=_SourceFormInterpreter.__init__
         def initialize(child,*args,**kwargs):
             original(child,*args,**kwargs);children.append(child)
-        with patch.object(_SourceFormInterpreter,'__init__',initialize),patch('yadinassi.python_direct_forms.prepare_form',side_effect=ValueError('failed preparation')):
+        with patch.object(_SourceFormInterpreter,'__init__',initialize),patch('yadinassi.execution.direct.python_direct_forms.prepare_form',side_effect=ValueError('failed preparation')):
             with self.assertRaisesRegex(ValueError,'failed preparation'):source_form_definition(app,'CommonForm.Main')
         self.assertEqual(len(children),1)
         self.assertTrue(children[0]._family_released);self.assertFalse(app.interpreter._family_closed)

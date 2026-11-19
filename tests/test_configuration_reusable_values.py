@@ -1,8 +1,8 @@
 import unittest
 from decimal import Decimal
-from yadinassi.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
 from yadinassi.runtime import Interpreter
-from yadinassi.errors import BSLError
+from yadinassi.types.errors import BSLError
 from configuration_runtime_fixture import module_files
 SOURCE='''
 Function Token(Key="default") Export Return String(New UUID); EndFunction

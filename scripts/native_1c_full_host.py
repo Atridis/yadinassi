@@ -413,7 +413,7 @@ Interpreter = module.Interpreter
 
 import json
 from decimal import Decimal
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.db.database_context import SQLiteDBContext
 if len(sys.argv) != 5 or sys.argv[2] not in ("standalone", "managed-thick-file"):
     raise RuntimeError("invalid compilation profile")
 context = SQLiteDBContext(sys.argv[4])

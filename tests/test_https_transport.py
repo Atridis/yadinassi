@@ -20,9 +20,9 @@ from unittest import mock
 from urllib.parse import urlsplit
 
 from yadinassi import Interpreter
-from yadinassi import http_client as http
-from yadinassi import http_security as security
-from yadinassi.maps import BSLMap
+from yadinassi.http import http_client as http
+from yadinassi.http import http_security as security
+from yadinassi.collections.maps import BSLMap
 
 
 class Origin(native_server.BaseHTTPRequestHandler):

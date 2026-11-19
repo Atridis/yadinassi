@@ -19,7 +19,7 @@ EXCLUDED = {}
 def _execute(context):
     """Whole original probe; context injection is solely the unit-test seam."""
     from yadinassi import Interpreter
-    from yadinassi.native_targets import LINUX_8_3_27_1508
+    from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
     path = Path(__file__).with_name('modules') / 'MetadataCatalogProbe.bsl'
     source = path.read_bytes()
     if hashlib.sha256(source).hexdigest() != PROBE_SHA256:
@@ -52,7 +52,7 @@ def compare_readback(actual_wire: bytes, native_wire: bytes) -> dict:
 
 def readback(database: Path, *, native_wire: bytes) -> dict:
     """Native expected values are used only after independent SQLite execution."""
-    from yadinassi.database_context import SQLiteDBContext
+    from yadinassi.db.database_context import SQLiteDBContext
     wire.require_available(native_wire)
     with SQLiteDBContext(database) as context:
         actual = _execute(context)

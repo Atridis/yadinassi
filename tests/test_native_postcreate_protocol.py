@@ -14,8 +14,8 @@ import test_native_1c_full_stage as stage
 from scripts import native_1c_full_host as host
 from scripts.native_historical_replay import without_exported_postcreate_probes
 from yadinassi import Interpreter
-from yadinassi.values import BSLObject, BSLArray, HostFunction
-from yadinassi.structures import BSLStructure
+from yadinassi.types.values import BSLObject, BSLArray, HostFunction
+from yadinassi.collections.structures import BSLStructure
 
 ROOT = Path(__file__).resolve().parents[1]
 launcher = stage.load_launcher(ROOT / 'integrational_tests/test_launcher.py')

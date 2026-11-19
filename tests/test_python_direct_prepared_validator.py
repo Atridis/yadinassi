@@ -4,17 +4,17 @@ from unittest import TestCase
 from unittest.mock import patch
 import test_python_direct_catalog_preparation as fixture
 SOURCE=fixture.SOURCE
-from yadinassi.catalog_object_preparation import prepare_catalog_object,CatalogWriteRefused
-from yadinassi.python_direct_catalog_preparation import prepared_validator
-from yadinassi.native_targets import target_context,LINUX_8_3_27_1508
-from yadinassi.catalog_backend import BackendError
+from yadinassi.db.catalog.catalog_object_preparation import prepare_catalog_object,CatalogWriteRefused
+from yadinassi.execution.direct.python_direct_catalog_preparation import prepared_validator
+from yadinassi.execution.codegen.native_targets import target_context,LINUX_8_3_27_1508
+from yadinassi.db.catalog.catalog_backend import BackendError
 
 class PreparedValidatorTests(TestCase):
     def setUp(self):
         self.f=fixture.DirectCatalogPreparationTests();self.f.setUp();self.addCleanup(self.f.doCleanups)
         self.manager=self.f.card._manager
     def test_single_compile_before_transaction_and_fresh_receivers(self):
-        import yadinassi.python_direct_catalog_preparation as direct
+        import yadinassi.execution.direct.python_direct_catalog_preparation as direct
         original=direct.compile_owned;seen=[]
         def compile(*args,**kwargs):
             self.assertIsNone(self.f.db.backend._active);seen.append(1)
@@ -42,7 +42,7 @@ class PreparedValidatorTests(TestCase):
         finally:self.manager._schema=old
         with target_context(LINUX_8_3_27_1508):
             fourth=prepared_validator(self.manager,changed);self.assertIsNot(second,fourth)
-        import yadinassi.python_direct_catalog_preparation as direct
+        import yadinassi.execution.direct.python_direct_catalog_preparation as direct
         with patch.object(direct,'REPAIRS',direct.REPAIRS+('authority_checkpoints',)):
             fifth=prepared_validator(self.manager,changed);self.assertIsNot(second,fifth)
             with self.assertRaisesRegex(ValueError,'changed'):prepared_validator(self.manager,changed,prepared=second)
@@ -61,7 +61,7 @@ class PreparedValidatorTests(TestCase):
             view=original(operation);view._connection=FaultConnection(view._connection,commit_fault='after');return view
         with patch.object(self.f.db.backend,'begin_write',begin):
             with self.assertRaisesRegex(BackendError,'uncertain_commit'):self.f.card.write()
-        with patch('yadinassi.python_direct_catalog_preparation.prepared_validator',side_effect=AssertionError('prepare on receipt')), \
-             patch('yadinassi.catalog_object_preparation._prepare_catalog_object',side_effect=AssertionError('replay')):
+        with patch('yadinassi.execution.direct.python_direct_catalog_preparation.prepared_validator',side_effect=AssertionError('prepare on receipt')), \
+             patch('yadinassi.db.catalog.catalog_object_preparation._prepare_catalog_object',side_effect=AssertionError('replay')):
             self.f.card.write()
         self.assertFalse(self.f.card.is_new());self.assertIsNone(self.f.card._pending_write)

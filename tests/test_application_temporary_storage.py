@@ -3,10 +3,10 @@ from decimal import Decimal
 from unittest import mock
 import unittest
 from configuration_runtime_fixture import module_files,SERVER
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.runtime import Interpreter
-from yadinassi import temporary_storage as storage
+from yadinassi.application import temporary_storage as storage
 
 SOURCE='''Function Put(Val Value,Val Owner=Undefined) Export If Owner=Undefined Then Owner=New UUID; EndIf; Return PutToTempStorage(Value,Owner); EndFunction
 Function Get(Val Address) Export Return GetFromTempStorage(Address); EndFunction

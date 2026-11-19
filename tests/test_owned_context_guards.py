@@ -6,9 +6,9 @@ foreign declaration denial and actual direct source/posting effects remain tests
 from types import SimpleNamespace
 import unittest
 
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.errors import BSLError
-from yadinassi.execution_policy import execution_backend_policy
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.types.errors import BSLError
+from yadinassi.execution.execution_policy import execution_backend_policy
 from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse
 
@@ -51,7 +51,7 @@ class OwnedContextGuardTests(unittest.TestCase):
 
     def test_foreign_ast_kind_cannot_gain_direct_execution_authority(self):
         from yadinassi import Interpreter
-        from yadinassi.python_direct import PythonDirectUnsupported
+        from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
         program = parse('Touch(); answer=42;')
         original = program[1].value
         class Foreign(ast.Literal):

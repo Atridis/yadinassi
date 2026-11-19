@@ -5,8 +5,8 @@ import unittest
 from unittest.mock import Mock
 
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.catalog_backend import CatalogSchema
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.catalog.catalog_backend import CatalogSchema
 from uuid import UUID
 
 

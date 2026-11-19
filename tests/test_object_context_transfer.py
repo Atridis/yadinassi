@@ -2,8 +2,8 @@
 import unittest
 from decimal import Decimal
 from yadinassi import Interpreter, BSLError
-from yadinassi.values import BSLArray
-from yadinassi.structures import BSLStructure
+from yadinassi.types.values import BSLArray
+from yadinassi.collections.structures import BSLStructure
 
 class ObjectContextTransferTests(unittest.TestCase):
     def setUp(self):

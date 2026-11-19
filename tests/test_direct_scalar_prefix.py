@@ -5,7 +5,7 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.experimental_naked_boundaries import BoundaryContext
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
 
 
 def source(iterations, steps):

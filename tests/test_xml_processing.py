@@ -8,13 +8,13 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
-from yadinassi import xml_processing
-from yadinassi.serialization import (
+from yadinassi.formats.xml import xml_processing
+from yadinassi.formats.storage.serialization import (
     FORMAT_ERROR, value_from_string_internal as read, value_to_string_internal as write,
 )
-from yadinassi.type_values import type_by_name, type_of
-from yadinassi.values import BSLType, HostFunction, NULL
-from yadinassi.xml_processing import (
+from yadinassi.types.type_values import type_by_name, type_of
+from yadinassi.types.values import BSLType, HostFunction, NULL
+from yadinassi.formats.xml.xml_processing import (
     BSLXMLStringProcessingManager, XML_STRING_PROCESSING,
     delete_disallowed_xml_characters as clean,
 )

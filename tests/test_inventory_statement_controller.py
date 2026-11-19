@@ -239,7 +239,7 @@ class StatementControllerTests(unittest.TestCase):
             with self.assertRaises(ValueError):validate_setup(bad,self.broker.posting_configuration)
 
     def test_choice_snapshot_limit_has_no_fabricated_partial_page(self):
-        import yadinassi.inventory_application_reports as reports
+        import yadinassi.configuration.demos.inventory_application_reports as reports
         self.prepare();self.setup_report()
         with patch.object(reports,'MAX_CHOICE_SNAPSHOT_ROWS',0):
             state=self.action('begin',filter='Product')

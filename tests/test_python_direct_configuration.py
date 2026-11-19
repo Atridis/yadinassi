@@ -4,11 +4,11 @@ from contextvars import ContextVar
 import unittest
 from unittest.mock import patch
 from yadinassi.runtime import Interpreter
-from yadinassi.invocation import InvocationServer
-from yadinassi.configuration_main_demo import import_main_demo_configuration, PROFILE
+from yadinassi.execution.invocation import InvocationServer
+from yadinassi.configuration.configuration_main_demo import import_main_demo_configuration, PROFILE
 from yadinassi.ui.main_demo import form_family
-from yadinassi.python_direct_configuration import ConfigurationBoundary, invoke_routine, check_owner
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.direct.python_direct_configuration import ConfigurationBoundary, invoke_routine, check_owner
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from test_main_demo_configuration import source
 
 class DirectConfigurationTests(unittest.TestCase):
@@ -45,7 +45,7 @@ class DirectConfigurationTests(unittest.TestCase):
             def secret(self):raise AssertionError('descriptor ran')
         with self.assertRaises(BoundaryViolation):ctx.resolve_member(Host(),'secret')
     def test_service_policy_before_effect_and_after_argument_binding(self):
-        from yadinassi.values import HostFunction
+        from yadinassi.types.values import HostFunction
         app=self.family('client',server_exchange=lambda _:self.fail('unexpected packet'))
         effects=[]
         app.interpreter.functions['openform']=HostFunction('OpenForm',lambda *args:effects.append(args))
@@ -62,14 +62,14 @@ class DirectConfigurationTests(unittest.TestCase):
         def factory(state,constants,output,ctx):
             return {'applicationtitle':lambda:ctx.resolve_service('BeginTransaction')()}
         owner._direct_configuration_plan.function=factory
-        with patch('yadinassi.database_transactions.begin') as begin:
+        with patch('yadinassi.db.database_transactions.begin') as begin:
             with self.assertRaises(Exception):invoke_routine(app,owner,routine,[])
             begin.assert_not_called()
         self.assertTrue(owner._transaction_activation_allowed)
         self.assertEqual(owner._context_stack,['server'])
         owner._direct_configuration_plan.function=original
     def test_restricted_context_rejected_before_generated_entry(self):
-        from yadinassi import safe_mode
+        from yadinassi.execution import safe_mode
         app=self.family('server');app.start()
         owner=app._modules['demoservice','server'].interpreter
         routine=owner.server_routines['applicationtitle']
@@ -79,7 +79,7 @@ class DirectConfigurationTests(unittest.TestCase):
                 with self.assertRaises(BoundaryViolation):invoke_routine(app,owner,routine,[])
         finally:safe_mode._CURRENT.reset(token)
     def test_server_shutdown_policy_rechecked_after_service(self):
-        from yadinassi.values import HostFunction
+        from yadinassi.types.values import HostFunction
         app=self.family('server');app.start()
         owner=app._modules['demoservice','server'].interpreter
         routine=owner.server_routines['applicationtitle']
@@ -91,7 +91,8 @@ class DirectConfigurationTests(unittest.TestCase):
         self.assertFalse(any(op.opname.startswith('IMPORT_') for op in dis.get_instructions(check_owner)))
 
     def test_owner_observes_live_restricted_context_attributes(self):
-        from yadinassi import safe_mode, source_transactions, database_transactions
+        from yadinassi.execution import safe_mode
+        from yadinassi.db import source_transactions, database_transactions
         app=self.family('server');app.start()
         owner=app.interpreter
         check_owner(app,owner)

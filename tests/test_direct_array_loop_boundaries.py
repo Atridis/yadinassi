@@ -5,9 +5,9 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.experimental_direct_ast import compile_owned
-from yadinassi.experimental_naked_boundaries import BoundaryContext, BoundaryViolation, HostMembers
-from yadinassi.python_direct_plain_array import PlainArray
+from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation, HostMembers
+from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 from yadinassi.syntax.parser import parse
 
 
@@ -59,7 +59,7 @@ class DirectArrayLoopBoundaryTests(unittest.TestCase):
         self.assertEqual(len(native_loops), 1)
         self.assertNotIn('_context.', ast.unparse(native_loops[0]))
         seen = []
-        from yadinassi.configuration_source_runtime import SourceApplication
+        from yadinassi.configuration.configuration_source_runtime import SourceApplication
         from test_configuration_source_runtime import source as configuration
         app = SourceApplication(configuration(routine.encode()), output=seen.append)
         self.addCleanup(app.close)

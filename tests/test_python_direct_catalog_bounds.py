@@ -4,10 +4,10 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from yadinassi import BSLError,Interpreter
-from yadinassi.catalog_object_preparation import _ObjectInterpreter,prepare_catalog_object
-from yadinassi.python_direct_catalog_preparation import CatalogPreparationBoundary,prepared_validator
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.experimental_direct_ast import compile_owned
+from yadinassi.db.catalog.catalog_object_preparation import _ObjectInterpreter,prepare_catalog_object
+from yadinassi.execution.direct.python_direct_catalog_preparation import CatalogPreparationBoundary,prepared_validator
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
 from yadinassi.syntax.parser import parse
 import test_catalog_object_preparation as catalog_fixture
 
@@ -41,20 +41,20 @@ class DirectCatalogBoundsTests(unittest.TestCase):
         for _ in range(20):self.card.get_member('Склады').add()
         for body in ('','Продолжить;'):
             source=handler('Для Каждого Р Из Склады Цикл '+body+'КонецЦикла;Наименование="success";')
-            with patch('yadinassi.catalog_object_preparation._MAX_STEPS',20),self.assertRaisesRegex(BSLError,'step budget'):
+            with patch('yadinassi.db.catalog.catalog_object_preparation._MAX_STEPS',20),self.assertRaisesRegex(BSLError,'step budget'):
                 prepare_catalog_object(source,self.card)
         self.assertNotEqual(self.card.get_member('Description'),'success')
         recursive=handler('Helper();')+' Процедура Helper() Helper();КонецПроцедуры'
-        with patch('yadinassi.catalog_object_preparation._MAX_STEPS',20),self.assertRaisesRegex(BSLError,'step budget'):
+        with patch('yadinassi.db.catalog.catalog_object_preparation._MAX_STEPS',20),self.assertRaisesRegex(BSLError,'step budget'):
             prepare_catalog_object(recursive,self.card)
 
     def test_cached_validator_counters_reset_per_invocation_and_after_error(self):
         source=handler('x="abc";')
-        with patch('yadinassi.catalog_object_preparation._MAX_STEPS',5):
+        with patch('yadinassi.db.catalog.catalog_object_preparation._MAX_STEPS',5):
             for _ in range(5):self.assertEqual(prepare_catalog_object(source,self.card),(False,()))
         first=prepared_validator(self.card._manager,source)
         self.assertIs(first,prepared_validator(self.card._manager,source))
-        with patch('yadinassi.catalog_object_preparation._MAX_STEPS',0),self.assertRaises(BSLError):prepare_catalog_object(source,self.card)
+        with patch('yadinassi.db.catalog.catalog_object_preparation._MAX_STEPS',0),self.assertRaises(BSLError):prepare_catalog_object(source,self.card)
         self.assertEqual(prepare_catalog_object(source,self.card),(False,()))
         self.assertIs(first,prepared_validator(self.card._manager,source))
         from dataclasses import replace
@@ -72,7 +72,7 @@ class DirectCatalogBoundsTests(unittest.TestCase):
             with self.subTest(body=body[:30]):self.assertEqual(prepare_catalog_object(handler(body),self.card),(False,()))
 
     def test_rebound_repairs_invalidate_and_cannot_disable_required_budget_profile(self):
-        import yadinassi.python_direct_catalog_preparation as direct
+        import yadinassi.execution.direct.python_direct_catalog_preparation as direct
         source=handler('x=1;')
         first=prepared_validator(self.card._manager,source)
         with patch.object(direct,'REPAIRS',direct.REPAIRS+('authority_checkpoints',)):
@@ -95,8 +95,8 @@ class DirectCatalogBoundsTests(unittest.TestCase):
             with self.assertRaises(ValueError):prepared_validator(self.card._manager,source,prepared=before)
 
     def test_options_snapshot_is_shared_by_cache_key_and_compilation(self):
-        import yadinassi.python_direct_catalog_preparation as direct
-        import yadinassi.catalog_object_preparation as preparation
+        import yadinassi.execution.direct.python_direct_catalog_preparation as direct
+        import yadinassi.db.catalog.catalog_object_preparation as preparation
         original=preparation._admit_catalog_object_source
         source=handler('x=2;')
         def change(*args):
@@ -135,13 +135,13 @@ class DirectCatalogBoundsTests(unittest.TestCase):
 
 import test_python_direct_catalog_preparation as main_fixture
 import test_python_direct_transaction_preparation as transaction_fixture
-from yadinassi import database_transactions as tx
+from yadinassi.db import database_transactions as tx
 
 class DirectCatalogBoundsWriteTests(unittest.TestCase):
     setUp=main_fixture.DirectCatalogPreparationTests.setUp
 
     def test_selected_standalone_write_budget_failure_never_persists(self):
-        with patch('yadinassi.catalog_object_preparation._MAX_STEPS',0),self.assertRaisesRegex(BSLError,'step budget'):
+        with patch('yadinassi.db.catalog.catalog_object_preparation._MAX_STEPS',0),self.assertRaisesRegex(BSLError,'step budget'):
             self.card.write()
         self.assertTrue(self.card.is_new());self.assertIsNone(self.card._pending_write)
         self.assertIsNone(self.db.backend._active)
@@ -157,7 +157,7 @@ class DirectCatalogBoundsWriteTests(unittest.TestCase):
                 tx.begin(self.db.backend)
                 self.warehouse.set_member('Наименование','must rollback');self.warehouse.write()
                 owners.append(tx.current(self.db.backend))
-                with patch('yadinassi.catalog_object_preparation._MAX_STEPS',0):self.card.write()
+                with patch('yadinassi.db.catalog.catalog_object_preparation._MAX_STEPS',0):self.card.write()
         self.vm.register_function('Probe',probe)
         with self.assertRaisesRegex(BSLError,'step budget'):self.vm.execute('Probe();')
         transaction_fixture.DirectTransactionPreparationTests.clean(self)
@@ -172,7 +172,7 @@ class DirectCatalogBoundsWriteTests(unittest.TestCase):
                 tx.begin(self.db.backend)
                 self.warehouse.set_member('Наименование','prior stage');self.warehouse.write()
                 owner=tx.current(self.db.backend);requests=owner.unit.requests;participants=owner.participants
-                with patch('yadinassi.catalog_object_preparation._MAX_STEPS',0),self.assertRaisesRegex(BSLError,'step budget'):
+                with patch('yadinassi.db.catalog.catalog_object_preparation._MAX_STEPS',0),self.assertRaisesRegex(BSLError,'step budget'):
                     self.card.write()
                 self.assertIs(owner.unit.requests,requests);self.assertIs(owner.participants,participants)
                 self.assertEqual(len(requests),1);self.assertEqual(owner.leases,0)

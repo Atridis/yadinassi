@@ -5,11 +5,11 @@ from io import StringIO
 import tempfile
 import unittest
 from yadinassi import Interpreter, cli
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.configuration_main_demo import PROFILE, import_main_demo_configuration
-from yadinassi.catalog_object_preparation import CatalogWriteRefused, write_prepared_catalog_object
-from yadinassi.catalog_backend import BackendError
-from yadinassi.sqlite_launch import launch_snapshot
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.configuration.configuration_main_demo import PROFILE, import_main_demo_configuration
+from yadinassi.db.catalog.catalog_object_preparation import CatalogWriteRefused, write_prepared_catalog_object
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.sqlite.sqlite_launch import launch_snapshot
 from test_main_demo_configuration import source, ROOT
 
 SEED='''Вид=Справочники.ВидыНоменклатуры.СоздатьЭлемент(); Вид.Наименование="Товары"; Вид.Записать();
@@ -86,7 +86,7 @@ Q=New Query("SELECT SUM(Quantity) AS N FROM AccumulationRegister.Stock");S=Q.Exe
 
     def test_active_transaction_cannot_bypass_preparation(self):
         from yadinassi import BSLRuntimeError
-        from yadinassi.database_transactions import current
+        from yadinassi.db.database_transactions import current
         self.vm.execute('Карточка=Справочники.Номенклатура.СоздатьЭлемент();')
         # Enter through the actual execution boundary, never host-only begin().
         with self.assertRaises((BackendError, BSLRuntimeError)):

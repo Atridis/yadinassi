@@ -1,8 +1,9 @@
 """Explicit new contracts for the next recovery slice, not historical source parity."""
-from yadinassi import Interpreter, native_bare_compiler as bare
+from yadinassi import Interpreter
+from yadinassi.execution.codegen import native_bare_compiler as bare
 from yadinassi.syntax.parser import parse
-from yadinassi.native_bare_collections import BareArray, BareStructure, BareMap, BareValueList
-from yadinassi.native_bare_table import BareTable
+from yadinassi.execution.codegen.native_bare_collections import BareArray, BareStructure, BareMap, BareValueList
+from yadinassi.execution.codegen.native_bare_table import BareTable
 
 # BSL source, Python source, classes source, fixture kind, result kind, description.
 CASES = {}

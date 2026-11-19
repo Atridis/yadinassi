@@ -4,9 +4,9 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.value_tables import BSLValueTable, BSLValueTableRow, BSLValueTableColumnCollection, BSLValueTableColumn
-from yadinassi.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
-from yadinassi.python_direct_table_iteration import resolve
+from yadinassi.collections.value_tables import BSLValueTable, BSLValueTableRow, BSLValueTableColumnCollection, BSLValueTableColumn
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.direct.python_direct_table_iteration import resolve
 from yadinassi.syntax.parser import parse
 
 
@@ -103,8 +103,8 @@ Other=T.Add();Other.X=7;T.Delete(R);N=0;For Each Live In R Do N=N+Live.X;EndDo;'
     def test_iterated_foreign_catalog_value_does_not_gain_authority(self):
         from pathlib import Path
         from tempfile import TemporaryDirectory
-        from yadinassi.configuration_main_demo import PROFILE,import_main_demo_configuration
-        from yadinassi.database_context import SQLiteDBContext
+        from yadinassi.configuration.configuration_main_demo import PROFILE,import_main_demo_configuration
+        from yadinassi.db.database_context import SQLiteDBContext
         from test_main_demo_configuration import source
         with TemporaryDirectory() as folder:
             context=SQLiteDBContext.create_main_demo(Path(folder)/'db.sqlite',import_main_demo_configuration(source(),profile=PROFILE))
@@ -123,12 +123,12 @@ Other=T.Add();Other.X=7;T.Delete(R);N=0;For Each Live In R Do N=N+Live.X;EndDo;'
         import subprocess,sys,textwrap
         script=textwrap.dedent('''
             from unittest.mock import patch
-            from yadinassi import value_tables as tables
-            from yadinassi.experimental_naked_boundaries import BoundaryContext
+            from yadinassi.collections import value_tables as tables
+            from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
             root=tables.BSLValueTable();root.columns.add('X');root.add().set_member('X',7)
             class Fake:pass
             with patch.object(tables,'BSLValueTable',Fake),patch.object(tables,'BSLValueTableColumnCollection',Fake),patch.object(tables,'BSLValueTableRow',Fake):
-                from yadinassi.python_direct_table_iteration import owns,resolve
+                from yadinassi.execution.direct.python_direct_table_iteration import owns,resolve
                 c=BoundaryContext();c.start()
                 if owns(Fake()):raise AssertionError('counterfeit admitted')
                 row=next(resolve(c,root)())

@@ -10,12 +10,12 @@ from unittest.mock import patch
 from uuid import UUID
 
 from yadinassi import Interpreter
-from yadinassi import query_parser as syntax
-from yadinassi.catalog_backend import BackendError
-from yadinassi.catalog_types import BSLCatalogReference
-from yadinassi.configuration_accumulation_references import PROFILE
-from yadinassi.configuration_profile_import import prepare_directory, create_prepared
-from yadinassi.dates import _from_parts
+from yadinassi.db.query import query_parser as syntax
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.catalog.catalog_types import BSLCatalogReference
+from yadinassi.configuration.configuration_accumulation_references import PROFILE
+from yadinassi.configuration.configuration_profile_import import prepare_directory, create_prepared
+from yadinassi.temporal.dates import _from_parts
 
 ROOT = Path(__file__).resolve().parents[1]
 REG = 'AccumulationRegister.Stock.'
@@ -167,7 +167,7 @@ class DimensionConditionRuntimeTests(unittest.TestCase):
         self.seed()
         for value in (empty,missing):
             for table in ('Balance','Turnovers','BalanceAndTurnovers'):
-                with self.subTest(table=table),patch('yadinassi.catalogs.BSLCatalogManager._view',side_effect=AssertionError('no existence read')):
+                with self.subTest(table=table),patch('yadinassi.db.catalog.catalogs.BSLCatalogManager._view',side_effect=AssertionError('no existence read')):
                     expected = () if table=='Turnovers' else ((Decimal(0),)*(2 if table=='BalanceAndTurnovers' else 1),)
                     self.assertEqual(self.report(table,P=value)._rows,expected)
 
@@ -245,7 +245,7 @@ class DimensionConditionRuntimeTests(unittest.TestCase):
         for mode in ('Day','Month'):
             for table in ('Turnovers','BalanceAndTurnovers'):
                 self.assertEqual(self.report(table,mode=mode)._rows,())
-        with patch('yadinassi.queries._MAX_CELLS',1):
+        with patch('yadinassi.db.query.queries._MAX_CELLS',1):
             with self.assertRaisesRegex(ValueError,'result resource limit'):self.report()
 
     def test_derived_and_package_condition_use_single_view(self):
@@ -263,7 +263,7 @@ class DimensionConditionRuntimeTests(unittest.TestCase):
         self.seed()
         with patch.object(syntax,'MAX_ROWS',4):
             with self.assertRaisesRegex(ValueError,'input row limit'):self.report()
-        with patch('yadinassi.queries._MAX_CELLS',49):
+        with patch('yadinassi.db.query.queries._MAX_CELLS',49):
             with self.assertRaisesRegex(ValueError,'input resource limit'):self.report()
 
     def test_explicit_condition_avoids_unrequested_generated_groups_but_where_does_not(self):

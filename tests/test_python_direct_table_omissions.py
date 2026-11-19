@@ -5,8 +5,8 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.syntax.parser import parse
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.value_tables import BSLValueTable
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.collections.value_tables import BSLValueTable
 
 
 class DirectTableOmissionsTests(unittest.TestCase):

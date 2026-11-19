@@ -8,12 +8,13 @@ from unittest.mock import patch
 
 from scripts.native_historical_replay import historical_collections_source, without_value_tree_probes
 
-from yadinassi import Interpreter, serialization
+from yadinassi import Interpreter
+from yadinassi.formats.storage import serialization
 from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse
-from yadinassi.value_tables import (BSLValueTable, BSLValueTableColumn,
+from yadinassi.collections.value_tables import (BSLValueTable, BSLValueTableColumn,
                                    BSLValueTableColumnCollection, BSLValueTableRow)
-from yadinassi.values import BSLArray, BSLType, HostFunction
+from yadinassi.types.values import BSLArray, BSLType, HostFunction
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/collections.bsl'

@@ -8,14 +8,14 @@ from unittest.mock import patch
 
 from test_source_constant_store import configuration
 from test_configuration_source_runtime import source
-from yadinassi.configuration_source_runtime import SourceApplication, _SourceInterpreter
-from yadinassi.python_direct_source import SourceBoundary, _compile
-from yadinassi import source_transactions
-from yadinassi import python_direct_source_query as bridge
-from yadinassi.source_constant_queries import SourceConstantQuery
-from yadinassi.source_constants_runtime import SourceConstants
+from yadinassi.configuration.configuration_source_runtime import SourceApplication, _SourceInterpreter
+from yadinassi.execution.direct.python_direct_source import SourceBoundary, _compile
+from yadinassi.db import source_transactions
+from yadinassi.execution.direct.source import python_direct_source_query as bridge
+from yadinassi.db.query.source_constant_queries import SourceConstantQuery
+from yadinassi.db.metadata.source_constants_runtime import SourceConstants
 from yadinassi.runtime import Interpreter
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
 class DirectSourceQueryTests(unittest.TestCase):
@@ -115,7 +115,7 @@ class DirectSourceQueryTests(unittest.TestCase):
             with self.assertRaises(BoundaryViolation):bridge.get_member(b,table,'__dict__')
 
     def test_base_query_and_subclasses_are_not_admitted(self):
-        from yadinassi.queries import BSLQuery
+        from yadinassi.db.query.queries import BSLQuery
         app,owner=self.app()
         class ForeignQuery(SourceConstantQuery):pass
         with self.boundary(app,owner) as b:

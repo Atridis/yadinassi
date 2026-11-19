@@ -1,6 +1,6 @@
 """Closed presentation-only stock statement envelopes; no database authority."""
 import re
-from ..invocation import _decode_scalar, _encode_scalar
+from yadinassi.execution.invocation import _decode_scalar, _encode_scalar
 
 
 def _keys(value, fields):
@@ -134,7 +134,7 @@ def validate_projection(result, configuration, request, *, paged=True):
         _filters(result['filters'], grant)
         if paged:
             validate_page(result['page'], result['rows'])
-    from ..inventory_application_reports import _columns
+    from yadinassi.configuration.demos.inventory_application_reports import _columns
     schema = next(s for s in configuration.registers if s.identity == grant.register_id)
     kinds = {'string': 'String', 'number': 'Number', 'boolean': 'Boolean', 'datetime': 'Date',
              'catalog_ref': 'Catalog', 'document_ref': 'Document', 'accumulation_direction': 'String'}

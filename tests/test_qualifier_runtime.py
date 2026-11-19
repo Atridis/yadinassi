@@ -3,7 +3,7 @@ from decimal import Decimal
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 
 
 class QualifierRuntimeTests(unittest.TestCase):

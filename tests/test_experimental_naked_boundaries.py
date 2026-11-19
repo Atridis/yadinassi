@@ -1,11 +1,11 @@
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 import os
 import unittest
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
 from tests.direct_boundary_compile import compile_boundary
-from yadinassi.experimental_naked_boundaries import BoundaryContext, BoundaryViolation, HostMembers
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation, HostMembers
 
 class NakedBoundaryIntegrationTests(unittest.TestCase):
 

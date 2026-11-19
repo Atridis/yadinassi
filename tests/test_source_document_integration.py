@@ -6,12 +6,12 @@ from unittest.mock import patch
 from uuid import uuid4
 import test_source_document_records as fixture
 from test_source_constant_store import configuration
-from yadinassi.configuration_source import import_source, save_source_archive
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_document_store import SourceDocumentStore
-from yadinassi.source_catalog_store import SourceCatalogStore
+from yadinassi.configuration.configuration_source import import_source, save_source_archive
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.document.source_document_store import SourceDocumentStore
+from yadinassi.db.catalog.source_catalog_store import SourceCatalogStore
 from yadinassi.cli import main
-from yadinassi.errors import BSLError
+from yadinassi.types.errors import BSLError
 
 CREATE='D=Documents.Invoice.CreateDocument(); D.Number="A"; D.Date=Date(2026,1,1); '
 

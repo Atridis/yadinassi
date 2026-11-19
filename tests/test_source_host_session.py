@@ -2,9 +2,9 @@ from pathlib import Path
 import tempfile
 import unittest
 from test_source_manager_modules import configuration
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
-from yadinassi.source_host_session import SourceSessionCall
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
+from yadinassi.application.source_host_session import SourceSessionCall
 from yadinassi.runtime import Interpreter
 
 

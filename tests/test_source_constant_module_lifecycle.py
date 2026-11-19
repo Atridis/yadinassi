@@ -6,9 +6,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from test_source_constant_store import configuration
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_constant_managers import _ValueInterpreter
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.metadata.source_constant_managers import _ValueInterpreter
+from yadinassi.types.errors import BSLError
 
 
 class SourceConstantModuleLifecycleTests(unittest.TestCase):
@@ -40,7 +40,7 @@ class SourceConstantModuleLifecycleTests(unittest.TestCase):
         body='M=Constants.Text.CreateValueManager();M.Value="initial";Change(M.Value);M.Write();'
         app=self.app(body,'')
         # Shared helper lives in the session module to exercise actual external caller.
-        from yadinassi.configuration_source import import_source
+        from yadinassi.configuration.configuration_source import import_source
         files={item.path:item.content for item in app.source.files};app.close();self.path.unlink()
         files['Ext/SessionModule.bsl']=('Procedure Change(V) V="helper";EndProcedure Procedure SessionParametersSetting(Names) '+body+' EndProcedure').encode()
         app=SourceApplication(import_source(files),scratch_database=self.path);self.addCleanup(app.close)
@@ -124,8 +124,8 @@ class SourceConstantModuleLifecycleTests(unittest.TestCase):
 
     def test_saved_manager_export_rejects_client(self):
         app=self.app('','Function Answer() Export Return 1;EndFunction');app.start()
-        from yadinassi.source_constant_managers import create_manager
-        from yadinassi.source_constants_runtime import SourceConstants
+        from yadinassi.db.metadata.source_constant_managers import create_manager
+        from yadinassi.db.metadata.source_constants_runtime import SourceConstants
         caller=app._session_owner;caller._context_stack.append('server')
         try:
             generator=create_manager(caller,SourceConstants(app),'Text')

@@ -2,12 +2,12 @@ from dataclasses import replace
 from decimal import Decimal
 import unittest
 from configuration_xdto_fixture import files
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.configuration_modules import MODULE_RUNTIME
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.xdto_io import BSLXDTOFactory,XS
-from yadinassi.xml_writer import BSLXMLWriter
-from yadinassi.json_processing import BSLJSONWriter
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_modules import MODULE_RUNTIME
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.formats.xml.xdto_io import BSLXDTOFactory,XS
+from yadinassi.formats.xml.xml_writer import BSLXMLWriter
+from yadinassi.formats.json.json_processing import BSLJSONWriter
 
 RESOURCE='XDTOPackages/OwnedRecords/Ext/Package.bin'
 

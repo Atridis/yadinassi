@@ -3,12 +3,12 @@ import unittest
 from unittest.mock import patch
 import test_source_xdto_packages as existing
 from test_configuration_source_runtime import source
-from yadinassi.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.runtime import Interpreter
-from yadinassi.errors import BSLError
-from yadinassi.experimental_naked_collections import UnsupportedNakedSyntax
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi import xdto_io,xdto_values,xml_io
+from yadinassi.types.errors import BSLError
+from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.formats.xml import xdto_io,xdto_values,xml_io
 
 DENIED=(BSLError,BoundaryViolation,ValueError,TypeError,UnsupportedNakedSyntax)
 

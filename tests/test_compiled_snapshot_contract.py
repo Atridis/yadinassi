@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 
 class SnapshotContractTests(unittest.TestCase):
     def test_retained_routine_version_survives_unrelated_repl(self):
@@ -48,7 +48,7 @@ class SnapshotContractTests(unittest.TestCase):
 class SnapshotLiveFormTests(unittest.TestCase):
     def test_live_form_values_items_and_handler_binding_do_not_recompile_client(self):
         from test_form_runtime import SOURCE, make
-        from yadinassi.execution_policy import execution_backend_policy
+        from yadinassi.execution.execution_policy import execution_backend_policy
         source=SOURCE.replace('ThisObject.Dynamic = "command";', 'Rebind();')+'''
 &AtServer
 Procedure Rebind()
@@ -76,7 +76,7 @@ EndProcedure
 
     def test_handler_authority_and_explicit_release_remain_enforced(self):
         from test_form_runtime import make
-        from yadinassi.execution_policy import execution_backend_policy
+        from yadinassi.execution.execution_policy import execution_backend_policy
         with execution_backend_policy('python-direct'):
             session=make();session.open()
             field=session.form.items._values['namefield']
@@ -88,7 +88,7 @@ EndProcedure
 
     def test_existing_server_handler_cannot_be_bound_as_client_event(self):
         from test_form_runtime import SOURCE,make
-        from yadinassi.execution_policy import execution_backend_policy
+        from yadinassi.execution.execution_policy import execution_backend_policy
         source=SOURCE.replace('ThisObject.Dynamic = "command";','BadBind();')+'''
 &AtServer
 Procedure BadBind()

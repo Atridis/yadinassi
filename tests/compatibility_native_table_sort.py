@@ -9,7 +9,7 @@ import unittest
 from decimal import Decimal
 from tests import test_native_target_sort as fixtures
 from tests.test_native_target_sort import KEYS, NATIVE_ORDERS, ORDERS, probe_table
-from yadinassi.native_targets import LINUX_8_3_27_1508, target_context
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508, target_context
 
 
 def historic_cases():

@@ -4,8 +4,8 @@ from unittest.mock import patch
 import sqlite3
 import unittest
 import test_main_demo_runtime as runtime_fixture
-from yadinassi.document_posting_values import DocumentWriteMode
-from yadinassi.document_posting import _PostingInterpreter
+from yadinassi.db.document.document_posting_values import DocumentWriteMode
+from yadinassi.db.document.document_posting import _PostingInterpreter
 
 class DirectPostingTests(unittest.TestCase):
     def setUp(self):
@@ -59,7 +59,7 @@ class DirectPostingTests(unittest.TestCase):
 
     def test_parent_close_revokes_posting_before_commit(self):
         from test_document_posting_runtime import PostingRuntimeTests
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         f=PostingRuntimeTests();f.setUp();self.addCleanup(f.doCleanups)
         f.make('Procedure Posting(Cancel,Mode) Message("close"); EndProcedure')
         f.vm.output=lambda text:f.vm.close()
@@ -72,7 +72,7 @@ class DirectPostingTests(unittest.TestCase):
 
     def test_generated_handler_has_server_module_scope(self):
         from test_document_posting_runtime import PostingRuntimeTests
-        from yadinassi.document_posting import _PostingInterpreter
+        from yadinassi.db.document.document_posting import _PostingInterpreter
         f=PostingRuntimeTests();f.setUp();self.addCleanup(f.doCleanups)
         f.make('Procedure Posting(Cancel,Mode) Message("side"); EndProcedure')
         seen=[];children=[];original=_PostingInterpreter.__init__
@@ -87,8 +87,8 @@ class DirectPostingTests(unittest.TestCase):
         self.assertEqual(len(children[0]._module_context_stack),1)
 
     def test_stale_generation_and_released_child_reject(self):
-        from yadinassi.python_direct_posting import PostingBoundary
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.direct.python_direct_posting import PostingBoundary
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         d=self.document();d._posting_active=object()
         child=_PostingInterpreter(d,self.vm,[]);boundary=PostingBoundary(child);boundary.start()
         self.addCleanup(child.close)
@@ -106,7 +106,7 @@ class DirectPostingTests(unittest.TestCase):
     def test_host_invoked_posting_preserves_native_target_scope(self):
         from test_document_posting_runtime import PostingRuntimeTests
         from yadinassi import Interpreter
-        from yadinassi.native_targets import LINUX_8_3_27_1508,current_native_target
+        from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508,current_native_target
         f=PostingRuntimeTests();f.setUp();self.addCleanup(f.doCleanups)
         f.make('Procedure Posting(Cancel,Mode) Message("target"); EndProcedure')
         f.vm.close();seen=[]

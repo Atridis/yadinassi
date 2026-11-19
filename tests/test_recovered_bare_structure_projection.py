@@ -2,8 +2,8 @@ import ast
 import unittest
 from unittest.mock import patch
 from recovered_bare_fixture import Interpreter
-from yadinassi.native_bare_collections import BareStructure,BareMapEntry
-import yadinassi.native_bare_compiler as compiler
+from yadinassi.execution.codegen.native_bare_collections import BareStructure,BareMapEntry
+import yadinassi.execution.codegen.native_bare_compiler as compiler
 
 class RecoveredStructureProjection(unittest.TestCase):
     def test_known_structure_direct_items_and_no_entry_allocation(self):

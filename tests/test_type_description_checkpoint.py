@@ -70,9 +70,9 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
     def test_compact_formatter_preserves_scalar_bytes_and_container_kinds(self):
         # Local formatter contract, never a newly manufactured native golden.
         from decimal import Decimal
-        from yadinassi.serialization import value_to_string_internal
-        from yadinassi.structures import BSLStructure
-        from yadinassi.values import BSLArray, NULL
+        from yadinassi.formats.storage.serialization import value_to_string_internal
+        from yadinassi.collections.structures import BSLStructure
+        from yadinassi.types.values import BSLArray, NULL
         vm = Interpreter()
         vm.execute(helpers())
         scalars = [None, NULL, False, Decimal(0), '0', '',
@@ -91,7 +91,7 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
         self.assertEqual(len(set(representations)), 3)
 
         # Actual controls and their literal escape spellings must never collide.
-        from yadinassi.serialization import value_from_string_internal
+        from yadinassi.formats.storage.serialization import value_from_string_internal
         pairs = ['\n', r'\n', '\r', r'\r', '\\', '"', ';[]=', '\t', r'\t', '\x00']
         encoded = []
         for value in pairs:
@@ -197,8 +197,8 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
 
     def test_qualifier_snapshot_retains_exact_differing_inverse_from_owner_evidence(self):
         import re
-        from yadinassi.serialization import value_to_string_internal
-        from yadinassi.values import BSLType
+        from yadinassi.formats.storage.serialization import value_to_string_internal
+        from yadinassi.types.values import BSLType
         # Exact fields of the genuine compact owner record, not generated goldens.
         native = (ROOT / 'tests/fixtures/native_windows/values.out').read_text(encoding='utf-8-sig')
         records = re.findall(r'^types\.number\.default\.en: \[(.*)\]$', native, re.MULTILINE)

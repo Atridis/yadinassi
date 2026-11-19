@@ -203,8 +203,8 @@ class Capture:
         self.trace.append(int(code))
 
     def retain(self, value):
-        from yadinassi.type_values import type_of
-        from yadinassi.values import BSLType
+        from yadinassi.types.type_values import type_of
+        from yadinassi.types.values import BSLType
         if type_of(value) is BSLType.PROMISE:
             _require(len(self.retained) < 32)
             self.retained.append(value)
@@ -214,8 +214,8 @@ class Capture:
         return int(slot)
 
     def save(self, slot, value):
-        from yadinassi.type_values import type_of
-        from yadinassi.values import BSLType
+        from yadinassi.types.type_values import type_of
+        from yadinassi.types.values import BSLType
         kind = type_of(value)
         tags = {BSLType.UNDEFINED: 1, BSLType.NULL: 2, BSLType.BOOLEAN: 3,
                 BSLType.NUMBER: 4, BSLType.STRING: 5, BSLType.PROMISE: 6}
@@ -233,9 +233,9 @@ class Capture:
         self.values[self._slot(slot)] = [tag, payload]
 
     def save_error(self, slot, phase, error):
-        from yadinassi.error_info import BSLErrorCategory, BSLErrorInfo
-        from yadinassi.type_values import type_of
-        from yadinassi.values import BSLType
+        from yadinassi.types.error_info import BSLErrorCategory, BSLErrorInfo
+        from yadinassi.types.type_values import type_of
+        from yadinassi.types.values import BSLType
         _require(type(error) is BSLErrorInfo and len(self.errors) < 3)
         _require(phase == int(phase) and 0 <= phase <= 6)
         fields = [error.get_member(name) for name in
@@ -274,7 +274,7 @@ def execute_actual(sources, *, execution_backend="python-direct", execution_evid
         failed, lifecycle = False, False
         try:
             from yadinassi import Interpreter
-            from yadinassi.native_targets import LINUX_8_3_27_1508
+            from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
             vm = Interpreter(output=lambda message: None, native_target=LINUX_8_3_27_1508, execution_backend=execution_backend)
             if vm.execution_backend != "python-direct":
                 raise ValueError("execution backend mismatch")

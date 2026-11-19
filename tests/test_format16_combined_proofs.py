@@ -9,10 +9,10 @@ from uuid import uuid4
 
 import test_main_demo_runtime as fixtures
 from test_sqlite_catalog_admission_cleanup import AdmissionFaultConnection
-from yadinassi.catalog_backend import BackendError, CatalogAggregateRequest
-from yadinassi.queries import BSLQuery
-from yadinassi.sqlite_catalog_layout import quote_identifier
-from yadinassi.sqlite_read_handles import ReadHandle
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogAggregateRequest
+from yadinassi.db.query.queries import BSLQuery
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
+from yadinassi.db.sqlite.sqlite_read_handles import ReadHandle
 
 
 class Format16CombinedProofTests(unittest.TestCase):
@@ -58,7 +58,7 @@ class Format16CombinedProofTests(unittest.TestCase):
 
     def test_both_warm_proofs_skip_admission_and_row_validation(self):
         self.warm()
-        from yadinassi.sqlite_catalog import _View
+        from yadinassi.db.sqlite.sqlite_catalog import _View
         with patch.object(self.backend, '_validate_transaction_admission', side_effect=AssertionError('admission repeated')), \
                 patch.object(_View, '_scalar', side_effect=AssertionError('rows decoded')):
             self.assertEqual(self.count(), Decimal(1))
@@ -139,7 +139,7 @@ class Format16CombinedProofTests(unittest.TestCase):
         self.assertEqual([v for k,v in handle.proofs.items() if k[0]=='catalog-count-unique-v1'], [(0,)])
 
     def test_enum_bound_query_uses_sql_and_retains_both_proofs(self):
-        from yadinassi.relational_queries import _Plan
+        from yadinassi.db.query.relational_queries import _Plan
         with patch.object(_Plan, 'load', side_effect=AssertionError('unexpected materialization')):
             for _ in range(2):
                 result = BSLQuery(self.vm._catalogs, 'SELECT COUNT(*) AS N FROM Catalog.Номенклатура').execute()

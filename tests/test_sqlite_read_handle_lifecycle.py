@@ -12,10 +12,10 @@ from uuid import uuid4
 
 import test_catalog_scan_optimization as fixtures
 from test_sqlite_catalog_admission_cleanup import AdmissionFaultConnection
-from yadinassi.catalog_backend import BackendError, CatalogComparison, CatalogScanRequest
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _View
-from yadinassi.sqlite_catalog_layout import quote_identifier
-from yadinassi.sqlite_read_handles import ReadHandle
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogComparison, CatalogScanRequest
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _View
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
+from yadinassi.db.sqlite.sqlite_read_handles import ReadHandle
 
 
 class ReadHandleLifecycleTests(unittest.TestCase):
@@ -245,7 +245,7 @@ class ReadHandleLifecycleTests(unittest.TestCase):
                 self.assertEqual(len(self.scan().rows),2)
 
     def test_retained_proof_counts_and_owner_identities_are_bounded(self):
-        from yadinassi.sqlite_read_handles import _bounded_proofs, MAX_PROOFS, MAX_OWNER_IDENTITIES
+        from yadinassi.db.sqlite.sqlite_read_handles import _bounded_proofs, MAX_PROOFS, MAX_OWNER_IDENTITIES
         facts={('fact',i):() for i in range(MAX_PROOFS+10)}
         self.assertEqual(len(_bounded_proofs(facts)),MAX_PROOFS)
         owners=frozenset(str(i).zfill(36) for i in range(MAX_OWNER_IDENTITIES))
@@ -265,7 +265,7 @@ class ReadHandleLifecycleTests(unittest.TestCase):
         failure=MemoryError('wrapper admission')
         try:
             with patch.object(self.backend,'_connect',connect), \
-                    patch('yadinassi.sqlite_catalog.DocumentView',side_effect=failure):
+                    patch('yadinassi.db.sqlite.sqlite_catalog.DocumentView',side_effect=failure):
                 with self.assertRaises(MemoryError) as caught:self.backend.begin_query_read()
             self.assertIs(caught.exception,failure)
             self.assertIsNone(self.backend._read_handle)

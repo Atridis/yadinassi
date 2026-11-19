@@ -7,9 +7,9 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import cli
-from yadinassi.catalog_backend import BackendError
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.configuration_profile_import import LEGACY, POSTING, POSTING_FORMS, ACCUMULATION
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.configuration.configuration_profile_import import LEGACY, POSTING, POSTING_FORMS, ACCUMULATION
 from sqlite_catalog_fixture import configuration_files
 from test_configuration_posting import source as posting_source
 from test_configuration_accumulation import source as accumulation_source

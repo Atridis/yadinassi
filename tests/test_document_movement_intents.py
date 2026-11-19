@@ -2,9 +2,9 @@
 from dataclasses import replace
 from uuid import uuid4
 import unittest
-from yadinassi.catalog_backend import BackendError, FieldSchema
-from yadinassi.document_backend import DocumentKey
-from yadinassi.document_movements import (RecorderRegisterSchema, RecorderMovementRow,
+from yadinassi.db.catalog.catalog_backend import BackendError, FieldSchema
+from yadinassi.db.document.document_backend import DocumentKey
+from yadinassi.db.document.document_movements import (RecorderRegisterSchema, RecorderMovementRow,
     RecorderReplacement, validate_replacement, mutation_identity)
 
 class MovementIntentTests(unittest.TestCase):

@@ -7,11 +7,11 @@ import unittest
 import weakref
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.http_client import BSLHTTPConnection,BSLHTTPRequest,_headers
-from yadinassi.experimental_naked_collections import _TypedMap
-from yadinassi.python_direct_plain_map import PlainMap
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.http.http_client import BSLHTTPConnection,BSLHTTPRequest,_headers
+from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
+from yadinassi.execution.direct.python_direct_plain_map import PlainMap
 
 class DirectHTTPTests(unittest.TestCase):
     def test_constructor_holes_source_ast_prepared(self):
@@ -65,7 +65,7 @@ class DirectHTTPTests(unittest.TestCase):
 
     def test_closed_runtime_and_external_access_guard(self):
         vm=Interpreter();vm.execute('C=New HTTPConnection("127.0.0.1",8080);Q=New HTTPRequest("/");')
-        with patch('yadinassi.http_client.require_external_access',side_effect=PermissionError('denied')):
+        with patch('yadinassi.http.http_client.require_external_access',side_effect=PermissionError('denied')):
             with self.assertRaises(PermissionError):vm.execute('C.Get(Q);')
         def close():vm.close();return BSLHTTPRequest('/')
         vm.register_function('Close',close)
@@ -74,7 +74,7 @@ class DirectHTTPTests(unittest.TestCase):
             connect.assert_not_called()
 
     def test_constructor_capability_does_not_require_cyclic_gc(self):
-        from yadinassi.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
         original=BoundaryContext.resolve_callable;references=[]
         def capture(context,*args,**kwargs):
             bound=original(context,*args,**kwargs);references.append(weakref.ref(bound));return bound

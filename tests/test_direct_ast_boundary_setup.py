@@ -1,9 +1,10 @@
 import unittest
 from decimal import Decimal
 from unittest.mock import patch
-from yadinassi import Interpreter,python_direct
+from yadinassi import Interpreter
+from yadinassi.execution.direct import python_direct
 from yadinassi.syntax.parser import parse
-from yadinassi.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
 
 class BoundarySetupTests(unittest.TestCase):
     def test_single_context_and_live_registry_no_throwaway_copy(self):
@@ -18,7 +19,7 @@ class BoundarySetupTests(unittest.TestCase):
     def test_failure_before_context_restores_active_flag(self):
         vm=Interpreter();self.addCleanup(vm.close)
         plan=vm.prepare_program(parse('R=3;'))
-        with patch('yadinassi.python_direct_imports.initialize',side_effect=ValueError('before context')):
+        with patch('yadinassi.execution.direct.python_direct_imports.initialize',side_effect=ValueError('before context')):
             with self.assertRaisesRegex(ValueError,'before context'):vm.execute_prepared(plan)
         self.assertFalse(vm._direct_active)
         vm.execute_prepared(plan);self.assertEqual(vm.variables['r'],Decimal(3))

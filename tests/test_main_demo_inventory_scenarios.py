@@ -1,6 +1,6 @@
 """Shared inventory scenarios on the canonical demo, not another configuration."""
 from datetime import datetime
-from yadinassi.inventory_application_reports import InventoryReports, UNAVAILABLE
+from yadinassi.configuration.demos.inventory_application_reports import InventoryReports, UNAVAILABLE
 import test_main_demo_runtime as runtime_fixture
 SEED = runtime_fixture.SEED
 
@@ -31,7 +31,7 @@ class MainDemoInventoryScenarios(unittest.TestCase):
         rows = self.reports().read('StockMovements')
         values = dict(zip((c.name for c in rows.columns), rows.rows[0]))
         self.assertEqual((values['Unit'], values['State']), ('Piece', 'Approved'))
-        from yadinassi.database_context import SQLiteDBContext
+        from yadinassi.db.database_context import SQLiteDBContext
         with SQLiteDBContext(self.path) as reopened:
             reports=InventoryReports(reopened,reopened.backend.accumulation_configuration)
             self.assertEqual(reports.read('StockMovements').rows, rows.rows)

@@ -2,9 +2,9 @@
 import unittest
 from unittest.mock import patch
 from test_source_server_call import configuration
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.runtime import Interpreter
 
 
@@ -116,7 +116,7 @@ class SourceServerCallSecurity(unittest.TestCase):
         self.assertEqual(app.interpreter.execution_context, 'client')
 
     def test_activation_revoked_after_return_and_error(self):
-        from yadinassi.python_direct_source_server import _ACTIVE, check_activation
+        from yadinassi.execution.direct.source.python_direct_source_server import _ACTIVE, check_activation
         for finish in ('Return 1;', 'Raise "stop";'):
             with self.subTest(finish=finish):
                 captured = []
@@ -133,7 +133,7 @@ class SourceServerCallSecurity(unittest.TestCase):
                 self.assertEqual(app.interpreter.execution_context, 'client')
 
     def test_factory_hook_rejected_before_callback(self):
-        from yadinassi.configuration_source_runtime import _SourceInterpreter
+        from yadinassi.configuration.configuration_source_runtime import _SourceInterpreter
         output = []
         app = self.app('Function Run() Export Return 1; EndFunction', output.append)
         app.module('serverapi', app.interpreter)
@@ -155,7 +155,7 @@ class SourceServerCallSecurity(unittest.TestCase):
                 callback.assert_not_called()
 
     def test_fresh_host_binding_mutation_rejected_before_next_callback(self):
-        from yadinassi.python_direct_source_server import _ACTIVE
+        from yadinassi.execution.direct.source.python_direct_source_server import _ACTIVE
         output = []
         def emit(value):
             output.append(value)

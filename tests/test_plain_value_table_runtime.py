@@ -3,10 +3,10 @@ from decimal import Decimal
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
-from yadinassi.value_tables import BSLValueTable
-from yadinassi.plain_value_table_runtime import BSLValueTable as PlainTable
-from yadinassi.python_direct_plain_tables import validate
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.collections.value_tables import BSLValueTable
+from yadinassi.collections.plain_value_table_runtime import BSLValueTable as PlainTable
+from yadinassi.execution.direct.python_direct_plain_tables import validate
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class PlainTableRuntimeTests(unittest.TestCase):
     def table(self):
@@ -62,7 +62,7 @@ class PlainTableRuntimeTests(unittest.TestCase):
         self.assertFalse(a==b);self.assertTrue(a!=b)
         self.assertTrue(a==a);self.assertFalse(a!=a)
     def test_added_builtin_shadow_is_rejected_without_callback(self):
-        import yadinassi.plain_value_table_runtime as runtime
+        import yadinassi.collections.plain_value_table_runtime as runtime
         t=self.table();seen=[]
         with patch.object(runtime,'len',lambda *args:seen.append(args),create=True):
             with self.assertRaises(BoundaryViolation):validate(t)
@@ -77,7 +77,7 @@ class PlainTableRuntimeTests(unittest.TestCase):
             with self.assertRaises(ValueError):action()
         self.assertIsNone(r.get_member('N'));self.assertEqual(t.count(),1)
     def test_growth_limits_fail_before_mutation(self):
-        import yadinassi.plain_value_table_runtime as runtime
+        import yadinassi.collections.plain_value_table_runtime as runtime
         t=self.table();t.add()
         with patch.object(runtime,'_MAX_ROWS',1):
             with self.assertRaises(ValueError):t.add()

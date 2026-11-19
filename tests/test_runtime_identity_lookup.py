@@ -3,14 +3,14 @@ import unittest
 import weakref
 from decimal import Decimal
 from unittest.mock import patch
-from yadinassi import owned_syntax as owned
+from yadinassi.execution import owned_syntax as owned
 from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse
 from yadinassi import Interpreter
-from yadinassi.type_values import type_of
-from yadinassi.values import BSLType, BSLArray
-from yadinassi.value_tables import BSLValueTable
-from yadinassi.value_trees import BSLValueTree
+from yadinassi.types.type_values import type_of
+from yadinassi.types.values import BSLType, BSLArray
+from yadinassi.collections.value_tables import BSLValueTable
+from yadinassi.collections.value_trees import BSLValueTree
 
 
 class RuntimeIdentityLookupTests(unittest.TestCase):
@@ -23,7 +23,7 @@ class RuntimeIdentityLookupTests(unittest.TestCase):
             with self.subTest(expected=expected): self.assertIs(type_of(value), expected)
 
     def test_every_static_type_matches_original_first_identity_scan(self):
-        from yadinassi.type_values import _VALUE_TYPES
+        from yadinassi.types.type_values import _VALUE_TYPES
         for cls, _, _ in _VALUE_TYPES:
             with self.subTest(cls=cls.__name__):
                 # Uninitialized instances are enough: static type reflection must

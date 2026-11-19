@@ -1,9 +1,9 @@
 import unittest
 from decimal import Decimal
-from yadinassi.experimental_direct_ast import compile_owned
+from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
 from yadinassi.syntax.parser import parse
-from yadinassi.python_direct import PythonDirectUnsupported
-from yadinassi.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
 
 class ProductContext(BoundaryContext):
     def __init__(self,values=None,services=None):
@@ -73,10 +73,10 @@ class ExternalNamespaceTests(unittest.TestCase):
                 compile_owned(parse(source),source_text=source,source_name='external.bsl',external_names=('amount',))
 
     def test_real_form_product_setter_adjusts_and_preserves_readonly(self):
-        from yadinassi.form_runtime import FormSession
-        from yadinassi.form_model import BSLFormAttribute
-        from yadinassi.type_descriptions import BSLTypeDescription
-        from yadinassi.type_qualifiers import BSLStringQualifiers
+        from yadinassi.forms.form_runtime import FormSession
+        from yadinassi.forms.form_model import BSLFormAttribute
+        from yadinassi.types.type_descriptions import BSLTypeDescription
+        from yadinassi.types.type_qualifiers import BSLStringQualifiers
         session=FormSession('',attributes=(BSLFormAttribute('Label',BSLTypeDescription('String',None,BSLStringQualifiers(Decimal(3)))),))
         class FormContext(BoundaryContext):
             def external_get(self,name):return session.form.get_member(name)

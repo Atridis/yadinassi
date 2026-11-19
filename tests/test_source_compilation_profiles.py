@@ -7,12 +7,12 @@ from test_source_metadata import xml
 from test_source_forms import files as form_files, request
 from test_source_global_modules import configuration as global_configuration
 from test_source_manager_modules import configuration as manager_configuration
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication, _SourceInterpreter
-from yadinassi.configuration_modules import compile_module, compile_session_module
-from yadinassi.source_forms import SourceFormController
-from yadinassi.form_program import compile_form_module, admitted_program
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication, _SourceInterpreter
+from yadinassi.configuration.configuration_modules import compile_module, compile_session_module
+from yadinassi.forms.source_forms import SourceFormController
+from yadinassi.forms.form_program import compile_form_module, admitted_program
+from yadinassi.types.errors import BSLError
 from yadinassi.syntax import ast
 
 PROFILE = 'managed-thick-file'
@@ -48,7 +48,7 @@ class SourceCompilationProfiles(unittest.TestCase):
         self.assertEqual(app.interpreter.compilation_profile, PROFILE)
 
     def test_invalid_profile_fails_before_database_creation(self):
-        with patch('yadinassi.source_constant_store.SourceConstantStore.create') as create:
+        with patch('yadinassi.db.metadata.source_constant_store.SourceConstantStore.create') as create:
             with self.assertRaises(ValueError):
                 SourceApplication(source(), compilation_profile='guessed-native', scratch_database='unused')
             create.assert_not_called()
@@ -192,14 +192,14 @@ EndProcedure'''
         from yadinassi.ui.source_shell import main
         with patch('yadinassi.ui.source_shell.load_source_archive', return_value=import_source(form_files())), \
              patch('yadinassi.ui.source_shell.SourceApplication') as app, \
-             patch('yadinassi.source_forms.SourceFormController'), \
+             patch('yadinassi.forms.source_forms.SourceFormController'), \
              patch('yadinassi.ui.source_shell.LocalUIServer'):
             self.assertEqual(main(['--configuration-source', 'unused.zip', '--run-startup',
                                    '--source-form', 'CommonForm.Main', '--preprocessor-profile', PROFILE]), 0)
             self.assertEqual(app.call_args.kwargs['compilation_profile'], PROFILE)
 
     def test_generic_nocontext_port_does_not_accept_another_profile(self):
-        from yadinassi.invocation import InvocationServer
+        from yadinassi.execution.invocation import InvocationServer
         program = compile_form_module('&AtServerNoContext\nFunction Answer(Val X)\nReturn X;\nEndFunction', compilation_profile=PROFILE)
         with self.assertRaisesRegex(ValueError, 'profile mismatch'):
             InvocationServer(program.nocontext, program.nocontext_endpoints)

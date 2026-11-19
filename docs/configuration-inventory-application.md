@@ -99,9 +99,9 @@ Create a **new** database with the reviewed source grant, never convert an old
 core15/demo database or replace its marker:
 
 ```python
-from yadinassi.configuration_import import read_configuration_directory
-from yadinassi.configuration_inventory_application import import_inventory_application, PROFILE
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.configuration.configuration_import import read_configuration_directory
+from yadinassi.configuration.configuration_inventory_application import import_inventory_application, PROFILE
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 
 files = read_configuration_directory("examples/configuration-inventory-application")
 configuration = import_inventory_application(files, inventory_runtime=PROFILE)

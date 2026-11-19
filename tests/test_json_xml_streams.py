@@ -9,14 +9,14 @@ from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.binary_streams import (BSLMemoryStream as Memory, BSLBinaryDataBuffer as Buffer,
+from yadinassi.streams.binary_streams import (BSLMemoryStream as Memory, BSLBinaryDataBuffer as Buffer,
     BSLFileStream as FileStream, BSLFileOpenMode as Mode, BSLFileAccess as Access,
     BSLPositionInStream as Origin)
-from yadinassi.file_io import BSLBinaryData, BSLTextEncoding
-from yadinassi.json_processing import (BSLJSONReader as JSONReader, BSLJSONWriter as JSONWriter,
+from yadinassi.streams.file_io import BSLBinaryData, BSLTextEncoding
+from yadinassi.formats.json.json_processing import (BSLJSONReader as JSONReader, BSLJSONWriter as JSONWriter,
     BSLJSONWriterSettings as JSONSettings, read_json)
-from yadinassi.xml_io import BSLXMLReader as XMLReader, BSLXMLReaderSettings
-from yadinassi.xml_writer import BSLXMLWriter as XMLWriter, BSLXMLWriterSettings as XMLSettings
+from yadinassi.formats.xml.xml_io import BSLXMLReader as XMLReader, BSLXMLReaderSettings
+from yadinassi.formats.xml.xml_writer import BSLXMLWriter as XMLWriter, BSLXMLWriterSettings as XMLSettings
 
 
 def memory(data=b''):
@@ -76,7 +76,7 @@ class JSONXMLStreamTests(unittest.TestCase):
             with self.subTest(encoding=encoding), self.assertRaises((TypeError, ValueError)):
                 r.open_stream(s, encoding)
             self.assertEqual(s.current_position(), 0)
-        with patch('yadinassi.json_processing.MAX_TEXT', 3), self.assertRaises(ValueError):
+        with patch('yadinassi.formats.json.json_processing.MAX_TEXT', 3), self.assertRaises(ValueError):
             r.open_stream(s)
         self.assertEqual(s.current_position(), 0); s.close()
 
@@ -196,7 +196,7 @@ R=New JSONReader; R.OpenStream(S); V2=ReadJSON(R,False,"When"); R.Close();
         with self.assertRaises(UnicodeError): r.open_stream(s, encoding='UTF-8')
         self.assertEqual(s.current_position(), 0); s.close()
         s = memory(b'<r/>')
-        with patch('yadinassi.xml_io.MAX_XML_BYTES', 3), self.assertRaises(ValueError): r.open_stream(s)
+        with patch('yadinassi.formats.xml.xml_io.MAX_XML_BYTES', 3), self.assertRaises(ValueError): r.open_stream(s)
         self.assertEqual(s.current_position(), 0); s.close()
 
     def test_xml_reader_close_releases_snapshot_not_stream(self):

@@ -11,9 +11,9 @@ from test_configuration_tabular_sections import edit_section
 from test_official_catalog_scalar_composition import composed, inventory
 from test_official_catalog_scalar_profile import NAME
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_xml import CFG, MD, V8, XR, XS, import_configuration
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_xml import CFG, MD, V8, XR, XS, import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
 
 PRODUCTS = 'Catalogs/Products.xml'
 SCALAR = 'Catalogs/'+NAME+'.xml'

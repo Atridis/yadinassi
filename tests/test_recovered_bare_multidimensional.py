@@ -1,6 +1,6 @@
 import unittest
 from recovered_bare_fixture import Interpreter
-from yadinassi.native_bare_collections import BareArray
+from yadinassi.execution.codegen.native_bare_collections import BareArray
 
 class RecoveredBareMultidimensional(unittest.TestCase):
     def test_independent_children_at_every_level(self):

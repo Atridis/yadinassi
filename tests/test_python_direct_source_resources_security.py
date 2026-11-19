@@ -2,11 +2,11 @@ import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
 from decimal import Decimal
-from yadinassi import python_direct_source_resources as resources
-from yadinassi.text_documents import BSLTextDocument
-from yadinassi.file_io import BSLBinaryData
-from yadinassi.values import HostFunction
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.direct.source import python_direct_source_resources as resources
+from yadinassi.streams.text_documents import BSLTextDocument
+from yadinassi.streams.file_io import BSLBinaryData
+from yadinassi.types.values import HostFunction
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
 class SourceResourceSecurity(unittest.TestCase):
@@ -46,7 +46,7 @@ class SourceResourceSecurity(unittest.TestCase):
         self.assertEqual(calls,[])
 
     def test_factory_init_module_and_alias_replacement(self):
-        from yadinassi import text_documents
+        from yadinassi.streams import text_documents
         boundary=self.boundary();create=resources.resolve_constructor(boundary,'textdocument');calls=[]
         with patch.object(BSLTextDocument,'__init__',lambda self:calls.append('init')):
             with self.assertRaises(BoundaryViolation):create()

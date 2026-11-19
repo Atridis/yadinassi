@@ -2,9 +2,9 @@
 import unittest
 from unittest.mock import patch
 import test_source_document_sections as support
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_document_section_store import SourceDocumentSectionStore
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.document.source_document_section_store import SourceDocumentSectionStore
+from yadinassi.types.errors import BSLError
 SEED=support.CREATE+'R=D.Lines.Add(); R.Flag=True; R=D.Lines.Add(); R.Flag=False; D.Write(); '
 class SourceDocumentSectionQueryTests(unittest.TestCase):
     setUp=support.SourceDocumentSectionTests.setUp
@@ -46,17 +46,17 @@ class SourceDocumentSectionQueryTests(unittest.TestCase):
     def test_failed_package_keeps_temp(self):
         _,out=self.run_body('M=New TempTablesManager; Q=New Query("SELECT Ref AS R INTO T FROM Document.Invoice.Lines"); Q.TempTablesManager=M; Q.Execute(); Q.Text="DESTROY T; SELECT Missing FROM Document.Invoice.Lines"; Try Q.Execute(); Except EndTry; Q.Text="SELECT R FROM T"; Message(Q.Execute().Unload().Count());');self.assertEqual(out,['2'])
     def test_low_row_budget_rolls_back_snapshot(self):
-        from yadinassi.source_constant_queries import SourceConstantQuery
+        from yadinassi.db.query.source_constant_queries import SourceConstantQuery
         app,_=self.run_body('');query=SourceConstantQuery(app.interpreter,app,'SELECT Ref FROM Document.Invoice.Lines')
         app.interpreter._context_stack.append('server');self.addCleanup(app.interpreter._context_stack.pop)
-        with patch('yadinassi.source_catalog_queries.MAX_ROWS',1):
+        with patch('yadinassi.db.query.source_catalog_queries.MAX_ROWS',1):
             with self.assertRaisesRegex(ValueError,'resource limit'):query.read(app.interpreter)
         self.assertFalse(app.constant_store.transaction_active)
         self.assertEqual(len(app.constant_store.read_document_bundle('Invoice',app.constant_store.read_documents('Invoice')[0][0])[3]['lines']),2)
     def test_low_cell_budget_rolls_back_snapshot(self):
-        from yadinassi.source_constant_queries import SourceConstantQuery
+        from yadinassi.db.query.source_constant_queries import SourceConstantQuery
         app,_=self.run_body('');query=SourceConstantQuery(app.interpreter,app,'SELECT Ref FROM Document.Invoice.Lines')
         app.interpreter._context_stack.append('server');self.addCleanup(app.interpreter._context_stack.pop)
-        with patch('yadinassi.source_catalog_queries.MAX_CELLS',1):
+        with patch('yadinassi.db.query.source_catalog_queries.MAX_CELLS',1):
             with self.assertRaisesRegex(ValueError,'resource limit'):query.read(app.interpreter)
         self.assertFalse(app.constant_store.transaction_active)

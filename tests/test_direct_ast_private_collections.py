@@ -3,10 +3,10 @@ import sys
 import unittest
 from decimal import Decimal as D
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.syntax.parser import parse
-from yadinassi.python_direct_static_module import analyze
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.direct.python_direct_static_module import analyze
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class PrivateCollectionTests(unittest.TestCase):
     def test_table_multiple_columns_aliases_branches_and_partial_error(self):
@@ -47,7 +47,7 @@ class PrivateCollectionTests(unittest.TestCase):
         for name in ('t','row','i','r'):self.assertNotIn(name,vm.variables)
     def test_growth_limits_are_still_real_native_boundaries(self):
         from unittest.mock import patch
-        from yadinassi import plain_value_table_runtime as native
+        from yadinassi.collections import plain_value_table_runtime as native
         vm=Interpreter();self.addCleanup(vm.close)
         with patch.object(native,'_MAX_ROWS',2):
             with self.assertRaisesRegex(BSLRuntimeError,'growth limit'):

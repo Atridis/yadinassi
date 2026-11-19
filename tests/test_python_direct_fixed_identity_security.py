@@ -4,11 +4,11 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.values import BSLArray, BSLFixedArray, equal
-from yadinassi.structures import BSLStructure, BSLFixedStructure
-from yadinassi.maps import BSLMap, BSLFixedMap
-from yadinassi.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
-from yadinassi import experimental_naked_scalar_semantics as scalar
+from yadinassi.types.values import BSLArray, BSLFixedArray, equal
+from yadinassi.collections.structures import BSLStructure, BSLFixedStructure
+from yadinassi.collections.maps import BSLMap, BSLFixedMap
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.codegen import experimental_naked_scalar_semantics as scalar
 
 
 class FixedIdentitySecurityTests(unittest.TestCase):
@@ -71,7 +71,7 @@ class FixedIdentitySecurityTests(unittest.TestCase):
         class Fixed(BSLFixedArray):
             def __eq__(self,other):raise AssertionError('hook')
         value=Fixed(BSLArray())
-        with patch('yadinassi.values.BSLFixedCollection',object):
+        with patch('yadinassi.types.values.BSLFixedCollection',object):
             self.assertTrue(scalar.collection_equal(value,value))
             self.assertIsNone(scalar.typed_find([value],Fixed(BSLArray())))
 

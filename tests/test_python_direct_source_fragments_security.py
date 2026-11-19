@@ -4,17 +4,17 @@ from unittest.mock import patch
 from decimal import Decimal
 from test_configuration_source_runtime import source
 from test_source_application_exports import configuration
-from yadinassi.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.runtime import Interpreter
-from yadinassi.values import HostFunction
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.python_direct_source import SourceBoundary
-from yadinassi.python_direct_source_fragments import execution, _ACTIVE
+from yadinassi.types.values import HostFunction
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.direct.python_direct_source import SourceBoundary
+from yadinassi.execution.direct.source.python_direct_source_fragments import execution, _ACTIVE
 
 
 class SourceFragmentsSecurity(unittest.TestCase):
     def setUp(self):
-        old=patch('yadinassi.experimental_naked_collections.prepare',create=True,side_effect=AssertionError('old compiler'))
+        old=patch('yadinassi.execution.codegen.experimental_naked_collections.prepare',create=True,side_effect=AssertionError('old compiler'))
         old.start();self.addCleanup(old.stop)
         for name in ('_execute_program','call_routine','_planned_routine_block'):
             guard=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
@@ -89,7 +89,7 @@ Procedure WriteShared() Export Execute("Shared=9;");EndProcedure''')
         self.assertEqual(_ACTIVE.get(),())
 
     def test_injected_cache_refused_without_callbacks_and_released(self):
-        from yadinassi.python_direct_source_fragments import _UNITS
+        from yadinassi.execution.direct.source.python_direct_source_fragments import _UNITS
         for kind,expression in (('execute','Execute("X=1;");'),('eval','Eval("1");')):
             app,_=self.app();app.start();effects=[];owners=[]
             class Cache(dict):
@@ -106,7 +106,7 @@ Procedure WriteShared() Export Execute("Shared=9;");EndProcedure''')
             self.assertNotIn(owners[0],_UNITS)
 
     def test_unsupported_fragment_is_fatal_and_depth_recovers(self):
-        from yadinassi.experimental_naked_collections import UnsupportedNakedSyntax
+        from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
         app,_=self.app();app.start();vm=app.interpreter;effects=[]
         vm.register_function('Effect',lambda:effects.append(1))
         for expression in ('Execute("Effect();New UnsupportedConstructor;")',

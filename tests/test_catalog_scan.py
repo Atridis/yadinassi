@@ -5,7 +5,7 @@ from uuid import uuid4
 import unittest
 
 import test_sqlite_catalog_backend as fixtures
-from yadinassi.catalog_backend import (BackendError, CatalogComparison,
+from yadinassi.db.catalog.catalog_backend import (BackendError, CatalogComparison,
     CatalogPredicate, CatalogOrder, CatalogScanRequest, CatalogKey)
 
 
@@ -37,7 +37,7 @@ class ScanTests(unittest.TestCase):
 
     def test_card_reads_reuse_one_schema_per_operation(self):
         from unittest.mock import patch
-        import yadinassi.sqlite_catalog as storage
+        import yadinassi.db.sqlite.sqlite_catalog as storage
         self.seed(20)
         view = self.backend.begin_read()
         self.addCleanup(view.close)
@@ -150,7 +150,7 @@ class ScanTests(unittest.TestCase):
 
     def test_materialization_preflight_rejects_before_payload_fetch(self):
         from unittest import mock
-        import yadinassi.sqlite_catalog as storage
+        import yadinassi.db.sqlite.sqlite_catalog as storage
         self.seed();view=self.backend.begin_read();connection=view._connection
         class Guard:
             def execute(self,sql,*args):
@@ -173,8 +173,8 @@ class ScanTests(unittest.TestCase):
 
     def test_runtime_exact_find_reaches_late_row_and_refuses_ambiguous_description(self):
         from yadinassi import Interpreter
-        from yadinassi.errors import BSLRuntimeError
-        from yadinassi.database_context import SQLiteDBContext
+        from yadinassi.types.errors import BSLRuntimeError
+        from yadinassi.db.database_context import SQLiteDBContext
         self.seed(1002);self.backend.close()
         context=SQLiteDBContext(self.path);output=[]
         try:

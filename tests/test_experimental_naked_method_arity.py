@@ -1,7 +1,7 @@
 """Direct method errors and effect order, not differential retired execution."""
 import unittest
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 
 class MethodArityTests(unittest.TestCase):
     def vm(self):

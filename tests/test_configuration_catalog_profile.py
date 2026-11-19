@@ -7,14 +7,14 @@ import tempfile
 import unittest
 from uuid import UUID
 
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_xml import import_configuration, import_catalog_forms_configuration
-from yadinassi.configuration_catalog_profile import CATALOG_FORMS_SOURCE_ISSUE
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.metadata import BSLCatalogMetadataCollection
-from yadinassi.catalogs import BSLCatalogs
-from yadinassi.catalog_object_preparation import CatalogWriteRefused
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_xml import import_configuration, import_catalog_forms_configuration
+from yadinassi.configuration.configuration_catalog_profile import CATALOG_FORMS_SOURCE_ISSUE
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.configuration.metadata import BSLCatalogMetadataCollection
+from yadinassi.db.catalog.catalogs import BSLCatalogs
+from yadinassi.db.catalog.catalog_object_preparation import CatalogWriteRefused
 
 CATALOG = UUID('21000000-0000-0000-0000-000000000001')
 FORM = UUID('21000000-0000-0000-0000-000000000002')

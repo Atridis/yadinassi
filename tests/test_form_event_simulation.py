@@ -4,10 +4,10 @@ from hashlib import sha256
 import unittest
 from unittest.mock import patch
 
-from yadinassi import form_event_simulation as sim
-from yadinassi.form_module_analysis import FormModuleAnalysisError
-from yadinassi.user_messages import UserMessageRecord
-from yadinassi.errors import BSLError
+from yadinassi.forms import form_event_simulation as sim
+from yadinassi.forms.form_module_analysis import FormModuleAnalysisError
+from yadinassi.application.user_messages import UserMessageRecord
+from yadinassi.types.errors import BSLError
 from test_form_module_analysis import SOURCE, CATALOG, FORM, DEFINITION, binding
 
 

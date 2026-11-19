@@ -6,11 +6,11 @@ import tempfile
 import unittest
 
 from yadinassi.cli import main
-from yadinassi.configuration_modules import MODULE_RUNTIME, compile_module
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_modules import MODULE_RUNTIME, compile_module
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.types.errors import BSLError
 from yadinassi.runtime import Interpreter
 from configuration_runtime_fixture import CLIENT, SERVER, module_files
 
@@ -433,7 +433,7 @@ class ModuleOnlyConfigurationTests(unittest.TestCase):
         app.start(); self.assertEqual(output, ['start'])
 
     def test_default_importer_and_storage_zero_inventory_stay_closed(self):
-        from yadinassi.catalog_backend import BackendError
+        from yadinassi.db.catalog.catalog_backend import BackendError
         files = self.files([CLIENT])
         with self.assertRaises(ValueError): import_configuration(files)
         config = import_configuration(files, module_runtime=MODULE_RUNTIME)

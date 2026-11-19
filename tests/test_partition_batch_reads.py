@@ -6,8 +6,8 @@ from uuid import uuid4
 
 import test_recorder_movement_storage as recorder_fixture
 import test_accumulation_movement_storage as accumulation_fixture
-from yadinassi.catalog_backend import BackendError
-from yadinassi.document_backend import DocumentKey
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.document.document_backend import DocumentKey
 
 
 class BatchContract:
@@ -90,5 +90,5 @@ class AccumulationBatchTests(BatchContract, unittest.TestCase):
     def test_configurable_partition_limit_is_not_register_limit(self):
         for key in [self.key, self.other_key()]:
             self.port.replace(uuid4(), self.request(key))
-        with patch('yadinassi.sqlite_accumulation_movements.MAX_MOVEMENT_ROWS', 1):
+        with patch('yadinassi.db.sqlite.sqlite_accumulation_movements.MAX_MOVEMENT_ROWS', 1):
             self.assertEqual(len(self.port.scan(self.reg)), 2)

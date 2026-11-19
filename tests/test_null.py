@@ -14,15 +14,15 @@ from scripts.smoke_test import null_checkpoint_output, null_checkpoint_source
 from yadinassi import BSLError, Interpreter
 from yadinassi.syntax import ast
 from yadinassi.syntax.lexer import Lexer
-from yadinassi.maps import BSLFixedMap, BSLMap
+from yadinassi.collections.maps import BSLFixedMap, BSLMap
 from yadinassi.syntax.parser import parse
-from yadinassi.serialization import (
+from yadinassi.formats.storage.serialization import (
     FORMAT_ERROR, value_from_string_internal as read, value_to_string_internal as write,
 )
-from yadinassi.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
-from yadinassi.type_values import type_by_name, type_of
-from yadinassi.value_checks import value_is_filled
-from yadinassi.values import (
+from yadinassi.collections.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
+from yadinassi.types.type_values import type_by_name, type_of
+from yadinassi.types.value_checks import value_is_filled
+from yadinassi.types.values import (
     BSLArray, BSLFixedArray, BSLNull, BSLType, NULL, boolean, equal, number, to_string,
 )
 

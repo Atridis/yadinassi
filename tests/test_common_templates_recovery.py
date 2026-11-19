@@ -1,9 +1,9 @@
 """Fresh recovery gate: original native observations plus closed application scope."""
 import hashlib,json,unittest
 from pathlib import Path
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.configuration_modules import MODULE_RUNTIME
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.configuration.configuration_modules import MODULE_RUNTIME
 from yadinassi.runtime import Interpreter
 from configuration_runtime_fixture import module_files
 ROOT=Path(__file__).resolve().parents[1];ASSETS=ROOT/'scripts/common_template_behavior'

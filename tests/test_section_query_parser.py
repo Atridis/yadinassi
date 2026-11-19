@@ -1,6 +1,6 @@
 """Authored section Query grammar contract; not native 1C evidence."""
 import unittest
-from yadinassi.query_parser import Parameter, parse_query
+from yadinassi.db.query.query_parser import Parameter, parse_query
 
 
 class SectionQueryParserTests(unittest.TestCase):
@@ -34,7 +34,7 @@ class SectionQueryParserTests(unittest.TestCase):
                 parse_query(text)
 
     def test_section_sources_can_join_and_aggregate_without_owner_dereference(self):
-        from yadinassi.query_parser import Aggregate
+        from yadinassi.db.query.query_parser import Aggregate
         joined = parse_query('SELECT L.Text FROM Catalog.Products.Lines AS L JOIN Catalog.Categories AS C ON L.Category=C.Ref')
         self.assertEqual((joined.catalog, joined.section), ('Products', 'Lines'))
         self.assertEqual(joined.joins[0].source.catalog, 'Categories')

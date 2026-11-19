@@ -1,7 +1,7 @@
 import unittest
 from decimal import Decimal as D
 from yadinassi import Interpreter
-from yadinassi.python_direct_plain_array import PlainArray
+from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 
 class PlainArrayTests(unittest.TestCase):
     def test_native_list_storage_and_explicit_index_tradeoff(self):
@@ -38,7 +38,7 @@ class PlainArrayTests(unittest.TestCase):
                 with self.assertRaises(Exception):vm.execute(source)
                 self.assertEqual(seen,[]);self.assertEqual(vm.variables['a'][0],D(1))
     def test_opaque_payload_equality_never_runs(self):
-        from yadinassi.experimental_naked_scalar_semantics import map_identity_operators
+        from yadinassi.execution.codegen.experimental_naked_scalar_semantics import map_identity_operators
         seen=[]
         class Opaque:
             def __eq__(self,other):seen.append('eq');raise AssertionError

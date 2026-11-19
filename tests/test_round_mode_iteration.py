@@ -3,9 +3,9 @@
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.numeric.round_modes import BSLRoundMode, BSLRoundModes, ROUND_MODES
-from yadinassi.values import BSLObject
+from yadinassi.types.values import BSLObject
 
 
 class RoundModeIterationTests(unittest.TestCase):

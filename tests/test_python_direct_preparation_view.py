@@ -2,8 +2,8 @@
 from unittest import TestCase
 from unittest.mock import patch
 import test_product_form_events as fixture
-from yadinassi.catalog_backend import BackendError
-from yadinassi.sqlite_catalog import _View
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.sqlite.sqlite_catalog import _View
 
 
 class PreparationViewTests(TestCase):
@@ -36,6 +36,6 @@ class PreparationViewTests(TestCase):
 
     def test_constructor_failure_also_closes_owned_snapshot(self):
         f=self.fixture
-        with patch('yadinassi.catalog_object_preparation._ObjectInterpreter',side_effect=ValueError('constructor failed')):
+        with patch('yadinassi.db.catalog.catalog_object_preparation._ObjectInterpreter',side_effect=ValueError('constructor failed')):
             with self.assertRaises(Exception):f.run_event('BeforeWriteAtServer')
         self.assertIsNone(f.context.backend._active)

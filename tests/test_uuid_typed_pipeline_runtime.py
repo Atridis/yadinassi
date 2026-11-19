@@ -1,10 +1,10 @@
 """Local bounds supplement to the separately source-bound native16 replay."""
 import unittest
 from yadinassi import Interpreter
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.unique_identifiers import BSLUUID
-from yadinassi.values import BSLArray, BSLType
-from yadinassi.serialization import value_to_string_internal, value_from_string_internal
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.types.values import BSLArray, BSLType
+from yadinassi.formats.storage.serialization import value_to_string_internal, value_from_string_internal
 
 FIXED='11111111-2222-4333-8444-555555555555'
 ZERO='00000000-0000-0000-0000-000000000000'

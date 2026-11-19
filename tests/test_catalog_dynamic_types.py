@@ -5,12 +5,12 @@ from uuid import UUID
 from types import SimpleNamespace
 
 from yadinassi import Interpreter
-from yadinassi.catalog_types import BSLCatalogReference, BSLCatalogType
-from yadinassi.serialization import value_to_string_internal
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.type_values import type_of
-from yadinassi.value_checks import value_is_filled
-from yadinassi.values import BSLArray, BSLType, equal, to_string
+from yadinassi.db.catalog.catalog_types import BSLCatalogReference, BSLCatalogType
+from yadinassi.formats.storage.serialization import value_to_string_internal
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.type_values import type_of
+from yadinassi.types.value_checks import value_is_filled
+from yadinassi.types.values import BSLArray, BSLType, equal, to_string
 
 
 class CatalogDynamicTypesTests(unittest.TestCase):
@@ -44,8 +44,8 @@ class CatalogDynamicTypesTests(unittest.TestCase):
             BSLCatalogType(UUID(int=10), 'Name', self.snapshot, 'unknown')
 
     def test_manager_and_selection_type_identity(self):
-        from yadinassi.catalogs import BSLCatalogManager, BSLCatalogSelection
-        from yadinassi.catalog_backend import CatalogSchema
+        from yadinassi.db.catalog.catalogs import BSLCatalogManager, BSLCatalogSelection
+        from yadinassi.db.catalog.catalog_backend import CatalogSchema
         metadata = SimpleNamespace(_metadata_uuid=str(UUID(int=10)), _name='Name',_schema=CatalogSchema(UUID(int=10),'Name',8,64,()))
         catalogs = SimpleNamespace(_metadata=self.snapshot)
         manager = BSLCatalogManager(catalogs, metadata)

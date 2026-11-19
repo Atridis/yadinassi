@@ -4,11 +4,11 @@ from decimal import Decimal
 import sqlite3
 import unittest
 from unittest.mock import patch
-from yadinassi import query_pushdown, relational_queries, queries, query_parser
-from yadinassi.catalog_backend import BackendError, CatalogAggregateRequest, CatalogAggregateResult
-from yadinassi.queries import BSLQuery
-from yadinassi.sqlite_catalog import _View
-from yadinassi.sqlite_catalog_layout import quote_identifier
+from yadinassi.db.query import query_pushdown, relational_queries, queries, query_parser
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogAggregateRequest, CatalogAggregateResult
+from yadinassi.db.query.queries import BSLQuery
+from yadinassi.db.sqlite.sqlite_catalog import _View
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
 import test_catalog_queries as fixtures
 
 class CountPushdownTests(unittest.TestCase):
@@ -105,7 +105,7 @@ class CountPushdownTests(unittest.TestCase):
             with self.assertRaises(sqlite3.OperationalError):view._connection.execute('DELETE FROM database_info')
         finally:view.close()
     def test_count_proof_external_commit_before_read_and_after_rollback(self):
-        from yadinassi.sqlite_read_handles import ReadHandle
+        from yadinassi.db.sqlite.sqlite_read_handles import ReadHandle
         table=self.table();self.query();backend=self.context.backend
         real=backend._check_file;calls=[]
         def check():
@@ -141,8 +141,8 @@ class CountPushdownTests(unittest.TestCase):
                     view.aggregate_catalog(manager._schema.identity,request)
     def test_active_transaction_staged_write_declines_to_current_executor(self):
         from yadinassi import Interpreter
-        from yadinassi.database_context import SQLiteDBContext
-        from yadinassi.sqlite_migration_plan import prepare,apply
+        from yadinassi.db.database_context import SQLiteDBContext
+        from yadinassi.db.sqlite.sqlite_migration_plan import prepare,apply
         path=self.context.path;self.context.close()
         apply(path,prepare(path,maintenance=True),maintenance=True)
         self.context=SQLiteDBContext(path)

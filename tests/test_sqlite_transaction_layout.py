@@ -6,10 +6,10 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import test_sqlite_transaction_source as fixture
-from yadinassi import sqlite_catalog as storage
-from yadinassi import sqlite_inventory_enum_profile as profile
-from yadinassi import sqlite_main_demo_profile as main_profile
-from yadinassi.catalog_backend import BackendError
+from yadinassi.db.sqlite import sqlite_catalog as storage
+from yadinassi.db.sqlite import sqlite_inventory_enum_profile as profile
+from yadinassi.db.sqlite import sqlite_main_demo_profile as main_profile
+from yadinassi.db.catalog.catalog_backend import BackendError
 
 
 class TransactionLayoutTests(unittest.TestCase):
@@ -135,9 +135,9 @@ class Format16ProfileLayoutTests(unittest.TestCase):
         from test_configuration_inventory_enums import source as core_source
         from inventory_enum_application_fixture import source as ui_source
         from test_main_demo_configuration import source as main_source
-        from yadinassi.configuration_inventory_enums import import_inventory_enum_configuration, PROFILE as CORE
-        from yadinassi.configuration_inventory_enum_application import import_inventory_application, PROFILE as UI
-        from yadinassi.configuration_main_demo import import_main_demo_configuration, PROFILE as MAIN
+        from yadinassi.configuration.configuration_inventory_enums import import_inventory_enum_configuration, PROFILE as CORE
+        from yadinassi.configuration.configuration_inventory_enum_application import import_inventory_application, PROFILE as UI
+        from yadinassi.configuration.configuration_main_demo import import_main_demo_configuration, PROFILE as MAIN
         configs = (
             (storage.SQLiteCatalogBackend.create_inventory_enum, import_inventory_enum_configuration(core_source(), inventory_runtime=CORE), profile, '_validate_ddl'),
             (storage.SQLiteCatalogBackend.create_inventory_enum_application, import_inventory_application(ui_source(), inventory_runtime=UI), profile, '_validate_ddl'),
@@ -159,7 +159,7 @@ class Format16ProfileLayoutTests(unittest.TestCase):
                             with self.assertRaises(BackendError):
                                 backend.begin_write(uuid4()) if writer else backend.begin_read()
                             self.assertIsNone(backend._active)
-                    from yadinassi.sqlite_accumulation_movements import AccumulationMovementPort
+                    from yadinassi.db.sqlite.sqlite_accumulation_movements import AccumulationMovementPort
                     for writer in (False, True):
                         backend._prepared_source.clear()
                         with patch.object(AccumulationMovementPort, '_require', side_effect=BackendError('integrity')):

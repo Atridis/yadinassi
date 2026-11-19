@@ -4,11 +4,11 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLError
-from yadinassi import value_trees as trees
-from yadinassi.dates import BSLDate
-from yadinassi.structures import BSLStructure, BSLFixedStructure
-from yadinassi.unique_identifiers import BSLUUID
-from yadinassi.values import BSLArray, NULL
+from yadinassi.collections import value_trees as trees
+from yadinassi.temporal.dates import BSLDate
+from yadinassi.collections.structures import BSLStructure, BSLFixedStructure
+from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.types.values import BSLArray, NULL
 
 
 def setup():

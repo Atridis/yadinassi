@@ -7,8 +7,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from yadinassi.catalog_backend import BackendError
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 
 
 def grouped(files, path):
@@ -27,7 +27,7 @@ class PreparedLayoutAdmissionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             database = Path(directory)/'layout.sqlite'
             with closing(create(database, source)) as backend:
-                with patch('yadinassi.configuration_forms.compile_form_module') as compiler:
+                with patch('yadinassi.configuration.configuration_forms.compile_form_module') as compiler:
                     for _ in range(3):
                         with closing(backend.begin_read()): pass
                         self.assertEqual(backend.export_configuration(), source)

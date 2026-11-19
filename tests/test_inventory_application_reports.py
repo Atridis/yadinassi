@@ -11,22 +11,22 @@ import unittest
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
-from yadinassi.accumulation_movements import AccumulationDirection
-from yadinassi.catalog_backend import BackendError, CatalogDraft, CatalogKey, TabularRow, TabularSectionRows
-from yadinassi.configuration_inventory_application import import_inventory_application, PROFILE, validated_core
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.database_transactions import admission, execution
-from yadinassi.document_backend import DocumentDraft, DocumentKey
-from yadinassi.inventory_application_reports import InventoryReports, UNAVAILABLE
-from yadinassi.inventory_host_operations import InventoryRootOperations
-from yadinassi.sqlite_accumulation_movements import AccumulationMovementPort
-from yadinassi.sqlite_catalog import _View
-from yadinassi.sqlite_query_indexes import register_query_collations
+from yadinassi.db.registers.accumulation_movements import AccumulationDirection
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogDraft, CatalogKey, TabularRow, TabularSectionRows
+from yadinassi.configuration.configuration_inventory_application import import_inventory_application, PROFILE, validated_core
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.database_transactions import admission, execution
+from yadinassi.db.document.document_backend import DocumentDraft, DocumentKey
+from yadinassi.configuration.demos.inventory_application_reports import InventoryReports, UNAVAILABLE
+from yadinassi.configuration.demos.inventory_host_operations import InventoryRootOperations
+from yadinassi.db.sqlite.sqlite_accumulation_movements import AccumulationMovementPort
+from yadinassi.db.sqlite.sqlite_catalog import _View
+from yadinassi.db.sqlite.sqlite_query_indexes import register_query_collations
 from inventory_application_fixture import ROOT, source
 
 DATE = datetime(2024, 1, 1, 12)
 AT = DATE + timedelta(days=1)
-REPORTS = 'yadinassi.inventory_application_reports.'
+REPORTS = 'yadinassi.configuration.demos.inventory_application_reports.'
 
 
 class InventoryReportTests(unittest.TestCase):
@@ -226,7 +226,7 @@ class InventoryReportTests(unittest.TestCase):
 
     def test_missing_nonempty_reference_is_integrity_failure_not_placeholder(self):
         self.post()
-        from yadinassi.sqlite_catalog_layout import quote_identifier
+        from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
         table = quote_identifier(self.backend._layout.table_name(self.product.catalog_id))
         self.sql('DELETE FROM '+table+' WHERE record_id=?', (str(self.product.record_id),))
         self.refused(self.read, 'integrity')
@@ -242,7 +242,7 @@ class InventoryReportTests(unittest.TestCase):
 
     def test_labels_and_movements_share_real_sqlite_read_snapshot(self):
         self.post(); original = AccumulationMovementPort.scan
-        from yadinassi.sqlite_catalog_layout import quote_identifier
+        from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
         table = quote_identifier(self.backend._layout.table_name(self.product.catalog_id))
         def scan(port, identity):
             rows = original(port, identity)
@@ -328,9 +328,9 @@ class InventoryReportTests(unittest.TestCase):
             self.refused(lambda:InventoryReports(c,self.config),'unsupported')
 
     def test_format14_and_13_have_no_report_grant(self):
-        from yadinassi.configuration_accumulation import import_accumulation_configuration, PROFILE as P14
+        from yadinassi.configuration.configuration_accumulation import import_accumulation_configuration, PROFILE as P14
         from test_sqlite_accumulation_profile import accumulation_source
-        from yadinassi.configuration_posting import import_posting_configuration, PROFILE as P13
+        from yadinassi.configuration.configuration_posting import import_posting_configuration, PROFILE as P13
         from test_configuration_posting import source as posting_source
         configs=[(SQLiteDBContext.create_accumulation,import_accumulation_configuration(accumulation_source(),accumulation_runtime=P14)),
                  (SQLiteDBContext.create_posting,import_posting_configuration(posting_source(),posting_runtime=P13))]

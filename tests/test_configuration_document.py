@@ -6,11 +6,11 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_document import DocumentObjectSession, DocumentImage, DocumentRowImage
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.dates import literal_date
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_document import DocumentObjectSession, DocumentImage, DocumentRowImage
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.temporal.dates import literal_date
 from test_document_configuration_xml import document_files
 
 
@@ -112,7 +112,7 @@ class ConfigurationDocumentTests(unittest.TestCase):
 
     def test_posting_profile_refuses_nonposting_host_editor_before_read(self):
         from test_document_posting_runtime import posting_source
-        from yadinassi.configuration_posting import import_posting_configuration, PROFILE
+        from yadinassi.configuration.configuration_posting import import_posting_configuration, PROFILE
         files = posting_source()
         config = import_posting_configuration(files, posting_runtime=PROFILE)
         path = Path(self.temp.name) / 'posting.sqlite'

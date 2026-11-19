@@ -7,7 +7,7 @@ import stat
 import tempfile
 import unittest
 from unittest.mock import patch
-import yadinassi.configuration_import as reader
+import yadinassi.configuration.configuration_import as reader
 from sqlite_catalog_fixture import configuration_files
 
 

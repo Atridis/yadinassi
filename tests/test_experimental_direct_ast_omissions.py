@@ -1,6 +1,6 @@
 """Omitted slots are validated at the reached call before argument effects."""
 import unittest
-from yadinassi.errors import BSLError
+from yadinassi.types.errors import BSLError
 from test_experimental_direct_ast_externals import DirectSourceAssertions
 
 class OmissionTests(DirectSourceAssertions,unittest.TestCase):

@@ -9,10 +9,10 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from test_main_demo_configuration import source
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_main_demo import PROFILE, import_main_demo_configuration
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi import sqlite_inventory_enum_profile as profile
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_main_demo import PROFILE, import_main_demo_configuration
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite import sqlite_inventory_enum_profile as profile
 
 
 class TransactionSourceTests(unittest.TestCase):

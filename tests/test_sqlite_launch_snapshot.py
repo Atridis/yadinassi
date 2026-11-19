@@ -9,11 +9,11 @@ import unittest
 from unittest import mock
 from uuid import uuid4
 
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_xml import import_configuration, import_inert_configuration
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _View, _json, _schema_data, _APPLICATION_ID
-from yadinassi.sqlite_launch import LaunchSnapshot, LaunchFile, PLAIN_PROFILE
-import yadinassi.sqlite_launch as launch
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_xml import import_configuration, import_inert_configuration
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _View, _json, _schema_data, _APPLICATION_ID
+from yadinassi.db.sqlite.sqlite_launch import LaunchSnapshot, LaunchFile, PLAIN_PROFILE
+import yadinassi.db.sqlite.sqlite_launch as launch
 from sqlite_catalog_fixture import configuration_files
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,11 +54,11 @@ class SQLiteLaunchSnapshotTests(unittest.TestCase):
     def upgrade(self, *, additive=False):
         backend, files, config = self.plain()
         backend.close()
-        from yadinassi.sqlite_migration_plan import prepare, apply
+        from yadinassi.db.sqlite.sqlite_migration_plan import prepare, apply
         apply(self.path, prepare(self.path, maintenance=True), maintenance=True)
         if additive:
             from test_configuration_evolution import append_field
-            from yadinassi.sqlite_configuration_update import prepare, apply
+            from yadinassi.db.sqlite.sqlite_configuration_update import prepare, apply
             files = append_field(files)
             config = import_configuration(files)
             apply(self.path, prepare(self.path, config, maintenance=True), maintenance=True)
@@ -96,7 +96,7 @@ class SQLiteLaunchSnapshotTests(unittest.TestCase):
         self.assertEqual(self.assert_route(b, files, 'catalog').profile, PLAIN_PROFILE)
 
     def test_legacy_v1_canonical_source(self):
-        from yadinassi.sqlite_catalog_migration import _V1_DDL
+        from yadinassi.db.sqlite.sqlite_catalog_migration import _V1_DDL
         files = configuration_files(); config = import_configuration(files)
         with closing(sqlite3.connect(self.path)) as db, db:
             for ddl in _V1_DDL: db.execute(ddl)
@@ -148,7 +148,7 @@ class SQLiteLaunchSnapshotTests(unittest.TestCase):
 
     def test_application_grant_does_not_execute_onstart(self):
         from test_configuration_application_profile import application_sources
-        from yadinassi.configuration_runtime import ConfigurationApplication
+        from yadinassi.configuration.configuration_runtime import ConfigurationApplication
         files = application_sources()
         b = self.granted('create_application', files)
         with mock.patch.object(ConfigurationApplication, 'start', side_effect=AssertionError('execution forbidden')):
@@ -167,7 +167,7 @@ class SQLiteLaunchSnapshotTests(unittest.TestCase):
         self.assert_route(self.granted('create_reference_application', files), files, 'references')
 
     def posting(self):
-        from yadinassi.configuration_posting_application import import_posting_application, PROFILE
+        from yadinassi.configuration.configuration_posting_application import import_posting_application, PROFILE
         files = files_at('examples/configuration-posting-application')
         config = import_posting_application(files, posting_runtime=PROFILE)
         return self.retain(SQLiteCatalogBackend.create_posting(self.path,config)), files
@@ -181,13 +181,13 @@ class SQLiteLaunchSnapshotTests(unittest.TestCase):
 
     def test_raw_posting_v13_has_no_ui_grant(self):
         from test_configuration_posting import source
-        from yadinassi.configuration_posting import import_posting_configuration, PROFILE
+        from yadinassi.configuration.configuration_posting import import_posting_configuration, PROFILE
         b = self.retain(SQLiteCatalogBackend.create_posting(self.path, import_posting_configuration(source(), posting_runtime=PROFILE)))
         self.assert_refused(b)
 
     def test_accumulation_v14_has_no_ui_grant(self):
         from test_sqlite_accumulation_profile import accumulation_source
-        from yadinassi.configuration_accumulation import import_accumulation_configuration, PROFILE
+        from yadinassi.configuration.configuration_accumulation import import_accumulation_configuration, PROFILE
         b = self.retain(SQLiteCatalogBackend.create_accumulation(self.path, import_accumulation_configuration(accumulation_source(), accumulation_runtime=PROFILE)))
         with mock.patch.object(b, 'begin_read', side_effect=AssertionError('unsupported profile must not lease')):
             self.assert_refused(b)
@@ -281,7 +281,7 @@ class SQLiteLaunchSnapshotTests(unittest.TestCase):
             with self.assertRaisesRegex(BackendError,'closed'): b.launch_snapshot()
 
     def test_current_transaction_owner_cannot_launch_or_borrow(self):
-        from yadinassi import database_transactions as tx
+        from yadinassi.db import database_transactions as tx
         b, _, _ = self.upgrade()
         with tx.execution(b):
             tx.begin(b); owner=b._bsl_transaction
@@ -291,7 +291,7 @@ class SQLiteLaunchSnapshotTests(unittest.TestCase):
             finally: tx.rollback(b)
 
     def test_foreign_transaction_owner_cannot_launch_or_adopt(self):
-        from yadinassi import database_transactions as tx
+        from yadinassi.db import database_transactions as tx
         b, _, _ = self.upgrade()
         with tx.execution(b):
             tx.begin(b); owner=b._bsl_transaction; old=owner.owner; owner.owner=object()

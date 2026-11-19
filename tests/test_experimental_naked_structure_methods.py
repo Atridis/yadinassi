@@ -2,13 +2,13 @@
 import unittest
 from decimal import Decimal as D
 from yadinassi import Interpreter
-from yadinassi.values import BSLArray,HostFunction
-from yadinassi.structures import BSLStructure
-from yadinassi.experimental_naked_structure import *
-from yadinassi.experimental_naked_structure import _DirectStructure
-from yadinassi.experimental_naked_array_methods import array_method_value
-from yadinassi.experimental_naked_collections import _checked_array_index,_array_insert_shape
-from yadinassi.experimental_naked_scalar_semantics import typed_find
+from yadinassi.types.values import BSLArray,HostFunction
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.execution.codegen.experimental_naked_structure import *
+from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
+from yadinassi.execution.codegen.experimental_naked_array_methods import array_method_value
+from yadinassi.execution.codegen.experimental_naked_collections import _checked_array_index,_array_insert_shape
+from yadinassi.execution.codegen.experimental_naked_scalar_semantics import typed_find
 
 def vm_values(source,*names):
     vm=Interpreter();vm.execute(source)

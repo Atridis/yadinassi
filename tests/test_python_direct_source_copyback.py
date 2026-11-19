@@ -5,8 +5,8 @@ from decimal import Decimal
 import test_source_server_call as existing
 import test_source_application_exports as exports
 from yadinassi.runtime import Interpreter
-from yadinassi.errors import BSLError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.types.errors import BSLError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
 class SourceCopybackTests(unittest.TestCase):
@@ -63,7 +63,7 @@ class SourceCopybackTests(unittest.TestCase):
             self.assertEqual(effects,[])
 
     def test_transaction_guard_precedes_argument_effects(self):
-        from yadinassi import database_transactions
+        from yadinassi.db import database_transactions
         app,_=self.run_app(existing.configuration('', 'Procedure Change(X,Val Y) Export X=9;EndProcedure'))
         effects=[];app.interpreter.register_function('Touch',lambda:effects.append('arg') or Decimal(1))
         with patch.object(database_transactions,'forbid_transfer',side_effect=ValueError('transaction crossing denied')):

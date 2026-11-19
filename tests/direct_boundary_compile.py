@@ -2,7 +2,7 @@
 
 No repair switches or test executor: callers supply the real context and state.
 """
-from yadinassi.experimental_direct_ast import compile_owned
+from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
 from yadinassi.syntax.parser import parse
 
 

@@ -3,10 +3,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.configuration_main_demo import PROFILE,import_main_demo_configuration
-from yadinassi.catalog_object_preparation import CatalogWriteRefused,prepare_catalog_object,write_prepared_catalog_object
-from yadinassi.catalog_backend import BackendError
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.configuration.configuration_main_demo import PROFILE,import_main_demo_configuration
+from yadinassi.db.catalog.catalog_object_preparation import CatalogWriteRefused,prepare_catalog_object,write_prepared_catalog_object
+from yadinassi.db.catalog.catalog_backend import BackendError
 
 ROOT=Path(__file__).resolve().parents[1]
 SOURCE=(ROOT/'examples/demo/Catalogs/Номенклатура/Ext/ObjectModule.bsl').read_text(encoding='utf-8-sig')
@@ -25,7 +25,7 @@ class DirectCatalogPreparationTests(unittest.TestCase):
         self.card.get_member('Склады').add().set_member('Склад',self.warehouse.get_member('Ссылка'))
 
     def test_original_handler_writes_without_vm_execution(self):
-        from yadinassi.catalog_object_preparation import _ObjectInterpreter
+        from yadinassi.db.catalog.catalog_object_preparation import _ObjectInterpreter
         with patch.object(_ObjectInterpreter,'execute_program',side_effect=AssertionError('VM execution')),patch.object(_ObjectInterpreter,'execute',side_effect=AssertionError('VM execution')):
             self.card.write()
         self.assertFalse(self.card.is_new());self.assertEqual(self.card.get_member('Наименование'),'Кабель')
@@ -68,7 +68,7 @@ class DirectCatalogPreparationTests(unittest.TestCase):
         self.assertEqual(self.card.get_member('Наименование'),'  Кабель  ')
 
     def test_host_explicit_transaction_does_not_gain_handler_authority(self):
-        from yadinassi import database_transactions as tx
+        from yadinassi.db import database_transactions as tx
         with self.assertRaises(BackendError):
             with tx.execution(self.db.backend):
                 tx.begin(self.db.backend);self.card.write()

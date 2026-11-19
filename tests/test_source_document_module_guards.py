@@ -5,10 +5,10 @@ import re
 import test_source_document_sections as fixture
 import test_source_document_records as records
 from test_source_constant_store import configuration
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_document_section_store import SourceDocumentSectionStore
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.document.source_document_section_store import SourceDocumentSectionStore
+from yadinassi.types.errors import BSLError
 
 def package(module,body='',sections=True):
     source=fixture.package(body,children=fixture.SECTION if sections else '')

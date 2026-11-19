@@ -23,21 +23,21 @@ COUNT_SIZES = (32, 128, 512)
 # Keys specify exact source file AND function name, not similarly named functions
 # from unrelated subsystems. Counts are entries, including recursive calls.
 WATCHED = {
-    'direct_ast_compile': ('experimental_direct_ast.py', 'compile_module'),
-    'source_map_compile': ('experimental_naked_errors.py', 'compile'),
-    'prepared_ast_snapshot': ('python_direct.py', '_snapshot'),
-    'sqlite_catalog_begin': ('sqlite_catalog.py', '_begin'),
-    'configuration_read_source': ('sqlite_inventory_enum_profile.py', 'read_source'),
-    'configuration_validate_ddl': ('sqlite_main_demo_profile.py', 'validate_main_demo_ddl'),
-    'configuration_validate_canonical': ('configuration_main_demo.py', 'validate_canonical'),
-    'configuration_same_recursive': ('configuration_inventory_enums.py', '_same'),
-    'direct_boundary_check': ('python_direct.py', '_check'),
-    'base_boundary_check': ('experimental_naked_boundaries.py', '_check'),
-    'catalog_owner_check': ('python_direct_database.py', '_catalog_owner'),
-    'catalog_resolve_member_call': ('python_direct_database.py', 'resolve_member_call'),
-    'catalog_resolve_member': ('python_direct_database.py', 'resolve_member'),
-    'catalog_invoke': ('python_direct_database.py', 'invoke'),
-    'live_source_reference': ('experimental_naked_live_state.py', 'source_reference'),
+    'direct_ast_compile': ('execution/codegen/experimental_direct_ast.py', 'compile_module'),
+    'source_map_compile': ('execution/codegen/experimental_naked_errors.py', 'compile'),
+    'prepared_ast_snapshot': ('execution/direct/python_direct.py', '_snapshot'),
+    'sqlite_catalog_begin': ('db/sqlite/sqlite_catalog.py', '_begin'),
+    'configuration_read_source': ('db/sqlite/sqlite_inventory_enum_profile.py', 'read_source'),
+    'configuration_validate_ddl': ('db/sqlite/sqlite_main_demo_profile.py', 'validate_main_demo_ddl'),
+    'configuration_validate_canonical': ('configuration/configuration_main_demo.py', 'validate_canonical'),
+    'configuration_same_recursive': ('configuration/configuration_inventory_enums.py', '_same'),
+    'direct_boundary_check': ('execution/direct/python_direct.py', '_check'),
+    'base_boundary_check': ('execution/codegen/experimental_naked_boundaries.py', '_check'),
+    'catalog_owner_check': ('execution/direct/python_direct_database.py', '_catalog_owner'),
+    'catalog_resolve_member_call': ('execution/direct/python_direct_database.py', 'resolve_member_call'),
+    'catalog_resolve_member': ('execution/direct/python_direct_database.py', 'resolve_member'),
+    'catalog_invoke': ('execution/direct/python_direct_database.py', 'invoke'),
+    'live_source_reference': ('execution/codegen/experimental_naked_live_state.py', 'source_reference'),
 }
 
 

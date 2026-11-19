@@ -7,10 +7,10 @@ from unittest.mock import Mock, patch
 from decimal import Decimal
 
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi import runtime_dependencies as dependencies
-from yadinassi.values import InterpreterCall, BSLArray
-from yadinassi import translated_access
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.execution import runtime_dependencies as dependencies
+from yadinassi.types.values import InterpreterCall, BSLArray
+from yadinassi.execution.codegen import translated_access
 
 
 class DependencyHandleTests(unittest.TestCase):
@@ -21,18 +21,18 @@ class DependencyHandleTests(unittest.TestCase):
     def test_lazy_failure_retries_and_closed_cache_is_bounded(self):
         original = dependencies.import_module
         calls = []
-        def load(name, package):
+        def load(name):
             calls.append(name)
             if len(calls) == 1:
                 raise ImportError('unavailable')
-            return original(name, package)
+            return original(name)
         with patch.object(dependencies, 'import_module', side_effect=load):
             with self.assertRaises(ImportError):
                 dependencies.runtime_module('runtime')
             self.assertEqual(dependencies._load_module.cache_info().currsize, 0)
             first = dependencies.runtime_module('runtime')
             self.assertIs(first, dependencies.runtime_module('runtime'))
-        self.assertEqual(calls, ['.runtime', '.runtime'])
+        self.assertEqual(calls, ['yadinassi.runtime', 'yadinassi.runtime'])
         for name in dependencies._MODULE_NAMES:
             self.assertIs(type(dependencies.runtime_module(name)), types.ModuleType)
         info = dependencies._load_module.cache_info()
@@ -63,7 +63,7 @@ class DependencyHandleTests(unittest.TestCase):
             self.assertIs(dependencies.runtime_module('runtime'), complete)
 
     def test_symbols_rebind_after_receiver_but_not_after_actual_arguments(self):
-        from yadinassi.values import HostFunction
+        from yadinassi.types.values import HostFunction
         module = dependencies.runtime_module('source_catalog_runtime')
         for backend in ('interpreter', 'compiled-strict'):
             events = []; vm = Interpreter(execution_backend=backend)

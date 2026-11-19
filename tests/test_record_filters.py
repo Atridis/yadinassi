@@ -3,8 +3,8 @@ from datetime import datetime
 from uuid import uuid4
 import unittest
 
-from yadinassi.catalog_backend import BackendError, CatalogKey
-from yadinassi.document_backend import DocumentKey
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogKey
+from yadinassi.db.document.document_backend import DocumentKey
 from yadinassi.ui.record_pages import (RecordPages, RecordSnapshot, RecordRow,
     DEFAULT_FILTERS, FILTER_NAMES, record_filters, validate_navigation)
 

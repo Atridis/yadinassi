@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 
 class StrictCodegenTests(unittest.TestCase):
     def run_strict(self, source, source_name='<direct-migrated-test>', vm=None):

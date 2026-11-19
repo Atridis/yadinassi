@@ -8,7 +8,7 @@ import unittest
 
 from yadinassi import BSLError, Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.values import BSLObject, HostFunction
+from yadinassi.types.values import BSLObject, HostFunction
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_SHA = '16bd5c91f17225906ef9e9e579371b8884eff74dafd67167b06e5a2dda2e55d5'

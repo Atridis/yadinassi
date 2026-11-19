@@ -1,6 +1,6 @@
 import unittest
 from recovered_bare_fixture import Interpreter
-from yadinassi.native_bare_table import BareTable, BareRow, BareColumn
+from yadinassi.execution.codegen.native_bare_table import BareTable, BareRow, BareColumn
 
 class RecoveredBareTableIntegration(unittest.TestCase):
     def test_both_routes_and_russian_member_names(self):
@@ -17,7 +17,7 @@ class RecoveredBareTableIntegration(unittest.TestCase):
             self.assertIs(vm.variables['в'],vm.variables['т'])
     def test_discarded_add_does_not_create_descriptor(self):
         from unittest.mock import patch
-        import yadinassi.native_bare_table as table
+        import yadinassi.execution.codegen.native_bare_table as table
         vm=Interpreter(); p=vm.prepare('T=New ValueTable; T.Columns.Add("N"); X=0;')
         self.assertIn('.add_column(',p.generated_source)
         with patch.object(table,'BareColumns',side_effect=AssertionError('eager columns')):

@@ -3,7 +3,7 @@ import unittest
 from decimal import Decimal
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.experimental_naked_scalar_semantics import array_equal,array_not_equal
+from yadinassi.execution.codegen.experimental_naked_scalar_semantics import array_equal,array_not_equal
 
 
 class DirectArrayEqualityTests(unittest.TestCase):
@@ -85,7 +85,7 @@ class DirectArrayEqualityTests(unittest.TestCase):
             self.assertIs(vm.execute('(New Array=New Array)'),False)
 
     def test_known_and_boundary_dates_in_both_directions(self):
-        from yadinassi.dates import BSLDate,MAX_TICKS
+        from yadinassi.temporal.dates import BSLDate,MAX_TICKS
         for backend in ('python-direct',):
             vm=self.vm(backend);vm.execute('A=New Array;')
             for ticks in (0,MAX_TICKS):
@@ -100,7 +100,7 @@ class DirectArrayEqualityTests(unittest.TestCase):
 
     def test_array_date_gate_uses_canonical_slot_not_host_callbacks(self):
         from unittest.mock import patch
-        from yadinassi.dates import BSLDate,UnsupportedDateRange
+        from yadinassi.temporal.dates import BSLDate,UnsupportedDateRange
         events=[];date=BSLDate(0,boundary=True)
         with patch.object(BSLDate,'require_known',lambda self:events.append('require')):
             for left,right in (([],date),(date,[])):
@@ -111,8 +111,8 @@ class DirectArrayEqualityTests(unittest.TestCase):
         self.assertEqual(events,[])
 
     def test_null_enum_and_foreign_mixed_kinds_do_not_add_callbacks(self):
-        from yadinassi.values import NULL,BSLType
-        from yadinassi.type_qualifiers import BSLAllowedSign
+        from yadinassi.types.values import NULL,BSLType
+        from yadinassi.types.type_qualifiers import BSLAllowedSign
         for other in (NULL,BSLType.ARRAY,BSLAllowedSign.ANY):
             for left,right in (([],other),(other,[])):
                 self.assertIs(array_equal(left,right),False)
@@ -130,7 +130,7 @@ class DirectArrayEqualityTests(unittest.TestCase):
         self.test_effect_order_and_single_evaluation()
 
     def test_date_unknown_vs_primitive_literals_preserves_original_errors(self):
-        from yadinassi.dates import BSLDate
+        from yadinassi.temporal.dates import BSLDate
         vm=self.vm();vm.variables['d']=BSLDate(0,boundary=True)
         for literal in ('1','True','"date"','Undefined'):
             for left,right in (('D',literal),(literal,'D')):

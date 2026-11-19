@@ -7,7 +7,7 @@ import unittest
 from decimal import Decimal
 
 from yadinassi import Interpreter
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
 class PythonSyncSegmentTests(unittest.TestCase):
@@ -86,7 +86,7 @@ class PythonSyncSegmentTests(unittest.TestCase):
         self.assertIsNone(vm.locals)
 
     def test_callback_replaces_scalar_with_reference_next_segment_declines(self):
-        from yadinassi.values import Reference
+        from yadinassi.types.values import Reference
         vm = Interpreter(execution_backend='python-direct')
         cell = [Decimal(100)]
         def boundary():

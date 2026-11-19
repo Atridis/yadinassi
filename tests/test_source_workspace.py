@@ -3,8 +3,8 @@ from threading import Event, Thread
 from unittest.mock import patch
 from test_source_forms import files, FORM, request as form_request
 from test_source_metadata import xml
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.ui.source_workspace import SourceWorkspace
 
 
@@ -71,7 +71,7 @@ class SourceWorkspaceTests(unittest.TestCase):
 
     def test_concurrent_open_and_close_are_rejected_during_form_creation(self):
         w=self.workspace();entered=Event();release=Event();errors=[]
-        from yadinassi.source_forms import SourceFormController
+        from yadinassi.forms.source_forms import SourceFormController
         def create(*args, **kwargs):
             entered.set()
             if not release.wait(5):raise RuntimeError('test timeout')

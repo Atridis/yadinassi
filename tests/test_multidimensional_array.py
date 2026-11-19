@@ -4,8 +4,8 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.values import BSLArray
-from yadinassi.serialization import value_to_string_internal, value_from_string_internal
+from yadinassi.types.values import BSLArray
+from yadinassi.formats.storage.serialization import value_to_string_internal, value_from_string_internal
 
 
 class MultidimensionalArrayTests(unittest.TestCase):
@@ -85,7 +85,7 @@ class MultidimensionalArrayTests(unittest.TestCase):
 
     def test_cumulative_budget_counts_nested_arrays(self):
         # Small patched limit tests exact accounting without large allocations.
-        with patch('yadinassi.values._MAX_ARRAY_CONSTRUCTION', 10):
+        with patch('yadinassi.types.values._MAX_ARRAY_CONSTRUCTION', 10):
             self.assertEqual(len(BSLArray(Decimal(10)).items), 10)
             self.assertEqual(len(BSLArray(Decimal(2), Decimal(3)).items), 2)  # 2+2+6
             self.assertEqual(len(BSLArray(Decimal(3), Decimal(1)).items), 3)  # 3+3+3

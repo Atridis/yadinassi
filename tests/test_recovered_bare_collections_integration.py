@@ -1,6 +1,6 @@
 import unittest
 from recovered_bare_fixture import Interpreter
-from yadinassi.native_bare_collections import BareArray
+from yadinassi.execution.codegen.native_bare_collections import BareArray
 
 class RecoveredBareCollectionsIntegration(unittest.TestCase):
     def test_map_and_structure_named_reads(self):

@@ -9,8 +9,8 @@ import json
 import re
 from uuid import UUID
 
-from ..dates import BSLDate
-from ..values import NULL
+from yadinassi.temporal.dates import BSLDate
+from yadinassi.types.values import NULL
 
 PROTOCOL = 'yadinassi-ui/0'
 MAX_LINE_BYTES = 131072

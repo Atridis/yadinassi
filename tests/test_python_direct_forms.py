@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.configuration_main_demo import PROFILE, import_main_demo_configuration
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.configuration.configuration_main_demo import PROFILE, import_main_demo_configuration
+from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.ui.configuration_app import load_application
 
 ROOT=Path(__file__).resolve().parents[1]/'examples/demo'
@@ -34,21 +34,21 @@ class DirectFormTests(unittest.TestCase):
                 self.assertEqual(path.read_bytes(),before)
 
     def test_event_transaction_service_rejected_before_effect(self):
-        from yadinassi.form_runtime import FormSession
+        from yadinassi.forms.form_runtime import FormSession
         source='&AtServer\nProcedure Created(Cancel, StandardProcessing) BeginTransaction(); EndProcedure'
         session=FormSession(source,bindings={'OnCreateAtServer':'Created'})
-        with patch('yadinassi.database_transactions.begin',side_effect=AssertionError('transaction effect')) as begin:
+        with patch('yadinassi.db.database_transactions.begin',side_effect=AssertionError('transaction effect')) as begin:
             with self.assertRaises(Exception):session.open()
             begin.assert_not_called()
         self.assertFalse(session._busy)
         self.assertEqual(session.interpreter.execution_context,'client')
 
     def test_loop_budget_and_closed_interpreter_reject(self):
-        from yadinassi.form_runtime import FormSession, FormLimitError
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.forms.form_runtime import FormSession, FormLimitError
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         source='&AtServer\nProcedure Created(Cancel, StandardProcessing) While True Do EndDo; EndProcedure'
         session=FormSession(source,bindings={'OnCreateAtServer':'Created'})
-        with patch('yadinassi.form_runtime.MAX_STEPS',5):
+        with patch('yadinassi.forms.form_runtime.MAX_STEPS',5):
             with self.assertRaises(FormLimitError):session.open()
         self.assertFalse(session._busy)
         session=FormSession('&AtServer\nProcedure Created(Cancel, StandardProcessing) EndProcedure',bindings={'OnCreateAtServer':'Created'})
@@ -58,7 +58,7 @@ class DirectFormTests(unittest.TestCase):
 
 class DirectDeclarationTests(unittest.TestCase):
     def session(self,body,side='Server'):
-        from yadinassi.form_runtime import FormSession
+        from yadinassi.forms.form_runtime import FormSession
         event='OnCreateAtServer' if side=='Server' else 'OnOpen'
         parameters='Cancel, StandardProcessing' if side=='Server' else 'Cancel'
         session=FormSession(f'&At{side}\nProcedure Event({parameters}) {body} EndProcedure',bindings={event:'Event'})
@@ -78,8 +78,8 @@ class DirectDeclarationTests(unittest.TestCase):
         self.assertFalse(session._busy)
 
     def test_constructor_override_rejected_before_argument_effect(self):
-        from yadinassi.values import HostFunction
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.types.values import HostFunction
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         for constructor in ('TypeDescription','ОписаниеТипов','FormAttribute','РеквизитФормы'):
             session=self.session(f'A=New {constructor}(Argument());');effects=[]
             session.interpreter.types[constructor.casefold()]=HostFunction(constructor,lambda *args:effects.append('factory'))
@@ -88,7 +88,7 @@ class DirectDeclarationTests(unittest.TestCase):
             self.assertEqual(effects,[])
 
     def test_foreign_attribute_factory_rejected(self):
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         other=self.session('');session=self.session('A=New FormAttribute("X",New TypeDescription("String"));')
         session.interpreter.types['formattribute']=other.interpreter.types['formattribute']
         with self.assertRaises(BoundaryViolation):session.open()
@@ -106,14 +106,14 @@ class DirectDeclarationTests(unittest.TestCase):
         self.assertEqual(session._allocated,0)
 
     def test_self_form_private_and_unknown_fields_denied(self):
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
-        from yadinassi.errors import BSLRuntimeError
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.types.errors import BSLRuntimeError
         for body,error in (('X=ThisObject._session;',BoundaryViolation),('ThisObject._data=1;',BoundaryViolation),('ThisObject.Missing=1;',BSLRuntimeError)):
             session=self.session(body)
             with self.subTest(body=body),self.assertRaises(error):session.open()
 
     def test_foreign_self_form_receiver_denied(self):
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         other=self.session('');session=self.session('X=Foreign(); X.Title="bad";')
         session.interpreter.register_function('Foreign',lambda:other.form)
         with self.assertRaises(BoundaryViolation):session.open()
@@ -121,8 +121,8 @@ class DirectDeclarationTests(unittest.TestCase):
 
     def test_original_managed_form_completes_without_vm_dispatch(self):
         import sys
-        from yadinassi.form_runtime import FormSession
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.forms.form_runtime import FormSession
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         with patch.object(sys,'path',[str(Path(__file__).resolve().parents[1]/'scripts')]+sys.path):
             from form_runtime_packet import source,parse_records,require_available
         session=FormSession(source(),bindings={'OnCreateAtServer':'FormCreate','OnOpen':'FormOpen','BeforeClose':'FormBeforeClose'})
@@ -140,8 +140,8 @@ class DirectDeclarationTests(unittest.TestCase):
         self.assertTrue(session.form._data['flog'].endswith('MF40=direct-calls-complete|'))
 
     def test_live_constructor_replacement_denied_before_argument(self):
-        from yadinassi.values import HostFunction
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.types.values import HostFunction
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         session=self.session('Change(); A=New TypeDescription(Argument());');effects=[]
         def change():session.interpreter.types['typedescription']=HostFunction('TypeDescription',lambda *args:effects.append('factory'))
         session.interpreter.register_function('Change',change)
@@ -157,8 +157,8 @@ class DirectDeclarationTests(unittest.TestCase):
 
 class DirectFormReferenceTests(unittest.TestCase):
     def boundary(self):
-        from yadinassi.form_runtime import FormSession
-        from yadinassi.python_direct_forms import FormBoundary
+        from yadinassi.forms.form_runtime import FormSession
+        from yadinassi.execution.direct.python_direct_forms import FormBoundary
         session=FormSession('&AtServer\nProcedure Event(Cancel, StandardProcessing) '
                             'Items.Add("Field",Type("FormField")); Commands.Add("Apply"); EndProcedure',
                             bindings={'OnCreateAtServer':'Event'})
@@ -191,7 +191,7 @@ class DirectFormReferenceTests(unittest.TestCase):
         self.assertEqual(own.get(),'own')
 
     def test_foreign_private_and_missing_slots_rejected_at_bind(self):
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         session,context=self.boundary();other,_=self.boundary()
         for receiver in (other.form,other.form.items,other.form.items.get_member('Field')):
             with self.subTest(receiver=type(receiver)),self.assertRaises(BoundaryViolation):
@@ -200,19 +200,19 @@ class DirectFormReferenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):context.reference_member(session.form.items,'Missing')
 
     def test_retired_control_and_collection_cannot_use_retained_reference(self):
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         session,context=self.boundary();items=session.form.items
         field=items.get_member('Field');ref=context.reference_member(field,'Title')
         items.delete(field)
         for operation in (ref.get,lambda:ref.set('bad')):
             with self.assertRaises(BoundaryViolation):operation()
         slot=context.reference_member(session.form.commands,'Apply')
-        from yadinassi.form_model import BSLFormCommands
+        from yadinassi.forms.form_model import BSLFormCommands
         session.form.commands=BSLFormCommands(session.form)
         with self.assertRaises(BoundaryViolation):slot.get()
 
     def test_retained_reference_requires_active_open_family(self):
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         session,context=self.boundary();ref=context.reference_member(session.form,'Title')
         session._busy=False
         with self.assertRaises(ValueError):ref.get()
@@ -221,7 +221,7 @@ class DirectFormReferenceTests(unittest.TestCase):
         with self.assertRaises(BoundaryViolation):ref.set('bad')
 
     def test_source_byref_writes_public_property_and_readonly_slot_stays_readonly(self):
-        from yadinassi.form_runtime import FormSession
+        from yadinassi.forms.form_runtime import FormSession
         source=('&AtServer\nProcedure Event(Cancel, StandardProcessing) '
                 'Items.Add("Field",Type("FormField")); Assign(ThisObject.Title); '
                 'Assign(Items.Field.Title); Try Assign(Items.Field); Except Message("readonly"); EndTry; EndProcedure\n'

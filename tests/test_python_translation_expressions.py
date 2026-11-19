@@ -52,7 +52,7 @@ class DirectExpressionBehavior(unittest.TestCase):
         self.assertEqual(events, [])
 
     def test_host_reference_variable_and_index(self):
-        from yadinassi.values import HostFunction, BSLArray
+        from yadinassi.types.values import HostFunction, BSLArray
         vm = Interpreter()
         vm.variables['x'] = Decimal(1)
         vm.execute('a=New Array(1);')
@@ -67,7 +67,7 @@ class DirectExpressionBehavior(unittest.TestCase):
         self.assertEqual(vm.variables['a'][0], 9)
 
     def test_reference_constructor_effects_once(self):
-        from yadinassi.values import HostFunction, BSLArray
+        from yadinassi.types.values import HostFunction, BSLArray
         vm = Interpreter()
         events = []
         array = [None]

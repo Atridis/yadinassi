@@ -17,15 +17,15 @@ from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
 from yadinassi.numeric.round_modes import BSLRoundMode, BSLRoundModes, ROUND_MODES
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.type_qualifiers import (
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.type_qualifiers import (
     ALLOWED_LENGTHS, ALLOWED_SIGNS, DATE_FRACTIONS,
     BSLAllowedLength, BSLAllowedSign, BSLBinaryDataQualifiers,
     BSLDateFractions, BSLDateQualifiers, BSLNumberQualifiers,
     BSLStringQualifiers,
 )
-from yadinassi.value_checks import value_is_filled
-from yadinassi.values import BSLArray, BSLType
+from yadinassi.types.value_checks import value_is_filled
+from yadinassi.types.values import BSLArray, BSLType
 from test_service_filled_checkpoint import CASES
 
 

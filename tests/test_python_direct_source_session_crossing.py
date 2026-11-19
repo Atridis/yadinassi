@@ -3,12 +3,12 @@ import unittest
 from unittest.mock import patch
 import test_source_session_types as existing
 from test_source_session_parameters import package
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.runtime import Interpreter
-from yadinassi.session_parameters import _UNSET
-from yadinassi.errors import BSLError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.application.session_parameters import _UNSET
+from yadinassi.types.errors import BSLError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 DENIED=(BSLError,BoundaryViolation,ValueError,TypeError)
 
@@ -43,7 +43,7 @@ class SourceSessionCrossingTests(unittest.TestCase):
         with self.assertRaises(DENIED):owner.execute('SessionParameters.State;')
         self.assertEqual(owner.execution_context,'client')
     def test_safe_mode_and_transaction_gates(self):
-        from yadinassi import database_transactions
+        from yadinassi.db import database_transactions
         app,out=self.app();owner=app._session_owner
         owner.execute('&AtServer\nProcedure Read() Message("bad");EndProcedure')
         with self.assertRaises(DENIED):owner.execute('SetSafeMode(True);Read();')

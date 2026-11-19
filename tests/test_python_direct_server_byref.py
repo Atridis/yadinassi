@@ -3,9 +3,9 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.values import Reference
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.types.values import Reference
 
 class DirectServerByrefTests(unittest.TestCase):
     def test_same_side_and_crossing_source_ast_prepared_without_dispatch(self):

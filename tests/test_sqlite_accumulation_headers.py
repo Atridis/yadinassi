@@ -5,11 +5,11 @@ import unittest
 from uuid import UUID, uuid4
 
 import test_sqlite_transaction_source as fixture
-from yadinassi import sqlite_accumulation_movements as movements
-from yadinassi import sqlite_inventory_enum_profile as profile
-from yadinassi import sqlite_catalog as storage
-from yadinassi.catalog_backend import BackendError
-from yadinassi.document_backend import DocumentKey
+from yadinassi.db.sqlite import sqlite_accumulation_movements as movements
+from yadinassi.db.sqlite import sqlite_inventory_enum_profile as profile
+from yadinassi.db.sqlite import sqlite_catalog as storage
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.document.document_backend import DocumentKey
 
 
 class AccumulationHeaderTests(unittest.TestCase):
@@ -68,7 +68,7 @@ class AccumulationHeaderTests(unittest.TestCase):
                 self.assertEqual(refs.call_count, 1)
 
     def test_actual_write_still_checks_references_before_mutation(self):
-        from yadinassi.accumulation_movements import AccumulationReplacement
+        from yadinassi.db.registers.accumulation_movements import AccumulationReplacement
         with closing(self.backend.begin_write(uuid4())) as view:
             port = self.port(view._connection)
             schema = self.backend.accumulation_configuration.registers[0]

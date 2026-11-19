@@ -1,7 +1,7 @@
 """Each nested actual is lowered once, for native and owning-host selections."""
 import unittest
 from unittest.mock import patch
-from yadinassi.experimental_direct_ast import Emitter,compile_owned
+from yadinassi.execution.codegen.experimental_direct_ast import Emitter,compile_owned
 from yadinassi.syntax.parser import parse
 from yadinassi.syntax import ast
 
@@ -33,8 +33,8 @@ class OwnedArgumentScalingTests(unittest.TestCase):
 
     def test_native_selected_callable_skips_host_protocol_and_preserves_arity_effects(self):
         from decimal import Decimal
-        from yadinassi.experimental_naked_boundaries import BoundaryContext
-        from yadinassi.values import HostFunction
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.types.values import HostFunction
         for source_scopes in (False,True):
             effects=[]
             context=BoundaryContext(services={'touch':HostFunction('Touch',lambda x:effects.append(x) or x)})

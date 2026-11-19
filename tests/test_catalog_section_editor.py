@@ -5,9 +5,9 @@ import unittest
 from uuid import uuid4
 
 import test_catalog_object_preparation as fixture
-from yadinassi.catalog_backend import BackendError
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import _View
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import _View
 from yadinassi.ui.catalog_editor import CatalogEditorApplication
 from yadinassi.ui.editor_protocol import CatalogEditorSession, validate_request
 from yadinassi.ui.protocol import CatalogRef, UIError
@@ -191,7 +191,7 @@ class CatalogSectionEditorTests(unittest.TestCase):
     def test_unsupported_sections_are_preserved_on_scalar_save(self):
         from pathlib import Path
         from catalog_sections_fixture import configuration_files_with_sections
-        from yadinassi.configuration_xml import import_configuration
+        from yadinassi.configuration.configuration_xml import import_configuration
         from yadinassi import Interpreter
         context = SQLiteDBContext.create(Path(self.temp.name)/'mixed.sqlite',
             import_configuration(configuration_files_with_sections()))

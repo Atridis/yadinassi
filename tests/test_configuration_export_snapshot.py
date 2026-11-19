@@ -10,10 +10,10 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from test_sqlite_catalog_backend import configuration
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_xml import ConfigurationFile
-import yadinassi.sqlite_catalog as storage
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_xml import ConfigurationFile
+import yadinassi.db.sqlite.sqlite_catalog as storage
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 
 
 class InterleavingConnection:

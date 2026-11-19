@@ -3,9 +3,9 @@ import unittest
 from unittest.mock import patch
 import test_source_temporary_storage as existing
 from yadinassi.runtime import Interpreter
-from yadinassi import temporary_storage as temporary
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.errors import BSLError
+from yadinassi.application import temporary_storage as temporary
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.types.errors import BSLError
 
 
 class SourceTemporarySecurity(unittest.TestCase):
@@ -43,8 +43,8 @@ class SourceTemporarySecurity(unittest.TestCase):
         callback.assert_not_called()
 
     def test_marker_retargeted_during_argument_cannot_write(self):
-        from yadinassi.configuration_source_runtime import SourceApplication
-        from yadinassi.python_direct_source_server import _ACTIVE
+        from yadinassi.configuration.configuration_source_runtime import SourceApplication
+        from yadinassi.execution.direct.source.python_direct_source_server import _ACTIVE
         from test_source_server_call import configuration
         other=self.app(); output=[]
         def emit(value):

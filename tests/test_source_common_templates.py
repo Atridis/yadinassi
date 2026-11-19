@@ -3,11 +3,11 @@ import json
 import unittest
 from pathlib import Path
 from test_common_templates_recovery import files, ASSETS, FIXTURE
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 from yadinassi.runtime import Interpreter
-from yadinassi.common_templates import SourceTemplateCall
+from yadinassi.configuration.common_templates import SourceTemplateCall
 
 class SourceTemplateTests(unittest.TestCase):
     def app(self, changes=None):

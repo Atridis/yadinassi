@@ -9,13 +9,14 @@ import unittest
 from unittest.mock import patch
 
 from tests.native_observations import extract_payload, inverse_stream, read_observation
-from yadinassi import Interpreter, serialization
-from yadinassi.serialization import value_from_string_internal as read
-from yadinassi.serialization import value_to_string_internal as write
-from yadinassi.type_values import type_of
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.value_lists import BSLValueList
-from yadinassi.values import BSLArray, BSLType, NULL, equal
+from yadinassi import Interpreter
+from yadinassi.formats.storage import serialization
+from yadinassi.formats.storage.serialization import value_from_string_internal as read
+from yadinassi.formats.storage.serialization import value_to_string_internal as write
+from yadinassi.types.type_values import type_of
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.collections.value_lists import BSLValueList
+from yadinassi.types.values import BSLArray, BSLType, NULL, equal
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -160,7 +161,7 @@ class ValueListCodecBoundaryTests(unittest.TestCase):
         self.assertEqual(last._next_id, 2 ** 32)
         with self.assertRaisesRegex(ValueError, 'предел идентификаторов'):
             last.add()
-        from yadinassi.type_qualifiers import BSLNumberQualifiers
+        from yadinassi.types.type_qualifiers import BSLNumberQualifiers
         # Host-corrupted descriptors must not silently lose hidden qualifiers.
         object.__setattr__(values.value_type, "number_qualifiers", BSLNumberQualifiers(D(1)))
         with self.assertRaisesRegex(ValueError, 'квалификаторы отсутствующего типа'):
@@ -186,7 +187,7 @@ class ValueListCodecBoundaryTests(unittest.TestCase):
             nested.add(child)
         stream = write(nested)
         self.assertEqual(write(read(stream)), stream)
-        with patch('yadinassi.serialization._MAX_NODES', 2):
+        with patch('yadinassi.formats.storage.serialization._MAX_NODES', 2):
             # Grammar-level limits still apply before semantic validation to
             # hostile streams containing many otherwise meaningless tokens.
             with self.assertRaisesRegex(ValueError, 'предел ресурсов'):
@@ -195,15 +196,15 @@ class ValueListCodecBoundaryTests(unittest.TestCase):
     def test_resource_budgets_for_nodes_depth_text_and_identifiers(self):
         values = sample()
         stream = write(values)
-        with patch('yadinassi.serialization._MAX_NODES', 3):
+        with patch('yadinassi.formats.storage.serialization._MAX_NODES', 3):
             for operation, value in ((write, values), (read, stream)):
                 with self.assertRaisesRegex(ValueError, 'предел ресурсов'):
                     operation(value)
-        with patch('yadinassi.serialization._MAX_DEPTH', 1):
+        with patch('yadinassi.formats.storage.serialization._MAX_DEPTH', 1):
             for operation, value in ((write, values), (read, stream)):
                 with self.assertRaisesRegex(ValueError, 'предел ресурсов'):
                     operation(value)
-        with patch('yadinassi.serialization._MAX_TEXT', 20):
+        with patch('yadinassi.formats.storage.serialization._MAX_TEXT', 20):
             for operation, value in ((write, values), (read, stream)):
                 with self.assertRaisesRegex(ValueError, 'предел ресурсов'):
                     operation(value)

@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 import test_imported_product_editor as fixture
-from yadinassi.catalog_backend import BackendError, CatalogBackend
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogBackend
 
 
 class SourcePairTests(unittest.TestCase):
@@ -54,7 +54,7 @@ class OtherProfilePairTests(unittest.TestCase):
         with patch.object(backend, '_main_demo_source_snapshot', wraps=backend._main_demo_source_snapshot) as read:
             self.assertEqual(backend.read_catalog_editor_source(identity), (form, policy))
             self.assertEqual(read.call_count, 1)
-        with patch('yadinassi.sqlite_main_demo_profile.validate_main_demo_ddl', side_effect=BackendError('schema_changed')):
+        with patch('yadinassi.db.sqlite.sqlite_main_demo_profile.validate_main_demo_ddl', side_effect=BackendError('schema_changed')):
             with self.assertRaisesRegex(BackendError, 'schema_changed'):
                 backend.read_catalog_editor_source(identity)
 

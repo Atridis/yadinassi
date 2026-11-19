@@ -5,9 +5,10 @@ import subprocess
 import sys
 import unittest
 import types
-from yadinassi import Interpreter,python_direct
+from yadinassi import Interpreter
+from yadinassi.execution.direct import python_direct
 from unittest.mock import patch
-from yadinassi import experimental_direct_ast as direct
+from yadinassi.execution.codegen import experimental_direct_ast as direct
 
 
 class WholeSourceResearchTests(unittest.TestCase):
@@ -67,8 +68,9 @@ class WholeSourceResearchTests(unittest.TestCase):
             script=r'''
 import ast,sys
 from unittest.mock import patch
-from yadinassi import Interpreter,python_direct
-from yadinassi import experimental_direct_ast as direct
+from yadinassi import Interpreter
+from yadinassi.execution.direct import python_direct
+from yadinassi.execution.codegen import experimental_direct_ast as direct
 policy=sys.argv[1];events=[]
 def check(value):
     if not value:raise AssertionError('audit contract mismatch')

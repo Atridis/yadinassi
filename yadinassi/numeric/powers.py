@@ -7,7 +7,7 @@ exponents belong to the separate floating-point math implementation.
 
 from decimal import Decimal
 
-from ..values import divide
+from yadinassi.types.values import divide
 
 
 # This is an implementation work/output budget, not a native Number limit.

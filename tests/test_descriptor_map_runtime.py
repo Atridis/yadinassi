@@ -16,21 +16,21 @@ import unittest
 from tests.native_observations import extract_payload, read_observation
 from scripts.native_historical_replay import without_fill_include_probes
 from yadinassi import Interpreter
-from yadinassi.dates import BSLDate
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.maps import BSLFixedMap, BSLMap
-from yadinassi.serialization import (
+from yadinassi.temporal.dates import BSLDate
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.collections.maps import BSLFixedMap, BSLMap
+from yadinassi.formats.storage.serialization import (
     FORMAT_ERROR, value_from_string_internal as read,
     value_to_string_internal as write,
 )
-from yadinassi.type_descriptions import BSLTypeDescription as TD
-from yadinassi.type_qualifiers import (
+from yadinassi.types.type_descriptions import BSLTypeDescription as TD
+from yadinassi.types.type_qualifiers import (
     BSLAllowedLength as AL, BSLAllowedSign as AS,
     BSLDateFractions as DF, BSLDateQualifiers as DQ,
     BSLNumberQualifiers as NQ, BSLStringQualifiers as SQ,
 )
-from yadinassi.type_values import type_of
-from yadinassi.values import BSLArray, BSLType, NULL
+from yadinassi.types.type_values import type_of
+from yadinassi.types.values import BSLArray, BSLType, NULL
 
 
 ROOT = Path(__file__).resolve().parents[1]

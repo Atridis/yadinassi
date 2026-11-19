@@ -7,13 +7,13 @@ from unittest.mock import patch
 
 from test_source_constant_store import configuration
 from test_source_catalog_object_modules import source as catalog_source
-from yadinassi.configuration_source_runtime import SourceApplication, _SourceInterpreter
+from yadinassi.configuration.configuration_source_runtime import SourceApplication, _SourceInterpreter
 from yadinassi.runtime import Interpreter
-from yadinassi.source_constants_runtime import SourceConstants, ConstantCall
-from yadinassi.source_constant_managers import create_manager, write_values
-from yadinassi.source_references import SourceReferenceManager
-from yadinassi.source_catalog_runtime import create_object
-from yadinassi import source_transactions
+from yadinassi.db.metadata.source_constants_runtime import SourceConstants, ConstantCall
+from yadinassi.db.metadata.source_constant_managers import create_manager, write_values
+from yadinassi.db.metadata.source_references import SourceReferenceManager
+from yadinassi.db.catalog.source_catalog_runtime import create_object
+from yadinassi.db import source_transactions
 
 
 def finish(operation):

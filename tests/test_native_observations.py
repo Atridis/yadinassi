@@ -4,9 +4,9 @@ from decimal import Decimal
 
 from tests.native_observations import (read_observation, extract_payload,
                                        inverse_stream, assert_snapshot)
-from yadinassi.serialization import value_to_string_internal as write
-from yadinassi.structures import BSLStructure
-from yadinassi.values import BSLArray
+from yadinassi.formats.storage.serialization import value_to_string_internal as write
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.types.values import BSLArray
 
 
 def encoded(value):
@@ -88,8 +88,8 @@ class SyntheticObservationReaderTests(unittest.TestCase):
 
     def test_table_snapshot_requires_both_view_fields(self):
         # Deliberately synthetic incomplete snapshot, never a native fixture.
-        from yadinassi.value_tables import BSLValueTable
-        from yadinassi.type_values import type_of
+        from yadinassi.collections.value_tables import BSLValueTable
+        from yadinassi.types.type_values import type_of
         table = BSLValueTable()
         nested = BSLArray(); nested.add(table)
         record = BSLStructure('Type,Text,Write,TypeWrite,ReadType,ReadWrite,TypeRead,Equal,Nested',

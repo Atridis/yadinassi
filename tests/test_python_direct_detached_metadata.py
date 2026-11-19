@@ -3,14 +3,14 @@ from decimal import Decimal
 import unittest
 from unittest.mock import patch
 from test_source_metadata import files
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_metadata import SourceMetadataRoot, SourceMetadataObject
-from yadinassi.metadata import _DeclaredMetadataCollection
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_metadata import SourceMetadataRoot, SourceMetadataObject
+from yadinassi.configuration.metadata import _DeclaredMetadataCollection
 from yadinassi.runtime import Interpreter
-from yadinassi.execution_policy import execution_backend_policy
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.errors import BSLError
-from yadinassi.values import HostFunction
+from yadinassi.execution.execution_policy import execution_backend_policy
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.types.errors import BSLError
+from yadinassi.types.values import HostFunction
 
 DENIED=(BoundaryViolation, BSLError, ValueError, TypeError)
 
@@ -101,7 +101,7 @@ class DetachedMetadataTests(unittest.TestCase):
         self.root._collections['Subsystem']=_DeclaredMetadataCollection(tuple(original))
         with self.assertRaises(DENIED):self.run_bsl('md.Subsystems.Count()')
     def test_foreign_child_entry_rejected_before_path_hash_callback(self):
-        from yadinassi.configuration_source import SourceMetadata
+        from yadinassi.configuration.configuration_source import SourceMetadata
         calls=[]
         class Path:
             def __hash__(self):calls.append('hash');return 0
@@ -124,7 +124,7 @@ class DetachedMetadataTests(unittest.TestCase):
             with self.assertRaises(DENIED):self.run_bsl('md.Subsystems')
         self.assertEqual(calls,[])
     def test_parser_factory_hook_never_called(self):
-        from yadinassi import configuration_source_metadata as module
+        from yadinassi.configuration import configuration_source_metadata as module
         calls=[]
         with patch.object(module.ET,'XMLPullParser',lambda *args,**kwargs:calls.append('factory')):
             with self.assertRaises(DENIED):self.run_bsl('md.Subsystems')
@@ -137,8 +137,8 @@ class DetachedMetadataTests(unittest.TestCase):
         gc.collect()
         self.assertIsNone(observed())
     def test_namespace_constant_hooks_never_called(self):
-        from yadinassi import configuration_source_metadata as module
-        from yadinassi import configuration_source as admission
+        from yadinassi.configuration import configuration_source_metadata as module
+        from yadinassi.configuration import configuration_source as admission
         calls=[]
         class Evil(str):
             def __radd__(self,left):calls.append('radd');return left+str(self)
@@ -147,7 +147,7 @@ class DetachedMetadataTests(unittest.TestCase):
                 with self.assertRaises(DENIED):self.run_bsl('md.Subsystems.Count()')
         self.assertEqual(calls,[])
     def test_family_table_keys_rejected_before_lookup_callback(self):
-        from yadinassi import configuration_source_metadata as module
+        from yadinassi.configuration import configuration_source_metadata as module
         calls=[];table=module._COLLECTIONS;saved=dict(table);key=next(iter(table))
         class Evil:
             def __hash__(self):return hash(key)
@@ -165,7 +165,7 @@ class DetachedMetadataTests(unittest.TestCase):
             with self.assertRaises(DENIED):self.run_bsl('md.Name')
         self.assertEqual(calls,[])
     def test_parser_hook_never_called(self):
-        from yadinassi import configuration_source_metadata as module
+        from yadinassi.configuration import configuration_source_metadata as module
         calls=[]
         with patch.object(module.ET,'iterparse',lambda *args,**kwargs:calls.append('parser')):
             with self.assertRaises(DENIED):self.run_bsl('md.Subsystems')
@@ -175,9 +175,9 @@ class DetachedMetadataTests(unittest.TestCase):
         self.root.get_member('Subsystems')
         with self.assertRaises(DENIED):self.run_bsl('md.Subsystems.Count()')
     def test_saved_calls_and_iterators_expire_with_boundary(self):
-        from yadinassi.python_direct_detached_metadata import DetachedMetadataBoundary
-        from yadinassi.python_direct_database import CatalogBoundary
-        from yadinassi.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.execution.direct.python_direct_detached_metadata import DetachedMetadataBoundary
+        from yadinassi.execution.direct.python_direct_database import CatalogBoundary
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
         class Context(DetachedMetadataBoundary,CatalogBoundary,BoundaryContext):pass
         ctx=Context();ctx.vm=self.vm;ctx.enter()
         collection=ctx.get_member(self.root,'Subsystems')
@@ -191,7 +191,7 @@ class DetachedMetadataTests(unittest.TestCase):
         with self.assertRaises(BoundaryViolation):count()
         ctx.leave()
     def test_database_metadata_collection_not_granted(self):
-        from yadinassi.metadata import BSLCatalogMetadataCollection
+        from yadinassi.configuration.metadata import BSLCatalogMetadataCollection
         # An exact foreign database class must not become detached merely because
         # it looks like another read-only metadata collection.
         forged=object.__new__(BSLCatalogMetadataCollection)

@@ -5,8 +5,8 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.python_direct import PythonDirectUnsupported
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.syntax.parser import parse
 
 
@@ -20,7 +20,7 @@ class PersistentDirectTests(unittest.TestCase):
         self.assertEqual((vm.variables['x'],vm.variables['total'],vm.variables['r']),(8,13,120))
 
     def test_one_compile_and_code_only_persistent_plan(self):
-        from yadinassi import python_direct
+        from yadinassi.execution.direct import python_direct
         for prepared in (False,True):
             vm=Interpreter()
             with patch.object(python_direct,'_compile',wraps=python_direct._compile) as compile_module:
@@ -97,7 +97,7 @@ class PersistentDirectTests(unittest.TestCase):
         self.assertTrue(vm.variables['caught']);self.assertEqual(effects,[])
 
     def test_indirect_host_function_call_is_unchanged(self):
-        from yadinassi.values import HostFunction
+        from yadinassi.types.values import HostFunction
         vm=Interpreter();vm.register_function('Get',lambda:HostFunction('F',lambda:Decimal(7)))
         self.assertEqual(vm.execute('Get()();'),7)
 

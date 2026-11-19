@@ -6,14 +6,14 @@ import unittest
 from unittest.mock import patch
 
 from business_configuration_fixture import sources
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_business_profile import import_business_configuration
-from yadinassi.configuration_document import DocumentObjectSession, DocumentImage, DocumentRowImage
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.dates import literal_date
-from yadinassi.errors import BSLError
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_business_profile import import_business_configuration
+from yadinassi.configuration.configuration_document import DocumentObjectSession, DocumentImage, DocumentRowImage
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.temporal.dates import literal_date
+from yadinassi.types.errors import BSLError
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 
 
 class BusinessRecoveryTests(unittest.TestCase):

@@ -29,17 +29,17 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi import native_target_sort as model
-from yadinassi.dates import BSLDate
-from yadinassi.maps import BSLMap
-from yadinassi.native_targets import (
+from yadinassi.execution.codegen import native_target_sort as model
+from yadinassi.temporal.dates import BSLDate
+from yadinassi.collections.maps import BSLMap
+from yadinassi.execution.codegen.native_targets import (
     LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, target_context,
 )
-from yadinassi.structures import BSLStructure
-from yadinassi.value_lists import BSLValueList
-from yadinassi.value_table_sort import _string_key
-from yadinassi.value_tables import BSLValueTable
-from yadinassi.values import BSLArray, NULL
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.collections.value_lists import BSLValueList
+from yadinassi.collections.value_table_sort import _string_key
+from yadinassi.collections.value_tables import BSLValueTable
+from yadinassi.types.values import BSLArray, NULL
 
 ROOT = Path(__file__).resolve().parents[1]
 KEYS = "я|е|Ё|Е|ё|a|A|á|a |a-1|a1|a10|a2| |!|😀|Я|A".split("|")
@@ -324,7 +324,7 @@ class NativeTargetSortTests(unittest.TestCase):
 
     def test_every_column_and_resource_limit_precedes_sorting(self):
         with target_context(LINUX_8_3_27_1508), patch(
-                'yadinassi.value_table_sort.introsort', side_effect=AssertionError('must not sort')):
+                'yadinassi.collections.value_table_sort.introsort', side_effect=AssertionError('must not sort')):
             for constant, limit, order in (
                 ('_MAX_SORT_CELLS', 1, 'Key'),
                 ('_MAX_SORT_TEXT', 3, 'Key'),
@@ -334,7 +334,7 @@ class NativeTargetSortTests(unittest.TestCase):
                 table = table_for(['bb', 'aa'])
                 before = list(table.rows)
                 with self.subTest(constant=constant):
-                    with patch('yadinassi.value_table_sort.' + constant, limit):
+                    with patch('yadinassi.collections.value_table_sort.' + constant, limit):
                         with self.assertRaises(ValueError):
                             table.sort(order)
                 self.assertEqual(table.rows, before)
@@ -357,7 +357,7 @@ class NativeTargetSortTests(unittest.TestCase):
             raise RuntimeError('synthetic sort failure')
 
         with target_context(LINUX_8_3_27_1508), patch(
-                'yadinassi.value_table_sort.introsort', side_effect=fail_after_mutation):
+                'yadinassi.collections.value_table_sort.introsort', side_effect=fail_after_mutation):
             with self.assertRaisesRegex(RuntimeError, 'synthetic sort failure'):
                 table.sort('Key')
         self.assertIs(table.rows, container)

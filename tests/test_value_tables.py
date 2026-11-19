@@ -6,11 +6,11 @@ from decimal import Decimal, Inexact, Rounded, localcontext
 import unittest
 from unittest.mock import patch
 
-from yadinassi.structures import BSLStructure
-from yadinassi.type_descriptions import BSLTypeDescription as TD
-from yadinassi.type_qualifiers import BSLStringQualifiers, BSLAllowedLength
-from yadinassi.values import BSLArray, NULL
-from yadinassi.value_tables import BSLValueTable, BSLValueTableRow, BSLValueTableColumn, BSLValueTableColumnCollection
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.types.type_descriptions import BSLTypeDescription as TD
+from yadinassi.types.type_qualifiers import BSLStringQualifiers, BSLAllowedLength
+from yadinassi.types.values import BSLArray, NULL
+from yadinassi.collections.value_tables import BSLValueTable, BSLValueTableRow, BSLValueTableColumn, BSLValueTableColumnCollection
 
 D = Decimal
 
@@ -254,7 +254,7 @@ class ValueTableTests(unittest.TestCase):
             single.columns.add("Value")
             single.add().set_member("Value", large)
             self.assertEqual(single.total("Value"), large)
-        with patch("yadinassi.value_tables._MAX_TOTAL_PRECISION", 20):
+        with patch("yadinassi.collections.value_tables._MAX_TOTAL_PRECISION", 20):
             with self.assertRaises(ValueError):
                 t.total("Value")
 
@@ -317,7 +317,7 @@ class ValueTableTests(unittest.TestCase):
             self.assertIsNotNone(obj.get_index("Имя"))
         for v in [True,1,D('NaN'),D('Infinity'),D('1e999999')]:
             with self.assertRaises((TypeError,ValueError)): t.get(v)
-        with patch('yadinassi.value_tables._MAX_CELLS',6):
+        with patch('yadinassi.collections.value_tables._MAX_CELLS',6):
             with self.assertRaises(ValueError): t.add()
             with self.assertRaises(ValueError): t.columns.add("Extra")
         self.assertEqual(len(t.rows),3); self.assertEqual(len(t.columns.items),2)

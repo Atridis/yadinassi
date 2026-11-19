@@ -2,7 +2,7 @@ import sys
 import unittest
 from decimal import Decimal
 from yadinassi import Interpreter
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class PublicationBoundaryTests(unittest.TestCase):
     def test_close_during_private_kernel_does_not_publish(self):

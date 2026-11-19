@@ -3,10 +3,10 @@ import unittest
 from decimal import Decimal
 from unittest.mock import patch, PropertyMock
 from yadinassi.runtime import Interpreter
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.form_runtime import FormSession
-from yadinassi.invocation import InvocationServer, InvocationPort, InvocationError
-from yadinassi.values import HostFunction
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.forms.form_runtime import FormSession
+from yadinassi.execution.invocation import InvocationServer, InvocationPort, InvocationError
+from yadinassi.types.values import HostFunction
 from configuration_runtime_fixture import module_files, CLIENT, SERVER
 
 

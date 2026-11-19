@@ -76,7 +76,7 @@ assert calls==['append'] and vm.variables['final']==1 and 'injected' not in vm.v
 
     def test_direct_caught_bsl_host_error_uses_admitted_handler(self):
         self.probe('''
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 vm=Interpreter(execution_backend='python-direct');program=parse('Try Boom();Except caught=1;EndTry;')
 calls=[]
 def boom():
@@ -127,7 +127,7 @@ for initially_dual in (False,True):
     def test_direct_module_export_gate_and_ready_remain_separate(self):
         self.probe('''
 import unittest
-from yadinassi.execution_policy import execution_backend_policy
+from yadinassi.execution.execution_policy import execution_backend_policy
 names=[
  'tests.test_python_direct_imports.DirectImportBoundaryTests.test_cache_namespace_and_family_rebindings_precede_arguments',
  'tests.test_python_direct_imports.DirectImportBoundaryTests.test_retained_callable_and_export_reference_expire_with_caller',
@@ -171,7 +171,7 @@ assert vm.variables['r']==1
     def test_configuration_authority_callbacks_and_form_quiescent_replacement(self):
         self.probe('''
 import unittest
-from yadinassi.execution_policy import execution_backend_policy
+from yadinassi.execution.execution_policy import execution_backend_policy
 names=[
  'tests.test_compiled_contexts.StrictContextTests.test_configuration_cross_owner_defaults_and_callbacks',
  'tests.test_compiled_contexts.StrictContextTests.test_source_value_manager_references',
@@ -184,8 +184,8 @@ assert result.wasSuccessful()
     def test_reuse_rejects_forged_or_wrong_origin_execution_views(self):
         self.probe('''
 from types import SimpleNamespace
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 vm=Interpreter(execution_backend='python-direct')
 first=parse('Function F() Return 1;EndFunction')[0]
 second=parse('Function G() Return 2;EndFunction')[0]

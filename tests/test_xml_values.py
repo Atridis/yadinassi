@@ -3,8 +3,8 @@ from decimal import Decimal
 import unittest
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.values import BSLType
-from yadinassi.xml_values import xml_string, xml_value
+from yadinassi.types.values import BSLType
+from yadinassi.formats.xml.xml_values import xml_string, xml_value
 
 
 class XMLValueTests(unittest.TestCase):

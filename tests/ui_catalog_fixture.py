@@ -8,9 +8,9 @@ from pathlib import Path
 import tempfile
 from uuid import UUID
 
-from yadinassi.catalog_backend import CatalogDraft, CatalogKey
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import CatalogDraft, CatalogKey
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from yadinassi.ui.catalog_view import CatalogRepository
 
 PRODUCT = UUID('10000000-0000-0000-0000-000000000001')

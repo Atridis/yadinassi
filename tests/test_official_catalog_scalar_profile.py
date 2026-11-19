@@ -13,14 +13,14 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_xml import (
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_xml import (
     MD, V8, XR, XS, XSI, _catalog_profile_fingerprint, _object,
     _SCALAR_PROFILE_SHA256, import_configuration,
 )
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.sqlite_catalog_layout import quote_identifier
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
 from test_official_catalog_xml_profile import files as empty_profile_files
 
 CATALOG = ROOT / 'scripts/catalog_query_behavior/generated/Catalog.xml'

@@ -4,10 +4,10 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.regex_functions import BSLRegexResult
-from yadinassi.values import BSLArray, BSLFixedArray
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.formats.regex.regex_functions import BSLRegexResult
+from yadinassi.types.values import BSLArray, BSLFixedArray
 import test_python_direct_database as database_fixture
 
 

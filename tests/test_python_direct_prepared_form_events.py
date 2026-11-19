@@ -5,8 +5,8 @@ from unittest.mock import patch
 import test_main_demo_host as hostfixture
 import test_verified_form_draft_session as scalarfixture
 import test_product_form_events as productfixture
-from yadinassi import python_direct_form_events as direct
-from yadinassi.catalog_backend import BackendError
+from yadinassi.execution.direct import python_direct_form_events as direct
+from yadinassi.db.catalog.catalog_backend import BackendError
 
 class PreparedFormEventsTests(TestCase):
     def test_actual_kind_editor_reuses_across_fresh_source_drafts(self):
@@ -41,7 +41,7 @@ class PreparedFormEventsTests(TestCase):
         self.assertIs(session.snapshot(),before)
     def test_product_event_and_object_code_reused_with_fresh_cancellation(self):
         f=productfixture.ProductFormEventTests();f.setUp();self.addCleanup(f.doCleanups)
-        import yadinassi.python_direct_catalog_preparation as object_direct
+        import yadinassi.execution.direct.python_direct_catalog_preparation as object_direct
         with patch.object(direct,'compile_owned',wraps=direct.compile_owned) as event_compile,patch.object(object_direct,'compile_owned',wraps=object_direct.compile_owned) as object_compile:
             self.assertFalse(f.run_event('BeforeWriteAtServer').cancel)
             self.assertFalse(f.run_event('BeforeWriteAtServer').cancel)

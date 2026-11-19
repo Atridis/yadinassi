@@ -4,9 +4,9 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
-from yadinassi.experimental_naked_collections import _DIRECT_MAP_ENTRY_TYPE as Entry
-from yadinassi.python_direct_services import ServicesBoundary
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_collections import _DIRECT_MAP_ENTRY_TYPE as Entry
+from yadinassi.execution.direct.python_direct_services import ServicesBoundary
 
 
 class DirectEntryReadonlyTests(unittest.TestCase):
@@ -80,7 +80,7 @@ N=M.Count();'''
     def test_counterfeit_class_rebinding_cannot_gain_catchable_admission(self):
         class Fake:pass
         vm=self.vm();pair=Entry('K',Decimal(1));vm.variables['p']=pair
-        with patch('yadinassi.experimental_naked_collections._MapEntry',Fake):
+        with patch('yadinassi.execution.codegen.experimental_naked_collections._MapEntry',Fake):
             vm.execute('Try P.Value=2;Except Caught=True;EndTry;')
             self.assertTrue(vm.variables['caught'])
             vm.variables['p']=Fake()

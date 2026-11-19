@@ -1,9 +1,9 @@
 """Source diagnostics retain authored names without changing admission."""
 import unittest
 from unittest.mock import patch
-from yadinassi.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.runtime import Interpreter
-from yadinassi.errors import BSLError
+from yadinassi.types.errors import BSLError
 from test_configuration_source_runtime import source
 from test_source_references import package
 
@@ -38,7 +38,7 @@ class SourceDiagnosticsTests(unittest.TestCase):
     def test_getref_requires_explicit_uuid_before_argument_effects(self):
         for method,args in (('GetRef',''),('GetRef','Touch(),Touch()'),('ПолучитьСсылку','Touch(),Touch()')):
             config=package('Catalogs.Items.'+method+'('+args+');')
-            from yadinassi.configuration_source import import_source
+            from yadinassi.configuration.configuration_source import import_source
             files={f.path:f.content for f in config.files}
             files['Ext/SessionModule.bsl']+=b'\nFunction Touch() Message("wrong");Return 1;EndFunction'
             app,output=self.app(import_source(files))

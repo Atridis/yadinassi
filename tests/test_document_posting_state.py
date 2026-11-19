@@ -1,9 +1,9 @@
 import sqlite3
 import unittest
 from uuid import uuid4
-from yadinassi.catalog_backend import BackendError
-from yadinassi.document_backend import DocumentKey
-from yadinassi.sqlite_document_posting_state import POSTED_DDL,PostedIntent,read_posted,stage_posted
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.document.document_backend import DocumentKey
+from yadinassi.db.sqlite.sqlite_document_posting_state import POSTED_DDL,PostedIntent,read_posted,stage_posted
 
 class PostedStorageTests(unittest.TestCase):
     def setUp(self):

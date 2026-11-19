@@ -9,11 +9,11 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import BackendError, CatalogDraft, CatalogKey
-from yadinassi.configuration_xml import import_demo_kinds_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _View
-from yadinassi.form_event_simulation import VerifiedFormDraftSession
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogDraft, CatalogKey
+from yadinassi.configuration.configuration_xml import import_demo_kinds_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _View
+from yadinassi.forms.form_event_simulation import VerifiedFormDraftSession
 from test_catalog_commit_cleanup_recovery import FaultConnection
 
 from legacy_demo_fixture import legacy_demo_files

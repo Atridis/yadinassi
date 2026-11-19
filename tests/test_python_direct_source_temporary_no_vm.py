@@ -38,7 +38,7 @@ class SourceTemporaryNoVM(existing.SourceTemporaryTests):
         import hashlib
         import json
         from pathlib import Path
-        from yadinassi.errors import BSLError
+        from yadinassi.types.errors import BSLError
         root=Path(__file__).resolve().parents[1]
         raw=(root/'tests/fixtures/native_temporary_storage_43056863128.json').read_bytes()
         self.assertEqual(hashlib.sha256(raw).hexdigest(),'0f475f9e8184890bdfa7f0d3e676970035586f7948365b0a1067275ba91486e7')

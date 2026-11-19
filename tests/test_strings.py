@@ -12,7 +12,7 @@ import sys
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.values import BSLArray
+from yadinassi.types.values import BSLArray
 
 
 class StringTests(unittest.TestCase):

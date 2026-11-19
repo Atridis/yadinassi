@@ -11,9 +11,9 @@ from uuid import uuid4
 
 from test_sqlite_catalog_admission_cleanup import AdmissionFaultConnection
 from test_sqlite_catalog_backend import configuration
-from yadinassi.catalog_backend import (BackendError, CatalogDraft, CatalogKey, FieldSchema,
+from yadinassi.db.catalog.catalog_backend import (BackendError, CatalogDraft, CatalogKey, FieldSchema,
                                       TabularRow, TabularSectionRows, TabularSectionSchema)
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _View
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _View
 
 
 class SQLiteCatalogSectionAdmissionCleanupTests(unittest.TestCase):
@@ -59,7 +59,7 @@ class SQLiteCatalogSectionAdmissionCleanupTests(unittest.TestCase):
             connection = AdmissionFaultConnection(self.real_connect(*args, **kwargs), **faults)
             self.connections.append(connection)
             return connection
-        with patch('yadinassi.sqlite_catalog.sqlite3.connect', side_effect=connect):
+        with patch('yadinassi.db.sqlite.sqlite_catalog.sqlite3.connect', side_effect=connect):
             yield
 
     def begin(self, writing):
@@ -77,7 +77,7 @@ class SQLiteCatalogSectionAdmissionCleanupTests(unittest.TestCase):
         else:
             self.assertNotIsInstance(owner, _View)
             self.assertFalse(hasattr(owner, 'commit'))
-        with patch('yadinassi.sqlite_catalog.sqlite3.connect', side_effect=AssertionError('must not reopen')):
+        with patch('yadinassi.db.sqlite.sqlite_catalog.sqlite3.connect', side_effect=AssertionError('must not reopen')):
             with self.assertRaisesRegex(BackendError, 'busy'): self.backend.begin_read()
             with self.assertRaisesRegex(BackendError, 'busy'): self.backend.begin_write(uuid4())
         return owner
@@ -125,7 +125,7 @@ class SQLiteCatalogSectionAdmissionCleanupTests(unittest.TestCase):
                                               _fields=dict(self.backend._section_layout._fields))
                     getattr(changed, mapping).pop(next(iter(getattr(changed, mapping))))
                     with self.connection_fault(close_error=sqlite3.OperationalError('close failed')), \
-                            patch('yadinassi.sqlite_catalog.load_section_layout', return_value=changed):
+                            patch('yadinassi.db.sqlite.sqlite_catalog.load_section_layout', return_value=changed):
                         with self.assertRaisesRegex(BackendError, 'schema_changed'): self.begin(writing)
                     connection = self.connections[-1]
                     owner = self.assert_owned_and_blocked(connection)

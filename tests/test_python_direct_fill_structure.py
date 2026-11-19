@@ -5,11 +5,11 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.experimental_naked_structure import new_structure, _DirectStructure
-from yadinassi.structures import BSLStructure, BSLFixedStructure
-from yadinassi.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342
-from yadinassi.python_direct_fill import fill
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_structure import new_structure, _DirectStructure
+from yadinassi.collections.structures import BSLStructure, BSLFixedStructure
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342
+from yadinassi.execution.direct.python_direct_fill import fill
 
 
 class DirectFillStructureTests(TestCase):
@@ -94,17 +94,17 @@ class DirectFillStructureTests(TestCase):
         self.assertEqual(vm.variables['t'].get('a'),Decimal(1));self.assertEqual(calls,[])
 
     def test_no_database_or_extended_adapter_fallback(self):
-        from yadinassi.value_tables import BSLValueTable
+        from yadinassi.collections.value_tables import BSLValueTable
         vm=self.vm();vm.variables.update(t=BSLValueTable(),s=new_structure('A',1))
-        with patch('yadinassi.property_transfer.fill_property_values',side_effect=AssertionError('fallback')):
+        with patch('yadinassi.collections.property_transfer.fill_property_values',side_effect=AssertionError('fallback')):
             with self.assertRaisesRegex(BSLRuntimeError,'приемник должен быть структурой'):
                 vm.execute('FillPropertyValues(T,S);')
 
     def test_lifetime_before_and_after_policy_boundary(self):
-        from yadinassi.python_direct_fill import resolve_fill
-        from yadinassi.experimental_naked_boundaries import BoundaryContext
-        from yadinassi.structures import fill_property_values
-        from yadinassi.values import HostFunction
+        from yadinassi.execution.direct.python_direct_fill import resolve_fill
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.collections.structures import fill_property_values
+        from yadinassi.types.values import HostFunction
         function=HostFunction('FillPropertyValues',fill_property_values,returns_value=False)
         context=BoundaryContext();context.start()
         bound=resolve_fill(context,function)
@@ -112,10 +112,10 @@ class DirectFillStructureTests(TestCase):
         with self.assertRaises(BoundaryViolation):bound(new_structure('A',1),new_structure('A',2))
 
     def test_policy_revocation_and_rebinding_precede_writes(self):
-        from yadinassi.python_direct_fill import resolve_fill
-        from yadinassi.experimental_naked_boundaries import BoundaryContext
-        from yadinassi.structures import fill_property_values
-        from yadinassi.values import HostFunction
+        from yadinassi.execution.direct.python_direct_fill import resolve_fill
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.collections.structures import fill_property_values
+        from yadinassi.types.values import HostFunction
         for mode in ('revoke','rebind','deny'):
             function=HostFunction('FillPropertyValues',fill_property_values,returns_value=False)
             context=BoundaryContext();context.start()
@@ -145,7 +145,7 @@ class DirectFillStructureTests(TestCase):
             vm.execute('Captured(F,S,"A");')
 
     def test_existing_canonical_host_lane_remains_unchanged(self):
-        from yadinassi.value_tables import BSLValueTable
+        from yadinassi.collections.value_tables import BSLValueTable
         vm=self.vm();table=BSLValueTable();table.columns.add('A');row=table.add()
         row.set_member('A',Decimal(1))
         vm.variables.update(t=row,s=BSLStructure('A',Decimal(2)))
@@ -191,10 +191,10 @@ class DirectFillStructureTests(TestCase):
                 target_count=len(target),target_missing=target.property('Missing'),target_missing_value=target.get('Missing')),record['state'])
 
     def test_preserved_host_lane_permission_error_remains_fail_closed(self):
-        from yadinassi.value_tables import BSLValueTable
+        from yadinassi.collections.value_tables import BSLValueTable
         vm=self.vm();table=BSLValueTable();table.columns.add('A');row=table.add()
         vm.variables.update(t=row,s=BSLStructure('A',2))
-        with patch('yadinassi.property_transfer.fill_property_values',side_effect=PermissionError('denied')):
+        with patch('yadinassi.collections.property_transfer.fill_property_values',side_effect=PermissionError('denied')):
             with self.assertRaises(BoundaryViolation):
                 vm.execute('Try FillPropertyValues(T,S);Except Swallowed=True;EndTry;')
         self.assertNotIn('swallowed',vm.variables)

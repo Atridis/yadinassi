@@ -7,12 +7,12 @@ from unittest.mock import patch
 
 import test_sqlite_catalog_sections as fixtures
 from test_sqlite_catalog_sections import ConnectionFault
-from yadinassi.catalog_backend import (
+from yadinassi.db.catalog.catalog_backend import (
     BackendError, CatalogComparison, CatalogOrder, CatalogPredicate,
     CatalogScanRequest, CatalogSectionPage, CatalogSectionRecord, CatalogKey,
     CatalogDraft, TabularRow, TabularSectionRows,
 )
-from yadinassi.sqlite_catalog_layout import quote_identifier
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
 
 
 class CatalogSectionScanTests(unittest.TestCase):
@@ -212,7 +212,7 @@ class CatalogSectionScanTests(unittest.TestCase):
             return connection.execute(sql, parameters)
         view._connection = ConnectionFault(view._connection, guard)
         try:
-            with patch('yadinassi.sqlite_catalog.'+limit, value):
+            with patch('yadinassi.db.sqlite.sqlite_catalog.'+limit, value):
                 with self.assertRaises(BackendError):
                     self.scan(view, CatalogScanRequest(page_size=1), section)
         finally: view.close()

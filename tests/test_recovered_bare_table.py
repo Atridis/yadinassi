@@ -2,7 +2,7 @@ import unittest
 # Standalone contract tests deliberately do not import the legacy package graph.
 import importlib.util
 from pathlib import Path
-spec = importlib.util.spec_from_file_location('recovered_bare_table', Path(__file__).resolve().parents[1] / 'yadinassi/native_bare_table.py')
+spec = importlib.util.spec_from_file_location('recovered_bare_table', Path(__file__).resolve().parents[1] / 'yadinassi/execution/codegen/native_bare_table.py')
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 BareTable, BareRow = module.BareTable, module.BareRow

@@ -4,7 +4,7 @@ from decimal import Decimal, Inexact, Rounded, ROUND_UP, localcontext
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.strings import character, character_code
+from yadinassi.text.strings import character, character_code
 
 
 class CharacterTests(unittest.TestCase):

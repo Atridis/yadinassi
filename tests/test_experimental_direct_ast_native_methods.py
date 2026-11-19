@@ -33,8 +33,9 @@ class NativeMethodsTests(DirectSourceAssertions,unittest.TestCase):
 
     def test_nested_invalid_arity_emission_is_linear(self):
         from unittest.mock import patch
-        from yadinassi import Interpreter,python_direct
-        from yadinassi import experimental_direct_ast as direct
+        from yadinassi import Interpreter
+        from yadinassi.execution.direct import python_direct
+        from yadinassi.execution.codegen import experimental_direct_ast as direct
         for compiler in (direct.compile_module,direct.compile_module_whole_source):
             counts=[]
             for size in (4,8,12):

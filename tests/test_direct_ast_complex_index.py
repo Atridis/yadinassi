@@ -3,14 +3,14 @@ import unittest
 from decimal import Decimal
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi import experimental_direct_ast as direct
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen import experimental_direct_ast as direct
 from yadinassi.syntax import ast as bsl
 from yadinassi.syntax.parser import parse
 
 class ComplexIndexTests(unittest.TestCase):
     def test_index_finalizer_success_error_and_close(self):
-        from yadinassi.values import BSLArray
+        from yadinassi.types.values import BSLArray
         for byref in (False,True):
             for action in ('normal','native','error','close'):
                 with self.subTest(byref=byref,action=action):

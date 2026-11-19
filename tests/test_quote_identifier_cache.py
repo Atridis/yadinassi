@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
-from yadinassi import sqlite_catalog_layout as layout
-from yadinassi.catalog_backend import BackendError
+from yadinassi.db.sqlite import sqlite_catalog_layout as layout
+from yadinassi.db.catalog.catalog_backend import BackendError
 
 class QuoteIdentifierCacheTests(unittest.TestCase):
     def tearDown(self):layout._quote_identifier.cache_clear()

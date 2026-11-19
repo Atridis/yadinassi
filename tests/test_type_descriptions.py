@@ -12,14 +12,14 @@ from itertools import permutations
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.dates import BSLDate, MAX_TICKS, date, shift_date
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.type_qualifiers import (
+from yadinassi.temporal.dates import BSLDate, MAX_TICKS, date, shift_date
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.type_qualifiers import (
     BSLAllowedLength, BSLAllowedSign, BSLBinaryDataQualifiers,
     BSLDateFractions, BSLDateQualifiers, BSLNumberQualifiers,
     BSLStringQualifiers,
 )
-from yadinassi.values import BSLArray, BSLFixedArray, BSLType, HostFunction, NULL
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLType, HostFunction, NULL
 
 
 D = Decimal

@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
 from scripts import native_1c_tree_profile as host
 from scripts import native_1c_tree_profiles as profiles
 from test_value_tree_columns_move_native import synthetic_source_reader

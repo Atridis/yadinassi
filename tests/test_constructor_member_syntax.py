@@ -9,10 +9,10 @@ from decimal import Decimal
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.syntax.parser import parse, parse_expression, parse_fragment
-from yadinassi.type_qualifiers import BSLDateFractions
-from yadinassi.values import BSLArray
+from yadinassi.types.type_qualifiers import BSLDateFractions
+from yadinassi.types.values import BSLArray
 
 
 # Every built-in constructor, with a valid instance and useful member read.

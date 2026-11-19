@@ -10,11 +10,11 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from test_main_demo_configuration import source
-from yadinassi.configuration_main_demo import import_main_demo_configuration, PROFILE
-from yadinassi.sqlite_inventory_enum_profile import create_main_demo
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_read_handles import ReadHandle
-from yadinassi.catalog_backend import BackendError
+from yadinassi.configuration.configuration_main_demo import import_main_demo_configuration, PROFILE
+from yadinassi.db.sqlite.sqlite_inventory_enum_profile import create_main_demo
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_read_handles import ReadHandle
+from yadinassi.db.catalog.catalog_backend import BackendError
 
 class AdmissionEpochTests(unittest.TestCase):
     def setUp(self):
@@ -33,8 +33,8 @@ class AdmissionEpochTests(unittest.TestCase):
             db.execute(sql, args); db.commit()
 
     def test_warm_reads_skip_full_source_admission_and_keep_data_proofs_separate(self):
-        from yadinassi.sqlite_inventory_enum_profile import read_source
-        with patch('yadinassi.sqlite_inventory_enum_profile.read_source', wraps=read_source) as read:
+        from yadinassi.db.sqlite.sqlite_inventory_enum_profile import read_source
+        with patch('yadinassi.db.sqlite.sqlite_inventory_enum_profile.read_source', wraps=read_source) as read:
             self.read(); self.assertEqual(read.call_count, 1)
             for _ in range(3): self.read()
             self.assertEqual(read.call_count, 1)
@@ -113,9 +113,9 @@ class AdmissionEpochTests(unittest.TestCase):
             object.__setattr__(config, 'catalog_handlers', old)
 
     def test_source_snapshot_reused_only_for_exact_owned_connection(self):
-        from yadinassi.sqlite_inventory_enum_profile import read_source
+        from yadinassi.db.sqlite.sqlite_inventory_enum_profile import read_source
         with closing(self.backend.begin_read()) as view:
-            with patch('yadinassi.sqlite_inventory_enum_profile.read_source', wraps=read_source) as read:
+            with patch('yadinassi.db.sqlite.sqlite_inventory_enum_profile.read_source', wraps=read_source) as read:
                 self.assertIs(self.backend._main_demo_source_snapshot(view._connection), self.backend.accumulation_configuration)
                 self.assertEqual(read.call_count, 0)
                 with closing(self.backend._connect()) as other:

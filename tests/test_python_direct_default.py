@@ -6,7 +6,7 @@ from unittest.mock import patch
 from decimal import Decimal
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.python_direct import PythonDirectUnsupported
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 
 class PythonDirectDefaultTests(unittest.TestCase):
  def test_default_without_experimental_environment(self):
@@ -21,7 +21,7 @@ class PythonDirectDefaultTests(unittest.TestCase):
   self.assertEqual(output,['3'])
  def test_execute_program_does_not_reparse_or_prepare_legacy_engine(self):
   vm=Interpreter();program=parse('r=2+3;')
-  with patch('yadinassi.experimental_naked_collections.parse',create=True,side_effect=AssertionError('retired reparsing')),patch('yadinassi.syntax.parser.parse',side_effect=AssertionError('reparsed')),patch.object(vm,'_compiled',side_effect=AssertionError('legacy')):
+  with patch('yadinassi.execution.codegen.experimental_naked_collections.parse',create=True,side_effect=AssertionError('retired reparsing')),patch('yadinassi.syntax.parser.parse',side_effect=AssertionError('reparsed')),patch.object(vm,'_compiled',side_effect=AssertionError('legacy')):
    vm.execute_program(program)
   self.assertEqual(vm.variables['r'],5)
  def test_repeated_variables_and_declared_globals(self):
@@ -48,7 +48,7 @@ class PythonDirectDefaultTests(unittest.TestCase):
  def test_no_context_and_active_application_rejected(self):
   vm=Interpreter();vm._module_context_stack[-1]=False
   with self.assertRaises(PythonDirectUnsupported):vm.execute('x=1;')
-  from yadinassi import safe_mode
+  from yadinassi.execution import safe_mode
   token=safe_mode._CURRENT.set(object())
   try:
    with self.assertRaises(PythonDirectUnsupported):Interpreter().execute('x=1;')
@@ -92,13 +92,13 @@ class PythonDirectDefaultTests(unittest.TestCase):
   with self.assertRaises(PythonDirectUnsupported):vm._scheduler.run_inline(vm.call_routine(routine,[],vm,require_value=False))
   self.assertEqual(vm.variables,{});self.assertEqual(events,[])
  def test_host_context_install_stops_before_following_write(self):
-  from yadinassi.experimental_naked_boundaries import BoundaryViolation
+  from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
   vm=Interpreter();vm.register_function('Install',lambda:setattr(vm,'_configuration_runtime',object()))
   with self.assertRaises(BoundaryViolation):vm.execute('Install();x=7;')
   self.assertNotIn('x',vm.variables)
  def test_host_safe_mode_install_stops_before_following_write(self):
-  from yadinassi import safe_mode
-  from yadinassi.experimental_naked_boundaries import BoundaryViolation
+  from yadinassi.execution import safe_mode
+  from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
   tokens=[];vm=Interpreter();vm.register_function('Install',lambda:tokens.append(safe_mode._CURRENT.set(object())))
   try:
    with self.assertRaises(BoundaryViolation):vm.execute('Install();x=7;')

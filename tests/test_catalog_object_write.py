@@ -11,12 +11,12 @@ import test_catalog_object_preparation as fixture
 from test_catalog_commit_cleanup_recovery import FaultConnection
 from test_sqlite_catalog_backend import configuration
 from yadinassi import BSLError, Interpreter
-from yadinassi.catalog_backend import BackendError
-from yadinassi.catalog_object_preparation import (
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.catalog.catalog_object_preparation import (
     CatalogWriteRefused, write_prepared_catalog_object)
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _View
-from yadinassi.unique_identifiers import BSLUUID
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _View
+from yadinassi.types.unique_identifiers import BSLUUID
 
 
 class CatalogObjectWriteTests(unittest.TestCase):
@@ -162,7 +162,7 @@ class CatalogObjectWriteTests(unittest.TestCase):
 
     def test_committed_receipt_resolution_never_reexecutes_preparation(self):
         self.pending()
-        with patch('yadinassi.catalog_object_preparation._prepare_catalog_object', side_effect=AssertionError('BSL replay')), \
+        with patch('yadinassi.db.catalog.catalog_object_preparation._prepare_catalog_object', side_effect=AssertionError('BSL replay')), \
              patch.object(_View, 'commit', side_effect=AssertionError('second commit')):
             self.assertEqual(self.write(), ())
         self.assertFalse(self.card.is_new())
@@ -170,7 +170,7 @@ class CatalogObjectWriteTests(unittest.TestCase):
 
     def test_ordinary_write_can_resolve_retained_prepared_outcome(self):
         self.pending()
-        with patch('yadinassi.catalog_object_preparation._prepare_catalog_object', side_effect=AssertionError('BSL replay')):
+        with patch('yadinassi.db.catalog.catalog_object_preparation._prepare_catalog_object', side_effect=AssertionError('BSL replay')):
             self.assertIsNone(self.card.write())
         self.assertFalse(self.card.is_new())
 
@@ -265,7 +265,7 @@ class CatalogObjectWriteTests(unittest.TestCase):
         with patch.object(context.backend, 'begin_write', begin), self.assertRaises(BackendError):
             write_prepared_catalog_object(fixture.SOURCE, obj)
         self.assertTrue(obj._pending_write[0].auto_number)
-        with patch('yadinassi.catalog_object_preparation._prepare_catalog_object', side_effect=AssertionError('BSL replay')):
+        with patch('yadinassi.db.catalog.catalog_object_preparation._prepare_catalog_object', side_effect=AssertionError('BSL replay')):
             write_prepared_catalog_object(fixture.SOURCE, obj)
         self.assertEqual(obj.get_member('Code'), '00000001')
         self.assertEqual(obj.get_member('Description'), 'Кабель')

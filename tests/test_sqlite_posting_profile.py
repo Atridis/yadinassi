@@ -6,9 +6,9 @@ import sqlite3
 import tempfile
 import unittest
 from uuid import UUID, uuid4
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_posting import import_posting_configuration,PROFILE
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_posting import import_posting_configuration,PROFILE
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from test_configuration_posting import source
 
 class PostingProfileTests(unittest.TestCase):
@@ -84,11 +84,11 @@ class PostingProfileTests(unittest.TestCase):
         with self.assertRaises(BackendError):SQLiteCatalogBackend(self.path)
     def test_migration_refused(self):
         self.create()
-        from yadinassi.sqlite_migration_plan import prepare
+        from yadinassi.db.sqlite.sqlite_migration_plan import prepare
         with self.assertRaises(BackendError):prepare(self.path,maintenance=True)
     def test_additive_update_refused(self):
         self.create()
-        from yadinassi.sqlite_configuration_update import prepare
+        from yadinassi.db.sqlite.sqlite_configuration_update import prepare
         with self.assertRaises(BackendError):prepare(self.path,self.config,maintenance=True)
     def test_empty_unit_of_work_can_rollback(self):
         b=self.create();unit=b.begin_unit_of_work(uuid4());unit.rollback()

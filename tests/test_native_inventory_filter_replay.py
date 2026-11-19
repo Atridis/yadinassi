@@ -7,8 +7,8 @@ import tempfile
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.configuration_accumulation_references import PROFILE
-from yadinassi.configuration_profile_import import prepare_directory, create_prepared
+from yadinassi.configuration.configuration_accumulation_references import PROFILE
+from yadinassi.configuration.configuration_profile_import import prepare_directory, create_prepared
 
 ROOT=Path(__file__).resolve().parents[1]
 CAPTURE=ROOT/'tests/fixtures/native_inventory_filter'

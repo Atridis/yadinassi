@@ -5,13 +5,13 @@ import sqlite3
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
-from yadinassi.catalog_backend import BackendError, CatalogNumericAggregateRequest, CatalogNumericAggregateResult
-from yadinassi.queries import BSLQuery
-from yadinassi.relational_queries import _Plan
-from yadinassi.sqlite_catalog import _View
-from yadinassi.sqlite_catalog_layout import quote_identifier
-from yadinassi.values import NULL
-from yadinassi import query_pushdown, queries
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogNumericAggregateRequest, CatalogNumericAggregateResult
+from yadinassi.db.query.queries import BSLQuery
+from yadinassi.db.query.relational_queries import _Plan
+from yadinassi.db.sqlite.sqlite_catalog import _View
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
+from yadinassi.types.values import NULL
+from yadinassi.db.query import query_pushdown, queries
 import test_catalog_queries as fixtures
 
 class NumericAggregateTests(unittest.TestCase):
@@ -111,8 +111,8 @@ class NumericAggregateTests(unittest.TestCase):
 
     def test_transactions_remain_residual(self):
         from yadinassi import Interpreter
-        from yadinassi.database_context import SQLiteDBContext
-        from yadinassi.sqlite_migration_plan import prepare,apply
+        from yadinassi.db.database_context import SQLiteDBContext
+        from yadinassi.db.sqlite.sqlite_migration_plan import prepare,apply
         path=self.context.path;self.context.close()
         apply(path,prepare(path,maintenance=True),maintenance=True)
         self.context=SQLiteDBContext(path)
@@ -130,7 +130,7 @@ class EnumNumericAggregateTests(unittest.TestCase):
         import tempfile,shutil
         from pathlib import Path
         from yadinassi import Interpreter
-        from yadinassi.configuration_profile_import import create_prepared,prepare_directory
+        from yadinassi.configuration.configuration_profile_import import create_prepared,prepare_directory
         from test_inventory_enum_relational_reporting import SOURCE,PROFILE
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
         root=Path(temp.name);source=root/'source';shutil.copytree(SOURCE/'runtime_source',source)

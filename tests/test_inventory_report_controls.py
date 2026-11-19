@@ -9,12 +9,12 @@ import unittest
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
-from yadinassi.catalog_backend import (BackendError, CatalogDraft, CatalogComparison,
+from yadinassi.db.catalog.catalog_backend import (BackendError, CatalogDraft, CatalogComparison,
     CatalogPredicate, CatalogOrder, CatalogScanRequest)
-from yadinassi.configuration_inventory_application import canonical
-from yadinassi.inventory_application_reports import (InventoryReports, InventoryReportChoice,
+from yadinassi.configuration.configuration_inventory_application import canonical
+from yadinassi.configuration.demos.inventory_application_reports import (InventoryReports, InventoryReportChoice,
     InventoryReportChoices, InventoryReportFilter, UNAVAILABLE)
-from yadinassi.sqlite_catalog import _View
+from yadinassi.db.sqlite.sqlite_catalog import _View
 from yadinassi.ui.inventory_report_controls import InventoryReportControls
 import test_inventory_application_reports as support
 
@@ -131,7 +131,7 @@ class InventoryReportChoiceTests(ControlsFixture,unittest.TestCase):
         self.refused(self.choices)
 
     def test_busy_closed_and_execution_owners_denied(self):
-        from yadinassi.database_transactions import admission,execution
+        from yadinassi.db.database_transactions import admission,execution
         with closing(self.backend.begin_read()) as owner:
             with self.assertRaises(BackendError):self.choices()
             self.assertIs(self.backend._active,owner)
@@ -152,7 +152,7 @@ class InventoryReportChoiceTests(ControlsFixture,unittest.TestCase):
         self.assertEqual(self.path.read_bytes(),before)
 
     def test_scan_payload_wrong_target_duplicates_or_generation_denied(self):
-        from yadinassi.catalog_backend import CatalogPage
+        from yadinassi.db.catalog.catalog_backend import CatalogPage
         key=self.catalog('Products','P1','One')
         with closing(self.backend.begin_read()) as owner:card=owner.read_catalog(key)
         for page in (CatalogPage((card,card),None),CatalogPage((replace(card,key=replace(key,catalog_id=uuid4())),),None),
@@ -353,7 +353,7 @@ class InventoryReportControlTests(ControlsFixture,unittest.TestCase):
 
     def test_selected_missing_card_is_revalidated_by_report_read(self):
         key=self.catalog('Products','P1','One');self.open();self.begin();self.apply_first()
-        from yadinassi.sqlite_catalog_layout import quote_identifier
+        from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
         self.sql('DELETE FROM '+quote_identifier(self.backend._layout.table_name(key.catalog_id))+' WHERE record_id=?',(str(key.record_id),))
         self.refused(self.report,'invalid_input')
 
@@ -398,7 +398,7 @@ class InventoryReportControlTests(ControlsFixture,unittest.TestCase):
 
     def test_snapshot_overflow_exact_recovers_full_search_refuses_partial(self):
         self.catalog('Products','P1','One');self.catalog('Products','P2','Two');self.open()
-        with patch('yadinassi.inventory_application_reports.MAX_CHOICE_SNAPSHOT_ROWS',1):
+        with patch('yadinassi.configuration.demos.inventory_application_reports.MAX_CHOICE_SNAPSHOT_ROWS',1):
             over=self.begin()['choice']
             self.assertEqual((over['rows'],over['navigation'],over['error']),([],None,'snapshot_limit'))
             exact=self.act('filter',choice=over['ticket'],code='P2')['choice']

@@ -4,8 +4,8 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.syntax.parser import parse
-from yadinassi.experimental_naked_scalar_semantics import uca_order
-from yadinassi import collation
+from yadinassi.execution.codegen.experimental_naked_scalar_semantics import uca_order
+from yadinassi.text import collation
 
 
 class DirectCollationTests(unittest.TestCase):
@@ -26,7 +26,7 @@ class DirectCollationTests(unittest.TestCase):
         collation._collator.cache_clear()
         try:
             vm=Interpreter()
-            with patch('yadinassi.collation.Path.read_bytes',return_value=b'changed') as read:
+            with patch('yadinassi.text.collation.Path.read_bytes',return_value=b'changed') as read:
                 plan=vm.prepare('If False Then X="a"<"A";EndIf;Try R="a"<"A";Except Caught=True;EndTry;After=7;')
                 self.assertEqual(read.call_count,0)
                 vm.execute_prepared(plan)

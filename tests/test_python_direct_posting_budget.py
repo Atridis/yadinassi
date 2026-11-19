@@ -2,8 +2,8 @@
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.document_posting import PostingLimitError
-from yadinassi.database_transactions import current,_registered
+from yadinassi.db.document.document_posting import PostingLimitError
+from yadinassi.db.database_transactions import current,_registered
 import test_document_posting_runtime as fixture
 
 class DirectPostingBudgetTests(unittest.TestCase):
@@ -14,7 +14,7 @@ class DirectPostingBudgetTests(unittest.TestCase):
             guard=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
             guard.start();self.addCleanup(guard.stop)
         obj=owner.new(3)
-        with patch('yadinassi.document_posting.MAX_STEPS',50):
+        with patch('yadinassi.db.document.document_posting.MAX_STEPS',50):
             with self.assertRaises(PostingLimitError):owner.post()
         self.assertTrue(obj.is_new())
         self.assertEqual(owner.rows(obj),())

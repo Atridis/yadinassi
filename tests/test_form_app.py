@@ -13,9 +13,9 @@ import unittest
 from unittest import mock
 
 from yadinassi import Interpreter
-from yadinassi.configuration_import import load_configuration_directory
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.form_replication import ReplicatedFormServer
+from yadinassi.configuration.configuration_import import load_configuration_directory
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.forms.form_replication import ReplicatedFormServer
 from yadinassi.ui.form_app import (FormController, FormHandler, FormProcess,
     PROTOCOL, main, serve_runtime)
 from yadinassi.ui.form_package import load_client, load_server

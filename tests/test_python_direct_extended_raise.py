@@ -7,9 +7,9 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.error_info import BSLErrorCategory, BSLErrorInfo
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.types.error_info import BSLErrorCategory, BSLErrorInfo
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.syntax.parser import parse
 
 
@@ -79,7 +79,7 @@ R=E.Code;A=E.AdditionalInformation;S=E.InitialString;'''
         self.assertEqual(calls,[])
 
     def test_query_wrapper_does_not_use_public_hostfunction_constructor(self):
-        from yadinassi import values
+        from yadinassi.types import values
         vm=Interpreter();vm.execute('Try Raise("x",ErrorCategory.ConfigurationError);Except E=ErrorInfo();EndTry;')
         plan=vm.prepare('Q=E.IsErrorOfCategory;R=Q(ErrorCategory.ConfigurationError);S=E.IsErrorOfCategory(ErrorCategory.ConfigurationError);Before=ErrorInfo();Try Raise \"new\";Except Current=ErrorInfo();Description=ErrorDescription();EndTry;')
         calls=[]

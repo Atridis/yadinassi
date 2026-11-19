@@ -3,13 +3,13 @@ from contextlib import contextmanager
 import unittest
 from unittest.mock import patch
 from test_source_forms import files
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_forms import SourceFormController
-from yadinassi.python_direct_source_forms import SourceFormBoundary,check_source_session
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.forms.source_forms import SourceFormController
+from yadinassi.execution.direct.source.python_direct_source_forms import SourceFormBoundary,check_source_session
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.runtime import Interpreter
-from yadinassi import source_transactions
+from yadinassi.db import source_transactions
 
 
 class DirectSourceFormSecurity(unittest.TestCase):
@@ -55,7 +55,7 @@ class DirectSourceFormSecurity(unittest.TestCase):
             boundary._check()
 
     def test_declaration_constructor_rechecked_after_argument_mutation(self):
-        from yadinassi.values import HostFunction
+        from yadinassi.types.values import HostFunction
         for mutation in ('function','registry'):
             with self.subTest(mutation=mutation):
                 app,controller=self.controller();session=controller.server.session;effects=[]

@@ -4,12 +4,12 @@ from pathlib import Path
 import sys
 from uuid import UUID
 
-from yadinassi.catalog_backend import (
+from yadinassi.db.catalog.catalog_backend import (
     CatalogDraft, CatalogKey, CatalogSchema, CatalogSelection, FieldSchema,
     TabularSectionSchema,
 )
-from yadinassi.configuration_xml import ConfigurationFile, ConfigurationImport
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.configuration.configuration_xml import ConfigurationFile, ConfigurationImport
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 
 CONFIGURATION = UUID('61000000-0000-0000-0000-000000000001')
 WAREHOUSES = UUID('62000000-0000-0000-0000-000000000001')
@@ -95,12 +95,12 @@ def audit(root):
 
 def seed_products(root):
     from yadinassi import Interpreter
-    from yadinassi.database_context import SQLiteDBContext
+    from yadinassi.db.database_context import SQLiteDBContext
 
     source = Path(__file__).resolve().parents[2] / 'examples/demo'
     files = {p.relative_to(source).as_posix(): p.read_bytes()
              for p in source.rglob('*') if p.is_file()}
-    from yadinassi.configuration_main_demo import PROFILE, import_main_demo_configuration
+    from yadinassi.configuration.configuration_main_demo import PROFILE, import_main_demo_configuration
     SQLiteCatalogBackend.create_main_demo(root / 'owned.sqlite', import_main_demo_configuration(files, profile=PROFILE)).close()
     context = SQLiteDBContext(root / 'owned.sqlite')
     vm = None

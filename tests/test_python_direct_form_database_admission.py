@@ -6,13 +6,14 @@ import unittest
 from unittest.mock import patch
 import test_python_direct_bound_forms as fixtures
 from test_main_demo_configuration import source
-from yadinassi.configuration_main_demo import import_main_demo_configuration, PROFILE
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.form_runtime import FormSession
-from yadinassi.python_direct_forms import FormBoundary, check_form_owner
-from yadinassi.python_direct_configuration import check_owner
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi import safe_mode, source_transactions, database_transactions
+from yadinassi.configuration.configuration_main_demo import import_main_demo_configuration, PROFILE
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.forms.form_runtime import FormSession
+from yadinassi.execution.direct.python_direct_forms import FormBoundary, check_form_owner
+from yadinassi.execution.direct.python_direct_configuration import check_owner
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution import safe_mode
+from yadinassi.db import source_transactions, database_transactions
 
 class DatabaseFormAdmissionTests(unittest.TestCase):
     def setUp(self):

@@ -5,10 +5,10 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 from test_source_document_sections import package, CREATE
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.configuration_source import import_source
 from yadinassi.runtime import Interpreter
-from yadinassi.errors import BSLError
+from yadinassi.types.errors import BSLError
 
 
 class DirectSourceDocumentTests(unittest.TestCase):

@@ -2,14 +2,14 @@
 import unittest
 from unittest.mock import patch
 import test_python_direct_source_session_crossing as basic
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class SourceSessionCrossingSecurity(unittest.TestCase):
     setUp=basic.SourceSessionCrossingTests.setUp
     app=basic.SourceSessionCrossingTests.app
 
     def test_fresh_activation_preserves_client_frame_and_revokes_on_return(self):
-        from yadinassi.python_direct_source_server import _ACTIVE,check_activation
+        from yadinassi.execution.direct.source.python_direct_source_server import _ACTIVE,check_activation
         app,_=self.app();owner=app._session_owner;seen=[]
         def capture(text):
             fresh=_ACTIVE.get()[-1][0]
@@ -62,8 +62,8 @@ class SourceSessionCrossingSecurity(unittest.TestCase):
     def test_real_transaction_gates_at_caller_and_server(self):
         import tempfile
         from pathlib import Path
-        from yadinassi.configuration_source_runtime import SourceApplication
-        from yadinassi.configuration_source import import_source
+        from yadinassi.configuration.configuration_source_runtime import SourceApplication
+        from yadinassi.configuration.configuration_source import import_source
         directory=tempfile.TemporaryDirectory();self.addCleanup(directory.cleanup)
         mapping={f.path:f.content for f in basic.package('',kind='xs:boolean').files}
         mapping['Ext/SessionModule.bsl']=b'Procedure SessionParametersSetting() SessionParameters.State=True;EndProcedure'

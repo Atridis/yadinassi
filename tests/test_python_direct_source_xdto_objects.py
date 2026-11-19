@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 import test_python_direct_source_xdto as basic
 import test_source_xdto_packages as existing
-from yadinassi import xdto_io,xdto_values
+from yadinassi.formats.xml import xdto_io,xdto_values
 
 XS='http://www.w3.org/2001/XMLSchema'
 BODY=b'''<package xmlns="http://v8.1c.ru/8.1/xdto" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:t="urn:owned:records" targetNamespace="urn:owned:records">

@@ -3,9 +3,9 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.python_direct import PythonDirectUnsupported
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 DECL='&AtServer\nVar N;\n&AtServer\nFunction Read() Return N;EndFunction\n'
 def initialize(body):return '#If AtServer Then\n'+body+'\n#EndIf\n'

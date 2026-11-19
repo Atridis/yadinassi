@@ -5,11 +5,11 @@ import threading
 import unittest
 from unittest.mock import patch
 from contextlib import contextmanager
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.python_direct import PythonDirectUnsupported
-from yadinassi.python_direct_configuration import ConfigurationBoundary
-from yadinassi import python_direct_configuration_metadata as readers
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+from yadinassi.execution.direct.python_direct_configuration import ConfigurationBoundary
+from yadinassi.execution.direct import python_direct_configuration_metadata as readers
 from configuration_runtime_fixture import CLIENT,module_files
 
 
@@ -20,7 +20,7 @@ class DirectConfigurationMetadataTests(unittest.TestCase):
 
     @contextmanager
     def context(self,app):
-        from yadinassi.python_direct_configuration_commands import _Scope
+        from yadinassi.execution.direct.python_direct_configuration_commands import _Scope
         scope=_Scope(app);scope.enter()
         try:
             context=ConfigurationBoundary(app,app.interpreter);context.enter()
@@ -28,7 +28,7 @@ class DirectConfigurationMetadataTests(unittest.TestCase):
         finally:scope.leave()
 
     def test_scalar_metadata_matches_canonical_public_objects(self):
-        from yadinassi.metadata import BSLCommonModuleMetadataCollection
+        from yadinassi.configuration.metadata import BSLCommonModuleMetadataCollection
         app=self.app();oracle=BSLCommonModuleMetadataCollection(app.configuration.common_modules)
         self.assertEqual(app.execute('Metadata.CommonModules.Count()'),oracle.count())
         for index,definition in enumerate(app.configuration.common_modules):
@@ -116,7 +116,7 @@ class DirectConfigurationMetadataTests(unittest.TestCase):
         self.assertEqual(events,[])
 
     def test_definition_descriptor_override_and_forged_definition_fail_closed(self):
-        from yadinassi.configuration_modules import CommonModuleDefinition
+        from yadinassi.configuration.configuration_modules import CommonModuleDefinition
         app=self.app();events=[]
         with patch.object(CommonModuleDefinition,'__getattribute__',lambda *a:events.append('attribute')):
             with self.assertRaises(BoundaryViolation):app.execute('Metadata.CommonModules.Count();')
@@ -138,7 +138,7 @@ class DirectConfigurationMetadataTests(unittest.TestCase):
         self.assertEqual(events,[]);self.assertEqual(app.interpreter.variables['x'],'missing')
 
     def test_readonly_and_private_branches_reject_before_effects(self):
-        from yadinassi.errors import BSLError
+        from yadinassi.types.errors import BSLError
         app=self.app();seen=[];app.interpreter.output=seen.append
         for text in ('Message("before"); Metadata.CommonModules.Tools.Name="changed";',
                      'Message("before"); Try X=1; Except X=Metadata.CommonModules.Tools.Source; EndTry;'):
@@ -148,7 +148,7 @@ class DirectConfigurationMetadataTests(unittest.TestCase):
         self.assertEqual(app.execute('Metadata.CommonModules.Tools.Name'),'Tools')
 
     def test_admission_descriptor_override_never_runs_host_hook(self):
-        from yadinassi.configuration_modules import CommonModuleDefinition
+        from yadinassi.configuration.configuration_modules import CommonModuleDefinition
         app=self.app();seen=[]
         def forbidden(value):seen.append('hook');raise AssertionError('host property')
         original=vars(CommonModuleDefinition)['return_values_reuse']

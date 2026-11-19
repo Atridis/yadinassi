@@ -1,11 +1,12 @@
 """Native Array contract repairs, retaining direct representation and budgets."""
 import unittest
 from unittest.mock import patch
-from yadinassi import Interpreter, BSLError, values
+from yadinassi import Interpreter, BSLError
+from yadinassi.types import values
 from yadinassi.syntax.parser import parse
-from yadinassi.values import BSLFixedArray
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.experimental_naked_resources import bounded_array
+from yadinassi.types.values import BSLFixedArray
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_resources import bounded_array
 
 class DirectArrayContractTests(unittest.TestCase):
     def test_fixed_copy_routes_nested_aliases_and_no_vm_dispatch(self):

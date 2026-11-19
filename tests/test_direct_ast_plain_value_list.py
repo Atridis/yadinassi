@@ -1,8 +1,8 @@
 import unittest
 from decimal import Decimal as D
 from yadinassi import Interpreter
-from yadinassi.plain_value_list import PlainValueList,PlainValueListItem
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.collections.plain_value_list import PlainValueList,PlainValueListItem
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class DirectPlainValueListTests(unittest.TestCase):
     def vm(self):

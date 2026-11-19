@@ -11,8 +11,8 @@ import weakref
 
 from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse
-from yadinassi.value_lists import BSLValueList, BSLValueListItem
-from yadinassi.values import BSLArray
+from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.types.values import BSLArray
 
 
 # Load the shared synthetic instrumentation without depending on unittest's

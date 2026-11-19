@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.execution_policy import current_backend, execution_backend_policy
+from yadinassi.execution.execution_policy import current_backend, execution_backend_policy
 from yadinassi.ui.local_app import LocalUIServer
 from yadinassi.ui.main_demo_web import MainDemoHandler
 from yadinassi.ui.editor_protocol import PROTOCOL as EDITOR_PROTOCOL
@@ -89,8 +89,8 @@ class CompiledHostThreadTests(unittest.TestCase):
 
     def test_source_workspace_server_client_on_new_request_thread(self):
         from test_source_forms import files
-        from yadinassi.configuration_source import import_source
-        from yadinassi.configuration_source_runtime import SourceApplication
+        from yadinassi.configuration.configuration_source import import_source
+        from yadinassi.configuration.configuration_source_runtime import SourceApplication
         from yadinassi.ui.source_workspace import SourceWorkspace, SourceWorkspaceHandler
         with execution_backend_policy('python-direct'):
             application=SourceApplication(import_source(files()))

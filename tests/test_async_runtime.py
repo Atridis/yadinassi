@@ -7,8 +7,8 @@ import unittest
 import weakref
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.async_runtime import Promise, AwaitRequest
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.application.async_runtime import Promise, AwaitRequest
+from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.syntax.parser import parse
 
 

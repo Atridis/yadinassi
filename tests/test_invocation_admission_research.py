@@ -1,7 +1,7 @@
 """Live direct invocation checks; retired lazy call_routine generator removed."""
 import unittest
 from yadinassi import Interpreter
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class AdmissionTests(unittest.TestCase):
  def test_bad_arity_rejects_before_argument_effects(self):

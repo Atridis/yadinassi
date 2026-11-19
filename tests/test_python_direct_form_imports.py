@@ -3,11 +3,12 @@ import dis
 from contextvars import ContextVar
 import unittest
 from unittest.mock import patch
-from yadinassi.form_runtime import FormSession, FormLimitError
-from yadinassi.python_direct_forms import FormBoundary
-from yadinassi.python_direct_configuration import check_owner
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi import safe_mode, source_transactions, database_transactions
+from yadinassi.forms.form_runtime import FormSession, FormLimitError
+from yadinassi.execution.direct.python_direct_forms import FormBoundary
+from yadinassi.execution.direct.python_direct_configuration import check_owner
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution import safe_mode
+from yadinassi.db import source_transactions, database_transactions
 
 
 class DirectFormImportTests(unittest.TestCase):
@@ -39,6 +40,6 @@ class DirectFormImportTests(unittest.TestCase):
     def test_budget_is_read_live_not_frozen_at_module_import(self):
         session,boundary=self.boundary()
         boundary.checkpoint()
-        with patch('yadinassi.form_runtime.MAX_STEPS',1):
+        with patch('yadinassi.forms.form_runtime.MAX_STEPS',1):
             with self.assertRaises(FormLimitError):boundary.checkpoint()
         self.assertEqual(session._steps,2)

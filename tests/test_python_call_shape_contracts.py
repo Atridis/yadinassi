@@ -6,8 +6,8 @@ no test substitutes a cached callable, grants, arguments or reference binding.
 import unittest
 from decimal import Decimal
 from yadinassi import Interpreter, BSLError
-from yadinassi.python_direct import PythonDirectUnsupported
-from yadinassi.values import InterpreterCall
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+from yadinassi.types.values import InterpreterCall
 
 
 class CallShapeContracts(unittest.TestCase):

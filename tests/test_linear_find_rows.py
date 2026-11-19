@@ -2,8 +2,8 @@ import unittest
 from decimal import Decimal
 from yadinassi import Interpreter
 from tests.recovered_bare_fixture import Interpreter as BareInterpreter
-from yadinassi.plain_value_table_runtime import BSLValueTable
-from yadinassi.structures import BSLStructure
+from yadinassi.collections.plain_value_table_runtime import BSLValueTable
+from yadinassi.collections.structures import BSLStructure
 
 SOURCE = '''Т=Новый ТаблицаЗначений;
 Т.Колонки.Добавить("Склад");Т.Колонки.Добавить("Товар");
@@ -98,8 +98,8 @@ class LazyFindRows(unittest.TestCase):
         t.columns.delete('Renamed')
         self.assertEqual(t.indexes.count(),1)
     def test_bare_index_numeric_equality_and_epoch(self):
-        from yadinassi.native_bare_table import BareTable
-        from yadinassi.native_bare_collections import BareStructure
+        from yadinassi.execution.codegen.native_bare_table import BareTable
+        from yadinassi.execution.codegen.native_bare_collections import BareStructure
         t=BareTable();t.add_column('K')
         for value in (True,1,Decimal(1)):t.add()[0]=value
         t.indexes.add('K')
@@ -110,7 +110,7 @@ class LazyFindRows(unittest.TestCase):
         t.sort('K');self.assertEqual(len(t.find_rows(BareStructure('K',1))),2)
     def test_cached_position_integrity_and_immutable_buckets(self):
         from types import MappingProxyType
-        from yadinassi.plain_table_search import _Entry
+        from yadinassi.collections.plain_table_search import _Entry
         t=BSLValueTable();t.columns.add('K');t.add().set_member('K',1);t.indexes.add('K')
         f=BSLStructure('K',1);t.find_rows(f)
         entry=t._search.cache[(0,)]

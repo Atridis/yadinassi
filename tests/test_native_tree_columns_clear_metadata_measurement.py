@@ -4,9 +4,9 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508
-from yadinassi.value_trees import BSLValueTreeColumn as Column, BSLValueTreeColumnCollection as Columns
-from yadinassi.values import HostFunction
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
+from yadinassi.collections.value_trees import BSLValueTreeColumn as Column, BSLValueTreeColumnCollection as Columns
+from yadinassi.types.values import HostFunction
 from scripts import native_1c_tree_columns_clear_metadata_contract as wire
 
 ROOT=Path(__file__).resolve().parents[1]

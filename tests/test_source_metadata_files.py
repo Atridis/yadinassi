@@ -2,8 +2,8 @@
 import unittest
 from test_source_metadata import xml
 from test_source_metadata_children import embedded
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_metadata import SourceMetadataRoot
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_metadata import SourceMetadataRoot
 
 
 class SourceMetadataFilesTests(unittest.TestCase):

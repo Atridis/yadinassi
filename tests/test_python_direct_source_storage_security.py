@@ -1,11 +1,11 @@
 """Admission and delayed capability revocation for finite source bridges."""
 import unittest
 import test_python_direct_source_query as fixtures
-from yadinassi import python_direct_source_storage as storage
-from yadinassi import python_direct_source_query as query
-from yadinassi.values import HostFunction
-from yadinassi.source_constants_runtime import SourceConstants, ConstantCall
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.direct.source import python_direct_source_storage as storage
+from yadinassi.execution.direct.source import python_direct_source_query as query
+from yadinassi.types.values import HostFunction
+from yadinassi.db.metadata.source_constants_runtime import SourceConstants, ConstantCall
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
 class SourceBridgeSecurityTests(unittest.TestCase):
@@ -49,7 +49,7 @@ class SourceBridgeSecurityTests(unittest.TestCase):
 
     def test_query_array_indexing_uses_canonical_protocol(self):
         from decimal import Decimal
-        from yadinassi.values import BSLArray, BSLFixedArray
+        from yadinassi.types.values import BSLArray, BSLFixedArray
         app,owner=self.app()
         with self.boundary(app,owner) as boundary:
             array=BSLArray();array.get_method('Add')('first')

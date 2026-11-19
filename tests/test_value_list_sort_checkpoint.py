@@ -14,10 +14,12 @@ from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse
-from yadinassi import type_values, serialization, runtime
-from yadinassi.search_directions import BSLSearchDirection
-from yadinassi.value_lists import BSLValueList, BSLValueListItem
-from yadinassi.values import BSLArray, BSLObject, BSLType, HostFunction
+from yadinassi.types import type_values
+from yadinassi.formats.storage import serialization
+from yadinassi import runtime
+from yadinassi.collections.search_directions import BSLSearchDirection
+from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.types.values import BSLArray, BSLObject, BSLType, HostFunction
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/collections.bsl'

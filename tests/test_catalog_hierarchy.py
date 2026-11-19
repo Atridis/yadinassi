@@ -6,10 +6,10 @@ import unittest
 from uuid import uuid4
 from sqlite_catalog_fixture import configuration_files
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.queries import BSLQuery
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.query.queries import BSLQuery
 
 
 def hierarchy_files():
@@ -135,6 +135,6 @@ D=Catalogs.Products.CreateItem();D.Code="D";D.Write();''')
     def test_hierarchy_joins_derived_and_aggregation(self):
         self.seed();self.assertEqual(self.rows('SELECT COUNT(*) AS N FROM (SELECT Ref FROM Catalog.Products WHERE Ref IN HIERARCHY (&Root)) AS T',self.vm.execute('A.Ref'))[0][0],3)
     def test_readonly_reopen(self):
-        self.seed();self.context.close();self.context._backend=__import__("yadinassi.sqlite_catalog",fromlist=["SQLiteCatalogBackend"]).SQLiteCatalogBackend(self.path,read_only=True);v=Interpreter(database_context=self.context)
+        self.seed();self.context.close();self.context._backend=__import__("yadinassi.db.sqlite.sqlite_catalog",fromlist=["SQLiteCatalogBackend"]).SQLiteCatalogBackend(self.path,read_only=True);v=Interpreter(database_context=self.context)
         self.assertEqual(v.execute('Catalogs.Products.FindByCode("C").Parent.Code'),'B')
         with self.assertRaises((ValueError,BSLRuntimeError)):v.execute('Catalogs.Products.CreateFolder();')

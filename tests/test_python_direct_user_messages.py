@@ -2,9 +2,9 @@
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.python_direct import make_boundary
-from yadinassi.user_messages import BSLUserMessage
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.direct.python_direct import make_boundary
+from yadinassi.application.user_messages import BSLUserMessage
 
 class DirectUserMessageSecurity(unittest.TestCase):
     def vm(self,**kwargs):
@@ -13,7 +13,7 @@ class DirectUserMessageSecurity(unittest.TestCase):
     def test_prepared_dynamic_and_captured_delivery(self):
         seen=[];vm=self.vm(user_message_sink=seen.append)
         plan=vm.prepare('M=New("UserMessage");M.Text="once";Saved=M.Message;Saved();')
-        with patch('yadinassi.python_direct._compile',side_effect=AssertionError('recompile')):
+        with patch('yadinassi.execution.direct.python_direct._compile',side_effect=AssertionError('recompile')):
             vm.execute_prepared(plan);vm.execute_prepared(plan)
         self.assertEqual([r.text for r in seen],['once','once'])
 
@@ -73,7 +73,7 @@ class DirectUserMessageSecurity(unittest.TestCase):
         self.assertEqual(seen,['sent']);self.assertNotIn('after',vm.variables)
 
     def test_form_procedure_value_is_not_delivered(self):
-        from yadinassi.form_runtime import FormSession
+        from yadinassi.forms.form_runtime import FormSession
         source='&AtClient\nProcedure Open(Cancel) M=New UserMessage;M.Text="not sent";X=M.Message();EndProcedure'
         session=FormSession(source,bindings={'OnOpen':'Open'})
         with self.assertRaises(BSLError):session.open()

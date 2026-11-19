@@ -5,11 +5,11 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest import mock
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_inventory_enums import import_inventory_enum_configuration,PROFILE
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_inventory_enums import import_inventory_enum_configuration,PROFILE
+from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.runtime import Interpreter
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 from test_configuration_inventory_enums import source
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -24,7 +24,7 @@ class InventoryEnumRuntimeBindingTests(unittest.TestCase):
         self.vm=Interpreter(database_context=self.context);self.addCleanup(self.vm.close)
         self.ref=self.vm.execute('Enums.Units.Piece')
         self.units=next(e.identity for e in self.config.enumerations if e.name=='Units')
-        from yadinassi.inventory_enum_runtime import binding
+        from yadinassi.configuration.demos.inventory_enum_runtime import binding
         self.bridge=binding(self.vm._metadata)
 
     def test_root_namespace_and_typed_empty(self):
@@ -52,7 +52,7 @@ class InventoryEnumRuntimeBindingTests(unittest.TestCase):
         self.assertIsNone(backend._active)
 
     def test_captured_snapshot_is_lexical_and_not_another_roots_authority(self):
-        from yadinassi.inventory_enum_runtime import binding,read_snapshot
+        from yadinassi.configuration.demos.inventory_enum_runtime import binding,read_snapshot
         backend=self.context.backend
         with closing(Interpreter(database_context=self.context)) as other:
             foreign=binding(other._metadata)
@@ -140,8 +140,8 @@ class InventoryEnumRuntimeBindingTests(unittest.TestCase):
 
     def test_other_root_cannot_borrow_current_transaction(self):
         from contextvars import Context
-        from yadinassi.values import HostFunction
-        from yadinassi.inventory_enum_runtime import binding
+        from yadinassi.types.values import HostFunction
+        from yadinassi.configuration.demos.inventory_enum_runtime import binding
         calls=[]
         with closing(Interpreter(database_context=self.context)) as other:
             foreign=binding(other._metadata)

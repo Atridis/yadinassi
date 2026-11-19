@@ -11,10 +11,10 @@ from test_native_async_fixture import historical_source_bytes
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi import query_parser as syntax
-from yadinassi.configuration_accumulation import import_accumulation_configuration, PROFILE
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.dates import _from_parts
+from yadinassi.db.query import query_parser as syntax
+from yadinassi.configuration.configuration_accumulation import import_accumulation_configuration, PROFILE
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.temporal.dates import _from_parts
 from test_sqlite_accumulation_profile import accumulation_source
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -241,8 +241,8 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
         self.assertEqual(self.query(vm, 'SELECT Item,Warehouse,AmountBalance FROM ' + REG + '.Balance(&At)', At=AT)._rows, ((True, DATE, Decimal(5)),))
 
     def test_query_exception_and_interruption_release_outer_read_lease(self):
-        from yadinassi.database_transactions import execution, current, begin, rollback
-        from yadinassi.document_posting_values import DocumentWriteMode
+        from yadinassi.db.database_transactions import execution, current, begin, rollback
+        from yadinassi.db.document.document_posting_values import DocumentWriteMode
         for error in (ValueError('query stopped'), KeyboardInterrupt()):
             with self.subTest(error=type(error).__name__):
                 vm, context = self.make()
@@ -256,7 +256,7 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
                 with execution(context.backend):
                     begin(context.backend)
                     a.write(DocumentWriteMode.POSTING)
-                    with patch('yadinassi.accumulation_queries._dimension_key', side_effect=error):
+                    with patch('yadinassi.db.query.accumulation_queries._dimension_key', side_effect=error):
                         with self.assertRaises(type(error)):
                             query.execute()
                     self.assertEqual(current(context.backend).leases, 0)
@@ -313,7 +313,7 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
                     self.query(vm, 'SELECT AmountBalance FROM ' + REG + '.Balance(&At)', At=value)
 
     def test_fractional_and_reversed_boundaries_are_deferred(self):
-        from yadinassi.dates import BSLDate
+        from yadinassi.temporal.dates import BSLDate
         vm, _ = self.make()
         with self.assertRaises(TypeError): self.query(vm, 'SELECT AmountBalance FROM ' + REG + '.Balance(&At)', At=BSLDate(DATE.ticks + 1))
         with self.assertRaises(ValueError): self.query(vm, 'SELECT AmountTurnover FROM ' + REG + '.Turnovers(&Start,&EndAt)', Start=AT, EndAt=DATE)
@@ -338,7 +338,7 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
     def test_input_budgets_charge_excluded_and_unprojected_values(self):
         vm, _ = self.make()
         self.seed(vm, [('A', 1, 5, 2, False, 0)])
-        with patch('yadinassi.queries._MAX_CELLS', 1):
+        with patch('yadinassi.db.query.queries._MAX_CELLS', 1):
             with self.assertRaisesRegex(ValueError, 'input resource limit'):
                 self.query(vm, 'SELECT COUNT(*) AS N FROM ' + REG + '.Balance(&At)', At=DATE)
 

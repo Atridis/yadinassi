@@ -2,7 +2,7 @@
 from dataclasses import dataclass, fields, is_dataclass
 import unittest
 from uuid import UUID
-from yadinassi.configuration_inventory_enums import _same
+from yadinassi.configuration.configuration_inventory_enums import _same
 
 
 def reference(expected, actual):

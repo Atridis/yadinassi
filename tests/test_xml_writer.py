@@ -5,8 +5,8 @@ import tempfile
 import unittest
 from unittest.mock import patch, Mock
 import xml.etree.ElementTree as ET
-from yadinassi.xml_writer import BSLXMLWriter as Writer, BSLXMLWriterSettings as Settings
-from yadinassi import xml_writer as module
+from yadinassi.formats.xml.xml_writer import BSLXMLWriter as Writer, BSLXMLWriterSettings as Settings
+from yadinassi.formats.xml import xml_writer as module
 
 
 class XMLWriterTests(unittest.TestCase):
@@ -131,14 +131,14 @@ class XMLWriterTests(unittest.TestCase):
         w.write_start_element('child','');w.write_end_element();w.write_end_element()
         root=ET.fromstring(w.close());self.assertEqual(root.tag,'{urn:r}root');self.assertEqual(root[0].tag,'child')
     def test_reader_whitespace_setting_changes_during_iteration(self):
-        from yadinassi.xml_io import BSLXMLReader, BSLXMLNodeType
+        from yadinassi.formats.xml.xml_io import BSLXMLReader, BSLXMLNodeType
         reader=BSLXMLReader();reader.set_string('<r>  <x/> </r>');reader.read()
         reader.set_member('IgnoreWhitespace',False);reader.read()
         self.assertEqual(reader.get_member('Value'),'  ')
         reader.set_member('IgnoreWhitespace',True);reader.read()
         self.assertEqual(reader.get_member('NodeType'),BSLXMLNodeType.START)
     def test_write_current_does_not_advance_reader(self):
-        from yadinassi.xml_io import BSLXMLReader
+        from yadinassi.formats.xml.xml_io import BSLXMLReader
         reader=BSLXMLReader();reader.set_string('<p:r xmlns:p="urn:r" a="1"><x>Привет</x><![CDATA[<&>]]><!--c--></p:r>')
         w=self.writer();count=0
         while reader.read():

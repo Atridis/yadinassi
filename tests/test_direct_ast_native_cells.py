@@ -35,7 +35,7 @@ class NativeCellTests(unittest.TestCase):
         vm=self.vm();vm.execute('Procedure Jump(X) X=5;EndProcedure R=0;For I=0 To 3 Do Jump(I);R=R+1;EndDo;')
         self.assertEqual(vm.variables['r'],D(1));self.assertEqual(vm.variables['i'],D(6))
     def test_host_reference_does_not_survive_activation(self):
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         vm=self.vm();saved=[]
         vm.register_function('Capture',lambda ref:saved.append(ref))
         vm.functions['capture'].reference_parameters=frozenset({0})
@@ -48,14 +48,14 @@ class NativeCellTests(unittest.TestCase):
             both(0,0);self.assertEqual(store[0],D(3))
             both(0,1);self.assertEqual((store[0],store[1]),(D(4),D(7)))
     def test_host_close_remains_fatal(self):
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         vm=self.vm();vm.register_function('Stop',lambda:vm.close())
         with self.assertRaises(BoundaryViolation):vm.execute('Procedure Inc(X) X=X+1;Stop();X=X+1;EndProcedure R=0;Try Inc(R);Except Caught=True;EndTry;After=1;')
         self.assertNotIn('after',vm.variables);self.assertNotIn('caught',vm.variables)
 
     def test_public_index_reference_checks_close_before_write(self):
-        from yadinassi.python_direct_plain_array import PlainArray
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.direct.python_direct_plain_array import PlainArray
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         vm=self.vm();array=PlainArray([D(0)]);vm.variables['a']=array
         class Opaque:
             def __add__(self,value):vm.close();return D(7)

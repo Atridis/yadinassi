@@ -1,7 +1,7 @@
 """Run in each checkout; compare with the linear commit, no searches in controls."""
 import json,statistics,time
 from decimal import Decimal
-from yadinassi.plain_value_table_runtime import BSLValueTable
+from yadinassi.collections.plain_value_table_runtime import BSLValueTable
 
 def median(fn):
     samples=[]

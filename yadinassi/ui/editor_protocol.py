@@ -5,7 +5,7 @@ can mutate form state even on failure; no transport ACK claims persistence.
 Editor snapshots include the last authoritative list read. A committed Save whose
 list refresh fails returns refresh_required, not a successful Save acknowledgment.
 """
-from ..catalog_backend import BackendError
+from yadinassi.db.catalog.catalog_backend import BackendError
 from .catalog_editor import CatalogEditorApplication
 from .protocol import (UIError, MAX_COUNTER, bounded_text, counter, decode_line,
                        decode_value, encode_line, uuid_text)

@@ -5,15 +5,15 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from yadinassi.catalog_backend import BackendError
-from yadinassi.catalog_types import BSLCatalogReference
-from yadinassi.configuration_business_profile import import_business_configuration
-from yadinassi.configuration_reference_profile import import_reference_configuration, REFERENCE_SOURCE_ISSUE, REFERENCE_PROFILE
-from yadinassi.configuration_forms import load_configuration_forms
-from yadinassi.configuration_catalog import CatalogObjectSession
-from yadinassi.configuration_document import DocumentObjectSession
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.catalog.catalog_types import BSLCatalogReference
+from yadinassi.configuration.configuration_business_profile import import_business_configuration
+from yadinassi.configuration.configuration_reference_profile import import_reference_configuration, REFERENCE_SOURCE_ISSUE, REFERENCE_PROFILE
+from yadinassi.configuration.configuration_forms import load_configuration_forms
+from yadinassi.configuration.configuration_catalog import CatalogObjectSession
+from yadinassi.configuration.configuration_document import DocumentObjectSession
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 
 ROOT = Path(__file__).resolve().parents[1] / 'examples/configuration-reference-application'
 def sources(): return {p.relative_to(ROOT).as_posix():p.read_bytes() for p in ROOT.rglob('*') if p.is_file()}
@@ -58,7 +58,7 @@ class ReferenceProfileTests(unittest.TestCase):
 
     def test_same_source_bytes_do_not_upgrade_old_scalar_database_grant(self):
         from business_configuration_fixture import sources as scalar_sources
-        from yadinassi.configuration_runtime import ConfigurationApplication
+        from yadinassi.configuration.configuration_runtime import ConfigurationApplication
         files=scalar_sources()
         with tempfile.TemporaryDirectory() as temporary:
             path=Path(temporary)/'db.sqlite'

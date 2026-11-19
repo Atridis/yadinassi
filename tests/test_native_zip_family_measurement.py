@@ -91,7 +91,7 @@ class ZipFamilyMeasurementTests(unittest.TestCase):
         self.assertTrue(all(row['status'] == 'action-error' for row in records))
 
     def test_unexpected_children_are_not_recursively_swept(self):
-        import yadinassi.file_io as files
+        import yadinassi.streams.file_io as files
         original = files.create_directory
         def create_with_sentinel(path):
             original(path)

@@ -3,8 +3,8 @@ import importlib.util
 import unittest
 from decimal import Decimal
 from yadinassi import Interpreter
-from yadinassi.execution_policy import execution_backend_policy, ui_backend
-from yadinassi.python_direct import PythonDirectUnsupported
+from yadinassi.execution.execution_policy import execution_backend_policy, ui_backend
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 
 
 class DirectOnlyRuntimeTests(unittest.TestCase):

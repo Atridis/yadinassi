@@ -7,13 +7,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_query_indexes import (
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_query_indexes import (
     _index_name, admit_query_indexes, canonical_index_ddls,
     catalog_query_index_ddls, read_index_bundle_ddls, register_query_collations)
-from yadinassi.sqlite_query_index_maintenance import prepare, apply, resolve, _fingerprint
+from yadinassi.db.sqlite.sqlite_query_index_maintenance import prepare, apply, resolve, _fingerprint
 from sqlite_catalog_fixture import configuration_files
 
 
@@ -131,7 +131,7 @@ class QueryIndexMaintenanceTests(unittest.TestCase):
         self.assertEqual(resolve(self.path, plan, maintenance=True), 'uncertain')
 
     def test_commit_ack_loss_resolves_without_replay(self):
-        from yadinassi import sqlite_query_index_maintenance as maintenance
+        from yadinassi.db.sqlite import sqlite_query_index_maintenance as maintenance
         plan = prepare(self.path, maintenance=True)
         original = maintenance._open
         class LostAck:
@@ -147,7 +147,7 @@ class QueryIndexMaintenanceTests(unittest.TestCase):
         self.assertEqual(resolve(self.path, plan, maintenance=True), 'committed')
 
     def test_precommit_failure_rolls_back_complete_bundle(self):
-        from yadinassi import sqlite_query_index_maintenance as maintenance
+        from yadinassi.db.sqlite import sqlite_query_index_maintenance as maintenance
         plan = prepare(self.path, maintenance=True)
         original = maintenance._open
         class FailDDL:
@@ -163,9 +163,9 @@ class QueryIndexMaintenanceTests(unittest.TestCase):
         self.assertEqual(resolve(self.path, plan, maintenance=True), 'not_committed')
 
     def test_configuration_rebuild_preserves_optional_bundle(self):
-        from yadinassi.sqlite_migration_plan import prepare as upgrade_plan, apply as upgrade
-        from yadinassi.sqlite_configuration_update import prepare as update_plan, apply as update
-        from yadinassi.sqlite_transaction_profile import profile_index_ddls
+        from yadinassi.db.sqlite.sqlite_migration_plan import prepare as upgrade_plan, apply as upgrade
+        from yadinassi.db.sqlite.sqlite_configuration_update import prepare as update_plan, apply as update
+        from yadinassi.db.sqlite.sqlite_transaction_profile import profile_index_ddls
         from test_configuration_evolution import append_field
         upgrade(self.path, upgrade_plan(self.path, maintenance=True), maintenance=True)
         plan = prepare(self.path, maintenance=True)
@@ -189,7 +189,7 @@ class QueryIndexMaintenanceTests(unittest.TestCase):
         try:
             self.assertTrue(backend._query_indexes)
             with self.assertRaises(BackendError):
-                from yadinassi.sqlite_migration_plan import prepare as upgrade_plan
+                from yadinassi.db.sqlite.sqlite_migration_plan import prepare as upgrade_plan
                 upgrade_plan(other,maintenance=True)
         finally: backend.close()
         backend=SQLiteCatalogBackend(self.path,read_only=True)
@@ -205,14 +205,14 @@ class QueryIndexMaintenanceTests(unittest.TestCase):
         self.assertEqual(resolve(self.path,plan,maintenance=True),'uncertain')
 
     def test_configuration_rebuild_schema_budget_failure_rolls_back_before_commit(self):
-        from yadinassi.sqlite_migration_plan import prepare as upgrade_plan, apply as upgrade
-        from yadinassi.sqlite_configuration_update import prepare as update_plan, apply as update
+        from yadinassi.db.sqlite.sqlite_migration_plan import prepare as upgrade_plan, apply as upgrade
+        from yadinassi.db.sqlite.sqlite_configuration_update import prepare as update_plan, apply as update
         from test_configuration_evolution import append_field
         upgrade(self.path,upgrade_plan(self.path,maintenance=True),maintenance=True)
         apply(self.path,prepare(self.path,maintenance=True),maintenance=True)
         plan=update_plan(self.path,import_configuration(append_field(self.files)),maintenance=True)
         before=_fingerprint(self.open())
-        with patch('yadinassi.sqlite_query_indexes.check_index_bundle_budget',side_effect=BackendError('unsupported')) as guard:
+        with patch('yadinassi.db.sqlite.sqlite_query_indexes.check_index_bundle_budget',side_effect=BackendError('unsupported')) as guard:
             with self.assertRaisesRegex(BackendError,'unsupported'): update(self.path,plan,maintenance=True)
         self.assertEqual(guard.call_count,1)
         self.assertEqual(_fingerprint(self.open()),before)

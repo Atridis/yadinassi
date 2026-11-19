@@ -5,12 +5,12 @@ import sqlite3
 import tempfile
 import unittest
 from test_source_constant_store import configuration
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_constants_runtime import SourceConstants, SourceConstant, SourceConstantSet, ConstantCall, ConstantSetCall
-from yadinassi.source_constant_managers import SourceConstantValueManager, ValueManagerCall
-from yadinassi.values import InterpreterCall
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.metadata.source_constants_runtime import SourceConstants, SourceConstant, SourceConstantSet, ConstantCall, ConstantSetCall
+from yadinassi.db.metadata.source_constant_managers import SourceConstantValueManager, ValueManagerCall
+from yadinassi.types.values import InterpreterCall
 from yadinassi.runtime import Interpreter
-from yadinassi.errors import BSLError
+from yadinassi.types.errors import BSLError
 
 
 class ConstantDispatchTests(unittest.TestCase):

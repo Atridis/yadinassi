@@ -11,7 +11,7 @@ from scripts.native_historical_replay import (
 )
 from yadinassi import Interpreter
 from yadinassi.syntax import ast
-from yadinassi.native_targets import WINDOWS_8_3_27_2342, LINUX_8_3_27_1508
+from yadinassi.execution.codegen.native_targets import WINDOWS_8_3_27_2342, LINUX_8_3_27_1508
 from yadinassi.syntax.parser import parse
 
 ROOT = Path(__file__).resolve().parents[1]

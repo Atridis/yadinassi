@@ -22,14 +22,14 @@ class DispatchImportTests(unittest.TestCase):
         self.assertEqual(outputs[0], outputs[1])
         info=runtime._source_call_dispatch_types.cache_info()
         self.assertEqual(info.misses,1); self.assertGreater(info.hits,1)
-        from yadinassi.source_constant_managers import ValueManagerCall, write_values
+        from yadinassi.db.metadata.source_constant_managers import ValueManagerCall, write_values
         value=runtime._source_call_dispatch_types()
         self.assertIs(type(value),tuple)
         self.assertEqual(value[-2:],(ValueManagerCall,write_values))
 
     def test_preargument_procedure_refusal_does_not_load(self):
         vm=Interpreter()
-        from yadinassi.values import HostFunction
+        from yadinassi.types.values import HostFunction
         vm.functions['procedureonly']=HostFunction('ProcedureOnly',lambda value: None,returns_value=False)
         with patch.object(runtime,'_source_call_dispatch_types',side_effect=AssertionError('too early')) as load:
             with self.assertRaises(BSLError):vm.execute('x = ProcedureOnly(1);')

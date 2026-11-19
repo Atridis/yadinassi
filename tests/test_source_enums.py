@@ -1,8 +1,8 @@
 """Source enum declarations preserve identity and isolate unsupported objects."""
 import unittest
 from uuid import uuid5, NAMESPACE_URL
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_enums import source_enum_definitions
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_enums import source_enum_definitions
 
 
 def identity(name):

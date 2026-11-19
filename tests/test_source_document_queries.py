@@ -2,8 +2,8 @@
 import unittest
 from unittest.mock import patch
 import test_source_document_records as support
-from yadinassi.errors import BSLError
-from yadinassi.source_document_store import SourceDocumentStore
+from yadinassi.types.errors import BSLError
+from yadinassi.db.document.source_document_store import SourceDocumentStore
 
 SEED='O=Catalogs.Items.CreateItem(); O.Code="C"; O.Description="catalog"; O.Write(); D=Documents.Invoice.CreateDocument(); D.Number="A"; D.Date=Date(2026,1,1); D.Write(); D=Documents.Invoice.CreateDocument(); D.Number="B"; D.Date=Date(2026,1,2); D.Write(); '
 class SourceDocumentQueryTests(unittest.TestCase):
@@ -39,7 +39,7 @@ class SourceDocumentQueryTests(unittest.TestCase):
     def test_safe(self):
         with self.assertRaises(BSLError):self.run_body('Q=New Query("SELECT Ref FROM Document.Invoice"); SetSafeMode(True); Q.Execute();')
     def test_no_document_v4(self):
-        from yadinassi.configuration_source_runtime import SourceApplication
+        from yadinassi.configuration.configuration_source_runtime import SourceApplication
         app=SourceApplication(support.package('Q=New Query("SELECT Ref FROM Document.Invoice"); Q.Execute();'),scratch_database=self.path,source_catalog_records=True);self.addCleanup(app.close)
         with self.assertRaises(BSLError):app.start()
     def test_explicit_transaction(self):
@@ -51,8 +51,8 @@ class SourceDocumentQueryTests(unittest.TestCase):
     def test_ref_getobject(self):
         _,out=self.run_body('Q=New Query("SELECT Ref AS R FROM Document.Invoice ORDER BY Number"); S=Q.Execute().Select(); S.Next(); O=S.R.GetObject(); Message(O.Number);');self.assertEqual(out,['A'])
     def test_same_name_catalog_document_do_not_collide(self):
-        from yadinassi.configuration_source import import_source
-        from yadinassi.configuration_source_runtime import SourceApplication
+        from yadinassi.configuration.configuration_source import import_source
+        from yadinassi.configuration.configuration_source_runtime import SourceApplication
         source=support.package();files={f.path:f.content for f in source.files}
         files['Catalogs/Invoice.xml']=files.pop('Catalogs/Items.xml').replace(b'<Name>Items</Name>',b'<Name>Invoice</Name>')
         body='O=Catalogs.Invoice.CreateItem(); O.Code="C"; O.Write(); D=Documents.Invoice.CreateDocument(); D.Number="D"; D.Date=Date(2026,1,1); D.Write(); Q=New Query("SELECT C.Code AS C, D.Number AS N FROM Catalog.Invoice AS C INNER JOIN Document.Invoice AS D ON C.DeletionMark=D.DeletionMark"); S=Q.Execute().Select(); S.Next(); Message(S.C); Message(S.N);'
@@ -61,8 +61,8 @@ class SourceDocumentQueryTests(unittest.TestCase):
     def test_binding_exact_owner_and_callbacks(self):
         from dataclasses import replace
         from uuid import uuid4
-        from yadinassi.source_query_references import make_binding
-        from yadinassi.configuration_source_runtime import SourceApplication
+        from yadinassi.db.query.source_query_references import make_binding
+        from yadinassi.configuration.configuration_source_runtime import SourceApplication
         app,_=self.run_body(''); other=SourceApplication(support.package()); self.addCleanup(other.close)
         binding=make_binding(app,app.interpreter._catalogs,'Invoice','Document')
         ref=app.references.ref('Document','Invoice',uuid4())
@@ -73,9 +73,9 @@ class SourceDocumentQueryTests(unittest.TestCase):
         app.close()
         with self.assertRaises(ValueError):binding.value(ref)
     def test_final_owner_failure_leaves_temp_tables_unpublished(self):
-        from yadinassi.source_query_references import SourcePackageScope
-        from yadinassi.source_constant_queries import SourceConstantQuery
-        from yadinassi.query_packages import BSLTempTablesManager
+        from yadinassi.db.query.source_query_references import SourcePackageScope
+        from yadinassi.db.query.source_constant_queries import SourceConstantQuery
+        from yadinassi.db.query.query_packages import BSLTempTablesManager
         app,_=self.run_body(''); query=SourceConstantQuery(app.interpreter,app,'SELECT Ref INTO T FROM Document.Invoice')
         manager=BSLTempTablesManager(); query._temp_tables_manager=manager
         app.interpreter._context_stack.append('server');self.addCleanup(app.interpreter._context_stack.pop)

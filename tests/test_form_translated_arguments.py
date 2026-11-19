@@ -1,9 +1,9 @@
 """Form references keep their authority rules under generated operand evaluation."""
 import unittest
-from yadinassi.execution_policy import execution_backend_policy
-from yadinassi.form_runtime import FormSession
-from yadinassi.form_model import BSLFormAttribute
-from yadinassi.type_descriptions import BSLTypeDescription
+from yadinassi.execution.execution_policy import execution_backend_policy
+from yadinassi.forms.form_runtime import FormSession
+from yadinassi.forms.form_model import BSLFormAttribute
+from yadinassi.types.type_descriptions import BSLTypeDescription
 import test_configuration_app as config_tests
 
 class TranslatedFormArgumentsTests(unittest.TestCase):

@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
-from yadinassi.native_bare_collections import BareArray, BareStructure
-from yadinassi.native_bare_structure_ops import bare_fill_property_values
+from yadinassi.execution.codegen.native_bare_collections import BareArray, BareStructure
+from yadinassi.execution.codegen.native_bare_structure_ops import bare_fill_property_values
 
 
 class RecoveredBareFill(unittest.TestCase):
@@ -16,7 +16,7 @@ class RecoveredBareFill(unittest.TestCase):
         target.get('Copy').add(7);self.assertEqual(source.get('Copy').get(0),7)
     def test_two_argument_path_does_not_parse_filters(self):
         target=BareStructure('A',1);source=BareStructure('A',2)
-        with patch('yadinassi.native_bare_structure_ops._filter_names',side_effect=AssertionError('unexpected filter parser')):
+        with patch('yadinassi.execution.codegen.native_bare_structure_ops._filter_names',side_effect=AssertionError('unexpected filter parser')):
             bare_fill_property_values(target,source)
             bare_fill_property_values(target,source,None,None)
         self.assertEqual(target.get('A'),2)

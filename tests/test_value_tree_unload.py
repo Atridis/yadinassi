@@ -2,9 +2,9 @@
 from decimal import Decimal as D
 import unittest
 from unittest import mock
-import yadinassi.value_trees as tree
-from yadinassi.values import BSLArray, NULL
-from yadinassi.structures import BSLStructure
+import yadinassi.collections.value_trees as tree
+from yadinassi.types.values import BSLArray, NULL
+from yadinassi.collections.structures import BSLStructure
 
 
 class UnloadColumnTests(unittest.TestCase):

@@ -4,9 +4,9 @@ from decimal import Decimal
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.syntax.parser import parse
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.values import BSLArray, BSLFixedArray
-from yadinassi.structures import BSLFixedStructure
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.types.values import BSLArray, BSLFixedArray
+from yadinassi.collections.structures import BSLFixedStructure
 
 class DirectFixedTests(unittest.TestCase):
     def test_routes_snapshot_aliases_and_repeated_branches(self):
@@ -72,8 +72,8 @@ class DirectFixedTests(unittest.TestCase):
         self.assertTrue(vm.variables['caught']);self.assertEqual(vm.variables['saved'],7)
 
     def test_existing_policy_event_and_post_policy_binding_check(self):
-        from yadinassi.python_direct_services import ServicesBoundary
-        from yadinassi.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.execution.direct.python_direct_services import ServicesBoundary
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
         class Boundary(ServicesBoundary,BoundaryContext):pass
         for mode in ('deny','mutate','permission'):
             vm=Interpreter();events=[];factory=vm.types['fixedarray']
@@ -83,7 +83,7 @@ class DirectFixedTests(unittest.TestCase):
                 return mode!='deny'
             context=Boundary(policy=policy);context.vm=vm;context.start()
             bound=context.resolve_service('new:fixedarray')
-            with patch('yadinassi.python_direct_fixed.construct',side_effect=PermissionError('denied')) as construct:
+            with patch('yadinassi.execution.direct.python_direct_fixed.construct',side_effect=PermissionError('denied')) as construct:
                 with self.assertRaises(BoundaryViolation):bound([])
                 self.assertEqual(construct.call_count,1 if mode=='permission' else 0)
             self.assertEqual(events,[('call_value',factory.name.casefold())])

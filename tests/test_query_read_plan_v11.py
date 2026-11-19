@@ -7,11 +7,11 @@ import unittest
 
 import test_catalog_scan_optimization as catalog_fixture
 import test_sqlite_unit_of_work as transaction_fixture
-from yadinassi.catalog_backend import CatalogScanRequest, BackendError
-from yadinassi.document_backend import DocumentScanRequest
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_migration_plan import prepare, apply
-from yadinassi.transaction_backend import TransactionRequest
+from yadinassi.db.catalog.catalog_backend import CatalogScanRequest, BackendError
+from yadinassi.db.document.document_backend import DocumentScanRequest
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_migration_plan import prepare, apply
+from yadinassi.db.transaction_backend import TransactionRequest
 
 
 class MigratedCatalogReadTests(unittest.TestCase):

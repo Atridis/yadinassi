@@ -4,11 +4,11 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.python_direct import PythonDirectUnsupported
-from yadinassi.python_direct_names import NAMES
-from yadinassi.search_directions import BSLSearchDirections, SEARCH_DIRECTIONS
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+from yadinassi.execution.direct.python_direct_names import NAMES
+from yadinassi.collections.search_directions import BSLSearchDirections, SEARCH_DIRECTIONS
 
 
 class DirectSystemNamesTests(unittest.TestCase):

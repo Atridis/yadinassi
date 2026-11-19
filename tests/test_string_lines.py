@@ -3,7 +3,7 @@ from decimal import Decimal
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.strings import line_count, get_line
+from yadinassi.text.strings import line_count, get_line
 
 
 class StringLineTests(unittest.TestCase):

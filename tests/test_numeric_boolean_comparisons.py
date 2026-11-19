@@ -5,8 +5,8 @@ import operator
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.values import BSLObject
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.types.values import BSLObject
 
 
 OPERATORS = {'=': operator.eq, '<>': operator.ne, '<': operator.lt,

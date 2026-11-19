@@ -5,10 +5,10 @@ from unittest.mock import patch
 import test_python_direct_source_document_guards as fixtures
 import test_python_direct_source_query as query_fixtures
 from test_source_document_object_modules import package
-from yadinassi.source_document_runtime import SourceDocumentObject,_ObjectInterpreter,create_object
-from yadinassi.python_direct_source_storage import finish
-from yadinassi.python_direct_source_document import check_object,bind_export
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.db.document.source_document_runtime import SourceDocumentObject,_ObjectInterpreter,create_object
+from yadinassi.execution.direct.source.python_direct_source_storage import finish
+from yadinassi.execution.direct.source.python_direct_source_document import check_object,bind_export
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
 class DirectDocumentHandlersSecurity(unittest.TestCase):

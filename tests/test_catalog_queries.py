@@ -8,10 +8,10 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from yadinassi import Interpreter
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.queries import BSLQuery
-from yadinassi.sqlite_catalog import _View
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.query.queries import BSLQuery
+from yadinassi.db.sqlite.sqlite_catalog import _View
 from sqlite_catalog_fixture import configuration_files
 
 
@@ -99,7 +99,7 @@ S=Q.Execute().Select();Message(S.Next());Message(S.Code);Message(S.Next());''')
     def test_continuation_keeps_page_size_and_top_truncates_only_last_page(self):
         from dataclasses import replace
         from uuid import UUID
-        from yadinassi.catalog_backend import CatalogValuePage, CatalogValueRow, CatalogSelection
+        from yadinassi.db.catalog.catalog_backend import CatalogValuePage, CatalogValueRow, CatalogSelection
         manager = self.vm._catalogs.get_index('Products')
         view = manager._view()
         try:
@@ -121,7 +121,7 @@ S=Q.Execute().Select();Message(S.Next());Message(S.Code);Message(S.Next());''')
         self.vm.execute('O=Catalogs.Products.FindByCode("1").GetObject();O.Write();')
 
     def test_hostile_page_and_resources_refuse_and_close_read_view(self):
-        from yadinassi.catalog_backend import CatalogValuePage, BackendError
+        from yadinassi.db.catalog.catalog_backend import CatalogValuePage, BackendError
         query = BSLQuery(self.vm._catalogs, 'SELECT Code FROM Catalog.Products')
         for page in (CatalogValuePage((), object()), CatalogValuePage((), 'x'), CatalogValuePage((), 'a'*32)):
             with patch.object(_View, 'scan_catalog_values', return_value=page), self.assertRaises(BackendError):
@@ -152,7 +152,7 @@ S=Q.Execute().Select();While S.Next() Do Message(S.Code);EndDo;''')
         with self.assertRaises(ValueError): rows.get_member('Code')
 
     def test_measured_nullable_scalar_metadata_and_exact_assignment(self):
-        from yadinassi.values import BSLType, NULL
+        from yadinassi.types.values import BSLType, NULL
         result = BSLQuery(self.vm._catalogs, 'SELECT Code,Amount,Active,Stamp FROM Catalog.Products ORDER BY Amount').execute()
         table = result.unload()
         self.assertEqual([c.name for c in table.columns.items], ['Код','Amount','Active','Stamp'])
@@ -170,7 +170,7 @@ S=Q.Execute().Select();While S.Next() Do Message(S.Code);EndDo;''')
         with self.assertRaises(ValueError): table.copy()
 
     def test_nullable_query_schema_does_not_admit_public_union_or_codec(self):
-        from yadinassi.type_descriptions import BSLTypeDescription, _query_nullable_description
+        from yadinassi.types.type_descriptions import BSLTypeDescription, _query_nullable_description
         query = BSLQuery(self.vm._catalogs, 'SELECT Amount FROM Catalog.Products')
         description = query.execute().unload().columns.items[0].value_type
         for source in ('Number,Null', description):

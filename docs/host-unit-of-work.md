@@ -12,8 +12,8 @@ can open the database, retain and verify an operator backup, then create and sav
 an explicit plan:
 
 ```sh
-python -m yadinassi.storage_migration_cli plan owned.sqlite --maintenance --plan-file upgrade.json
-python -m yadinassi.storage_migration_cli apply owned.sqlite --maintenance --plan-file upgrade.json
+python -m yadinassi.cli_support.storage_migration_cli plan owned.sqlite --maintenance --plan-file upgrade.json
+python -m yadinassi.cli_support.storage_migration_cli apply owned.sqlite --maintenance --plan-file upgrade.json
 ```
 
 The new format is 11. Its retained base layout is 2, 3, 4, 7, 8, 9 or 10;
@@ -37,7 +37,7 @@ never overwrites an existing recovery plan. It does not make a backup. An
 `uncertain_commit` must be resolved while maintenance remains in force:
 
 ```sh
-python -m yadinassi.storage_migration_cli resolve owned.sqlite --maintenance --plan-file upgrade.json
+python -m yadinassi.cli_support.storage_migration_cli resolve owned.sqlite --maintenance --plan-file upgrade.json
 ```
 
 A matching version alone is not proof. The resolver checks the exact marker,
@@ -49,7 +49,7 @@ journal requires operator investigation.
 
 ```python
 from uuid import uuid4
-from yadinassi.transaction_backend import TransactionRequest
+from yadinassi.db.transaction_backend import TransactionRequest
 
 operation = uuid4()  # Retain this and the exact immutable requests for recovery.
 requests = (

@@ -17,7 +17,7 @@ Function Both(Val N=2) Return N+1; EndFunction
 Function Server() Counter=Counter+Both(); Return Counter; EndFunction
 R=Server(); C=Both();
 '''
-        with patch('yadinassi.experimental_naked_collections.prepare',create=True, side_effect=AssertionError('retired compiler')):
+        with patch('yadinassi.execution.codegen.experimental_naked_collections.prepare',create=True, side_effect=AssertionError('retired compiler')):
             vm=Interpreter(compilation_profile='managed-thick-file');self.addCleanup(vm.close)
             vm.execute_prepared(vm.prepare(source))
             self.assertEqual((vm.variables['r'],vm.variables['c']),(13,3))
@@ -30,17 +30,17 @@ R=Server(); C=Both();
 
     def test_source_startup_and_safe_mode_without_retired_compiler(self):
         from test_configuration_source_runtime import source
-        from yadinassi.configuration_source_runtime import SourceApplication
+        from yadinassi.configuration.configuration_source_runtime import SourceApplication
         code=b'Procedure Inner() SetSafeMode(True); Raise "error"; EndProcedure\nProcedure Outer() SetSafeMode(True);Try Inner();Except EndTry;Message(SafeMode());EndProcedure\nProcedure OnStart() Outer();Message(SafeMode());EndProcedure'
         output=[]
         app=SourceApplication(source(code),output=output.append);self.addCleanup(app.close)
-        with patch('yadinassi.experimental_naked_collections.prepare',create=True,side_effect=AssertionError('retired compiler')):
+        with patch('yadinassi.execution.codegen.experimental_naked_collections.prepare',create=True,side_effect=AssertionError('retired compiler')):
             app.start()
         self.assertEqual(output,['Да','Нет'])
 
     def test_source_direct_frames_cover_defaults_and_nested_calls(self):
         from test_python_direct_source_scopes import ScopeContext
-        from yadinassi.experimental_direct_ast import compile_owned
+        from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
         from yadinassi.syntax.parser import parse
         text='Function Inner() Return Depth(); EndFunction Function Outer(Val X=1) Return X+Inner(); EndFunction A=Outer(); B=Depth();'
         program=parse(text)
@@ -53,10 +53,10 @@ R=Server(); C=Both();
 
     def test_source_callable_byref_accepts_canonical_forwarded_storage(self):
         from test_python_direct_source_scopes import ScopeContext
-        from yadinassi.experimental_direct_ast import compile_owned
-        from yadinassi.experimental_naked_collections import _Cell
+        from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
+        from yadinassi.execution.codegen.experimental_naked_collections import _Cell
         from yadinassi.syntax.parser import parse
-        from yadinassi.values import HostFunction
+        from yadinassi.types.values import HostFunction
         callback=HostFunction('C',lambda:42)
         for actual in ('C','A[0]'):
             text='Function Invoke(F) Return F(); EndFunction R=Invoke('+actual+');'
@@ -71,8 +71,8 @@ R=Server(); C=Both();
 
     def test_source_constructor_arity_is_checked_before_argument_effects(self):
         from test_configuration_source_runtime import source
-        from yadinassi.configuration_source_runtime import SourceApplication
-        from yadinassi.errors import BSLError
+        from yadinassi.configuration.configuration_source_runtime import SourceApplication
+        from yadinassi.types.errors import BSLError
         for arguments in ('Effect(), Effect()', 'Effect(),, Effect()'):
             output=[]
             code=('Function Effect() Message("wrong-effect");Return 1;EndFunction Procedure OnStart() X=New Query('+arguments+'); EndProcedure').encode()
@@ -82,15 +82,15 @@ R=Server(); C=Both();
             self.assertEqual(output,[])
 
     def test_owned_handler_declarations_and_casefolded_external_names(self):
-        from yadinassi.python_direct_handlers import prepare_handlers
-        from yadinassi.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.execution.direct.python_direct_handlers import prepare_handlers
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
         from yadinassi.syntax.parser import parse
         state={};external={'field':4}
         class Context(BoundaryContext):
             def external_get(self,name):return external[name]
             def external_set(self,name,value):external[name]=value
         text='Var Total; Procedure Event(x) Field=Field+1;x=Total;EndProcedure'
-        with patch('yadinassi.experimental_naked_collections.prepare',create=True,side_effect=AssertionError('retired compiler')):
+        with patch('yadinassi.execution.codegen.experimental_naked_collections.prepare',create=True,side_effect=AssertionError('retired compiler')):
             plan=prepare_handlers(parse(text),source_text=text,external_names=('FiElD',))
             self.assertEqual(plan.invoke('Event','client',[0],state=state,context_factory=Context),[None])
             state['total']=9
@@ -98,8 +98,8 @@ R=Server(); C=Both();
         self.assertEqual(state,{'total':9});self.assertEqual(external,{'field':6})
 
     def test_unknown_handler_argument_does_not_gain_module_authority(self):
-        from yadinassi.python_direct_handlers import prepare_handlers
-        from yadinassi.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.execution.direct.python_direct_handlers import prepare_handlers
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
         from yadinassi.syntax.parser import parse
         text='Procedure Event() Capture(Field);EndProcedure'
         plan=prepare_handlers(parse(text),source_text=text)
@@ -111,10 +111,10 @@ R=Server(); C=Both();
 
     def test_unknown_source_host_argument_never_leaks_unset_sentinel(self):
         from test_python_direct_source_scopes import ScopeContext
-        from yadinassi.experimental_direct_ast import compile_owned
+        from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
         from yadinassi.syntax.parser import parse
         text='Procedure Event() Capture(Missing);EndProcedure Event();'
         plan=compile_owned(parse(text),source_text=text,source_name='<unknown>',source_scopes=True)
         calls=[];context=ScopeContext();context._services['capture']=calls.append
-        with self.assertRaises(__import__("yadinassi.errors",fromlist=["BSLRuntimeError"]).BSLRuntimeError):plan.run({},context=context)
+        with self.assertRaises(__import__("yadinassi.types.errors",fromlist=["BSLRuntimeError"]).BSLRuntimeError):plan.run({},context=context)
         self.assertEqual(calls,[]);self.assertEqual(context.frames,[])

@@ -1,10 +1,10 @@
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.dom_io import BSLDOMBuilder
-from yadinassi.xml_io import BSLXMLReader
-from yadinassi.dom_xpath import BSLDOMNamespaceResolver, BSLDOMXPathResult
-from yadinassi.dom_xpath_engine import parse
+from yadinassi.formats.xml.dom_io import BSLDOMBuilder
+from yadinassi.formats.xml.xml_io import BSLXMLReader
+from yadinassi.formats.xml.dom_xpath import BSLDOMNamespaceResolver, BSLDOMXPathResult
+from yadinassi.formats.xml.dom_xpath_engine import parse
 
 class XPathBindingTests(unittest.TestCase):
     def doc(self, text='<root><group><item id="a"/><item id="b"/></group><group><item id="c"/></group></root>'):
@@ -60,7 +60,7 @@ class XPathBindingTests(unittest.TestCase):
             with self.subTest(path=path[:20]),self.assertRaises(ValueError):parse(path)
     def test_shared_work_budget(self):
         d=self.doc()
-        with patch('yadinassi.dom_xpath_engine.MAX_WORK',2),self.assertRaises(ValueError):self.nodes(d,'//item')
+        with patch('yadinassi.formats.xml.dom_xpath_engine.MAX_WORK',2),self.assertRaises(ValueError):self.nodes(d,'//item')
     def test_iterator_identity_mutation_and_exhaustion(self):
         d=self.doc();v=d.evaluate_xpath_expression('//item',d,BSLDOMNamespaceResolver(d));first=d.document_element()._children[0]._children[0]
         first.set_attribute('id','mutated');d.document_element().append_child(d.create_element('item'))
@@ -73,8 +73,8 @@ class XPathBindingTests(unittest.TestCase):
         with self.assertRaises(Exception):vm.execute('V=New DOMXPathResult;')
 
     def test_xpath_objects_and_types_have_explicit_closed_internal_codec_policy(self):
-        from yadinassi.serialization import value_to_string_internal, _UNSUPPORTED_CODEC_TYPES, _TYPE_IDS
-        from yadinassi.values import BSLType
+        from yadinassi.formats.storage.serialization import value_to_string_internal, _UNSUPPORTED_CODEC_TYPES, _TYPE_IDS
+        from yadinassi.types.values import BSLType
         d=self.doc()
         resolver=BSLDOMNamespaceResolver(d)
         result=d.evaluate_xpath_expression('.',d,resolver)

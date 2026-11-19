@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.values import BSLObject
+from yadinassi.types.values import BSLObject
 
 
 class ReferenceArgumentTests(unittest.TestCase):

@@ -1,12 +1,12 @@
 """UUID construction inside configured source, without new service/transfer grants."""
 import unittest
 from unittest.mock import patch
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.python_direct_configuration import ConfigurationBoundary
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.execution.direct.python_direct_configuration import ConfigurationBoundary
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.runtime import Interpreter
-from yadinassi.unique_identifiers import BSLUUID
-from yadinassi.values import HostFunction
+from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.types.values import HostFunction
 from configuration_runtime_fixture import module_files
 
 TEXT='01234567-89ab-cdef-0123-456789abcdef'

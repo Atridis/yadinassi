@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from yadinassi.ui.browser import CatalogBrowserSession
 from yadinassi.ui.catalog_view import CatalogRepository
 from yadinassi.ui.protocol import MAX_LINE_BYTES, encode_line, error_response

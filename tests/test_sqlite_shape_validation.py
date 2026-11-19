@@ -5,8 +5,8 @@ import unittest
 from unittest.mock import patch
 
 import test_sqlite_transaction_source as fixture
-from yadinassi import sqlite_main_demo_profile as profile
-from yadinassi.catalog_backend import BackendError
+from yadinassi.db.sqlite import sqlite_main_demo_profile as profile
+from yadinassi.db.catalog.catalog_backend import BackendError
 
 
 class ExistingShapeValidationTests(unittest.TestCase):

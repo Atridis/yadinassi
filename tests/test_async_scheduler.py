@@ -4,9 +4,9 @@ from decimal import getcontext, localcontext
 import unittest
 import weakref
 
-from yadinassi.async_runtime import AwaitRequest, Scheduler, SchedulerLimitError
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.native_targets import (
+from yadinassi.application.async_runtime import AwaitRequest, Scheduler, SchedulerLimitError
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.execution.codegen.native_targets import (
     LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, current_native_target, target_context,
 )
 

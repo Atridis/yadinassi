@@ -2,8 +2,8 @@
 import json
 from threading import Lock
 
-from ..errors import BSLError
-from ..source_forms import SourceFormController
+from yadinassi.types.errors import BSLError
+from yadinassi.forms.source_forms import SourceFormController
 from .local_app import _Handler
 
 PROTOCOL = 'yadinassi-source-workspace/1'

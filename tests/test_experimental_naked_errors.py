@@ -5,13 +5,13 @@ from unittest.mock import patch
 from decimal import Decimal
 from types import CodeType
 from yadinassi.syntax.parser import parse
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.experimental_naked_errors import convert_error
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.execution.codegen.experimental_naked_errors import convert_error
 
 class DirectErrorConversionTests(unittest.TestCase):
 
     def test_authority_and_control_failures_remain_outside_conversion(self):
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         for error in (BoundaryViolation('denied'), KeyboardInterrupt(), SystemExit(), PermissionError('denied')):
             self.assertIs(convert_error(error, 'original.bsl', ''), error)
 
@@ -53,7 +53,7 @@ class DirectPortableDiagnosticsTests(unittest.TestCase):
 
     def test_try_handles_runtime_error_without_masking_authority(self):
         from yadinassi import Interpreter
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         vm = Interpreter()
         vm.execute('caught=False; Try x=1/0; Except caught=True; EndTry;')
         self.assertTrue(vm.variables['caught'])
@@ -75,7 +75,7 @@ class DirectPermissionErrors(unittest.TestCase):
         def denied():
             raise PermissionError('denied')
         vm.register_function('Host', denied)
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         with self.assertRaisesRegex(BoundaryViolation, 'denied'):
             vm.execute('caught=False;Try Host();Except caught=True;EndTry;')
         self.assertIs(vm.variables['caught'], False)

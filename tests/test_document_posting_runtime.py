@@ -11,12 +11,12 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.catalog_backend import BackendError
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.database_transactions import current, execution, begin, rollback
-from yadinassi.configuration_posting import import_posting_configuration, PROFILE
-from yadinassi.document_posting import PostingLimitError
-from yadinassi.document_posting_values import DocumentWriteMode
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.database_transactions import current, execution, begin, rollback
+from yadinassi.configuration.configuration_posting import import_posting_configuration, PROFILE
+from yadinassi.db.document.document_posting import PostingLimitError
+from yadinassi.db.document.document_posting_values import DocumentWriteMode
 from test_configuration_posting import wrap
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -223,7 +223,7 @@ EndProcedure''')
     def test_budget_failure_cannot_be_caught_and_leaves_no_rows(self):
         self.make('Procedure Posting(Cancel,Mode) Try While True Do EndDo; Except EndTry; EndProcedure')
         obj=self.new(3)
-        with patch('yadinassi.document_posting.MAX_STEPS',50):
+        with patch('yadinassi.db.document.document_posting.MAX_STEPS',50):
             with self.assertRaises(PostingLimitError):self.post()
         self.assertTrue(obj.is_new());self.assertEqual(self.rows(obj),())
         self.vm.execute('BeginTransaction();RollbackTransaction();')
@@ -257,14 +257,14 @@ EndProcedure''')
 
     def test_movement_rows_are_bounded_before_buffer_growth(self):
         self.new(3)
-        with patch('yadinassi.document_posting_values.MAX_MOVEMENT_ROWS',1):
+        with patch('yadinassi.db.document.document_posting_values.MAX_MOVEMENT_ROWS',1):
             self.vm.execute('O.RegisterRecords.OwnedPostingRows.Add();')
             with self.assertRaises(BSLRuntimeError):self.vm.execute('O.RegisterRecords.OwnedPostingRows.Add();')
         self.assertEqual(self.vm.execute('O.RegisterRecords.OwnedPostingRows.Count()'),Decimal(1))
 
     def test_movement_bytes_are_bounded_before_buffer_growth(self):
         self.new(3)
-        with patch('yadinassi.document_posting_values.MAX_BUFFER_BYTES',1):
+        with patch('yadinassi.db.document.document_posting_values.MAX_BUFFER_BYTES',1):
             with self.assertRaises(BSLRuntimeError):self.vm.execute('O.RegisterRecords.OwnedPostingRows.Add();')
         self.assertEqual(self.vm.execute('O.RegisterRecords.OwnedPostingRows.Count()'),Decimal(0))
 

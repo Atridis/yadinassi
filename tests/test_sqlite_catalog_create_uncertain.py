@@ -8,8 +8,8 @@ import unittest
 from unittest.mock import patch
 
 from test_sqlite_catalog_backend import configuration
-from yadinassi.catalog_backend import BackendError
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 
 
 @contextmanager
@@ -21,11 +21,11 @@ def mocked_cli_storage_source(configuration):
     Creation still uses the real SQLiteDBContext/SQLiteCatalogBackend and keeps
     all transaction, concurrent-owner, journal and cleanup assertions below.
     """
-    from yadinassi.configuration_profile_import import _prepare_imported
-    from yadinassi.database_context import SQLiteDBContext
+    from yadinassi.configuration.configuration_profile_import import _prepare_imported
+    from yadinassi.db.database_context import SQLiteDBContext
     prepared = _prepare_imported(configuration, 'legacy', 'explicit', None, True)
-    with patch('yadinassi.configuration_profile_import.prepare_directory', return_value=prepared), \
-         patch('yadinassi.configuration_profile_import.create_prepared',
+    with patch('yadinassi.configuration.configuration_profile_import.prepare_directory', return_value=prepared), \
+         patch('yadinassi.configuration.configuration_profile_import.create_prepared',
                side_effect=lambda path, retained: SQLiteDBContext.create(
                    path, configuration, activate=retained.activate)):
         yield
@@ -106,7 +106,7 @@ class SQLiteCreateUncertainTests(unittest.TestCase):
             proxy = CreateConnection(conn, **fault)
             self.handles.append(proxy)
             return proxy
-        return patch('yadinassi.sqlite_catalog.sqlite3.connect', side_effect=connect)
+        return patch('yadinassi.db.sqlite.sqlite_catalog.sqlite3.connect', side_effect=connect)
 
     def assert_complete_source(self):
         backend = SQLiteCatalogBackend(self.path)
@@ -183,7 +183,7 @@ class SQLiteCreateUncertainTests(unittest.TestCase):
             self.assertEqual(db.execute('SELECT value FROM retained_marker').fetchone(), ('other process',))
 
     def test_connect_failure_leaves_reserved_path_and_original_error(self):
-        with patch('yadinassi.sqlite_catalog.sqlite3.connect', side_effect=sqlite3.OperationalError('injected')):
+        with patch('yadinassi.db.sqlite.sqlite_catalog.sqlite3.connect', side_effect=sqlite3.OperationalError('injected')):
             with self.assertRaisesRegex(BackendError, 'storage_error'):
                 SQLiteCatalogBackend.create(self.path, self.config)
         self.assertTrue(self.path.exists())

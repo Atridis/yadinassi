@@ -1,7 +1,7 @@
 import unittest
 from test_configuration_source_runtime import source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 
 
 def configuration(call='Message(Catalogs.Items.Answer());', body='Function Answer() Export\nReturn 42;\nEndFunction', family='Catalog', folder='Catalogs', session=True):

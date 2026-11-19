@@ -6,7 +6,7 @@ from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from yadinassi.configuration_xml import ConfigurationImport, import_configuration
+from yadinassi.configuration.configuration_xml import ConfigurationImport, import_configuration
 from sqlite_catalog_fixture import configuration_files
 
 

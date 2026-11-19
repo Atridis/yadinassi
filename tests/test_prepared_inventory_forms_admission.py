@@ -9,14 +9,14 @@ import unittest
 from unittest.mock import patch
 
 from inventory_application_fixture import source, MANIFEST, DOC_FORM, DOC_MODULE
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_inventory_application import (
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_inventory_application import (
     InventoryApplicationConfiguration, PROFILE, import_inventory_application, validated_core)
-from yadinassi.configuration_accumulation_references import PROFILE as CORE_PROFILE
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.configuration.configuration_accumulation_references import PROFILE as CORE_PROFILE
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 
 ROOT = Path(__file__).resolve().parents[1]
-TARGET = 'yadinassi.configuration_inventory_application.import_inventory_application'
+TARGET = 'yadinassi.configuration.configuration_inventory_application.import_inventory_application'
 
 
 class PreparedInventoryFormsAdmissionTests(unittest.TestCase):
@@ -50,7 +50,7 @@ class PreparedInventoryFormsAdmissionTests(unittest.TestCase):
             self.read(); importer.assert_not_called()
 
     def test_twenty_three_snapshots_reuse_full_form_import_and_compilation(self):
-        with patch(TARGET) as importer, patch('yadinassi.configuration_forms.compile_form_module') as compiler:
+        with patch(TARGET) as importer, patch('yadinassi.configuration.configuration_forms.compile_form_module') as compiler:
             for _ in range(23): self.read()
             importer.assert_not_called(); compiler.assert_not_called()
         retained = self.backend._prepared_source._entry.value
@@ -113,6 +113,6 @@ class PreparedInventoryFormsAdmissionTests(unittest.TestCase):
         self.assertIsNone(other._prepared_source._entry)
 
     def test_recorder_fields_remain_live_for_full_variant(self):
-        with patch('yadinassi.sqlite_accumulation_movements.AccumulationMovementPort._require', side_effect=BackendError('integrity')):
+        with patch('yadinassi.db.sqlite.sqlite_accumulation_movements.AccumulationMovementPort._require', side_effect=BackendError('integrity')):
             with self.assertRaises(BackendError): self.read()
         self.read()

@@ -5,8 +5,8 @@ import tempfile
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.callbacks import BSLCallbackDescription
-from yadinassi.values import BSLType
+from yadinassi.application.callbacks import BSLCallbackDescription
+from yadinassi.types.values import BSLType
 
 
 SOURCE = '''

@@ -7,10 +7,11 @@ import sys
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi import serialization, type_values
-from yadinassi.serialization import value_from_string_internal, value_to_string_internal
-from yadinassi.values import BSLType, to_string
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.formats.storage import serialization
+from yadinassi.types import type_values
+from yadinassi.formats.storage.serialization import value_from_string_internal, value_to_string_internal
+from yadinassi.types.values import BSLType, to_string
 
 
 ROOT = Path(__file__).resolve().parents[1]

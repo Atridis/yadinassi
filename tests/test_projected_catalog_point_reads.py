@@ -5,10 +5,10 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 import test_catalog_tabular_runtime as fixtures
-from yadinassi.catalog_backend import BackendError
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.sqlite_catalog import _View
-from yadinassi.sqlite_catalog_layout import quote_identifier
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.db.sqlite.sqlite_catalog import _View
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
 
 
 class CatalogPointProjectionTests(unittest.TestCase):
@@ -81,7 +81,7 @@ class EnumCatalogPointProjectionTests(unittest.TestCase):
             with self.assertRaisesRegex(BSLRuntimeError,'unsupported'):
                 self.vm.execute('BeginTransaction();V=C.Ref.'+member+';RollbackTransaction();')
     def test_lexical_witness_still_refuses_unregistered_view_subclass(self):
-        from yadinassi.inventory_enum_runtime import read_snapshot
+        from yadinassi.configuration.demos.inventory_enum_runtime import read_snapshot
         class ForeignView(_View): pass
         with closing(self.context.backend.begin_read()) as view:
             foreign=object.__new__(ForeignView);foreign.__dict__.update(view.__dict__)

@@ -9,9 +9,9 @@ from unittest.mock import patch
 import weakref
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.user_messages import UserMessageContext, UserMessageRecord, MAX_TEXT, MAX_PATH
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.application.user_messages import UserMessageContext, UserMessageRecord, MAX_TEXT, MAX_PATH
 from sqlite_catalog_fixture import configuration_files
 
 
@@ -151,7 +151,7 @@ class UserMessageTests(unittest.TestCase):
         self.assertEqual([r.text for r in self.records], ['imported'])
 
     def test_form_session_retains_existing_plain_message_contract(self):
-        from yadinassi.form_runtime import FormSession
+        from yadinassi.forms.form_runtime import FormSession
         source='&AtClient\nProcedure OnOpen(Cancel) m=New UserMessage; m.Text="form"; m.Field="Object.Name"; m.Message(); EndProcedure'
         session=FormSession(source,bindings={'OnOpen':'OnOpen'})
         session.open()

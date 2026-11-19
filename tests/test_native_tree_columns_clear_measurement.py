@@ -5,10 +5,10 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.value_trees import (BSLValueTree, BSLValueTreeColumn as Column,
+from yadinassi.collections.value_trees import (BSLValueTree, BSLValueTreeColumn as Column,
     BSLValueTreeColumnCollection as Columns, BSLValueTreeRow as Row,
     BSLValueTreeRowCollection as Rows)
-from yadinassi.values import BSLArray, HostFunction
+from yadinassi.types.values import BSLArray, HostFunction
 from scripts import native_1c_tree_columns_clear_contract as wire
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -74,7 +74,7 @@ class ClearObserverTests(unittest.TestCase):
         with self.assertRaises(wire.AvailabilityError):wire.require_available(emit())
 
     def test_retired_synthetic_class_hooks_fail_before_action(self):
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         with model('noop'):
             with self.assertRaisesRegex(BoundaryViolation,'ValueTree class hooks changed'):
                 probe()

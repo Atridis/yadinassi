@@ -6,8 +6,8 @@ from decimal import Decimal
 from unittest.mock import patch
 import test_python_direct_source_xdto as basic
 import test_source_xdto_packages as existing
-from yadinassi import xdto_io,xdto_values
-from yadinassi.values import HostFunction
+from yadinassi.formats.xml import xdto_io,xdto_values
+from yadinassi.types.values import HostFunction
 
 XS='http://www.w3.org/2001/XMLSchema'
 

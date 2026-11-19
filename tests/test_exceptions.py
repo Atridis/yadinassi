@@ -8,7 +8,7 @@ import unittest
 
 from yadinassi import BSLError, Interpreter
 from yadinassi.syntax import ast
-from yadinassi.errors import BSLRuntimeError, IncompleteInput
+from yadinassi.types.errors import BSLRuntimeError, IncompleteInput
 from yadinassi.syntax.parser import parse
 
 

@@ -4,9 +4,9 @@ from decimal import Decimal
 from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.python_direct_handlers import prepare_handlers
-from yadinassi.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.execution.direct.python_direct_handlers import prepare_handlers
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
+from yadinassi.types.errors import BSLRuntimeError
 
 class DirectHandlerTests(unittest.TestCase):
     def prepare(self,source):return prepare_handlers(parse(source,'handlers.bsl'),source_text=source,source_name='handlers.bsl')
@@ -79,7 +79,7 @@ class DirectHandlerTests(unittest.TestCase):
 
     def test_explicit_loop_header_budget_and_cleanup(self):
         source='Procedure Event() While True Do EndDo;EndProcedure'
-        p=prepare_handlers(parse(source),source_text=source,repairs=__import__('yadinassi.python_direct',fromlist=['REPAIRS']).REPAIRS+('authority_checkpoints',))
+        p=prepare_handlers(parse(source),source_text=source,repairs=__import__('yadinassi.execution.direct.python_direct',fromlist=['REPAIRS']).REPAIRS+('authority_checkpoints',))
         ctx=BoundaryContext(loop_budget=2)
         with self.assertRaises(BoundaryViolation):p.invoke('Event','client',[],state={},context_factory=lambda:ctx)
         self.assertEqual(ctx.loop_backedges,2)

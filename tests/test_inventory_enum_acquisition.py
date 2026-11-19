@@ -9,8 +9,8 @@ import tempfile
 import unittest
 from test_native_async_fixture import historical_source_bytes
 from inventory_enum_behavior import route
-from yadinassi.configuration_inventory_enums import PROFILE,import_inventory_enum_configuration
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.configuration.configuration_inventory_enums import PROFILE,import_inventory_enum_configuration
+from yadinassi.db.database_context import SQLiteDBContext
 from test_configuration_inventory_enums import source
 
 ROOT=Path(__file__).resolve().parents[1]

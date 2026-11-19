@@ -6,14 +6,14 @@ import unittest
 from unittest.mock import patch
 import test_source_document_records as documents
 import test_source_document_sections as sections
-from yadinassi.configuration_source_runtime import SourceApplication,_SourceInterpreter
-from yadinassi.source_document_runtime import create_object,write_object
-from yadinassi.source_document_sections import SourceDocumentSectionCall
-from yadinassi.source_references import SourceReferenceManager
-from yadinassi.python_direct_source_storage import finish
+from yadinassi.configuration.configuration_source_runtime import SourceApplication,_SourceInterpreter
+from yadinassi.db.document.source_document_runtime import create_object,write_object
+from yadinassi.db.document.source_document_sections import SourceDocumentSectionCall
+from yadinassi.db.metadata.source_references import SourceReferenceManager
+from yadinassi.execution.direct.source.python_direct_source_storage import finish
 from yadinassi.runtime import Interpreter
-from yadinassi.dates import BSLDate
-from yadinassi import source_transactions
+from yadinassi.temporal.dates import BSLDate
+from yadinassi.db import source_transactions
 
 
 class DirectDocumentGuards(unittest.TestCase):

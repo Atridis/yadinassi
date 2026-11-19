@@ -1,12 +1,12 @@
 """Exact direct Map identity, separately evidenced from Array/Structure."""
-from yadinassi.experimental_naked_collections import _TypedMap, _NakedMap
+from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap, _NakedMap
 from pathlib import Path
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.experimental_naked_scalar_semantics import map_identity_operators
-from yadinassi.experimental_naked_structure import new_structure
+from yadinassi.execution.codegen.experimental_naked_scalar_semantics import map_identity_operators
+from yadinassi.execution.codegen.experimental_naked_structure import new_structure
 
 
 class DirectMapIdentityTests(unittest.TestCase):
@@ -62,7 +62,7 @@ class DirectMapIdentityTests(unittest.TestCase):
         self.assertEqual(vm.execute('M.Count()'),2)
 
     def test_date_boundary_and_operand_effect_order(self):
-        from yadinassi.dates import BSLDate,MAX_TICKS,UnsupportedDateRange
+        from yadinassi.temporal.dates import BSLDate,MAX_TICKS,UnsupportedDateRange
         equal,not_equal=map_identity_operators();m=_TypedMap();boundary=BSLDate(MAX_TICKS,boundary=True)
         for left,right in ((m,boundary),(boundary,m)):
             with self.assertRaises(UnsupportedDateRange):equal(left,right)

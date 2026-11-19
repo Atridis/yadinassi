@@ -2,9 +2,9 @@
 import unittest
 from unittest.mock import patch
 import test_python_direct_source_query as fixtures
-from yadinassi import python_direct_source_extensions as bridge
-from yadinassi.source_extensions import SourceExtensions
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.direct.source import python_direct_source_extensions as bridge
+from yadinassi.configuration.source_extensions import SourceExtensions
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
 class DirectSourceExtensionSecurity(unittest.TestCase):
@@ -12,8 +12,8 @@ class DirectSourceExtensionSecurity(unittest.TestCase):
     boundary=fixtures.DirectSourceQueryTests.boundary
 
     def test_marker_cannot_use_stateless_sources_as_manager(self):
-        from yadinassi.source_extensions import SourceExtensionSources,ExtensionCall
-        from yadinassi.values import HostFunction
+        from yadinassi.configuration.source_extensions import SourceExtensionSources,ExtensionCall
+        from yadinassi.types.values import HostFunction
         app,caller=self.app();effects=[]
         namespace=SourceExtensionSources()
         namespace.read=lambda *args:effects.append('callback')

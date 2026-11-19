@@ -3,8 +3,9 @@ import sys
 import unittest
 from decimal import Decimal as D
 from unittest.mock import patch
-from yadinassi import Interpreter, python_direct
-from yadinassi.experimental_naked_boundaries import HostMembers, BoundaryViolation, BoundaryContext
+from yadinassi import Interpreter
+from yadinassi.execution.direct import python_direct
+from yadinassi.execution.codegen.experimental_naked_boundaries import HostMembers, BoundaryViolation, BoundaryContext
 
 class ExternalSyncTests(unittest.TestCase):
     def test_native_table_sync_count_does_not_scale_with_operations(self):
@@ -66,7 +67,7 @@ class ExternalSyncTests(unittest.TestCase):
                     vm.execute('X=3;Try Y=H.Value;Except R=X;EndTry;')
                     self.assertEqual(vm.variables['r'],D(9))
     def test_opaque_arithmetic_close_prevents_public_native_alias_mutation(self):
-        from yadinassi.python_direct_plain_array import PlainArray
+        from yadinassi.execution.direct.python_direct_plain_array import PlainArray
         for operation in ('A.Add(7);','A[0]=7;'):
             vm=Interpreter();self.addCleanup(vm.close);array=PlainArray([D(3)])
             class Opaque:

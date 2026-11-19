@@ -1,8 +1,8 @@
 """Small reproducible kernel + actual prepared BSL scan/index comparison."""
 import json,time,statistics
 from decimal import Decimal as D
-from yadinassi.plain_value_table_runtime import BSLValueTable
-from yadinassi.structures import BSLStructure
+from yadinassi.collections.plain_value_table_runtime import BSLValueTable
+from yadinassi.collections.structures import BSLStructure
 from yadinassi import Interpreter
 from recovered_bare_fixture import Interpreter as BareInterpreter
 

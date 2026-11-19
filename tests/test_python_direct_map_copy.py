@@ -4,14 +4,14 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.experimental_naked_collections import _TypedMap
-from yadinassi.maps import BSLMap, BSLFixedMap
+from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
+from yadinassi.collections.maps import BSLMap, BSLFixedMap
 from yadinassi.syntax.parser import parse
-from yadinassi.unique_identifiers import BSLUUID
-from yadinassi.dates import BSLDate
-from yadinassi.values import BSLType, BSLNull
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.catalog_types import BSLCatalogReference, BSLCatalogType
+from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.temporal.dates import BSLDate
+from yadinassi.types.values import BSLType, BSLNull
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.db.catalog.catalog_types import BSLCatalogReference, BSLCatalogType
 from uuid import UUID
 
 
@@ -107,11 +107,11 @@ Args=New Array;Args.Add(F);T=New("Map",Args);T.Insert("K",2);R=F.Get("K");V=T.Ge
         import subprocess,sys,textwrap
         script=textwrap.dedent('''
             from unittest.mock import patch
-            from yadinassi import maps
+            from yadinassi.collections import maps
             m=maps.BSLMap();m.insert('x',1);source=maps.BSLFixedMap(m)
             class Fake:pass
             with patch.object(maps,'BSLFixedMap',Fake):
-                from yadinassi.experimental_naked_collections import _TypedMap
+                from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
                 if _TypedMap(source).get('x')!=1:raise AssertionError('lost canonical snapshot')
                 try:_TypedMap(Fake())
                 except TypeError:pass

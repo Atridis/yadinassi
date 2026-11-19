@@ -2,8 +2,8 @@
 import json
 import unittest
 from unittest.mock import patch
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.types.errors import BSLError
 from configuration_runtime_fixture import module_files
 from test_server_module_reuse_native_replay import application, application_files, NATIVE
 
@@ -52,7 +52,7 @@ class ServerReuseTests(unittest.TestCase):
         self.assertNotEqual(a.execute('CachedServerCall.Token("same")'),b.execute('CachedServerCall.Token("same")'))
     def test_warm_cache_cannot_skip_transfer_guard(self):
         app=self.app();app.execute('CachedServerCall.Token("warm")')
-        with patch('yadinassi.database_transactions.forbid_transfer',side_effect=ValueError('denied')) as guard:
+        with patch('yadinassi.db.database_transactions.forbid_transfer',side_effect=ValueError('denied')) as guard:
             with self.assertRaises(BSLError):app.execute('CachedServerCall.Token("warm")')
             guard.assert_called_once()
     def test_request_cleanup_after_failure(self):

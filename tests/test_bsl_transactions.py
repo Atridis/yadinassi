@@ -4,10 +4,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.catalog_backend import BackendError
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.database_transactions import execution, begin, commit, rollback, current
-from yadinassi.sqlite_migration_plan import prepare, apply
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.database_transactions import execution, begin, commit, rollback, current
+from yadinassi.db.sqlite.sqlite_migration_plan import prepare, apply
 from test_sqlite_catalog_hierarchy import configuration
 from test_catalog_commit_cleanup_recovery import FaultConnection
 

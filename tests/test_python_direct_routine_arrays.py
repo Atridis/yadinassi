@@ -2,9 +2,9 @@
 from decimal import Decimal
 from unittest import TestCase
 from yadinassi import Interpreter
-from yadinassi.experimental_direct_ast import compile_owned
+from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
 from yadinassi.syntax.parser import parse
-from yadinassi.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
 
 BODY='a=New Array;For i=0 To 99 Do a.Add(i);EndDo;s=0;For j=0 To 99 Do s=s+a.Get(j);EndDo;Return s;'
 class RoutineArrayTests(TestCase):

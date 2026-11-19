@@ -2,8 +2,8 @@
 from pathlib import Path
 import tempfile,unittest
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
 from sqlite_catalog_fixture import configuration_files
 
 class CatalogScenarioTests(unittest.TestCase):

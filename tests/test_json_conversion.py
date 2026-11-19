@@ -8,8 +8,8 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.json_processing import BSLJSONReader
-from yadinassi.values import BSLType
+from yadinassi.formats.json.json_processing import BSLJSONReader
+from yadinassi.types.values import BSLType
 
 
 UUID_TEXT = '12345678-1234-1234-1234-123456789abc'

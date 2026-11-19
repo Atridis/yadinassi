@@ -13,9 +13,9 @@ import tempfile
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.structures import BSLStructure
-from yadinassi.values import BSLArray
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.types.values import BSLArray
 
 
 class MapTests(unittest.TestCase):

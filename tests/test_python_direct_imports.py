@@ -9,8 +9,8 @@ from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.runtime import _Module, _Namespace
 from yadinassi.syntax.parser import parse
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.python_direct import make_boundary
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.direct.python_direct import make_boundary
 
 
 class DirectImportBoundaryTests(unittest.TestCase):
@@ -99,7 +99,7 @@ class DirectImportBoundaryTests(unittest.TestCase):
             return context
         parent=original(self.vm);parent.enter()
         try:
-            with patch('yadinassi.python_direct.make_boundary',capture):
+            with patch('yadinassi.execution.direct.python_direct.make_boundary',capture):
                 call=parent.resolve_import_call(('side','f'),require_value=True,argument_count=0)
                 self.assertEqual(contexts,[])
                 self.assertEqual(call(),42)
@@ -110,11 +110,11 @@ class DirectImportBoundaryTests(unittest.TestCase):
 
     def test_detached_metadata_enters_child_boundary_and_retained_method_expires(self):
         from test_source_metadata import files
-        from yadinassi.configuration_source import import_source
-        from yadinassi.configuration_source_metadata import SourceMetadataRoot
+        from yadinassi.configuration.configuration_source import import_source
+        from yadinassi.configuration.configuration_source_metadata import SourceMetadataRoot
         child=self.load('Var MD;Function Read() Export Return MD.Subsystems.Count();EndFunction')
         child.variables['md']=SourceMetadataRoot(import_source(files()))
-        from yadinassi.python_direct_detached_metadata import DetachedMetadataBoundary
+        from yadinassi.execution.direct.python_direct_detached_metadata import DetachedMetadataBoundary
         retained=[];original=DetachedMetadataBoundary.resolve_member
         def capture(context,value,name):
             bound=original(context,value,name)
@@ -148,14 +148,14 @@ Procedure Inner() Export Try Raise "inner";Except Captured=ErrorDescription();En
             context=original(vm,**kwargs)
             if vm is child:contexts.append(context)
             return context
-        with patch('yadinassi.python_direct.make_boundary',capture):
+        with patch('yadinassi.execution.direct.python_direct.make_boundary',capture):
             with self.assertRaises(BSLError):self.vm.execute('Side.F(1/0)')
         self.assertEqual(contexts,[]);self.assertEqual(self.events,[])
         self.assertEqual(self.vm.execute('Side.F(7)'),7)
         self.assertEqual(self.events,['body'])
 
     def test_nested_load_budgets_reject_without_partial_publication_and_recover(self):
-        from yadinassi import python_direct_imports as imports
+        from yadinassi.execution.direct import python_direct_imports as imports
         self.module('// #Import Leaf.bsl\nMessage("side");Function F() Export Return Leaf.F();EndFunction')
         (self.directory/'Leaf.bsl').write_text('Message("leaf");Function F() Export Return 42;EndFunction',encoding='utf-8')
         for limit in ('_MAX_MODULES','_MAX_DEPTH'):
@@ -170,7 +170,7 @@ Procedure Inner() Export Try Raise "inner";Except Captured=ErrorDescription();En
                 self.assertEqual(len(vm._module_cache),2)
 
     def test_prepared_late_namespace_layout_change_refuses_before_effects(self):
-        from yadinassi.python_direct import PythonDirectUnsupported
+        from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
         self.module('Function F() Export Return 42;EndFunction')
         self.vm.register_function('Touch',lambda:self.events.append('effect'))
         prepared=self.vm.prepare('Touch();Saved=9;',self.main)
@@ -223,7 +223,7 @@ Procedure Inner() Export Try Raise "inner";Except Captured=ErrorDescription();En
             from yadinassi import Interpreter
             from yadinassi.runtime import _Module
             from unittest.mock import patch
-            from yadinassi.experimental_naked_boundaries import BoundaryViolation
+            from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
             cls,name=((Interpreter,'_load_module') if sys.argv[1]=='loader' else (_Module,'get_member'))
             events=[]
             with patch.object(cls,name,side_effect=lambda *a:events.append('hook')):

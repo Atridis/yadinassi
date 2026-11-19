@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi import runtime as R
-from yadinassi import translated_access as A
+from yadinassi.execution.codegen import translated_access as A
 from yadinassi.syntax.parser import parse
 
 class TranslatedAccessTests(unittest.TestCase):
@@ -61,7 +61,7 @@ class TranslatedAccessTests(unittest.TestCase):
    else:vm.execute('a.x=Rhs();')
    self.assertEqual(events,['rhs',('initial','x',Decimal(5))])
  def test_source_index_method_bound_before_index(self):
-  from yadinassi.source_document_sections import SourceDocumentSection
+  from yadinassi.db.document.source_document_sections import SourceDocumentSection
   vm=self.vm();value=object.__new__(SourceDocumentSection);events=[]
   with patch.object(SourceDocumentSection,'get_index',lambda self,caller,index:events.append('original') or index):
    operation=A.prepare_index_read(vm,value)
@@ -85,7 +85,7 @@ class TranslatedAccessTests(unittest.TestCase):
   self.assertEqual(events,['authorize']*3)
  def test_source_readonly_precedes_rhs(self):
   vm=self.vm();value=object();events=[]
-  with patch('yadinassi.source_document_runtime.is_source_reference',lambda x:x is value):
+  with patch('yadinassi.db.document.source_document_runtime.is_source_reference',lambda x:x is value):
    with self.assertRaisesRegex(ValueError,'readonly'):A.prepare_attribute_write(vm,value,'x')
    with self.assertRaisesRegex(ValueError,'readonly'):A.prepare_index_write(vm,value)
   self.assertEqual(events,[])

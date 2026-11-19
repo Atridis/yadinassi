@@ -4,9 +4,9 @@ from contextlib import ExitStack
 from decimal import Decimal
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.error_info import BSLErrorInfo
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.types.error_info import BSLErrorInfo
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class DirectErrorInfoTests(unittest.TestCase):
     def vm(self,backend='python-direct'):
@@ -73,7 +73,7 @@ class DirectErrorInfoTests(unittest.TestCase):
         self.assertEqual(events,[])
 
     def test_observation_is_lazy_and_cached(self):
-        from yadinassi import experimental_naked_errors as errors
+        from yadinassi.execution.codegen import experimental_naked_errors as errors
         with patch.object(errors,'convert_error',wraps=errors.convert_error) as convert:
             vm=self.vm();vm.execute('Try X=1/0;Except A=ErrorInfo();B=ErrorInfo();D=ErrorDescription();EndTry;')
             self.assertEqual(convert.call_count,1);self.assertIs(vm.variables['a'],vm.variables['b'])
@@ -91,8 +91,8 @@ class DirectErrorInfoTests(unittest.TestCase):
         from contextlib import closing
         from pathlib import Path
         import tempfile
-        from yadinassi.configuration_accumulation_references import PROFILE
-        from yadinassi.configuration_profile_import import prepare_directory,create_prepared
+        from yadinassi.configuration.configuration_accumulation_references import PROFILE
+        from yadinassi.configuration.configuration_profile_import import prepare_directory,create_prepared
         root=Path(__file__).resolve().parents[1]
         prepared=prepare_directory(root/'scripts/inventory_reference_behavior/runtime_source',profile=PROFILE)
         with tempfile.TemporaryDirectory() as temp,closing(create_prepared(Path(temp)/'test.sqlite',prepared)) as context:
@@ -105,7 +105,7 @@ class DirectErrorInfoTests(unittest.TestCase):
                 self.assertFalse(vm._transaction_activation_allowed)
 
     def test_public_snapshot_rebinding_never_calls_foreign_constructor(self):
-        from yadinassi import error_info
+        from yadinassi.types import error_info
         calls=[]
         class Fake:
             def __init__(self,*args,**kwargs):calls.append('constructor')

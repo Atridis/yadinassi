@@ -1,6 +1,6 @@
 import unittest
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 
 class NamespaceTests(unittest.TestCase):
     def run_case(self, source, expected):

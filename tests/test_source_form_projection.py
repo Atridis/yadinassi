@@ -1,10 +1,10 @@
 import unittest
 from hashlib import sha256
 from test_source_forms import files, FORM, request
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_forms import SourceFormController
-from yadinassi.source_form_projection import project_source_form
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.forms.source_forms import SourceFormController
+from yadinassi.forms.source_form_projection import project_source_form
 
 
 class SourceFormProjectionTests(unittest.TestCase):

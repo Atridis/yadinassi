@@ -2,8 +2,8 @@
 import unittest
 from decimal import Decimal
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.python_direct import PythonDirectUnsupported
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 
 class DirectSourceAssertions:
     def check_source(self, source, *, expected=None, error=None, touches=0, setup=None, kind=BSLRuntimeError):

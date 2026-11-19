@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from yadinassi.ui.protocol import encode_value
 from yadinassi.ui.configuration_app import ConfigurationController, ConfigurationProcess, PROTOCOL, load_application, main
 

@@ -15,11 +15,11 @@ import sqlite3
 import sys
 from uuid import UUID
 
-from yadinassi.catalog_backend import CatalogDraft, CatalogKey, CatalogSelection
-from yadinassi.configuration_import import read_configuration_directory
-from yadinassi.configuration_main_demo import PROFILE, import_main_demo_configuration
-from yadinassi.document_backend import DocumentSelection
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import CatalogDraft, CatalogKey, CatalogSelection
+from yadinassi.configuration.configuration_import import read_configuration_directory
+from yadinassi.configuration.configuration_main_demo import PROFILE, import_main_demo_configuration
+from yadinassi.db.document.document_backend import DocumentSelection
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 
 SOURCE = Path(__file__).resolve().parents[2] / 'examples/demo'
 DATABASE = 'main-demo.sqlite'

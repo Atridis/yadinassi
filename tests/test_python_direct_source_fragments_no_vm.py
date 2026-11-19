@@ -4,13 +4,13 @@ from unittest.mock import patch
 import test_source_safe_mode as safe
 import test_source_application_exports as exports
 from test_configuration_source_runtime import source
-from yadinassi.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.runtime import Interpreter
 
 
 class SourceFragmentsNoVM(unittest.TestCase):
     def setUp(self):
-        old=patch('yadinassi.experimental_naked_collections.prepare',create=True,side_effect=AssertionError('old compiler'))
+        old=patch('yadinassi.execution.codegen.experimental_naked_collections.prepare',create=True,side_effect=AssertionError('old compiler'))
         old.start();self.addCleanup(old.stop)
         for name in ('_execute_program','call_routine','_planned_routine_block'):
             guard=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))

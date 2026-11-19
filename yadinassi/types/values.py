@@ -1,0 +1,728 @@
+"""BSL values and explicit host API; Python attributes are never exposed."""
+
+from dataclasses import dataclass
+from decimal import Decimal
+from enum import Enum
+import re
+from typing import Callable
+
+from yadinassi.temporal.dates import BSLDate
+
+
+class BSLNull(Enum):
+    """The single Null value, distinct from Undefined and its type descriptor."""
+
+    VALUE = "Null"
+
+
+NULL = BSLNull.VALUE
+
+
+class BSLType(Enum):
+    COMMON_MODULE = "ОбщийМодуль"
+    ACCUMULATION_RECORD_TYPE = "ВидДвиженияНакопления"
+    USER_MESSAGE = "СообщениеПользователю"
+    FORM = "ФормаКлиентскогоПриложения"
+    FORM_ATTRIBUTE = "РеквизитФормы"
+    FORM_TABLE = "ТаблицаФормы"
+    FORM_DATA_COLLECTION = "ДанныеФормыКоллекция"
+    FORM_DATA_COLLECTION_ITEM = "ДанныеФормыЭлементКоллекции"
+    FORM_FIELD = "ПолеФормы"
+    FORM_GROUP = "ГруппаФормы"
+    FORM_BUTTON = "КнопкаФормы"
+    FORM_COMMAND = "КомандаФормы"
+    FORM_ITEMS = "ВсеЭлементыФормы"
+    FORM_COMMANDS = "КомандыФормы"
+    FORM_FIELD_VIEW = "ВидПоляФормы"
+    XDTO_FACTORY = "ФабрикаXDTO"
+    XDTO_OBJECT = "ОбъектXDTO"
+    XDTO_VALUE = "ЗначениеXDTO"
+    XDTO_LIST = "СписокXDTO"
+    XDTO_VALUE_TYPE = "ТипЗначенияXDTO"
+    XDTO_OBJECT_TYPE = "ТипОбъектаXDTO"
+    XDTO_PROPERTY = "СвойствоXDTO"
+    XDTO_PROPERTIES = "КоллекцияСвойствXDTO"
+    XDTO_PACKAGE = "ПакетXDTO"
+    XDTO_PACKAGES = "КоллекцияПакетовXDTO"
+    XML_FORM = "ФормаXML"
+    DOM_NAMESPACE_RESOLVER = "Разыменователь пространств имен DOM XPath"
+    DOM_XPATH_RESULT = "Результат DOM XPath"
+    DOM_DOCUMENT = "ДокументDOM"
+    DOM_ELEMENT = "ЭлементDOM"
+    DOM_ATTRIBUTE = "АтрибутDOM"
+    DOM_TEXT = "ТекстDOM"
+    DOM_CDATA = "СекцияCDATADOM"
+    DOM_COMMENT = "КомментарийDOM"
+    DOM_PI = "ИнструкцияОбработкиDOM"
+    DOM_FRAGMENT = "ФрагментДокументаDOM"
+    DOM_NODE_LIST = "СписокУзловDOM"
+    DOM_ELEMENT_LIST = "СписокЭлементовDOM"
+    DOM_ATTRIBUTE_MAP = "КоллекцияАтрибутовDOM"
+    DOM_NODE_TYPE = "ТипУзлаDOM"
+    DOM_BUILDER = "ПостроительDOM"
+    DOM_WRITER = "ЗаписьDOM"
+    OPENSSL_SECURE_CONNECTION = "ЗащищенноеСоединениеOpenSSL"
+    FILE_CA_CERTIFICATES = "СертификатыУдостоверяющихЦентровФайл"
+    OS_CA_CERTIFICATES = "СертификатыУдостоверяющихЦентровОС"
+    INTERNET_PROXY = "ИнтернетПрокси"
+    HTTP_CONNECTION = "HTTPСоединение"
+    HTTP_REQUEST = "HTTPЗапрос"
+    HTTP_RESPONSE = "HTTPОтвет"
+    BYTE_ORDER_MARK_USE = "ИспользованиеByteOrderMark"
+    DATA_HASHING = "ХешированиеДанных"
+    HASH_FUNCTION = "ХешФункция"
+    REGEX_RESULT = "РезультатПоискаПоРегулярномуВыражению"
+    REGEX_GROUP = "ГруппаРезультатаПоискаПоРегулярномуВыражению"
+    DATA_READER = "ЧтениеДанных"
+    DATA_WRITER = "ЗаписьДанных"
+    READ_DATA_RESULT = "РезультатЧтенияДанных"
+    ZIP_READER = "ЧтениеZipФайла"
+    ZIP_WRITER = "ЗаписьZipФайла"
+    ZIP_ENTRY = "ЭлементZipФайла"
+    ZIP_ENTRIES = "ЭлементыZipФайла"
+    ZIP_COMPRESSION_METHOD = "МетодСжатияZIP"
+    ZIP_COMPRESSION_LEVEL = "УровеньСжатияZIP"
+    ZIP_STORE_PATH_MODE = "РежимСохраненияПутейZIP"
+    ZIP_SUBDIR_MODE = "РежимОбработкиПодкаталоговZIP"
+    ZIP_RESTORE_MODE = "РежимВосстановленияПутейФайловZIP"
+    ZIP_ENCRYPTION_METHOD = "МетодШифрованияZIP"
+    ZIP_NAMES_ENCODING = "КодировкаИменФайловВZipФайле"
+
+    BINARY_DATA_BUFFER = "БуферДвоичныхДанных"
+    MEMORY_STREAM = "ПотокВПамяти"
+    FILE_STREAM = "ФайловыйПоток"
+    STREAM = "Поток"
+    BYTE_ORDER = "ПорядокБайтов"
+    FILE_OPEN_MODE = "РежимОткрытияФайла"
+    FILE_ACCESS = "ДоступКФайлу"
+    POSITION_IN_STREAM = "ПозицияВПотоке"
+
+    DOCUMENTS_MANAGER = "Документы менеджер"
+    INFORMATION_REGISTERS_MANAGER = "Регистры сведений менеджер"
+    CATALOGS_MANAGER = "Справочники менеджер"
+    XML_READER = "ЧтениеXML"
+    XML_WRITER = "ЗаписьXML"
+    XML_READER_SETTINGS = "ПараметрыЧтенияXML"
+    XML_WRITER_SETTINGS = "ПараметрыЗаписиXML"
+    XML_NODE_TYPE = "ТипУзлаXML"
+    XML_SPACE = "ПробельныеСимволыXML"
+    XML_VALIDATION_TYPE = "ТипПроверкиXML"
+    XML_NAMESPACE_CONTEXT = "КонтекстПространствИменXML"
+
+    FILE = "Файл"
+    TEXT_READER = "ЧтениеТекста"
+    TEXT_WRITER = "ЗаписьТекста"
+    BINARY_DATA = "ДвоичныеДанные"
+    TEXT_ENCODING = "КодировкаТекста"
+    JSON_SERIALIZER_SETTINGS = "НастройкиСериализацииJSON"
+    JSON_DATE_FORMAT = "ФорматДатыJSON"
+    JSON_DATE_WRITING_VARIANT = "ВариантЗаписиДатыJSON"
+    JSON_WRITER_SETTINGS = "ПараметрыЗаписиJSON"
+    JSON_LINE_BREAK = "ПереносСтрокJSON"
+    JSON_READER = "ЧтениеJSON"
+    JSON_WRITER = "ЗаписьJSON"
+    JSON_VALUE_TYPE = "ТипЗначенияJSON"
+    TEXT_DOCUMENT = "ТекстовыйДокумент"
+    DEFLATION = "СжатиеДанных"
+    VALUE_STORAGE = "ХранилищеЗначения"
+    UUID = "УникальныйИдентификатор"
+    PROMISE = "Обещание"
+    CALLBACK_DESCRIPTION = "ОписаниеОповещения"
+    """Opaque, immutable type identities; presentations are not their identity."""
+
+    ERROR_INFO = "ИнформацияОбОшибке"
+    ERROR_CATEGORY = "КатегорияОшибки"
+    NULL = "Null"
+    UNDEFINED = "Неопределено"
+    BOOLEAN = "Булево"
+    NUMBER = "Число"
+    STRING = "Строка"
+    DATE = "Дата"
+    ARRAY = "Массив"
+    STRUCTURE = "Структура"
+    MAP = "Соответствие"
+    FIXED_ARRAY = "ФиксированныйМассив"
+    FIXED_STRUCTURE = "ФиксированнаяСтруктура"
+    FIXED_MAP = "ФиксированноеСоответствие"
+    KEY_AND_VALUE = "КлючИЗначение"
+    TYPE = "Тип"
+    ROUND_MODE = "РежимОкругления"
+    QUESTION_DIALOG_MODE = "РежимДиалогаВопрос"
+    DIALOG_RETURN_CODE = "КодВозвратаДиалога"
+    ROUND_MODES = "ПеречислениеРежимОкругления"
+    XML_STRING_PROCESSING_MANAGER = "МенеджерОбработкиСтрокиXML"
+    SEARCH_DIRECTION = "НаправлениеПоиска"
+    SEARCH_DIRECTIONS = "ПеречислениеНаправлениеПоиска"
+    SORT_DIRECTION = "НаправлениеСортировки"
+    NUMBER_QUALIFIERS = "КвалификаторыЧисла"
+    STRING_QUALIFIERS = "КвалификаторыСтроки"
+    DATE_QUALIFIERS = "КвалификаторыДаты"
+    BINARY_DATA_QUALIFIERS = "КвалификаторыДвоичныхДанных"
+    ALLOWED_SIGN = "ДопустимыйЗнак"
+    ALLOWED_SIGNS = "ПеречислениеДопустимыйЗнак"
+    ALLOWED_LENGTH = "ДопустимаяДлина"
+    ALLOWED_LENGTHS = "ПеречислениеДопустимаяДлина"
+    DATE_FRACTIONS = "ЧастиДаты"
+    DATE_FRACTIONS_NAMESPACE = "ПеречислениеЧастиДаты"
+    TYPE_DESCRIPTION = "ОписаниеТипов"
+    VALUE_TREE = "ДеревоЗначений"
+    VALUE_TREE_COLUMN_COLLECTION = "КоллекцияКолонокДереваЗначений"
+    VALUE_TREE_COLUMN = "КолонкаДереваЗначений"
+    VALUE_TREE_ROW = "СтрокаДереваЗначений"
+    VALUE_TREE_ROW_COLLECTION = "КоллекцияСтрокДереваЗначений"
+    TEMP_TABLES_MANAGER = "МенеджерВременныхТаблиц"
+    QUERY = "Запрос"
+    QUERY_RESULT = "РезультатЗапроса"
+    QUERY_RESULT_SELECTION = "ВыборкаИзРезультатаЗапроса"
+    VALUE_TABLE = "ТаблицаЗначений"
+    VALUE_TABLE_COLUMN_COLLECTION = "КоллекцияКолонокТаблицыЗначений"
+    VALUE_TABLE_COLUMN = "КолонкаТаблицыЗначений"
+    VALUE_TABLE_ROW = "СтрокаТаблицыЗначений"
+    COLLECTION_INDEXES = "ИндексыКоллекции"
+    COLLECTION_INDEX = "ИндексКоллекции"
+    VALUE_LIST = "СписокЗначений"
+    VALUE_LIST_ITEM = "ЭлементСпискаЗначений"
+
+    def __str__(self) -> str:
+        if self is BSLType.ACCUMULATION_RECORD_TYPE:
+            raise ValueError("Представление вида движения накопления не измерено")
+        # Native run 40221284540, collections record 856: TypeOf displays.
+        # Enum values stay unspaced lookup names, not presentation aliases.
+        if self in (BSLType.VALUE_STORAGE, BSLType.DEFLATION):
+            raise ValueError("ХранилищеЗначения/СжатиеДанных: представление типа не измерено")
+        # Native common-template observation 43083042989, case 5.
+        if self is BSLType.BINARY_DATA:
+            return "Двоичные данные"
+        # Source-bound configuration XDTO runs 43086017286 / 43089477510.
+        if self is BSLType.XDTO_OBJECT_TYPE:
+            return "Тип объекта XDTO"
+        if self is BSLType.XDTO_VALUE_TYPE:
+            return "Тип значения XDTO"
+        if self is BSLType.TEXT_DOCUMENT:
+            return "Текстовый документ"
+        if self is BSLType.UUID:
+            return "Уникальный идентификатор"
+        if self is BSLType.VALUE_TREE:
+            return "Дерево значений"
+        if self is BSLType.VALUE_TREE_ROW_COLLECTION:
+            return "Коллекция строк дерева значений"
+        if self is BSLType.VALUE_TREE_ROW:
+            return "Строка дерева значений"
+        if self is BSLType.VALUE_TREE_COLUMN_COLLECTION:
+            return "Коллекция колонок дерева значений"
+        if self is BSLType.VALUE_TREE_COLUMN:
+            return "Колонка дерева значений"
+        if self is BSLType.QUERY_RESULT:
+            return "Результат запроса"
+        if self is BSLType.QUERY_RESULT_SELECTION:
+            return "Выборка из результата запроса"
+        if self is BSLType.VALUE_TABLE:
+            return "Таблица значений"
+        if self is BSLType.COLLECTION_INDEXES:
+            return "Коллекция индексов таблицы значений"
+        if self is BSLType.COLLECTION_INDEX:
+            return "Индекс таблицы значений"
+        if self is BSLType.VALUE_LIST:
+            return "Список значений"
+        if self is BSLType.VALUE_LIST_ITEM:
+            return "Элемент списка значений"
+        return "Не определено" if self is BSLType.UNDEFINED else self.value
+
+
+# Freeze canonical presentation (including unmeasured cases) before lazy direct
+# imports can observe public Enum property or method replacements.
+def _direct_type_presentations():
+    result=[]
+    for member in BSLType:
+        try:label=BSLType.__str__(member)
+        except ValueError as error:result.append((member,None,error.args[0]))
+        else:result.append((member,label,None))
+    return tuple(result)
+
+_DIRECT_TYPE_PRESENTATIONS = _direct_type_presentations()
+
+
+def _presented_number(value: Decimal) -> Decimal:
+    """Bounded empirical presentation; never alter the stored numeric value."""
+    if not value.is_finite():
+        raise ValueError("Представление числа: ожидается конечное число")
+    sign, digits, exponent = value.as_tuple()
+    end = len(digits)
+    while end > 1 and digits[end - 1] == 0:
+        end -= 1
+        exponent += 1
+    digits = digits[:end]
+    # Guard expanded text before format(..., 'f') can allocate it. This is a
+    # Yadinassi resource budget, not an inferred maximum of native numbers.
+    if max(len(digits) + max(exponent, 0), -exponent) > 4096:
+        raise ValueError("Представление числа: превышен предел ресурсов Yadinassi (4096 десятичных разрядов)")
+    if exponent >= -324:
+        return Decimal((sign, digits, exponent))
+    # The owner's corrected twenty-step experiment only establishes this
+    # display boundary for magnitudes below one, not a universal String cap.
+    if value.adjusted() >= 0:
+        raise ValueError("Представление числа: более 324 дробных позиций при модуле не меньше 1 пока не поддерживается в Yadinassi")
+    cut = len(digits) + exponent + 324
+    kept = digits[:cut] if cut > 0 else (0,)
+    discarded = digits[cut:] if cut >= 0 else (0,) + digits
+    first = discarded[0]
+    tail_nonzero = any(discarded[1:])
+    if first == 5 and not tail_nonzero:
+        raise ValueError("Представление числа: точная половина на границе 324 позиций пока не поддерживается в Yadinassi")
+    coefficient = Decimal((0, kept, 0)).as_integer_ratio()[0]
+    if first > 5 or (first == 5 and tail_nonzero):
+        coefficient += 1
+    return Decimal((sign, Decimal(coefficient).as_tuple().digits, -324))
+
+
+def to_string(value: object) -> str:
+    if value is None or value is NULL:
+        return ""
+    if isinstance(value, bool):
+        return "Да" if value else "Нет"
+    if isinstance(value, Decimal):
+        if value.is_zero():
+            return "0"
+        value = _presented_number(value)
+        if value.is_zero():
+            return "0"
+        text = format(value, "f")
+        text = text.rstrip("0").rstrip(".") if "." in text else text
+        # The owner's native numbers.out confirms a decimal comma and groups
+        # of three integer digits separated by U+00A0 (not an ASCII space).
+        # Literal syntax and canonical Number("1.5") input remain dot-based.
+        integer, separator, fraction = text.partition(".")
+        sign = "-" if integer.startswith("-") else ""
+        digits = integer[len(sign):]
+        groups = [digits[max(0, end - 3):end] for end in range(len(digits), 0, -3)]
+        result = sign + "\u00a0".join(reversed(groups))
+        return result + ("," + fraction if separator else "")
+    if isinstance(value, BSLArray):
+        return "Массив"
+    return str(value)
+
+
+# Definition-time identity for canonical direct String adaptation.
+_DIRECT_TO_STRING_ABI = to_string
+
+def number(value: object) -> Decimal:
+    if isinstance(value, bool):
+        return Decimal(int(value))
+    if isinstance(value, str) and ("," in value or "\u00a0" in value):
+        # Accept this standalone presentation as well as canonical input.
+        # Localized groups are exactly three ASCII digits with U+00A0; mixed
+        # separators and other grouping conventions are not guessed.
+        value = value.strip()
+        if "\u00a0" in value:
+            pattern = r"[+-]?[0-9]{1,3}(?:\u00a0[0-9]{3})+(?:,[0-9]+)?"
+        elif "," in value:
+            pattern = r"[+-]?[0-9]+,[0-9]+"
+        else:
+            pattern = None  # Only surrounding whitespace was localized.
+        if pattern is not None and re.fullmatch(pattern, value) is None:
+            raise ValueError("Невозможно преобразовать значение в число")
+        value = value.replace("\u00a0", "").replace(",", ".")
+    if isinstance(value, (str, Decimal, int)):
+        result = Decimal(value)
+        if result.is_finite():
+            return result
+    raise ValueError("Невозможно преобразовать значение в число")
+
+
+def require_number(value: object) -> Decimal:
+    if not isinstance(value, Decimal):
+        raise TypeError("Ожидается число")
+    return value
+
+
+_DIVISION_MAX_DIGITS = 4096
+
+
+def divide(left: Decimal, right: Decimal) -> Decimal:
+    """Empirical nine-digit-block model, verified by native numbers.bsl v2.
+
+    This does not use the process Decimal context or infer a native maximum.
+    Exact-half ties round away from zero, measured in PR83 at scales 18/27/36.
+    Other bounded scales remain model extrapolations, not new native evidence.
+    """
+    if not left.is_finite() or not right.is_finite():
+        raise ValueError("Деление: ожидаются конечные числа")
+    if right.is_zero():
+        raise ValueError("Деление на ноль")
+    if left.is_zero():
+        return Decimal(0)
+
+    def components(value):
+        sign, digits, exponent = value.as_tuple()
+        end = len(digits)
+        while end > 1 and digits[end - 1] == 0:
+            end -= 1
+            exponent += 1
+        return sign, digits[:end], exponent
+
+    left_sign, left_digits, left_exponent = components(left)
+    right_sign, right_digits, right_exponent = components(right)
+    fractional_digits = max(0, -left_exponent)
+    scale = 27 + 9 * ((fractional_digits + 8) // 9) + 9 * (right.adjusted() // 9)
+    shift = left_exponent - right_exponent + scale
+    # Check metadata before constructing coefficients or allocating powers.
+    # These are explicit Yadinassi work limits, not a platform precision cap.
+    left_size, right_size = len(left_digits), len(right_digits)
+    sizes = (left_size + max(shift, 0),
+             right_size + max(-shift, 0),
+             abs(left_exponent), abs(right_exponent), abs(scale),
+             max(1, left.adjusted() - right.adjusted() + 1) + max(scale, 0))
+    if max(sizes) > _DIVISION_MAX_DIGITS:
+        raise ValueError("Деление: превышен предел ресурсов Yadinassi (4096 десятичных разрядов)")
+    # A normalized one-digit coefficient is already an exact Python int.
+    # Keep this after all work-limit checks; no operand normalization/cache
+    # or precision/rounding rule changes are involved.
+    numerator = (left_digits[0] if left_size == 1 and type(left) is Decimal else
+                 Decimal((0, left_digits, 0)).as_integer_ratio()[0])
+    denominator = (right_digits[0] if right_size == 1 and type(right) is Decimal else
+                   Decimal((0, right_digits, 0)).as_integer_ratio()[0])
+    if shift >= 0:
+        numerator *= 10 ** shift
+    else:
+        denominator *= 10 ** -shift
+    coefficient, remainder = divmod(numerator, denominator)
+    # The coefficient is unsigned: incrementing magnitude rounds a tie away
+    # from zero for either operand sign (native PR83 run 39779498177).
+    if 2 * remainder >= denominator:
+        coefficient += 1
+    # Decimal(int) and the tuple constructor are exact even under tiny host
+    # contexts with rounding traps. scaleb()/unary minus would not be.
+    digits = Decimal(coefficient).as_tuple().digits
+    return Decimal((left_sign ^ right_sign, digits, -scale))
+
+
+def boolean(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, Decimal):
+        return value != 0
+    raise TypeError("Ожидается булево значение или число")
+
+
+def integer(value: object) -> int:
+    value = require_number(value)
+    if value != value.to_integral_value():
+        raise ValueError("Ожидается целое число")
+    return int(value)
+
+
+def equal(left: object, right: object) -> bool:
+    if type(left) is BSLDate:
+        left.require_known()
+    if type(right) is BSLDate:
+        right.require_known()
+    # Typed lookup equality; operator-only Number/Boolean conversion lives in runtime.
+    if type(left) is not type(right):
+        return False
+    if issubclass(type(left), BSLFixedCollection):
+        # Native collections compare by identity, even for equal contents.
+        # Do not let a host subclass replace this with Python value equality.
+        return left is right
+    return left == right
+
+
+class BSLObject:
+    """Subclass to expose a type through Interpreter.register_type()."""
+    # Stable copyreg cache: ordinary copy/deepcopy must not mutate the class ABI.
+    __slotnames__ = []
+
+    def get_member(self, name: str) -> object:
+        raise ValueError(f"Метод или свойство не найдено: {name}")
+
+    def get_method(self, name: str) -> object:
+        # Existing extensions expose methods through get_member. Collections with
+        # dynamic properties can override this to keep method names independent.
+        return self.get_member(name)
+
+    def set_member(self, name: str, value: object) -> None:
+        raise ValueError(f"Свойство недоступно для записи: {name}")
+
+
+class BSLFixedCollection:
+    """Marker for fixed collections with identity comparison semantics."""
+
+
+# Definition-time identity marker; comparing descendants grants no member access.
+_DIRECT_FIXED_COLLECTION_TYPE = BSLFixedCollection
+
+
+class _ArrayBase(BSLObject):
+    """Shared reads; fixed arrays do not inherit any mutable collection API."""
+    # Stable copyreg cache: ordinary copy/deepcopy must not mutate the class ABI.
+    __slotnames__ = []
+
+    def __iter__(self):
+        return iter(self.items)
+
+    def checked_index(self, index: object, *, inserting: bool = False) -> int:
+        value = integer(index)
+        limit = len(self.items) + int(inserting)
+        if not 0 <= value < limit:
+            raise IndexError(f"Индекс массива вне границ: {value}")
+        return value
+
+    def get(self, index: object) -> object:
+        return self.items[self.checked_index(index)]
+
+    def set(self, index: object, value: object) -> None:
+        raise ValueError("Элементы фиксированного массива недоступны для записи")
+
+    def find(self, value: object) -> object:
+        if type(value) is BSLDate:
+            value.require_known()
+        for index, item in enumerate(self.items):
+            if equal(item, value):
+                return Decimal(index)
+        return None
+
+    def get_member(self, name: str) -> object:
+        methods = {
+            "количество": lambda: Decimal(len(self.items)),
+            "count": lambda: Decimal(len(self.items)),
+            "вграница": lambda: Decimal(len(self.items) - 1),
+            "ubound": lambda: Decimal(len(self.items) - 1),
+            "получить": self.get, "get": self.get,
+            "найти": self.find, "find": self.find,
+        }
+        method = methods.get(name.casefold())
+        if method is None:
+            return super().get_member(name)
+        return HostFunction(name, method)
+
+
+_MAX_INSERT_GROWTH = 1_000_000  # Yadinassi allocation budget, not a native limit.
+
+
+# Constructor budgets count slots plus nested array objects (not the root).
+# These are Yadinassi limits, not inferred limits of the native platform.
+_MAX_ARRAY_CONSTRUCTION = 1_000_000
+_MAX_ARRAY_DIMENSIONS = 64
+
+
+class BSLArray(_ArrayBase):
+    # Stable copyreg cache: ordinary copy/deepcopy must not mutate the class ABI.
+    __slotnames__ = []
+    def __init__(self, size: object = Decimal(0), *dimensions: object):
+        if isinstance(size, BSLFixedArray):
+            if dimensions:
+                raise TypeError("Копирование массива ожидает один аргумент")
+            # The platform recursively converts direct fixed-array elements.
+            self.items = [BSLArray(item) if isinstance(item, BSLFixedArray) else item
+                          for item in size.items]
+            return
+        sizes = (size, *dimensions)
+        if len(sizes) > _MAX_ARRAY_DIMENSIONS:
+            raise ValueError("Массив: превышен предел измерений Yadinassi (64)")
+        # Validate every dimension before allocating any nested arrays.
+        # Keep Decimals until each reachable allocation is proven affordable.
+        for value in sizes:
+            value = require_number(value)
+            if not value.is_finite() or value != value.to_integral_value():
+                raise ValueError("Ожидается целое число")
+            if value < 0:
+                raise ValueError("Размер массива не может быть отрицательным")
+            if dimensions and value == 0:
+                raise ValueError("Размеры многомерного массива должны быть положительными")
+        widths = []
+        parents, cost = 1, 0
+        for depth, value in enumerate(sizes):
+            if depth:
+                cost += parents  # Each parent slot becomes a distinct array.
+            remaining = _MAX_ARRAY_CONSTRUCTION - cost
+            if parents and (remaining < 0 or value > remaining // parents):
+                raise ValueError("Массив: превышен предел ресурсов Yadinassi "
+                                 "(1000000 элементов и вложенных массивов)")
+            width = int(value) if parents else 0
+            widths.append(width)
+            parents *= width
+            cost += parents
+
+        def create(depth):
+            if depth == len(widths) - 1:
+                return [None] * widths[depth]
+            items = []
+            for _ in range(widths[depth]):
+                child = object.__new__(BSLArray)
+                child.items = create(depth + 1)
+                items.append(child)
+            return items
+
+        # Publish only the complete shape; failed validation leaves self intact.
+        self.items: list[object] = create(0)
+
+    def set(self, index: object, value: object) -> None:
+        self.items[self.checked_index(index)] = value
+
+    def add(self, value: object = None) -> None:
+        self.items.append(value)
+
+    def insert(self, index: object, value: object = None) -> None:
+        position = require_number(index)
+        if not position.is_finite() or position != position.to_integral_value():
+            raise ValueError("Ожидается целое число")
+        if position < 0:
+            raise IndexError("Индекс массива вне границ")
+        # Compare Decimals before int(): a huge exponent must not expand into
+        # an enormous Python integer or allocation. Existing in-range inserts
+        # need only one new element and retain their shifting behavior.
+        if position >= len(self.items) + _MAX_INSERT_GROWTH:
+            raise ValueError("Вставить: превышен предел роста массива Yadinassi (1000000 элементов)")
+        offset = int(position)
+        if offset < len(self.items):
+            self.items.insert(offset, value)
+        else:
+            # Prepare the complete tail before mutating the live list, so
+            # validation/allocation failure cannot leave a partly padded array.
+            tail = [None] * (offset - len(self.items))
+            tail.append(value)
+            self.items.extend(tail)
+
+    def delete(self, index: object) -> None:
+        position = require_number(index)
+        if not position.is_finite() or position != position.to_integral_value():
+            raise ValueError("Ожидается целое число")
+        if position < 0:
+            raise IndexError("Индекс массива вне границ")
+        # Native controls reject empty and above-bound deletion atomically.
+        # Compare before int(): huge positive exponents must not expand.
+        if position >= len(self.items):
+            raise IndexError("Индекс массива вне границ")
+        del self.items[int(position)]
+
+    def get_member(self, name: str) -> object:
+        methods = {
+            "добавить": self.add, "add": self.add,
+            "установить": self.set, "set": self.set,
+            "вставить": self.insert, "insert": self.insert,
+            "удалить": self.delete, "delete": self.delete,
+            "очистить": self.items.clear, "clear": self.items.clear,
+        }
+        method = methods.get(name.casefold())
+        if method is None:
+            return super().get_member(name)
+        return HostFunction(name, method)
+
+
+class BSLFixedArray(_ArrayBase, BSLFixedCollection):
+    def __init__(self, source: object):
+        if not isinstance(source, BSLArray):
+            raise TypeError("ФиксированныйМассив ожидает массив")
+        self.items = self._freeze_items(source, set())
+
+    @staticmethod
+    def _freeze_items(source: BSLArray, active: set[int]) -> tuple[object, ...]:
+        # Follow direct mutable-array elements only. Records, maps and already
+        # fixed arrays retain their references; their contents are not traversed.
+        # Native cycle behavior is unverified: reject a cycle explicitly rather
+        # than recurse until the host stack overflows. Repeated acyclic branches
+        # are copied independently, without treating sharing as a cycle.
+        identity = id(source)
+        if identity in active:
+            raise ValueError("ФиксированныйМассив с циклическими вложенными массивами "
+                             "пока не поддерживается")
+        active.add(identity)
+        try:
+            items = []
+            for item in source.items:
+                if isinstance(item, BSLArray):
+                    snapshot = object.__new__(BSLFixedArray)
+                    snapshot.items = BSLFixedArray._freeze_items(item, active)
+                    item = snapshot
+                items.append(item)
+            return tuple(items)
+        finally:
+            active.remove(identity)
+
+    def __str__(self) -> str:
+        return "ФиксированныйМассив"
+
+
+@dataclass
+class Reference:
+    """A caller-owned storage location; never exposed as a BSL object."""
+
+    get: Callable[[], object]
+    set: Callable[[object], None]
+
+
+@dataclass(frozen=True, slots=True)
+class InterpreterCall:
+    """Explicit internal capability, never inferred from a callable's attributes.
+
+    Only exact descriptors receive an executing interpreter. The first bounded
+    producers are source constants; ordinary HostFunction callables are unchanged.
+    """
+    minimum_arguments: int
+    maximum_arguments: int
+    authorize: Callable
+    dispatch: Callable
+
+    def __post_init__(self):
+        if (type(self.minimum_arguments) is not int or type(self.maximum_arguments) is not int
+                or not 0 <= self.minimum_arguments <= self.maximum_arguments):
+            raise TypeError('invalid interpreter-call argument bounds')
+        if not callable(self.authorize) or not callable(self.dispatch):
+            raise TypeError('interpreter-call callbacks must be explicit callables')
+
+    def __call__(self, *arguments):
+        raise ValueError('interpreter-aware call requires an explicit interpreter dispatch')
+
+    def prepare(self, caller, count):
+        self.authorize(caller)
+        if not self.minimum_arguments <= count <= self.maximum_arguments:
+            raise TypeError('invalid interpreter-aware argument count')
+
+    def invoke(self, caller, values):
+        # Arguments can close or otherwise invalidate the owner. Admission is
+        # repeated against the actual caller immediately before dispatch.
+        self.prepare(caller, len(values))
+        from types import GeneratorType
+        operation = self.dispatch(caller, values)
+        if type(operation) is not GeneratorType:
+            raise TypeError('interpreter-aware dispatch requires a generator')
+        return (yield from operation)
+
+
+# Definition-time identity: generic direct calls must not dispatch this protocol.
+_DIRECT_INTERPRETER_CALL_TYPE = InterpreterCall
+
+
+class HostFunction:
+    """Only explicitly registered callables may be invoked from BSL."""
+    # Stable copyreg cache: ordinary copy/deepcopy must not mutate the class ABI.
+    __slotnames__ = []
+
+    def __init__(self, name: str, function: Callable, *,
+                 reference_parameters: frozenset[int] = frozenset(),
+                 returns_value: bool = True):
+        self.name = name
+        self.function = function
+        self.reference_parameters = reference_parameters
+        self.returns_value = returns_value
+
+    def __call__(self, *arguments: object) -> object:
+        return self.function(*arguments)
+
+# Definition-time identities for optional closed-region collection lowering.
+# Capture here, before the compiler's lazy import can encounter host patches.
+_DIRECT_COLLECTION_CLASS_ABI = tuple((cls, cls.__mro__, tuple(vars(cls).items()))
+    for cls in (BSLObject, _ArrayBase, BSLArray, HostFunction))
+_DIRECT_COLLECTION_HELPER_ABI = tuple((name, globals()[name]) for name in (
+    'integer', 'require_number', 'equal', 'BSLArray', 'HostFunction',
+    'BSLFixedCollection', '_MAX_INSERT_GROWTH', '_MAX_ARRAY_CONSTRUCTION',
+    '_MAX_ARRAY_DIMENSIONS'))
+
+# Immutable identity/name pairs for finite direct dynamic construction. Never
+# read a host-patched Enum.value descriptor at the lazy adapter boundary.
+_DIRECT_DYNAMIC_TYPE_NAMES = tuple((member, member.value) for member in BSLType)
+
+# Stable identity for bounded direct fixed-collection lookup.
+_DIRECT_ARRAY_TYPE = BSLArray
+_DIRECT_FIXED_ARRAY_TYPE = BSLFixedArray
+_DIRECT_FIXED_FIND_ABI=(_ArrayBase.find,tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in BSLFixedArray.__mro__))

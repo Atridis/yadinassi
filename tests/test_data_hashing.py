@@ -7,15 +7,16 @@ import unittest
 from unittest import mock
 import zlib
 
-from yadinassi import Interpreter, serialization
-from yadinassi import data_hashing as api
-from yadinassi.data_hashing import BSLDataHashing as Hash, BSLHashFunction as Function
-from yadinassi.binary_streams import (BSLMemoryStream as Memory, BSLFileStream as File,
+from yadinassi import Interpreter
+from yadinassi.formats.storage import serialization
+from yadinassi.streams import data_hashing as api
+from yadinassi.streams.data_hashing import BSLDataHashing as Hash, BSLHashFunction as Function
+from yadinassi.streams.binary_streams import (BSLMemoryStream as Memory, BSLFileStream as File,
     BSLBinaryDataBuffer as Buffer, BSLFileOpenMode as Mode, BSLFileAccess as Access,
     BSLPositionInStream as Origin)
-from yadinassi.file_io import BSLBinaryData as Binary
-from yadinassi.type_values import type_of
-from yadinassi.values import BSLType
+from yadinassi.streams.file_io import BSLBinaryData as Binary
+from yadinassi.types.type_values import type_of
+from yadinassi.types.values import BSLType
 
 
 def digest(value):
@@ -114,7 +115,7 @@ class DataHashingTests(unittest.TestCase):
     def test_local_file_boundary_rejects_before_open(self):
         for path in ('https://example.invalid/a','\\\\host\\share\\a','//host/share/a',
                      '\\\\.\\pipe\\a','name:stream','NUL'):
-            with mock.patch('yadinassi.binary_streams.os.open') as opened:
+            with mock.patch('yadinassi.streams.binary_streams.os.open') as opened:
                 with self.assertRaises((TypeError,ValueError)): Hash(Function.CRC32).append_file(path)
                 opened.assert_not_called()
 

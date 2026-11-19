@@ -3,11 +3,11 @@ from decimal import Decimal
 import unittest
 from unittest.mock import patch
 
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.errors import BSLError, BSLRuntimeError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.python_direct import PythonDirectUnsupported
-from yadinassi.python_direct_configuration import ConfigurationBoundary, _COMMAND_SCOPE
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.types.errors import BSLError, BSLRuntimeError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+from yadinassi.execution.direct.python_direct_configuration import ConfigurationBoundary, _COMMAND_SCOPE
 from configuration_runtime_fixture import module_files
 
 MODULE=('Tools','Procedure Fail() Export Raise "boom";EndProcedure Function Double(Val X) Export Return X*2;EndFunction',{})

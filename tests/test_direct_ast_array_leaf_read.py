@@ -14,7 +14,7 @@ class ArrayLeafReadTests(unittest.TestCase):
                 vm.execute_prepared(plan)
             self.assertEqual(vm.variables['r'],Decimal(14))
     def test_cached_plan_rechecks_receiver_and_decimal_index(self):
-        from yadinassi.values import BSLArray
+        from yadinassi.types.values import BSLArray
         vm=Interpreter();self.addCleanup(vm.close)
         plan=vm.prepare_program(parse('R=A[I];'))
         for receiver in ([Decimal(7)],BSLArray(Decimal(1))):

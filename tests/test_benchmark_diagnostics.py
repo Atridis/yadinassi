@@ -47,7 +47,7 @@ class BenchmarkDiagnosticTests(unittest.TestCase):
         def _check(): return 1
         _, counts = bench.capture(_check)
         self.assertEqual(counts['direct_boundary_check'], 0)
-        with patch.dict(bench.WATCHED, {'bad': ('python_direct.py', 'does_not_exist')}):
+        with patch.dict(bench.WATCHED, {'bad': ('execution/direct/python_direct.py', 'does_not_exist')}):
             with self.assertRaises(ValueError): bench.validate_targets()
 
     def test_targets_are_read_as_utf8_independently_of_host_locale(self):

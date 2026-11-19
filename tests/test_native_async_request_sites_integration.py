@@ -6,8 +6,8 @@ from decimal import Decimal
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508
-from yadinassi.structures import BSLStructure
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
+from yadinassi.collections.structures import BSLStructure
 import test_native_async_request_reader as reader_fixture
 
 SOURCE_LABEL = 'offline-managed-form-module'

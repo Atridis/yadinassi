@@ -2,10 +2,10 @@ import unittest
 from decimal import Decimal as D
 from types import MappingProxyType
 from yadinassi import Interpreter, BSLError
-from yadinassi.python_direct_plain_map import PlainMap,PlainFixedMap,plain_map
-from yadinassi.python_direct_fixed import construct
-from yadinassi.maps import BSLMap,BSLFixedMap
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.direct.python_direct_plain_map import PlainMap,PlainFixedMap,plain_map
+from yadinassi.execution.direct.python_direct_fixed import construct
+from yadinassi.collections.maps import BSLMap,BSLFixedMap
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class PlainFixedMapTests(unittest.TestCase):
     def test_shallow_native_snapshot_and_reverse_copy(self):
@@ -43,5 +43,5 @@ S=String(F);T=TypeOf(F);I=0;For Each Pair In F Do I=I+1;EndDo;'''
             def __hash__(self):raise AssertionError('hash')
         fixed=PlainFixedMap(PlainMap())
         with self.assertRaises(TypeError):fixed.get(Key())
-        from yadinassi import value_storage
+        from yadinassi.formats.storage import value_storage
         with self.assertRaises(value_storage.SnapshotError):value_storage.capture(fixed)

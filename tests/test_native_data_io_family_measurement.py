@@ -68,7 +68,7 @@ class DataIOFamilyMeasurementTests(unittest.TestCase):
         with self.assertRaises(wire.AvailabilityError): wire.require_available(emit(missing=True))
 
     def test_action_failure_still_cleans_owned_paths(self):
-        from yadinassi.data_io import BSLDataWriter
+        from yadinassi.streams.data_io import BSLDataWriter
         with mock.patch.object(BSLDataWriter, 'write_chars', side_effect=ValueError('injected')):
             raw = emit()
         records = wire.validate_output(raw)
@@ -76,7 +76,7 @@ class DataIOFamilyMeasurementTests(unittest.TestCase):
         self.assertFalse(any(row['status'] == 'observer-error' for row in records))
 
     def test_unexpected_children_are_not_recursively_swept(self):
-        import yadinassi.file_io as files
+        import yadinassi.streams.file_io as files
         original = files.create_directory
         def create_with_sentinel(path):
             original(path)

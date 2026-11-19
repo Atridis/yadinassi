@@ -150,8 +150,8 @@ def check_ui(executable, directory, env):
     sys.path.insert(0, str(ROOT / 'tests'))
     from browser_ui.fixture import seed
     from ui_catalog_fixture import CATEGORY
-    from yadinassi.catalog_backend import CatalogSelection
-    from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+    from yadinassi.db.catalog.catalog_backend import CatalogSelection
+    from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 
     directory = Path(directory) / 'ui smoke база'
     directory.mkdir(parents=True)

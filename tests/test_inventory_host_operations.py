@@ -10,13 +10,13 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import BackendError, CatalogKey, TabularSectionRows, TabularRow
-from yadinassi.configuration_inventory_application import import_inventory_application, PROFILE, validated_core
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.database_transactions import RootOperation, admission, execution
-from yadinassi.document_backend import DocumentDraft, DocumentKey
-from yadinassi.document_posting_host import PostingRecoveryUnavailable
-from yadinassi.inventory_host_operations import InventoryRootOperations, InventoryRootOperation
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogKey, TabularSectionRows, TabularRow
+from yadinassi.configuration.configuration_inventory_application import import_inventory_application, PROFILE, validated_core
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.database_transactions import RootOperation, admission, execution
+from yadinassi.db.document.document_backend import DocumentDraft, DocumentKey
+from yadinassi.db.document.document_posting_host import PostingRecoveryUnavailable
+from yadinassi.configuration.demos.inventory_host_operations import InventoryRootOperations, InventoryRootOperation
 from inventory_application_fixture import source, ROOT
 from test_document_posting_host import PostingHostTests as _ScalarHostTests
 
@@ -102,7 +102,7 @@ class InventoryHostTests(unittest.TestCase):
                 form='Document.Other.Form.Card',command='Post')
 
     def test_old_nonposting_session_still_refuses_backend(self):
-        from yadinassi.configuration_document import DocumentObjectSession
+        from yadinassi.configuration.configuration_document import DocumentObjectSession
         with self.assertRaises(BackendError):
             DocumentObjectSession(self.context,self.schema,self.files,reference_fields=True)
 
@@ -150,7 +150,7 @@ class InventoryHostTests(unittest.TestCase):
             with self.assertRaises(PostingRecoveryUnavailable):other.resolve(receipt.operation_id)
 
     def test_max_receipts_never_evicts_recovery(self):
-        with patch('yadinassi.inventory_host_operations.MAX_RECEIPTS',1):
+        with patch('yadinassi.configuration.demos.inventory_host_operations.MAX_RECEIPTS',1):
             self.execute()
             with self.assertRaises(BackendError):self.execute(expected=self.card().revision)
 

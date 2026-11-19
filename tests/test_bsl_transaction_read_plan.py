@@ -3,9 +3,9 @@ import unittest
 from unittest.mock import patch
 import test_bsl_transactions as fixtures
 from yadinassi import BSLRuntimeError, Interpreter
-from yadinassi.catalog_backend import CatalogScanRequest
-from yadinassi.document_backend import DocumentScanRequest
-from yadinassi.database_transactions import execution, begin, commit, rollback
+from yadinassi.db.catalog.catalog_backend import CatalogScanRequest
+from yadinassi.db.document.document_backend import DocumentScanRequest
+from yadinassi.db.database_transactions import execution, begin, commit, rollback
 
 
 class TransactionReadPlanTests(unittest.TestCase):

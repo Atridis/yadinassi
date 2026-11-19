@@ -1,9 +1,10 @@
 """Independent metadata publication, callback and lifetime guards."""
 import unittest
 from unittest.mock import patch
-from yadinassi import metadata,type_qualifiers
-from yadinassi.values import HostFunction
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.configuration import metadata
+from yadinassi.types import type_qualifiers
+from yadinassi.types.values import HostFunction
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 import test_python_direct_live_metadata_ownership as fixture
 
 class LiveMetadataHookTests(unittest.TestCase):
@@ -46,13 +47,13 @@ class LiveMetadataHookTests(unittest.TestCase):
             with self.assertRaises(fixture.DENIED):vm.execute('Saved();')
         finally:saved.reference_parameters=old
     def test_type_slot_descriptor_denied_before_callback(self):
-        from yadinassi.catalog_types import BSLCatalogType
+        from yadinassi.db.catalog.catalog_types import BSLCatalogType
         vm=self.prepared();vm.execute('T=Type("CatalogRef.Products");');effects=[]
         with patch.object(BSLCatalogType,'snapshot',property(lambda self:effects.append('type'))):
             with self.assertRaises(fixture.DENIED):vm.execute('Metadata.FindByType(T);')
         self.assertEqual(effects,[])
     def test_reference_description_array_factory_denied(self):
-        from yadinassi.values import BSLArray
+        from yadinassi.types.values import BSLArray
         self.vm.execute('A=Metadata.Catalogs.Products.Attributes.Category;');effects=[]
         with patch.object(BSLArray,'__init__',lambda *a,**kw:effects.append('array')):
             with self.assertRaises(fixture.DENIED):self.vm.execute('A.Type;')

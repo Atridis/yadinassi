@@ -1,8 +1,8 @@
 """Exact scalar envelopes retain the recursive transfer contract."""
 from decimal import Decimal
 import unittest
-from yadinassi.python_direct_server import transfer
-from yadinassi.values import NULL, BSLArray
+from yadinassi.execution.direct.python_direct_server import transfer
+from yadinassi.types.values import NULL, BSLArray
 
 class ScalarTransferTests(unittest.TestCase):
     def test_fresh_envelope_and_immutable_identity(self):

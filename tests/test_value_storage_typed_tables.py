@@ -5,19 +5,19 @@ import unittest
 from unittest import mock
 from uuid import UUID
 
-from yadinassi import value_storage as storage
-from yadinassi import value_storage_table as hooks
-from yadinassi.catalog_types import BSLCatalogType
-from yadinassi.dates import date
-from yadinassi.queries import BSLQuery, BSLQueryResult, _Column
-from yadinassi.structures import BSLStructure
-from yadinassi.type_descriptions import BSLTypeDescription, _query_nullable_description
-from yadinassi.type_qualifiers import (BSLAllowedLength, BSLAllowedSign, BSLBinaryDataQualifiers,
+from yadinassi.formats.storage import value_storage as storage
+from yadinassi.formats.storage import value_storage_table as hooks
+from yadinassi.db.catalog.catalog_types import BSLCatalogType
+from yadinassi.temporal.dates import date
+from yadinassi.db.query.queries import BSLQuery, BSLQueryResult, _Column
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.types.type_descriptions import BSLTypeDescription, _query_nullable_description
+from yadinassi.types.type_qualifiers import (BSLAllowedLength, BSLAllowedSign, BSLBinaryDataQualifiers,
                                       BSLDateFractions, BSLDateQualifiers, BSLNumberQualifiers,
                                       BSLStringQualifiers)
-from yadinassi.unique_identifiers import BSLUUID
-from yadinassi.value_tables import BSLCollectionIndex, BSLValueTable
-from yadinassi.values import BSLArray, BSLType, NULL
+from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.collections.value_tables import BSLCollectionIndex, BSLValueTable
+from yadinassi.types.values import BSLArray, BSLType, NULL
 import test_catalog_queries as fixtures
 
 D = Decimal
@@ -277,7 +277,7 @@ class TypedIndexSnapshotTests(unittest.TestCase):
         snapshot = storage.capture(table_with(numeric()))
         root = snapshot._root
         root = (*root[:3], ((0,),))
-        with mock.patch('yadinassi.value_tables.BSLCollectionIndexes._add_columns',
+        with mock.patch('yadinassi.collections.value_tables.BSLCollectionIndexes._add_columns',
                         side_effect=ValueError('runtime budget')):
             with self.assertRaises(storage.SnapshotError): storage.restore(storage.Snapshot(root))
 

@@ -8,13 +8,13 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
-from yadinassi.accumulation_movements import (
+from yadinassi.db.registers.accumulation_movements import (
     AccumulationDirection, AccumulationMovementRow, AccumulationRegisterSchema,
     AccumulationReplacement,
 )
-from yadinassi.catalog_backend import BackendError, FieldSchema
-from yadinassi.document_backend import DocumentKey
-from yadinassi.sqlite_accumulation_movements import (
+from yadinassi.db.catalog.catalog_backend import BackendError, FieldSchema
+from yadinassi.db.document.document_backend import DocumentKey
+from yadinassi.db.sqlite.sqlite_accumulation_movements import (
     ACCUMULATION_DDL, AccumulationMovementPort, _hash, _json, schema_data,
 )
 
@@ -240,7 +240,7 @@ class AccumulationStorageTests(unittest.TestCase):
     def test_row_and_partition_payload_budgets_apply_before_writes(self):
         request = self.request()
         for constant in ('MAX_ROW_BYTES', 'MAX_BYTES'):
-            with self.subTest(constant=constant), patch('yadinassi.sqlite_accumulation_movements.' + constant, 1):
+            with self.subTest(constant=constant), patch('yadinassi.db.sqlite.sqlite_accumulation_movements.' + constant, 1):
                 with self.assertRaises(BackendError):
                     self.port.replace(uuid4(), request)
         self.assertEqual(self.port.read(self.reg, self.key).revision, 0)
@@ -249,14 +249,14 @@ class AccumulationStorageTests(unittest.TestCase):
     def test_database_row_budget_rolls_back_rows_revision_and_receipt(self):
         original = self.port.replace(uuid4(), self.request())
         request, operation = self.request(rows=(self.row, replace(self.row, line_number=2))), uuid4()
-        with patch('yadinassi.sqlite_accumulation_movements.MAX_DATABASE_ROWS', 1), self.assertRaises(BackendError):
+        with patch('yadinassi.db.sqlite.sqlite_accumulation_movements.MAX_DATABASE_ROWS', 1), self.assertRaises(BackendError):
             self.port.replace(operation, request)
         self.assertEqual(self.port.read(self.reg, self.key).snapshot, original.snapshot)
         self.assertIsNone(self.port.resolve(operation, request))
 
     def test_database_byte_budget_failure_keeps_previous_state(self):
         request, operation = self.request(), uuid4()
-        with patch('yadinassi.sqlite_accumulation_movements.MAX_DATABASE_BYTES', 1), self.assertRaises(BackendError):
+        with patch('yadinassi.db.sqlite.sqlite_accumulation_movements.MAX_DATABASE_BYTES', 1), self.assertRaises(BackendError):
             self.port.replace(operation, request)
         self.assertEqual(self.port.read(self.reg, self.key).revision, 0)
         self.assertIsNone(self.port.resolve(operation, request))
@@ -265,7 +265,7 @@ class AccumulationStorageTests(unittest.TestCase):
         self.port.replace(uuid4(), self.request(rows=()))
         other = self.other_key()
         request, operation = self.request(other, ()), uuid4()
-        with patch('yadinassi.sqlite_accumulation_movements.MAX_DATABASE_PARTITIONS', 1), self.assertRaises(BackendError):
+        with patch('yadinassi.db.sqlite.sqlite_accumulation_movements.MAX_DATABASE_PARTITIONS', 1), self.assertRaises(BackendError):
             self.port.replace(operation, request)
         self.assertEqual(self.port.read(self.reg, other).revision, 0)
         self.assertIsNone(self.port.resolve(operation, request))
@@ -273,16 +273,16 @@ class AccumulationStorageTests(unittest.TestCase):
     def test_receipt_budget_does_not_prune_or_mutate_old_receipts(self):
         request, operation = self.request(), uuid4()
         original = self.port.replace(operation, request)
-        with patch('yadinassi.sqlite_accumulation_movements.MAX_DATABASE_RECEIPTS', 1), self.assertRaises(BackendError):
+        with patch('yadinassi.db.sqlite.sqlite_accumulation_movements.MAX_DATABASE_RECEIPTS', 1), self.assertRaises(BackendError):
             self.port.replace(uuid4(), self.request(rows=()))
         self.assertEqual(self.port.resolve(operation, request), original)
         self.assertEqual(self.port.read(self.reg, self.key).snapshot, original.snapshot)
 
     def test_read_and_scan_enforce_payload_budgets(self):
         self.port.replace(uuid4(), self.request())
-        with patch('yadinassi.sqlite_accumulation_movements.MAX_ROW_BYTES', 1), self.assertRaises(BackendError):
+        with patch('yadinassi.db.sqlite.sqlite_accumulation_movements.MAX_ROW_BYTES', 1), self.assertRaises(BackendError):
             self.port.read(self.reg, self.key)
-        with patch('yadinassi.sqlite_accumulation_movements.MAX_DATABASE_ROWS', 0), self.assertRaises(BackendError):
+        with patch('yadinassi.db.sqlite.sqlite_accumulation_movements.MAX_DATABASE_ROWS', 0), self.assertRaises(BackendError):
             self.port.scan(self.reg)
 
     def test_missing_receipt_is_none_and_different_request_cannot_resolve(self):

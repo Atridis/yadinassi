@@ -31,7 +31,7 @@ class ModuleLocalsPrototypeTests(unittest.TestCase):
         vm.execute('X=3;Inc(X);R=X;');self.assertEqual(vm.variables['r'],D(4))
     def test_close_during_callback_remains_fatal(self):
         vm=self.vm();vm.register_function('Stop',lambda:vm.close())
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         with self.assertRaises(BoundaryViolation):vm.execute('X=1;Try Stop();Except Caught=True;EndTry;After=1;')
         self.assertNotIn('caught',vm.variables);self.assertNotIn('after',vm.variables)
     def test_new_slot_zero_loop_and_declared_slot(self):

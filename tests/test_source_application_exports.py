@@ -2,8 +2,8 @@
 import unittest
 from test_configuration_source_runtime import source
 from test_source_server_call import module
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 
 
 def configuration(app, helper, *, global_module=False, server=False):
@@ -114,7 +114,7 @@ class SourceApplicationExportsTests(unittest.TestCase):
         self.assertEqual(a,['2']);self.assertEqual(b,['2'])
 
     def test_retained_reference_rejects_closed_application(self):
-        from yadinassi.source_application_exports import variable
+        from yadinassi.execution.source_application_exports import variable
         app,_=self.run_app('Var Shared Export;\nProcedure OnStart() Helpers.Run(); EndProcedure',
                           'Procedure Run() Export EndProcedure')
         child=app._instances[('helpers','client',False)]
@@ -124,8 +124,8 @@ class SourceApplicationExportsTests(unittest.TestCase):
 
     def form_controller(self, app_code, form_code):
         from test_source_forms import files
-        from yadinassi.configuration_source import import_source
-        from yadinassi.source_forms import SourceFormController
+        from yadinassi.configuration.configuration_source import import_source
+        from yadinassi.forms.source_forms import SourceFormController
         mapping=files(form_code.encode())
         mapping['Ext/ManagedApplicationModule.bsl']=app_code.encode()
         app=SourceApplication(import_source(mapping))
@@ -159,7 +159,7 @@ class SourceApplicationExportsTests(unittest.TestCase):
         self.assertIsNotNone(controller.exchange(request())['result']['error'])
 
     def test_server_copyback_preserves_global_slot(self):
-        from yadinassi.configuration_source import import_source
+        from yadinassi.configuration.configuration_source import import_source
         cfg=configuration('Var Shared Export;\nProcedure OnStart() Shared=1; Helpers.Run(); Message(Shared); EndProcedure',
             'Procedure Run() Export API.Change(Shared); EndProcedure')
         files={item.path:item.content for item in cfg.files}

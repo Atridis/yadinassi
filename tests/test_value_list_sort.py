@@ -9,14 +9,15 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from yadinassi import BSLError, Interpreter, value_list_sort
-from yadinassi.dates import BSLDate
-from yadinassi.maps import BSLMap
-from yadinassi.search_directions import BSLSearchDirection
-from yadinassi.sort_directions import BSLSortDirection as Direction
-from yadinassi.structures import BSLStructure
-from yadinassi.value_lists import BSLValueList, BSLValueListItem
-from yadinassi.values import BSLArray, BSLType, NULL
+from yadinassi import BSLError, Interpreter
+from yadinassi.collections import value_list_sort
+from yadinassi.temporal.dates import BSLDate
+from yadinassi.collections.maps import BSLMap
+from yadinassi.collections.search_directions import BSLSearchDirection
+from yadinassi.collections.sort_directions import BSLSortDirection as Direction
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.types.values import BSLArray, BSLType, NULL
 
 
 ROOT = Path(__file__).resolve().parents[1]

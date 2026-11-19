@@ -3,8 +3,8 @@ import unittest
 from unittest.mock import patch
 from decimal import Decimal
 from yadinassi import Interpreter
-from yadinassi.errors import BSLError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.types.errors import BSLError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 import test_accumulation_query_runtime as fixture
 
 DENIED=(BoundaryViolation,BSLError,ValueError,TypeError)
@@ -112,7 +112,7 @@ class DirectAccumulationOwnershipTests(unittest.TestCase):
             with self.assertRaises(DENIED):vm.execute('R.Amount=9;')
         finally:new._rows.remove(row);old._rows.append(row);row._owner=old
     def test_forged_native_row_copy_not_admitted(self):
-        from yadinassi.accumulation_posting_values import BSLAccumulationRow
+        from yadinassi.db.registers.accumulation_posting_values import BSLAccumulationRow
         vm=self.prepared();original=vm.variables['r'];copy=object.__new__(BSLAccumulationRow);copy.__dict__.update(original.__dict__)
         group=vm.variables['set'];group._rows.append(copy);vm.variables['forged']=copy
         try:

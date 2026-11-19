@@ -1,7 +1,7 @@
 """Assertions for the public BSL array contract on the direct backend."""
 from yadinassi import Interpreter
-from yadinassi.values import BSLArray, BSLFixedArray
-from yadinassi.serialization import value_to_string_internal
+from yadinassi.types.values import BSLArray, BSLFixedArray
+from yadinassi.formats.storage.serialization import value_to_string_internal
 
 class ArrayBackendContract:
     def interpreter(self, **kwargs):

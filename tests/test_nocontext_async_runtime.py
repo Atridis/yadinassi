@@ -5,7 +5,7 @@ import unittest
 from unittest import mock
 import weakref
 from yadinassi import Interpreter
-from yadinassi.async_runtime import AwaitRequest
+from yadinassi.application.async_runtime import AwaitRequest
 
 class NoContextAsyncRuntimeTests(unittest.TestCase):
     def setUp(self):

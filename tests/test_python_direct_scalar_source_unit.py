@@ -2,8 +2,8 @@ from dataclasses import replace
 from unittest import TestCase
 from unittest.mock import patch
 from hashlib import sha256
-from yadinassi import form_event_simulation as sim
-from yadinassi import form_module_analysis as analysis
+from yadinassi.forms import form_event_simulation as sim
+from yadinassi.forms import form_module_analysis as analysis
 import test_form_draft_session as draftfixture
 import test_verified_form_draft_session as verifiedfixture
 

@@ -1,11 +1,12 @@
 import unittest
 from dataclasses import replace
 from decimal import Decimal as D
-from yadinassi import Interpreter, value_storage as storage
-from yadinassi.plain_value_table_runtime import BSLValueTable
-from yadinassi.structures import BSLStructure
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.type_qualifiers import BSLNumberQualifiers
+from yadinassi import Interpreter
+from yadinassi.formats.storage import value_storage as storage
+from yadinassi.collections.plain_value_table_runtime import BSLValueTable
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.type_qualifiers import BSLNumberQualifiers
 
 class DirectTableSnapshot(unittest.TestCase):
     def table(self, typed=False):
@@ -53,9 +54,9 @@ class DirectTableSnapshot(unittest.TestCase):
         self.assertEqual(restored.find_rows(BSLStructure('K',D(1))).items,[restored.rows[0]])
     def test_source_seals_new_storage_classes_and_slots(self):
         from unittest.mock import patch
-        from yadinassi import value_storage_table as codec
-        from yadinassi import python_direct_source_value_storage as direct
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.formats.storage import value_storage_table as codec
+        from yadinassi.execution.direct.source import python_direct_source_value_storage as direct
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         for name in ('Schema','TableStorage','SearchIndexes'):
             cls=getattr(codec,name)
             with patch.object(codec,name,type('Replacement',(),{})):
@@ -70,6 +71,6 @@ class DirectTableSnapshot(unittest.TestCase):
         t=BSLValueTable();t.columns.add('A,B')
         with self.assertRaises(storage.SnapshotError):storage.capture(t)
     def test_declarations_bounded_before_elements(self):
-        from yadinassi import value_storage_table as codec
+        from yadinassi.formats.storage import value_storage_table as codec
         t=self.table();t._search.declarations=set((i,) for i in range(codec.MAX_INDEXES+1))
         with self.assertRaises(storage.SnapshotError):storage.capture(t)

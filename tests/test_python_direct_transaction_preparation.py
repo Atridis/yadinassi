@@ -3,11 +3,11 @@ import unittest
 from unittest.mock import patch
 from contextvars import copy_context
 from contextlib import contextmanager
-from yadinassi import database_transactions as tx
-from yadinassi.catalog_backend import BackendError
-from yadinassi.catalog_object_preparation import CatalogWriteRefused
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-import yadinassi.catalog_object_preparation as prep
+from yadinassi.db import database_transactions as tx
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.catalog.catalog_object_preparation import CatalogWriteRefused
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+import yadinassi.db.catalog.catalog_object_preparation as prep
 import test_python_direct_catalog_preparation as fixture
 from test_catalog_commit_cleanup_recovery import FaultConnection
 
@@ -27,7 +27,7 @@ class DirectTransactionPreparationTests(unittest.TestCase):
         self.vm.execute('CaseBody();')
     @contextmanager
     def activation(self):
-        from yadinassi.python_direct_transactions import _ROOT_OWNER
+        from yadinassi.execution.direct.python_direct_transactions import _ROOT_OWNER
         owner=_ROOT_OWNER.get();owner.check_origin();owner.start()
         try:yield
         except BaseException as error:
@@ -177,7 +177,7 @@ class DirectTransactionPreparationTests(unittest.TestCase):
                 tx.begin(self.db.backend);self.card.write();tx.commit(self.db.backend)
         self.clean()
     def test_reference_reads_remain_explicit_getobject_only(self):
-        from yadinassi.python_direct_catalog_preparation import CatalogPreparationBoundary
+        from yadinassi.execution.direct.python_direct_catalog_preparation import CatalogPreparationBoundary
         original=prep._prepare_catalog_object
         def inspect(*args,**kwargs):
             vm=prep._ObjectInterpreter(self.card,lambda record:None,kwargs['write_view'])
@@ -198,7 +198,7 @@ class DirectTransactionPreparationTests(unittest.TestCase):
                 tx.begin(self.db.backend);self.card.write();tx.commit(self.db.backend)
         self.clean()
     def test_backend_change_cannot_enter_legacy_preparation(self):
-        from yadinassi.execution_policy import execution_backend_policy
+        from yadinassi.execution.execution_policy import execution_backend_policy
         original=prep._prepare_catalog_object
         def change(*args,**kwargs):
             with execution_backend_policy('compiled-strict'):
@@ -271,7 +271,7 @@ class DirectTransactionPreparationTests(unittest.TestCase):
         self.clean();self.assertTrue(self.card.is_new())
     def test_ingress_copied_context_cannot_mint_begin_authority(self):
         from types import SimpleNamespace
-        from yadinassi.python_direct_transactions import _ROOT_OWNER,service
+        from yadinassi.execution.direct.python_direct_transactions import _ROOT_OWNER,service
         def probe():
             context=SimpleNamespace(vm=self.vm,_direct_transaction_owner=_ROOT_OWNER.get(),_eval_depth=[0])
             begin=service(context,self.vm.functions['begintransaction'])
@@ -282,7 +282,8 @@ class DirectTransactionPreparationTests(unittest.TestCase):
         self.vm.execute('Probe();BeginTransaction();RollbackTransaction();')
         self.clean()
     def test_ingress_live_root_replacements_cannot_acquire_handler_scope(self):
-        from yadinassi import safe_mode,source_transactions
+        from yadinassi.execution import safe_mode
+        from yadinassi.db import source_transactions
         backend=self.db.backend
         def probe():
             for mode in ('scheduler','database','generation','family','released','configuration','locals','profile','server','module','safe','source'):

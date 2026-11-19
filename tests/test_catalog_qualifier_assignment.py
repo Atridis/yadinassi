@@ -12,14 +12,14 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import (BackendError, CatalogDraft, CatalogKey,
+from yadinassi.db.catalog.catalog_backend import (BackendError, CatalogDraft, CatalogKey,
     CatalogSchema, FieldSchema, TabularRow, TabularSectionRows, TabularSectionSchema)
-from yadinassi.catalog_qualifiers import (normalize_string, normalize_number,
+from yadinassi.db.catalog.catalog_qualifiers import (normalize_string, normalize_number,
     validate_string, _MAX_TEXT_CHARS, _MAX_DECIMAL_BYTES)
-from yadinassi.configuration_xml import ConfigurationImport, ConfigurationFile, import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _View, _encode, _decode, _json
-from yadinassi.sqlite_catalog_layout import quote_identifier
+from yadinassi.configuration.configuration_xml import ConfigurationImport, ConfigurationFile, import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _View, _encode, _decode, _json
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
 from catalog_sections_fixture import configuration_files_with_sections
 
 
@@ -197,9 +197,9 @@ class RuntimeQualifierTests(unittest.TestCase):
     def test_conversion_and_budget_exceptions_are_before_mutation(self):
         self.obj.write()
         before = (self.row._bytes, self.section._bytes, self.section._dirty, dict(self.row._values))
-        with patch('yadinassi.catalogs.normalize_field', side_effect=MemoryError('injected')):
+        with patch('yadinassi.db.catalog.catalogs.normalize_field', side_effect=MemoryError('injected')):
             with self.assertRaises(MemoryError): self.row.set_member('Amount', Decimal('1.245'))
-        with patch('yadinassi.catalog_sections._MAX_BUFFER_BYTES', self.obj._section_buffer_bytes()):
+        with patch('yadinassi.db.catalog.catalog_sections._MAX_BUFFER_BYTES', self.obj._section_buffer_bytes()):
             with self.assertRaisesRegex(ValueError, 'buffer limit'): self.row.set_member('Text', 'abcdef')
         self.assertEqual((self.row._bytes, self.section._bytes, self.section._dirty, dict(self.row._values)), before)
 
@@ -397,7 +397,7 @@ class BackendQualifierTests(unittest.TestCase):
     def test_conversion_exception_before_sql_and_receipt(self):
         draft = self.draft(); tx = self.backend.begin_write(uuid4())
         try:
-            with patch('yadinassi.sqlite_catalog.normalize_field', side_effect=MemoryError('injected')):
+            with patch('yadinassi.db.sqlite.sqlite_catalog.normalize_field', side_effect=MemoryError('injected')):
                 with self.assertRaises(MemoryError): tx.create(draft)
             self.assertEqual(tx._changes, []); self.assertEqual(tx._intents, [])
             self.assertIsNone(tx.read_catalog(draft.key))
@@ -408,14 +408,14 @@ class BackendQualifierTests(unittest.TestCase):
         try:
             tx.create(self.draft('old'))
             before = (list(tx._changes), list(tx._intents), tx._section_write_bytes, tx._section_write_rows)
-            from yadinassi.catalog_qualifiers import normalize_field
+            from yadinassi.db.catalog.catalog_qualifiers import normalize_field
             calls = 0
             def fail_on_section(value, field):
                 nonlocal calls
                 calls += 1
                 if calls == len(self.schema.fields) + 2: raise MemoryError('injected in row')
                 return normalize_field(value, field)
-            with patch('yadinassi.sqlite_catalog.normalize_field', side_effect=fail_on_section):
+            with patch('yadinassi.db.sqlite.sqlite_catalog.normalize_field', side_effect=fail_on_section):
                 with self.assertRaises(MemoryError): tx.create(draft)
             self.assertEqual((tx._changes, tx._intents, tx._section_write_bytes, tx._section_write_rows), before)
             self.assertIsNone(tx.read_catalog(draft.key))
@@ -424,7 +424,7 @@ class BackendQualifierTests(unittest.TestCase):
 
     def test_bookkeeping_faults_rollback_sql_and_all_partial_journal_updates(self):
         from contextlib import nullcontext
-        import yadinassi.sqlite_catalog as storage
+        import yadinassi.db.sqlite.sqlite_catalog as storage
         original = _View._record_change
         stages = ('Revision', 'CatalogWriteOutcome', '_intent', '_json', 'changes_copy', 'intents_copy', 'outcomes_copy',
                   '_changes', '_intents', '_outcomes', '_section_write_bytes', '_section_write_rows', 'after_all')

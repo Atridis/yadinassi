@@ -10,8 +10,8 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.values import Reference
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.types.values import Reference
 
 class CompiledForSlotTests(unittest.TestCase):
     def test_bounds_once_and_live_counter_mutation(self):

@@ -5,11 +5,11 @@ from itertools import product
 import unittest
 
 from yadinassi import BSLRuntimeError, Interpreter
-from yadinassi.native_targets import (
+from yadinassi.execution.codegen.native_targets import (
     LINUX_8_3_27_1508, WINDOWS_8_3_27_2342,
     current_native_target, target_context,
 )
-from yadinassi.structures import BSLFixedStructure, BSLStructure, fill_property_values
+from yadinassi.collections.structures import BSLFixedStructure, BSLStructure, fill_property_values
 
 
 TARGETS = (None, WINDOWS_8_3_27_2342, LINUX_8_3_27_1508)

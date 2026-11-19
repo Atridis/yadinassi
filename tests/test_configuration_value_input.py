@@ -11,15 +11,15 @@ from test_configuration_form_results import HostFixture
 from configuration_form_results_fixture import OWNER_MODULE, OPEN, CHILD_MODULE, business_sources
 from configuration_dialog_fixture import sources as dialog_sources, QUESTION, WARNING
 from yadinassi import Interpreter, BSLError
-from yadinassi.configuration_application_profile import import_application_configuration
-from yadinassi.configuration_forms import load_configuration_forms
-from yadinassi.form_dialogs import DIALOG_CAPABILITY
-from yadinassi.form_value_input import INPUT_CAPABILITY
+from yadinassi.configuration.configuration_application_profile import import_application_configuration
+from yadinassi.configuration.configuration_forms import load_configuration_forms
+from yadinassi.forms.form_dialogs import DIALOG_CAPABILITY
+from yadinassi.forms.form_value_input import INPUT_CAPABILITY
 from yadinassi.ui.configuration_app import ConfigurationBroker, ConfigurationController, PROTOCOL
 from yadinassi.ui.form_app import PROTOCOL as FORM_PROTOCOL
 from yadinassi.ui.protocol import encode_line, decode_line, encode_value
-from yadinassi.value_lists import BSLValueList
-from yadinassi.values import HostFunction
+from yadinassi.collections.value_lists import BSLValueList
+from yadinassi.types.values import HostFunction
 
 INPUT = 'ShowInputValue(Callback, 1, "Quantity");'
 PREPARE = 'Options=New ValueList; Options.Add("same","First"); InitialItem=Options.Add("same","Second");'
@@ -39,8 +39,8 @@ class InputFixture(HostFixture):
         files = sources() if files is None else files
         database = None
         if business:
-            from yadinassi.configuration_business_profile import import_business_configuration
-            from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+            from yadinassi.configuration.configuration_business_profile import import_business_configuration
+            from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
             temporary = tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
             database = Path(temporary.name)/'inputs.sqlite'
             SQLiteCatalogBackend.create_business_application(database, files).close()
@@ -127,7 +127,7 @@ class InputHostTests(InputFixture, unittest.TestCase):
         self.assertEqual(broker.sessions[owner][0].session.form._data['greeting'], 'accepted')
 
     def test_four_scalar_kinds_and_russian_alias(self):
-        from yadinassi.dates import date
+        from yadinassi.temporal.dates import date
         for initial, value in [('"before"','after'), ('False',True), ('1',Decimal('3.50')),
                                ('Date(2024,1,2)',date(Decimal(2024),Decimal(1),Decimal(3)))]:
             with self.subTest(initial=initial):

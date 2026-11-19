@@ -2,7 +2,7 @@
 from contextlib import closing
 import unittest
 from yadinassi import Interpreter
-from yadinassi.python_direct import PythonDirectUnsupported
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.syntax.parser import parse
 
 

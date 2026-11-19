@@ -2,10 +2,10 @@
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.python_direct import PythonDirectUnsupported
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.unique_identifiers import BSLUUID
-from yadinassi.values import HostFunction
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.types.values import HostFunction
 
 TEXT='6fe6c569-c38f-4f76-a3a6-bea52c24ed0a'
 

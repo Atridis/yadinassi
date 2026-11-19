@@ -5,8 +5,8 @@ import unittest
 from array_backend_contract import ArrayBackendContract
 
 from yadinassi import BSLError
-from yadinassi.values import BSLArray
-from yadinassi.serialization import value_from_string_internal
+from yadinassi.types.values import BSLArray
+from yadinassi.formats.storage.serialization import value_from_string_internal
 
 
 class _ArrayDefaultTests(ArrayBackendContract):

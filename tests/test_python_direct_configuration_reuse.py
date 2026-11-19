@@ -2,8 +2,8 @@
 import unittest
 from unittest.mock import patch
 from decimal import Decimal
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.types.errors import BSLRuntimeError
 from configuration_runtime_fixture import module_files
 
 SOURCE='''Function F(Val X) Export Message(X);Return X;EndFunction
@@ -64,15 +64,15 @@ class DirectConfigurationReuseTests(unittest.TestCase):
     def test_ordinary_command_does_not_enter_reuse_or_request_scope(self):
         app=ConfigurationApplication.from_files(module_files([('Tools','Function F(Val X) Export Return X;EndFunction',{})]))
         self.addCleanup(app.close,force=True);app.start()
-        with patch('yadinassi.python_direct_configuration.invoke_reusable',side_effect=AssertionError('ordinary reuse')), \
-             patch('yadinassi.python_direct_source_requests.request_scope',side_effect=AssertionError('ordinary request')):
+        with patch('yadinassi.execution.direct.python_direct_configuration.invoke_reusable',side_effect=AssertionError('ordinary reuse')), \
+             patch('yadinassi.execution.direct.source.python_direct_source_requests.request_scope',side_effect=AssertionError('ordinary request')):
             self.assertEqual(app.execute('Tools.F(3)'),Decimal(3))
             self.assertEqual(app.execute('1+2'),Decimal(3))
 
     def test_numeric_equal_keys_and_current_target_check_on_hit(self):
         app,output=self.app()
         app.execute('Tools.F(1.00)')
-        from yadinassi.python_direct_configuration_commands import _Scope
+        from yadinassi.execution.direct.python_direct_configuration_commands import _Scope
         original=_Scope.check;owners=[]
         def checked(scope,application,owner):
             owners.append(owner)

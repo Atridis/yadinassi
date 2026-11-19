@@ -2,12 +2,12 @@
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.python_direct import PythonDirectUnsupported
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 
 class PreparedAdmissionTests(unittest.TestCase):
     def test_no_source_walk_parse_or_compile_during_execution(self):
         vm=Interpreter();plan=vm.prepare('Var x;Function F() Return 3;EndFunction x=F();x;')
-        with patch('yadinassi.python_direct._nodes',side_effect=AssertionError('walk')),patch('yadinassi.python_direct._source_facts',side_effect=AssertionError('source admission')),patch('yadinassi.python_direct._compile',side_effect=AssertionError('compile')),patch('yadinassi.syntax.parser.parse',side_effect=AssertionError('parse')):
+        with patch('yadinassi.execution.direct.python_direct._nodes',side_effect=AssertionError('walk')),patch('yadinassi.execution.direct.python_direct._source_facts',side_effect=AssertionError('source admission')),patch('yadinassi.execution.direct.python_direct._compile',side_effect=AssertionError('compile')),patch('yadinassi.syntax.parser.parse',side_effect=AssertionError('parse')):
             self.assertEqual(vm.execute_prepared(plan),3)
             self.assertEqual(vm.execute_prepared(plan),3)
         self.assertEqual(vm.module_names,{'x'})

@@ -1,7 +1,7 @@
 """The query port validates the complete bounded source before projection."""
 import unittest
 from uuid import uuid4
-from yadinassi.catalog_backend import BackendError
+from yadinassi.db.catalog.catalog_backend import BackendError
 import test_recorder_movement_storage as fixtures
 
 class RecorderQueryPortTests(unittest.TestCase):

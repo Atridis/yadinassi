@@ -10,11 +10,11 @@ import weakref
 
 from yadinassi import Interpreter, BSLRuntimeError
 from yadinassi import cli
-from yadinassi.async_runtime import _HostFault
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.configuration_modules import MODULE_RUNTIME
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.application.async_runtime import _HostFault
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.configuration.configuration_modules import MODULE_RUNTIME
+from yadinassi.db.database_context import SQLiteDBContext
 from configuration_runtime_fixture import module_files
 
 
@@ -182,8 +182,8 @@ class HostFailureLifetimeTests(unittest.TestCase):
         self.assertEqual(calls,[])
 
     def test_failed_await_does_not_read_custom_class_attribute(self):
-        from yadinassi.async_runtime import Scheduler, AwaitRequest
-        from yadinassi.native_targets import WINDOWS_8_3_27_2342
+        from yadinassi.application.async_runtime import Scheduler, AwaitRequest
+        from yadinassi.execution.codegen.native_targets import WINDOWS_8_3_27_2342
         calls=[]
         class Fault(RuntimeError):
             def __getattribute__(self,name):

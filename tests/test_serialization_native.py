@@ -14,21 +14,22 @@ import re
 import unittest
 from unittest.mock import patch
 
-from yadinassi import Interpreter, serialization
-from yadinassi.unique_identifiers import BSLUUID
-from yadinassi.dates import BSLDate
-from yadinassi.xml_processing import XML_STRING_PROCESSING
+from yadinassi import Interpreter
+from yadinassi.formats.storage import serialization
+from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.temporal.dates import BSLDate
+from yadinassi.formats.xml.xml_processing import XML_STRING_PROCESSING
 from yadinassi.numeric.round_modes import BSLRoundMode, ROUND_MODES
-from yadinassi.search_directions import BSLSearchDirection, SEARCH_DIRECTIONS
-from yadinassi.sort_directions import BSLSortDirection
-from yadinassi.maps import BSLFixedMap, BSLMap
-from yadinassi.serialization import value_from_string_internal as read
-from yadinassi.serialization import value_to_string_internal as write
-from yadinassi.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
-from yadinassi.type_values import type_by_name, type_of
-from yadinassi.value_tables import BSLValueTable
-from yadinassi.value_lists import BSLValueList
-from yadinassi.values import BSLArray, BSLFixedArray, BSLType, NULL, equal, to_string
+from yadinassi.collections.search_directions import BSLSearchDirection, SEARCH_DIRECTIONS
+from yadinassi.collections.sort_directions import BSLSortDirection
+from yadinassi.collections.maps import BSLFixedMap, BSLMap
+from yadinassi.formats.storage.serialization import value_from_string_internal as read
+from yadinassi.formats.storage.serialization import value_to_string_internal as write
+from yadinassi.collections.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
+from yadinassi.types.type_values import type_by_name, type_of
+from yadinassi.collections.value_tables import BSLValueTable
+from yadinassi.collections.value_lists import BSLValueList
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLType, NULL, equal, to_string
 
 
 def table_family_samples():

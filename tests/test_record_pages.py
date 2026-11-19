@@ -8,9 +8,9 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from inventory_enum_application_fixture import source
-from yadinassi.configuration_inventory_enum_application import import_inventory_application, PROFILE
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.catalog_backend import BackendError, CatalogDraft, CatalogKey
+from yadinassi.configuration.configuration_inventory_enum_application import import_inventory_application, PROFILE
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogDraft, CatalogKey
 from yadinassi.ui.record_pages import RecordPages, load_record_snapshot, RecordRow, validate_navigation
 
 

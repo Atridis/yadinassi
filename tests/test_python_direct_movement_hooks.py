@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import patch
 import test_python_direct_accumulation_ownership as fixture
-from yadinassi import accumulation_posting_values as native
+from yadinassi.db.registers import accumulation_posting_values as native
 DENIED=fixture.DENIED
 
 class MovementHookTests(unittest.TestCase):
@@ -50,8 +50,8 @@ class MovementHookTests(unittest.TestCase):
                 with self.assertRaises(DENIED):vm.execute('Set.Count();')
             finally:target._bytes=old
     def test_parent_class_and_slot_hooks_rejected(self):
-        from yadinassi.documents import BSLDocumentManager
-        from yadinassi.document_backend import DocumentKey
+        from yadinassi.db.document.documents import BSLDocumentManager
+        from yadinassi.db.document.document_backend import DocumentKey
         vm=self.prepared();effects=[]
         config=vm._documents._posting_runtime.configuration
         for cls,name,replacement in (

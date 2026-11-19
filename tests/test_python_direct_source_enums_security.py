@@ -5,10 +5,10 @@ from uuid import uuid4
 from unittest.mock import patch
 import test_python_direct_source_query as fixtures
 from test_source_enumeration_runtime import package
-from yadinassi.configuration_source_runtime import SourceApplication,_SourceInterpreter
-from yadinassi import python_direct_source_enums as bridge
-from yadinassi.enum_types import BSLEnumReference
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.configuration.configuration_source_runtime import SourceApplication,_SourceInterpreter
+from yadinassi.execution.direct.source import python_direct_source_enums as bridge
+from yadinassi.db.metadata.enum_types import BSLEnumReference
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
 class DirectSourceEnumsSecurity(unittest.TestCase):
@@ -39,7 +39,7 @@ class DirectSourceEnumsSecurity(unittest.TestCase):
         with self.assertRaises(BoundaryViolation):bound()
 
     def test_class_and_instance_hooks_rejected_without_callback(self):
-        from yadinassi.enumerations import BSLEnumManager
+        from yadinassi.db.metadata.enumerations import BSLEnumManager
         app,caller=self.app();effects=[]
         with self.boundary(app,caller) as boundary:
             manager=app.enumerations.get_member('Status')

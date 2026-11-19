@@ -9,7 +9,7 @@ There is no second evaluator. Import, database creation and database opening
 ## Using it
 
 ```python
-from yadinassi.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
 
 application = ConfigurationApplication.from_files(files, output=print)
 try:

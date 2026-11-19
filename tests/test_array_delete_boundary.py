@@ -5,7 +5,7 @@ import unittest
 from array_backend_contract import ArrayBackendContract
 
 from yadinassi import BSLError
-from yadinassi.values import BSLArray
+from yadinassi.types.values import BSLArray
 
 
 class _ArrayDeleteBoundaryTests(ArrayBackendContract):

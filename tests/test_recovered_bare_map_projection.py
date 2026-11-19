@@ -1,9 +1,9 @@
 import unittest
 from unittest.mock import patch
 from recovered_bare_fixture import Interpreter
-from yadinassi.native_bare_collections import BareMap, BareMapEntry, BareArray
-from yadinassi.python_direct import PythonDirectUnsupported
-import yadinassi.native_bare_compiler as compiler
+from yadinassi.execution.codegen.native_bare_collections import BareMap, BareMapEntry, BareArray
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+import yadinassi.execution.codegen.native_bare_compiler as compiler
 
 class RecoveredMapProjection(unittest.TestCase):
     def run_counted(self,source,setup=None):

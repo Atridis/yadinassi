@@ -2,9 +2,10 @@
 import unittest
 from decimal import Decimal as D
 from unittest.mock import patch
-from yadinassi import Interpreter,values
-from yadinassi.values import BSLArray
-from yadinassi import experimental_naked_resources as resources
+from yadinassi import Interpreter
+from yadinassi.types import values
+from yadinassi.types.values import BSLArray
+from yadinassi.execution.codegen import experimental_naked_resources as resources
 
 
 def native_shape(value):

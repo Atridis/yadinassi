@@ -2,11 +2,11 @@
 from contextlib import contextmanager
 import unittest
 
-from yadinassi.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
-from yadinassi.experimental_direct_ast import compile_owned
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
 from yadinassi.syntax.parser import parse
-from yadinassi.experimental_naked_collections import UnsupportedNakedSyntax
-from yadinassi.values import HostFunction
+from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
+from yadinassi.types.values import HostFunction
 
 
 class ScopeContext(BoundaryContext):

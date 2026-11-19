@@ -3,9 +3,9 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.values import BSLType, _DIRECT_TYPE_PRESENTATIONS
-from yadinassi.experimental_naked_scalar_semantics import presentation, concatenate, typed_find
-from yadinassi.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.types.values import BSLType, _DIRECT_TYPE_PRESENTATIONS
+from yadinassi.execution.codegen.experimental_naked_scalar_semantics import presentation, concatenate, typed_find
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
 
 
 class TypePresentationTests(unittest.TestCase):
@@ -55,7 +55,7 @@ class TypePresentationTests(unittest.TestCase):
             def __str__(self):raise AssertionError('host str')
         for value in (forged,Foreign()):
             with self.assertRaises(BoundaryViolation):presentation(value)
-        with patch('yadinassi.values.BSLType',Foreign):
+        with patch('yadinassi.types.values.BSLType',Foreign):
             self.assertEqual(presentation(BSLType.NUMBER),'Число')
             with self.assertRaises(BoundaryViolation):presentation(Foreign())
 

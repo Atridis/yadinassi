@@ -4,8 +4,8 @@ from unittest.mock import patch
 import sqlite3
 from contextlib import closing
 import test_imported_kind_editor as fixture
-from yadinassi.form_event_simulation import FormDraftSession
-from yadinassi.catalog_backend import BackendError
+from yadinassi.forms.form_event_simulation import FormDraftSession
+from yadinassi.db.catalog.catalog_backend import BackendError
 
 class ScalarEditorSourceBoundaryTests(unittest.TestCase):
     def setUp(self):

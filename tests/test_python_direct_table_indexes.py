@@ -2,8 +2,8 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.value_tables import BSLValueTable,BSLCollectionIndex,BSLCollectionIndexes
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.collections.value_tables import BSLValueTable,BSLCollectionIndex,BSLCollectionIndexes
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class DirectTableIndexTests(unittest.TestCase):
     def test_source_ast_prepared_public_protocol(self):
@@ -43,7 +43,7 @@ class DirectTableIndexTests(unittest.TestCase):
 
     def test_budget_failure_is_atomic(self):
         vm=Interpreter();vm.execute('T=New ValueTable;T.Columns.Add("Key");T.Indexes.Add("Key");')
-        with patch('yadinassi.value_tables._MAX_INDEXES',1):
+        with patch('yadinassi.collections.value_tables._MAX_INDEXES',1):
             vm.execute('Try T.Indexes.Add("Key");Except Caught=True;EndTry;')
         self.assertTrue(vm.variables['caught']);self.assertEqual(vm.execute('T.Indexes.Count()'),1)
 

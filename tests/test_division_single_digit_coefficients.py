@@ -3,7 +3,7 @@ from decimal import Decimal, localcontext
 from fractions import Fraction
 import random
 import unittest
-from yadinassi.values import divide
+from yadinassi.types.values import divide
 from test_division import fraction_oracle, model_scale
 
 class SingleDigitCoefficientTests(unittest.TestCase):

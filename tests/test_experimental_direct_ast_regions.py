@@ -3,8 +3,9 @@ import subprocess
 import sys
 import unittest
 from unittest.mock import patch
-from yadinassi import Interpreter,python_direct
-from yadinassi import experimental_direct_ast as direct
+from yadinassi import Interpreter
+from yadinassi.execution.direct import python_direct
+from yadinassi.execution.codegen import experimental_direct_ast as direct
 import test_python_direct_collection_regions as canonical
 
 class DirectASTRegionTests(unittest.TestCase):
@@ -26,8 +27,9 @@ class DirectASTRegionTests(unittest.TestCase):
         script=r"""
 import functools,importlib,sys
 from unittest.mock import patch
-from yadinassi import Interpreter,python_direct
-from yadinassi import experimental_direct_ast as old
+from yadinassi import Interpreter
+from yadinassi.execution.direct import python_direct
+from yadinassi.execution.codegen import experimental_direct_ast as old
 real=functools.partial
 class Fake:
     __new__=real.__new__
@@ -41,8 +43,8 @@ seen=[]
 def callback(*args,**kwargs):
     seen.append('callback');return real(*args,**kwargs)
 functools.partial=callback
-sys.modules.pop('yadinassi.experimental_direct_ast')
-research=importlib.import_module('yadinassi.experimental_direct_ast')
+sys.modules.pop('yadinassi.execution.codegen.experimental_direct_ast')
+research=importlib.import_module('yadinassi.execution.codegen.experimental_direct_ast')
 functools.partial=real
 vm=Interpreter()
 with patch.object(python_direct,'_compile',research.compile_module):
@@ -58,8 +60,9 @@ if vm.variables or seen:raise AssertionError((vm.variables,seen))
         script=r"""
 import _operator,importlib,sys
 from unittest.mock import patch
-from yadinassi import Interpreter,python_direct
-from yadinassi import experimental_direct_ast
+from yadinassi import Interpreter
+from yadinassi.execution.direct import python_direct
+from yadinassi.execution.codegen import experimental_direct_ast
 spoof=set().add
 spoof.__module__='_operator'
 if experimental_direct_ast._native_operator_binding(spoof,'add'):raise AssertionError('bound method spoof accepted')
@@ -68,8 +71,8 @@ if not experimental_direct_ast._native_operator_binding(_operator.add,'add'):rai
 real=_operator.add;seen=[]
 def callback(*args):seen.append('callback');return real(*args)
 _operator.add=callback
-sys.modules.pop('yadinassi.experimental_direct_ast')
-research=importlib.import_module('yadinassi.experimental_direct_ast')
+sys.modules.pop('yadinassi.execution.codegen.experimental_direct_ast')
+research=importlib.import_module('yadinassi.execution.codegen.experimental_direct_ast')
 _operator.add=real
 vm=Interpreter()
 with patch.object(python_direct,'_compile',research.compile_module):

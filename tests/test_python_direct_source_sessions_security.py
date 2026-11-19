@@ -3,11 +3,11 @@ import unittest
 from unittest.mock import patch
 import test_python_direct_source_query as fixtures
 from test_source_session_parameters import package
-from yadinassi.configuration_source_runtime import SourceApplication,_SourceInterpreter
+from yadinassi.configuration.configuration_source_runtime import SourceApplication,_SourceInterpreter
 from yadinassi.runtime import Interpreter
-from yadinassi import python_direct_source_sessions as bridge
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.errors import BSLError
+from yadinassi.execution.direct.source import python_direct_source_sessions as bridge
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.types.errors import BSLError
 
 
 class DirectSourceSessionSecurity(unittest.TestCase):
@@ -36,7 +36,7 @@ class DirectSourceSessionSecurity(unittest.TestCase):
             self.assertIs(bridge.resolve(boundary,store,'__getitem__')('State'),False)
 
     def test_typed_property_byref_uses_canonical_writer(self):
-        from yadinassi.configuration_source import import_source
+        from yadinassi.configuration.configuration_source import import_source
         files={item.path:item.content for item in package('',kind='xs:boolean').files}
         files['Ext/SessionModule.bsl']=b'Procedure Change(V) V=False; EndProcedure Procedure SessionParametersSetting(Names) SessionParameters.State=True; Change(SessionParameters.State); Message(SessionParameters.State); EndProcedure'
         out=[];app=SourceApplication(import_source(files),output=out.append);self.addCleanup(app.close)
@@ -52,8 +52,8 @@ class DirectSourceSessionSecurity(unittest.TestCase):
             with self.assertRaises(BoundaryViolation):bridge.get(boundary,other.session_parameters,'State')
 
     def test_zero_parameter_lazy_handler_on_actual_server_context(self):
-        from yadinassi.configuration_source import import_source
-        from yadinassi.session_parameters import _UNSET
+        from yadinassi.configuration.configuration_source import import_source
+        from yadinassi.application.session_parameters import _UNSET
         config=package('',kind='xs:boolean')
         files={item.path:item.content for item in config.files}
         files['Ext/SessionModule.bsl']=b'Procedure SessionParametersSetting() SessionParameters.State=True; EndProcedure'
@@ -66,7 +66,7 @@ class DirectSourceSessionSecurity(unittest.TestCase):
             self.assertIs(bridge.get(boundary,app.session_parameters,'State'),True)
 
     def test_class_hook_replacement_refused_before_callback(self):
-        from yadinassi.session_parameters import BSLSessionParameters
+        from yadinassi.application.session_parameters import BSLSessionParameters
         app,caller,_=self.app();effects=[]
         for method in ('read','_authorize'):
             with self.subTest(method=method),self.boundary(app,caller) as boundary:

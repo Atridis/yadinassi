@@ -5,8 +5,8 @@ from unittest.mock import patch
 import test_python_direct_source_xdto as basic
 import test_python_direct_source_xdto_objects as flat
 import test_source_xdto_packages as existing
-from yadinassi import xdto_io, xdto_values
-from yadinassi.values import HostFunction
+from yadinassi.formats.xml import xdto_io, xdto_values
+from yadinassi.types.values import HostFunction
 
 BODY=flat.BODY.replace(b'</package>', b'''<objectType name="Tree"><property name="Label" type="xs:string" lowerBound="0"/><property name="Child" type="t:Flat" lowerBound="0" nillable="true"/><property name="Children" type="t:Flat" lowerBound="0" upperBound="-1"/><property name="Labels" type="xs:string" lowerBound="0" upperBound="-1"/></objectType><objectType name="Outer"><property name="Tree" type="t:Tree" lowerBound="0"/></objectType></package>''')
 

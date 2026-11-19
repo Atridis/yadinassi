@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from yadinassi.ui.configuration_app import ConfigurationController, ConfigurationProcess, PROTOCOL, load_application
 from yadinassi.ui.protocol import encode_value
 

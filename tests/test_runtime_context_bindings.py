@@ -3,11 +3,11 @@ from pathlib import Path
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.configuration_modules import MODULE_RUNTIME
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.values import HostFunction
+from yadinassi.configuration.configuration_modules import MODULE_RUNTIME
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.types.values import HostFunction
 from configuration_runtime_fixture import module_files, SERVER
 import test_catalog_queries as catalog_fixtures
 

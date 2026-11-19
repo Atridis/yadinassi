@@ -1,11 +1,11 @@
 import unittest
 from types import SimpleNamespace
-from yadinassi.python_direct_database import CatalogBoundary, _DETACHED_TYPE_IDS
-from yadinassi.values import BSLArray
-from yadinassi.value_tables import BSLValueTableRow, BSLCollectionIndexes
-from yadinassi.value_lists import BSLValueListItem
-from yadinassi.queries import BSLQuery
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.direct.python_direct_database import CatalogBoundary, _DETACHED_TYPE_IDS
+from yadinassi.types.values import BSLArray
+from yadinassi.collections.value_tables import BSLValueTableRow, BSLCollectionIndexes
+from yadinassi.collections.value_lists import BSLValueListItem
+from yadinassi.db.query.queries import BSLQuery
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class DetachedDispatchTests(unittest.TestCase):
     def test_exact_detached_type_still_checks_current_boundary(self):

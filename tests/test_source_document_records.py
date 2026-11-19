@@ -4,13 +4,13 @@ import unittest
 from pathlib import Path
 from uuid import uuid4
 import test_source_catalog_definitions as fixture
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_document_definitions import source_document_definitions
-from yadinassi.source_document_store import SourceDocumentStore
-from yadinassi.source_catalog_store import SourceCatalogStore
-from yadinassi.dates import BSLDate
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.document.source_document_definitions import source_document_definitions
+from yadinassi.db.document.source_document_store import SourceDocumentStore
+from yadinassi.db.catalog.source_catalog_store import SourceCatalogStore
+from yadinassi.temporal.dates import BSLDate
+from yadinassi.types.errors import BSLError
 
 BASE='<Name>Invoice</Name><NumberType>String</NumberType><NumberLength>9</NumberLength><NumberPeriodicity>Nonperiodical</NumberPeriodicity><CheckUnique>true</CheckUnique><Autonumbering>false</Autonumbering><Posting>Deny</Posting>'
 def package(body='',props=BASE,children='',extra=None):

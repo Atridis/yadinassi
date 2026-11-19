@@ -35,7 +35,7 @@ Managed form, the same source and lifecycle binding used by its comparator:
 ```sh
 PYTHONPATH=scripts:. python -B - <<'PY'
 from form_runtime_packet import source
-from yadinassi.form_runtime import FormSession
+from yadinassi.forms.form_runtime import FormSession
 session = FormSession(source(), bindings={
     'OnCreateAtServer': 'FormCreate', 'OnOpen': 'FormOpen',
     'BeforeClose': 'FormBeforeClose'})

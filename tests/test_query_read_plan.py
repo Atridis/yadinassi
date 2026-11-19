@@ -6,9 +6,9 @@ from unittest.mock import patch
 import test_catalog_scan_optimization as scans
 import test_document_query_port as documents
 import test_catalog_queries as queries
-from yadinassi.catalog_backend import CatalogScanRequest, CatalogOrder, BackendError
-from yadinassi.document_backend import DocumentScanRequest
-from yadinassi.queries import BSLQuery
+from yadinassi.db.catalog.catalog_backend import CatalogScanRequest, CatalogOrder, BackendError
+from yadinassi.db.document.document_backend import DocumentScanRequest
+from yadinassi.db.query.queries import BSLQuery
 
 
 class CatalogReadPlanTests(unittest.TestCase):
@@ -92,7 +92,7 @@ class BindingReadPlanTests(unittest.TestCase):
         self.assertEqual(simple._columns, package._columns)
 
     def test_relational_scan_receives_safe_filter(self):
-        from yadinassi.sqlite_catalog import _View
+        from yadinassi.db.sqlite.sqlite_catalog import _View
         original = _View.scan_catalog_values; predicates = []
         def scan(view, identity, request, fields):
             predicates.append(request.predicate)
@@ -144,9 +144,9 @@ class QueryIndexTests(unittest.TestCase):
     def test_uuid_index_supplies_default_order_and_write_collation(self):
         import sqlite3
         from uuid import UUID
-        from yadinassi.catalog_backend import CatalogSchema
-        from yadinassi.sqlite_query_indexes import register_query_collations, catalog_query_index_ddls
-        from yadinassi.sqlite_catalog_layout import build_layout, quote_identifier
+        from yadinassi.db.catalog.catalog_backend import CatalogSchema
+        from yadinassi.db.sqlite.sqlite_query_indexes import register_query_collations, catalog_query_index_ddls
+        from yadinassi.db.sqlite.sqlite_catalog_layout import build_layout, quote_identifier
         schema = CatalogSchema(UUID(int=9), 'Items', 10, 20)
         layout = build_layout((schema,)); name = quote_identifier(layout.table_name(schema.identity))
         db = sqlite3.connect(':memory:'); self.addCleanup(db.close)
@@ -163,7 +163,7 @@ class QueryIndexTests(unittest.TestCase):
 
     def test_no_implicit_index_creation(self):
         import sqlite3
-        from yadinassi.sqlite_query_indexes import register_query_collations
+        from yadinassi.db.sqlite.sqlite_query_indexes import register_query_collations
         db = sqlite3.connect(':memory:'); self.addCleanup(db.close)
         register_query_collations(db)
         self.assertEqual(db.execute('SELECT count(*) FROM sqlite_master').fetchone()[0], 0)

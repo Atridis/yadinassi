@@ -2,7 +2,7 @@
 from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import patch
-from yadinassi import experimental_naked_scalar_semantics as scalar
+from yadinassi.execution.codegen import experimental_naked_scalar_semantics as scalar
 
 @contextmanager
 def direct_equality():

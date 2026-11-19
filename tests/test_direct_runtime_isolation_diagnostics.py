@@ -3,7 +3,7 @@ import gc
 import unittest
 import weakref
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 
 
 class DirectRuntimeIsolationDiagnosticsTests(unittest.TestCase):

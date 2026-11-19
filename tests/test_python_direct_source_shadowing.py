@@ -4,11 +4,11 @@ from unittest.mock import patch
 import test_source_manager_modules as managers
 import test_source_application_exports as exports
 from test_configuration_source_runtime import source
-from yadinassi.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.runtime import Interpreter
-from yadinassi.experimental_direct_ast import compile_owned
+from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
 from yadinassi.syntax.parser import parse
-from yadinassi.experimental_naked_collections import UnsupportedNakedSyntax
+from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
 
 class SourceShadowingTests(unittest.TestCase):
     def setUp(self):
@@ -33,7 +33,7 @@ Procedure Third(Val Catalogs) Message(Catalogs);EndProcedure'''
         _,out=self.run_app(source(code.encode()));self.assertEqual(out,['7','8','6'])
         package=managers.configuration('Change();Message(Catalogs.Items.Answer());')
         # A sibling is available in this source session, but its local is not.
-        from yadinassi.configuration_source import import_source
+        from yadinassi.configuration.configuration_source import import_source
         files={f.path:f.content for f in package.files}
         files['Ext/SessionModule.bsl']+=b'\nProcedure Change() Catalogs=7;EndProcedure'
         _,out=self.run_app(import_source(files));self.assertEqual(out,['42'])
@@ -56,14 +56,14 @@ Procedure Change(X) X=9;EndProcedure'''
         with self.assertRaises(ValueError):compile_owned([],source_text='',source_name='shadow.bsl',shadowable_externals=('catalogs',))
 
     def test_late_export_conflict_rejected_before_routine_effects(self):
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         app,out=self.run_app(source(b'Procedure P() Message("bad");Catalogs=7;EndProcedure'))
         app.interpreter.exported_variables.add('catalogs')
         with self.assertRaises(BoundaryViolation):app.interpreter.execute('P();')
         self.assertEqual(out,[])
 
     def test_noncanonical_export_inventory_rejected_without_iteration(self):
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         calls=[]
         class Poison(set):
             def __iter__(self):calls.append('iter');raise AssertionError('callback')
@@ -73,7 +73,7 @@ Procedure Change(X) X=9;EndProcedure'''
         try:
             # Validate the existing routine plan directly, without first
             # compiling a new statement plan from the poisoned inventory.
-            from yadinassi.python_direct_source import _check_plan
+            from yadinassi.execution.direct.python_direct_source import _check_plan
             plan=app.interpreter._direct_source_plans['p'][1]
             with self.assertRaises(BoundaryViolation):_check_plan(app.interpreter,plan)
         finally:app.interpreter.exported_variables=original

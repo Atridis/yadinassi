@@ -2,11 +2,11 @@
 import unittest
 from test_source_manager_modules import configuration
 from test_source_server_call import module
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 from yadinassi.runtime import Interpreter
-from yadinassi.source_manager_modules import SourceManagers
+from yadinassi.configuration.source_manager_modules import SourceManagers
 
 FAMILIES = (
     ('Catalog','Catalogs','Справочники'), ('Document','Documents','Документы'),
@@ -116,7 +116,7 @@ class SourceManagerFamiliesTests(unittest.TestCase):
     def test_selected_source_form_server_dynamic_manager(self):
         from test_source_forms import files, request
         from test_source_metadata import xml
-        from yadinassi.source_forms import SourceFormController
+        from yadinassi.forms.source_forms import SourceFormController
         mapping=files(b'&AtServer\nProcedure Created(Cancel, StandardProcessing) Greeting=InformationRegisters["Items"].Answer(); EndProcedure\n&AtClient\nProcedure Go(Command) EndProcedure')
         mapping['InformationRegisters/Items.xml']=xml('InformationRegister','Items')
         mapping['InformationRegisters/Items/Ext/ManagerModule.bsl']=b'Function Answer() Export Return "manager"; EndFunction'

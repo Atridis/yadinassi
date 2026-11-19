@@ -7,7 +7,7 @@ class OwningProfilesTests(unittest.TestCase):
         from importlib import import_module
         original=getattr(import_module(module),cls)(name)
         self.addCleanup(original.doCleanups)
-        with patch('yadinassi.experimental_naked_collections.prepare',create=True,side_effect=AssertionError('old compiler')):
+        with patch('yadinassi.execution.codegen.experimental_naked_collections.prepare',create=True,side_effect=AssertionError('old compiler')):
             original.setUp()
             try:getattr(original,name)()
             finally:original.tearDown()
@@ -24,10 +24,10 @@ class OwningProfilesTests(unittest.TestCase):
         self.scenario('test_python_direct_catalog_preparation','DirectCatalogPreparationTests','test_original_handler_writes_without_vm_execution')
 
     def test_posting_style_unknown_host_argument_never_leaks_sentinel(self):
-        from yadinassi.experimental_direct_ast import compile_owned
-        from yadinassi.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
         from yadinassi.syntax.parser import parse
-        from yadinassi.errors import BSLRuntimeError
+        from yadinassi.types.errors import BSLRuntimeError
         text='Procedure Event() Capture(Missing);EndProcedure Event();'
         plan=compile_owned(parse(text),source_text=text,source_name='<host-binding>',host_bindings=True)
         seen=[];context=BoundaryContext(services={'capture':seen.append})

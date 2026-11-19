@@ -2,8 +2,8 @@ import unittest
 from decimal import Decimal
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.experimental_naked_collections import UnsupportedNakedSyntax
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
 
 class DirectEvalTests(unittest.TestCase):
     def test_source_ast_prepared_live_locals_and_module(self):
@@ -112,7 +112,7 @@ class EvalPreparationReuseTests(unittest.TestCase):
 
     def test_retained_units_do_not_retain_owner_or_scope(self):
         import gc,weakref
-        import yadinassi.python_direct_execute as fragments
+        import yadinassi.execution.direct.python_direct_execute as fragments
         units=[];refs=[];original=fragments.FragmentScope.__init__
         def track(scope,*args):
             original(scope,*args);refs.extend((weakref.ref(scope),weakref.ref(scope.context)))

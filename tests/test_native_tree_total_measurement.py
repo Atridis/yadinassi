@@ -4,8 +4,8 @@ from pathlib import Path
 import unittest
 from unittest import mock
 from yadinassi import Interpreter
-from yadinassi.values import HostFunction
-from yadinassi.value_trees import BSLValueTreeRowCollection as Rows
+from yadinassi.types.values import HostFunction
+from yadinassi.collections.value_trees import BSLValueTreeRowCollection as Rows
 from scripts import native_1c_tree_total_contract as contract
 
 ROOT = Path(__file__).resolve().parents[1]

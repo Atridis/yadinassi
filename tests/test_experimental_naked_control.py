@@ -2,9 +2,9 @@ import os
 import threading
 import unittest
 from unittest.mock import patch
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from tests.direct_boundary_compile import compile_boundary
-from yadinassi.experimental_naked_control import SharedBoundaryContext
+from yadinassi.execution.codegen.experimental_naked_control import SharedBoundaryContext
 
 class SharedBoundaryTests(unittest.TestCase):
 

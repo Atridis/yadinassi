@@ -8,11 +8,11 @@ import tempfile
 import unittest
 from uuid import UUID
 
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_posting_application import import_posting_application, canonical, PROFILE
-from yadinassi.configuration_posting import import_posting_configuration, PROFILE as CORE_PROFILE
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_posting_application import import_posting_application, canonical, PROFILE
+from yadinassi.configuration.configuration_posting import import_posting_configuration, PROFILE as CORE_PROFILE
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from posting_application_fixture import source, FORM_MODULE
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -119,5 +119,5 @@ class PostingApplicationSourceTests(unittest.TestCase):
         self.assertEqual([d.name for d in config.documents],['Order','Alpha'])
         with tempfile.TemporaryDirectory(dir=ROOT.parent) as tmp:
             with closing(SQLiteDBContext.create_posting(Path(tmp)/'app.sqlite',config)) as context:
-                from yadinassi.document_posting_host import RootPostingOperations
+                from yadinassi.db.document.document_posting_host import RootPostingOperations
                 host=RootPostingOperations(context,config);host.verify_source();host.close()

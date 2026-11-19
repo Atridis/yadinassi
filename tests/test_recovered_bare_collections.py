@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch
-from yadinassi.native_bare_collections import (
+from yadinassi.execution.codegen.native_bare_collections import (
     BareArray, BareMap, BareMapEntry, BareStructure, BareValueList, BareValueListItem,
 )
 

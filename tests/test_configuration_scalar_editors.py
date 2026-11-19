@@ -6,13 +6,13 @@ from pathlib import Path
 import unittest
 
 import test_configuration_reference_app as reference_tests
-from yadinassi.catalogs import BSLCatalogs
-from yadinassi.configuration_reference_profile import import_reference_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.dates import BSLDate, date
-from yadinassi.document_backend import DocumentSelection
-from yadinassi.documents import BSLDocuments
-from yadinassi.metadata import BSLMetadata, BSLCatalogMetadataCollection
+from yadinassi.db.catalog.catalogs import BSLCatalogs
+from yadinassi.configuration.configuration_reference_profile import import_reference_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.temporal.dates import BSLDate, date
+from yadinassi.db.document.document_backend import DocumentSelection
+from yadinassi.db.document.documents import BSLDocuments
+from yadinassi.configuration.metadata import BSLMetadata, BSLCatalogMetadataCollection
 from yadinassi.ui.configuration_app import ConfigurationProcess, ConfigurationController, PROTOCOL, load_application
 from yadinassi.ui.protocol import encode_value
 

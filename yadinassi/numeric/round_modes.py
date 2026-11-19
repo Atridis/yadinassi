@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Iterator
 
-from ..values import BSLObject
+from yadinassi.types.values import BSLObject
 
 
 class BSLRoundMode(Enum):

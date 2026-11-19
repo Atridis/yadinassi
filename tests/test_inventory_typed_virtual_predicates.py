@@ -11,11 +11,11 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi import query_parser as syntax
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_inventory_enums import PROFILE
-from yadinassi.configuration_profile_import import prepare_directory, create_prepared
-from yadinassi.values import BSLArray, BSLFixedArray, NULL
+from yadinassi.db.query import query_parser as syntax
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_inventory_enums import PROFILE
+from yadinassi.configuration.configuration_profile_import import prepare_directory, create_prepared
+from yadinassi.types.values import BSLArray, BSLFixedArray, NULL
 
 ROOT=Path(__file__).resolve().parents[1]
 SOURCE=ROOT/'scripts/inventory_typed_filter_behavior'
@@ -141,7 +141,7 @@ class TypedVirtualRuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'member limit'):self.report('Unit IN (&V)',V=array(*([self.u]*257)))
 
     def test_list_snapshot_is_once_per_execute_and_shared_by_sources(self):
-        from yadinassi import relational_queries
+        from yadinassi.db.query import relational_queries
         values=array(self.u)
         q=self.query('SELECT A.QuantityBalance AS X,B.QuantityBalance AS Y FROM '+REG+
             'Balance(&At,Unit IN (&V)) AS A INNER JOIN '+REG+
@@ -176,7 +176,7 @@ class TypedVirtualRuntimeTests(unittest.TestCase):
             def __call__(self,*a):touched.append('call')
             def __eq__(self,other):touched.append('eq');return True
             def __hash__(self):touched.append('hash');return 1
-        with patch('yadinassi.accumulation_queries.load', side_effect=AssertionError('no source scan')):
+        with patch('yadinassi.db.query.accumulation_queries.load', side_effect=AssertionError('no source scan')):
             with self.assertRaises((TypeError,ValueError,BackendError)): self.report('Product IN (&V)',V=array(self.w))
         self.assertIsNone(self.context.backend._active)
         for value in (replace(self.p,read_member=Hook()),replace(self.p,metadata=object())):
@@ -189,7 +189,7 @@ class TypedVirtualRuntimeTests(unittest.TestCase):
             with self.assertRaises((TypeError,ValueError)):self.report('Unit IN (&V)',V=value)
 
     def test_all_terms_bound_and_limits_remain_closed(self):
-        with patch('yadinassi.accumulation_queries.load',side_effect=AssertionError('no source scan')):
+        with patch('yadinassi.db.query.accumulation_queries.load',side_effect=AssertionError('no source scan')):
             with self.assertRaises(ValueError):self.report('Unit IN (&Empty) AND Missing=&U',Empty=array())
             self.assertIsNone(self.context.backend._active)
         with patch.object(self.context.backend,'begin_query_read',side_effect=AssertionError('no query lease')):
@@ -202,7 +202,7 @@ class TypedVirtualRuntimeTests(unittest.TestCase):
     def test_unselected_rows_and_fields_charge_before_filter(self):
         with patch.object(syntax,'MAX_ROWS',1):
             with self.assertRaisesRegex(ValueError,'input row limit'):self.report('Unit=&U')
-        with patch('yadinassi.queries._MAX_CELLS',20):
+        with patch('yadinassi.db.query.queries._MAX_CELLS',20):
             with self.assertRaisesRegex(ValueError,'input resource limit'):self.report('Unit=&U')
 
     def test_unselected_raw_edit_is_detected_after_warm_read(self):
@@ -219,7 +219,7 @@ class TypedVirtualRuntimeTests(unittest.TestCase):
                          self.query('SELECT Unit FROM Catalog.Products').execute()._rows)
 
     def test_legacy_profiles_do_not_gain_virtual_in(self):
-        from yadinassi.configuration_accumulation_references import PROFILE as LEGACY
+        from yadinassi.configuration.configuration_accumulation_references import PROFILE as LEGACY
         path=Path(self.temp.name)/'legacy.sqlite'
         with closing(create_prepared(path,prepare_directory(ROOT/'scripts/inventory_reference_behavior/runtime_source',profile=LEGACY))) as context:
             with closing(Interpreter(database_context=context)) as vm:
@@ -230,22 +230,22 @@ class TypedVirtualRuntimeTests(unittest.TestCase):
 
     def test_reused_array_charges_each_term_before_dedup(self):
         values=array('lot','lot')
-        with patch('yadinassi.queries._MAX_RESULT_TEXT',10):
+        with patch('yadinassi.db.query.queries._MAX_RESULT_TEXT',10):
             with self.assertRaisesRegex(ValueError,'binding resource limit'):
                 self.report('Batch IN (&V) AND Batch IN (&V)',V=values)
-        with patch('yadinassi.queries._MAX_CELLS',3):
+        with patch('yadinassi.db.query.queries._MAX_CELLS',3):
             with self.assertRaisesRegex(ValueError,'binding resource limit'):
                 self.report('Batch IN (&V) AND Batch IN (&V)',V=values)
 
     def test_binding_budget_is_shared_across_joined_sources(self):
         text='SELECT A.QuantityBalance AS X,B.QuantityBalance AS Y FROM '+REG+'Balance(&At,Batch IN (&V)) AS A INNER JOIN '+REG+'Balance(&At,Batch IN (&V)) AS B ON A.Unit=B.Unit'
-        with patch('yadinassi.queries._MAX_RESULT_TEXT',10):
+        with patch('yadinassi.db.query.queries._MAX_RESULT_TEXT',10):
             with self.assertRaisesRegex(ValueError,'binding resource limit'):
                 self.query(text,V=array('lot','lot')).execute()
 
     def test_empty_scan_revalidates_issuer_after_binding_inside_view(self):
         self.vm.execute('First.Write(DocumentWriteMode.UndoPosting);Second.Write(DocumentWriteMode.UndoPosting);')
-        from yadinassi.inventory_enum_runtime import query_binding
+        from yadinassi.configuration.demos.inventory_enum_runtime import query_binding
         binding=query_binding(self.vm.execute('Catalogs'))
         manager=binding._namespace._managers['units'];old=manager._values
         original=self.context.backend.begin_query_read

@@ -6,8 +6,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from test_main_demo_configuration import source, ROOT
-from yadinassi.configuration_main_demo import PROFILE, import_main_demo_configuration
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.configuration.configuration_main_demo import PROFILE, import_main_demo_configuration
+from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.ui.database_launch import binding, main
 from yadinassi.ui.main_demo_host import MainDemoHost
 from yadinassi.ui.main_demo_web import MainDemoHandler

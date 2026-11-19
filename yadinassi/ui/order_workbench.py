@@ -10,13 +10,13 @@ from decimal import Decimal
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
-from ..catalog_backend import (BackendError, CatalogComparison, CatalogScanRequest,
+from yadinassi.db.catalog.catalog_backend import (BackendError, CatalogComparison, CatalogScanRequest,
     CatalogOrder, CatalogValuePage, CatalogValueRow, CatalogKey, TabularRow)
-from ..catalog_object_preparation import CatalogWriteRefused
-from ..catalog_sections import BSLCatalogSection
-from ..form_runtime import FormServerBinding
-from ..form_tables import validate_table_data, MAX_TABLE_ROWS, MAX_TABLE_ALLOCATED
-from ..invocation import _encode_scalar
+from yadinassi.db.catalog.catalog_object_preparation import CatalogWriteRefused
+from yadinassi.db.catalog.catalog_sections import BSLCatalogSection
+from yadinassi.forms.form_runtime import FormServerBinding
+from yadinassi.forms.form_tables import validate_table_data, MAX_TABLE_ROWS, MAX_TABLE_ALLOCATED
+from yadinassi.execution.invocation import _encode_scalar
 from .protocol import encode_line, encode_value
 
 
@@ -113,7 +113,7 @@ class OrdersWorkbenchSession:
         budgets and selections. The complete prospective response is byte-bounded
         too, rather than exposing a truncated editable prefix on load failure.
         """
-        from ..form_replication import _pack_state, _unpack_state
+        from yadinassi.forms.form_replication import _pack_state, _unpack_state
         form = session.form
         data = dict(form._data)
         data.update(values)
@@ -147,7 +147,7 @@ class OrdersWorkbenchSession:
 
     @staticmethod
     def _install(session, prepared):
-        from ..form_replication import _install_state
+        from yadinassi.forms.form_replication import _install_state
         _install_state(session, prepared)
 
     def list_page(self, session, code):

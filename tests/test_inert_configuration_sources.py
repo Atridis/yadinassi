@@ -9,11 +9,11 @@ import unittest
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
-from yadinassi.catalog_backend import BackendError, CatalogSchema
-from yadinassi.configuration_xml import INERT_SOURCE_ISSUE, import_configuration, import_inert_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _json, _schema_data
-from yadinassi.sqlite_catalog_migration import prepare_v1
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogSchema
+from yadinassi.configuration.configuration_xml import INERT_SOURCE_ISSUE, import_configuration, import_inert_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _json, _schema_data
+from yadinassi.db.sqlite.sqlite_catalog_migration import prepare_v1
 
 CONFIG = UUID('10000000-0000-0000-0000-000000000001')
 CATALOG = UUID('10000000-0000-0000-0000-000000000002')
@@ -358,7 +358,7 @@ class DemoKindsSourceImportTests(unittest.TestCase):
         return legacy_demo_files()
 
     def test_original_full_source_retained_with_only_numbered_kinds(self):
-        from yadinassi.configuration_xml import DEMO_KINDS_PROFILE, DEMO_KINDS_SOURCE_ISSUE, import_demo_kinds_configuration
+        from yadinassi.configuration.configuration_xml import DEMO_KINDS_PROFILE, DEMO_KINDS_SOURCE_ISSUE, import_demo_kinds_configuration
         files = self.source()
         imported = import_demo_kinds_configuration(files)
         self.assertEqual(DEMO_KINDS_PROFILE, 'demo_kinds_v1')
@@ -374,7 +374,7 @@ class DemoKindsSourceImportTests(unittest.TestCase):
             self.assertIs(f.content, files[f.path])
 
     def test_original_all_catalog_and_form_identity_inventory_retained(self):
-        from yadinassi.configuration_xml import _demo_kinds_configuration, _inert_configuration
+        from yadinassi.configuration.configuration_xml import _demo_kinds_configuration, _inert_configuration
         files = self.source()
         imported, inventory = _demo_kinds_configuration(files)
         inert, expected = _inert_configuration(files)
@@ -389,7 +389,7 @@ class DemoKindsSourceImportTests(unittest.TestCase):
         self.assertEqual(kinds.default_object_form, 'Catalog.ВидыНоменклатуры.Form.ФормаЭлемента')
 
     def test_admission_uses_original_immutable_snapshot_and_stable_order(self):
-        from yadinassi.configuration_xml import import_demo_kinds_configuration
+        from yadinassi.configuration.configuration_xml import import_demo_kinds_configuration
         files = self.source()
         snapshot = dict(files)
         imported = import_demo_kinds_configuration(files)
@@ -399,7 +399,7 @@ class DemoKindsSourceImportTests(unittest.TestCase):
         self.assertEqual({f.path: f.content for f in imported.files}, snapshot)
 
     def test_every_source_is_hash_bound_even_harmless_whitespace(self):
-        from yadinassi.configuration_xml import import_demo_kinds_configuration
+        from yadinassi.configuration.configuration_xml import import_demo_kinds_configuration
         original = self.source()
         for path in original:
             files = dict(original); files[path] += b'\n'
@@ -407,7 +407,7 @@ class DemoKindsSourceImportTests(unittest.TestCase):
                 import_demo_kinds_configuration(files)
 
     def test_recognized_catalog_settings_are_not_projection_admission(self):
-        from yadinassi.configuration_xml import import_demo_kinds_configuration
+        from yadinassi.configuration.configuration_xml import import_demo_kinds_configuration
         for old, new in ((b'<CodeLength>9', b'<CodeLength>8'),
                          (b'<DescriptionLength>100', b'<DescriptionLength>64'),
                          (b'<Hierarchical>false', b'<Hierarchical>true'),
@@ -425,7 +425,7 @@ class DemoKindsSourceImportTests(unittest.TestCase):
                 import_demo_kinds_configuration(files)
 
     def test_original_and_inert_module_changes_are_rejected(self):
-        from yadinassi.configuration_xml import import_demo_kinds_configuration
+        from yadinassi.configuration.configuration_xml import import_demo_kinds_configuration
         original = self.source()
         for path in (p for p in original if p.endswith('.bsl')):
             files = dict(original); files[path] += b'\n// harmless additional comment\n'
@@ -439,7 +439,7 @@ class DemoKindsSourceImportTests(unittest.TestCase):
             import_demo_kinds_configuration(files)
 
     def test_every_missing_file_fails_closed_including_inert_sources(self):
-        from yadinassi.configuration_xml import import_demo_kinds_configuration
+        from yadinassi.configuration.configuration_xml import import_demo_kinds_configuration
         original = self.source()
         for path in original:
             files = dict(original); del files[path]
@@ -447,7 +447,7 @@ class DemoKindsSourceImportTests(unittest.TestCase):
                 import_demo_kinds_configuration(files)
 
     def test_extra_files_and_path_aliases_fail_closed(self):
-        from yadinassi.configuration_xml import import_demo_kinds_configuration
+        from yadinassi.configuration.configuration_xml import import_demo_kinds_configuration
         for path, raw in (('Extra.xml', b'<x/>'), ('Ext/SessionModule.bsl', b''),
                           ('Catalogs/ВидыНоменклатуры/Ext/ObjectModule.bsl', b''),
                           ('Catalogs/Склады/Ext/ObjectModule.bsl', b''),
@@ -459,7 +459,7 @@ class DemoKindsSourceImportTests(unittest.TestCase):
         with self.assertRaises(ValueError): import_demo_kinds_configuration(files)
 
     def test_exact_bytes_do_not_normalize_bom_or_line_endings(self):
-        from yadinassi.configuration_xml import import_demo_kinds_configuration
+        from yadinassi.configuration.configuration_xml import import_demo_kinds_configuration
         original = self.source()
         for raw in (b'\xef\xbb\xbf'+original[self.MODULE], original[self.MODULE].replace(b'\n', b'\r\n')):
             files = dict(original); files[self.MODULE] = raw
@@ -467,8 +467,8 @@ class DemoKindsSourceImportTests(unittest.TestCase):
                 import_demo_kinds_configuration(files)
 
     def test_original_form_analyzer_runs_and_its_rejection_is_not_ignored(self):
-        from yadinassi.configuration_xml import import_demo_kinds_configuration
-        from yadinassi import form_module_analysis as analysis
+        from yadinassi.configuration.configuration_xml import import_demo_kinds_configuration
+        from yadinassi.forms import form_module_analysis as analysis
         files = self.source()
         with patch.object(analysis, 'analyze_form_module', wraps=analysis.analyze_form_module) as analyze:
             import_demo_kinds_configuration(files)
@@ -483,7 +483,7 @@ class DemoKindsSourceImportTests(unittest.TestCase):
                 import_demo_kinds_configuration(files)
 
     def test_generic_import_and_activation_remain_closed(self):
-        from yadinassi.configuration_xml import import_demo_kinds_configuration
+        from yadinassi.configuration.configuration_xml import import_demo_kinds_configuration
         files = self.source()
         for policy in ('explicit', 'decimal_v1'):
             with self.subTest(policy=policy), self.assertRaises(ValueError):
@@ -496,7 +496,7 @@ class DemoKindsSourceImportTests(unittest.TestCase):
             self.assertFalse(target.exists())
 
     def test_exact_input_types_and_source_budgets_remain_enforced(self):
-        from yadinassi.configuration_xml import import_demo_kinds_configuration
+        from yadinassi.configuration.configuration_xml import import_demo_kinds_configuration
         for raw in (None, '', bytearray(b''), b'\xff', b' '*(1024*1024+1)):
             files = self.source(); files[self.MODULE] = raw
             with self.subTest(kind=type(raw)), self.assertRaises(ValueError):

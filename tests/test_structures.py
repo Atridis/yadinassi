@@ -12,7 +12,7 @@ import tempfile
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 
 
 class StructureTests(unittest.TestCase):

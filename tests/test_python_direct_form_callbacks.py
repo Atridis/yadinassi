@@ -1,9 +1,9 @@
 import unittest
 from unittest.mock import patch
 from yadinassi.runtime import Interpreter
-from yadinassi.form_runtime import FormSession
-from yadinassi.callbacks import BSLCallbackDescription
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.forms.form_runtime import FormSession
+from yadinassi.application.callbacks import BSLCallbackDescription
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 SOURCE='''Var Observed;
 Procedure Make() Capture(New CallbackDescription("Done",ThisObject));EndProcedure
@@ -45,8 +45,8 @@ class DirectCallbackTests(unittest.TestCase):
         self.assertEqual(session.interpreter.variables['observed'],'partial')
         self.assertFalse(session._busy);self.assertFalse(session._completion_active)
     def test_validated_schema_names_refresh_without_body_or_value_recompile(self):
-        from yadinassi.form_model import BSLFormAttribute
-        from yadinassi.type_descriptions import BSLTypeDescription
+        from yadinassi.forms.form_model import BSLFormAttribute
+        from yadinassi.types.type_descriptions import BSLTypeDescription
         session=FormSession('Procedure Event() Capture(Field);EndProcedure')
         values=[];session.interpreter.register_function('Capture',values.append)
         # Mirrors the already-validated replica schema installation, not source.

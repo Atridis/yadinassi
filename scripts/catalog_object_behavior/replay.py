@@ -74,8 +74,8 @@ def logical_model_files(setup):
 
 def replay():
     from yadinassi import Interpreter
-    from yadinassi.configuration_xml import import_configuration
-    from yadinassi.database_context import SQLiteDBContext
+    from yadinassi.configuration.configuration_xml import import_configuration
+    from yadinassi.db.database_context import SQLiteDBContext
     setup,assets=load_saved();rows=[]
     require_behavior_profile(setup,assets['generated/Catalog.xml'])
     def emit(number,value):

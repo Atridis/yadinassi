@@ -6,10 +6,10 @@ import unittest
 from unittest.mock import patch
 from test_source_catalog_records import package as catalogs
 from test_source_constants_runtime import package as constants
-from yadinassi.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.runtime import Interpreter
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.errors import BSLError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.types.errors import BSLError
 
 
 class DirectSourceStorageTests(unittest.TestCase):
@@ -38,7 +38,7 @@ class DirectSourceStorageTests(unittest.TestCase):
         self.assertEqual(out,['Да','Second'])
 
     def test_unexpected_suspension_closes_operation(self):
-        from yadinassi.python_direct_source_storage import finish
+        from yadinassi.execution.direct.source.python_direct_source_storage import finish
         cleaned=[]
         def operation():
             try:yield object()
@@ -64,7 +64,7 @@ class DirectSourceStorageTests(unittest.TestCase):
         self.assertEqual(out,[])
 
     def test_safe_mode_change_in_argument_prevents_write(self):
-        from yadinassi.configuration_source import import_source
+        from yadinassi.configuration.configuration_source import import_source
         source=constants('Constants.Flag.Set(ChangeMode());')
         files={entry.path:entry.content for entry in source.files}
         files['Ext/SessionModule.bsl']+=b' Function ChangeMode() SetSafeMode(True); Return True; EndFunction'

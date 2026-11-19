@@ -1,6 +1,6 @@
 # Replicated form host API
 
-`yadinassi.form_replication` is an opt-in Python embedding API for a detached
+`yadinassi.forms.form_replication` is an opt-in Python embedding API for a detached
 client/server form pair. It is not a new CLI mode, network listener or native 1C
 compatibility claim. Existing `FormSession` remains a local shared-model session.
 The synthetic tests do not replace native platform observations.

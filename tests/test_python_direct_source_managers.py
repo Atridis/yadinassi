@@ -4,10 +4,10 @@ import unittest
 from unittest.mock import patch
 from test_source_manager_modules import configuration
 from test_source_manager_families import FAMILIES
-from yadinassi.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.runtime import Interpreter
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.errors import BSLError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.types.errors import BSLError
 
 
 class DirectSourceManagers(unittest.TestCase):
@@ -31,7 +31,7 @@ class DirectSourceManagers(unittest.TestCase):
         self.assertEqual(out,['42'])
 
     def test_client_index_denied_before_index_expression(self):
-        from yadinassi.configuration_source import import_source
+        from yadinassi.configuration.configuration_source import import_source
         config=configuration('Try Catalogs[Name()].Answer(); Except Message("denied"); EndTry;',session=False)
         files={entry.path:entry.content for entry in config.files}
         files['Ext/ManagedApplicationModule.bsl']+=b' Function Name() Message("effect"); Return "Items"; EndFunction'

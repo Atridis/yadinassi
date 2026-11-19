@@ -11,7 +11,7 @@ import unittest
 from unittest import mock
 
 from yadinassi import Interpreter, launcher
-from yadinassi.cli_emit_python import emit_file, sources
+from yadinassi.cli_support.cli_emit_python import emit_file, sources
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -42,7 +42,7 @@ class EmitPythonTests(unittest.TestCase):
         emitted = (self.out / (self.script.stem + '.py')).read_text(encoding='utf-8')
         ast.parse(emitted)
         # Capture the actual ordinary execute() compilation, not a second emitter.
-        from yadinassi import python_direct
+        from yadinassi.execution.direct import python_direct
         actual = python_direct._compile
         plans = []
         def capture(*args, **kwargs):
@@ -144,7 +144,7 @@ class EmitPythonTests(unittest.TestCase):
     def test_windows_reserved_output_name_rejected_on_every_platform(self):
         source = self.root / 'CON.bsl'
         if os.name == 'nt':
-            from yadinassi.cli_emit_python import _portable_name
+            from yadinassi.cli_support.cli_emit_python import _portable_name
             with self.assertRaises(ValueError):
                 _portable_name('CON.py')
         else:

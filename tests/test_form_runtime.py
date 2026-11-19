@@ -2,9 +2,9 @@
 import unittest
 from decimal import Decimal
 from unittest.mock import patch
-from yadinassi.form_runtime import FormSession, FormLimitError
-from yadinassi.form_model import BSLFormAttribute
-from yadinassi.type_descriptions import BSLTypeDescription
+from yadinassi.forms.form_runtime import FormSession, FormLimitError
+from yadinassi.forms.form_model import BSLFormAttribute
+from yadinassi.types.type_descriptions import BSLTypeDescription
 
 SOURCE = '''
 &AtServer
@@ -103,7 +103,7 @@ class FormRuntimeTests(unittest.TestCase):
 
     def test_execution_budget(self):
         session=make(SOURCE.replace('ThisObject.Dynamic = ThisObject.Dynamic + ":open";', 'While True Do EndDo;'))
-        with patch('yadinassi.form_runtime.MAX_STEPS',100):
+        with patch('yadinassi.forms.form_runtime.MAX_STEPS',100):
             with self.assertRaises(FormLimitError):session.open()
         self.assertFalse(session._busy)
         self.assertTrue(session.closed)
@@ -181,7 +181,7 @@ EndProcedure
 
     def test_allocation_ledger_and_no_partially_added_item(self):
         session=make()
-        with patch('yadinassi.form_model.MAX_ALLOCATED',2):
+        with patch('yadinassi.forms.form_model.MAX_ALLOCATED',2):
             with self.assertRaises(Exception):session.open()
         self.assertEqual(session._allocated,2)
         self.assertEqual(tuple(session.form.commands._values),())
@@ -204,8 +204,8 @@ EndProcedure
         self.assertEqual(session.revision,1)
 
     def test_registry_codec_refusal(self):
-        from yadinassi import type_values
-        from yadinassi.values import BSLType
+        from yadinassi.types import type_values
+        from yadinassi.types.values import BSLType
         session=make();session.open()
         self.assertIs(type_values.type_of(session.form),BSLType.FORM)
         self.assertIs(type_values.type_of(session.form.items),BSLType.FORM_ITEMS)

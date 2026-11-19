@@ -11,7 +11,7 @@ for path in (ROOT,ROOT/'scripts'):
 import native_1c_http_family_contract as contract
 import native_1c_http_route as route
 from native_1c_http_fixture import owned_fixture
-from yadinassi.http_client import BSLHTTPConnection, BSLHTTPRequest
+from yadinassi.http.http_client import BSLHTTPConnection, BSLHTTPRequest
 
 
 class HTTPPacketTests(unittest.TestCase):

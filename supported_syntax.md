@@ -880,13 +880,13 @@ ID и истории их выделения. Поддержана только 
 ## Основание справочника
 
 Регистрация API: [runtime.py](yadinassi/runtime.py). Реализация объектов:
-[values.py](yadinassi/values.py), [structures.py](yadinassi/structures.py),
-[maps.py](yadinassi/maps.py), [type_values.py](yadinassi/type_values.py),
+[values.py](yadinassi/types/values.py), [structures.py](yadinassi/collections/structures.py),
+[maps.py](yadinassi/collections/maps.py), [type_values.py](yadinassi/types/type_values.py),
 [round_modes.py](yadinassi/numeric/round_modes.py),
-[search_directions.py](yadinassi/search_directions.py). Функции:
-[strings.py](yadinassi/strings.py), [numbers.py](yadinassi/numeric/numbers.py),
-[dates.py](yadinassi/dates.py), [bits.py](yadinassi/numeric/bits.py), [value_checks.py](yadinassi/value_checks.py),
-[xml_values.py](yadinassi/xml_values.py), [serialization.py](yadinassi/serialization.py).
+[search_directions.py](yadinassi/collections/search_directions.py). Функции:
+[strings.py](yadinassi/text/strings.py), [numbers.py](yadinassi/numeric/numbers.py),
+[dates.py](yadinassi/temporal/dates.py), [bits.py](yadinassi/numeric/bits.py), [value_checks.py](yadinassi/types/value_checks.py),
+[xml_values.py](yadinassi/formats/xml/xml_values.py), [serialization.py](yadinassi/formats/storage/serialization.py).
 Проверки находятся в [tests](tests); подтвержденные ручные прогоны 1С —
 в [integrational_tests](integrational_tests). Наличие локального теста само по себе
 не означает, что все варианты вызова проверены на реальной 1С.

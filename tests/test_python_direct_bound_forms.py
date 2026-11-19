@@ -3,13 +3,13 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 from yadinassi.runtime import Interpreter
-from yadinassi.form_runtime import FormSession
+from yadinassi.forms.form_runtime import FormSession
 from yadinassi.ui.configuration_app import load_application
 from yadinassi.ui.main_demo import form_family
-from yadinassi.configuration_main_demo import import_main_demo_configuration,PROFILE
-from yadinassi.invocation import InvocationServer
-from yadinassi.values import HostFunction
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.configuration.configuration_main_demo import import_main_demo_configuration,PROFILE
+from yadinassi.execution.invocation import InvocationServer
+from yadinassi.types.values import HostFunction
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from test_main_demo_configuration import source
 ROOT=Path(__file__).resolve().parents[1]/'examples/demo'
 

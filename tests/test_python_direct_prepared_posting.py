@@ -4,16 +4,16 @@ from decimal import Decimal
 from unittest import TestCase
 from unittest.mock import patch
 import test_python_direct_posting as fixture
-from yadinassi.document_posting_values import DocumentWriteMode
-from yadinassi.python_direct_posting import prepared_posting
-from yadinassi.native_targets import LINUX_8_3_27_1508
+from yadinassi.db.document.document_posting_values import DocumentWriteMode
+from yadinassi.execution.direct.python_direct_posting import prepared_posting
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
 
 class PreparedPostingTests(TestCase):
     def setUp(self):
         self.f=fixture.DirectPostingTests();self.f.setUp();self.addCleanup(self.f.doCleanups)
         self.vm=self.f.vm
     def test_compile_once_before_own_transaction_fresh_receivers_contexts(self):
-        import yadinassi.python_direct_posting as direct
+        import yadinassi.execution.direct.python_direct_posting as direct
         original=direct.compile_owned;boundary=direct.PostingBoundary;compiles=[];contexts=[]
         def compile(*args,**kwargs):
             self.assertIsNone(self.f.fixture.context.backend._active);compiles.append(1)
@@ -31,14 +31,14 @@ class PreparedPostingTests(TestCase):
         self.assertEqual(self.f.counts(),(2,2,2))
     def test_cached_handler_cancel_and_raise_read_current_inputs(self):
         d=self.f.document();d.write(DocumentWriteMode.POSTING);before=self.f.counts()
-        with patch('yadinassi.python_direct_posting.compile_owned',side_effect=AssertionError('recompile')):
+        with patch('yadinassi.execution.direct.python_direct_posting.compile_owned',side_effect=AssertionError('recompile')):
             for mode in (1,2):
                 d.get_member('AdditionalProperties').insert('Mode',Decimal(mode))
                 with self.assertRaises(Exception):d.write(DocumentWriteMode.POSTING)
                 self.assertEqual(d.get_member('AdditionalProperties').get_member('Inside'),1)
                 self.assertEqual(self.f.counts(),before);self.assertIsNone(d._posting_active)
     def test_target_schema_and_compiler_options_replace_only_slot(self):
-        import yadinassi.python_direct_posting as direct
+        import yadinassi.execution.direct.python_direct_posting as direct
         d=self.f.document();runtime=self.vm._documents.posting_runtime()
         a=prepared_posting(runtime,d,self.vm)
         old=d._manager._schema
@@ -66,21 +66,21 @@ class PreparedPostingTests(TestCase):
 
     def test_original_receipt_committed_id_never_prepares_or_replays(self):
         from uuid import uuid4
-        from yadinassi.inventory_host_operations import InventoryRootOperations
+        from yadinassi.configuration.demos.inventory_host_operations import InventoryRootOperations
         host=InventoryRootOperations(self.f.fixture.context,self.f.fixture.context.backend.accumulation_configuration)
         self.addCleanup(host.close)
         d=self.f.document();draft=d._draft();operation=uuid4()
         receipt=host.execute(operation,draft,None,form='Document.Receipt.Form.Card',command='Post')
         self.assertEqual(receipt.state,'committed');self.assertEqual(self.f.counts(),(1,1,1))
-        with patch('yadinassi.python_direct_posting.prepared_posting',side_effect=AssertionError('prepare on receipt')),patch('yadinassi.document_posting.PostingRuntime.write',side_effect=AssertionError('handler replay')):
+        with patch('yadinassi.execution.direct.python_direct_posting.prepared_posting',side_effect=AssertionError('prepare on receipt')),patch('yadinassi.db.document.document_posting.PostingRuntime.write',side_effect=AssertionError('handler replay')):
             again=host.execute(operation,draft,None,form='Document.Receipt.Form.Card',command='Post')
         self.assertIs(again,receipt);self.assertEqual(self.f.counts(),(1,1,1))
 
     def test_original_receipt_uncertain_commit_resolves_without_prepare(self):
         from uuid import uuid4
-        from yadinassi.inventory_host_operations import InventoryRootOperations
-        from yadinassi.sqlite_transactions import UnitOfWork
-        from yadinassi.catalog_backend import BackendError
+        from yadinassi.configuration.demos.inventory_host_operations import InventoryRootOperations
+        from yadinassi.db.sqlite.sqlite_transactions import UnitOfWork
+        from yadinassi.db.catalog.catalog_backend import BackendError
         host=InventoryRootOperations(self.f.fixture.context,self.f.fixture.context.backend.accumulation_configuration)
         self.addCleanup(host.close)
         d=self.f.document();original=UnitOfWork.commit
@@ -88,13 +88,13 @@ class PreparedPostingTests(TestCase):
         with patch.object(UnitOfWork,'commit',lost):
             receipt=host.execute(uuid4(),d._draft(),None,form='Document.Receipt.Form.Card',command='Post')
         self.assertEqual(receipt.state,'uncertain')
-        with patch('yadinassi.python_direct_posting.prepared_posting',side_effect=AssertionError('prepare on receipt')),patch('yadinassi.document_posting.PostingRuntime.write',side_effect=AssertionError('handler replay')):
+        with patch('yadinassi.execution.direct.python_direct_posting.prepared_posting',side_effect=AssertionError('prepare on receipt')),patch('yadinassi.db.document.document_posting.PostingRuntime.write',side_effect=AssertionError('handler replay')):
             resolved=host.resolve(receipt.operation_id)
         self.assertEqual(resolved.state,'committed');self.assertEqual(self.f.counts(),(1,1,1))
 
     def test_plain_write_without_selected_handlers_does_not_compile(self):
         d=self.f.document()
-        with patch('yadinassi.python_direct_posting.compile_owned',side_effect=AssertionError('unused posting compile')):
+        with patch('yadinassi.execution.direct.python_direct_posting.compile_owned',side_effect=AssertionError('unused posting compile')):
             d.write(DocumentWriteMode.WRITE)
         self.assertEqual(self.f.counts(),(1,1,0))
         self.assertFalse(d.get_member('Posted'))

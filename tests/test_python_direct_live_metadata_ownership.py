@@ -3,8 +3,8 @@ from decimal import Decimal
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter,BSLRuntimeError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi import metadata
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.configuration import metadata
 import test_configuration_metadata_graph as fixture
 
 DENIED=(BoundaryViolation,BSLRuntimeError,ValueError,TypeError)

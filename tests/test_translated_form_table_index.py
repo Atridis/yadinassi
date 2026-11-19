@@ -3,8 +3,8 @@ import unittest
 from decimal import Decimal
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.execution_policy import execution_backend_policy
-from yadinassi import translated_access as access
+from yadinassi.execution.execution_policy import execution_backend_policy
+from yadinassi.execution.codegen import translated_access as access
 from test_form_tables import make, active
 import test_form_tables as form_tests
 
@@ -48,7 +48,7 @@ class TranslatedFormTableIndexTests(unittest.TestCase):
             try:
                 with self.assertRaises(TypeError):access.prepare_index_read(ordinary, table)
             finally:ordinary.close()
-            from yadinassi.form_runtime import _FormInterpreter
+            from yadinassi.forms.form_runtime import _FormInterpreter
             class UnknownForm(_FormInterpreter): pass
             with self.assertRaises(TypeError):
                 access.prepare_index_read(object.__new__(UnknownForm), table)
@@ -57,13 +57,13 @@ class TranslatedFormTableIndexTests(unittest.TestCase):
             vm._scheduler.run_inline(operation.finish(Decimal(0)))
 
     def test_unscoped_source_form_factory_is_not_an_ownership_grant(self):
-        from yadinassi.configuration_source import import_source
-        from yadinassi.configuration_source_runtime import SourceApplication
-        from yadinassi.source_forms import _SourceFormInterpreter
-        from yadinassi.form_runtime import FormSession
-        from yadinassi.form_model import BSLFormAttribute
-        from yadinassi.type_descriptions import BSLTypeDescription
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.configuration.configuration_source import import_source
+        from yadinassi.configuration.configuration_source_runtime import SourceApplication
+        from yadinassi.forms.source_forms import _SourceFormInterpreter
+        from yadinassi.forms.form_runtime import FormSession
+        from yadinassi.forms.form_model import BSLFormAttribute
+        from yadinassi.types.type_descriptions import BSLTypeDescription
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         from test_source_forms import files
         application=SourceApplication(import_source(files()))
         try:

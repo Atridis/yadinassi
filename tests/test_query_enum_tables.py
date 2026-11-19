@@ -7,11 +7,11 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.catalog_backend import BackendError
-from yadinassi.query_packages import BSLTempTablesManager
-from yadinassi.values import NULL, BSLType
-from yadinassi.sqlite_catalog import _View
-from yadinassi.sqlite_documents import DocumentView
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.query.query_packages import BSLTempTablesManager
+from yadinassi.types.values import NULL, BSLType
+from yadinassi.db.sqlite.sqlite_catalog import _View
+from yadinassi.db.sqlite.sqlite_documents import DocumentView
 import test_inventory_enum_queries as enum_fixtures
 
 
@@ -85,8 +85,8 @@ class EnumTableTests(unittest.TestCase):
         self.assertEqual(r._rows, ((NULL,), (self.empty,)))
 
     def test_array_and_external_parameters_snapshot_once(self):
-        from yadinassi.query_sources import _snapshot
-        import yadinassi.query_sources as sources
+        from yadinassi.db.query.query_sources import _snapshot
+        import yadinassi.db.query.query_sources as sources
         t = self.table()
         with patch.object(sources, '_snapshot', wraps=_snapshot) as snapshot:
             r = self.q('SELECT Unit INTO A FROM &Input; SELECT Unit FROM A '
@@ -187,14 +187,14 @@ class EnumTableTests(unittest.TestCase):
     def test_no_query_scope_retained_by_published_columns(self):
         m = BSLTempTablesManager()
         r = self.q('SELECT Unit INTO Saved FROM Catalog.Products; SELECT Unit FROM Saved', manager=m).execute()
-        from yadinassi.query_enum_tables import _EnumBinding
+        from yadinassi.db.query.query_enum_tables import _EnumBinding
         for c in (r._columns[0], m._tables['saved'].columns[0]):
             self.assertIsNone(c.enum_descriptor)
             self.assertIs(type(c.reference_binding), _EnumBinding)
             self.assertFalse(hasattr(c.reference_binding, '_scope'))
 
     def test_budgets_fail_before_publish(self):
-        from yadinassi import query_packages
+        from yadinassi.db.query import query_packages
         m = BSLTempTablesManager()
         with patch.object(query_packages, 'MAX_CELLS', 2):
             with self.assertRaises(ValueError):
@@ -222,7 +222,7 @@ class EnumTableTests(unittest.TestCase):
                 self.q('SELECT Amount FROM InformationRegister.Unknown', vm=other).execute()
 
     def test_transaction_query_uses_one_registered_lease(self):
-        from yadinassi.database_transactions import Transaction
+        from yadinassi.db.database_transactions import Transaction
         original = Transaction.read_lease; calls = []
         def read(tx):
             calls.append(tx); return original(tx)
@@ -233,7 +233,7 @@ class EnumTableTests(unittest.TestCase):
         self.assertEqual(calls[0]._read_leases, {})
 
     def test_registered_lease_rejects_forgery_and_closed_identity(self):
-        from yadinassi.database_transactions import require_registered_query_lease
+        from yadinassi.db.database_transactions import require_registered_query_lease
         def probe():
             wrapped = self.context.backend.begin_query_read(); lease = wrapped._view
             self.assertIs(require_registered_query_lease(self.context.backend, lease), lease)
@@ -247,7 +247,7 @@ class EnumTableTests(unittest.TestCase):
         self.vm.execute('BeginTransaction(); Probe(); RollbackTransaction();')
 
     def test_registered_lease_rejects_wrong_execution_token(self):
-        import yadinassi.database_transactions as tx
+        import yadinassi.db.database_transactions as tx
         def probe():
             wrapped = self.context.backend.begin_query_read()
             token = tx._execution.set(object())
@@ -259,11 +259,11 @@ class EnumTableTests(unittest.TestCase):
         self.vm.execute('BeginTransaction(); Probe(); RollbackTransaction();')
 
     def test_failed_transaction_lease_cleanup_retains_owner_until_retry(self):
-        import yadinassi.database_transactions as tx
-        from yadinassi.sqlite_catalog import _close_document_scan
+        import yadinassi.db.database_transactions as tx
+        from yadinassi.db.sqlite.sqlite_catalog import _close_document_scan
         def probe():
             current = tx.current(self.context.backend)
-            with patch('yadinassi.sqlite_catalog._close_document_scan', wraps=_close_document_scan) as cleanup:
+            with patch('yadinassi.db.sqlite.sqlite_catalog._close_document_scan', wraps=_close_document_scan) as cleanup:
                 wrapped = self.context.backend.begin_query_read(); lease = wrapped._view
                 entry = current._read_leases[id(lease)]
                 cleanup.side_effect = ValueError('cleanup failure')
@@ -280,7 +280,7 @@ class EnumTableTests(unittest.TestCase):
         self.vm.execute('BeginTransaction(); Probe(); RollbackTransaction();')
 
     def test_lease_registration_failure_does_not_leak_count(self):
-        import yadinassi.database_transactions as tx
+        import yadinassi.db.database_transactions as tx
         class Broken(dict):
             def __setitem__(self, key, value): raise MemoryError('allocation')
         def probe():

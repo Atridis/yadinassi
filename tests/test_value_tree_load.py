@@ -3,10 +3,10 @@ from decimal import Decimal as D
 import unittest
 from unittest import mock
 from yadinassi import Interpreter, BSLError
-import yadinassi.value_trees as tree
-from yadinassi.values import BSLArray, BSLFixedArray, NULL
-from yadinassi.structures import BSLStructure
-from yadinassi.type_descriptions import BSLTypeDescription
+import yadinassi.collections.value_trees as tree
+from yadinassi.types.values import BSLArray, BSLFixedArray, NULL
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.types.type_descriptions import BSLTypeDescription
 
 
 def array(*values):

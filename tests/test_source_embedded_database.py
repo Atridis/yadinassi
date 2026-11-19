@@ -7,8 +7,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from test_source_constant_store import configuration
-from yadinassi.configuration_source import import_source, source_digest
-from yadinassi.source_constant_store import SourceConstantStore
+from yadinassi.configuration.configuration_source import import_source, source_digest
+from yadinassi.db.metadata.source_constant_store import SourceConstantStore
 from yadinassi.cli import main
 
 
@@ -74,7 +74,7 @@ class EmbeddedSourceTests(unittest.TestCase):
         def connect(path, *args, **kwargs):
             calls.append(str(path))
             return original(path, *args, **kwargs)
-        with patch('yadinassi.source_constant_store.sqlite3.connect', side_effect=connect):
+        with patch('yadinassi.db.metadata.source_constant_store.sqlite3.connect', side_effect=connect):
             with self.assertRaisesRegex(ValueError, 'schema'): SourceConstantStore.load_source(self.path)
         self.assertTrue(any('mode=ro' in p for p in calls))
         self.assertFalse(any('mode=rw' in p for p in calls))
@@ -118,7 +118,7 @@ class EmbeddedSourceTests(unittest.TestCase):
     def test_corrupt_values_prevent_startup(self):
         self.create()
         self.change("UPDATE constant_value SET value_json='bad'")
-        with patch('yadinassi.configuration_source_runtime.SourceApplication.start', side_effect=AssertionError('must not execute')):
+        with patch('yadinassi.configuration.configuration_source_runtime.SourceApplication.start', side_effect=AssertionError('must not execute')):
             result, _, err = self.cli('--open-source-scratch-db', str(self.path), '--run-startup')
         self.assertEqual(result, 1)
         self.assertIn('integrity', err)

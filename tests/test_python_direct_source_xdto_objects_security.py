@@ -3,8 +3,8 @@ import unittest
 from unittest.mock import patch
 import test_python_direct_source_xdto as basic
 import test_python_direct_source_xdto_objects as flat
-from yadinassi import xdto_values
-from yadinassi.values import HostFunction
+from yadinassi.formats.xml import xdto_values
+from yadinassi.types.values import HostFunction
 
 class FlatXDTOSecurity(unittest.TestCase):
     setUp=flat.FlatXDTOTests.setUp
@@ -113,7 +113,7 @@ class FlatXDTOSecurity(unittest.TestCase):
         with self.assertRaises(basic.DENIED):vm.execute('V.Label=Touch();')
         self.assertEqual(effects,[])
     def test_bound_setter_expires_with_activation(self):
-        from yadinassi import python_direct_source_xdto_objects as helper
+        from yadinassi.execution.direct.source import python_direct_source_xdto_objects as helper
         app=self.prepared();vm=app.interpreter;captured=[];original=helper.set_member
         def intercept(*args):
             result=original(*args);captured.append(result);return result

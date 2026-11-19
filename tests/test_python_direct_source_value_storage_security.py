@@ -2,13 +2,13 @@ import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
 from decimal import Decimal
-from yadinassi import value_storage as storage
-from yadinassi import python_direct_source_value_storage as direct
-from yadinassi.experimental_naked_collections import _TypedMap
-from yadinassi.experimental_naked_structure import new_structure
-from yadinassi.unique_identifiers import BSLUUID
-from yadinassi.values import HostFunction
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.formats.storage import value_storage as storage
+from yadinassi.execution.direct.source import python_direct_source_value_storage as direct
+from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
+from yadinassi.execution.codegen.experimental_naked_structure import new_structure
+from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.types.values import HostFunction
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
 class SourceValueStorageSecurity(unittest.TestCase):
@@ -98,7 +98,7 @@ class SourceValueStorageSecurity(unittest.TestCase):
         self.assertEqual(calls,[])
 
     def test_capture_receiver_descriptors_and_table_bindings(self):
-        from yadinassi import value_storage_table as tables
+        from yadinassi.formats.storage import value_storage_table as tables
         boundary=self.boundary();create=direct.resolve_constructor(boundary,'valuestorage')
         array=storage.BSLArray();calls=[]
         descriptor=property(lambda self:calls.append('field') or [])

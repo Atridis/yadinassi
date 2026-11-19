@@ -45,10 +45,10 @@ CONTRACTS.update({name: (entry[0],entry[1],entry[4],entry[5]) for name,entry in 
 def binding(case, n, layer):
     if case in MORE_CASES: return bind_more(case,n,layer)
     from yadinassi import Interpreter
-    from yadinassi import native_bare_compiler as bare
+    from yadinassi.execution.codegen import native_bare_compiler as bare
     from yadinassi.syntax.parser import parse
-    from yadinassi.native_bare_collections import BareArray, BareValueList, BareMap
-    from yadinassi.native_bare_table import BareTable
+    from yadinassi.execution.codegen.native_bare_collections import BareArray, BareValueList, BareMap
+    from yadinassi.execution.codegen.native_bare_table import BareTable
     bsl, python, kind, description = CONTRACTS[case]
     classes = python
     if kind == 'map_iterate': classes = python.replace('a.items()', 'dict.items(a)')
@@ -214,7 +214,7 @@ def main():
                   reconstructed_workloads=True, historical_source_equivalence=False,
                   backend='explicit native_bare_compiler (not public default)',
                   api_contract={'default': 'bare.execute(vm, preparsed_ast)', 'prepared': 'bare.execute_prepared(vm, plan)'},
-                  compiler_sha256=hashlib.sha256((ROOT/'yadinassi/native_bare_compiler.py').read_bytes()).hexdigest())
+                  compiler_sha256=hashlib.sha256((ROOT/'yadinassi/execution/codegen/native_bare_compiler.py').read_bytes()).hexdigest())
     index={(r['case'],r['n'],r['layer']): r for r in report['rows']}
     for case in CONTRACTS:
         for n in (512,4096):

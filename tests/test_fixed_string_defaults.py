@@ -7,10 +7,10 @@ import unittest
 
 from scripts.native_historical_replay import without_uuid_probes, without_fixed_string_probes, without_service_filled_probes
 from yadinassi import Interpreter
-from yadinassi.serialization import value_from_string_internal, value_to_string_internal
-from yadinassi.type_descriptions import BSLTypeDescription as TD
-from yadinassi.type_qualifiers import BSLAllowedLength as AL, BSLStringQualifiers as SQ
-from yadinassi.values import BSLType
+from yadinassi.formats.storage.serialization import value_from_string_internal, value_to_string_internal
+from yadinassi.types.type_descriptions import BSLTypeDescription as TD
+from yadinassi.types.type_qualifiers import BSLAllowedLength as AL, BSLStringQualifiers as SQ
+from yadinassi.types.values import BSLType
 
 ROOT = Path(__file__).resolve().parents[1]
 

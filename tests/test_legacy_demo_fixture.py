@@ -6,7 +6,7 @@ import unittest
 
 from legacy_demo_fixture import (ROOT, HISTORICAL_ROOT, SOURCE_SHA256,
     legacy_demo_files, materialize_legacy_demo)
-from yadinassi.configuration_xml import _DEMO_KINDS_SOURCE_SHA256
+from yadinassi.configuration.configuration_xml import _DEMO_KINDS_SOURCE_SHA256
 
 
 class LegacyDemoFixtureTests(unittest.TestCase):

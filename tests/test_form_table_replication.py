@@ -5,13 +5,13 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import BSLError
-from yadinassi.dates import BSLDate
-from yadinassi.form_model import BSLFormAttribute
-from yadinassi.form_replication import (PROTOCOL, ReplicatedFormServer,
+from yadinassi.temporal.dates import BSLDate
+from yadinassi.forms.form_model import BSLFormAttribute
+from yadinassi.forms.form_replication import (PROTOCOL, ReplicatedFormServer,
                                         ReplicatedFormSession)
-from yadinassi.form_tables import FormTableColumn, FormTableSchema
-from yadinassi.invocation import InvocationBinding, InvocationPort, InvocationServer
-from yadinassi.type_descriptions import BSLTypeDescription
+from yadinassi.forms.form_tables import FormTableColumn, FormTableSchema
+from yadinassi.execution.invocation import InvocationBinding, InvocationPort, InvocationServer
+from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.ui.protocol import decode_line, encode_line, encode_value
 
 SCHEMA = FormTableSchema('Lines', (
@@ -313,14 +313,14 @@ EndFunction
         client, server, requests, replies = self.pair(); client.open()
         delta = scalar_delta(); delta['attributes'] = [['status', encode_value('must not apply')]]
         delta['cells'] = [[1, 1, 0, encode_value('x' * 500)]]
-        with patch('yadinassi.form_tables.MAX_TABLE_DATA_BYTES', 500): self.reject_delta(server, delta)
+        with patch('yadinassi.forms.form_tables.MAX_TABLE_DATA_BYTES', 500): self.reject_delta(server, delta)
 
     def test_valid_multitable_delta_can_grow_then_shrink_atomically(self):
         other = FormTableSchema('Other', (FormTableColumn('Label', BSLTypeDescription('String')),))
         source = SERVER.replace('// extra-create', 'R = Lines.Get(0); R.Label = "'+('a' * 8000)+'"; R = Other.Add();')
         client, server, requests, replies = self.pair(server_source=source, tables=(SCHEMA, other)); client.open()
         delta = scalar_delta(); delta['cells'] = [[2, 1, 0, encode_value('b' * 8000)], [1, 1, 0, encode_value('')]]
-        with patch('yadinassi.form_tables.MAX_TABLE_DATA_BYTES', 9000):
+        with patch('yadinassi.forms.form_tables.MAX_TABLE_DATA_BYTES', 9000):
             response = decode_line(server.exchange(encode_line(self.request(server, delta))))
         self.assertTrue(response['accepted']); self.assertEqual(response['status'], 'ok')
         snapshots = server.session.snapshot().tables
@@ -388,7 +388,7 @@ EndFunction
         self.assertNotIn(b'BSLFormDataCollectionItem', replies[-1])
 
     def test_date_default_and_fractional_ticks_roundtrip_without_invocation_widening(self):
-        from yadinassi.invocation import _encode_scalar
+        from yadinassi.execution.invocation import _encode_scalar
         temporal = FormTableSchema('Temporal', (FormTableColumn('When', BSLTypeDescription('Date')),))
         source = SERVER.replace('// extra-create', 'R = Temporal.Add();')
         client, server, requests, replies = self.pair(server_source=source, tables=(SCHEMA, temporal))

@@ -6,9 +6,9 @@ import unittest
 from decimal import Decimal
 from test_source_constant_store import configuration
 from test_source_constants_runtime import package
-from yadinassi.source_constant_store import SourceConstantStore
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
+from yadinassi.db.metadata.source_constant_store import SourceConstantStore
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 
 
 class SourceTransactionTests(unittest.TestCase):
@@ -101,14 +101,14 @@ class SourceTransactionTests(unittest.TestCase):
         with self.assertRaisesRegex(BSLError, 'lock modes unsupported'): app.start()
 
     def test_foreign_and_client_captured_call_denied(self):
-        from yadinassi.source_transactions import SourceTransactionCall
+        from yadinassi.db.source_transactions import SourceTransactionCall
         app = self.app(''); app.start()
         app.interpreter.register_function('Captured', SourceTransactionCall(app, 'begin'), returns_value=False)
         with self.assertRaisesRegex(BSLError, 'owning synchronous server'): app.interpreter.execute('Captured();')
 
     def test_transfer_guard(self):
-        from yadinassi.source_transactions import execution
-        from yadinassi.database_transactions import forbid_transfer
+        from yadinassi.db.source_transactions import execution
+        from yadinassi.db.database_transactions import forbid_transfer
         app = self.app(''); app.start()
         with execution(app):
             app.constant_store.begin_transaction()

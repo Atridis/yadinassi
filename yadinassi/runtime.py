@@ -1,91 +1,95 @@
-from .runtime_dependencies import runtime_module as _runtime_module
+from .execution.runtime_dependencies import runtime_module as _runtime_module
 from functools import lru_cache
 from weakref import WeakValueDictionary
 from threading import RLock
 from contextlib import nullcontext, contextmanager
-from .http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
+from .http.http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
                             BSLOSCertificationAuthorityCertificates, BSLInternetProxy)
-from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BYTE_ORDER_MARK_USE
-from .xdto_values import (BSLXDTODataObject, BSLXDTODataValue, BSLXDTOList, BSLXDTOValueType, BSLXDTOObjectType, BSLXDTOProperty, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection)
-from .xdto_io import BSLXDTOFactory, BSLXMLForm, XML_FORMS, create_xdto_factory
-from .dom_nodes import (BSLDOMDocument, BSLDOMElement, BSLDOMAttribute, BSLDOMText, BSLDOMCDATASection, BSLDOMComment, BSLDOMProcessingInstruction, BSLDOMDocumentFragment, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDOMNodeType, DOM_NODE_TYPES)
-from .dom_xpath import BSLDOMNamespaceResolver
-from .dom_io import BSLDOMBuilder, BSLDOMWriter
-from .data_hashing import BSLDataHashing, HASH_FUNCTIONS
-from .data_io import BSLDataReader, BSLDataWriter
-from . import zip_archives
-from .zip_archives import BSLZipFileReader, BSLZipFileWriter, BSLZipFileEntries
+from .http.http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BYTE_ORDER_MARK_USE
+from .formats.xml.xdto_values import (BSLXDTODataObject, BSLXDTODataValue, BSLXDTOList, BSLXDTOValueType, BSLXDTOObjectType, BSLXDTOProperty, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection)
+from .formats.xml.xdto_io import BSLXDTOFactory, BSLXMLForm, XML_FORMS, create_xdto_factory
+from .formats.xml.dom_nodes import (BSLDOMDocument, BSLDOMElement, BSLDOMAttribute, BSLDOMText, BSLDOMCDATASection, BSLDOMComment, BSLDOMProcessingInstruction, BSLDOMDocumentFragment, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDOMNodeType, DOM_NODE_TYPES)
+from .formats.xml.dom_xpath import BSLDOMNamespaceResolver
+from .formats.xml.dom_io import BSLDOMBuilder, BSLDOMWriter
+from .streams.data_hashing import BSLDataHashing, HASH_FUNCTIONS
+from .streams.data_io import BSLDataReader, BSLDataWriter
+from .streams import zip_archives
+from .streams.zip_archives import BSLZipFileReader, BSLZipFileWriter, BSLZipFileEntries
 """Direct runtime state, canonical services and live ownership boundaries."""
 
 from decimal import Decimal, localcontext
 from types import GeneratorType, MethodType
 
-from . import file_io
-from .xml_io import (BSLXMLReader, BSLXMLReaderSettings, BSLXMLNodeType, BSLXMLSpace,
+from .streams import file_io
+from .formats.xml.xml_io import (BSLXMLReader, BSLXMLReaderSettings, BSLXMLNodeType, BSLXMLSpace,
                      BSLXMLValidationType, BSLXMLNamespaceContext, XML_NODE_TYPES, XML_SPACES, XML_VALIDATION_TYPES)
-from .xml_writer import BSLXMLWriter, BSLXMLWriterSettings
-from . import binary_streams
-from .binary_streams import BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream
-from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, TEXT_ENCODINGS
-from .text_documents import BSLTextDocument
-from .user_messages import BSLUserMessage, UserMessageContext
-from .value_storage import BSLValueStorage
-from .data_compression import BSLDeflation
-from . import json_processing
-from .json_dates import (BSLJSONSerializerSettings, JSON_DATE_FORMATS, JSON_DATE_WRITING_VARIANTS,
+from .formats.xml.xml_writer import BSLXMLWriter, BSLXMLWriterSettings
+from .streams import binary_streams
+from .streams.binary_streams import BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream
+from .streams.file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, TEXT_ENCODINGS
+from .streams.text_documents import BSLTextDocument
+from .application.user_messages import BSLUserMessage, UserMessageContext
+from .formats.storage.value_storage import BSLValueStorage
+from .streams.data_compression import BSLDeflation
+from .formats.json import json_processing
+from .formats.json.json_dates import (BSLJSONSerializerSettings, JSON_DATE_FORMATS, JSON_DATE_WRITING_VARIANTS,
                          read_json_date, write_json_date)
-from .json_processing import BSLJSONReader, BSLJSONWriter, JSON_VALUE_TYPES, JSON_LINE_BREAKS, BSLJSONWriterSettings, read_json, write_json
-from .unique_identifiers import BSLUUID
-from .async_runtime import Scheduler, Promise, AwaitRequest, SchedulerLimitError
-from .callbacks import BSLCallbackDescription, callback_description_marker, run_callback_marker
+from .formats.json.json_processing import BSLJSONReader, BSLJSONWriter, JSON_VALUE_TYPES, JSON_LINE_BREAKS, BSLJSONWriterSettings, read_json, write_json
+from .types.unique_identifiers import BSLUUID
+from .application.async_runtime import Scheduler, Promise, AwaitRequest, SchedulerLimitError
+from .application.callbacks import BSLCallbackDescription, callback_description_marker, run_callback_marker
 from pathlib import Path
 from typing import Callable
 
 from .syntax import ast
 from .numeric import bits, elementary, numbers
-from . import regex_functions
-from . import clocks, date_time_conversions, dates, formatting, number_in_words, period_presentation, serialization, strings, type_values, value_checks, xml_values
-from .chars import BSLChars, CHARS
-from .metadata import BSLCommonModuleMetadataCollection, BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection, is_metadata_collection, is_metadata_object
-from .catalogs import BSLCatalogs
-from .enumerations import BSLEnumerations, BSLEnumManager
-from .session_parameters import BSLSessionParameters
-from .catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
-from .queries import BSLQuery
-from .query_packages import BSLTempTablesManager
-from .documents import BSLDocuments, BSLDocumentObject
-from .information_registers import BSLInformationRegisters, BSLInformationRegisterType, BSLInformationRegisterRecordSet
-from .document_types import BSLDocumentType
-from .document_lines import BSLDocumentLines, BSLDocumentLinesType, BSLDocumentLine, BSLDocumentSectionType
-from .catalog_types import BSLCatalogType
-from .database_context import SQLiteDBContext, require_database_context
+from .formats.regex import regex_functions
+from yadinassi.temporal import clocks, date_time_conversions, dates, period_presentation
+from yadinassi.text import formatting, number_in_words, strings
+from yadinassi.formats.storage import serialization
+from yadinassi.types import type_values, value_checks
+from yadinassi.formats.xml import xml_values
+from .text.chars import BSLChars, CHARS
+from .configuration.metadata import BSLCommonModuleMetadataCollection, BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection, is_metadata_collection, is_metadata_object
+from .db.catalog.catalogs import BSLCatalogs
+from .db.metadata.enumerations import BSLEnumerations, BSLEnumManager
+from .application.session_parameters import BSLSessionParameters
+from .db.catalog.catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
+from .db.query.queries import BSLQuery
+from .db.query.query_packages import BSLTempTablesManager
+from .db.document.documents import BSLDocuments, BSLDocumentObject
+from .db.registers.information_registers import BSLInformationRegisters, BSLInformationRegisterType, BSLInformationRegisterRecordSet
+from .db.document.document_types import BSLDocumentType
+from .db.document.document_lines import BSLDocumentLines, BSLDocumentLinesType, BSLDocumentLine, BSLDocumentSectionType
+from .db.catalog.catalog_types import BSLCatalogType
+from .db.database_context import SQLiteDBContext, require_database_context
 from .numeric.round_modes import BSLRoundModes, ROUND_MODES
-from .search_directions import BSLSearchDirections, SEARCH_DIRECTIONS
-from .sort_directions import BSLSortDirections, SORT_DIRECTIONS
-from .xml_processing import XML_STRING_PROCESSING
-from .type_descriptions import BSLTypeDescription
-from .value_trees import (BSLValueTree, BSLValueTreeColumnCollection, BSLValueTreeColumn,
+from .collections.search_directions import BSLSearchDirections, SEARCH_DIRECTIONS
+from .collections.sort_directions import BSLSortDirections, SORT_DIRECTIONS
+from .formats.xml.xml_processing import XML_STRING_PROCESSING
+from .types.type_descriptions import BSLTypeDescription
+from .collections.value_trees import (BSLValueTree, BSLValueTreeColumnCollection, BSLValueTreeColumn,
                           BSLValueTreeRow, BSLValueTreeRowCollection)
-from .value_tables import (BSLValueTable, BSLValueTableColumnCollection,
+from .collections.value_tables import (BSLValueTable, BSLValueTableColumnCollection,
                            BSLValueTableColumn, BSLValueTableRow,
                            BSLCollectionIndexes, BSLCollectionIndex)
-from .value_lists import BSLValueList, BSLValueListItem
-from .type_qualifiers import (
+from .collections.value_lists import BSLValueList, BSLValueListItem
+from .types.type_qualifiers import (
     ALLOWED_SIGNS, ALLOWED_LENGTHS, DATE_FRACTIONS,
     BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers,
 )
-from .errors import BSLError, BSLRuntimeError
-from .error_info import (BSLErrorInfo, BSLErrorCategory, ERROR_CATEGORIES,
+from .types.errors import BSLError, BSLRuntimeError
+from .types.error_info import (BSLErrorInfo, BSLErrorCategory, ERROR_CATEGORIES,
                          FORBIDDEN_RAISE_CATEGORIES, empty_error_info)
-from .collation import string_key
+from .text.collation import string_key
 from .syntax.parser import (parse, parse_expression, parse_fragment, validate_labels, validate_async,
                             prepare_control_flow, PreparedBlock)
 from .syntax.lexer import KEYWORDS
 from .syntax.preprocessor import validate_compilation_profile
-from .maps import BSLFixedMap, BSLMap
-from .native_targets import WINDOWS_8_3_27_2342, target_context, validate_native_target
-from .structures import BSLFixedStructure, BSLStructure, fill_property_values
-from .values import (
+from .collections.maps import BSLFixedMap, BSLMap
+from .execution.codegen.native_targets import WINDOWS_8_3_27_2342, target_context, validate_native_target
+from .collections.structures import BSLFixedStructure, BSLStructure, fill_property_values
+from .types.values import (
     BSLArray, BSLFixedArray, BSLObject, BSLType, HostFunction, InterpreterCall, NULL, Reference as _Reference,
     boolean, divide, equal, number, require_number, to_string,
 )
@@ -199,7 +203,7 @@ class Interpreter:
                  execution_backend: str | None = None,
                  compiled_ast_contract: str | None = None,
                  compiled_plain_routines: bool | None = None):
-        from .execution_policy import current_backend, BACKENDS, current_ast_contract, AST_CONTRACTS
+        from .execution.execution_policy import current_backend, BACKENDS, current_ast_contract, AST_CONTRACTS
         if execution_backend is None:
             execution_backend = (family_owner.execution_backend if isinstance(family_owner, Interpreter)
                                  else current_backend())
@@ -285,12 +289,12 @@ class Interpreter:
         self._handled_errors: list[BSLRuntimeError | None] = []
         self._error_info_boundaries: list[int] = []
         self._execute_depth = [0]
-        from .common_templates import get_common_template_marker
+        from .configuration.common_templates import get_common_template_marker
         self.register_function('ПолучитьОбщийМакет',get_common_template_marker,'GetCommonTemplate')
-        from .reusable_values import refresh_reusable_marker
+        from .application.reusable_values import refresh_reusable_marker
         self.register_function('ОбновитьПовторноИспользуемыеЗначения',refresh_reusable_marker,'RefreshReusableValues',returns_value=False)
         self._eval_depth = [0]  # Shared by imported modules, like the handler stack.
-        from . import temporary_storage
+        from .application import temporary_storage
         self.register_function('ПоместитьВоВременноеХранилище',temporary_storage.put_marker,'PutToTempStorage')
         self.register_function('ПолучитьИзВременногоХранилища',temporary_storage.get_marker,'GetFromTempStorage')
         self.register_function('УдалитьИзВременногоХранилища',temporary_storage.delete_marker,'DeleteFromTempStorage',returns_value=False)
@@ -507,7 +511,7 @@ class Interpreter:
         if metadata is None:
             self._metadata._catalog_managers = self._catalogs
             self._metadata._document_managers = self._documents
-            from .inventory_enum_runtime import bind as bind_storage_enums
+            from .configuration.demos.inventory_enum_runtime import bind as bind_storage_enums
             bind_storage_enums(self,self._metadata)
 
     @contextmanager
@@ -563,7 +567,7 @@ class Interpreter:
         return self._scheduler.pending
 
     def visit(self, node: ast.Node) -> object:
-        from .python_direct import _reject
+        from .execution.direct.python_direct import _reject
         _reject("visit is a retired execution entrypoint; use execute or prepare")
 
     @property
@@ -681,25 +685,25 @@ class Interpreter:
         return error.info
 
     def _evaluate(self, argument: ast.Node, *, _evaluation=None) -> object:
-        from .python_direct import _reject
+        from .execution.direct.python_direct import _reject
         _reject("_evaluate is a retired execution entrypoint; use execute or prepare")
 
     def semantic_execute(self, node: ast.Execute, *, _evaluation=None) -> None:
-        from .python_direct import _reject
+        from .execution.direct.python_direct import _reject
         _reject("semantic_execute is a retired execution entrypoint; use execute or prepare")
 
     def _transaction_backend(self):
         return None if self.database_context is None else self.database_context.backend
 
     def _transaction_active(self):
-        from .database_transactions import active
+        from .db.database_transactions import active
         if (not getattr(self, '_transaction_activation_allowed', True)
                 or self._scheduler._active_task is not None or self._scheduler.pending):
             raise ValueError('Transaction status requires an authorized synchronous activation')
         return active(self._transaction_backend())
 
     def _begin_transaction(self):
-        from .database_transactions import begin
+        from .db.database_transactions import begin
         if (not getattr(self, '_transaction_activation_allowed', True)
                 or self._scheduler._active_task is not None or self._scheduler.pending):
             raise ValueError('Transactions require synchronous execution without pending tasks')
@@ -708,21 +712,21 @@ class Interpreter:
     def _commit_transaction(self):
         if not getattr(self, '_transaction_activation_allowed', True):
             raise ValueError('Transaction control is unavailable in this activation')
-        from .database_transactions import commit
+        from .db.database_transactions import commit
         commit(self._transaction_backend())
 
     def _rollback_transaction(self):
         if not getattr(self, '_transaction_activation_allowed', True):
             raise ValueError('Transaction control is unavailable in this activation')
-        from .database_transactions import rollback
+        from .db.database_transactions import rollback
         rollback(self._transaction_backend())
 
     def _compiled(self):
-        from .python_direct import _reject
+        from .execution.direct.python_direct import _reject
         _reject("_compiled is a retired execution entrypoint; use execute or prepare")
 
     def _admit_compiled_node(self, node):
-        from .python_direct import _reject
+        from .execution.direct.python_direct import _reject
         _reject("_admit_compiled_node is a retired execution entrypoint; use execute or prepare")
 
     @property
@@ -747,7 +751,7 @@ class Interpreter:
 
     def prepare(self, text: str, source: str = "<строка>"):
         """Compile a reusable owned module snapshot for python-direct only."""
-        from .python_direct import prepare_module, _reject
+        from .execution.direct.python_direct import prepare_module, _reject
         if type(self) is not Interpreter:
             _reject('specialized Interpreter contexts are not integrated')
         return prepare_module(self, parse(text, source, compilation_profile=self.compilation_profile),
@@ -755,45 +759,45 @@ class Interpreter:
 
     def prepare_program(self, program: list[ast.Node]):
         """Snapshot and compile an AST; later caller edits do not affect it."""
-        from .python_direct import prepare_module
+        from .execution.direct.python_direct import prepare_module
         return prepare_module(self, program)
 
     def execute_prepared(self, prepared):
         """Run an explicit prepared snapshot with current namespace/services."""
-        from .python_direct import execute_prepared
+        from .execution.direct.python_direct import execute_prepared
         return execute_prepared(self, prepared)
 
     def execute(self, text: str, source: str = "<строка>") -> object:
-        from .python_direct import execute
+        from .execution.direct.python_direct import execute
         return execute(self, parse(text, source, compilation_profile=self.compilation_profile),
                        source_text=text, source_name=source)
 
     def execute_program(self, program: list[ast.Node]) -> object:
         """Compile and execute the supplied AST through the direct compiler only."""
-        from .python_direct import execute
+        from .execution.direct.python_direct import execute
         return execute(self, program)
 
     def _execute_program_boundary(self, program, outermost):
-        from .python_direct import _reject
+        from .execution.direct.python_direct import _reject
         _reject("_execute_program_boundary is a retired execution entrypoint; use execute or prepare")
 
     def _execute_program(self, program: list[ast.Node], *, module_entry=False) -> object:
         # Also validate callers supplying an AST directly. No import or declaration
         # effects may precede label resolution.
-        from .python_direct import _reject
+        from .execution.direct.python_direct import _reject
         _reject("_execute_program is a retired execution entrypoint; use execute or prepare")
 
     def _planned_module_block(self, statements, *, enabled=False):
-        from .python_direct import _reject
+        from .execution.direct.python_direct import _reject
         _reject("_planned_module_block is a retired execution entrypoint; use execute or prepare")
 
 
     def _planned_routine_block(self, function):
-        from .python_direct import _reject
+        from .execution.direct.python_direct import _reject
         _reject("_planned_routine_block is a retired execution entrypoint; use execute or prepare")
 
     def block(self, statements: list[ast.Node]) -> object:
-        from .python_direct import _reject
+        from .execution.direct.python_direct import _reject
         _reject("block is a retired execution entrypoint; use execute or prepare")
 
     def compiled_before(self, node):
@@ -822,7 +826,7 @@ class Interpreter:
     def _visit(self, node: ast.Node) -> object:
         # Select this frame's path on entry. Runtime backend selection is fixed
         # at construction; private mutation during a yield is not a mode API.
-        from .python_direct import _reject
+        from .execution.direct.python_direct import _reject
         _reject("_visit is a retired execution entrypoint; use execute or prepare")
 
 
@@ -859,11 +863,11 @@ class Interpreter:
             posting = self._documents.posting_runtime()
             if posting is None or not posting.accumulation:
                 raise ValueError("accumulation posting profile required")
-            from .accumulation_posting_values import ACCUMULATION_RECORD_TYPES
+            from .db.registers.accumulation_posting_values import ACCUMULATION_RECORD_TYPES
             return ACCUMULATION_RECORD_TYPES
         if name in ("documentwritemode", "режимзаписидокумента"):
             if self._documents.posting_runtime() is None: raise ValueError("posting profile required")
-            from .document_posting_values import DOCUMENT_WRITE_MODES
+            from .db.document.document_posting_values import DOCUMENT_WRITE_MODES
             return DOCUMENT_WRITE_MODES
         if name in ("enums", "перечисления"):
             if self._metadata._enumerations is None: raise ValueError("enumerations require an active configuration application")
@@ -885,10 +889,10 @@ class Interpreter:
         if name in ("режимокругления", "roundmode"):
             return ROUND_MODES
         if name in ('questiondialogmode', 'режимдиалогавопрос'):
-            from .form_dialogs import QUESTION_DIALOG_MODES
+            from .forms.form_dialogs import QUESTION_DIALOG_MODES
             return QUESTION_DIALOG_MODES
         if name in ('dialogreturncode', 'кодвозвратадиалога'):
-            from .form_dialogs import DIALOG_RETURN_CODES
+            from .forms.form_dialogs import DIALOG_RETURN_CODES
             return DIALOG_RETURN_CODES
         if name in ("форматдатыjson", "jsondateformat"):
             return JSON_DATE_FORMATS
@@ -1048,7 +1052,7 @@ class Interpreter:
         return candidates[0] or candidates[1]
 
     def call(self, node: ast.Call, *, require_value: bool, _evaluation=None) -> object:
-        from .python_direct import _reject
+        from .execution.direct.python_direct import _reject
         _reject("call is a retired execution entrypoint; use execute or prepare")
 
     def _convert_json(self, node, *, writing, _evaluation=None):
@@ -1179,7 +1183,7 @@ class Interpreter:
         self._require_callback_context()
         if type(description) is not BSLCallbackDescription:
             raise TypeError('ВыполнитьОбработкуОповещения: ожидается ОписаниеОповещения')
-        from .callbacks import _FormCallbackTarget
+        from .application.callbacks import _FormCallbackTarget
         target = description._form_target
         if target is not None:
             if type(target) is not _FormCallbackTarget or description.module is not target.receiver:
@@ -1270,7 +1274,7 @@ class Interpreter:
     @staticmethod
     def table_optional_arguments(receiver: object, name: str) -> frozenset[int] | None:
         key = name.casefold()
-        from .source_extensions import SourceExtensions
+        from .configuration.source_extensions import SourceExtensions
         if type(receiver) is SourceExtensions and key in ('get', 'получить'):
             return frozenset({0, 1})
         if type(receiver) is BSLTextDocument and key in {"read", "прочитать", "write", "записать"}:
@@ -1357,7 +1361,7 @@ class Interpreter:
 
     def call_routine(self, function: ast.Routine, arguments: list[ast.Node],
                      owner: "Interpreter", *, require_value: bool, qualified: bool = False, _evaluation=None) -> object:
-        from .python_direct import _reject
+        from .execution.direct.python_direct import _reject
         _reject("call_routine is a retired execution entrypoint; use execute or prepare")
 
 
@@ -1839,7 +1843,7 @@ class Interpreter:
             child._execute_depth = self._execute_depth
             child._self_module.path = path
             if self.execution_backend == 'python-direct':
-                from .python_direct_imports import loading_child
+                from .execution.direct.python_direct_imports import loading_child
                 with loading_child(self,child,path):
                     child.execute(text,str(path))
                     module=child._self_module
@@ -1914,10 +1918,10 @@ class Interpreter:
 
 
     def compiled_iterable(self, collection):
-        from .source_document_sections import SourceDocumentSection
+        from .db.document.source_document_sections import SourceDocumentSection
         if type(collection) is SourceDocumentSection:
             return collection.iterate(self)
-        from .source_constants_runtime import SourceConstants
+        from .db.metadata.source_constants_runtime import SourceConstants
         if type(collection) is SourceConstants:
             members = collection.members(self)
             collection = BSLArray()
@@ -2033,16 +2037,16 @@ def _source_call_dispatch_types():
     avoid runtime/configuration-source circular imports during module loading.
     Failed imports do not populate functools.lru_cache.
     """
-    from .source_catalog_runtime import SourceCatalogCall
-    from .source_document_sections import SourceDocumentSectionCall
-    from .source_document_runtime import SourceDocumentCall
-    from .source_references import SourceReferenceCall
-    from .source_constants_runtime import ConstantCall, ConstantSetCall
-    from .source_constant_queries import SourceQueryCall
-    from .source_extensions import ExtensionCall
-    from .source_host_session import SourceSessionCall
-    from .source_transactions import SourceTransactionCall
-    from .source_constant_managers import ValueManagerCall, write_values
+    from .db.catalog.source_catalog_runtime import SourceCatalogCall
+    from .db.document.source_document_sections import SourceDocumentSectionCall
+    from .db.document.source_document_runtime import SourceDocumentCall
+    from .db.metadata.source_references import SourceReferenceCall
+    from .db.metadata.source_constants_runtime import ConstantCall, ConstantSetCall
+    from .db.query.source_constant_queries import SourceQueryCall
+    from .configuration.source_extensions import ExtensionCall
+    from .application.source_host_session import SourceSessionCall
+    from .db.source_transactions import SourceTransactionCall
+    from .db.metadata.source_constant_managers import ValueManagerCall, write_values
     return (SourceCatalogCall, SourceDocumentSectionCall, SourceDocumentCall,
             SourceReferenceCall, ConstantCall, ConstantSetCall, SourceQueryCall,
             ExtensionCall, SourceSessionCall, SourceTransactionCall,
@@ -2052,7 +2056,7 @@ _PLAIN_BLOCK_ABI = Interpreter.block
 
 _PLAIN_SCOPE_ABI = (Interpreter.locals, Interpreter._context_stack, Interpreter._module_context_stack)
 
-from .async_runtime import ExecutionContext as _PlainExecutionContext
+from .application.async_runtime import ExecutionContext as _PlainExecutionContext
 _PLAIN_STORAGE_ABI = tuple((cls, vars(cls).get('__dict__'), cls.__mro__)
                            for cls in (Interpreter, Scheduler, _PlainExecutionContext))
 

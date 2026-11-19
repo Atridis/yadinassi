@@ -9,8 +9,8 @@ import unittest
 
 from yadinassi import Interpreter
 from yadinassi.syntax import ast
-from yadinassi.async_runtime import Promise
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.application.async_runtime import Promise
+from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.syntax.parser import parse
 
 

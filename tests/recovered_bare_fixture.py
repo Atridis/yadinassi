@@ -1,6 +1,6 @@
 """Test-only explicit caller of reconstructed compiler; no production routing."""
 from yadinassi import Interpreter as PublicInterpreter
-from yadinassi import native_bare_compiler as bare
+from yadinassi.execution.codegen import native_bare_compiler as bare
 from yadinassi.syntax.parser import parse
 
 class Interpreter(PublicInterpreter):

@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter,BSLError
 from yadinassi.syntax.parser import parse
-from yadinassi.experimental_naked_scalar_semantics import numeric_boolean_operators,map_identity_operators
+from yadinassi.execution.codegen.experimental_naked_scalar_semantics import numeric_boolean_operators,map_identity_operators
 
 class DirectNumericBooleanDomainTests(unittest.TestCase):
     def test_host_values_both_orders_bool_values_literal_and_variable_routes(self):
@@ -73,7 +73,7 @@ class DirectNumericBooleanDomainTests(unittest.TestCase):
         self.assertIs(eq(1,1.0),True)
 
     def test_registered_host_objects_keep_unrelated_equality(self):
-        from yadinassi.values import BSLObject
+        from yadinassi.types.values import BSLObject
         events=[]
         class Host(BSLObject):
             def __eq__(self,other):events.append('eq');return True
@@ -90,7 +90,7 @@ class DirectNumericBooleanDomainTests(unittest.TestCase):
             vm.variables['host']=value;vm.execute_prepared(plan);self.assertIs(vm.variables['r'],expected)
 
     def test_unknown_date_boundary_still_rejects_before_boolean_mismatch(self):
-        from yadinassi.dates import BSLDate,MAX_TICKS,UnsupportedDateRange
+        from yadinassi.temporal.dates import BSLDate,MAX_TICKS,UnsupportedDateRange
         eq,ne=numeric_boolean_operators();unknown=BSLDate(MAX_TICKS,boundary=True)
         for operation in (eq,ne):
             for left,right in ((unknown,True),(False,unknown)):

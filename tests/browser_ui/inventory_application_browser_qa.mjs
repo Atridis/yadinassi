@@ -193,14 +193,14 @@ from contextlib import closing
 from datetime import datetime
 from decimal import Decimal, localcontext
 from hashlib import sha256
-from yadinassi.configuration_import import read_configuration_directory
-from yadinassi.configuration_inventory_application import import_inventory_application, PROFILE, validated_core
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.catalog_backend import CatalogKey, CatalogSelection, BackendError
-from yadinassi.document_backend import DocumentKey, DocumentSelection
-from yadinassi.sqlite_documents import DocumentView
-from yadinassi.sqlite_transactions import _accumulation_port
-from yadinassi.accumulation_movements import AccumulationDirection
+from yadinassi.configuration.configuration_import import read_configuration_directory
+from yadinassi.configuration.configuration_inventory_application import import_inventory_application, PROFILE, validated_core
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import CatalogKey, CatalogSelection, BackendError
+from yadinassi.db.document.document_backend import DocumentKey, DocumentSelection
+from yadinassi.db.sqlite.sqlite_documents import DocumentView
+from yadinassi.db.sqlite.sqlite_transactions import _accumulation_port
+from yadinassi.db.registers.accumulation_movements import AccumulationDirection
 root=Path(sys.argv[2]); source=Path(sys.argv[3]); database=root/'stock.sqlite'
 try:
  files=read_configuration_directory(source)
@@ -461,8 +461,8 @@ async function sourceBinding(){
   const names=git('ls-files','-z','yadinassi','pyproject.toml','frontend/form','frontend/configuration','examples/configuration-inventory-application','tests/browser_ui',
     'tests/test_configuration_inventory_app.py','tests/test_inventory_application_reports.py','tests/test_configuration_inventory_reports_ui.py',
     'docs/inventory-application-browser-qa.md','tests/test_inventory_application_browser_qa_contract.py','.github/workflows/inventory-application-browser-qa.yml').split('\0').filter(Boolean);
-  for(const required of ['yadinassi/inventory_application_reports.py','yadinassi/inventory_host_operations.py',
-    'yadinassi/sqlite_launch.py','yadinassi/ui/database_launch.py','frontend/configuration/src/reports.mjs',
+  for(const required of ['yadinassi/configuration/demos/inventory_application_reports.py','yadinassi/configuration/demos/inventory_host_operations.py',
+    'yadinassi/db/sqlite/sqlite_launch.py','yadinassi/ui/database_launch.py','frontend/configuration/src/reports.mjs',
     'examples/configuration-inventory-application/InventoryApplication.xml',
     'tests/browser_ui/inventory_application_browser_qa.mjs','.github/workflows/inventory-application-browser-qa.yml'])
     assert.ok(names.includes(required),'source_manifest_missing');

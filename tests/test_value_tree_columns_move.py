@@ -2,9 +2,9 @@
 from decimal import Decimal as D, Inexact, Rounded, localcontext
 import unittest
 from unittest.mock import patch
-from yadinassi.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, target_context
-from yadinassi.value_trees import BSLValueTree, BSLValueTreeColumnCollection as Columns
-from yadinassi.values import NULL
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, target_context
+from yadinassi.collections.value_trees import BSLValueTree, BSLValueTreeColumnCollection as Columns
+from yadinassi.types.values import NULL
 
 
 class Poison:
@@ -109,11 +109,11 @@ class ColumnsMovePolicyTests(unittest.TestCase):
         for text in ('1' * 5000, 'bad', 'NaN', 'Infinity', '1e999999999'):
             self.reject(self.fixture().columns, D(0), text)
         tree = self.fixture()
-        with patch('yadinassi.value_trees._MAX_COLUMNS', 2):
+        with patch('yadinassi.collections.value_trees._MAX_COLUMNS', 2):
             self.reject(tree.columns, D(0), D(1))
-        with patch('yadinassi.value_trees._MAX_SEARCH_WORK', 1):
+        with patch('yadinassi.collections.value_trees._MAX_SEARCH_WORK', 1):
             self.reject(self.fixture().columns, D(0), D(1))
-        with patch('yadinassi.value_trees._MAX_SEARCH_TEXT', 2):
+        with patch('yadinassi.collections.value_trees._MAX_SEARCH_TEXT', 2):
             self.reject(self.fixture().columns, D(0), D(1))
 
     def test_decimal_context_is_not_modified(self):

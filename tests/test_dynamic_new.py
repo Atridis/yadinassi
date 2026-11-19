@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.values import BSLType
+from yadinassi.types.values import BSLType
 
 
 class DynamicNewTests(unittest.TestCase):

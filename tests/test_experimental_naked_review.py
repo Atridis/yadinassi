@@ -1,12 +1,12 @@
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 'Independent adversarial regressions for experimental service admission.'
 import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 from tests.direct_boundary_compile import compile_boundary
-from yadinassi.values import HostFunction
-from yadinassi.experimental_naked_boundaries import BoundaryContext, BoundaryViolation, HostMembers
+from yadinassi.types.values import HostFunction
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation, HostMembers
 
 class NakedReviewRegressions(unittest.TestCase):
 

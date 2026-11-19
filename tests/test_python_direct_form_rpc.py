@@ -2,11 +2,11 @@
 from decimal import Decimal
 from unittest import TestCase
 from unittest.mock import patch
-from yadinassi.form_replication import ReplicatedFormServer,PROTOCOL
-from yadinassi.form_model import BSLFormAttribute
-from yadinassi.type_descriptions import BSLTypeDescription
+from yadinassi.forms.form_replication import ReplicatedFormServer,PROTOCOL
+from yadinassi.forms.form_model import BSLFormAttribute
+from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.ui.protocol import encode_line,decode_line
-from yadinassi.invocation import _encode_scalar,_decode_scalar
+from yadinassi.execution.invocation import _encode_scalar,_decode_scalar
 from yadinassi.runtime import Interpreter
 
 SOURCE='''&AtServer

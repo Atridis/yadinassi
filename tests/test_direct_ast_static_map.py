@@ -1,7 +1,7 @@
 import unittest
 from decimal import Decimal
 from yadinassi import Interpreter
-from yadinassi.python_direct_plain_map import PlainMap
+from yadinassi.execution.direct.python_direct_plain_map import PlainMap
 
 class StaticMapTests(unittest.TestCase):
     def test_map_loops_use_local_native_storage(self):

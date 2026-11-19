@@ -2,9 +2,9 @@
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter,BSLRuntimeError
-from yadinassi.catalog_backend import BackendError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi import database_transactions as tx
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.db import database_transactions as tx
 import test_bsl_transactions as fixtures
 from test_catalog_commit_cleanup_recovery import FaultConnection
 
@@ -108,7 +108,7 @@ class DirectTransactionTests(unittest.TestCase):
         self.vm.register_function('Capture',lambda:captured.append(tx._execution.get()))
         self.vm.execute('BeginTransaction();Capture();RollbackTransaction();BeginTransaction();Capture();CommitTransaction();')
         self.assertEqual(len(captured),2);self.assertIsNot(captured[0],captured[1]);self.assert_clean()
-        from yadinassi import python_direct
+        from yadinassi.execution.direct import python_direct
         contexts=[];original=python_direct.make_boundary
         def remember(*args,**kwargs):
             context=original(*args,**kwargs);contexts.append(context);return context
@@ -123,7 +123,7 @@ class DirectTransactionTests(unittest.TestCase):
         self.assert_clean();self.assertTrue(self.vm.variables['c'].is_new())
 
     def test_pending_or_service_replacement_at_policy_boundary_opens_no_writer(self):
-        from yadinassi.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
         original=BoundaryContext._before
         for action in ('pending','replace'):
             function=self.vm.functions['begintransaction'];implementation=function.function
@@ -218,7 +218,7 @@ class DirectTransactionTests(unittest.TestCase):
 
     def test_owner_cannot_be_used_from_another_host_thread_before_begin(self):
         from threading import Thread
-        from yadinassi import python_direct
+        from yadinassi.execution.direct import python_direct
         contexts=[];original=python_direct.make_boundary;errors=[]
         def remember(*args,**kwargs):
             context=original(*args,**kwargs);contexts.append(context);return context
@@ -235,7 +235,7 @@ class DirectTransactionTests(unittest.TestCase):
     def test_execute_can_begin_write_and_commit_but_inherited_denial_has_no_effect(self):
         self.vm.execute('C=Catalogs.Products.CreateItem();C.Code="fragment";Execute("BeginTransaction();C.Write();CommitTransaction();");')
         self.assertFalse(self.vm.variables['c'].is_new());self.assert_clean()
-        with tx.admission(False),patch('yadinassi.database_transactions.begin',side_effect=AssertionError('effect')) as begin:
+        with tx.admission(False),patch('yadinassi.db.database_transactions.begin',side_effect=AssertionError('effect')) as begin:
             with self.assertRaises(BSLRuntimeError):self.vm.execute('Execute("BeginTransaction();");')
             begin.assert_not_called()
         self.assert_clean()

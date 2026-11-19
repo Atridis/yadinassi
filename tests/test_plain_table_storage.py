@@ -1,8 +1,8 @@
 """Storage-only contracts; these tests do not grant interpreted receiver access."""
 import unittest
 from decimal import Decimal as D
-from yadinassi.plain_table_storage import Schema, RowStorage, TableStorage, StorageError
-from yadinassi.values import BSLObject
+from yadinassi.collections.plain_table_storage import Schema, RowStorage, TableStorage, StorageError
+from yadinassi.types.values import BSLObject
 
 
 class PublicRow(RowStorage, BSLObject):

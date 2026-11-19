@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.experimental_naked_collections import UnsupportedNakedSyntax
+from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
 
 class FragmentPreparationFailureTests(unittest.TestCase):
     def test_execute_and_eval_preparation_failure_never_enters_bsl_handler(self):
@@ -13,7 +13,7 @@ class FragmentPreparationFailureTests(unittest.TestCase):
             source='Try '+expression+';Except Caught=True;EndTry;After=True;'
             plan=vm.prepare(source)
             for _ in range(2):
-                with patch('yadinassi.experimental_naked_collections.prepare',create=True,side_effect=AssertionError('old compiler')):
+                with patch('yadinassi.execution.codegen.experimental_naked_collections.prepare',create=True,side_effect=AssertionError('old compiler')):
                     with self.assertRaises(UnsupportedNakedSyntax):vm.execute_prepared(plan)
                 self.assertEqual(effects,[])
                 self.assertNotIn('caught',vm.variables);self.assertNotIn('after',vm.variables)

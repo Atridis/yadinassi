@@ -9,12 +9,12 @@ import unittest
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
-from yadinassi.catalog_backend import (
+from yadinassi.db.catalog.catalog_backend import (
     BackendError, CatalogDraft, CatalogKey, CatalogSchema, CatalogWriteOutcome,
     FieldSchema, Revision, TabularRow, TabularSectionRows, TabularSectionSchema,
 )
-from yadinassi.configuration_xml import ConfigurationFile, ConfigurationImport, import_configuration
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _View, _schema, _schema_data, _json
+from yadinassi.configuration.configuration_xml import ConfigurationFile, ConfigurationImport, import_configuration
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _View, _schema, _schema_data, _json
 from sqlite_catalog_fixture import configuration_files
 from test_catalog_commit_cleanup_recovery import FaultConnection
 

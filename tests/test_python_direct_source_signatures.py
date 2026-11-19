@@ -2,8 +2,8 @@
 import copy
 import unittest
 from yadinassi.syntax.parser import parse
-from yadinassi.python_direct_source import _signature, _signature_matches
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.direct.python_direct_source import _signature, _signature_matches
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class SourceSignatureTests(unittest.TestCase):
     def setUp(self):

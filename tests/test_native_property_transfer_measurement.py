@@ -7,11 +7,11 @@ import sys
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
 from yadinassi.syntax.parser import parse
-from yadinassi.structures import BSLStructure, BSLFixedStructure
-from yadinassi.value_tables import BSLValueTableRow
-from yadinassi.value_trees import BSLValueTreeRow
+from yadinassi.collections.structures import BSLStructure, BSLFixedStructure
+from yadinassi.collections.value_tables import BSLValueTableRow
+from yadinassi.collections.value_trees import BSLValueTreeRow
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
@@ -133,7 +133,7 @@ class PropertyTransferObserverTests(unittest.TestCase):
             self.assertEqual(observed[2]['target'][1], 'A1')
             self.assertEqual(observed[2]['source'][1], 'A1')
             def cloned(target, source, *args):
-                from yadinassi.values import BSLArray
+                from yadinassi.types.values import BSLArray
                 value = BSLArray()
                 value.items = list(source.get_member('Last').items)
                 target.set_member('Last', value)

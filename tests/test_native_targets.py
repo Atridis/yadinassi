@@ -11,12 +11,12 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.native_targets import (
+from yadinassi.execution.codegen.native_targets import (
     LINUX_8_3_27_1508, WINDOWS_8_3_27_2342,
     current_native_target, target_context,
 )
 from yadinassi.syntax.parser import parse
-from yadinassi.structures import BSLStructure, fill_property_values
+from yadinassi.collections.structures import BSLStructure, fill_property_values
 
 
 class NativeTargetTests(unittest.TestCase):

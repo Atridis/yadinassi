@@ -5,7 +5,7 @@ from types import CodeType
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.experimental_naked_errors import SourceMap, _StructureIndex
+from yadinassi.execution.codegen.experimental_naked_errors import SourceMap, _StructureIndex
 
 
 def dump_compile(self,generated,filename,body_offset):
@@ -54,7 +54,7 @@ class SourceMapStructureTests(unittest.TestCase):
         code="""
 import sys
 from yadinassi import Interpreter
-from yadinassi.experimental_naked_errors import SourceMap
+from yadinassi.execution.codegen.experimental_naked_errors import SourceMap
 source='T=New ValueList;For I=0 To 2 Do T.Add(I);EndDo;'
 vm=Interpreter();default=SourceMap._allow_markers;SourceMap._allow_markers=False
 vm.execute(source,'audit.bsl')
@@ -85,7 +85,7 @@ else:raise AssertionError('selective compile authorization bypassed')
         code="""
 import sys
 from yadinassi import Interpreter
-from yadinassi.experimental_naked_errors import SourceMap
+from yadinassi.execution.codegen.experimental_naked_errors import SourceMap
 source='T=New ValueTable;T.Columns.Add("N");For I=0 To 2 Do Row=T.Add();Row.N=I;EndDo;'
 vm=Interpreter();vm.execute(source,'audit.bsl');seen=[]
 def observe(event,args):
@@ -164,7 +164,7 @@ if current!=seen:raise AssertionError('default audit stream differs from unmarke
 
     def test_marker_metadata_not_retained_by_prepared_plan(self):
         import gc,weakref
-        import yadinassi.experimental_naked_errors as errors
+        import yadinassi.execution.codegen.experimental_naked_errors as errors
         refs=[]
         def create():
             value=SourceMap();refs.append(weakref.ref(value));return value
@@ -179,7 +179,7 @@ if current!=seen:raise AssertionError('default audit stream differs from unmarke
 
     def test_index_is_released_without_waiting_for_cyclic_gc(self):
         import gc,weakref
-        import yadinassi.experimental_naked_errors as errors
+        import yadinassi.execution.codegen.experimental_naked_errors as errors
         refs=[]
         def create():
             value=_StructureIndex();refs.append(weakref.ref(value));return value

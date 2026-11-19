@@ -1,8 +1,8 @@
 import unittest
 from decimal import Decimal
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.values import HostFunction
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.types.values import HostFunction
 
 class DirectByrefContracts(unittest.TestCase):
     def check_source(self, source, names, expected):
@@ -82,7 +82,7 @@ class DirectByrefContracts(unittest.TestCase):
 
     def test_host_attribute_proxy_forwarding_keeps_alias(self):
         from types import SimpleNamespace
-        from yadinassi.experimental_naked_boundaries import BoundaryContext,HostMembers
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext,HostMembers
         from tests.direct_boundary_compile import compile_boundary
         obj=SimpleNamespace(value=Decimal(1))
         context=BoundaryContext(members=(HostMembers(obj,readable=('value',),writable=('value',)),))

@@ -4,8 +4,8 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.value_trees import BSLValueTree
-from yadinassi.type_descriptions import BSLTypeDescription
+from yadinassi.collections.value_trees import BSLValueTree
+from yadinassi.types.type_descriptions import BSLTypeDescription
 
 
 class ValueTreeTests(unittest.TestCase):
@@ -64,10 +64,10 @@ class ValueTreeTests(unittest.TestCase):
         self.assertEqual(self.tree.rows.count(), D(1))
 
     def test_global_budgets_and_transactionality(self):
-        with patch('yadinassi.value_trees._MAX_ROWS', 2):
+        with patch('yadinassi.collections.value_trees._MAX_ROWS', 2):
             with self.assertRaises(ValueError):
                 self.child.rows.add()
-        with patch('yadinassi.value_trees._MAX_CELLS', 3):
+        with patch('yadinassi.collections.value_trees._MAX_CELLS', 3):
             with self.assertRaises(ValueError):
                 self.tree.columns.add('Extra')
         self.assertEqual(len(self.tree.columns.items), 1)
@@ -75,7 +75,7 @@ class ValueTreeTests(unittest.TestCase):
 
     def test_depth_budget_and_iterative_clear(self):
         row = self.child
-        with patch('yadinassi.value_trees._MAX_DEPTH', 2):
+        with patch('yadinassi.collections.value_trees._MAX_DEPTH', 2):
             row = row.rows.add()
             with self.assertRaises(ValueError):
                 row.rows.add()
@@ -183,7 +183,7 @@ class ValueTreeRuntimeTests(unittest.TestCase):
         root = self.vm.execute('r.Big')
         self.assertIs(root, self.vm.execute('child.Big'))
         self.assertIs(root, self.vm.execute('later.Big'))
-        with patch('yadinassi.value_trees._MAX_DEFAULT_TEXT', 150):
+        with patch('yadinassi.collections.value_trees._MAX_DEFAULT_TEXT', 150):
             with self.assertRaises(BSLError):
                 self.vm.execute('t.Columns.Add("TooBig",d);')
         self.assertEqual(self.vm.execute('t.Columns.Count()'), D(2))

@@ -7,11 +7,11 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.syntax.parser import parse
-from yadinassi.text_documents import BSLTextDocument
-from yadinassi.values import HostFunction
+from yadinassi.streams.text_documents import BSLTextDocument
+from yadinassi.types.values import HostFunction
 
 
 class DirectTextDocumentTests(unittest.TestCase):
@@ -76,7 +76,7 @@ D.AddLine("b"); R=Saved(); N=D.LineCount(); E=New("ТекстовыйДокум�
             self.assertFalse(path.exists())
 
     def test_factory_class_helper_storage_and_alias_tampering_no_hooks(self):
-        from yadinassi import text_documents
+        from yadinassi.streams import text_documents
         calls=[]
         class ChangedBase(BSLTextDocument.__bases__[0]):
             pass

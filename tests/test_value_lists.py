@@ -9,11 +9,11 @@ import gc
 import unittest
 from unittest.mock import patch
 
-from yadinassi import value_lists
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.type_values import type_by_name, type_of
-from yadinassi.value_lists import BSLValueList, BSLValueListItem
-from yadinassi.values import BSLArray, BSLFixedArray, BSLType, NULL, equal
+from yadinassi.collections import value_lists
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.type_values import type_by_name, type_of
+from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLType, NULL, equal
 
 
 D = Decimal

@@ -1,8 +1,8 @@
 """Additional transaction publication, buffer and read boundaries."""
 from unittest.mock import patch
-from yadinassi.catalog_backend import BackendError
-from yadinassi.database_transactions import execution, begin, commit, rollback, current
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.database_transactions import execution, begin, commit, rollback, current
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 import test_bsl_transactions as fixtures
 import unittest
 
@@ -25,7 +25,7 @@ class TransactionBoundariesTests(unittest.TestCase):
     def test_query_wrapper_memoryerror_releases_lease(self):
         with execution(self.backend):
             begin(self.backend)
-            with patch('yadinassi.sqlite_catalog.DocumentView', side_effect=MemoryError):
+            with patch('yadinassi.db.sqlite.sqlite_catalog.DocumentView', side_effect=MemoryError):
                 with self.assertRaises(MemoryError): self.backend.begin_query_read()
             self.assertEqual(current(self.backend).leases,0)
             rollback(self.backend)

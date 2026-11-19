@@ -2,9 +2,9 @@
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.execution_policy import execution_backend_policy
-from yadinassi.source_forms import _SourceNoContextInterpreter
-from yadinassi.form_runtime import FormLimitError
+from yadinassi.execution.execution_policy import execution_backend_policy
+from yadinassi.forms.source_forms import _SourceNoContextInterpreter
+from yadinassi.forms.form_runtime import FormLimitError
 from yadinassi.syntax.parser import parse
 
 

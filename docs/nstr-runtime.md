@@ -1,7 +1,7 @@
 # НСтр / NStr: bounded standalone compatibility profile
 
 `НСтр / NStr(Template [, Language])` selects multilingual text through a generic
-scanner in the existing `yadinassi/strings.py`. This is a bounded local policy,
+scanner in the existing `yadinassi/text/strings.py`. This is a bounded local policy,
 not a complete native grammar, coercion or configuration-language model.
 
 ```bsl

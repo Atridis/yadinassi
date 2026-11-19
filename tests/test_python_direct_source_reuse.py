@@ -7,9 +7,9 @@ import sys
 from pathlib import Path
 import test_source_session_parameters as session_tests
 from test_configuration_source_runtime import source
-from yadinassi.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.runtime import Interpreter
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
 class SourceReuseTests(unittest.TestCase):
@@ -74,7 +74,7 @@ class SourceReuseTests(unittest.TestCase):
 
     def test_argument_effect_cannot_retarget_cache(self):
         app,out=self.app('Message(Helpers.Value(1));','Function Value(Val X) Export Return X;EndFunction')
-        from yadinassi.reusable_values import ReusableValueCache
+        from yadinassi.application.reusable_values import ReusableValueCache
         app._session_owner.register_function('Swap',lambda:setattr(app.reusable_values,'_session',ReusableValueCache()) or 1)
         with self.assertRaises(BoundaryViolation):self.execute(app,'Helpers.Value(Swap());')
         self.assertEqual(out,['1'])
@@ -125,12 +125,12 @@ raise SystemExit(not result.wasSuccessful())
         child=subprocess.run([sys.executable,*options,'-c',script],
             cwd=Path(__file__).resolve().parents[1],capture_output=True,text=True,timeout=30)
         self.assertEqual(child.returncode,0,child.stdout+child.stderr)
-        from yadinassi.reusable_values import ReusableValueCache
+        from yadinassi.application.reusable_values import ReusableValueCache
         ReusableValueCache(clock=lambda:0)  # Parent constructor remains usable.
 
     def _factory_new_hook_probe(self):
         app,out=self.app();effects=[]
-        from yadinassi.reusable_values import ReusableValueCache
+        from yadinassi.application.reusable_values import ReusableValueCache
         with patch.object(ReusableValueCache,'__new__',side_effect=lambda *a:effects.append('factory')):
             with self.assertRaises(BoundaryViolation):self.execute(app,'Helpers.Value();')
         self.assertEqual(effects,[])

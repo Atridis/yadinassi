@@ -10,10 +10,10 @@ import unittest
 from unittest import mock
 
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_import import load_configuration_directory
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.form_replication import ReplicatedFormServer
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_import import load_configuration_directory
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.forms.form_replication import ReplicatedFormServer
 from yadinassi.ui.form_app import FormController, FormProcess, PROTOCOL
 from yadinassi.ui.form_package import load_client, load_server
 from yadinassi.ui.protocol import encode_line

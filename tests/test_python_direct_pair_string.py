@@ -3,8 +3,8 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.experimental_naked_collections import _DIRECT_MAP_ENTRY_TYPE as Pair
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_collections import _DIRECT_MAP_ENTRY_TYPE as Pair
 from yadinassi.syntax.parser import parse
 
 class DirectPairStringTests(unittest.TestCase):
@@ -55,8 +55,8 @@ class DirectPairStringTests(unittest.TestCase):
             self.assertEqual(seen,['argument'])
 
     def test_policy_revocation_and_class_rebinding_do_not_grant_authority(self):
-        from yadinassi.python_direct import make_boundary
-        from yadinassi import experimental_naked_collections as collections
+        from yadinassi.execution.direct.python_direct import make_boundary
+        from yadinassi.execution.codegen import experimental_naked_collections as collections
         vm=Interpreter();pair=Pair('x',1);vm.variables['p']=pair
         context=make_boundary(vm);context.start();invoke=context.resolve_callable(vm.functions['string'])
         context.policy=lambda operation,name:False

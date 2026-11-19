@@ -1,7 +1,7 @@
 """Persistent routine arity reports retain the same pre-effect rejection."""
 import unittest
 from yadinassi import Interpreter
-from yadinassi.errors import BSLError
+from yadinassi.types.errors import BSLError
 
 
 class PersistentRoutineArityTests(unittest.TestCase):

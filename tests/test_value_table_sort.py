@@ -11,14 +11,14 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi import value_table_collation as sort_collation
-from yadinassi.dates import BSLDate
-from yadinassi.maps import BSLMap
-from yadinassi.value_tables import BSLValueTable, BSLValueTableColumn
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.value_table_sort import _value_key
-from yadinassi.values import BSLArray, BSLType, NULL
-from yadinassi.structures import BSLStructure
+from yadinassi.collections import value_table_collation as sort_collation
+from yadinassi.temporal.dates import BSLDate
+from yadinassi.collections.maps import BSLMap
+from yadinassi.collections.value_tables import BSLValueTable, BSLValueTableColumn
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.collections.value_table_sort import _value_key
+from yadinassi.types.values import BSLArray, BSLType, NULL
+from yadinassi.collections.structures import BSLStructure
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -235,12 +235,12 @@ class NativeSortTests(unittest.TestCase):
         for order in ('Key,Key,Key,Key', 'Key,,,'):
             table = table_for(D(2), D(1))
             rows = list(table.rows)
-            with patch('yadinassi.value_table_sort._MAX_SORT_TOKENS', 3):
+            with patch('yadinassi.collections.value_table_sort._MAX_SORT_TOKENS', 3):
                 with self.assertRaisesRegex(ValueError, 'элементов списка'):
                     table.sort(order)
             self.assertEqual(table.rows, rows)
         table = table_for(D(2), D(1))
-        with patch('yadinassi.value_table_sort._MAX_SORT_TOKENS', 3):
+        with patch('yadinassi.collections.value_table_sort._MAX_SORT_TOKENS', 3):
             table.sort('Key,,')
         self.assertEqual([row.get_member('Key') for row in table.rows], [D(1), D(2)])
 
@@ -248,7 +248,7 @@ class NativeSortTests(unittest.TestCase):
         for constant, limit in (('_MAX_SORT_CELLS', 1), ('_MAX_SORT_TEXT', 3), ('_MAX_KEY_WEIGHTS', 1)):
             table = table_for('bb', 'aa')
             before = list(table.rows)
-            with patch('yadinassi.value_table_sort.' + constant, limit):
+            with patch('yadinassi.collections.value_table_sort.' + constant, limit):
                 with self.assertRaises(ValueError):
                     table.sort('Key')
             self.assertEqual(table.rows, before)

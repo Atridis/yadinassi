@@ -5,7 +5,7 @@ import weakref
 from decimal import Decimal
 
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 
 
 class DirectRuntimeLanguageContractsTests(unittest.TestCase):
@@ -169,7 +169,7 @@ class DirectRuntimeLanguageContractsTests(unittest.TestCase):
         self.assertEqual(vm.variables['r'], 7)
 
     def test_malformed_ast_does_not_call_the_host(self):
-        from yadinassi.python_direct import PythonDirectUnsupported
+        from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
         from yadinassi.syntax import ast
         from yadinassi.syntax.parser import parse
 

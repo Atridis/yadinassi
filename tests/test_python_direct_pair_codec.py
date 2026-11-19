@@ -2,11 +2,12 @@
 from decimal import Decimal
 from unittest.mock import patch
 import unittest
-from yadinassi import Interpreter, serialization
-from yadinassi.errors import BSLError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.experimental_naked_collections import _DIRECT_MAP_ENTRY_TYPE as Pair
-from yadinassi.structures import BSLKeyAndValue
+from yadinassi import Interpreter
+from yadinassi.formats.storage import serialization
+from yadinassi.types.errors import BSLError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_collections import _DIRECT_MAP_ENTRY_TYPE as Pair
+from yadinassi.collections.structures import BSLKeyAndValue
 from yadinassi.syntax.parser import parse
 from tests import test_serialization_native as native
 
@@ -72,7 +73,7 @@ class DirectPairCodecTests(unittest.TestCase):
         vm.variables['p']=Pair('x',Decimal(1));self.assertIn('"N",1',vm.execute('ValueToStringInternal(P)'))
 
     def test_cycle_through_list_aliases_undefined_and_public_rebinding(self):
-        from yadinassi import experimental_naked_collections as collections
+        from yadinassi.execution.codegen import experimental_naked_collections as collections
         vm=Interpreter();items=[];p=Pair('x',items);items.append(p);vm.variables['p']=p
         with self.assertRaisesRegex(BSLError,'циклические'):vm.execute('ValueToStringInternal(P)')
         shared=Pair('nested',None);vm.variables['p']=Pair(shared,shared)
@@ -108,7 +109,7 @@ class DirectPairCodecTests(unittest.TestCase):
                 self.assertEqual(seen,['arg'])
 
     def test_retained_callable_policy_and_revocation(self):
-        from yadinassi.python_direct import make_boundary
+        from yadinassi.execution.direct.python_direct import make_boundary
         vm=Interpreter();context=make_boundary(vm);context.start()
         invoke=context.resolve_callable(vm.functions['valuetostringinternal']);p=Pair('x',Decimal(1))
         context.policy=lambda operation,name:operation!='call_value'

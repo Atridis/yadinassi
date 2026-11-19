@@ -6,7 +6,7 @@ posting, preparation and Execute/Eval. Unsupported compilation fails explicitly;
 there is no retry through a text generator or interpreter. The legacy
 interpreter is no longer available.
 
-`yadinassi.experimental_naked_collections` retains shared runtime values and the
+`yadinassi.execution.codegen.experimental_naked_collections` retains shared runtime values and the
 `Program` container at their original identities. It no longer exposes
 `prepare`, `compile_source` or `execute`. Its historical name does not imply a
 second compiler. Other historically named helper modules remain where the new

@@ -5,9 +5,9 @@ import tempfile
 import unittest
 from uuid import UUID
 
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 from yadinassi.cli import main
 
 
@@ -84,7 +84,7 @@ class SourceStartupTests(unittest.TestCase):
                 self.assertEqual(main(['--configuration-source', directory, '--run-startup']), 1)
 
     def test_source_archive_roundtrip_startup(self):
-        from yadinassi.configuration_source import save_source_archive, load_source_archive
+        from yadinassi.configuration.configuration_source import save_source_archive, load_source_archive
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'source.zip'
             save_source_archive(path, source())

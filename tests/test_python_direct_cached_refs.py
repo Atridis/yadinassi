@@ -2,11 +2,11 @@ import unittest
 from decimal import Decimal
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.values import Reference,HostFunction
-from yadinassi.experimental_naked_live_state import source_reference,_SlotReference
-from yadinassi.experimental_direct_ast import compile_owned
+from yadinassi.types.values import Reference,HostFunction
+from yadinassi.execution.codegen.experimental_naked_live_state import source_reference,_SlotReference
+from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
 from yadinassi.syntax.parser import parse
-from yadinassi.experimental_naked_boundaries import BoundaryContext
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
 
 class CachedSourceRefsTests(unittest.TestCase):
     def test_cache_is_address_not_value_or_canonical_binding(self):
@@ -53,7 +53,7 @@ class CachedSourceRefsTests(unittest.TestCase):
         self.assertEqual(vm.variables['x'],1);self.assertEqual(vm.variables['i'],1)
 
     def test_one_slot_allocation_per_name_per_module_invocation(self):
-        import yadinassi.experimental_naked_live_state as live
+        import yadinassi.execution.codegen.experimental_naked_live_state as live
         with patch.object(live,'_SlotReference',wraps=_SlotReference) as factory:
             vm=Interpreter();vm.execute('Procedure F(a,b) a=a+1;b=b+1;EndProcedure x=0;For i=1 To 20 Do F(x,x);EndDo;')
             self.assertEqual(factory.call_count,1);self.assertEqual(vm.variables['x'],40)

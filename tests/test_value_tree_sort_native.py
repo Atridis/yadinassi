@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
 from scripts import native_1c_tree_sort_contract as contract
 from scripts import native_1c_tree_profile as host
 

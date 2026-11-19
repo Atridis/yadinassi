@@ -4,7 +4,7 @@ import unittest
 
 from yadinassi import BSLError, Interpreter
 from yadinassi.syntax import ast
-from yadinassi.errors import IncompleteInput
+from yadinassi.types.errors import IncompleteInput
 from yadinassi.syntax.parser import parse
 
 

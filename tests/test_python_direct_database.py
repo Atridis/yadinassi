@@ -4,9 +4,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.configuration_main_demo import PROFILE,import_main_demo_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.configuration.configuration_main_demo import PROFILE,import_main_demo_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from test_main_demo_configuration import source
 
 class DirectDatabaseTests(unittest.TestCase):
@@ -36,7 +36,7 @@ class DirectDatabaseTests(unittest.TestCase):
 
     def test_denied_transaction_caller_is_rejected_before_effect_and_flag_restored(self):
         self.vm._transaction_activation_allowed=False
-        with patch('yadinassi.database_transactions.begin',side_effect=AssertionError('effect')) as begin:
+        with patch('yadinassi.db.database_transactions.begin',side_effect=AssertionError('effect')) as begin:
             with self.assertRaises(Exception):self.vm.execute('BeginTransaction();')
             begin.assert_not_called()
         self.assertFalse(self.vm._transaction_activation_allowed)
@@ -62,7 +62,7 @@ class DirectDatabaseTests(unittest.TestCase):
         self.assertEqual(self.vm.variables['d'].get_member('Number'),'draft')
         self.assertEqual(self.vm.variables['l'].get_member('Quantity'),3)
         self.assertEqual(self.vm.variables['n'],1)
-        from yadinassi.document_posting_values import DocumentWriteMode
+        from yadinassi.db.document.document_posting_values import DocumentWriteMode
         self.assertIs(self.vm.variables['mode'],DocumentWriteMode.POSTING)
         self.assertTrue(self.vm.variables['d'].is_new())
 
@@ -121,7 +121,7 @@ class DirectDatabaseTests(unittest.TestCase):
             with self.subTest(source=source),self.assertRaises(Exception):self.vm.execute(source)
 
     def test_foreign_and_subclass_catalog_selection_rejected(self):
-        from yadinassi.catalogs import BSLCatalogSelection
+        from yadinassi.db.catalog.catalogs import BSLCatalogSelection
         self.vm.execute('S=Catalogs.Склады.Select();')
         selection=self.vm.variables['s']
         other=Interpreter(database_context=self.context);self.addCleanup(other.close)
@@ -176,7 +176,7 @@ class DirectDatabaseTests(unittest.TestCase):
             with self.subTest(name=name),self.assertRaises(BoundaryViolation):other.execute('X='+expression+';')
 
     def test_metadata_private_readonly_and_admitted_family_boundaries(self):
-        from yadinassi.errors import BSLRuntimeError
+        from yadinassi.types.errors import BSLRuntimeError
         for source in ('Metadata=1;', 'Metadata.Catalogs=1;', 'Metadata.Catalogs.Склады.Name="bad";',
                        'Metadata.Catalogs["Склады"]=1;', 'X=Metadata._catalogs;', 'X=Metadata.Catalogs._context;',
                        'X=Metadata.Catalogs.Склады._root;'):
@@ -186,7 +186,7 @@ class DirectDatabaseTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('Metadata.Documents.Count();'),2)
 
     def test_metadata_subclasses_rejected(self):
-        from yadinassi.metadata import BSLMetadata,BSLCatalogMetadataCollection,BSLCatalogMetadata
+        from yadinassi.configuration.metadata import BSLMetadata,BSLCatalogMetadataCollection,BSLCatalogMetadata
         for base in (BSLMetadata,BSLCatalogMetadataCollection,BSLCatalogMetadata):
             class Derived(base):pass
             self.vm.variables['foreign']=object.__new__(Derived)

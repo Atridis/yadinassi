@@ -7,8 +7,8 @@ from pathlib import Path
 from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.errors import BSLError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.types.errors import BSLError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class PreparedImportFactsTests(unittest.TestCase):
     def test_unrelated_top_level_statements_do_not_add_preflight_entries(self):

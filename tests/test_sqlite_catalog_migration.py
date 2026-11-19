@@ -11,11 +11,11 @@ import unittest
 from unittest import mock
 from uuid import UUID, uuid4
 
-from yadinassi.catalog_backend import BackendError, CatalogSchema, FieldSchema, CatalogKey
-from yadinassi.sqlite_catalog import _APPLICATION_ID, _json, _schema_data, SQLiteCatalogBackend
-from yadinassi.sqlite_catalog_layout import load_layout, decode_columns, quote_identifier
-from yadinassi.sqlite_catalog_migration import _V1_DDL, prepare_v1, migrate_v1, resolve_migration
-import yadinassi.sqlite_catalog_migration as migration
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogSchema, FieldSchema, CatalogKey
+from yadinassi.db.sqlite.sqlite_catalog import _APPLICATION_ID, _json, _schema_data, SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_catalog_layout import load_layout, decode_columns, quote_identifier
+from yadinassi.db.sqlite.sqlite_catalog_migration import _V1_DDL, prepare_v1, migrate_v1, resolve_migration
+import yadinassi.db.sqlite.sqlite_catalog_migration as migration
 
 
 class MigrationTests(unittest.TestCase):
@@ -105,7 +105,7 @@ class MigrationTests(unittest.TestCase):
         self.assert_v1()
 
     def test_v1_card_reads_reuse_schema_without_changing_values(self):
-        from yadinassi.catalog_backend import CatalogScanRequest, CatalogOrder
+        from yadinassi.db.catalog.catalog_backend import CatalogScanRequest, CatalogOrder
         # addCleanup runs after tearDown, too late for Windows file removal.
         with closing(SQLiteCatalogBackend(self.path)) as backend, closing(backend.begin_read()) as view:
             queries = []
@@ -126,8 +126,8 @@ class MigrationTests(unittest.TestCase):
                                  for query in queries), 1)
 
     def test_backend_reopen_and_old_receipt_resolves_exact_intent(self):
-        from yadinassi.catalog_backend import CatalogDraft, CatalogKey, Revision
-        from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _decode
+        from yadinassi.db.catalog.catalog_backend import CatalogDraft, CatalogKey, Revision
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _decode
         values = tuple(_decode(v, f, self.database_id) for v, f in zip(self.va, self.sa.fields))
         draft = CatalogDraft(CatalogKey(self.database_id,self.a,self.ra), '1', 'Описание', False, values)
         expected = Revision(self.database_id,3,self.a,self.ra,'6')
@@ -151,7 +151,7 @@ class MigrationTests(unittest.TestCase):
         finally: backend.close()
 
     def test_stale_new_backend_rejects_migrated_file(self):
-        from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
         idle = SQLiteCatalogBackend(self.path)
         try:
             migrate_v1(self.path, self.plan, maintenance=True)
@@ -159,8 +159,8 @@ class MigrationTests(unittest.TestCase):
         finally: idle.close()
 
     def test_non_ascii_v1_json_remains_readable_after_migration(self):
-        from yadinassi.catalog_backend import CatalogKey
-        from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+        from yadinassi.db.catalog.catalog_backend import CatalogKey
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
         fields = tuple(FieldSchema(uuid4(), 'Text%d' % i, 'string', (65536,)) for i in range(4))
         schema = CatalogSchema(self.a, 'A', 8, 64, fields)
         text = '猫' * 50000
@@ -350,7 +350,7 @@ class MigrationTests(unittest.TestCase):
             def execute(self, sql, *args):
                 if sql == 'COMMIT': raise sqlite3.OperationalError('injected')
                 return self.connection.execute(sql, *args)
-        with mock.patch('yadinassi.sqlite_catalog_migration.sqlite3.connect', side_effect=lambda *a, **kw: Connection(real_connect(*a, **kw))):
+        with mock.patch('yadinassi.db.sqlite.sqlite_catalog_migration.sqlite3.connect', side_effect=lambda *a, **kw: Connection(real_connect(*a, **kw))):
             with self.assertRaisesRegex(BackendError, 'uncertain_commit'): migrate_v1(self.path, self.plan, maintenance=True)
         self.assert_v1()
         self.assertEqual(resolve_migration(self.path, self.plan, maintenance=True), 'not_committed')
@@ -366,7 +366,7 @@ class MigrationTests(unittest.TestCase):
                 result = self.connection.execute(sql, *args)
                 if sql == 'COMMIT': raise sqlite3.OperationalError('injected')
                 return result
-        with mock.patch('yadinassi.sqlite_catalog_migration.sqlite3.connect', side_effect=lambda *a, **kw: Connection(real_connect(*a, **kw))):
+        with mock.patch('yadinassi.db.sqlite.sqlite_catalog_migration.sqlite3.connect', side_effect=lambda *a, **kw: Connection(real_connect(*a, **kw))):
             with self.assertRaisesRegex(BackendError, 'uncertain_commit'): migrate_v1(self.path, self.plan, maintenance=True)
         with closing(sqlite3.connect(self.path)) as db, db:
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 2)
@@ -382,7 +382,7 @@ class MigrationTests(unittest.TestCase):
         script = """
 import os, sys
 from uuid import UUID
-import yadinassi.sqlite_catalog_migration as migration
+import yadinassi.db.sqlite.sqlite_catalog_migration as migration
 plan = migration.MigrationPlan(UUID(sys.argv[2]), UUID(sys.argv[3]), sys.argv[4], sys.argv[5])
 def crash(*args): os._exit(71)
 migration._verify_records = crash
@@ -414,7 +414,7 @@ migration.migrate_v1(sys.argv[1], plan, maintenance=True)
                 result = self.connection.execute(sql, *args)
                 if sql == 'COMMIT': raise RuntimeError('injected after commit')
                 return result
-        with mock.patch('yadinassi.sqlite_catalog_migration.sqlite3.connect', side_effect=lambda *a, **kw: Connection(real_connect(*a, **kw))):
+        with mock.patch('yadinassi.db.sqlite.sqlite_catalog_migration.sqlite3.connect', side_effect=lambda *a, **kw: Connection(real_connect(*a, **kw))):
             with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
                 migrate_v1(self.path, self.plan, maintenance=True)
         self.assertEqual(resolve_migration(self.path, self.plan, maintenance=True), 'committed')
@@ -427,7 +427,7 @@ migration.migrate_v1(sys.argv[1], plan, maintenance=True)
             def close(self):
                 self.connection.close()
                 raise sqlite3.OperationalError('injected close failure')
-        with mock.patch('yadinassi.sqlite_catalog_migration.sqlite3.connect', side_effect=lambda *a, **kw: Connection(real_connect(*a, **kw))):
+        with mock.patch('yadinassi.db.sqlite.sqlite_catalog_migration.sqlite3.connect', side_effect=lambda *a, **kw: Connection(real_connect(*a, **kw))):
             with mock.patch.object(migration, '_copy_records', side_effect=BackendError('integrity')):
                 with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
                     migrate_v1(self.path, self.plan, maintenance=True)
@@ -442,7 +442,7 @@ migration.migrate_v1(sys.argv[1], plan, maintenance=True)
             def close(self):
                 self.connection.close()
                 raise sqlite3.OperationalError('injected close failure')
-        with mock.patch('yadinassi.sqlite_catalog_migration.sqlite3.connect', side_effect=lambda *a, **kw: Connection(real_connect(*a, **kw))):
+        with mock.patch('yadinassi.db.sqlite.sqlite_catalog_migration.sqlite3.connect', side_effect=lambda *a, **kw: Connection(real_connect(*a, **kw))):
             with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
                 migrate_v1(self.path, self.plan, maintenance=True)
         self.assertEqual(resolve_migration(self.path, self.plan, maintenance=True), 'committed')
@@ -456,12 +456,12 @@ migration.migrate_v1(sys.argv[1], plan, maintenance=True)
             def close(self):
                 self.connection.close()
                 raise sqlite3.OperationalError('injected close failure')
-        with mock.patch('yadinassi.sqlite_catalog_migration.sqlite3.connect', side_effect=lambda *a, **kw: Connection(real_connect(*a, **kw))):
+        with mock.patch('yadinassi.db.sqlite.sqlite_catalog_migration.sqlite3.connect', side_effect=lambda *a, **kw: Connection(real_connect(*a, **kw))):
             self.assertEqual(resolve_migration(self.path, self.plan, maintenance=True), 'uncertain')
 
     def test_section_metadata_is_not_silently_dropped_from_v1(self):
         from dataclasses import replace
-        from yadinassi.catalog_backend import TabularSectionSchema
+        from yadinassi.db.catalog.catalog_backend import TabularSectionSchema
         changed = replace(self.sa, tabular_sections=(TabularSectionSchema(uuid4(), 'Lines'),))
         self.execute('UPDATE catalog_schema SET definition=? WHERE identity=?',
                      (_json(_schema_data(changed)), str(self.a)))
@@ -482,7 +482,7 @@ migration.migrate_v1(sys.argv[1], plan, maintenance=True)
 
     def test_resolver_refuses_section_metadata_in_v2(self):
         from dataclasses import replace
-        from yadinassi.catalog_backend import TabularSectionSchema
+        from yadinassi.db.catalog.catalog_backend import TabularSectionSchema
         migrate_v1(self.path, self.plan, maintenance=True)
         changed = replace(self.sa, tabular_sections=(TabularSectionSchema(uuid4(), 'Lines'),))
         self.execute('UPDATE catalog_schema SET definition=? WHERE identity=?',

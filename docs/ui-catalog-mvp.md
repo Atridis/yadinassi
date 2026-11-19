@@ -42,7 +42,7 @@ and [form data types](https://1c-dn.com/library/tutorials/practical_developer_gu
 
 ## UI/backend boundary
 
-`yadinassi/catalog_backend.py` defines logical schema, keys, snapshots, revisions,
+`yadinassi/db/catalog/catalog_backend.py` defines logical schema, keys, snapshots, revisions,
 capabilities and read/write operations. The DB track owns persistence, configuration
 admission, atomicity and recovery; the runtime owns BSL object identity, defaults,
 assignment, handlers and validation. UI owns presentation, navigation, eventual

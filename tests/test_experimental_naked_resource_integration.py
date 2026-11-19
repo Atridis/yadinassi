@@ -1,14 +1,14 @@
 import os
 import unittest
 from unittest.mock import patch
-from yadinassi import values
-from yadinassi.experimental_naked_boundaries import BoundaryContext
+from yadinassi.types import values
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
 
 class ResourceIntegrationTests(unittest.TestCase):
 
     def test_huge_bad_index_diagnostic_does_not_expand_integer(self):
         from decimal import Decimal
-        from yadinassi import experimental_naked_collections as module
+        from yadinassi.execution.codegen import experimental_naked_collections as module
         with patch.object(module, 'int', side_effect=AssertionError('integer expansion'), create=True):
             with self.assertRaises(IndexError):
                 module._checked_array_index([], Decimal('1e1000000'))

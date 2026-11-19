@@ -3,7 +3,7 @@ import unittest
 import json
 from decimal import Decimal
 from yadinassi import Interpreter, BSLError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class DirectASTCanonicalConstructorTests(unittest.TestCase):
     def vm(self):

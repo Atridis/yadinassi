@@ -4,10 +4,10 @@ from unittest.mock import patch
 import test_source_storage_values as existing
 import test_source_session_types as sessions
 from test_configuration_source_runtime import source
-from yadinassi.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.runtime import Interpreter
-from yadinassi.errors import BSLError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.types.errors import BSLError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
 def poison(test):
@@ -64,8 +64,8 @@ class DirectSourceValueStorage(unittest.TestCase):
 
     def test_source_form_scalar_storage(self):
         import test_source_forms as forms
-        from yadinassi.configuration_source import import_source
-        from yadinassi.source_forms import SourceFormController
+        from yadinassi.configuration.configuration_source import import_source
+        from yadinassi.forms.source_forms import SourceFormController
         mapping=forms.files(b'&AtServer\nProcedure Created(Cancel, StandardProcessing)\n'
             b'S=New ValueStorage("stored");Greeting=S.Get();EndProcedure\n'
             b'&AtClient\nProcedure Go(Command) EndProcedure')

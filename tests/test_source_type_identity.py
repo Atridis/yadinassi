@@ -1,9 +1,9 @@
 import unittest
 from test_configuration_source_runtime import source
-from yadinassi.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.runtime import Interpreter
-from yadinassi.type_values import type_by_name, type_of
-from yadinassi.values import BSLType
+from yadinassi.types.type_values import type_by_name, type_of
+from yadinassi.types.values import BSLType
 
 
 class SourceTypeIdentityTests(unittest.TestCase):

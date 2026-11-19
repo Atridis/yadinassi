@@ -8,14 +8,14 @@ from unittest import mock
 from uuid import UUID
 import xml.etree.ElementTree as ET
 
-from yadinassi.catalog_backend import FieldSchema
-from yadinassi.configuration_accumulation import (PROFILE as SCALAR,
+from yadinassi.db.catalog.catalog_backend import FieldSchema
+from yadinassi.configuration.configuration_accumulation import (PROFILE as SCALAR,
     canonical as scalar_canonical, import_accumulation_configuration)
-from yadinassi.configuration_accumulation_references import (PROFILE as REFERENCES,
+from yadinassi.configuration.configuration_accumulation_references import (PROFILE as REFERENCES,
     canonical as reference_canonical, import_inventory_configuration)
-from yadinassi.configuration_inventory_enums import (PROFILE, FORMAT_VERSION, VALUE_PROFILE,
+from yadinassi.configuration.configuration_inventory_enums import (PROFILE, FORMAT_VERSION, VALUE_PROFILE,
     InventoryEnumConfiguration, canonical, import_inventory_enum_configuration)
-from yadinassi import configuration_xml as xml
+from yadinassi.configuration import configuration_xml as xml
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / 'scripts/inventory_enum_behavior/runtime_source'

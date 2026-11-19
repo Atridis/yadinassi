@@ -3,9 +3,9 @@ from decimal import Decimal as D
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, target_context
-from yadinassi.value_trees import BSLValueTree, BSLValueTreeColumnCollection as Columns, BSLValueTreeRowCollection as Rows
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, target_context
+from yadinassi.collections.value_trees import BSLValueTree, BSLValueTreeColumnCollection as Columns, BSLValueTreeRowCollection as Rows
 
 
 class Poison:
@@ -26,7 +26,7 @@ class ClearPolicyTests(unittest.TestCase):
         return tree,column,(root,child,deep,sibling)
 
     def test_query_nullable_marker_preserves_ordinary_exact_descriptor_shape(self):
-        from yadinassi.type_descriptions import BSLTypeDescription, _query_nullable_description
+        from yadinassi.types.type_descriptions import BSLTypeDescription, _query_nullable_description
         fields = {'types', 'number_qualifiers', 'string_qualifiers',
                   'date_qualifiers', 'binary_data_qualifiers'}
         ordinary = BSLTypeDescription('Number')
@@ -174,7 +174,7 @@ class ClearPolicyTests(unittest.TestCase):
         with self.assertRaises(ValueError):held.add()
 
     def test_forward_creation_rejects_poisoned_descriptors_qualifiers_and_defaults(self):
-        from yadinassi.type_descriptions import BSLTypeDescription
+        from yadinassi.types.type_descriptions import BSLTypeDescription
         for mutate in (lambda c:setattr(c,'value_type',Poison()),
                        lambda c:object.__setattr__(c.value_type,'types',Poison()),
                        lambda c:object.__setattr__(c.value_type,'types',(Poison(),)),
@@ -216,17 +216,17 @@ class ClearPolicyTests(unittest.TestCase):
     def test_row_column_cell_and_work_budgets(self):
         for name,limit in (('_MAX_ROWS',3),('_MAX_COLUMNS',0),('_MAX_CELLS',3),('_MAX_SEARCH_WORK',2)):
             tree,column,rows=self.fixture()
-            with patch('yadinassi.value_trees.'+name,limit),self.assertRaises(ValueError):tree.columns.clear()
+            with patch('yadinassi.collections.value_trees.'+name,limit),self.assertRaises(ValueError):tree.columns.clear()
             self.assertFalse(rows[0]._deleted)
         tree,column,rows=self.fixture();held=rows[1].rows;tree.columns.clear()
-        with patch('yadinassi.value_trees._MAX_ROWS',0),self.assertRaises(ValueError):held.add()
+        with patch('yadinassi.collections.value_trees._MAX_ROWS',0),self.assertRaises(ValueError):held.add()
 
     def test_depth_boundary_and_iterative_work(self):
         tree=BSLValueTree();tree.columns.add('Key');row=tree.rows.add()
         for _ in range(256):row=row.rows.add()
         held=row.rows;tree.columns.clear();self.assertEqual(held.add().depth,0)
         tree,column,rows=self.fixture()
-        with patch('yadinassi.value_trees._MAX_DEPTH',1),self.assertRaises(ValueError):tree.columns.clear()
+        with patch('yadinassi.collections.value_trees._MAX_DEPTH',1),self.assertRaises(ValueError):tree.columns.clear()
 
     def test_linux_target_not_host_os_procedure_arity_and_expression(self):
         tree,column,rows=self.fixture()

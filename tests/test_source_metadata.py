@@ -3,10 +3,10 @@ from decimal import Decimal
 import unittest
 from uuid import uuid5, NAMESPACE_URL
 
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_metadata import SourceMetadataRoot
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_metadata import SourceMetadataRoot
 from yadinassi.runtime import Interpreter
-from yadinassi.errors import BSLError
+from yadinassi.types.errors import BSLError
 
 
 def xml(family, name, *, properties='', children=''):

@@ -7,9 +7,9 @@ from unittest.mock import patch
 from uuid import uuid4
 import test_query_count_pushdown as fixtures
 from yadinassi import Interpreter
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_migration_plan import prepare, apply
-from yadinassi.catalog_backend import BackendError
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_migration_plan import prepare, apply
+from yadinassi.db.catalog.catalog_backend import BackendError
 
 class GenericAdmissionEpochTests(unittest.TestCase):
     tearDown = fixtures.CountPushdownTests.tearDown
@@ -28,7 +28,7 @@ class GenericAdmissionEpochTests(unittest.TestCase):
         self.assertTrue(self.backend._read_admission_cache_allowed())
 
     def sql(self, statement, args=()):
-        from yadinassi.sqlite_catalog import register_query_collations
+        from yadinassi.db.sqlite.sqlite_catalog import register_query_collations
         with closing(sqlite3.connect(self.context.path)) as db:
             register_query_collations(db)
             result = db.execute(statement, args).fetchall(); db.commit()
@@ -50,7 +50,7 @@ class GenericAdmissionEpochTests(unittest.TestCase):
         self.warm(); table=self.table()
         # A noncooperating SQLite writer can bypass CHECK constraints. COUNT
         # must still validate the unprojected revision after the epoch changes.
-        from yadinassi.sqlite_catalog import register_query_collations
+        from yadinassi.db.sqlite.sqlite_catalog import register_query_collations
         with closing(sqlite3.connect(self.context.path)) as db:
             register_query_collations(db)
             db.execute('PRAGMA ignore_check_constraints=ON')
@@ -115,7 +115,7 @@ class GenericSectionAndSequenceEpochTests(unittest.TestCase):
         from pathlib import Path
         import tempfile
         from test_catalog_atomic_numbering import numbered_configuration
-        from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
         @contextmanager
         def opened():
             with tempfile.TemporaryDirectory() as directory:
@@ -163,9 +163,9 @@ class GenericSectionAndSequenceEpochTests(unittest.TestCase):
                     with self.assertRaises(BackendError): backend.begin_read()
 
     def test_foreign_section_payload_corruption_after_warm_read(self):
-        from yadinassi.catalog_backend import CatalogDraft, CatalogKey, TabularRow, TabularSectionRows
-        from yadinassi.sqlite_catalog import register_query_collations
-        from yadinassi.sqlite_catalog_layout import quote_identifier
+        from yadinassi.db.catalog.catalog_backend import CatalogDraft, CatalogKey, TabularRow, TabularSectionRows
+        from yadinassi.db.sqlite.sqlite_catalog import register_query_collations
+        from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
         for version in (3, 4):
             for migrated in (False, True):
                 with self.subTest(version=version, migrated=migrated), self.backend_variant(version, migrated) as (backend, path):

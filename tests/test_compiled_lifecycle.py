@@ -34,7 +34,7 @@ class CompiledLifecycleTests(unittest.TestCase):
         self.assertEqual(vm.pending_promises, ())
 
     def test_late_host_callback_child_inherits_strict_scheduler_policy(self):
-        from yadinassi.execution_policy import current_backend
+        from yadinassi.execution.execution_policy import current_backend
         entry_backend = current_backend()
         vm = self.vm()
         signal = vm._scheduler.new_pending()

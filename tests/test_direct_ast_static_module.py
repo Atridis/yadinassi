@@ -1,9 +1,9 @@
 import unittest
 from decimal import Decimal as D
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.syntax.parser import parse
-from yadinassi.python_direct_static_module import analyze
+from yadinassi.execution.direct.python_direct_static_module import analyze
 
 class StaticModuleTests(unittest.TestCase):
     def prepare(self,source):

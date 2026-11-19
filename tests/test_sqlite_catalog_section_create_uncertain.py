@@ -13,9 +13,9 @@ from uuid import uuid4
 
 from test_sqlite_catalog_backend import configuration
 from test_sqlite_catalog_create_uncertain import CreateConnection, mocked_cli_storage_source
-from yadinassi.catalog_backend import (BackendError, CatalogDraft, CatalogKey, FieldSchema,
+from yadinassi.db.catalog.catalog_backend import (BackendError, CatalogDraft, CatalogKey, FieldSchema,
                                       TabularRow, TabularSectionRows, TabularSectionSchema)
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 
 
 class SectionCreateConnection(CreateConnection):
@@ -77,7 +77,7 @@ class SQLiteSectionCreateUncertainTests(unittest.TestCase):
             proxy = SectionCreateConnection(connection, **fault)
             self.handles.append(proxy)
             return proxy
-        return patch('yadinassi.sqlite_catalog.sqlite3.connect', side_effect=connect)
+        return patch('yadinassi.db.sqlite.sqlite_catalog.sqlite3.connect', side_effect=connect)
 
     def write_concurrently(self):
         # Runs only after the creator's real COMMIT (or physical close). A

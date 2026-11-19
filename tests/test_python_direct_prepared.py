@@ -4,13 +4,13 @@ from unittest.mock import patch
 from dataclasses import FrozenInstanceError
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.python_direct import PythonDirectUnsupported
-from yadinassi.native_targets import LINUX_8_3_27_1508
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
 
 class PreparedDirectTests(unittest.TestCase):
     def test_compile_once_current_state(self):
         vm=Interpreter();vm.variables['x']=Decimal(1);p=vm.prepare('x=x+1;x;')
-        with patch('yadinassi.python_direct._compile',side_effect=AssertionError('recompile')):
+        with patch('yadinassi.execution.direct.python_direct._compile',side_effect=AssertionError('recompile')):
             self.assertEqual(vm.execute_prepared(p),2)
             self.assertEqual(vm.execute_prepared(p),3)
         self.assertIsNone(p._plan.last_state)
@@ -71,7 +71,7 @@ class PreparedDirectTests(unittest.TestCase):
     def test_immutable_literal_payloads(self):
         vm=Interpreter();p=vm.prepare("a=Null;b='20200101';")
         vm.execute_prepared(p)
-        from yadinassi.values import NULL
+        from yadinassi.types.values import NULL
         self.assertIs(vm.variables['a'],NULL)
         previous=vm.variables['b'];vm.variables.clear();vm.execute_prepared(p)
         self.assertIs(vm.variables['b'],previous)
@@ -90,7 +90,7 @@ class PreparedDirectTests(unittest.TestCase):
 
     def test_callback_restriction_not_authorization_cached(self):
         vm=Interpreter();p=vm.prepare('Install();x=1;');vm.register_function('Install',lambda:setattr(vm,'_configuration_runtime',object()))
-        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         with self.assertRaises(BoundaryViolation):vm.execute_prepared(p)
         self.assertNotIn('x',vm.variables)
 

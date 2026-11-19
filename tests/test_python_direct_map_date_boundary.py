@@ -3,9 +3,9 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.dates import BSLDate, MAX_TICKS, UnsupportedDateRange
-from yadinassi.experimental_naked_collections import _TypedMap
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.temporal.dates import BSLDate, MAX_TICKS, UnsupportedDateRange
+from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
 class MapDateBoundaryTests(unittest.TestCase):
@@ -66,7 +66,7 @@ class MapDateBoundaryTests(unittest.TestCase):
         for value in (object.__new__(Child),Fake()):
             mapping=_TypedMap();mapping[value]=3
             self.assertEqual(mapping[value],3)
-        with patch('yadinassi.dates.BSLDate',Fake):
+        with patch('yadinassi.temporal.dates.BSLDate',Fake):
             with self.assertRaises(UnsupportedDateRange):_TypedMap.token(BSLDate(0,True))
 
     def test_known_dates_keep_existing_identity_limitation(self):

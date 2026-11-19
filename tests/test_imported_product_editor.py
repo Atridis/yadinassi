@@ -6,9 +6,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from yadinassi.catalog_backend import BackendError
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _View
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _View
 from yadinassi.ui.catalog_editor import CatalogEditorApplication
 from yadinassi.ui.protocol import CatalogRef, UIError
 

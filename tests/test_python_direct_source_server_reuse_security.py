@@ -2,11 +2,11 @@
 import unittest
 from unittest.mock import patch
 from test_source_server_call import configuration
-from yadinassi.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.runtime import Interpreter
-from yadinassi.reusable_values import ReusableValueCache
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.errors import BSLError
+from yadinassi.application.reusable_values import ReusableValueCache
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.types.errors import BSLError
 
 
 class SourceServerReuseSecurity(unittest.TestCase):

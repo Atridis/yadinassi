@@ -9,8 +9,8 @@ import unittest
 from unittest import mock
 from yadinassi import BSLError, Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.value_trees import BSLValueTree, BSLValueTreeRowCollection
-from yadinassi.values import BSLArray, HostFunction
+from yadinassi.collections.value_trees import BSLValueTree, BSLValueTreeRowCollection
+from yadinassi.types.values import BSLArray, HostFunction
 from test_native_tree_findrows_measurement import PRESENT
 
 ROOT = Path(__file__).resolve().parents[1]

@@ -3,8 +3,8 @@ import ast
 import inspect
 import unittest
 from types import SimpleNamespace
-from yadinassi.form_runtime import FormSession
-from yadinassi.configuration_runtime import ConfigurationApplication
+from yadinassi.forms.form_runtime import FormSession
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
 
 
 class DirectOnlyAdapterTests(unittest.TestCase):
@@ -26,7 +26,8 @@ class DirectOnlyAdapterTests(unittest.TestCase):
         self.assertEqual(events, [caller])
 
     def test_selected_adapters_have_no_old_scheduler_dispatch(self):
-        from yadinassi import source_forms, document_posting, form_event_simulation
+        from yadinassi.forms import source_forms, form_event_simulation
+        from yadinassi.db.document import document_posting
         methods = (FormSession._invoke, FormSession.dispatch_completion,
                    ConfigurationApplication._invoke, ConfigurationApplication._invoke_remote,
                    source_forms._SourceNoContextServer._invoke,

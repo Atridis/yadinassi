@@ -2,11 +2,11 @@
 import unittest
 from unittest.mock import patch
 import test_python_direct_source_query as fixtures
-from yadinassi import python_direct_source_host_info as bridge
-from yadinassi.source_system_info import SourceSystemInfo
-from yadinassi.source_host_session import SourceSessionCall
-from yadinassi.values import HostFunction
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.direct.source import python_direct_source_host_info as bridge
+from yadinassi.application.source_system_info import SourceSystemInfo
+from yadinassi.application.source_host_session import SourceSessionCall
+from yadinassi.types.values import HostFunction
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
 class DirectHostInfoSecurity(unittest.TestCase):
@@ -45,7 +45,7 @@ class DirectHostInfoSecurity(unittest.TestCase):
             finally:app.host_session._background_job=None
 
     def test_constructor_class_and_initializer_replacement_before_callback(self):
-        from yadinassi import source_system_info
+        from yadinassi.application import source_system_info
         app,caller=self.app();effects=[]
         with self.boundary(app,caller) as boundary:
             bound=bridge.resolve_constructor(boundary,'SystemInfo')

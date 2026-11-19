@@ -5,11 +5,11 @@ import tempfile
 import unittest
 from test_main_demo_configuration import source
 from test_main_demo_runtime import SEED
-from yadinassi.configuration_main_demo import PROFILE, import_main_demo_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.inventory_application_reports import InventoryReports
-from yadinassi.inventory_host_operations import _source_configuration
-from yadinassi.catalog_backend import BackendError
+from yadinassi.configuration.configuration_main_demo import PROFILE, import_main_demo_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.configuration.demos.inventory_application_reports import InventoryReports
+from yadinassi.configuration.demos.inventory_host_operations import _source_configuration
+from yadinassi.db.catalog.catalog_backend import BackendError
 from yadinassi.runtime import Interpreter
 
 class MainDemoUIReportsTests(unittest.TestCase):

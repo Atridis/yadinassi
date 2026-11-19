@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 import test_document_posting_runtime as fixture
 
 class DirectRecorderOwnershipTests(unittest.TestCase):

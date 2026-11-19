@@ -1,6 +1,6 @@
 import unittest
 from recovered_bare_fixture import Interpreter
-from yadinassi.python_direct import PythonDirectUnsupported
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 class RecoveredRoutines(unittest.TestCase):
     def test_calls_by_value_and_byref_both_routes(self):
         source='Function Double(Val X) X=X*2; Return X; EndFunction; Procedure Inc(X) X=X+1; EndProcedure; R=3; S=Double(R); Inc(R);'

@@ -14,12 +14,14 @@ import re
 import unittest
 from unittest.mock import patch
 
-from yadinassi import Interpreter, runtime, serialization, type_values
+from yadinassi import Interpreter, runtime
+from yadinassi.formats.storage import serialization
+from yadinassi.types import type_values
 from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse
-from yadinassi.structures import BSLStructure
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.values import BSLArray, BSLFixedArray, BSLObject, HostFunction, equal
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLObject, HostFunction, equal
 
 
 ROOT = Path(__file__).resolve().parents[1]

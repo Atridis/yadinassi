@@ -5,7 +5,7 @@ import subprocess
 import sys
 import unittest
 from unittest.mock import patch
-from yadinassi.execution_policy import backend_entrypoint, current_backend, execution_backend_policy
+from yadinassi.execution.execution_policy import backend_entrypoint, current_backend, execution_backend_policy
 from yadinassi.ui.form_app import FormProcess
 from yadinassi.ui.configuration_app import ConfigurationProcess
 from yadinassi.ui.local_app import RuntimeBridge
@@ -43,7 +43,7 @@ class UIBackendSelectionTests(unittest.TestCase):
                 code = '''import sys,json,io
 sys.path.insert(0,sys.argv[1])
 from unittest.mock import patch,Mock
-from yadinassi.execution_policy import current_backend
+from yadinassi.execution.execution_policy import current_backend
 from yadinassi.ui import MODULE as app
 seen=[]
 def runtime(*a,**kw): seen.append(current_backend()); return 0

@@ -16,7 +16,7 @@ from threading import BoundedSemaphore, Lock, Thread
 from queue import Empty, Full, Queue
 import webbrowser
 
-from ..execution_policy import UI_BACKENDS, ui_backend, execution_backend_policy
+from yadinassi.execution.execution_policy import UI_BACKENDS, ui_backend, execution_backend_policy
 from .protocol import MAX_COUNTER, MAX_LINE_BYTES, UIError, decode_line, encode_line
 from .browser_session import BrowserSession, AttachmentError, PROTOCOL as ATTACHMENT_PROTOCOL
 

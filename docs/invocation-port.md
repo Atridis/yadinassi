@@ -14,7 +14,7 @@ in requests or retained in client stubs.
 
 ```python
 from yadinassi import Interpreter
-from yadinassi.invocation import InvocationBinding, InvocationPort, InvocationServer
+from yadinassi.execution.invocation import InvocationBinding, InvocationPort, InvocationServer
 
 server = InvocationServer('''&AtServerNoContext
 Function Calculate(Val Price, Val Quantity)

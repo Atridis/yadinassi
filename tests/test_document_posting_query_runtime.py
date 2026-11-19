@@ -6,8 +6,8 @@ import tempfile
 import unittest
 
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.configuration_posting import import_posting_configuration,PROFILE
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.configuration.configuration_posting import import_posting_configuration,PROFILE
+from yadinassi.db.database_context import SQLiteDBContext
 from test_document_posting_runtime import posting_source,ROOT
 
 

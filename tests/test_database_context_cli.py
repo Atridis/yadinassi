@@ -40,8 +40,8 @@ def write_source(path, code):
 
 
 def make_sqlite_fixture(directory):
-    from yadinassi.configuration_xml import import_configuration
-    from yadinassi.database_context import SQLiteDBContext
+    from yadinassi.configuration.configuration_xml import import_configuration
+    from yadinassi.db.database_context import SQLiteDBContext
     from sqlite_catalog_fixture import configuration_files
     directory.mkdir()
     path = directory / 'application.sqlite'

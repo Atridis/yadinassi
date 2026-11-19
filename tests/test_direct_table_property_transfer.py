@@ -1,8 +1,8 @@
 import unittest
 from decimal import Decimal as D
 from yadinassi import Interpreter
-from yadinassi.plain_value_table_runtime import BSLValueTable
-from yadinassi.structures import BSLStructure, fill_property_values
+from yadinassi.collections.plain_value_table_runtime import BSLValueTable
+from yadinassi.collections.structures import BSLStructure, fill_property_values
 
 class DirectTablePropertyTransfer(unittest.TestCase):
     def table(self):
@@ -40,8 +40,8 @@ Live=R.K;'''
         fill_property_values(r,BSLStructure('K',D(2)))
         self.assertEqual(r.get_member('K'),D(2))
     def test_direct_structure_object_endpoint_stays_closed(self):
-        from yadinassi.python_direct_fill import fill
-        from yadinassi.experimental_naked_structure import new_structure
+        from yadinassi.execution.direct.python_direct_fill import fill
+        from yadinassi.execution.codegen.experimental_naked_structure import new_structure
         t,r=self.table()
         with self.assertRaises(TypeError):fill(r,new_structure('K',D(2)))
         self.assertEqual(r.get_member('K'),D(1))

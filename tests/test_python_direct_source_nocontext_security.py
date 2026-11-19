@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 import test_source_forms as existing
 from yadinassi.runtime import Interpreter
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
 class SourceNoContextSecurity(unittest.TestCase):
@@ -39,7 +39,7 @@ class SourceNoContextSecurity(unittest.TestCase):
                 self.assertEqual(dict(controller.client.session.snapshot().attributes)['Greeting'],'initial')
 
     def test_constructor_tampering_rejected_before_callback(self):
-        from yadinassi.source_forms import _SourceNoContextInterpreter
+        from yadinassi.forms.source_forms import _SourceNoContextInterpreter
         controller=self.controller()
         callback=unittest.mock.Mock(side_effect=AssertionError('wrong-constructor'))
         with patch.object(_SourceNoContextInterpreter,'__init__',callback):
@@ -48,7 +48,7 @@ class SourceNoContextSecurity(unittest.TestCase):
         callback.assert_not_called()
 
     def test_same_app_foreign_controller_executor_rejected(self):
-        from yadinassi.source_forms import SourceFormController
+        from yadinassi.forms.source_forms import SourceFormController
         for server in (False,True):
             with self.subTest(server=server):
                 controller=self.controller(server_call=server)

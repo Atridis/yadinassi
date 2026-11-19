@@ -3,12 +3,12 @@ from pathlib import Path
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
-from yadinassi.direct_form_parameters import (structure_items,is_parameters,get_parameter,bind_parameter_method,bind_parameter_write)
-from yadinassi.experimental_naked_structure import new_structure,_DirectStructure
-from yadinassi.configuration_forms import bind_parameters
-from yadinassi.form_results import freeze_result,result_value
-from yadinassi.structures import BSLStructure,BSLFixedStructure
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.forms.direct_form_parameters import (structure_items,is_parameters,get_parameter,bind_parameter_method,bind_parameter_write)
+from yadinassi.execution.codegen.experimental_naked_structure import new_structure,_DirectStructure
+from yadinassi.configuration.configuration_forms import bind_parameters
+from yadinassi.forms.form_results import freeze_result,result_value
+from yadinassi.collections.structures import BSLStructure,BSLFixedStructure
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class DirectFormParametersTests(unittest.TestCase):
     def session(self):
@@ -66,7 +66,7 @@ class DirectFormParametersTests(unittest.TestCase):
     def test_actual_draftdetails_created_source_without_vm_dispatch(self):
         from yadinassi import Interpreter
         from yadinassi.ui.configuration_app import load_application
-        from yadinassi.python_direct_forms import FormBoundary
+        from yadinassi.execution.direct.python_direct_forms import FormBoundary
         root=Path(__file__).resolve().parents[1]/'examples/demo'
         original_get=FormBoundary.get_member;original_method=FormBoundary.resolve_member
         def get(ctx,value,name):

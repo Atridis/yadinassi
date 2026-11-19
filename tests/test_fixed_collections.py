@@ -11,10 +11,10 @@ import tempfile
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.maps import BSLFixedMap, BSLMap
-from yadinassi.structures import BSLFixedStructure, BSLStructure
-from yadinassi.values import BSLArray, BSLFixedArray
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.collections.maps import BSLFixedMap, BSLMap
+from yadinassi.collections.structures import BSLFixedStructure, BSLStructure
+from yadinassi.types.values import BSLArray, BSLFixedArray
 
 
 class FixedCollectionTests(unittest.TestCase):

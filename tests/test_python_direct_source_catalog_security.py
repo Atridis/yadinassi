@@ -5,11 +5,11 @@ from unittest.mock import patch
 import test_python_direct_source_storage_guards as fixtures
 import test_python_direct_source_query as query_fixtures
 from test_source_catalog_object_modules import source
-from yadinassi.source_references import SourceReferenceManager
-from yadinassi.source_catalog_runtime import SourceCatalogObject,_ObjectInterpreter,create_object
-from yadinassi.python_direct_source_storage import finish
-from yadinassi.python_direct_source_catalog import check_object,bind_export
-from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.db.metadata.source_references import SourceReferenceManager
+from yadinassi.db.catalog.source_catalog_runtime import SourceCatalogObject,_ObjectInterpreter,create_object
+from yadinassi.execution.direct.source.python_direct_source_storage import finish
+from yadinassi.execution.direct.source.python_direct_source_catalog import check_object,bind_export
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
 class DirectCatalogSecurity(unittest.TestCase):

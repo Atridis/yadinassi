@@ -4,10 +4,10 @@ import unittest
 from xml.etree import ElementTree as ET
 
 from business_configuration_fixture import sources
-from yadinassi.configuration_business_profile import (
+from yadinassi.configuration.configuration_business_profile import (
     BUSINESS_SOURCE_ISSUE, business_configuration, import_business_configuration)
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.configuration_forms import load_configuration_forms
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_forms import load_configuration_forms
 
 
 class BusinessProfileTests(unittest.TestCase):
@@ -34,9 +34,9 @@ class BusinessProfileTests(unittest.TestCase):
             app.close()
 
     def test_old_profiles_remain_closed(self):
-        from yadinassi.configuration_application_profile import import_application_configuration
-        from yadinassi.configuration_document_profile import import_document_forms_configuration
-        from yadinassi.configuration_xml import import_catalog_forms_configuration
+        from yadinassi.configuration.configuration_application_profile import import_application_configuration
+        from yadinassi.configuration.configuration_document_profile import import_document_forms_configuration
+        from yadinassi.configuration.configuration_xml import import_catalog_forms_configuration
         for loader in (import_application_configuration, import_document_forms_configuration, import_catalog_forms_configuration):
             with self.subTest(loader=loader.__name__), self.assertRaises(ValueError): loader(sources())
 
