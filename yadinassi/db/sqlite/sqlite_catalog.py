@@ -2097,41 +2097,12 @@ class _View:
         fields = ','.join(quote_identifier(self._backend._layout.field_name(schema.identity, f.identity)) for f in schema.fields)
         return (quote_identifier(self._backend._layout.table_name(schema.identity)), 'record_id,revision,code,description,deletion_mark' + (',' + fields if fields else ''), '1', ())
 
-    def _preflight_v2(self, schema, *, record_id=None, selection_limit=None):
-        table, _, _, _ = self._source(schema)
-        invalid = ["typeof(record_id)!='text'", "typeof(revision)!='integer'", "typeof(code)!='text'", "typeof(description)!='text'", "typeof(deletion_mark)!='integer'", "length(CAST(record_id AS BLOB))>36", "length(CAST(code AS BLOB))>%d" % (schema.code_length*4), "length(CAST(description AS BLOB))>%d" % (schema.description_length*4)]
-        lengths = ['length(CAST(record_id AS BLOB))', 'length(CAST(code AS BLOB))', 'length(CAST(description AS BLOB))', '32']
-        for field in schema.fields:
-            col = quote_identifier(self._backend._layout.field_name(schema.identity, field.identity))
-            expected = 'integer' if field.kind == 'boolean' else 'text'
-            nullable = field.kind == 'catalog_ref'
-            invalid.append(("(%s IS NOT NULL AND typeof(%s)!='%s')" if nullable else "typeof(%s)!='%s'") % ((col,col,expected) if nullable else (col,expected)))
-            limit = field.qualifiers[0]*4 if field.kind == 'string' else (36 if nullable else 64)
-            invalid.append('length(CAST(%s AS BLOB))>%d' % (col,limit))
-            lengths.append('COALESCE(length(CAST(%s AS BLOB)),0)' % col)
-        length = '+'.join(lengths)
-        # A v1 database could contain non-ASCII JSON up to 1 Mi characters.
-        # UTF-8 can need four bytes per character; keep point reads bounded.
-        invalid.append('(%s)>%d' % (length,4 * _MAX_ROW_BYTES + 4 * 2048 + 128))
-        if selection_limit is not None:
-            table = '(SELECT * FROM %s ORDER BY code COLLATE BINARY,record_id LIMIT ?)' % table
-            args = (selection_limit,)
-            where = '1'
-        else:
-            where = '1' if record_id is None else 'record_id=?'
-            args = () if record_id is None else (str(record_id),)
-        if self._connection.execute('SELECT 1 FROM %s WHERE (%s) AND (%s) LIMIT 1' % (table,where,' OR '.join(invalid)), args).fetchone(): raise BackendError('integrity')
-        count, total = self._connection.execute('SELECT COUNT(*),COALESCE(SUM(%s),0) FROM %s WHERE %s' % (length,table,where), args).fetchone()
-        if type(count) is not int or type(total) is not int or count > _MAX_ROWS or total > _MAX_CONFIG_BYTES: raise BackendError('unsupported')
-        return count
-
     @_boundary
     def select_catalog(self, catalog_id, request=CatalogSelection()):
         self._require(); schema = self.catalog_schema(catalog_id)
         if type(request) is not CatalogSelection or type(request.limit) is not int or not 1 <= request.limit <= _MAX_ROWS or request.order != 'code_then_identity':
             raise BackendError('unsupported')
         table, columns, where, args = self._source(schema)
-        if self._backend.storage_version >= 2: self._preflight_v2(schema, selection_limit=request.limit+1)
         rows = self._connection.execute('SELECT %s FROM %s WHERE %s ORDER BY code COLLATE BINARY,record_id LIMIT ?' % (columns,table,where), args+(request.limit+1,)).fetchall()
         if len(rows) > request.limit: raise BackendError('unsupported')
         # Validate all selected scalars before section payloads. The selection
@@ -2224,35 +2195,16 @@ class _View:
         cache_key = ('catalog-scalars', catalog_id, schema, retain_owners)
         if self._cache_validation_allowed() and cache_key in self._validated_sources:
             return set(self._validated_sources[cache_key])
-        # Filtering must not hide corrupted owner values. This pass retains no
-        # payload or card; coarse bounds run before the first payload fetch.
-        if self._backend.storage_version >= 2:
-            count = self._preflight_v2(schema)
-        else:
-            malformed = self._connection.execute(
-                "SELECT 1 FROM catalog_record WHERE catalog_id=? AND ("
-                "typeof(revision)!='integer' OR typeof(deletion_mark)!='integer' OR "
-                "typeof(record_id)!='text' OR typeof(code)!='text' OR "
-                "typeof(description)!='text' OR typeof(values_json)!='text' OR "
-                "length(CAST(record_id AS BLOB))>36 OR "
-                "length(CAST(code AS BLOB))>? OR length(CAST(description AS BLOB))>? OR "
-                "length(CAST(values_json AS BLOB))>?) LIMIT 1",
-                (str(catalog_id),schema.code_length*4,schema.description_length*4,_MAX_ROW_BYTES)).fetchone()
-            if malformed is not None: raise BackendError('integrity')
-            count, raw_bytes = self._connection.execute(
-                'SELECT COUNT(*), COALESCE(SUM(length(CAST(record_id AS BLOB)) + '
-                'length(CAST(code AS BLOB)) + length(CAST(description AS BLOB)) + '
-                'length(CAST(values_json AS BLOB)) + 32),0) '
-                'FROM catalog_record WHERE catalog_id=?', (str(catalog_id),)).fetchone()
-            if type(count) is not int or type(raw_bytes) is not int or count > _MAX_ROWS or raw_bytes > _MAX_CONFIG_BYTES: raise BackendError('unsupported')
+        # Validate actual scalar rows once; filtering must not hide malformed
+        # owner values. No preliminary COUNT/SUM or typeof scan is needed.
         table, columns, where, args = self._source(schema)
         owners = set(); seen = 0
         for row in self._connection.execute('SELECT %s FROM %s WHERE %s LIMIT ?' %
                 (columns, table, where), args + (_MAX_ROWS + 1,)):
+            seen += 1
+            if seen > _MAX_ROWS: raise BackendError('unsupported')
             scalar = self._scalar(catalog_id, row, schema=schema)
             if retain_owners: owners.add(str(scalar.key.record_id))
-            seen += 1
-        if seen != count: raise BackendError('integrity')
         if self._cache_validation_allowed():
             self._validated_sources[cache_key] = frozenset(owners)
         return owners
@@ -2737,7 +2689,6 @@ class _View:
         self._require(); self._key(key)
         schema = self.catalog_schema(key.catalog_id)
         table, columns, where, args = self._source(schema)
-        if self._backend.storage_version >= 2: self._preflight_v2(schema, record_id=key.record_id)
         row = self._connection.execute('SELECT %s FROM %s WHERE %s AND record_id=?' % (columns,table,where), args+(str(key.record_id),)).fetchone()
         return None if row is None else self._card(key.catalog_id,row,schema=schema)
 
@@ -2762,7 +2713,6 @@ class _View:
         args += (str(key.record_id),)
         proof = ('catalog-point',key.catalog_id,schema,key.record_id)
         if proof not in self._validated_sources:
-            self._preflight_v2(schema,record_id=key.record_id)
             row = self._connection.execute('SELECT %s FROM %s WHERE %s AND record_id=?' %
                 (columns,table,where),args).fetchone()
             if row is not None:

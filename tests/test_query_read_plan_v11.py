@@ -54,10 +54,10 @@ class MigratedCatalogReadTests(unittest.TestCase):
 
     def test_migrated_repeat_scans_reuse_integrity_pass(self):
         self.seed(4); view = self.view()
-        with patch.object(view, '_preflight_v2', wraps=view._preflight_v2) as check:
+        with patch.object(view, '_scalar', wraps=view._scalar) as check:
             for _ in range(2):
                 view.scan_catalog_values(self.product.identity, CatalogScanRequest(), ('code',))
-            self.assertEqual(check.call_count, 1)
+            self.assertEqual(check.call_count, 4)
         view.close()
         self.assertFalse(view._validated_sources)
 

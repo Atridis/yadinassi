@@ -40,23 +40,23 @@ class CatalogReadPlanTests(unittest.TestCase):
 
     def test_two_scans_validate_once_per_snapshot(self):
         self.seed(3); view = self.view()
-        with patch.object(view, '_preflight_v2', wraps=view._preflight_v2) as validate:
+        with patch.object(view, '_scalar', wraps=view._scalar) as validate:
             for _ in range(2):
                 view.scan_catalog_values(self.product.identity, CatalogScanRequest(), ('code',))
-            self.assertEqual(validate.call_count, 1)
+            self.assertEqual(validate.call_count, 3)
 
     def test_new_snapshot_reuses_same_unchanged_handle_proof(self):
         self.seed(3)
         first = self.view()
         first.scan_catalog_values(self.product.identity, CatalogScanRequest(), ('code',)); first.close()
         second = self.view()
-        with patch.object(second, '_preflight_v2', wraps=second._preflight_v2) as validate:
+        with patch.object(second, '_scalar', wraps=second._scalar) as validate:
             second.scan_catalog_values(self.product.identity, CatalogScanRequest(), ('code',))
             self.assertEqual(validate.call_count, 0)
 
     def test_failed_validation_not_cached(self):
         self.seed(3); view = self.view()
-        with patch.object(view, '_preflight_v2', side_effect=BackendError('integrity')):
+        with patch.object(view, '_scalar', side_effect=BackendError('integrity')):
             with self.assertRaises(BackendError):
                 view.scan_catalog_values(self.product.identity, CatalogScanRequest(), ('code',))
         self.assertFalse(view._validated_sources)

@@ -104,9 +104,9 @@ class ReadHandleLifecycleTests(unittest.TestCase):
         with patch.object(ReadHandle, 'complete', complete): self.scan()
         with closing(self.backend.begin_read()) as view:
             self.assertEqual(view._validated_sources, {})
-            with patch.object(view, '_preflight_v2', wraps=view._preflight_v2) as validate:
+            with patch.object(view, '_scalar', wraps=view._scalar) as validate:
                 view.scan_catalog_values(self.product.identity, CatalogScanRequest(), ('code',))
-            self.assertEqual(validate.call_count, 1)
+            self.assertEqual(validate.call_count, 2)
 
     def test_own_write_invalidates_all_read_proofs_even_after_rollback(self):
         self.seed(2); self.scan(); handle = self.backend._read_handle
@@ -129,7 +129,7 @@ class ReadHandleLifecycleTests(unittest.TestCase):
         self.seed(2)
         view = self.backend.begin_read()
         view.scan_catalog_values(self.category.identity, CatalogScanRequest(), ('code',))
-        with patch.object(view, '_preflight_v2', side_effect=BackendError('integrity')):
+        with patch.object(view, '_scalar', side_effect=BackendError('integrity')):
             with self.assertRaises(BackendError):
                 view.scan_catalog_values(self.product.identity, CatalogScanRequest(), ('code',))
         handle = self.backend._read_handle; view.close()

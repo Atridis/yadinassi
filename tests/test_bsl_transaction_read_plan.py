@@ -17,9 +17,13 @@ class TransactionReadPlanTests(unittest.TestCase):
         obj = self.catalog()
         with execution(self.backend):
             begin(self.backend);obj.write();view=self.backend.begin_read()
-            with patch.object(view,'_preflight_v2',wraps=view._preflight_v2) as check:
-                for _ in range(2):view.scan_catalog_values(obj._key.catalog_id,CatalogScanRequest(),('code',))
-                self.assertEqual(check.call_count,2)
+            with patch.object(view,'_scalar',wraps=view._scalar) as check:
+                first=view.scan_catalog_values(obj._key.catalog_id,CatalogScanRequest(),('code',))
+                calls=check.call_count
+                second=view.scan_catalog_values(obj._key.catalog_id,CatalogScanRequest(),('code',))
+                self.assertEqual(first.rows,second.rows)
+                self.assertGreater(calls,0)
+                self.assertEqual(check.call_count,2*calls)
             self.assertEqual(view._validated_sources,{})
             view.close();commit(self.backend)
 

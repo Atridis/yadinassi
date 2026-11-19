@@ -148,21 +148,29 @@ class ScanTests(unittest.TestCase):
         tx.rollback()
 
 
-    def test_materialization_preflight_rejects_before_payload_fetch(self):
-        from unittest import mock
-        import yadinassi.db.sqlite.sqlite_catalog as storage
-        self.seed();view=self.backend.begin_read();connection=view._connection
-        class Guard:
-            def execute(self,sql,*args):
-                if sql.startswith('SELECT record_id,revision'):
-                    raise AssertionError('payload materialized before resource refusal')
-                return connection.execute(sql,*args)
-            def __getattr__(self,name):return getattr(connection,name)
-        view._connection=Guard()
-        with mock.patch.object(storage,'_MAX_CONFIG_BYTES',1):
-            with self.assertRaisesRegex(BackendError,'unsupported'):
-                view.scan_catalog(self.product.identity,CatalogScanRequest())
-        view.close()
+    def test_catalog_reads_skip_separate_scalar_preflight_queries(self):
+        self.seed()
+        view=self.backend.begin_read()
+        self.addCleanup(view.close)
+        trace=[]
+        view._connection.set_trace_callback(trace.append)
+        cards=view.select_catalog(self.product.identity)
+        self.assertEqual(len(cards),5)
+        key=cards[0].key
+        trace.clear()
+        self.assertEqual(view.read_catalog(key),cards[0])
+        reads=[q for q in trace if q.startswith('SELECT record_id,revision,')]
+        self.assertEqual(len(reads),1, trace)
+        self.assertIn('AND record_id=',reads[0])
+        self.assertFalse(any('typeof(record_id)' in q or 'COALESCE(SUM(length(' in q for q in trace),trace)
+        for read in (
+            lambda: view.select_catalog(self.product.identity),
+            lambda: view.read_catalog_values(key,('code',)),
+            lambda: view.scan_catalog(self.product.identity,CatalogScanRequest()),
+        ):
+            trace.clear()
+            self.assertIsNotNone(read())
+            self.assertFalse(any('typeof(record_id)' in q or 'COALESCE(SUM(length(' in q for q in trace),trace)
 
     def test_large_decimal_coefficient_refuses_before_tuple_expansion(self):
         view=self.backend.begin_read();amount=self.product.fields[1].identity
