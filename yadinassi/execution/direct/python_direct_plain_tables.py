@@ -103,6 +103,13 @@ def validate(value,pure=False):
         if set(col)!={'table','_name','value_type','title','width','_deleted'}:fail()
         if col['table'] is not table or col['_deleted'] is not False or type(col['_name']) is not str or col['_name']!=schema._names[i]:fail()
         if schema._metadata[i] is not column:fail()
+        # Raw region stores are valid only for untyped cells. Typed tables
+        # continue through the ordinary direct facade, never another engine.
+        if pure:
+            description=col['value_type']
+            if type(description) is not runtime.BSLTypeDescription:return False
+            kinds=raw(description).get('types')
+            if type(kinds) is not tuple or len(kinds):return False
     if pure and any(v is not None and type(v) is not Decimal for v in schema._defaults):return False
     for row in rows:
         if not row_check(row,table,schema,keys,pure):return False

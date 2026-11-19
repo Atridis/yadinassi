@@ -46,7 +46,7 @@ class DirectTableSnapshot(unittest.TestCase):
             else:t.columns._items[0].table=object()
             with self.subTest(change=change),self.assertRaises(storage.SnapshotError):storage.capture(t)
     def test_nonconformant_typed_is_not_coerced(self):
-        t=self.table(True);t.rows[0].set_member('K',D('1.234'))
+        t=self.table(True);list.__setitem__(t.rows[0],0,D('1.234'))
         with self.assertRaises(storage.SnapshotError):storage.capture(t)
     def test_bsl_created_table_host_storage(self):
         vm=Interpreter();vm.execute('T=New ValueTable;T.Columns.Add("K");R=T.Add();R.K=1;T.Indexes.Add("K");')

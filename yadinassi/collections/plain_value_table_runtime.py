@@ -8,6 +8,7 @@ from types import MappingProxyType
 from yadinassi.types.values import BSLObject, BSLArray, HostFunction
 from yadinassi.types.type_descriptions import BSLTypeDescription
 from .plain_table_search import SearchIndexes
+from .value_tables import _adjust, _default
 from .plain_table_storage import RowStorage, TableStorage, Schema, scalar_equal
 
 
@@ -82,9 +83,8 @@ class BSLValueTableColumnCollection(BSLObject):
         if type(value_type) is not BSLTypeDescription:raise TypeError('exact TypeDescription required')
         if type(width) is not Decimal or not width.is_finite():raise TypeError('width must be finite')
         column=BSLValueTableColumn(self.table,name,value_type,title,width)
-        # Default and coercion compatibility is deliberately not in the hot
-        # path. Typed descriptors are metadata; default cells are Undefined.
-        self.table._storage.add_column(name,column,None);self._items.append(column)
+        default = _default(value_type) if value_type.types else None
+        self.table._storage.add_column(name,column,default);self._items.append(column)
         return column
     def _append_materialized(self,column):
         if type(column) is not BSLValueTableColumn or column.table is not self.table:raise ValueError('foreign column')
@@ -150,7 +150,13 @@ class BSLValueTableRow(RowStorage,BSLObject):
         value = RowStorage.get_value(self,name)
         return Decimal(value) if type(value) is int else value
     def set_member(self,name,value):
-        _writable(self.table);return RowStorage.set_value(self,name,value)
+        _writable(self.table)
+        if self._deleted:raise ValueError("row is deleted")
+        position = self.schema.offset(name)
+        description = self.schema._metadata[position].value_type
+        if description.types:value = _adjust(description,value)
+        self.schema.data_epoch += 1
+        list.__setitem__(self,position,value)
     def _positional_value(self,index):
         if self._deleted:raise ValueError("row is deleted")
         return list.__getitem__(self,_index(index,len(self.schema._keys)))
@@ -161,6 +167,8 @@ class BSLValueTableRow(RowStorage,BSLObject):
         if self._deleted:raise ValueError("row is deleted")
         _writable(self.table)
         position = _index(index,len(self.schema._keys))
+        description = self.schema._metadata[position].value_type
+        if description.types:value = _adjust(description,value)
         self.table._storage.epoch += 1
         list.__setitem__(self,position,value)
     def get_index(self,index):return self.get_member(index) if type(index) is str else self.get(index)
