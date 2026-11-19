@@ -4,7 +4,6 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter,BSLError
 from yadinassi.syntax.parser import parse
-from tests.retired_text_compiler import prepare
 from yadinassi.experimental_naked_scalar_semantics import numeric_boolean_operators,map_identity_operators
 
 class DirectNumericBooleanDomainTests(unittest.TestCase):
@@ -84,10 +83,8 @@ class DirectNumericBooleanDomainTests(unittest.TestCase):
         self.assertEqual((vm.variables['a'],vm.variables['b'],vm.variables['c'],vm.variables['d']),(True,False,False,True))
         self.assertEqual(events,['eq','ne'])
 
-    def test_repair_optin_and_cached_plan_live_types(self):
+    def test_cached_plan_uses_live_types(self):
         code='R=(Host=True);'
-        self.assertIs(prepare(code,_trusted_entry=True).run({'host':1})['r'],True)
-        self.assertIs(prepare(code,repairs=('numeric_boolean_equality',),_trusted_entry=True).run({'host':1})['r'],False)
         vm=Interpreter();plan=vm.prepare(code)
         for value,expected in ((Decimal(1),True),(1,False),(True,True),(1.0,False)):
             vm.variables['host']=value;vm.execute_prepared(plan);self.assertIs(vm.variables['r'],expected)

@@ -1,54 +1,54 @@
-import os,unittest
-from unittest.mock import patch
+"""Public direct host binding contracts with independent effect assertions."""
+import unittest
 from yadinassi import Interpreter
 from yadinassi.values import HostFunction
-from tests.retired_text_compiler import prepare
-from yadinassi.experimental_naked_boundaries import BoundaryContext,BoundaryViolation,UnsupportedHostSignature
+from yadinassi.errors import BSLRuntimeError
+from yadinassi.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+
 class ServiceContracts(unittest.TestCase):
- def setUp(self):
-  p=patch.dict(os.environ,{'YADINASSI_UNSAFE_COLLECTION_ABLATION':'1'});p.start();self.addCleanup(p.stop)
- def test_registration_change_keeps_bound_callee(self):
-  for candidate in (False,True):
-   events=[]
-   old=lambda x:events.append('old') or 1
-   new=lambda x:events.append('new') or 2
-   if candidate:
-    ctx=BoundaryContext(services={'host':old})
-    def change():ctx._services['host']=new;return 0
-    ctx._services['change']=change
-    state=prepare('r=Host(Change());',repairs=('service_boundaries',)).run(context=ctx)
-   else:
-    vm=Interpreter(execution_backend='compiled-strict');vm.register_function('Host',old)
-    def change():vm.register_function('Host',new);return 0
-    vm.register_function('Change',change);vm.execute('r=Host(Change());');state=vm.variables
-   self.assertEqual((state['r'],events),(1,['old']))
- def test_registered_service_outranks_variable(self):
-  ctx=BoundaryContext(services={'host':lambda:1})
-  self.assertEqual(prepare('Host=7;r=Host();',repairs=('service_boundaries',)).run(context=ctx)['r'],1)
- def test_canonical_dynamic_host_and_raw_rejection(self):
-  for source in ('r=(Get())();','f=Get();r=f();'):
-   for canonical in (False,True):
-    for candidate in (False,True):
-     events=[];function=lambda:events.append('called') or 7
-     value=HostFunction('chosen',function) if canonical else function
-     if candidate:
-      p=prepare(source,repairs=('service_boundaries','error_boundaries'))
-      execute=lambda:p.run(context=BoundaryContext(services={'get':lambda:value}))
-     else:
-      vm=Interpreter(execution_backend='compiled-strict');vm.register_function('Get',lambda:value)
-      def execute():vm.execute(source);return vm.variables
-     if canonical:self.assertEqual(execute()['r'],7);self.assertEqual(events,['called'])
-     else:
-      with self.assertRaisesRegex(Exception,'Значение не является функцией'):execute()
-      self.assertEqual(events,[])
- def test_procedure_value_and_unsupported_dynamic_byref_before_args(self):
-  for value,error in ((HostFunction('P',lambda x:None,returns_value=False),Exception),(HostFunction('P',lambda x:None,reference_parameters=frozenset({0})),UnsupportedHostSignature)):
-   events=[];ctx=BoundaryContext(services={'get':lambda:value,'arg':lambda:events.append('arg')})
-   with self.assertRaises(error):prepare('r=(Get())(Arg());',repairs=('service_boundaries',)).run(context=ctx)
-   self.assertEqual(events,[])
- def test_policy_changed_by_argument_checked_after_binding(self):
-  events=[];ctx=BoundaryContext(services={'host':lambda x:events.append('host')})
-  def change():ctx.policy=lambda op,name:name!='host';return 0
-  ctx._services['change']=change
-  with self.assertRaises(BoundaryViolation):prepare('Host(Change());',repairs=('service_boundaries',)).run(context=ctx)
-  self.assertEqual(events,[])
+    def vm(self):
+        vm=Interpreter();self.addCleanup(vm.close);return vm
+
+    def test_registration_change_keeps_bound_callee(self):
+        vm=self.vm();events=[]
+        vm.register_function('Host',lambda x:events.append('old') or 1)
+        def change():vm.register_function('Host',lambda x:events.append('new') or 2);return 0
+        vm.register_function('Change',change)
+        vm.execute('r=Host(Change());')
+        self.assertEqual((vm.variables['r'],events),(1,['old']))
+
+    def test_registered_service_outranks_variable(self):
+        vm=self.vm();vm.register_function('Host',lambda:1)
+        vm.execute('Host=7;r=Host();')
+        self.assertEqual(vm.variables['r'],1)
+
+    def test_canonical_dynamic_host_and_raw_rejection(self):
+        for source in ('r=(Get())();','f=Get();r=f();'):
+            for canonical in (False,True):
+                with self.subTest(source=source,canonical=canonical):
+                    vm=self.vm();events=[]
+                    function=lambda:events.append('called') or 7
+                    value=HostFunction('chosen',function) if canonical else function
+                    vm.register_function('Get',lambda:value)
+                    if canonical:
+                        vm.execute(source)
+                        self.assertEqual(vm.variables['r'],7);self.assertEqual(events,['called'])
+                    else:
+                        with self.assertRaisesRegex(BSLRuntimeError,'Значение не является функцией'):vm.execute(source)
+                        self.assertEqual(events,[])
+
+    def test_procedure_value_rejected_before_arguments(self):
+        vm=self.vm();events=[]
+        vm.register_function('Get',lambda:HostFunction('P',lambda x:events.append('body'),returns_value=False))
+        vm.register_function('Arg',lambda:events.append('arg'))
+        with self.assertRaises(BSLRuntimeError):vm.execute('r=(Get())(Arg());')
+        self.assertEqual(events,[])
+
+    def test_policy_changed_by_argument_checked_after_binding(self):
+        from tests.direct_boundary_compile import compile_boundary
+        events=[];ctx=BoundaryContext(services={'host':lambda x:events.append('host')})
+        def change():ctx.policy=lambda op,name:name!='host';return 0
+        ctx._services['change']=change
+        with self.assertRaises(BoundaryViolation):
+            compile_boundary('Host(Change());').run({},context=ctx)
+        self.assertEqual(events,[])

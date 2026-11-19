@@ -205,7 +205,7 @@ class DirectTransactionPreparationTests(unittest.TestCase):
                 return original(*args,**kwargs)
         with patch.object(prep,'_prepare_catalog_object',side_effect=change):
             with patch.object(prep._ObjectInterpreter,'execute_program',side_effect=AssertionError('legacy execution')) as legacy:
-                with self.assertRaises(BoundaryViolation):
+                with self.assertRaisesRegex(ValueError,'unsupported execution backend'):
                     with self.activation():
                         tx.begin(self.db.backend);self.card.write()
                 legacy.assert_not_called()
@@ -355,14 +355,7 @@ class DirectTransactionPreparationTests(unittest.TestCase):
         with self.assertRaises((BoundaryViolation,BackendError)):
             captured[0].run(self.card.write)
         self.clean()
-    def test_no_grant_and_legacy_do_not_gain_handler_execution(self):
-        from yadinassi.execution_policy import execution_backend_policy
-        for backend in ('interpreter','compiled-strict'):
-            with execution_backend_policy(backend):
-                with self.assertRaises(BackendError):
-                    with self.activation():
-                        tx.begin(self.db.backend);self.card.write()
-            self.clean()
+    def test_no_grant_cannot_gain_handler_execution(self):
         with self.assertRaises(BackendError):
             with self.activation():
                 tx.begin(self.db.backend)

@@ -1,5 +1,9 @@
 # Historical direct Python audit (retired text-generator experiment)
 
+> Historical note: the backend and reproducer described here were retired from #337. Current execution uses only python-direct.
+
+> [Archived reproducer](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/tests/retired_text_compiler.py). Commands below refer to that checkpoint.
+
 This document records an earlier experiment, not an available production route.
 The text generator now lives only in `tests/retired_text_compiler.py` as a
 differential oracle. Public compilation uses the direct Python AST generator;

@@ -10,7 +10,7 @@ from yadinassi.native_targets import LINUX_8_3_27_1508
 class PreparedDirectTests(unittest.TestCase):
     def test_compile_once_current_state(self):
         vm=Interpreter();vm.variables['x']=Decimal(1);p=vm.prepare('x=x+1;x;')
-        with patch('yadinassi.experimental_naked_collections.prepare',create=True,side_effect=AssertionError('recompile')):
+        with patch('yadinassi.python_direct._compile',side_effect=AssertionError('recompile')):
             self.assertEqual(vm.execute_prepared(p),2)
             self.assertEqual(vm.execute_prepared(p),3)
         self.assertIsNone(p._plan.last_state)
@@ -45,10 +45,12 @@ class PreparedDirectTests(unittest.TestCase):
 
     def test_target_backend_and_profile_binding(self):
         p=Interpreter().prepare('x=1;')
-        for vm in (Interpreter(native_target=LINUX_8_3_27_1508),Interpreter(execution_backend='compiled-strict')):
-            with self.assertRaisesRegex(PythonDirectUnsupported,'contract changed'):vm.execute_prepared(p)
-            self.assertEqual(vm.variables,{})
-        with self.assertRaises(PythonDirectUnsupported):Interpreter(execution_backend='interpreter').prepare('x=1;')
+        vm=Interpreter(native_target=LINUX_8_3_27_1508)
+        with self.assertRaisesRegex(PythonDirectUnsupported,'contract changed'):vm.execute_prepared(p)
+        self.assertEqual(vm.variables,{})
+        for removed in ('compiled-strict','interpreter'):
+            with self.subTest(backend=removed), self.assertRaises(ValueError):
+                Interpreter(execution_backend=removed)
 
     def test_closed_and_restricted_before_effects(self):
         a=Interpreter();p=a.prepare('x=1;');a.close()

@@ -4,9 +4,9 @@ from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.values import Reference,HostFunction
 from yadinassi.experimental_naked_live_state import source_reference,_SlotReference
-from tests.retired_text_compiler import prepare
+from yadinassi.experimental_direct_ast import compile_owned
+from yadinassi.syntax.parser import parse
 from yadinassi.experimental_naked_boundaries import BoundaryContext
-from yadinassi.python_direct import REPAIRS
 
 class CachedSourceRefsTests(unittest.TestCase):
     def test_cache_is_address_not_value_or_canonical_binding(self):
@@ -40,7 +40,7 @@ class CachedSourceRefsTests(unittest.TestCase):
         kept=[]
         h=HostFunction('Keep',lambda x:kept.append(x),reference_parameters=frozenset({0}))
         source='Procedure F(a) Keep(a);EndProcedure x=1;F(x);'
-        p=prepare(source,repairs=REPAIRS,_trusted_entry=True)
+        p=compile_owned(parse(source),source_text=source,source_name='refs.bsl')
         a={};b={}
         for state in (a,b):p.run(state,context=BoundaryContext(services={'Keep':h}))
         kept[0].set(Decimal(7));kept[1].set(Decimal(9))

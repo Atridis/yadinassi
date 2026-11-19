@@ -41,10 +41,10 @@ class DirectArrayEqualityTests(unittest.TestCase):
         self.assertEqual(array_equal(Host(),Host()),'eq')
         self.assertEqual(array_not_equal(Host(),Host()),'ne')
 
-    def test_mixed_types_match_existing_legacy_contract(self):
-        # Native fixed-vs-mutable comparisons and legacy values.equal's exact
+    def test_mixed_types_use_identity_contract(self):
+        # Native fixed-vs-mutable comparisons and exact
         # type gate establish False for mixed kinds, symmetrically.
-        for backend in ('python-direct','compiled-strict'):
+        for backend in ('python-direct',):
             vm=self.vm(backend);vm.execute('A=New Array;F=New FixedArray(A);S=New Structure;M=New Map;')
             for other in ('F','S','M','Undefined','True','0','""','Type("Array")'):
                 for left,right in (('A',other),(other,'A')):
@@ -73,12 +73,6 @@ class DirectArrayEqualityTests(unittest.TestCase):
             self.assertIs(vm.execute('(LeftValue()'+operator+'RightValue())'),operator=='<>')
             self.assertEqual(events,['left','right'])
 
-    def test_experiment_opt_in_is_explicit(self):
-        from tests.retired_text_compiler import prepare
-        source='A=New Array;B=New Array;Same=(A=B);'
-        for repairs,expected in (((),True),(('array_identity_equality',),False)):
-            scope=prepare(source,repairs=repairs,_trusted_entry=True).run({})
-            self.assertIs(scope['same'],expected)
 
     def test_direct_comparison_has_no_vm_fallback(self):
         from contextlib import ExitStack
@@ -90,9 +84,9 @@ class DirectArrayEqualityTests(unittest.TestCase):
             stack.enter_context(patch('yadinassi.runtime.binary_values',side_effect=AssertionError('VM operator fallback')))
             self.assertIs(vm.execute('(New Array=New Array)'),False)
 
-    def test_known_and_boundary_dates_match_legacy_in_both_directions(self):
+    def test_known_and_boundary_dates_in_both_directions(self):
         from yadinassi.dates import BSLDate,MAX_TICKS
-        for backend in ('python-direct','compiled-strict'):
+        for backend in ('python-direct',):
             vm=self.vm(backend);vm.execute('A=New Array;')
             for ticks in (0,MAX_TICKS):
                 for boundary in (False,True):
@@ -124,20 +118,6 @@ class DirectArrayEqualityTests(unittest.TestCase):
                 self.assertIs(array_equal(left,right),False)
                 self.assertIs(array_not_equal(left,right),True)
 
-    def test_static_primitive_literals_exclude_helper_but_variables_do_not(self):
-        from tests.retired_text_compiler import prepare
-        for literal in ('1','True','"x"','Undefined'):
-            for left,right in (('X',literal),(literal,'X')):
-                for operator in ('=','<>'):
-                    plan=prepare('X=1;R=('+left+operator+right+');',repairs=('array_identity_equality',),_trusted_entry=True)
-                    self.assertNotIn('_array_equal(',plan.generated_source)
-                    self.assertNotIn('_array_not_equal(',plan.generated_source)
-        for operator,helper in (('=','_array_equal('),('<>','_array_not_equal(')):
-            plan=prepare('X=1;Y=1;R=(X'+operator+'Y);',repairs=('array_identity_equality',),_trusted_entry=True)
-            self.assertIn(helper,plan.generated_source)
-        # Parenthesized literals are deliberately not inferred/unwrapped.
-        plan=prepare('X=1;R=(X=(1));',repairs=('array_identity_equality',),_trusted_entry=True)
-        self.assertIn('_array_equal(',plan.generated_source)
 
     def test_literal_comparisons_evaluate_dynamic_operand_once(self):
         for operator in ('=','<>'):
@@ -165,13 +145,3 @@ class DirectArrayEqualityTests(unittest.TestCase):
         for source,expected in (('N=True',True),('N=1.00',True),('N<>"1"',True),
                                 ('A=Undefined',False),('False<>A',True),('A=""',False),('1<>A',True)):
             self.assertIs(vm.execute('('+source+')'),expected)
-
-    def test_literal_exclusion_is_exact_not_subclass_admission(self):
-        from tests.retired_text_compiler import prepare
-        class CustomInt(int):pass
-        class CustomString(str):pass
-        for value,excluded in ((1,True),(True,True),(Decimal(1),True),('x',True),(None,True),
-                               (CustomInt(1),False),(CustomString('x'),False),([],False)):
-            program=parse('X=1;R=X=1;');program[-1].value.right.value=value
-            plan=prepare('',parsed_ast=program,repairs=('array_identity_equality',),_trusted_entry=True)
-            self.assertEqual('_array_equal(' not in plan.generated_source,excluded)

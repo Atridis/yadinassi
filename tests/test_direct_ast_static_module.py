@@ -1,32 +1,42 @@
 import unittest
 from decimal import Decimal as D
-from unittest.mock import patch
 from yadinassi import Interpreter
+from yadinassi.errors import BSLRuntimeError
 from yadinassi.syntax.parser import parse
 from yadinassi.python_direct_static_module import analyze
-from yadinassi import python_direct
-from direct_ast_text_oracle import compile_module as oracle
 
 class StaticModuleTests(unittest.TestCase):
-    def compare(self,source):
-        results=[]
-        for enabled in (False,True):
-            vm=Interpreter();self.addCleanup(vm.close)
-            with patch.object(python_direct,'_compile',python_direct._compile if enabled else oracle):
-                plan=vm.prepare_program(parse(source))
-            if True:
-                try:vm.execute_prepared(plan);error=None
-                except Exception as exc:error=(type(exc).__name__,str(exc))
-            results.append(({key:list(value) if isinstance(value,list) else value for key,value in vm.variables.items()},error))
-        self.assertEqual(results[0],results[1]);return results[1]
+    def prepare(self,source):
+        vm=Interpreter();self.addCleanup(vm.close)
+        return vm,vm.prepare_program(parse(source))
+
     def test_nested_loops_alias_branches_and_write(self):
-        state,error=self.compare('A=New Array;B=A;R=0;For I=1 To 4 Do For J=1 To 3 Do If J=2 Then B.Add(I*J);Else A.Add(I+J);EndIf;EndDo;EndDo;I=0;While I<A.Count() Do R=R+A[I];A[I]=A[I]+1;I=I+1;EndDo;')
-        self.assertIsNone(error);self.assertEqual(len(state['a']),12)
+        vm,plan=self.prepare('A=New Array;B=A;R=0;For I=1 To 4 Do For J=1 To 3 Do If J=2 Then B.Add(I*J);Else A.Add(I+J);EndIf;EndDo;EndDo;I=0;While I<A.Count() Do R=R+A[I];A[I]=A[I]+1;I=I+1;EndDo;')
+        vm.execute_prepared(plan)
+        state=vm.variables
+        self.assertIs(state['a'],state['b'])
+        self.assertEqual(list(state['a']),[3,3,5,4,5,6,5,7,7,6,9,8])
+        self.assertEqual(state['r'],D(56))
+        self.assertEqual(state['i'],D(12))
+
     def test_errors_preserve_reached_state(self):
-        for source in ('A=New Array;A.Add(4);R=7;R=A[99];After=1;', 'R=1;For I=0 To 3 Do R=10/(2-I);EndDo;After=1;'):
-            with self.subTest(source=source):self.compare(source)
+        cases=(
+            ('A=New Array;A.Add(4);R=7;R=A[99];After=1;', 'index out of range', {'a':[D(4)],'r':D(7)}),
+            ('R=1;For I=0 To 3 Do R=10/(2-I);EndDo;After=1;', 'Деление на ноль', {'i':D(2),'r':D(10)}),
+        )
+        for source,message,expected in cases:
+            with self.subTest(source=source):
+                vm,plan=self.prepare(source)
+                with self.assertRaisesRegex(BSLRuntimeError,message):vm.execute_prepared(plan)
+                state={name:list(value) if isinstance(value,list) else value
+                       for name,value in vm.variables.items()}
+                self.assertEqual(state,expected)
+
     def test_zero_iterations_and_conditional_binding(self):
-        self.compare('R=1;For I=3 To 1 Do Hidden=9;EndDo;If R=1 Then X=2;Else X=3;EndIf;R=R+X;')
+        vm,plan=self.prepare('R=1;For I=3 To 1 Do Hidden=9;EndDo;If R=1 Then X=2;Else X=3;EndIf;R=R+X;')
+        vm.execute_prepared(plan)
+        self.assertEqual(vm.variables,{'r':D(3),'i':D(3),'x':D(2)})
+
     def test_dynamic_inputs_and_callbacks_decline(self):
         for source in ('R=Incoming+1;', 'A=New Array;Host(A);', 'Execute("X=1;");', 'R=Eval("1");'):
             self.assertIsNone(analyze(parse(source)))

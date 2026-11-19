@@ -1,8 +1,9 @@
 import unittest
 from decimal import Decimal
-from tests.retired_text_compiler import prepare,UnsupportedNakedSyntax
+from yadinassi.experimental_direct_ast import compile_owned
+from yadinassi.syntax.parser import parse
+from yadinassi.python_direct import PythonDirectUnsupported
 from yadinassi.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
-from yadinassi.python_direct import REPAIRS
 
 class ProductContext(BoundaryContext):
     def __init__(self,values=None,services=None):
@@ -15,7 +16,7 @@ class ProductContext(BoundaryContext):
 
 class ExternalNamespaceTests(unittest.TestCase):
     def run_source(self,source,ctx,external=('amount','thisobject'),state=None):
-        p=prepare(source,repairs=REPAIRS,external_names=external,_trusted_entry=True)
+        p=compile_owned(parse(source),source_text=source,source_name='external.bsl',external_names=external)
         state={} if state is None else state;p.run(state,context=ctx);return state
 
     def test_schema_known_before_values_initialized(self):
@@ -68,16 +69,15 @@ class ExternalNamespaceTests(unittest.TestCase):
 
     def test_declaration_and_conditional_shadow_refused(self):
         for source in ('Var Amount;', 'Procedure F() If True Then Var Amount;EndIf;EndProcedure'):
-            with self.assertRaises(UnsupportedNakedSyntax):prepare(source,repairs=REPAIRS,external_names=('amount',),_trusted_entry=True)
+            with self.assertRaises(PythonDirectUnsupported):
+                compile_owned(parse(source),source_text=source,source_name='external.bsl',external_names=('amount',))
 
     def test_real_form_product_setter_adjusts_and_preserves_readonly(self):
         from yadinassi.form_runtime import FormSession
         from yadinassi.form_model import BSLFormAttribute
         from yadinassi.type_descriptions import BSLTypeDescription
         from yadinassi.type_qualifiers import BSLStringQualifiers
-        from yadinassi.execution_policy import execution_backend_policy
-        with execution_backend_policy('compiled-strict'):
-            session=FormSession('',attributes=(BSLFormAttribute('Label',BSLTypeDescription('String',None,BSLStringQualifiers(Decimal(3)))),))
+        session=FormSession('',attributes=(BSLFormAttribute('Label',BSLTypeDescription('String',None,BSLStringQualifiers(Decimal(3)))),))
         class FormContext(BoundaryContext):
             def external_get(self,name):return session.form.get_member(name)
             def external_set(self,name,value):return session.form.set_member(name,value)

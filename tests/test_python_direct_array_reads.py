@@ -2,34 +2,22 @@
 from decimal import Decimal
 import unittest
 from contextlib import closing
-from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi import python_direct_arrays as arrays
-from tests.retired_text_compiler import prepare
-from yadinassi.python_direct import REPAIRS
 
 
 class ArrayDefiniteReadTests(unittest.TestCase):
     def paired(self, source, install=None):
-        facts=arrays.array_facts
-        def old(*args,definite_reads=None,**kwargs):return facts(*args,**kwargs)
-        observations=[]
-        for optimize in (False,True):
-            with closing(Interpreter()) as vm:
-                if install:install(vm)
-                error=None
-                with patch.object(arrays,'array_facts',facts if optimize else old):
-                    try:vm.execute(source)
-                    except Exception as exc:error=(type(exc).__name__,str(exc))
-                observations.append(({k:v for k,v in vm.variables.items() if k!='host'},error))
-        self.assertEqual(*observations)
-        return observations[-1]
+        # Product observations, not a comparison of an inactive optimizer hook.
+        with closing(Interpreter()) as vm:
+            if install:install(vm)
+            error=None
+            try:vm.execute(source)
+            except Exception as exc:error=(type(exc).__name__,str(exc))
+            return ({k:v for k,v in vm.variables.items() if k!='host'},error)
 
     def test_proven_array_loop_reads_and_counter_use_live_subscripts(self):
         source='a=New Array;For i=0 To 9 Do a.Add(i);EndDo;s=0;For j=0 To a.Count()-1 Do s=s+a.Get(j);EndDo;'
-        plan=prepare(source,repairs=REPAIRS,_trusted_entry=True)
-        self.assertNotIn('_initial.get(',plan.generated_source)
         self.assertEqual(self.paired(source)[0]['s'],45)
 
     def test_aliases_and_clear_keep_native_effects(self):

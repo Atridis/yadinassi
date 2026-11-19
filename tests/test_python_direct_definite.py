@@ -4,8 +4,6 @@ from decimal import Decimal
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
 from yadinassi.python_direct_definite import definite_module_reads
-from yadinassi.python_direct import REPAIRS
-from tests.retired_text_compiler import prepare
 
 
 class DefiniteReadsTests(unittest.TestCase):
@@ -23,11 +21,12 @@ class DefiniteReadsTests(unittest.TestCase):
         self.assertEqual(*results)
         return results[1]
 
-    def test_scalar_loop_source_is_subscript_not_get(self):
-        p=prepare('s=0;For i=1 To 5 Do s=s+i;EndDo;', repairs=REPAIRS,_trusted_entry=True)
-        self.assertNotIn("_initial.get(",p.generated_source)
-        from yadinassi.experimental_naked_boundaries import BoundaryContext
-        self.assertEqual(p.run({},context=BoundaryContext())['s'],15)
+    def test_prepared_scalar_loop(self):
+        vm=Interpreter()
+        source='s=0;For i=1 To 5 Do s=s+i;EndDo;'
+        prepared=vm.prepare(source)
+        vm.execute_prepared(prepared)
+        self.assertEqual(vm.variables['s'],15)
 
     def test_callback_delete_after_assignment(self):
         values,error=self.paired('x=1;Drop();y=x;',lambda vm:vm.register_function('Drop',lambda:vm.variables.pop('x')))

@@ -6,7 +6,9 @@ import test_source_application_exports as exports
 from test_configuration_source_runtime import source
 from yadinassi.configuration_source_runtime import SourceApplication
 from yadinassi.runtime import Interpreter
-from tests.retired_text_compiler import UnsupportedNakedSyntax,prepare
+from yadinassi.experimental_direct_ast import compile_owned
+from yadinassi.syntax.parser import parse
+from yadinassi.experimental_naked_collections import UnsupportedNakedSyntax
 
 class SourceShadowingTests(unittest.TestCase):
     def setUp(self):
@@ -51,7 +53,7 @@ Procedure Change(X) X=9;EndProcedure'''
             with self.assertRaises(UnsupportedNakedSyntax):app.start()
             self.assertEqual(out,[])
     def test_private_compiler_contract_requires_source_trust(self):
-        with self.assertRaises(ValueError):prepare('',_trusted_entry=True,_source_shadowable_externals=('catalogs',))
+        with self.assertRaises(ValueError):compile_owned([],source_text='',source_name='shadow.bsl',shadowable_externals=('catalogs',))
 
     def test_late_export_conflict_rejected_before_routine_effects(self):
         from yadinassi.experimental_naked_boundaries import BoundaryViolation

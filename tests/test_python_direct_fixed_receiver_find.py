@@ -29,9 +29,6 @@ class DirectFixedReceiverFindTests(unittest.TestCase):
             self.assertEqual((vm.variables['r'],vm.variables['q']),(0,1))
             self.assertIsNone(vm.variables['u']);self.assertIsNone(vm.variables['v'])
             self.assertIs(type(vm.variables['r']),Decimal)
-        control=Interpreter(execution_backend='compiled-strict');control.execute(SETUP+BODY)
-        self.assertEqual((control.variables['r'],control.variables['q']),(0,1))
-        self.assertIsNone(control.variables['u']);self.assertIsNone(control.variables['v'])
 
     def test_named_captured_cached_alias_and_live_state(self):
         vm=Interpreter();vm.execute(SETUP);saved=vm.variables['f'].get_method('Find');vm.variables['saved']=saved

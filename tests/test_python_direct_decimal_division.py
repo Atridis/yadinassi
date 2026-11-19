@@ -80,11 +80,3 @@ class DirectDecimalDivisionTests(unittest.TestCase):
         vm.execute((root/'integrational_tests/tests/numbers.bsl').read_text(encoding='utf-8-sig'))
         self.assertEqual(len(output),421)
         self.assertEqual(output[350:],fixture['records'])
-
-    def test_experiment_opt_in(self):
-        from tests.retired_text_compiler import prepare
-        source='Result=1/268435456;'
-        raw=prepare(source,_trusted_entry=True).run({})['result']
-        fixed=prepare(source,repairs=('decimal_division',),_trusted_entry=True).run({})['result']
-        self.assertNotEqual(raw,fixed)
-        self.assertEqual(fixed,Decimal('0.000000003725290298461914063'))

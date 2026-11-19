@@ -4,11 +4,10 @@ from unittest.mock import patch
 from yadinassi import Interpreter,BSLError
 from yadinassi.syntax.parser import parse
 from yadinassi.python_direct import PythonDirectUnsupported
-from tests.retired_text_compiler import prepare,UnsupportedNakedSyntax
 
 class DirectConstructorHolesTests(unittest.TestCase):
     def test_all_constructors_positions_reject_before_effects(self):
-        for backend in ('python-direct','compiled-strict'):
+        for backend in ('python-direct',):
             for constructor in ('Array','Массив','Map','Соответствие','Structure','Структура'):
                 for arguments in (',Effect()', 'Effect(),', 'Effect(),,Effect()', ','):
                     vm=Interpreter(execution_backend=backend);seen=[]
@@ -30,7 +29,7 @@ class DirectConstructorHolesTests(unittest.TestCase):
             self.assertEqual(seen,[])
 
     def test_explicit_undefined_is_evaluated_not_a_hole(self):
-        for backend in ('python-direct','compiled-strict'):
+        for backend in ('python-direct',):
             for constructor in ('Array','Map','Structure'):
                 vm=Interpreter(execution_backend=backend);seen=[]
                 vm.register_function('Effect',lambda:seen.append('effect') or 1)
@@ -58,21 +57,6 @@ class DirectConstructorHolesTests(unittest.TestCase):
                     vm.execute('New '+constructor+'('+arguments+');')
             self.assertEqual(seen,[])
 
-    def test_explicit_constructor_protocol_precedes_builtin_rejection(self):
-        from yadinassi.experimental_naked_boundaries import BoundaryContext
-        events=[]
-        class Context(BoundaryContext):
-            def resolve_service(self,name,*args,**kwargs):
-                self._check();events.append(('resolve',name))
-                def call(*values):events.append(('call',values));return values
-                def omissions(bound,positions,count):
-                    events.append(('omissions',positions,count));return bound,{0:9}
-                call.prepare_omissions=omissions
-                return call
-        plan=prepare('R=New Array(,1);',repairs=('service_boundaries',),constructors=('array',),_trusted_entry=True)
-        result=plan.run({},context=Context())
-        self.assertEqual(result['r'],(9,1))
-        self.assertEqual(events,[('resolve','new:array'),('omissions',(0,),2),('call',(9,1))])
 
     def test_dynamic_constructor_explicit_parameter_array_unchanged(self):
         vm=Interpreter();vm.execute('Args=New Array;Args.Add("X");Args.Add(Undefined);S=New("Structure",Args);')

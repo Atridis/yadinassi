@@ -484,9 +484,8 @@ This adds no runtime local-presence observer or replay path.
 
 The standalone default `python_direct._compile` now calls the whole-source AST
 compiler directly. There is no compiler selector and no retry/fallback to the
-text emitter. The former standalone compiler entry is temporarily preserved
-only in `tests/direct_ast_text_oracle.py` for differential tests. The legacy
-interpreter is deliberately retained as an independent backend.
+text emitter. The former standalone compiler entry survives in Git history
+only, with [historical differential tests](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/tests/direct_ast_text_oracle.py). Neither former executor is available on the current branch.
 
 This is an in-progress branch switch, not a release/parity declaration. Full
 existing direct tests must run against the new default and unsupported forms

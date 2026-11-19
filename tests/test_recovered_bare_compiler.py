@@ -52,6 +52,3 @@ class RecoveredBareCompilerTests(unittest.TestCase):
     def test_native_strings(self):
         vm=self.run_source('A=ВРег("Straße"); B=НРег("ABC"); C=СокрЛП(" x ");')
         self.assertEqual((vm.variables['a'],vm.variables['b'],vm.variables['c']),('STRASSE','abc','x'))
-    def test_legacy_is_separate(self):
-        vm=Interpreter(execution_backend='interpreter'); vm.execute('R=1+2;')
-        self.assertEqual(vm.variables['r'],3)

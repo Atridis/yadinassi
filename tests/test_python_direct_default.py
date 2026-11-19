@@ -13,9 +13,8 @@ class PythonDirectDefaultTests(unittest.TestCase):
   with patch.dict(os.environ,{},clear=True):
    vm=Interpreter();self.assertEqual(vm.execution_backend,'python-direct')
    vm.execute('a=New Array;a.Add(2);r=a[0]+1;')
-   self.assertEqual(vm.variables['r'],3);self.assertIs(type(vm.variables['a']),list)
+   self.assertEqual(vm.variables['r'],3);self.assertEqual(vm.variables['a'][0],2)
    self.assertEqual(vm.execution_backend_stats['python_direct_modules'],1)
-   self.assertEqual(vm.execution_backend_stats['fallback'],0)
  def test_api_existing_source_functions_and_host_output(self):
   output=[];vm=Interpreter(output.append)
   vm.execute('Function F(Val x) Return x+1;EndFunction r=F(2);Message(r);')
@@ -37,10 +36,6 @@ class PythonDirectDefaultTests(unittest.TestCase):
  def test_observable_callback_values(self):
   vm=Interpreter();vm.register_function('Write',lambda:vm.variables.__setitem__('x',Decimal(9)))
   vm.execute('x=1;Write();r=x;');self.assertEqual(vm.variables['r'],9)
- def test_legacy_and_oracle_remain_explicit(self):
-  for mode in ('compiled-strict','interpreter'):
-   vm=Interpreter(execution_backend=mode);vm.execute('r=1+2;')
-   self.assertEqual(vm.variables['r'],3);self.assertNotIn('python_direct_modules',vm.execution_backend_stats)
  def test_subclass_custom_policy_configuration_rejected_before_effects(self):
   class Restricted(Interpreter):pass
   for vm in (Restricted(),Interpreter(),Interpreter()):
@@ -60,24 +55,17 @@ class PythonDirectDefaultTests(unittest.TestCase):
   finally:safe_mode._CURRENT.reset(token)
  def test_unsupported_syntax_has_no_silent_fallback_or_prior_effect(self):
   vm=Interpreter()
-  with self.assertRaises(PythonDirectUnsupported):vm.execute('x=1;~finish:x=2;')
+  with self.assertRaises(PythonDirectUnsupported):vm.execute('x=1;If True Then Goto ~finish;EndIf;~finish:x=2;')
   self.assertEqual(vm.variables,{})
  def test_constructor_override_not_silently_ignored(self):
   effects=[];vm=Interpreter();vm.register_type('Array',lambda:effects.append(1))
   with self.assertRaises(PythonDirectUnsupported):vm.execute('x=1;a=New Array;')
   self.assertEqual(vm.variables,{});self.assertEqual(effects,[])
- def test_cli_default_and_legacy(self):
-  for args in ([],['--legacy'],['--execution-backend','interpreter']):
+ def test_cli_default_and_explicit_direct(self):
+  for args in ([],['--execution-backend','python-direct']):
    env=dict(os.environ);env.pop('YADINASSI_UNSAFE_COLLECTION_ABLATION',None)
    p=subprocess.run([sys.executable,'-m','yadinassi',*args,'-c','Сообщить(2+3);'],capture_output=True,text=True,env=env)
    self.assertEqual(p.returncode,0,p.stderr);self.assertEqual(p.stdout.strip(),'5')
- def test_cli_legacy_conflict_rejected(self):
-  p=subprocess.run([sys.executable,'-m','yadinassi','--legacy','--execution-backend','interpreter','-c','x=1;'],capture_output=True,text=True)
-  self.assertNotEqual(p.returncode,0)
- def test_experimental_gate_still_required_for_manual_prepare(self):
-  from tests.retired_text_compiler import prepare
-  with patch.dict(os.environ,{},clear=True):
-   with self.assertRaises(RuntimeError):prepare('x=1;')
  def test_nested_direct_execution_is_explicitly_rejected(self):
   vm=Interpreter();vm.register_function('Nested',lambda:vm.execute('nested=1;'))
   with self.assertRaisesRegex(Exception,'nested or asynchronous'):vm.execute('Nested();')

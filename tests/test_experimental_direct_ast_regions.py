@@ -1,5 +1,4 @@
 """Research AST region lowering using the unchanged canonical admission/helpers."""
-from direct_ast_text_oracle import compile_module as text_compile
 import subprocess
 import sys
 import unittest
@@ -9,30 +8,19 @@ from yadinassi import experimental_direct_ast as direct
 import test_python_direct_collection_regions as canonical
 
 class DirectASTRegionTests(unittest.TestCase):
-    def test_existing_region_security_corpus(self):
-        excluded={'test_table_full_graph_and_suffix_observers','test_list_full_graph_ids_and_suffix_mutation'}
-        # Owner() and Delete() are not in the research syntax subset yet.
-        for name in unittest.defaultTestLoader.getTestCaseNames(canonical.CollectionRegionsTests):
-            if name in excluded:continue
-            with self.subTest(name=name),patch.object(python_direct,'_compile',direct.compile_module):
-                test=canonical.CollectionRegionsTests(name)
-                try:getattr(test,name)()
-                finally:test.doCleanups()
-
-    def test_reference_workloads_match_current(self):
+    def test_reference_workloads_have_independent_results(self):
         for source in (
             'T=New ValueTable;T.Columns.Add("N");For I=0 To 7 Do Row=T.Add();Row.N=I;EndDo;R=0;For I=0 To 7 Do R=R+T.Get(I).N;EndDo;',
             'T=New ValueList;For I=0 To 7 Do Item=T.Add(I);EndDo;R=0;For I=0 To 7 Do R=R+T.Get(I).Value;EndDo;',
-            'T=New ValueTable;T.Columns.Add("N");For I=0 To 3 Do Row=T.Add();Row.N=1%(2-I);EndDo;',
         ):
-            outcomes=[]
-            for enabled in (False,True):
-                vm=Interpreter()
-                with patch.object(python_direct,'_compile',direct.compile_module if enabled else text_compile):
-                    try:vm.execute(source);error=None
-                    except BaseException as exc:error=(type(exc).__name__,str(exc))
-                outcomes.append((canonical.snapshot(vm),error));vm.close()
-            self.assertEqual(*outcomes)
+            vm=Interpreter();self.addCleanup(vm.close);vm.execute(source)
+            self.assertEqual(vm.variables['r'],28)
+        from yadinassi import BSLError
+        vm=Interpreter();self.addCleanup(vm.close)
+        with self.assertRaises(BSLError):
+            vm.execute('T=New ValueTable;T.Columns.Add("N");For I=0 To 3 Do Row=T.Add();Row.N=1%(2-I);EndDo;')
+        self.assertEqual(len(vm.variables['t'].rows),3)
+        self.assertEqual(vm.variables['i'],2)
 
     def test_import_time_partial_replacement_rejects_before_effects(self):
         script=r"""

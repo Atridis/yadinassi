@@ -21,13 +21,13 @@ class ConfigurationDefaultTests(unittest.TestCase):
         app=ConfigurationApplication.from_files(module_files([('Tools',source,{})]),output=output or (lambda x:None))
         self.addCleanup(lambda:app.close(force=True));app.start();return app
 
-    def test_omitted_trailing_and_explicit_undefined_match_oracle(self):
-        app=self.app();oracle=Interpreter(execution_backend='compiled-strict');self.addCleanup(oracle.close)
-        oracle.execute(SOURCE)
-        for call in ('F()','F(,2)','F(,)','F(Undefined)','F(3)','F(3,)','Sum(2)','Nested()','Nested(5)'):
+    def test_omitted_trailing_and_explicit_undefined(self):
+        app=self.app()
+        for call,expected in (('F()',7),('F(,2)',7),('F(,)',7),('F(Undefined)',None),
+                              ('F(3)',3),('F(3,)',3),('Sum(2)',11),('Nested()',14),('Nested(5)',16)):
             with self.subTest(call=call):
-                oracle.execute('Result='+call+';');app.execute('Result=Tools.'+call+';')
-                self.assertEqual(app.interpreter.variables['result'],oracle.variables['result'])
+                app.execute('Result=Tools.'+call+';')
+                self.assertEqual(app.interpreter.variables['result'],expected)
 
     def test_all_literal_scalar_types_and_aliases(self):
         for literal,expected in (('Undefined',None),('True',True),('False',False),('"text"','text'),('12.5',Decimal('12.5'))):
@@ -154,16 +154,13 @@ class ConfigurationDefaultTests(unittest.TestCase):
             finally:parameter.by_value=original
             self.assertEqual(seen,[])
 
-    def test_arity_errors_match_oracle_without_argument_effects(self):
+    def test_arity_errors_precede_argument_effects(self):
         source=SOURCE+' Function Need(Val A,Val B) Export Return A;EndFunction'
         for call in ('Need(Effect())','F(Effect(),Effect(),Effect())'):
-            seen=[];app=self.app(source,seen.append);expected=[]
-            oracle=Interpreter(execution_backend='compiled-strict',output=expected.append);self.addCleanup(oracle.close)
-            oracle.execute(source)
-            oracle.execute('Try '+call+';Except Message("caught");EndTry;')
+            seen=[];app=self.app(source,seen.append)
             qualified=call.replace('Effect()', 'Tools.Effect()')
             app.execute('Try Tools.'+qualified+';Except Message("caught");EndTry;')
-            self.assertEqual(seen,expected);self.assertEqual(seen,['caught'])
+            self.assertEqual(seen,['caught'])
 
     def test_nested_qualified_calls_and_collection_like_names_use_same_contract(self):
         source='Function Add(Val X=4,Val Y=5) Export Return X+Y;EndFunction Function Nested() Export Return Tools.Add(,3);EndFunction'
@@ -171,16 +168,14 @@ class ConfigurationDefaultTests(unittest.TestCase):
         self.assertEqual(app.execute('Tools.Add()'),Decimal(9))
         self.assertEqual(app.execute('Tools.Nested()'),Decimal(7))
 
-    def test_required_hole_matches_undefined_oracle(self):
+    def test_required_hole_is_undefined_and_other_actuals_run(self):
         source=SOURCE+' Function Need(Val A,Val B) Export Return A;EndFunction'
-        for call in ('Need(,Effect())','Sum(,Effect())'):
-            seen=[];app=self.app(source,seen.append);expected=[]
-            oracle=Interpreter(execution_backend='compiled-strict',output=expected.append);self.addCleanup(oracle.close)
-            oracle.execute(source);oracle.execute('Result="unset";Try Result='+call+';Except Message("caught");EndTry;')
+        for call,expected,output in (('Need(,Effect())',None,['effect']),('Sum(,Effect())','unset',['effect','caught'])):
+            seen=[];app=self.app(source,seen.append)
             qualified=call.replace('Effect()', 'Tools.Effect()')
             app.execute('Result="unset";Try Result=Tools.'+qualified+';Except Message("caught");EndTry;')
-            self.assertEqual(seen,expected)
-            self.assertEqual(app.interpreter.variables['result'],oracle.variables['result'])
+            self.assertEqual(seen,output)
+            self.assertEqual(app.interpreter.variables['result'],expected)
 
     def test_procedure_as_value_rejects_before_actual_effects(self):
         seen=[];app=self.app(SOURCE+' Procedure P(Val X=1) Export EndProcedure',seen.append)

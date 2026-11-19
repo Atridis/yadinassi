@@ -101,3 +101,20 @@ retain baseline identities; direct async execution is not claimed compatible.
 Two new routing/failure-preservation tests pass. Combined optimized run: 119 tests,
 109 pass, nine failures and one error. Historical test_compiled* and evidence
 fixtures are untouched; no failures are skipped or converted to expectedFailure.
+
+## Native evidence test retirement
+
+`test_native_compiled_backend` now executes only the current direct child. Two
+real routine bodies verify default/explicit direct output and actual backend
+state; injected backend drift must fail before or after execution, and invalid
+protocols must fail before effects. Removed five obsolete strict visitor/async
+instrumentation tests and replaced three old engine-route probes with these two
+direct probes. No runtime code changed.
+
+Historical evidence-v1/v2/v3 count/type/tampering assertions remain. The schema-3
+comparison test builds explicitly synthetic historical evidence rather than
+running a deleted engine. Exact source-inverse provenance assertions and their
+JSON inventory are unchanged: they still expose that current adapter source no
+longer matches those historical pins. CPython 3.10 normal/-O each collect 11 test
+methods: nine pass, two fail (four failing subcases). This is not a green native
+suite claim; no inverse identity check is skipped or weakened.

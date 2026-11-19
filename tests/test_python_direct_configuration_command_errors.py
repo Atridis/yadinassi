@@ -39,19 +39,17 @@ class ConfigurationCommandErrorTests(unittest.TestCase):
         app.execute('Message("clean");')
         self.assertEqual(output,['outer','clean'])
 
-    def test_scalar_errors_match_compiled_strict_oracle(self):
-        from yadinassi import Interpreter
+    def test_scalar_errors_preserve_handler_state(self):
         cases=(
-            'X=1;Try X=2;Raise "boom";Except X=X+3;EndTry;',
-            'X=1;Try X=1/0;Except X=7;EndTry;',
-            'X=1;Try Try Raise "inner";Except Raise;EndTry;Except X=9;EndTry;',
-            'X=1;Try Raise 42;Except X=6;EndTry;',
+            ('X=1;Try X=2;Raise "boom";Except X=X+3;EndTry;',5),
+            ('X=1;Try X=1/0;Except X=7;EndTry;',7),
+            ('X=1;Try Try Raise "inner";Except Raise;EndTry;Except X=9;EndTry;',9),
+            ('X=1;Try Raise 42;Except X=6;EndTry;',6),
         )
-        for source in cases:
+        for source,expected in cases:
             with self.subTest(source=source):
-                app=self.app();oracle=Interpreter(execution_backend='compiled-strict')
-                oracle.execute(source);app.execute(source)
-                self.assertEqual(app.interpreter.variables['x'],oracle.variables['x'])
+                app=self.app();app.execute(source)
+                self.assertEqual(app.interpreter.variables['x'],expected)
 
     def test_body_and_unreachable_nested_handler_validate_before_effects(self):
         forbidden=('X=New Array();','Eval("1");','Tools=1;','Var X;',

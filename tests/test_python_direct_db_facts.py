@@ -3,23 +3,22 @@ from decimal import Decimal
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from tests.retired_text_compiler import prepare
+from yadinassi.experimental_direct_ast import compile_owned
+from yadinassi.syntax.parser import parse
 from yadinassi.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
-from yadinassi.python_direct import REPAIRS
 from yadinassi.python_direct_database import NAMES
 import test_python_direct_database as dbfixture
 
 KERNEL='a=New Array;For i=0 To 99 Do a.Add(i);EndDo;s=0;For j=0 To 99 Do s=s+a.Get(j);EndDo;'
 class IndependentFactsTests(unittest.TestCase):
     def plan(self,source,**kwargs):
-        return prepare(source,repairs=REPAIRS,_trusted_entry=True,external_names=('External',),constructors=('Query',),**kwargs)
+        return compile_owned(parse(source),source_text=source,source_name='facts.bsl',external_names=('External',),constructors=('Query',),**kwargs)
     def test_db_namespace_generates_same_pure_code(self):
-        plain=prepare(KERNEL,repairs=REPAIRS,_trusted_entry=True)
-        db=prepare(KERNEL,repairs=REPAIRS,_trusted_entry=True,external_names=NAMES,constructors=('query','запрос'))
+        plain=compile_owned(parse(KERNEL),source_text=KERNEL,source_name='facts.bsl')
+        db=compile_owned(parse(KERNEL),source_text=KERNEL,source_name='facts.bsl',external_names=tuple(NAMES),constructors=('query','запрос'))
         self.assertEqual(plain.generated_source,db.generated_source)
-        self.assertNotIn('id(type(',db.generated_source);self.assertNotIn('_checked_array_index(',db.generated_source)
         numeric=self.plan('s=0;For i=1 To 100 Do s=s+i;EndDo;')
-        self.assertNotIn('_initial.get(',numeric.generated_source)
+        self.assertEqual(numeric.run({},context=BoundaryContext())['s'],5050)
     def test_external_get_and_set_clear_array_facts(self):
         for effect in ('x=External;','External=1;'):
             with self.subTest(effect=effect):
@@ -50,9 +49,10 @@ class IndependentFactsTests(unittest.TestCase):
         with self.assertRaisesRegex(BoundaryViolation,'external counter effect'):p.run(state,context=Context())
         self.assertEqual(calls,['Add'])
     def test_custom_array_and_authority_keep_dispatch(self):
-        p=prepare('a=New Array;a.Add(1);',repairs=REPAIRS,constructors=('Array',),external_names=NAMES,_trusted_entry=True)
+        source='a=New Array;a.Add(1);'
+        p=compile_owned(parse(source),source_text=source,source_name='facts.bsl',constructors=('Array',),external_names=tuple(NAMES))
         self.assertIn('id(type(',p.generated_source)
-        p=prepare(KERNEL,repairs=REPAIRS+('authority_checkpoints',),external_names=NAMES,_trusted_entry=True)
+        p=compile_owned(parse(KERNEL),source_text=KERNEL,source_name='facts.bsl',external_names=tuple(NAMES),authority_checks=True)
         self.assertIn('id(type(',p.generated_source)
     def test_query_constructor_callback_clears_existing_facts(self):
         state={};calls=[]

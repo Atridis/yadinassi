@@ -2,46 +2,39 @@ import os
 import threading
 import unittest
 from unittest.mock import patch
-
 from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from tests.retired_text_compiler import prepare
+from tests.direct_boundary_compile import compile_boundary
 from yadinassi.experimental_naked_control import SharedBoundaryContext
 
-
 class SharedBoundaryTests(unittest.TestCase):
-    def setUp(self):
-        self.env = patch.dict(os.environ, {'YADINASSI_UNSAFE_COLLECTION_ABLATION': '1'})
-        self.env.start()
-        self.addCleanup(self.env.stop)
 
     def program(self, source):
-        return prepare(source, repairs=('service_boundaries', 'authority_checkpoints'))
+        return compile_boundary(source)
 
     def test_nested_entry_cannot_reset_budget(self):
         nested = self.program('x=1;')
         ctx = SharedBoundaryContext(loop_budget=2)
-        ctx._services['nested'] = lambda: nested.run(context=ctx)
+        ctx._services['nested'] = lambda: nested.run({}, context=ctx)
         outer = self.program('r=0;For i=1 To 5 Do Nested();r=r+1;EndDo;')
         with self.assertRaises(BoundaryViolation):
-            outer.run(context=ctx)
+            outer.run({}, context=ctx)
         self.assertEqual(outer.last_state['r'], 2)
         self.assertEqual(ctx.loop_backedges, 2)
         self.assertEqual(ctx._active_frames, 0)
         self.assertEqual(ctx._frame_threads, {})
 
     def test_sequential_top_level_entry_gets_new_budget(self):
-        # Two successful iterations plus the terminal failed loop condition.
         ctx = SharedBoundaryContext(loop_budget=3)
         program = self.program('r=0;For i=1 To 2 Do r=r+1;EndDo;')
-        self.assertEqual(program.run(context=ctx)['r'], 2)
-        self.assertEqual(program.run(context=ctx)['r'], 2)
+        self.assertEqual(program.run({}, context=ctx)['r'], 2)
+        self.assertEqual(program.run({}, context=ctx)['r'], 2)
         self.assertEqual(ctx._active_frames, 0)
 
     def test_exception_unwinds_all_frames(self):
         nested = self.program('r=1/0;')
-        ctx = SharedBoundaryContext(services={'nested': lambda: nested.run(context=ctx)})
+        ctx = SharedBoundaryContext(services={'nested': lambda: nested.run({}, context=ctx)})
         with self.assertRaises(Exception):
-            self.program('Nested();').run(context=ctx)
+            self.program('Nested();').run({}, context=ctx)
         self.assertEqual(ctx._active_frames, 0)
         self.assertEqual(ctx._frame_threads, {})
 
@@ -49,10 +42,10 @@ class SharedBoundaryTests(unittest.TestCase):
         ctx = SharedBoundaryContext()
         ctx._services['revoke'] = ctx.revoke
         with self.assertRaises(BoundaryViolation):
-            self.program('Revoke();').run(context=ctx)
+            self.program('Revoke();').run({}, context=ctx)
         self.assertEqual(ctx._active_frames, 0)
         with self.assertRaises(BoundaryViolation):
-            self.program('r=1;').run(context=ctx)
+            self.program('r=1;').run({}, context=ctx)
         self.assertEqual(ctx._active_frames, 0)
 
     def test_legacy_start_cannot_reset_active_budget(self):
@@ -72,6 +65,7 @@ class SharedBoundaryTests(unittest.TestCase):
         completed = threading.Barrier(3)
         counts = []
         errors = []
+
         def worker():
             try:
                 ctx.enter()
@@ -96,7 +90,7 @@ class SharedBoundaryTests(unittest.TestCase):
         for thread in threads:
             thread.join(timeout=3)
         self.assertEqual(errors, [])
-        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertFalse(any((thread.is_alive() for thread in threads)))
         self.assertEqual(sum(counts), 50)
         self.assertEqual(ctx.loop_backedges, 50)
         self.assertEqual(ctx._active_frames, 0)
@@ -105,6 +99,7 @@ class SharedBoundaryTests(unittest.TestCase):
         ctx = SharedBoundaryContext()
         ctx.enter()
         errors = []
+
         def worker():
             try:
                 ctx.leave()

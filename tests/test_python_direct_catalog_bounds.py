@@ -7,7 +7,8 @@ from yadinassi import BSLError,Interpreter
 from yadinassi.catalog_object_preparation import _ObjectInterpreter,prepare_catalog_object
 from yadinassi.python_direct_catalog_preparation import CatalogPreparationBoundary,prepared_validator
 from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from tests.retired_text_compiler import prepare
+from yadinassi.experimental_direct_ast import compile_owned
+from yadinassi.syntax.parser import parse
 import test_catalog_object_preparation as catalog_fixture
 
 
@@ -126,11 +127,11 @@ class DirectCatalogBoundsTests(unittest.TestCase):
         source=handler('Если Ложь Тогда x=1;x=x+x;КонецЕсли;')
         self.assertEqual(prepare_catalog_object(source,self.card),(False,()))
         code='X=1;X=X+1;'
-        base=prepare(code,_trusted_entry=True)
-        explicit=prepare(code,_trusted_entry=True,_catalog_preparation_bounds=False)
+        base=compile_owned(parse(code),source_text=code,source_name='bounds.bsl')
+        explicit=compile_owned(parse(code),source_text=code,source_name='bounds.bsl',catalog_bounds=False)
         self.assertEqual(base.generated_source,explicit.generated_source)
         self.assertNotIn('preparation_',base.generated_source)
-        with self.assertRaises(ValueError):prepare(code,_trusted_entry=True,_catalog_preparation_bounds=True)
+        with self.assertRaises(ValueError):compile_owned(parse(code),source_text=code,source_name='bounds.bsl',catalog_bounds=True)
 
 import test_python_direct_catalog_preparation as main_fixture
 import test_python_direct_transaction_preparation as transaction_fixture

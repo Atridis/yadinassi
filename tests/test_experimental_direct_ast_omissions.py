@@ -1,20 +1,22 @@
 """Omitted slots are validated at the reached call before argument effects."""
-import test_experimental_direct_ast_externals as external_cases
+import unittest
+from yadinassi.errors import BSLError
+from test_experimental_direct_ast_externals import DirectSourceAssertions
 
-class OmissionTests(external_cases.DirectASTExternalTests):
+class OmissionTests(DirectSourceAssertions,unittest.TestCase):
     def test_omitted_slots_and_unreachable_calls(self):
-        for source in (
-            'R=1;If False Then A=New Array(,Touch());EndIf;',
-            'R=1;If False Then A=New Structure(,Touch());EndIf;',
-            'A=New Array(,Touch());',
-            'A=New Map(,Touch());',
-            'A=New Structure(,Touch());',
-            'A=New Array;A.Insert(Touch(),);',
-            'A=New Array;A.Set(,Touch());',
-            'A=New Array;A.Add(,Touch());',
-            'New Array().Insert(Touch(),);',
-            'R=Touch(,Touch());',
-            'R=StrFindByRegularExpression("ab","a",,,).Value;',
-            'R=New NumberQualifiers(,,);',
+        for source, checks in (
+            ('R=1;If False Then A=New Array(,Touch());EndIf;', {'expected': {'r': 1}}),
+            ('R=1;If False Then A=New Structure(,Touch());EndIf;', {'expected': {'r': 1}}),
+            ('A=New Array(,Touch());', dict(error='Пропуск аргументов', touches=0)),
+            ('A=New Map(,Touch());', dict(error='Пропуск аргументов', touches=0)),
+            ('A=New Structure(,Touch());', dict(error='Пропуск аргументов', touches=0)),
+            ('A=New Array;A.Insert(Touch(),);', dict(error='Пропуск аргументов', touches=0)),
+            ('A=New Array;A.Set(,Touch());', dict(error='Пропуск аргументов', touches=0)),
+            ('A=New Array;A.Add(,Touch());', dict(error='Пропуск аргументов', touches=0)),
+            ('New Array().Insert(Touch(),);', dict(error='Недопустимое обращение', touches=0, kind=BSLError)),
+            ('R=Touch(,Touch());', dict(error='Пропуск аргументов', touches=0)),
+            ('R=StrFindByRegularExpression("ab","a",,,).Value;', {'expected': {'r': 'a'}}),
+            ('R=New NumberQualifiers(,,);', dict(error='Пропуск аргументов', touches=0)),
         ):
-            with self.subTest(source=source):self.paired(source)
+            with self.subTest(source=source):self.check_source(source,**checks)

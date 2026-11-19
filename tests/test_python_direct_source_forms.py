@@ -68,13 +68,11 @@ class DirectSourceForms(unittest.TestCase):
         self.assertEqual(len(children),1)
         self.assertTrue(children[0]._family_released);self.assertFalse(app.interpreter._family_closed)
 
-    def test_explicit_legacy_nocontext_control_remains_available(self):
-        from yadinassi.execution_policy import execution_backend_policy
-        code=CODE.replace(b' UpdateAtServer();',b' Greeting=Remote("legacy");')+b'\n&AtServerNoContext\nFunction Remote(Val X) Return X; EndFunction'
-        with execution_backend_policy('compiled-strict'):
-            _,controller=self.controller(code);controller.exchange(request())
-            self.assertIsNone(self.command(controller)['error'])
-            self.assertEqual(dict(controller.client.session.snapshot().attributes)['Greeting'],'legacy')
+    def test_nocontext_routine_called_from_managed_form(self):
+        code=CODE.replace(b' UpdateAtServer();',b' Greeting=Remote("remote");')+b'\n&AtServerNoContext\nFunction Remote(Val X) Return X; EndFunction'
+        _,controller=self.controller(code);controller.exchange(request())
+        self.assertIsNone(self.command(controller)['error'])
+        self.assertEqual(dict(controller.client.session.snapshot().attributes)['Greeting'],'remote')
 
     def test_closed_source_owner_cannot_receive_event(self):
         with self.no_vm():

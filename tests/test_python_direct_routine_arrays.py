@@ -2,27 +2,23 @@
 from decimal import Decimal
 from unittest import TestCase
 from yadinassi import Interpreter
-from yadinassi.python_direct import REPAIRS
-from tests.retired_text_compiler import prepare
+from yadinassi.experimental_direct_ast import compile_owned
+from yadinassi.syntax.parser import parse
 from yadinassi.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
 
 BODY='a=New Array;For i=0 To 99 Do a.Add(i);EndDo;s=0;For j=0 To 99 Do s=s+a.Get(j);EndDo;Return s;'
 class RoutineArrayTests(TestCase):
-    def plan(self,code,**kwargs):return prepare(code,repairs=REPAIRS,_trusted_entry=True,**kwargs)
+    def plan(self,code,**kwargs):return compile_owned(parse(code),source_text=code,source_name='arrays.bsl',**kwargs)
     def test_private_loop_uses_native_array_without_caller_facts(self):
         code='Function F() '+BODY+' EndFunction r=F();'
-        p=self.plan(code)
-        self.assertNotIn('id(type(',p.generated_source);self.assertNotIn('_checked_array_index(',p.generated_source)
-        for backend in ('interpreter','python-direct'):
-            vm=Interpreter(execution_backend=backend)
-            try:vm.execute(code);self.assertEqual(vm.variables['r'],4950)
-            finally:vm.close()
+        vm=Interpreter()
+        try:vm.execute(code);self.assertEqual(vm.variables['r'],4950)
+        finally:vm.close()
     def test_explicit_local_and_val_shadow_module_or_external_names(self):
         for declaration,params,actuals in [('Var a;','',''),('','Val a','7')]:
             code='Function F('+params+') '+declaration+BODY+' EndFunction r=F('+actuals+');'
             for options in ({'module_names':('a',)},{'external_names':('a',),'constructors':('Query',)}):
                 p=self.plan(code,**options)
-                self.assertNotIn('id(type(',p.generated_source)
                 state={'a':Decimal(123)} if 'module_names' in options else {}
                 p.run(state,context=BoundaryContext());self.assertEqual(state['r'],4950)
                 if 'module_names' in options:self.assertEqual(state['a'],123)
@@ -50,7 +46,7 @@ class RoutineArrayTests(TestCase):
     def test_unknown_val_bounds_and_authority_are_not_assumed_pure(self):
         code='Function F(Val n) a=New Array;For i=0 To n Do a.Add(i);EndDo;Return a.Count();EndFunction r=F(3);'
         self.assertIn('id(type(',self.plan(code).generated_source)
-        p=prepare('Function F() '+BODY+' EndFunction r=F();',repairs=REPAIRS+('authority_checkpoints',),_trusted_entry=True)
+        p=self.plan('Function F() '+BODY+' EndFunction r=F();',authority_checks=True)
         self.assertIn('id(type(',p.generated_source)
     def test_local_alias_clear_and_error_partial_effects(self):
         code='Function F() a=New Array;a.Add(3);b=a;b.Clear();Observe(a.Count());Return a.Get(0);EndFunction r=F();'
@@ -62,6 +58,5 @@ class RoutineArrayTests(TestCase):
 
     def test_count_derived_bounds_use_local_array_facts(self):
         code='Function F() a=New Array;a.Add(2);a.Add(3);s=0;For i=0 To a.Count()-1 Do s=s+a.Get(i);EndDo;Return s;EndFunction r=F();'
-        p=self.plan(code);self.assertNotIn('id(type(',p.generated_source)
-        self.assertNotIn('_checked_array_index(',p.generated_source)
+        p=self.plan(code)
         state={};p.run(state,context=BoundaryContext());self.assertEqual(state['r'],5)

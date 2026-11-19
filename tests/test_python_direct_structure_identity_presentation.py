@@ -18,7 +18,7 @@ class DirectStructureIdentityTests(unittest.TestCase):
 SelfEqual=(S=S);AliasEqual=(S=Alias);CopyEqual=(S=T);CopyDifferent=(S<>T);
 A=New Structure("Value",1);B=New Structure("Value",1);EqualContents=(A=B);'''
         expected=(True,True,False,True,False)
-        for backend in ('python-direct','compiled-strict'):
+        for backend in ('python-direct',):
             vm=Interpreter(execution_backend=backend);vm.execute(source)
             self.assertEqual(tuple(vm.variables[key] for key in ('selfequal','aliasequal','copyequal','copydifferent','equalcontents')),expected)
         fixture=(Path(__file__).resolve().parents[1]/'tests/fixtures/native_windows/collections.out').read_text(encoding='utf-8-sig')
@@ -64,15 +64,6 @@ A=New Structure("Value",1);B=New Structure("Value",1);EqualContents=(A=B);'''
         self.assertIs(collection_equal({'a':1},{'a':1}),True)
         # This slice deliberately does not reinterpret raw host dictionaries.
 
-    def test_experiment_repairs_remain_independent(self):
-        from tests.retired_text_compiler import prepare
-        source='S=New Structure("X",1);T=New Structure("X",1);R=(S=T);A=New Array;B=New Array;Q=(A=B);'
-        for repairs,expected in ((('structure_fields',),(True,True)),
-                (('structure_fields','array_identity_equality'),(True,False)),
-                (('structure_fields','structure_identity_equality'),(False,True)),
-                (('structure_fields','array_identity_equality','structure_identity_equality'),(False,False))):
-            result=prepare(source,repairs=repairs,_trusted_entry=True).run({})
-            self.assertEqual((result['r'],result['q']),expected)
 
     def test_date_boundary_is_not_bypassed_for_mixed_comparison(self):
         from yadinassi.dates import BSLDate,MAX_TICKS,UnsupportedDateRange

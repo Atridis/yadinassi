@@ -11,7 +11,7 @@ from yadinassi.experimental_naked_collections import _checked_array_index,_array
 from yadinassi.experimental_naked_scalar_semantics import typed_find
 
 def vm_values(source,*names):
-    vm=Interpreter(execution_backend='compiled-strict');vm.compiled_before=lambda node:None;vm.execute(source)
+    vm=Interpreter();vm.execute(source)
     return tuple(vm.variables[name] for name in names)
 
 def method(array,name):

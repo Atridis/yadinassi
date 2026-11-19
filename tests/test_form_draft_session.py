@@ -273,47 +273,6 @@ class FormDraftSessionTests(unittest.TestCase):
             with self.assertRaises(FormModuleAnalysisError):
                 self.make(source=source, binding=binding(source))
 
-    def test_legacy_visitor_failure_after_private_mutation_oracle(self):
-        from yadinassi.execution_policy import execution_backend_policy
-        with execution_backend_policy('interpreter'):
-            self._legacy_visitor_failure_after_private_mutation_oracle()
-
-    def _legacy_visitor_failure_after_private_mutation_oracle(self):
-        original = sim._EventInterpreter
-        observed, created, closed = [], [], []
-        class Failure(original):
-            def __init__(self, sink):
-                def observe(record):
-                    observed.append(record)
-                    sink(record)
-                super().__init__(observe)
-                created.append(self)
-
-            def visit_ExpressionStatement(self, node):
-                yield from super().visit_ExpressionStatement(node)
-                raise ValueError('failure after private mutation and message')
-
-            def close(self):
-                closed.append(self)
-                return super().close()
-
-        for event in ('change', 'save'):
-            session = self.make(description=' x ')
-            if event == 'change': session.change_description(' z ', revision=0)
-            before = session.snapshot(); count = len(created)
-            with patch.object(sim, '_EventInterpreter', Failure):
-                with self.subTest(event=event), self.assertRaises((ValueError, BSLError)):
-                    if event == 'change': session.change_description(' y ', revision=1)
-                    else: session.prepare_save(revision=0)
-            self.assertEqual(len(created), count + 1)  # No retry.
-            self.assertIn(created[-1], closed)
-            self.assertEqual(created[-1].variables['объект'].get_member('Description'),
-                             'y' if event == 'change' else 'x')
-            self.assertIs(session.snapshot(), before)
-            self.assertEqual(session.change_description(' recovered ', revision=before.revision).revision,
-                             before.revision + 1)
-        self.assertEqual(len(observed), 2)
-
     def test_failure_after_private_mutation_and_message_has_no_partial_state(self):
         original = sim._EventInterpreter.__init__
         observed, created, closed = [], [], []

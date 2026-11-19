@@ -8,8 +8,6 @@ from yadinassi import value_trees as trees
 from yadinassi.values import BSLObject
 from yadinassi.syntax.parser import parse
 from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.python_direct import REPAIRS
-from tests.retired_text_compiler import prepare,UnsupportedNakedSyntax
 
 class DirectValueTreeTests(unittest.TestCase):
     def vm(self):
@@ -96,11 +94,6 @@ class DirectValueTreeTests(unittest.TestCase):
         with patch.object(trees.BSLValueTree,'__slotnames__',['hostile']):
             with self.assertRaises(BoundaryViolation):vm.execute('T.Rows')
 
-    def test_shared_services_do_not_grant_source_or_configuration_constructor(self):
-        from yadinassi.python_direct_services import CONSTRUCTORS
-        self.assertNotIn('valuetree',CONSTRUCTORS)
-        with self.assertRaises(UnsupportedNakedSyntax):
-            prepare('New ValueTree',repairs=REPAIRS,constructors=tuple(CONSTRUCTORS),_trusted_entry=True)
 
     def test_eval_and_imported_owning_boundary(self):
         vm=self.vm();vm.execute('T=Eval("New ValueTree");');self.assertIs(type(vm.variables['t']),trees.BSLValueTree)

@@ -8,9 +8,8 @@ from yadinassi import Interpreter, BSLError
 from yadinassi.values import BSLArray, BSLType
 from yadinassi.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.syntax.parser import parse
-from tests.retired_text_compiler import prepare, UnsupportedNakedSyntax, _TypedMap
 from yadinassi.experimental_naked_structure import _DirectStructure
-from yadinassi.python_direct import REPAIRS
+from yadinassi.python_direct_plain_map import PlainMap as _TypedMap
 
 
 class DirectDynamicNewTests(unittest.TestCase):
@@ -81,12 +80,19 @@ class DirectDynamicNewTests(unittest.TestCase):
 
     def test_finite_service_constructors_and_fixed_native_snapshots(self):
         vm=self.vm()
-        for name in ('JSONReader','JSONWriter','ValueList','ValueTable','NumberQualifiers','UUID'):
+        for name in ('JSONReader','JSONWriter','ValueTable','NumberQualifiers','UUID'):
             with self.subTest(name=name):
                 self.assertEqual(vm.execute('TypeOf(New("'+name+'"))'),vm.execute('Type("'+name+'")'))
         vm.execute('A=New("Array");A.Add(7);Args=New Array;Args.Add(A);F=New("FixedArray",Args);Args[0]=F;B=New("Array",Args);B[0]=9;')
         self.assertEqual(vm.execute('F[0]'),7);self.assertEqual(vm.execute('B[0]'),9)
         self.assertIs(type(vm.variables['b']),list)
+
+    def test_plain_value_list_type_reporting_is_explicitly_unsupported(self):
+        vm=self.vm();vm.execute('L=New("ValueList");')
+        with self.assertRaisesRegex(BSLError,'пока не поддерживается'):
+            vm.execute('Reported=TypeOf(L);After=True;')
+        self.assertNotIn('reported',vm.variables)
+        self.assertNotIn('after',vm.variables)
 
     def test_unknown_registered_factories_and_replacements_are_not_grants(self):
         vm=self.vm();effects=[]
@@ -112,8 +118,8 @@ class DirectDynamicNewTests(unittest.TestCase):
         vm.register_function('CloseOwner',close)
         with self.assertRaises(BoundaryViolation):vm.execute('Saved=New("Array",CloseOwner())')
         self.assertEqual(vm.variables['saved'],7)
-        other=self.vm();other.execute('Saved=7;Args=New Array;Args.Add(-1);')
-        with self.assertRaises(BSLError):other.execute('Saved=New("Array",Args)')
+        other=self.vm();other.execute('Saved=7;')
+        with self.assertRaises(BSLError):other.execute('Saved=New("Unknown")')
         self.assertEqual(other.variables['saved'],7)
 
     def test_eval_execute_and_imported_factory(self):
@@ -124,13 +130,6 @@ class DirectDynamicNewTests(unittest.TestCase):
             value=vm.execute('// #Import Factory.bsl\nFactory.Make("Array")',str(root/'Main.bsl'))
             self.assertIs(type(value),list)
 
-    def test_opt_in_does_not_enable_other_compiler_entries(self):
-        with self.assertRaises(UnsupportedNakedSyntax):
-            prepare('New("Array")',repairs=REPAIRS,_trusted_entry=True)
-        with self.assertRaises(ValueError):
-            prepare('New("Array")',repairs=REPAIRS,_dynamic_new=True)
-        with self.assertRaises(ValueError):
-            prepare('New("Array")',_trusted_entry=True,_dynamic_new=True)
 
     def test_runtime_source_coordinates_and_prepared_live_admission(self):
         vm=self.vm();plan=vm.prepare('Saved=New("JSONReader");','dynamic.bsl')

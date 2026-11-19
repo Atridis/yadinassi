@@ -17,7 +17,7 @@ class ConfigurationConditionalTests(unittest.TestCase):
         app=ConfigurationApplication.from_files(module_files([CLIENT]),output=output or (lambda value:None))
         self.addCleanup(lambda:app.close(force=True));app.start();return app
 
-    def test_scalar_if_elseif_else_matches_compiled_oracle(self):
+    def test_scalar_if_elseif_else_selects_right_branch(self):
         cases=(
             'X=0;If True Then X=1;Else X=2;EndIf;',
             'X=0;If False Then X=1;ElsIf 2>1 Then X=3;Else X=4;EndIf;',
@@ -27,11 +27,10 @@ class ConfigurationConditionalTests(unittest.TestCase):
             'X=0;Try If True Then Raise "boom";EndIf;Except If True Then X=7;EndIf;EndTry;',
             'X=0;If True Then Try Try Raise "boom";Except Raise;EndTry;Except X=8;EndTry;EndIf;',
         )
-        for source in cases:
+        for source,expected in zip(cases,(1,3,4,5,1,7,8)):
             with self.subTest(source=source):
-                app=self.app();oracle=Interpreter(execution_backend='compiled-strict')
-                self.addCleanup(oracle.close);oracle.execute(source);app.execute(source)
-                self.assertEqual(app.interpreter.variables['x'],oracle.variables['x'])
+                app=self.app();app.execute(source)
+                self.assertEqual(app.interpreter.variables['x'],expected)
                 self.assertIsNone(_COMMAND_SCOPE.get())
 
     def test_metadata_predicate_calls_only_selected_scalar_routine(self):

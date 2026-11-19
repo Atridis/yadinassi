@@ -6,28 +6,11 @@ import sys
 import unittest
 import types
 from yadinassi import Interpreter,python_direct
-import test_experimental_direct_ast_regions as regions
 from unittest.mock import patch
-import test_experimental_direct_ast as original
 from yadinassi import experimental_direct_ast as direct
 
 
 class WholeSourceResearchTests(unittest.TestCase):
-    def test_supported_semantics_and_diagnostics(self):
-        compile_ast=direct.compile_module
-        with patch.object(direct,'compile_module',functools.partial(compile_ast,_whole_source=True)):
-            oracle=original.DirectASTResearchTests()
-            for name in dir(oracle):
-                if name.startswith('test_') and 'audit' not in name and 'one_real_compile' not in name:
-                    with self.subTest(name=name):getattr(oracle,name)()
-
-    def test_region_security_and_graph_corpus(self):
-        compile_ast=direct.compile_module
-        with patch.object(direct,'compile_module',functools.partial(compile_ast,_whole_source=True)):
-            oracle=regions.DirectASTRegionTests()
-            for name in ('test_existing_region_security_corpus','test_reference_workloads_match_current','test_nested_tracked_get_emits_linear_nodes'):
-                with self.subTest(name=name):getattr(oracle,name)()
-
     def test_pairwise_walk_counts_without_subtree_dump(self):
         counts={}
         with patch.object(ast,'dump',side_effect=AssertionError('no subtree dumps')),patch.object(python_direct,'_compile',direct.compile_module_whole_source):

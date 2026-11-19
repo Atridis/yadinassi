@@ -4,7 +4,6 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.syntax.parser import parse
-from tests.retired_text_compiler import prepare
 from yadinassi.experimental_naked_scalar_semantics import uca_order
 from yadinassi import collation
 
@@ -22,13 +21,6 @@ class DirectCollationTests(unittest.TestCase):
                 else:vm.execute('A="a";B="A";R=Eval("A<B");S=Eval("""a""<""A""");E=(A=B);N=(A<>B);')
             self.assertEqual(tuple(vm.variables[k] for k in ('r','s','e','n')),(True,True,False,True))
 
-    def test_experiment_ordinal_profile_is_retained(self):
-        source='R="a"<"A";A="a";B="A";S=A<B;'
-        raw=prepare(source,repairs=('native_order',),_trusted_entry=True).run({})
-        fixed=prepare(source,repairs=('native_order','uca_string_order'),_trusted_entry=True).run({})
-        self.assertEqual((raw['r'],raw['s']),(False,False));self.assertEqual((fixed['r'],fixed['s']),(True,True))
-        with self.assertRaisesRegex(ValueError,'requires native_order'):
-            prepare(source,repairs=('uca_string_order',),_trusted_entry=True)
 
     def test_literal_errors_are_runtime_catchable_and_dead_branches_do_no_io(self):
         collation._collator.cache_clear()

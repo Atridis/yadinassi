@@ -3,8 +3,8 @@
 Production Python-direct compilation now uses the direct Python AST generator
 for modules, side-specific routines, source-owned callbacks, configuration,
 posting, preparation and Execute/Eval. Unsupported compilation fails explicitly;
-there is no retry through a text generator or interpreter. The separately
-selected legacy interpreter remains supported.
+there is no retry through a text generator or interpreter. The legacy
+interpreter is no longer available.
 
 `yadinassi.experimental_naked_collections` retains shared runtime values and the
 `Program` container at their original identities. It no longer exposes
@@ -12,12 +12,11 @@ selected legacy interpreter remains supported.
 second compiler. Other historically named helper modules remain where the new
 AST compiler actually uses their value, reference or boundary semantics.
 
-The old text generator is isolated in `tests/retired_text_compiler.py` for
-historical repair and differential tests. It imports shared canonical runtime
-objects, rather than cloning classes. Packaging includes only `yadinassi*`;
-production neither imports nor discovers the oracle. Tripwires install a raising
-fake at the removed production attribute, so a reintroduced caller still fails.
-No tests are skipped to accomplish the retirement.
+The old text generator and oracle are not shipped, including in tests.
+[Their archived source](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/tests/retired_text_compiler.py)
+can reproduce old experiments, but is not an execution or test option.
+Tests of observable behavior use the direct engine and independent expectations;
+production isolation tests still reject imports of test code or the old emitter.
 
 The execution-layer benchmark rejects `--bsl-route experimental`, even if the
 old experiment environment variable is set. Use the public default/prepared
