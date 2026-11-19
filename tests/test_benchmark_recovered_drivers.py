@@ -45,6 +45,16 @@ class DriversTests(unittest.TestCase):
         self.assertIn('Не восстановлены:', text)
         self.assertIn('method.valuetable.find N4096', text)
         self.assertNotIn('0.00', text)
+    def test_summary_colors_structure_ratios_only_before_rounding(self):
+        rows = [
+            dict(case='method.structure.get', n=512, layer=layer, status='measured',
+                 wall_seconds=.000012, ratio_to_python=ratio, python_calls=9, c_calls=2)
+            for layer, ratio in zip(('python', 'classes', 'default', 'prepared'),
+                                    (1, 1.999, 3, 3.001))
+        ]
+        text = summary(dict(commit='abc', rows=rows))
+        self.assertIn('| method.structure.get | 0.0120 | 🟩 2.00× | 🟨 3.00× | 🟧 3.00× | 9/2 |', text)
+
     def test_limits(self):
         for n,rounds in ((0,3),(1,2),(True,3)):
             with self.assertRaises(ValueError): measure_case('addition',n,rounds)

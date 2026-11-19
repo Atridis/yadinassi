@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from scripts.benchmark_call_counts import capture
 from scripts.benchmark_recovery import scaffold
+from scripts.benchmark_summary import ratio_cell
 
 # Each Python source is the actual executed 1x baseline, not pseudocode.
 CONTRACTS = {
@@ -194,7 +195,8 @@ def summary(report):
         for case in CONTRACTS:
             if (case,n,'prepared') not in measured: continue
             rows = [measured[case,n,layer] for layer in ('python','classes','default','prepared')]
-            lines.append(f"| {case} | {rows[0]['wall_seconds']*1000:.4f} | {rows[1]['ratio_to_python']:.2f} | {rows[2]['ratio_to_python']:.2f} | {rows[3]['ratio_to_python']:.2f} | {rows[3]['python_calls']}/{rows[3]['c_calls']} |")
+            ratios = ' | '.join(ratio_cell(row['ratio_to_python']) for row in rows[1:])
+            lines.append(f"| {case} | {rows[0]['wall_seconds']*1000:.4f} | {ratios} | {rows[3]['python_calls']}/{rows[3]['c_calls']} |")
     unbound=sorted({r['case'] for r in report['rows'] if r['status']=='unbound'})
     lines += ['', 'Не восстановлены: '+(', '.join(unbound) if unbound else 'нет'), '', 'Явный пропуск: method.valuetable.find N4096 во всех слоях.']
     for r in report['rows']:
