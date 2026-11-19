@@ -183,7 +183,8 @@ class DatabaseSectionTests(unittest.TestCase):
                     if row.startswith(('| db.count |', '| db.update |')):
                         self.assertIn(row, db)
         counts = db.split('#### SQL-команды за один замер', 1)[1]
-        self.assertEqual(counts.count('| db.count | 2 | 6 | 10 | 3.00× | 5.00× | 1.67× |'), 2)
+        self.assertEqual(counts.count('| db.count | Запросы | 1 | 5 | 9 | 5.00× | 9.00× | 1.80× |'), 2)
+        self.assertEqual(counts.count('| db.count | Все команды | 2 | 6 | 10 | 3.00× | 5.00× | 1.67× |'), 2)
         self.assertIn('Итераций на замер: db.count: 64, db.update: 64.', counts)
         self.assertIn('без подготовки, сброса', counts)
 
@@ -194,8 +195,8 @@ class DatabaseSectionTests(unittest.TestCase):
         case['sql_statements'] = {'python': {'total': 0, 'by_verb': {}}}
         text, errors = paired.assemble(data)
         self.assertEqual(errors, ['extended-prepared.json'])
-        self.assertIn('| db.count | 0 | — | — | — | — | — |', text)
-        self.assertIn('| db.update | — | — | — | — | — | — |', text)
+        self.assertIn('| db.count | Запросы | 0 | — | — | — | — | — |', text)
+        self.assertIn('| db.update | Все команды | — | — | — | — | — | — |', text)
         self.assertIn('Неполный отчёт', text)
 
     def test_malformed_counts_do_not_masquerade_as_valid_diagnostics(self):
@@ -205,4 +206,4 @@ class DatabaseSectionTests(unittest.TestCase):
         self.assertEqual(errors, ['extended-default.json'])
         self.assertIn('### База данных', text)
         self.assertIn('| db.count |', text)
-        self.assertNotIn('| db.count | 9 |', text)
+        self.assertNotIn('| db.count | Все команды | 9 |', text)

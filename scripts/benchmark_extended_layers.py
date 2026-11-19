@@ -45,8 +45,30 @@ CASES = ('structure.fields', 'valuetable.build_scan', 'valuelist.build_scan',
          'db.count', 'db.update', 'form.event', 'form.open')
 PREPARED_CASES = tuple(name for name in CASES if not name.startswith('form.'))
 DB_CASES = ('db.count', 'db.update')
-SQL_NOTE = ('SQL-команды за один прогретый замер: включая PRAGMA и команды транзакций; '
-            'без подготовки, сброса и проверки результата. Счётчик запускается отдельно от таймера.')
+SQL_REQUEST_VERBS = ('SELECT', 'INSERT', 'UPDATE', 'DELETE')
+SQL_NOTE = ('Запросы: SELECT, INSERT, UPDATE, DELETE, включая запросы к метаданным. '
+            'Все команды: также PRAGMA, BEGIN, COMMIT, ROLLBACK и другие команды SQLite. '
+            'Счётчики снимаются отдельно от таймера за один прогретый замер, без подготовки, сброса и проверки результата.')
+
+
+def sql_metrics(case):
+    """Derive both counters from the same trace; missing counts stay missing."""
+    counts = case.get('sql_statements', {})
+    if not isinstance(counts, dict) or set(counts) - set(LAYERS):
+        raise ValueError('invalid SQL counts')
+    requests, totals = {}, {}
+    for layer, count in counts.items():
+        if not isinstance(count, dict) or type(count.get('total')) is not int or count['total'] < 0:
+            raise ValueError('invalid SQL total')
+        verbs = count.get('by_verb')
+        if not isinstance(verbs, dict) or any(type(k) is not str or type(v) is not int or v < 0 for k, v in verbs.items()):
+            raise ValueError('invalid SQL verb counts')
+        if sum(verbs.values()) != count['total'] or layer not in case['summary']:
+            raise ValueError('contradictory SQL counts')
+        totals[layer] = count['total']
+        requests[layer] = sum(verbs.get(verb, 0) for verb in SQL_REQUEST_VERBS)
+    return (('Запросы', requests), ('Все команды', totals))
+
 
 
 def q(value):
@@ -557,11 +579,11 @@ def render(report, *, include_sql=True):
         ratios.insert(0,ratio_cell(values['python_classes']/values['python']) if 'python' in values and 'python_classes' in values and values['python']>0 else '—')
         database = case['case'] in DB_CASES
         if database and include_sql:
-            sql = case.get('sql_statements', {})
-            python = sql.get('python', {}).get('total')
-            bsl = sql.get('bsl', {}).get('total')
-            cells_sql = [str(count) if count is not None else '—' for count in (python, bsl)]
-            cells_sql.append(ratio_cell(bsl/python) if python and bsl is not None else '—')
+            cells_sql = []
+            for _, counts in sql_metrics(case):
+                python, bsl = counts.get('python'), counts.get('bsl')
+                cells_sql.extend(str(count) if count is not None else '—' for count in (python, bsl))
+                cells_sql.append(ratio_cell(bsl/python) if python and bsl is not None else '—')
         else:
             cells_sql = []
         tables[database].append('| '+case['case']+' | '+' | '.join(cells+ratios+cells_sql)+' |')
@@ -573,8 +595,9 @@ def render(report, *, include_sql=True):
         divider = '|---|---:|---:|---:|---:|---:|---:|'
         if database and include_sql:
             lines.extend(['### Операции SQLite', '', SQL_NOTE, ''])
-            header += ' SQL Python | SQL yadinassi (BSL) | SQL BSL / Python |'
-            divider += '---:|---:|---:|'
+            header += (' Запросы Python | Запросы BSL | Запросы BSL / Python |'
+                       ' Все команды Python | Все команды BSL | Команды BSL / Python |')
+            divider += '---:|' * 6
         lines.extend([header, divider, *tables[database], '',
                       '| Подготовка / первый вызов | Общие тестовые данные + подготовка BSL, мс | Первый Python, мс | Первый вызов классов, мс | Первый BSL, мс |',
                       '|---|---:|---:|---:|---:|'])

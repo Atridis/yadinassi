@@ -186,7 +186,7 @@ class ExtendedReferenceTests(unittest.TestCase):
         row = next(line for line in text.splitlines() if line.startswith('| db.update |'))
         cells = [cell.strip() for cell in row.split('|')[1:-1]]
         self.assertEqual((cells[1],cells[4],cells[5]), ('—','—','—'))
-        self.assertEqual(cells[-3:], ['—','—','—'])
+        self.assertEqual(cells[-6:], ['—'] * 6)
         self.assertTrue(any(c in cells[6] for c in '🟩🟨🟧'))
 
     def test_db_timings_and_sql_separate_from_general_cases(self):
@@ -200,8 +200,9 @@ class ExtendedReferenceTests(unittest.TestCase):
         self.assertEqual(sql.count('| db.count |'), 2)  # timings and first call
         row = next(line for line in sql.splitlines() if line.startswith('| db.count |'))
         n = db['sql_statements']['bsl']['total']
-        self.assertEqual([cell.strip() for cell in row.split('|')[1:-1]][-3:],
-                         ['1', str(n), bench.ratio_cell(n)])
+        queries = db['sql_statements']['bsl']['by_verb']['SELECT']
+        self.assertEqual([cell.strip() for cell in row.split('|')[1:-1]][-6:],
+                         ['1', str(queries), bench.ratio_cell(queries), '1', str(n), bench.ratio_cell(n)])
 
     def test_xml_reader_wrong_order_with_same_checksum_is_rejected(self):
         with ExitStack() as stack:
