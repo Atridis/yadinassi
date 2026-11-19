@@ -10,7 +10,8 @@ The probe source is integrational_tests/tests/collections.bsl at that commit.
 The 48 compact expected tuples below were extracted from the 96 exact native
 "target-probes.v1.sort.*" records after independently checking the file digest,
 status=ok, identity=true and byte-identical IDs for pass1/pass2 of every case.
-Every tuple is asserted on BOTH consecutive sorts. Inputs are reconstructed
+Every tuple is asserted on BOTH consecutive sorts by the explicit
+`tests.compatibility_native_table_sort` diagnostic. Inputs are reconstructed
 from the BSL probe's key literals and insertion rules, without using the sorter
 or its pivot/partition rules to generate expected orders. The record checksum
 covers all 96 original labelled records, not a local sort prediction.
@@ -153,28 +154,100 @@ class NativeTargetSortTests(unittest.TestCase):
         unique = sorted(set(keys))
         self.assertEqual(tuple(unique.index(key) for key in keys), RANKS)
 
-    def test_all_96_native_orders_and_row_identity(self):
+    def test_all_96_python_orders_preserve_records_and_metadata(self):
+        # Python scalar ordering is the documented lightweight contract.
+        # Historical native IDs remain unchanged in the explicit diagnostic:
+        # python -m unittest tests.compatibility_native_table_sort -v
         observed = 0
         with target_context(LINUX_8_3_27_1508):
-            for (size, insertion, mode), expected in NATIVE_ORDERS.items():
+            for size, insertion, mode in NATIVE_ORDERS:
                 table, original = probe_table(size, insertion)
                 container = table.rows
                 columns = list(table.columns)
-                cells = {i: row.cells for i, row in original.items()}
+                metadata = [(c.name, type(c.name), c.title, type(c.title),
+                             c.width, type(c.width), id(c.value_type)) for c in columns]
+                payloads = {i: tuple(row) for i, row in original.items()}
+                ids = input_ids(size, insertion)
+                if mode == 'asc-id-desc':
+                    ids = sorted(ids, reverse=True)
+                elif mode == 'desc-id-asc':
+                    ids = sorted(ids)
+                expected = tuple(sorted(ids, key=lambda i: KEYS[i - 1],
+                                        reverse=mode.startswith('desc')))
                 for repeat in (1, 2):
                     with self.subTest(size=size, insertion=insertion, mode=mode, repeat=repeat):
                         self.assertIsNone(table.sort(ORDERS[mode]))
                         observed += 1
                         actual = tuple(int(row.get_member('ID')) for row in table.rows)
                         self.assertEqual(actual, expected)
+                        self.assertEqual(sorted(actual), list(range(1, size + 1)))
                         self.assertIs(table.rows, container)
-                        self.assertEqual(list(table.columns), columns)
+                        self.assertEqual([id(c) for c in table.columns], [id(c) for c in columns])
+                        self.assertEqual([(c.name, type(c.name), c.title, type(c.title),
+                                           c.width, type(c.width), id(c.value_type))
+                                          for c in table.columns], metadata)
                         for identifier, row in zip(actual, table.rows):
                             self.assertIs(row, original[identifier])
-                            self.assertIs(row.cells, cells[identifier])
                             self.assertIs(row.owner(), table)
-                            self.assertEqual(row.get_member('Key'), KEYS[identifier - 1])
+                            self.assertEqual(tuple(row), payloads[identifier])
+                            for actual_value, prior_value in zip(row, payloads[identifier]):
+                                self.assertIs(actual_value, prior_value)
+                            self.assertEqual(dict(row.cells), dict(zip(columns, payloads[identifier])))
         self.assertEqual(observed, 96)
+
+    def test_readonly_cells_snapshot_contract_is_separate_from_order(self):
+        # docs/plain-table-runtime-contract.md specifies an inspection snapshot,
+        # not the identity of a mutable backing dict. Verify values and writes.
+        table = table_for(['b', 'a'])
+        row = table.rows[0]
+        column = table.columns.get(0)
+        snapshot = row.cells
+        with self.assertRaises(TypeError):
+            snapshot[column] = 'changed'
+        table.sort('Key')
+        self.assertIs(table.rows[1], row)
+        self.assertIs(row.owner(), table)
+        self.assertEqual(snapshot[column], 'b')
+        self.assertEqual(dict(row.cells), dict(snapshot))
+        row.set_member('Key', 'c')
+        self.assertEqual(snapshot[column], 'b')
+        self.assertEqual(row.cells[column], 'c')
+
+    def test_python_numeric_sort_preserves_decimal_and_payload_identity(self):
+        values = [D('1.00'), D('-2'), D('1.0'), D('0'),
+                  D('999999999999999999999.001'), D('-0')]
+        for reverse in (False, True):
+            table = table_for([])
+            table.columns.add('Payload')
+            original = []
+            for value in values:
+                row = table.add()
+                row.set_member('Key', value)
+                row.set_member('Payload', object())
+                original.append(row)
+            payloads = {id(row): tuple(row) for row in original}
+            expected = sorted(original, key=lambda row: row.get_member('Key'), reverse=reverse)
+            for repeat in (1, 2):
+                with self.subTest(reverse=reverse, repeat=repeat):
+                    table.sort('Key Desc' if reverse else 'Key Asc')
+                    self.assertEqual([id(row) for row in table.rows], [id(row) for row in expected])
+                    for row in table.rows:
+                        self.assertIs(row.get_member('Key'), payloads[id(row)][0])
+                        self.assertIs(row.get_member('Payload'), payloads[id(row)][1])
+                        self.assertIs(row.owner(), table)
+
+    def test_python_sort_rejects_opaque_key_without_callback_or_partial_order(self):
+        events = []
+        class Opaque:
+            def __lt__(self, other):
+                events.append('comparison')
+                raise AssertionError('opaque comparator executed')
+        table = table_for([D(2), Opaque(), D(1)])
+        original = list(table.rows)
+        with self.assertRaises(NotImplementedError):
+            table.sort('Key')
+        self.assertEqual([id(row) for row in table.rows], [id(row) for row in original])
+        self.assertEqual(events, [])
 
     def test_original_two_locale_checkpoints_through_interpreter(self):
         vm = Interpreter(native_target=LINUX_8_3_27_1508)

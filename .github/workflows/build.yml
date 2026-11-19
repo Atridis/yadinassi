@@ -200,6 +200,11 @@ jobs:
           python -m unittest tests.test_benchmark_diagnostics
           python scripts/benchmark_diagnostics.py --iterations 8 --output performance-results/diagnostics.json --summary performance-results/diagnostics.md
           cat performance-results/diagnostics.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Report historic Table ordering (data errors remain fatal)
+        if: ${{ !cancelled() }}
+        run: |
+          python -m tests.compatibility_native_table_sort > native-table-order.md
+          cat native-table-order.md >> "$GITHUB_STEP_SUMMARY"
       - name: Explain incomplete results
         if: failure()
         run: echo 'Сравнение производительности не завершено. См. шаг с ошибкой и исходный артефакт. Порогов скорости нет; ошибки подготовки, корректности и измерения приводят к сбою этой задачи.' >> "$GITHUB_STEP_SUMMARY"
