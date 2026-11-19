@@ -187,7 +187,7 @@ class ServicesBoundary:
             raise ValueError('Свойство недоступно для записи: '+name)
         return readonly
 
-    def resolve_callable(self,value,*,require_value=False,allow_references=False):
+    def resolve_callable(self,value,*,require_value=False,allow_references=False,_extension_value=False):
         if (type(value) is user_messages.HostFunction and type(value.function) is user_messages.MethodType
                 and type(value.function.__self__) is user_messages.BSLUserMessage):
             return user_messages.captured(self,value,require_value=require_value,allow_references=allow_references)
@@ -223,7 +223,7 @@ class ServicesBoundary:
             raise ValueError('temporary storage belongs to another or closed source application')
         if type(value) is HostFunction and type(value.function) is SourceTemplateCall:
             raise ValueError('foreign or inactive source common template owner')
-        return super().resolve_callable(value,require_value=require_value,allow_references=allow_references)
+        return super().resolve_callable(value,require_value=require_value,allow_references=allow_references,_extension_value=_extension_value)
 
     def resolve_service(self,name,*args,**kwargs):
         key=name.casefold()

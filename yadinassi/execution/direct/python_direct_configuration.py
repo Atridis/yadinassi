@@ -130,13 +130,13 @@ class ConfigurationBoundary(BoundaryContext):
             return result
         if allow_references:invoke.requires_reference=call.requires_reference
         return invoke
-    def resolve_callable(self,value,*,require_value=False,allow_references=False):
+    def resolve_callable(self,value,*,require_value=False,allow_references=False,_extension_value=False):
         scope=self._command_scope
         if scope is None:
-            return super().resolve_callable(value,require_value=require_value,allow_references=allow_references)
+            return super().resolve_callable(value,require_value=require_value,allow_references=allow_references,_extension_value=_extension_value)
         self._check();scope.service(value,self.owner)
         self.app.check_host_service(value,self.owner)
-        call=super().resolve_callable(value,require_value=require_value,allow_references=allow_references)
+        call=super().resolve_callable(value,require_value=require_value,allow_references=allow_references,_extension_value=_extension_value)
         def invoke(*args):
             self._check();self.app.check_host_service(value,self.owner)
             scope.service(value,self.owner);scope.values(args)

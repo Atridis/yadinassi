@@ -114,9 +114,10 @@ def _list_get(receiver,index):
 
 
 def _array_member(receiver,name):
-    return array_method_value(receiver,name,index=_checked_array_index,
+    from yadinassi.execution.direct.python_direct_captured_values import register
+    return register(array_method_value(receiver,name,index=_checked_array_index,
         insert=_array_insert_shape,find=scalar.typed_find,
-        delete=lambda obj,key:obj.__delitem__(_checked_array_index(obj,key)))
+        delete=lambda obj,key:obj.__delitem__(_checked_array_index(obj,key))))
 
 
 def _identity_reference(value):return value

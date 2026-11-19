@@ -104,13 +104,13 @@ class CatalogBoundary:
         if owner is not root:
             raise BoundaryViolation('unregistered or foreign database receiver')
 
-    def resolve_callable(self,value,*,require_value=False,allow_references=False):
+    def resolve_callable(self,value,*,require_value=False,allow_references=False,_extension_value=False):
         from .python_direct_fixed_find import captured
         bound=captured(self,value,require_value=require_value,allow_references=allow_references)
         if bound is not None:return bound
         bound=movements.captured(self,value,require_value=require_value,allow_references=allow_references)
         if bound is not None:return bound
-        return super().resolve_callable(value,require_value=require_value,allow_references=allow_references)
+        return super().resolve_callable(value,require_value=require_value,allow_references=allow_references,_extension_value=_extension_value)
 
     def resolve_service(self,name,*args,**kwargs):
         if name.casefold() in ('new:query','new:запрос'):

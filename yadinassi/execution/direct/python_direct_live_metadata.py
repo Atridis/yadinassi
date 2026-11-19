@@ -219,7 +219,7 @@ class LiveMetadataBoundary:
             result=method(*args)
             current();return _owned(self,result)
         return call
-    def resolve_callable(self,value,*,require_value=False,allow_references=False):
+    def resolve_callable(self,value,*,require_value=False,allow_references=False,_extension_value=False):
         if type(value) is HostFunction:
             _class_hooks((_DIRECT_COLLECTION_CLASS_ABI[-1],));_fields(value)
             callback=value.function
@@ -242,4 +242,4 @@ class LiveMetadataBoundary:
                     result=callback(*args);check(self,receiver);return _owned(self,result)
                 if allow_references:call.requires_reference=lambda index:False
                 return call
-        return super().resolve_callable(value,require_value=require_value,allow_references=allow_references)
+        return super().resolve_callable(value,require_value=require_value,allow_references=allow_references,_extension_value=_extension_value)

@@ -121,13 +121,18 @@ class BoundaryContext:
 
 
     def resolve_extension_value(self,value,*,require_value=False,allow_references=False):
-        if getattr(self,'_restrict_python_extensions',False) and type(value) is HostFunction:
-            self._check()
-            raise BoundaryViolation('callable Python values require allow_extensions=True')
+        if getattr(self,'_restrict_python_extensions',False):
+            return self.resolve_callable(value,require_value=require_value,
+                allow_references=allow_references,_extension_value=True)
         return self.resolve_callable(value,require_value=require_value,allow_references=allow_references)
 
-    def resolve_callable(self,value,*,require_value=False,allow_references=False):
+    def resolve_callable(self,value,*,require_value=False,allow_references=False,_extension_value=False):
         self._check()
+        if _extension_value and type(value) is HostFunction:
+            from yadinassi.execution.direct.python_direct_captured_values import resolve
+            bound=resolve(self,value,require_value=require_value,allow_references=allow_references)
+            if bound is not None:return bound
+            raise BoundaryViolation('callable Python values require allow_extensions=True')
         if type(value) is HostFunction and getattr(self,'_direct_transaction_owner',None) is not None:
             from yadinassi.execution.direct.python_direct_transactions import service as transaction_service
             value=transaction_service(self,value)

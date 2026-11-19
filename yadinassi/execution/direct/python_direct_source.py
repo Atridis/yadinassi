@@ -217,7 +217,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         if hasattr(bound,'prepare_argument_shapes'):invoke.prepare_argument_shapes=bound.prepare_argument_shapes
         if hasattr(bound,'bind_eval'):invoke.bind_eval=bound.bind_eval
         return invoke
-    def resolve_callable(self,value,*,require_value=False,allow_references=False):
+    def resolve_callable(self,value,*,require_value=False,allow_references=False,_extension_value=False):
         xdto_json.reject_global_callable(value)
         bound=xdto.captured(self,value,require_value=require_value,allow_references=allow_references)
         if bound is not None:return bound
@@ -235,7 +235,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         if bound is not None:return bound
         captured=storage.captured(self,value,require_value=require_value,allow_references=allow_references)
         if captured is not None:return captured
-        bound=super().resolve_callable(value,require_value=require_value,allow_references=allow_references)
+        bound=super().resolve_callable(value,require_value=require_value,allow_references=allow_references,_extension_value=_extension_value)
         bound=xdto_json.guard_global_callable(self,value,bound)
         return self._guard_references(bound) if allow_references else bound
     def leave(self):

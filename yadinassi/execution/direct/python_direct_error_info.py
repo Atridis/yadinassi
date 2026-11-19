@@ -25,7 +25,8 @@ def owns(value):return type(value) is BSLErrorInfo
 def read(context,value,name):
     context._check()
     if name.casefold() in _QUERY_NAMES:
-        return _HostFunction(name,_CategoryQuery(value))
+        from .python_direct_captured_values import register
+        return register(_HostFunction(name,_CategoryQuery(value)))
     field=_FIELDS.get(name.casefold())
     if field is None:raise ValueError('Свойство не найдено: '+name)
     state=_STATE.__get__(value,BSLErrorInfo)
@@ -82,7 +83,7 @@ def _chain(value):
 
 
 class _CategoryQuery:
-    __slots__=('value',)
+    __slots__=('value','__weakref__')
     def __init__(self,value):self.value=value
     def __call__(self,category):
         category=_category(category)
