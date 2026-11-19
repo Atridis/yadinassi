@@ -143,10 +143,25 @@ class IntegerLaneTests(unittest.TestCase):
                  if isinstance(node,ast.For)]
         self.assertEqual(len(loops),2)
         self.assertTrue(all('_Decimal' not in ast.unparse(loop) for loop in loops))
+        self.assertTrue(all(not isinstance(loop.body[0],ast.Assign) or
+                            not isinstance(loop.body[0].value,ast.Name) for loop in loops))
         from yadinassi.types.values import BSLType
         self.assertIs(vm.execute('TypeOf(M.Get(300))'),BSLType.NUMBER)
         self.assertIs(type(vm.execute('M[300]')),D)
         self.assertIs(type(vm.execute('For Each Entry In M Do K=Entry.Key; Break; EndDo; K;')),D)
+
+    def test_native_for_reuses_counter_slot_with_existing_exit_semantics(self):
+        for source, expected in (
+                ('For I=1 To 8 Do If I=4 Then Break; EndIf; EndDo; I;',D(4)),
+                ('For I=9 To 8 Do EndDo; I;',D(9)),
+                ('For I=1 To 8 Do EndDo; I;',D(9))):
+            with self.subTest(source=source):
+                vm,plan,result = self.run_source(source)
+                self.assertEqual(result,expected)
+                self.assertIs(type(vm.variables['i']),D)
+                loop=next(node for node in ast.walk(ast.parse(plan._plan.generated_source))
+                          if isinstance(node,ast.For))
+                self.assertEqual(loop.target.id,loop.orelse[0].targets[0].id)
 
     def test_numeric_map_fractional_keys_and_values_remain_decimal(self):
         vm,_,result = self.run_source('M=New Map; M.Insert(1.25,2.50); M.Get(1.25);')

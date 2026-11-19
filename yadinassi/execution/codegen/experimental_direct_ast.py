@@ -1382,12 +1382,14 @@ class Emitter:
                     elif isinstance(value,bsl.Node):pending.extend(getattr(value,f.name) for f in fields(value) if f.name!='token' and not (type(value) is bsl.Literal and f.name=='value'))
                     elif type(value) in (list,tuple):pending.extend(value)
                 if not mutated and type(start) is Decimal and type(end) is Decimal and start.is_finite() and end.is_finite() and start.as_tuple().exponent==0 and end.as_tuple().exponent==0:
-                    counter=self.temp()
+                    name=node.name.casefold()
+                    slot_counter=self.static_module_names.get(name) if self.integer_lane else None
+                    counter=slot_counter or self.temp()
                     initialize=self.assign_name(node.name,self.literal(start,t),t)
                     # A counter used only for native indexing need not make a
                     # Decimal and immediately convert it back to int. Other uses
                     # still see Decimal, once per iteration, not per reference.
-                    name=node.name.casefold();pending=list(node.body);decimal_use=False
+                    pending=list(node.body);decimal_use=False
                     def is_counter(value):
                         while type(value) is bsl.Group:value=value.expression
                         return type(value) is bsl.Name and value.name.casefold()==name
@@ -1401,7 +1403,8 @@ class Emitter:
                         if isinstance(value,bsl.Node):pending.extend(getattr(value,f.name) for f in fields(value) if f.name!='token' and not (type(value) is bsl.Literal and f.name=='value'))
                         elif type(value) in (list,tuple):pending.extend(value)
                     raw=self.name(counter,t)
-                    advance=self.assign_name(node.name,self.call('_Decimal',[raw],t) if decimal_use and not self.integer_lane else raw,t)
+                    advance=([] if slot_counter else [self.assign_name(
+                        node.name,self.call('_Decimal',[raw],t) if decimal_use and not self.integer_lane else raw,t)])
                     previous=self.range_indices.get(name);self.range_indices[name]=counter
                     body=self.loop_body(node.body,None)
                     if previous is None:self.range_indices.pop(name)
@@ -1410,7 +1413,7 @@ class Emitter:
                     # publishes the historical post-increment value (or start).
                     final=max(int(start),int(end)+1)
                     done=self.assign_name(node.name,self.literal(Decimal(final),t),t)
-                    loop=self.node(py.For,t,target=self.name(counter,t,True),iter=self.call('range',[self.const(int(start),t),self.const(int(end)+1,t)],t),body=[advance,*body],orelse=[done],type_comment=None)
+                    loop=self.node(py.For,t,target=self.name(counter,t,True),iter=self.call('range',[self.const(int(start),t),self.const(int(end)+1,t)],t),body=[*advance,*body] or [self.node(py.Pass,t)],orelse=[done],type_comment=None)
                     # Internal integer induction must not escape through Break,
                     # an exception, or a following read/append of the BSL slot.
                     slot=self.read(node.name,t)
