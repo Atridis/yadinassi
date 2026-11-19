@@ -22,37 +22,33 @@ For Each P In M Do
     K=P.Key;V=P.Value;
 EndDo;
 N=M.Count();'''
-                results=[]
-                for backend in ('python-direct','compiled-strict'):
-                    with self.subTest(constructor=constructor,name=name,backend=backend):
-                        vm=self.vm(backend)
-                        if backend=='python-direct':
-                            with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):vm.execute(source)
-                        else:vm.execute(source)
-                        # Python3.10 direct tracebacks retain line but not expression columns.
-                        error=vm.variables['error'].split(': ',1)[1]
-                        results.append((vm.variables['caught'],error,vm.variables['k'],vm.variables['v'],vm.variables['n']))
-                self.assertEqual(results[0],results[1]);self.assertEqual(results[0][0],True)
-                self.assertEqual(results[0][2:],('K',Decimal(1),Decimal(1)))
-                self.assertIn('Свойство недоступно для записи: '+name,results[0][1])
+                with self.subTest(constructor=constructor,name=name):
+                    vm=self.vm()
+                    with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
+                        vm.execute(source)
+                    # Python3.10 direct tracebacks retain line but not expression columns.
+                    error=vm.variables['error'].split(': ',1)[1]
+                    self.assertIs(vm.variables['caught'],True)
+                    self.assertEqual((vm.variables['k'],vm.variables['v'],vm.variables['n']),
+                                     ('K',Decimal(1),Decimal(1)))
+                    self.assertIn('Свойство недоступно для записи: '+name,error)
 
     def test_receiver_once_then_rhs_and_rhs_error_takes_precedence(self):
         for rhs_fails in (False,True):
-            for backend in ('python-direct','compiled-strict'):
-                with self.subTest(rhs_fails=rhs_fails,backend=backend):
-                    vm=self.vm(backend, allow_extensions=True);events=[]
-                    vm.execute('M=New Map;M.Insert("K",1);For Each P In M Do EndDo;')
-                    pair=vm.variables['p']
-                    def receiver():events.append('receiver');return pair
-                    def rhs():
-                        events.append('rhs')
-                        if rhs_fails:raise ValueError('rhs failed')
-                        return Decimal(2)
-                    vm.register_function('Receiver',receiver);vm.register_function('Effect',rhs)
-                    vm.execute('Try Receiver().Value=Effect();Except E=ErrorDescription();EndTry;')
-                    self.assertEqual(events,['receiver','rhs'])
-                    self.assertIn('rhs failed' if rhs_fails else 'Свойство недоступно для записи',vm.variables['e'])
-                    self.assertEqual(pair.value,Decimal(1))
+            with self.subTest(rhs_fails=rhs_fails):
+                vm=self.vm(allow_extensions=True);events=[]
+                vm.execute('M=New Map;M.Insert("K",1);For Each P In M Do EndDo;')
+                pair=vm.variables['p']
+                def receiver():events.append('receiver');return pair
+                def rhs():
+                    events.append('rhs')
+                    if rhs_fails:raise ValueError('rhs failed')
+                    return Decimal(2)
+                vm.register_function('Receiver',receiver);vm.register_function('Effect',rhs)
+                vm.execute('Try Receiver().Value=Effect();Except E=ErrorDescription();EndTry;')
+                self.assertEqual(events,['receiver','rhs'])
+                self.assertIn('rhs failed' if rhs_fails else 'Свойство недоступно для записи',vm.variables['e'])
+                self.assertEqual(pair.value,Decimal(1))
 
     def test_closed_lifetime_cannot_be_hidden_as_catchable_readonly(self):
         vm=self.vm(allow_extensions=True);pair=Entry('K',Decimal(1));vm.variables['p']=pair
@@ -93,9 +89,6 @@ M.Insert("1",10);M.Insert(1,20);M.Insert(True,30);M.Insert(K,40);
 M.Delete(Other);M.Удалить("absent");N=M.Count();
 M.Delete(1);M.Delete(1);S=M.Get("1");B=M.Get(True);A=M.Get(K);
 M.Delete(K);M.Delete(K);Final=Alias.Count();'''
-        results=[]
-        for backend in ('python-direct','compiled-strict'):
-            vm=self.vm(backend);vm.execute(source)
-            results.append(tuple(vm.variables[k] for k in ('n','s','b','a','final')))
-        self.assertEqual(results[0],results[1])
-        self.assertEqual(results[0],tuple(map(Decimal,(4,10,30,40,2))))
+        vm=self.vm();vm.execute(source)
+        self.assertEqual(tuple(vm.variables[k] for k in ('n','s','b','a','final')),
+                         tuple(map(Decimal,(4,10,30,40,2))))

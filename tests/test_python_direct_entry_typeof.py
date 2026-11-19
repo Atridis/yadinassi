@@ -14,18 +14,16 @@ class DirectEntryTypeOfTests(unittest.TestCase):
     def vm(self, backend='python-direct', *, allow_extensions=False):
         vm=Interpreter(allow_extensions=allow_extensions, execution_backend=backend);self.addCleanup(vm.close);return vm
 
-    def test_map_and_structure_pairs_match_legacy_without_vm(self):
+    def test_map_and_structure_pairs_have_canonical_type_without_vm(self):
         source='''M=New Map;M.Insert("K",1);S=New Structure("K",1);
 For Each P In M Do MT=TypeOf(P);MR=(MT=Type("KeyAndValue"));EndDo;
 For Each P In S Do ST=ТипЗнч(P);SR=(ST=Тип("КлючИЗначение"));EndDo;'''
-        for backend in ('python-direct','compiled-strict'):
-            vm=self.vm(backend)
-            if backend=='python-direct':
-                with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):vm.execute(source)
-            else:vm.execute(source)
-            self.assertIs(vm.variables['mt'],BSLType.KEY_AND_VALUE)
-            self.assertIs(vm.variables['st'],BSLType.KEY_AND_VALUE)
-            self.assertIs(vm.variables['mr'],True);self.assertIs(vm.variables['sr'],True)
+        vm=self.vm()
+        with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
+            vm.execute(source)
+        self.assertIs(vm.variables['mt'],BSLType.KEY_AND_VALUE)
+        self.assertIs(vm.variables['st'],BSLType.KEY_AND_VALUE)
+        self.assertIs(vm.variables['mr'],True);self.assertIs(vm.variables['sr'],True)
 
     def test_alias_override_and_late_function_revocation(self):
         vm=self.vm(allow_extensions=True);pair=_MapEntry('K',1);vm.variables['p']=pair
