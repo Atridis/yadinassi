@@ -248,6 +248,7 @@ def helpers():
     def table_add(value):
         if len(value.rows)>=table_limits["_MAX_ROWS"] or len(value.columns._items)>table_limits["_MAX_COLUMNS"] or (len(value.rows)+1)*len(value.columns._items)>table_limits["_MAX_CELLS"]:raise ValueError("ValueTable growth limit exceeded")
         row=row_type(value,value._storage.schema)
+        value._storage.epoch += 1
         value.rows.append(row)
         return row
     def table_get(value,index):
@@ -259,6 +260,7 @@ def helpers():
     def row_set(row,name,value):
         key=name.casefold()
         if key not in row.schema._offsets:raise ValueError('column not found: '+name)
+        row.table._storage.epoch += 1
         list.__setitem__(row,row.schema._offsets[key],value)
     def list_add(value,number):
         count=len(value.items)

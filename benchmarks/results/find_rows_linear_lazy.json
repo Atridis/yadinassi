@@ -1,0 +1,32 @@
+[
+  {
+    "n": 512,
+    "python_scan": 1.8234000890515745e-05,
+    "class_linear": 0.0008612180026830174,
+    "class_build": 0.0020560599987220485,
+    "class_steady": 4.3592001020442694e-05,
+    "batch_write_search": 0.0017254329977731686,
+    "interleaved8": 0.008704806998139247,
+    "prepared_bsl": {
+      "yadinassi.runtime_linear": 0.0013824420020682737,
+      "yadinassi.runtime_indexed": 0.0005274649993225466,
+      "recovered_bare_fixture_linear": 4.4702999730361626e-05,
+      "recovered_bare_fixture_indexed": 2.2781998268328607e-05
+    }
+  },
+  {
+    "n": 4096,
+    "python_scan": 0.0003523580016917549,
+    "class_linear": 0.007566562002466526,
+    "class_build": 0.009611059998860583,
+    "class_steady": 0.000331039002048783,
+    "batch_write_search": 0.014199750999978278,
+    "interleaved8": 0.06860561299981782,
+    "prepared_bsl": {
+      "yadinassi.runtime_linear": 0.0075629960010701325,
+      "yadinassi.runtime_indexed": 0.0007789449991832953,
+      "recovered_bare_fixture_linear": 0.00039151199962361716,
+      "recovered_bare_fixture_indexed": 0.00016559899813728407
+    }
+  }
+]

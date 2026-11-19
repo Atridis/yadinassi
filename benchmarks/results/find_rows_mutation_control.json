@@ -1,0 +1,176 @@
+[
+  {
+    "pair": 0,
+    "revision": "linear",
+    "results": [
+      {
+        "n": 512,
+        "declarations": 0,
+        "add_seconds": 0.000495995998790022,
+        "read_iteration_seconds": 0.0004309549985919148
+      },
+      {
+        "n": 512,
+        "declarations": 3,
+        "unsupported": true
+      },
+      {
+        "n": 4096,
+        "declarations": 0,
+        "add_seconds": 0.004264123002940323,
+        "read_iteration_seconds": 0.004049422001116909
+      },
+      {
+        "n": 4096,
+        "declarations": 3,
+        "unsupported": true
+      }
+    ]
+  },
+  {
+    "pair": 0,
+    "revision": "candidate",
+    "results": [
+      {
+        "n": 512,
+        "declarations": 0,
+        "add_seconds": 0.0004875599988736212,
+        "read_iteration_seconds": 0.0004429780019563623
+      },
+      {
+        "n": 512,
+        "declarations": 3,
+        "add_seconds": 0.00048534600136918016,
+        "read_iteration_seconds": 0.0004213070023979526
+      },
+      {
+        "n": 4096,
+        "declarations": 0,
+        "add_seconds": 0.004184304001682904,
+        "read_iteration_seconds": 0.0034792869992088526
+      },
+      {
+        "n": 4096,
+        "declarations": 3,
+        "add_seconds": 0.004365081997093512,
+        "read_iteration_seconds": 0.003535011001076782
+      }
+    ]
+  },
+  {
+    "pair": 1,
+    "revision": "candidate",
+    "results": [
+      {
+        "n": 512,
+        "declarations": 0,
+        "add_seconds": 0.0009190159980789758,
+        "read_iteration_seconds": 0.00085059800039744
+      },
+      {
+        "n": 512,
+        "declarations": 3,
+        "add_seconds": 0.0009226830006809905,
+        "read_iteration_seconds": 0.0008798029994068202
+      },
+      {
+        "n": 4096,
+        "declarations": 0,
+        "add_seconds": 0.007756896000501001,
+        "read_iteration_seconds": 0.003569376000086777
+      },
+      {
+        "n": 4096,
+        "declarations": 3,
+        "add_seconds": 0.0043240949999017175,
+        "read_iteration_seconds": 0.0037640700029442087
+      }
+    ]
+  },
+  {
+    "pair": 1,
+    "revision": "linear",
+    "results": [
+      {
+        "n": 512,
+        "declarations": 0,
+        "add_seconds": 0.0008743319995119236,
+        "read_iteration_seconds": 0.0007986509990587365
+      },
+      {
+        "n": 512,
+        "declarations": 3,
+        "unsupported": true
+      },
+      {
+        "n": 4096,
+        "declarations": 0,
+        "add_seconds": 0.007354633999057114,
+        "read_iteration_seconds": 0.006112184000812704
+      },
+      {
+        "n": 4096,
+        "declarations": 3,
+        "unsupported": true
+      }
+    ]
+  },
+  {
+    "pair": 2,
+    "revision": "linear",
+    "results": [
+      {
+        "n": 512,
+        "declarations": 0,
+        "add_seconds": 0.0004572339967126027,
+        "read_iteration_seconds": 0.0004672530012612697
+      },
+      {
+        "n": 512,
+        "declarations": 3,
+        "unsupported": true
+      },
+      {
+        "n": 4096,
+        "declarations": 0,
+        "add_seconds": 0.003921923998859711,
+        "read_iteration_seconds": 0.004125264000322204
+      },
+      {
+        "n": 4096,
+        "declarations": 3,
+        "unsupported": true
+      }
+    ]
+  },
+  {
+    "pair": 2,
+    "revision": "candidate",
+    "results": [
+      {
+        "n": 512,
+        "declarations": 0,
+        "add_seconds": 0.000490045000333339,
+        "read_iteration_seconds": 0.0004369160014903173
+      },
+      {
+        "n": 512,
+        "declarations": 3,
+        "add_seconds": 0.0004877210012637079,
+        "read_iteration_seconds": 0.00041923300159396604
+      },
+      {
+        "n": 4096,
+        "declarations": 0,
+        "add_seconds": 0.004205623998132069,
+        "read_iteration_seconds": 0.003514923999318853
+      },
+      {
+        "n": 4096,
+        "declarations": 3,
+        "add_seconds": 0.004266627001925372,
+        "read_iteration_seconds": 0.0034824129979824647
+      }
+    ]
+  }
+]

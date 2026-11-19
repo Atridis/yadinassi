@@ -7,6 +7,7 @@ from decimal import Decimal, ROUND_DOWN
 from types import MappingProxyType
 from .values import BSLObject, BSLArray, HostFunction
 from .type_descriptions import BSLTypeDescription
+from .plain_table_search import SearchIndexes
 from .plain_table_storage import RowStorage, TableStorage, Schema, scalar_equal
 
 
@@ -118,7 +119,13 @@ class BSLValueTableColumnCollection(BSLObject):
         self.table._storage.rename_column(column._name,name);column._name=name
     def delete(self,column):
         _writable(self.table)
-        column=self.resolve(column);self.table._storage.delete_column(column.name)
+        column=self.resolve(column)
+        position=self.table._storage.schema.offset(column.name)
+        self.table._storage.delete_column(column.name)
+        indexes=self.table.indexes
+        indexes.items[:]=[tuple(i-(i>position) for i in sig) for sig in indexes.items if position not in sig]
+        self.table._search.declarations=set(indexes.items)
+        self.table._search.cache.clear()
         self._items.remove(column);column._deleted=True
     def clear(self):
         for column in tuple(self._items):self.delete(column)
@@ -152,7 +159,9 @@ class BSLValueTableRow(RowStorage,BSLObject):
     def set(self,index,value):
         if self._deleted:raise ValueError("row is deleted")
         _writable(self.table)
-        list.__setitem__(self,_index(index,len(self.schema._keys)),value)
+        position = _index(index,len(self.schema._keys))
+        self.table._storage.epoch += 1
+        list.__setitem__(self,position,value)
     def get_index(self,index):return self.get_member(index) if type(index) is str else self.get(index)
     def set_index(self,index,value):return self.set_member(index,value) if type(index) is str else self.set(index,value)
     def owner(self):
@@ -170,6 +179,8 @@ class BSLValueTableRow(RowStorage,BSLObject):
             if type(column) is not BSLValueTableColumn or column.table is not self.table:raise ValueError('foreign column')
             prepared[column.name.casefold()]=value
         if set(prepared)!=set(self.schema._keys):raise ValueError('materialized schema mismatch')
+        _writable(self.table)
+        self.table._storage.epoch += 1
         list.__setitem__(self,slice(None),[prepared[k] for k in self.schema._keys])
     def __iter__(self):return list.__iter__(self)
     def get_method(self,name):return _method(self,name,(
@@ -179,15 +190,23 @@ class BSLValueTableRow(RowStorage,BSLObject):
 
 class BSLCollectionIndexes(BSLObject):
     def __init__(self,table):self.table=table;self.items=[]
-    def count(self):return Decimal(0)
-    def add(self,*args):raise NotImplementedError('ValueTable indexes are parked')
-    def clear(self):pass
+    def count(self):return Decimal(len(self.items))
+    def add(self,names):
+        _writable(self.table)
+        if type(names) is not str:raise TypeError('index columns must be str')
+        offsets=tuple(self.table._storage.schema.offset(n.strip()) for n in names.split(','))
+        signature=self.table._search.declare(offsets)
+        if signature not in self.items:self.items.append(signature)
+        return signature
+    def clear(self):
+        _writable(self.table);self.items.clear();self.table._search.clear()
     def get_method(self,name):return _method(self,name,(
         (('count','количество'),'count',True),(('add','добавить'),'add',True),(('clear','очистить'),'clear',False)))
 
 
 class BSLValueTable(BSLObject):
     def __init__(self):
+        self._search=SearchIndexes()
         self._bounded_slice_read=False;self._storage=TableStorage(self,BSLValueTableRow)
         self.rows=self._storage.rows;self.columns=BSLValueTableColumnCollection(self);self.indexes=BSLCollectionIndexes(self)
     def add(self):
@@ -242,7 +261,8 @@ class BSLValueTable(BSLObject):
         result = []
         # Historical FindRows(empty Structure) is empty, not all rows.
         if selected:
-            for row in self.rows:
+            rows = self._search.candidates(self.rows, selected, (self._storage.epoch,self._storage.schema.version,self._storage.schema.data_epoch), True)
+            for row in rows:
                 for offset, value in selected:
                     if not scalar_equal(list.__getitem__(row, offset), value):
                         break

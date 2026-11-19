@@ -20,8 +20,10 @@ class RecoveredBareTableTests(unittest.TestCase):
         self.assertEqual(table.schema, {'n': 0})
         self.assertEqual(table.rows, [[None]])
         self.assertIs(BareRow.get, list.__getitem__)
-        self.assertIs(BareRow.set, list.__setitem__)
+        # Writes invalidate lazy declared indexes; reads remain native slots.
+        epoch = table.epoch
         row.set(0, 7)
+        self.assertEqual(table.epoch, epoch + 1)
         self.assertEqual(row.get_member('n'), 7)
         row.set_member('n', 9)
         self.assertEqual(row.get(0), 9)

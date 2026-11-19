@@ -21,7 +21,7 @@ def key(name):
 
 class Schema:
     """Ordered schema and a reusable default row; no per-row schema objects."""
-    __slots__ = ('_names', '_keys', '_offsets', '_metadata', '_defaults', 'version')
+    __slots__ = ('_names', '_keys', '_offsets', '_metadata', '_defaults', 'version', 'data_epoch')
 
     def __init__(self):
         self._names = []
@@ -30,6 +30,7 @@ class Schema:
         self._metadata = []
         self._defaults = []
         self.version = 0
+        self.data_epoch = 0
 
     @property
     def names(self):
@@ -105,7 +106,9 @@ class RowStorage(list):
     def set_value(self, name, value):
         if self._deleted:
             raise StorageError('row is detached')
-        list.__setitem__(self, self.schema.offset(name), value)
+        offset = self.schema.offset(name)
+        self.schema.data_epoch += 1
+        list.__setitem__(self, offset, value)
 
 
 def validate_row(row, schema, owner, *, active=True, row_type=RowStorage):
@@ -154,7 +157,7 @@ class TableStorage:
     Index arguments here are exact Python ints. BSL argument conversion belongs
     in the facade and is deliberately not repeated inside this kernel.
     """
-    __slots__ = ('owner', 'schema', 'rows', 'row_factory')
+    __slots__ = ('owner', 'schema', 'rows', 'row_factory', 'epoch')
 
     def __init__(self, owner, row_factory=RowStorage):
         # This is an internal factory parameter, not runtime admission. The
@@ -163,6 +166,7 @@ class TableStorage:
             raise TypeError('row factory must be a RowStorage class')
         self.owner, self.schema, self.rows = owner, Schema(), []
         self.row_factory = row_factory
+        self.epoch = 0
 
     def validate(self):
         if type(self.schema) is not Schema or type(self.rows) is not list:
@@ -180,12 +184,14 @@ class TableStorage:
 
     def add(self):
         row = self.row_factory(self.owner, self.schema)
+        self.epoch += 1
         self.rows.append(row)
         return row
 
     def insert(self, index):
         position = self._position(index, inserting=True)
         row = self.row_factory(self.owner, self.schema)
+        self.epoch += 1
         self.rows.insert(position, row)
         return row
 
@@ -193,6 +199,7 @@ class TableStorage:
         return self.rows[self._position(index)]
 
     def delete(self, index):
+        self.epoch += 1
         row = self.rows.pop(self._position(index))
         row._deleted = True
         return row
@@ -202,10 +209,12 @@ class TableStorage:
         if type(offset) is not int:
             raise TypeError('storage offset must be exact int')
         new = self._position(old + offset)
+        self.epoch += 1
         self.rows.insert(new, self.rows.pop(old))
 
     def clear(self):
         rows = self.rows[:]
+        self.epoch += 1
         self.rows.clear()
         for row in rows:
             row._deleted = True
@@ -237,6 +246,7 @@ class TableStorage:
         if normalized in schema._offsets:
             raise StorageError('duplicate column: ' + name)
         position = len(schema._names)
+        self.epoch += 1
         schema._names.append(name)
         schema._keys.append(normalized)
         schema._metadata.append(metadata)
@@ -255,6 +265,7 @@ class TableStorage:
             raise StorageError('duplicate column: ' + new_name)
         position = schema._offsets[old]
         # Rows are positional and need no mutation or payload copying.
+        self.epoch += 1
         schema._offsets[new] = position
         if new != old:
             del schema._offsets[old]
@@ -271,6 +282,7 @@ class TableStorage:
         # Keep all removed references alive until schema and rows agree.
         previous = (schema._metadata, schema._defaults,
                     [list.__getitem__(row, position) for row in self.rows])
+        self.epoch += 1
         schema._publish(names, metadata, defaults)
         for row in self.rows:
             list.__delitem__(row, position)
@@ -290,6 +302,7 @@ class TableStorage:
             if type(names) is not tuple and type(names) is not list:
                 raise TypeError('column selection must be exact list or tuple')
             selected = tuple(self.schema.offset(name) for name in names)
+        self.epoch += 1
         previous = [[list.__getitem__(row, name) for name in selected] for row in self.rows]
         for row in self.rows:
             for name in selected:
@@ -329,6 +342,7 @@ class TableStorage:
                                  for name, _ in prepared)) for row in self.rows]
         for index in range(len(prepared) - 1, -1, -1):
             decorated.sort(key=lambda entry: entry[1][index], reverse=prepared[index][1])
+        self.epoch += 1
         self.rows[:] = [row for row, _ in decorated]
 
 # Definition-time code/data identity, consumed by the direct boundary before a

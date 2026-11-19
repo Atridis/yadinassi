@@ -49,7 +49,9 @@ class PlainTableRuntimeTests(unittest.TestCase):
     def test_explicit_parked_operations(self):
         t=self.table()
         with self.assertRaises(NotImplementedError):t.group_by('N')
-        with self.assertRaises(NotImplementedError):t.indexes.add('N')
+        t.indexes.add('N')
+        self.assertEqual(t.indexes.count(), 1)
+        self.assertEqual(t._search.builds, 0)
         with self.assertRaises(NotImplementedError):t.columns.move(0,1)
     def test_row_identity_comparison_never_compares_payloads(self):
         class Hostile:

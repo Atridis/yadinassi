@@ -6,13 +6,17 @@ Removed rows remain ordinary lists; stale column/row references have no guards.
 Names supplied to get_member/set_member are canonical (casefolded by compiler).
 """
 
+from yadinassi.plain_table_search import SearchIndexes
 
 class BareRow(list):
     __slots__ = ('table',)
     get = list.__getitem__
-    set = list.__setitem__
+    def __setitem__(self, key, value):
+        self.table.epoch += 1
+        list.__setitem__(self,key,value)
+    set = __setitem__
     get_index = list.__getitem__
-    set_index = list.__setitem__
+    set_index = __setitem__
 
     def owner(self):
         return self.table
@@ -43,6 +47,7 @@ class BareColumn:
         if value != self.name and value in self.table.schema:
             raise ValueError('duplicate column')
         index = self.table.schema.pop(self.name)
+        self.table.epoch += 1
         self.table.schema[value] = index
         self.name = value
 
@@ -77,12 +82,24 @@ class BareColumns:
             yield BareColumn(self.table, name)
 
 
+class BareIndexes:
+    __slots__ = ('table','search')
+    def __init__(self,table):self.table=table;self.search=SearchIndexes()
+    def add(self,names):
+        if type(names) is not str:raise TypeError('index columns must be str')
+        return self.search.declare(tuple(self.table.schema[n.strip().casefold()] for n in names.split(',')))
+    def count(self):return len(self.search.declarations)
+    def clear(self):self.search.clear()
+
+
 class BareTable:
-    __slots__ = ('rows', 'schema')
+    __slots__ = ('rows', 'schema', 'epoch', 'indexes')
 
     def __init__(self):
         self.rows = []
         self.schema = {}
+        self.epoch = 0
+        self.indexes = BareIndexes(self)
 
     @property
     def columns(self):
@@ -91,12 +108,15 @@ class BareTable:
     def get_member(self, name):
         if name in ('columns', 'колонки'):
             return BareColumns(self)
+        if name in ('indexes', 'индексы'):
+            return self.indexes
         raise AttributeError(name)
 
     def add_column(self, name):
         name = name.casefold()
         if name in self.schema:
             raise ValueError('duplicate column')
+        self.epoch += 1
         self.schema[name] = len(self.schema)
         for row in self.rows:
             row.append(None)
@@ -104,12 +124,14 @@ class BareTable:
     def add(self):
         row = BareRow([None] * len(self.schema))
         row.table = self
+        self.epoch += 1
         self.rows.append(row)
         return row
 
     def insert(self, index):
         row = BareRow([None] * len(self.schema))
         row.table = self
+        self.epoch += 1
         self.rows.insert(index, row)
         return row
 
@@ -120,9 +142,11 @@ class BareTable:
         self.rows[row][column] = value
 
     def delete(self, index):
+        self.epoch += 1
         del self.rows[index]
 
     def clear(self):
+        self.epoch += 1
         self.rows.clear()
 
     def count(self):
@@ -145,13 +169,13 @@ class BareTable:
         return None
 
     def find_rows(self, filters):
-        from .native_bare_collections import BareStructure, BareArray
+        from yadinassi.native_bare_collections import BareStructure, BareArray
         if type(filters) is not BareStructure:
             raise TypeError('Structure filter required')
         selected = tuple((self.schema[name], value) for name, value in dict.items(filters))
         result = BareArray()
         if selected:
-            for row in self.rows:
+            for row in self.indexes.search.candidates(self.rows, selected, self.epoch, False):
                 for offset, value in selected:
                     if row[offset] != value:
                         break
@@ -161,6 +185,7 @@ class BareTable:
 
     def sort(self, column, reverse=False):
         index = self.schema[column.casefold()]
+        self.epoch += 1
         self.rows.sort(key=lambda row: row[index], reverse=reverse)
 
     def copy_columns(self):

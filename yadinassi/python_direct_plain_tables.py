@@ -1,6 +1,6 @@
 """Exact detached plain-table admission. No database or source scope grant."""
 from decimal import Decimal
-from . import plain_table_storage as storage, plain_value_table_runtime as runtime
+from . import plain_table_storage as storage, plain_value_table_runtime as runtime, plain_table_search as search
 from .experimental_naked_boundaries import BoundaryViolation
 from .values import BSLObject
 
@@ -9,7 +9,7 @@ _COLUMNS=runtime.BSLValueTableColumnCollection;_COLUMN=runtime.BSLValueTableColu
 _INDEXES=runtime.BSLCollectionIndexes;_STORAGE=storage.TableStorage;_SCHEMA=storage.Schema
 _DICT=vars(BSLObject)['__dict__']
 _SNAPSHOTS=tuple((vars(module),module._DIRECT_CLASSES,module._DIRECT_FUNCTIONS,module._DIRECT_BINDINGS,module._DIRECT_NAMES)
-                 for module in (storage,runtime))
+                 for module in (storage,runtime,search))
 
 
 def raw(value):return _DICT.__get__(value,type(value))
@@ -62,14 +62,24 @@ def validate(value,pure=False):
     if type(table) is not _TABLE:fail()
     data=raw(table)
     if any(type(k) is not str for k in data):fail()
-    if set(data)!={'_bounded_slice_read','_storage','rows','columns','indexes'}:fail()
+    if set(data)!={'_bounded_slice_read','_storage','rows','columns','indexes','_search'}:fail()
     if type(data['_bounded_slice_read']) is not bool:fail()
     if pure and data['_bounded_slice_read']:return False
     kernel=data['_storage'];rows=data['rows'];columns=data['columns'];indexes=data['indexes']
     if type(kernel) is not _STORAGE or type(rows) is not list or type(columns) is not _COLUMNS or type(indexes) is not _INDEXES:fail()
     if kernel.owner is not table or kernel.rows is not rows or kernel.row_factory is not _ROW or type(kernel.schema) is not _SCHEMA:fail()
+    if type(kernel.epoch) is not int or kernel.epoch<0:fail()
+    cache=data['_search']
+    if type(cache) is not search.SearchIndexes:fail()
+    if type(cache.declarations) is not set or type(cache.cache) is not dict or type(cache.builds) is not int:fail()
+    for signature in cache.declarations:
+        if type(signature) is not tuple or any(type(i) is not int or i<0 for i in signature):fail()
+    # Derived cache is private implementation state, not a receiver graph.
+    # Search returns rows from the already validated table, never cached refs.
+    # Raw host writes to cache internals are outside the supported API.
     schema=kernel.schema
     if type(schema.version) is not int or schema.version<0:fail()
+    if type(schema.data_epoch) is not int or schema.data_epoch<0:fail()
     # Exact key types before any hashing, comparison, or user dictionary lookup.
     if type(schema._keys) is not list or any(type(k) is not str for k in schema._keys):fail()
     if type(schema._names) is not list or any(type(k) is not str for k in schema._names):fail()
@@ -82,7 +92,9 @@ def validate(value,pure=False):
     cols=raw(columns);ix=raw(indexes)
     if any(type(k) is not str for k in cols) or any(type(k) is not str for k in ix):fail()
     if set(cols)!={'table','_items'} or cols['table'] is not table or type(cols['_items']) is not list:fail()
-    if set(ix)!={'table','items'} or ix['table'] is not table or type(ix['items']) is not list or ix['items']:fail()
+    if set(ix)!={'table','items'} or ix['table'] is not table or type(ix['items']) is not list:fail()
+    if any(type(sig) is not tuple or any(type(i) is not int or i<0 for i in sig) for sig in ix['items']):fail()
+    if set(ix['items'])!=cache.declarations:fail()
     if len(cols['_items'])!=len(keys):fail()
     for i,column in enumerate(cols['_items']):
         if type(column) is not _COLUMN:fail()
