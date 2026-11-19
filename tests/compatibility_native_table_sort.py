@@ -3,10 +3,12 @@
 Both entry points validate fixture coverage and data invariants without catching
 errors. Only the final historic ID-order comparison is informational in CI.
 """
+import argparse
+from pathlib import Path
 import unittest
 from decimal import Decimal
 from tests import test_native_target_sort as fixtures
-from tests.test_native_target_sort import NATIVE_ORDERS, ORDERS, probe_table
+from tests.test_native_target_sort import KEYS, NATIVE_ORDERS, ORDERS, probe_table
 from yadinassi.native_targets import LINUX_8_3_27_1508, target_context
 
 
@@ -50,10 +52,44 @@ class HistoricNativeTableOrderDiagnostic(unittest.TestCase):
                 self.assertEqual(actual, expected)
 
 
-if __name__ == '__main__':
-    results = list(historic_cases())  # Complete validation before reporting success.
+def _sequence(ids):
+    # Quotes make case, spaces, and trailing blanks visible; IDs disambiguate
+    # rows with equal text. The fixture controls all values in this report.
+    return ', '.join(f'{KEYS[i - 1]!r} (#{i})' for i in ids)
+
+
+def render(results, limit=None):
     mismatches = [(case, actual, expected) for case, actual, expected in results if actual != expected]
-    print(f'### Historic Table order: {len(results)}/96 cases checked; {len(mismatches)} ordering differences')
-    print('Ordering differences are informational, not native parity. Data/fixture errors fail this step.')
-    for case, actual, expected in mismatches:
-        print(f'- {case}: actual={actual}; native={expected}')
+    shown = mismatches if limit is None else mismatches[:limit]
+    lines = [
+        '### Порядок сортировки ТаблицыЗначений',
+        '',
+        f'Проверено: {len(results)}/96. Расхождений: {len(mismatches)}. Показано: {len(shown)}.',
+        'Основной ключ: текстовая колонка `Key`. В комбинированных режимах `ID` служит вторым ключом.',
+        'В списках ниже показано `значение Key (#ID строки)`. Кавычки показывают, где есть пробелы.',
+        '',
+    ]
+    if len(shown) < len(mismatches):
+        lines += ['Полный список в артефакте `compatibility-differences-*`.', '']
+    for (size, insertion, mode, repeat), actual, expected in shown:
+        lines += [
+            f'- **{size} строк; вставка `{insertion}`; `{ORDERS[mode]}`; проход {repeat}**',
+            f'  - yadinassi: `{_sequence(actual)}`',
+            f'  - 1С: `{_sequence(expected)}`',
+        ]
+    return '\n'.join(lines) + '\n'
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--summary-output', type=Path,
+                        help='Write the first 10 examples separately for CI Summary')
+    args = parser.parse_args()
+    results = list(historic_cases())  # Validate all 96 even when displaying ten.
+    if args.summary_output is not None:
+        args.summary_output.write_text(render(results, limit=10), encoding='utf-8')
+    print(render(results), end='')
+
+
+if __name__ == '__main__':
+    main()

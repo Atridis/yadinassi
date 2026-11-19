@@ -229,7 +229,7 @@ jobs:
         run: python -m pip install -e . wcwidth==0.8.2
       - name: Compare historical ValueTable ordering with 1C
         id: table_order
-        run: python -m tests.compatibility_native_table_sort > native-table-order.md
+        run: python -m tests.compatibility_native_table_sort --summary-output native-table-order-summary.md > native-table-order.md
       - name: Publish known compatibility differences
         if: ${{ !cancelled() }}
         env:
@@ -245,7 +245,7 @@ jobs:
             echo 'Диагностика не блокирует CI. Обычные тесты данных остаются обязательными.'
             echo
             if [ "$TABLE_ORDER_OUTCOME" = success ]; then
-              cat native-table-order.md
+              cat native-table-order-summary.md
             else
               echo '**Сравнение не завершилось.** См. ошибку или пропущенный шаг в логе; число расхождений неизвестно.'
             fi

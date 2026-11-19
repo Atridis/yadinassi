@@ -7,8 +7,9 @@ and metadata preservation, numeric ordering and callback rejection. The readonly
 `python -m tests.compatibility_native_table_sort` validates the unchanged fixture
 and all 96 actual cases, then reports exact historic ordering differences. The
 dedicated **Совместимость с 1С: известные расхождения** job in **Test and build**
-publishes the report in the run Summary and as a `compatibility-differences-*`
-artifact. The job is informational and is not a dependency of the required
+publishes the first 10 examples in the run Summary and all differences in a
+`compatibility-differences-*` artifact. Examples show the actual text keys and
+row IDs for both implementations. The job is informational and is not a dependency of the required
 verdict or release. Missing coverage, fixture/data corruption and execution
 errors fail the diagnostic step and are labeled incomplete in the Summary,
 not mistaken for zero differences. The job currently lists this exact-order
