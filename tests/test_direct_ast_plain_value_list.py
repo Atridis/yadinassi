@@ -15,6 +15,32 @@ class DirectPlainValueListTests(unittest.TestCase):
         self.assertEqual(list(item),[D(9),'changed',True,None]);self.assertEqual(vm.variables['r'],D(9));self.assertEqual(vm.variables['n'],D(1));self.assertIs(vm.variables['found'],item)
         vm.execute('Other=New("ValueList");Other.Add(4);S=Other[0].Value;')
         self.assertIs(type(vm.variables['other']),PlainValueList);self.assertEqual(vm.variables['s'],D(4))
+
+    def test_val_item_field_reads_use_live_slots_without_copyback(self):
+        vm = self.vm(allow_extensions=True)
+        vm.execute('L=New ValueList; Item=L.Add(10,"old",True,"image"); '
+                   'Function ReadAndAssign(Val field) '
+                   'result=field; field=Undefined; Return result; EndFunction')
+        original = vm.variables['item']
+        effects = []
+
+        def receiver():
+            effects.append('receiver')
+            return original
+
+        vm.register_function('Receiver', receiver)
+        for field, expected in (('Value', D(10)), ('Значение', D(10)),
+                                ('Presentation', 'old'), ('Представление', 'old'),
+                                ('Check', True), ('Пометка', True),
+                                ('Picture', 'image'), ('Картинка', 'image')):
+            with self.subTest(field=field):
+                effects.clear()
+                result = vm.execute(f'ReadAndAssign(Receiver().{field})')
+                self.assertEqual(result, expected)
+                self.assertIs(type(result), type(expected))
+                self.assertEqual(effects, ['receiver'])
+                self.assertEqual(list(original), [D(10), 'old', True, 'image'])
+
     def test_hostile_index_and_equality_do_not_gain_callbacks(self):
         vm=self.vm();seen=[]
         class Hostile:

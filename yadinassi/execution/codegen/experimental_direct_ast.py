@@ -990,6 +990,10 @@ class Emitter:
             read=self.node(py.IfExp,t,test=exact('_DirectStructure'),body=structure,orelse=read)
             dictionary=self.node(py.Subscript,t,value=self.name(receiver,t),slice=self.const(node.name,t),ctx=py.Load())
             read=self.node(py.IfExp,t,test=exact('dict'),body=dictionary,orelse=read)
+            item_field={'value':0,'значение':0,'presentation':1,'представление':1,'check':2,'пометка':2,'picture':3,'картинка':3}.get(node.name.casefold())
+            if item_field is not None:
+                item=self.node(py.Subscript,t,value=self.name(receiver,t),slice=self.const(item_field,t),ctx=py.Load())
+                read=self.node(py.IfExp,t,test=exact('_PlainValueListItem'),body=item,orelse=read)
             result=self.node(py.IfExp,rt,test=self.name(mode,rt),body=reference,orelse=read)
         converter=self.node(py.IfExp,rt,test=self.name(mode,rt),body=self.name('_canonical_reference',rt),orelse=self.name('_identity_reference',rt))
         converted=self.invoke(converter,[result],rt)
