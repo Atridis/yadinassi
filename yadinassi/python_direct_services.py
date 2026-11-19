@@ -21,6 +21,7 @@ from .experimental_naked_structure import _DirectStructure as _DirectStructureTy
 from .type_values import _DIRECT_TYPE_OF_ABI
 from .serialization import _DIRECT_VALUE_TO_STRING_ABI, _direct_value_to_string_internal
 from .runtime import _eval_marker
+from . import python_direct_user_messages as user_messages
 from .callbacks import callback_description_marker
 from .direct_callbacks import CallbackDescription as _CallbackDescription, construct as _new_callback, read as _callback_read
 
@@ -29,6 +30,7 @@ _REGEX_IDENTITIES=frozenset(map(id,_REGEX_IMPLEMENTATIONS))
 
 CONSTRUCTORS = {
     alias: factory for aliases,factory in (
+        (user_messages.NAMES,user_messages._FACTORY),
         (('callbackdescription','описаниеоповещения'),callback_description_marker),
         (('fixedmap','фиксированноесоответствие'),BSLFixedMap),
         (('fixedarray','фиксированныймассив'),BSLFixedArray),
@@ -89,6 +91,7 @@ def _string_callable(context,function,*,name=None,require_value=False,allow_refe
 
 class ServicesBoundary:
     def get_member(self,value,name):
+        if type(value) is user_messages.BSLUserMessage:return user_messages.get(self,value,name)
         if type(value) is fixed.PlainFixedMap:return fixed.get(self,value,name)
         if type(value) is _CallbackDescription:
             self._check()
@@ -101,6 +104,7 @@ class ServicesBoundary:
         return super().get_member(value,name)
 
     def resolve_member(self,value,name):
+        if type(value) is user_messages.BSLUserMessage:return user_messages.resolve(self,value,name)
         if type(value) is fixed.PlainFixedMap:return fixed.resolve(self,value,name)
         if value is None:
             self._check();raise ValueError('Значение не является значением объектного типа')
@@ -110,6 +114,7 @@ class ServicesBoundary:
         return super().resolve_member(value,name)
 
     def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
+        if type(value) is user_messages.BSLUserMessage:return user_messages.resolve(self,value,name,require_value=require_value,omitted=omitted)
         if type(value) is fixed.PlainFixedMap:
             if omitted:raise TypeError('FixedMap method argument omission is unsupported')
             return fixed.resolve(self,value,name,require_value=require_value)
@@ -132,6 +137,7 @@ class ServicesBoundary:
         return invoke
 
     def resolve_set_member(self, value, name):
+        if type(value) is user_messages.BSLUserMessage:return user_messages.setter(self,value,name)
         if type(value) is fixed.PlainFixedMap:
             self._check()
             def readonly_fixed_map(new_value):
@@ -157,6 +163,9 @@ class ServicesBoundary:
         return readonly
 
     def resolve_callable(self,value,*,require_value=False,allow_references=False):
+        if (type(value) is user_messages.HostFunction and type(value.function) is user_messages.MethodType
+                and type(value.function.__self__) is user_messages.BSLUserMessage):
+            return user_messages.captured(self,value,require_value=require_value,allow_references=allow_references)
         bound=_string_callable(self,value,require_value=require_value,allow_references=allow_references)
         if bound is not None:return bound
         if type(value) is HostFunction and value.function is _DIRECT_VALUE_TO_STRING_ABI:
@@ -193,9 +202,14 @@ class ServicesBoundary:
 
     def resolve_service(self,name,*args,**kwargs):
         key=name.casefold()
+        if key.startswith('new:') and key[4:] in user_messages.NAMES:
+            return user_messages.constructor(self,key,**kwargs)
         from .temporary_storage import SourceTemporaryCall
         from .common_templates import SourceTemplateCall
         function=self._services.get(key)
+        if (type(function) is user_messages.HostFunction and type(function.function) is user_messages.MethodType
+                and type(function.function.__self__) is user_messages.BSLUserMessage):
+            return user_messages.captured(self,function,operation='call',**kwargs)
         from .python_direct_fill import resolve_fill
         bound=resolve_fill(self,function,name=key,**kwargs)
         if bound is not None:return bound

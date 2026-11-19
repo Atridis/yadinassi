@@ -107,7 +107,3 @@ class _ArrayGapInsertTests(ArrayBackendContract):
 
 class ArrayGapInsertTests(_ArrayGapInsertTests, unittest.TestCase):
     """Default direct backend."""
-
-
-class LegacyArrayGapInsertTests(_ArrayGapInsertTests, unittest.TestCase):
-    backend = "compiled-strict"

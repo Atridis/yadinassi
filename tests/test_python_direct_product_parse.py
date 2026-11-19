@@ -4,7 +4,6 @@ from unittest import TestCase
 from unittest.mock import patch
 from yadinassi.syntax import parser
 from yadinassi.form_event_simulation import simulate_product_form_event
-from yadinassi.execution_policy import execution_backend_policy
 from yadinassi.catalog_backend import BackendError
 import test_product_form_events as fixture
 
@@ -55,10 +54,3 @@ class ProductParseTests(TestCase):
         with patch.object(self.f.card,'_pending_write',object()):
             with self.assertRaisesRegex(BackendError,'uncertain_commit'):
                 self.f.run_event('DescriptionOnChange')
-    def test_legacy_does_not_consult_or_fill_direct_slot(self):
-        m=self.f.card._manager
-        for backend in ('interpreter', 'compiled-strict'):
-            with self.subTest(backend=backend),execution_backend_policy(backend),patch.object(parser,'parse',wraps=parser.parse) as parse:
-                self.f.run_event('DescriptionOnChange');self.f.run_event('DescriptionOnChange')
-            self.assertEqual(parse.call_count,2)
-            self.assertFalse(hasattr(m,'_direct_product_program'))

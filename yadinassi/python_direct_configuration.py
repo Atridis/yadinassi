@@ -93,6 +93,27 @@ class ConfigurationBoundary(BoundaryContext):
         raise ValueError('common module names are read-only')
     def resolve_service(self,name,fallback=None,*,require_value=False,allow_references=False,argument_count=None):
         self._check()
+        if name.casefold() in ('new:uuid','new:уникальныйидентификатор'):
+            from .unique_identifiers import BSLUUID
+            alias=name.split(':',1)[1].casefold()
+            factory=self.owner.types.get(alias)
+            def validate():
+                self._check()
+                if (self.owner.types.get(alias) is not factory
+                        or type(factory) is not HostFunction or factory.function is not BSLUUID
+                        or type(factory.reference_parameters) is not frozenset or factory.reference_parameters
+                        or factory.returns_value is not True):
+                    raise BoundaryViolation('configuration UUID requires canonical constructor')
+            validate()
+            # Bind only the admitted scalar constructor. This does not authorize
+            # arbitrary host services or extend command transfer/cache values.
+            call=BoundaryContext.resolve_callable(self,factory,require_value=True)
+            def construct(*args):
+                validate()
+                # Bound callable performs policy admission and the post-call
+                # owner check; do not duplicate its finally check here.
+                return call(*args)
+            return construct
         function=self._services.get(name.casefold())
         if type(function) is not HostFunction:
             raise BoundaryViolation('unsupported configuration service: '+name)
@@ -219,7 +240,8 @@ def install(app,owner,program,source_text=''):
         raise BoundaryViolation('direct configured async/dual routines are not connected')
     owned=_snapshot(program)
     plan=compile_owned(owned,source_text=source_text,source_name=program[0].token.source if program else '<configuration>',
-        external_names=tuple(app._definitions),exports=True,authority_checks=True,configuration_calls=True)
+        external_names=tuple(app._definitions),constructors=('uuid','уникальныйидентификатор'),
+        exports=True,authority_checks=True,configuration_calls=True)
     # Capture original declaration bindings when this exact plan is installed.
     # Never infer a default from later host-mutated declaration metadata.
     plan._configuration_parameters=tuple((node,tuple(

@@ -7,6 +7,7 @@ from .python_direct_handlers import prepare_handlers
 from .syntax import ast
 from .python_direct_configuration import ConfigurationBoundary, check_owner, _COMMAND_SCOPE
 from .database_context import SQLiteDBContext
+from . import python_direct_user_messages as user_messages
 
 CALLBACK_CONSTRUCTORS=('callbackdescription','описаниеоповещения')
 DECLARATION_CONSTRUCTORS=('typedescription','описаниетипов','formattribute','реквизитформы')
@@ -24,6 +25,7 @@ class FormBoundary(ConfigurationBoundary):
         self.session = session
         self.routine = routine
         self.owner = session.interpreter
+        self.vm = self.owner
         self.app = self.owner._configuration_runtime
         self.database = self.owner.database_context
         self._services = session.interpreter.functions
@@ -87,6 +89,13 @@ class FormBoundary(ConfigurationBoundary):
         self.session.form.set_member(name, value)
 
     def resolve_service(self,*args,**kwargs):
+        if args and args[0].casefold() in user_messages.CONSTRUCTOR_SERVICES:
+            return user_messages.constructor(self,args[0],**kwargs)
+        if args:
+            function=self._services.get(args[0].casefold())
+            if (type(function) is user_messages.HostFunction and type(function.function) is user_messages.MethodType
+                    and type(function.function.__self__) is user_messages.BSLUserMessage):
+                return user_messages.captured(self,function,operation="call",**kwargs)
         if args and args[0].casefold() in tuple('new:'+name for name in DECLARATION_CONSTRUCTORS):
             from .values import HostFunction
             from .type_descriptions import BSLTypeDescription
@@ -166,6 +175,17 @@ class FormBoundary(ConfigurationBoundary):
         if self.owner._configuration_runtime is not None:return ConfigurationBoundary.resolve_service(self,*args,**kwargs)
         return BoundaryContext.resolve_service(self,*args,**kwargs)
 
+    def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
+        if type(value) is user_messages.BSLUserMessage:
+            return user_messages.resolve(self,value,name,require_value=require_value,omitted=omitted)
+        return super().resolve_member_call(value,name,require_value=require_value,omitted=omitted)
+
+    def resolve_callable(self,value,**kwargs):
+        if (type(value) is user_messages.HostFunction and type(value.function) is user_messages.MethodType
+                and type(value.function.__self__) is user_messages.BSLUserMessage):
+            return user_messages.captured(self,value,**kwargs)
+        return super().resolve_callable(value,**kwargs)
+
     def set_member(self,value,name,new_value):
         from . import python_direct_form_objects as objects
         if value is self.session.form or objects.recognized(value):
@@ -183,6 +203,7 @@ class FormBoundary(ConfigurationBoundary):
         return BoundaryContext.reference_member(self,value,name)
 
     def get_member(self,value,name):
+        if type(value) is user_messages.BSLUserMessage:return user_messages.get(self,value,name)
         from . import python_direct_form_objects as objects
         if objects.recognized(value):return objects.get(self,value,name)
         from .form_dialogs import QUESTION_DIALOG_MODES,DIALOG_RETURN_CODES
@@ -204,6 +225,7 @@ class FormBoundary(ConfigurationBoundary):
         return BoundaryContext.get_member(self,value,name)
 
     def resolve_member(self,value,name):
+        if type(value) is user_messages.BSLUserMessage:return user_messages.resolve(self,value,name)
         from . import python_direct_form_objects as objects
         if objects.recognized(value):return objects.method(self,value,name)
         from .direct_form_parameters import is_parameters,bind_parameter_method
@@ -226,6 +248,7 @@ class FormBoundary(ConfigurationBoundary):
         return BoundaryContext.resolve_member(self,value,name)
 
     def resolve_set_member(self,value,name):
+        if type(value) is user_messages.BSLUserMessage:return user_messages.setter(self,value,name)
         from . import python_direct_form_objects as objects
         if objects.recognized(value):return objects.setter(self,value,name)
         from .direct_form_parameters import is_parameters,bind_parameter_write
@@ -299,7 +322,7 @@ def prepare_form(session, program, source, attributes, tables, *, install_metada
                          if type(node) is not ast.Routine or node.module_context]
                         if source_mode else program)
     prepared=prepare_handlers(executable_program, source_text=source if type(source) is str else '',
-                            external_names=names, constructors=CALLBACK_CONSTRUCTORS+DECLARATION_CONSTRUCTORS+(CONSTRUCTORS if source_mode else ()),
+                            external_names=names, constructors=CALLBACK_CONSTRUCTORS+DECLARATION_CONSTRUCTORS+user_messages.NAMES+(CONSTRUCTORS if source_mode else ()),
                             repairs=REPAIRS+('authority_checkpoints',),_source_routine_scopes=source_mode)
     if install_metadata and local_server_calls:
         vm=session.interpreter

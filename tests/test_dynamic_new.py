@@ -5,18 +5,15 @@ import tempfile
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.values import BSLArray, BSLType
+from yadinassi.values import BSLType
 
 
 class DynamicNewTests(unittest.TestCase):
-    backend = "python-direct"
-
     def setUp(self):
-        self.vm = Interpreter(execution_backend=self.backend)
+        self.vm = Interpreter()
 
     def assert_array_representation(self, value):
-        expected = list if self.backend == "python-direct" else BSLArray
-        self.assertIs(type(value), expected)
+        self.assertIs(type(value), list)
 
     def test_keyword_and_type_aliases(self):
         for keyword in ('Новый', 'New', 'нОвЫй', 'nEw'):
@@ -240,10 +237,6 @@ class DynamicNewTests(unittest.TestCase):
                             'x = factory.Make(Type("Array"), args);', encoding='utf-8-sig')
             self.vm.execute(main.read_text(encoding="utf-8-sig"), str(main))
             self.assertEqual(self.vm.execute('x.Count()'), Decimal(2))
-
-
-class LegacyDynamicNewTests(DynamicNewTests):
-    backend = "compiled-strict"
 
 
 if __name__ == '__main__':

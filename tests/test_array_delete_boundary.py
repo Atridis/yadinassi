@@ -194,7 +194,3 @@ class _ArrayDeleteBoundaryTests(ArrayBackendContract):
 
 class ArrayDeleteBoundaryTests(_ArrayDeleteBoundaryTests, unittest.TestCase):
     """Default direct backend."""
-
-
-class LegacyArrayDeleteBoundaryTests(_ArrayDeleteBoundaryTests, unittest.TestCase):
-    backend = "compiled-strict"

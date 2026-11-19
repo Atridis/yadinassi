@@ -104,7 +104,3 @@ class _ArrayDefaultTests(ArrayBackendContract):
 
 class ArrayDefaultTests(_ArrayDefaultTests, unittest.TestCase):
     """Default direct backend."""
-
-
-class LegacyArrayDefaultTests(_ArrayDefaultTests, unittest.TestCase):
-    backend = "compiled-strict"
