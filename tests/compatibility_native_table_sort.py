@@ -52,13 +52,13 @@ class HistoricNativeTableOrderDiagnostic(unittest.TestCase):
                 self.assertEqual(actual, expected)
 
 
-def _sequence(ids):
+def _sequence(ids, show_ids):
     # Quotes make case, spaces, and trailing blanks visible; IDs disambiguate
     # rows with equal text. The fixture controls all values in this report.
-    return ', '.join(f'{KEYS[i - 1]!r} (#{i})' for i in ids)
+    return ', '.join(repr(KEYS[i - 1]) + (f' (#{i})' if show_ids else '') for i in ids)
 
 
-def render(results, limit=None):
+def render(results, limit=None, *, show_ids=True):
     mismatches = [(case, actual, expected) for case, actual, expected in results if actual != expected]
     shown = mismatches if limit is None else mismatches[:limit]
     lines = [
@@ -66,7 +66,8 @@ def render(results, limit=None):
         '',
         f'Проверено: {len(results)}/96. Расхождений: {len(mismatches)}. Показано: {len(shown)}.',
         'Основной ключ: текстовая колонка `Key`. В комбинированных режимах `ID` служит вторым ключом.',
-        'В списках ниже показано `значение Key (#ID строки)`. Кавычки показывают, где есть пробелы.',
+        ('Показаны значения `Key` и ID строк.' if show_ids else 'Показаны только значения `Key`.')
+        + ' Кавычки показывают, где есть пробелы.',
         '',
     ]
     if len(shown) < len(mismatches):
@@ -74,8 +75,8 @@ def render(results, limit=None):
     for (size, insertion, mode, repeat), actual, expected in shown:
         lines += [
             f'- **{size} строк; вставка `{insertion}`; `{ORDERS[mode]}`; проход {repeat}**',
-            f'  - yadinassi: `{_sequence(actual)}`',
-            f'  - 1С: `{_sequence(expected)}`',
+            f'  - yadinassi: `{_sequence(actual, show_ids)}`',
+            f'  - 1С: `{_sequence(expected, show_ids)}`',
         ]
     return '\n'.join(lines) + '\n'
 
@@ -87,7 +88,7 @@ def main():
     args = parser.parse_args()
     results = list(historic_cases())  # Validate all 96 even when displaying ten.
     if args.summary_output is not None:
-        args.summary_output.write_text(render(results, limit=10), encoding='utf-8')
+        args.summary_output.write_text(render(results, limit=10, show_ids=False), encoding='utf-8')
     print(render(results), end='')
 
 
