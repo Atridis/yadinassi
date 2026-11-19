@@ -1,9 +1,32 @@
 import unittest
+from unittest.mock import patch
 from decimal import Decimal as D
 from yadinassi.collections.plain_value_list import PlainValueList, PlainValueListItem
+from yadinassi.collections.value_lists import BSLValueList
 
 
 class PlainValueListTests(unittest.TestCase):
+    def test_move_and_delete_use_internal_position_not_public_decimal(self):
+        for kind in (PlainValueList, BSLValueList):
+            with self.subTest(kind=kind):
+                values = kind()
+                first = values.add(D(3))
+                second = values.add(D(5))
+                foreign = kind().add(D(7))
+                self.assertIs(type(values.index_of(second)), D)
+                self.assertIs(type(values._index_of(second)), int)
+                self.assertEqual(values.index_of(foreign), D(-1))
+                with patch.object(kind, 'index_of', side_effect=AssertionError('public conversion')):
+                    values.move(second, D(-1))
+                    self.assertIs(values.get(D(0)), second)
+                    values.delete(first)
+                    with self.assertRaises(ValueError):
+                        values.delete(foreign)
+                    with self.assertRaises(ValueError):
+                        values.delete(first)
+                self.assertEqual(values.index_of(first), D(-1))
+                self.assertEqual(values.count(), D(1))
+
     def test_build_read_and_item_metadata(self):
         values = PlainValueList()
         first = values.add(D(3), 'three', True, None)

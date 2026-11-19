@@ -17,7 +17,10 @@ def _item(item):
 
 
 def _index(index):
-    if type(index) is not int and type(index) is not Decimal:
+    kind = type(index)
+    if kind is int:
+        return index
+    if kind is not Decimal:
         raise TypeError('ValueList index requires a number')
     return int(index)
 
@@ -111,15 +114,18 @@ class PlainValueList(list):
     def count(self):
         return Decimal(list.__len__(self))
 
-    def index_of(self, item):
+    def _index_of(self, item):
         for index, existing in enumerate(self):
             if existing is item:
-                return Decimal(index)
-        return Decimal(-1)
+                return index
+        return -1
+
+    def index_of(self, item):
+        return Decimal(self._index_of(item))
 
     def _position(self, item_or_index):
         if type(item_or_index) is PlainValueListItem:
-            index = int(self.index_of(item_or_index))
+            index = self._index_of(item_or_index)
             if index < 0:
                 raise ValueError('ValueList item does not belong to this list')
             return index

@@ -316,16 +316,19 @@ class BSLValueList(BSLObject):
         return self._insert(_position(index, len(self.items), inserting=True),
                             value, presentation, check)
 
-    def index_of(self, item):
+    def _index_of(self, item):
         if type(item) is not BSLValueListItem:
             raise TypeError("Ожидается элемент списка значений")
         if item._owner_ref() is not self or self._by_id.get(item._id) is not item:
-            return Decimal(-1)
-        return Decimal(self.items.index(item))
+            return -1
+        return self.items.index(item)
+
+    def index_of(self, item):
+        return Decimal(self._index_of(item))
 
     def _selected_position(self, selector):
         if type(selector) is BSLValueListItem:
-            position = int(self.index_of(selector))
+            position = self._index_of(selector)
             if position < 0:
                 raise ValueError("Элемент не принадлежит списку значений")
             return position

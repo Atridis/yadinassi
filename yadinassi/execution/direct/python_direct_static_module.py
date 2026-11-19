@@ -69,6 +69,9 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False):
                 require(receiver_kind!='row' and not node.arguments and (receiver_kind=='array' or method in ('count','количество')));kind='number'
             elif method in ('total','итог'):
                 require(receiver_kind=='table' and len(node.arguments)==1 and expression(node.arguments[0],env)=='string');kind='number'
+            elif method in ('indexof','индекс'):
+                argument_kind={'table':'row','columns':'column'}.get(receiver_kind)
+                require(argument_kind is not None and len(node.arguments)==1 and expression(node.arguments[0],env)==argument_kind);kind='number'
             else:raise _Decline
         else:raise _Decline
         kinds[id(node)]=kind;return kind

@@ -411,6 +411,13 @@ class Emitter:
         while type(leaf) is bsl.Group:leaf=leaf.expression
         if type(leaf) is bsl.Name and leaf.name.casefold() in self.range_indices:
             return self.name(self.range_indices[leaf.name.casefold()],node.token)
+        # A raw count used only as an index cannot escape into collection data.
+        if type(leaf) is bsl.Call and type(leaf.callee) is bsl.Attribute and not leaf.arguments:
+            owner=self.static_module_kinds.get(id(leaf.callee.object))
+            method=leaf.callee.name.casefold()
+            if owner=='array' and method in ('count','количество','ubound','вграница'):
+                count=self.call('len',[self.expr(leaf.callee.object)],node.token)
+                return count if method in ('count','количество') else self.node(py.BinOp,node.token,left=count,op=py.Sub(),right=self.const(1,node.token))
         return self.call('int',[self.expr(node)],node.token)
     def expr(self,node,require_value=True):
         value=self._expr(node,require_value)
@@ -463,6 +470,12 @@ class Emitter:
                     return self.call('_raw_table_positional',[receiver,self.expr(node.arguments[0])],t)
                 if owner=='row':
                     return self.invoke(self.attribute(receiver,'get',t),[self.expr(node.arguments[0])],t)
+                if self.integer_lane and owner in ('table','columns') and method in ('count','количество'):
+                    storage=self.attribute(receiver,'rows' if owner=='table' else '_items',t)
+                    return self.call('len',[storage],t)
+                if owner in ('table','columns') and method in ('indexof','индекс'):
+                    name='_index_of' if self.integer_lane else 'index_of'
+                    return self.invoke(self.attribute(receiver,name,t),[self.expr(node.arguments[0])],t)
                 if owner in ('table','valuelist','columns'):
                     name={'add':'add','добавить':'add','get':'get','получить':'get','count':'count','количество':'count','total':'total','итог':'total'}[method]
                     return self.invoke(self.attribute(receiver,name,t),[self.expr(arg) for arg in node.arguments],t)

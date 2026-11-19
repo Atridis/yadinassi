@@ -126,7 +126,8 @@ class BSLValueTableColumnCollection(BSLObject):
         for column in tuple(self._items):self.delete(column)
         self.table.clear()
     def count(self):return Decimal(len(self._items))
-    def index_of(self,column):return Decimal(next((i for i,c in enumerate(self._items) if c is column),-1))
+    def _index_of(self,column):return next((i for i,c in enumerate(self._items) if c is column),-1)
+    def index_of(self,column):return Decimal(self._index_of(column))
     def insert(self,*args):raise NotImplementedError('column insertion is parked')
     def move(self,*args):raise NotImplementedError('column reordering is parked')
     def get_member(self,name):return self.get_index(name)
@@ -218,12 +219,16 @@ class BSLValueTable(BSLObject):
     def set_index(self,*args):raise ValueError('rows cannot be replaced')
     def __iter__(self):return iter(self.rows)
     def count(self):return Decimal(len(self.rows))
-    def index_of(self,row):return Decimal(next((i for i,r in enumerate(self.rows) if r is row),-1))
+    def _index_of(self,row):
+        for index,item in enumerate(self.rows):
+            if item is row:return index
+        return -1
+    def index_of(self,row):return Decimal(self._index_of(row))
     def _row_index(self,row):
         if type(row) is BSLValueTableRow:
-            for index,item in enumerate(self.rows):
-                if item is row:return index
-            raise ValueError('foreign row')
+            index=self._index_of(row)
+            if index<0:raise ValueError('foreign row')
+            return index
         return _index(row,len(self.rows))
     def delete(self,row):
         _writable(self);self._storage.delete(self._row_index(row))

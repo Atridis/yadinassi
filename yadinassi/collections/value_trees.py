@@ -215,6 +215,10 @@ def _search_recursive(value, budget):
 
 
 def _position(value, count, inserting=False):
+    if type(value) is int:
+        if not 0 <= value < count + int(inserting):
+            raise IndexError("Индекс дерева вне границ")
+        return value
     # Reject unmeasured fractional/out-of-range coercions rather than borrowing
     # ValueTable's native-specific truncation and append-on-invalid-index rules.
     if type(value) is not Decimal or not value.is_finite() or value != value.to_integral_value():
@@ -328,7 +332,7 @@ class BSLValueTreeColumnCollection(BSLObject):
         return Decimal(next((i for i, c in enumerate(self.items) if c is column), -1))
 
     def add(self, name="", value_type=None, title="", width=Decimal(0)):
-        return self.insert(Decimal(len(self.items)), name, value_type, title, width)
+        return self.insert(len(self.items), name, value_type, title, width)
 
     def insert(self, index, name="", value_type=None, title="", width=Decimal(0)):
         position = _position(index, len(self.items), True)
@@ -745,7 +749,7 @@ class BSLValueTreeRowCollection(BSLObject):
         if target is not None:
             BSLValueTreeRowCollection._clear_defaults(self)
             return BSLValueTreeRowCollection.add(target)
-        return self.insert(Decimal(len(self.items)))
+        return self.insert(len(self.items))
 
     def insert(self, index):
         target = BSLValueTreeRowCollection._clear_target(self)
