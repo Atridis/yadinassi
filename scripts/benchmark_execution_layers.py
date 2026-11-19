@@ -117,9 +117,9 @@ def workload(name, n):
 
 
 def prepare_bsl(source, route):
-    if route in ('default', 'compiled-strict'):
+    if route == 'default':
         program = parse(source, '<execution-layer-benchmark>')
-        vm = Interpreter() if route == 'default' else Interpreter(execution_backend='compiled-strict')
+        vm = Interpreter()
         def run():
             vm.execute_program(program)
             return vm.variables['r']
@@ -212,7 +212,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--iterations', type=int, default=1000)
     parser.add_argument('--rounds', type=int, default=9)
-    parser.add_argument('--bsl-route', choices=('default', 'prepared', 'compiled-strict'), default='default')
+    parser.add_argument('--bsl-route', choices=('default', 'prepared'), default='default')
     parser.add_argument('--case', choices=CASES, action='append')
     args = parser.parse_args(argv)
     if not 1 <= args.iterations <= 100000 or args.rounds < 3:

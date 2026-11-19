@@ -14,7 +14,7 @@ class ExecutionLayerBenchmarkTests(unittest.TestCase):
             with self.subTest(case=name):
                 job = bench.workload(name, 13)
                 self.assertEqual(job.expected, result)
-                for route in ('default', 'prepared', 'compiled-strict'):
+                for route in ('default', 'prepared'):
                     with patch.dict(os.environ, {'YADINASSI_UNSAFE_COLLECTION_ABLATION': '1'}):
                         bsl, _ = bench.prepare_bsl(job.source, route)
                         for run in (job.native, job.classes, bsl):
@@ -28,19 +28,36 @@ class ExecutionLayerBenchmarkTests(unittest.TestCase):
             bench.validate(run(), Decimal(1))
             self.assertEqual(info['requested_route'], 'default')
             self.assertEqual(info['backend'], 'python-direct')
-        with patch.object(bench, 'Interpreter', wraps=bench.Interpreter) as constructor:
-            run, info = bench.prepare_bsl('r=1;', 'compiled-strict')
-            constructor.assert_called_once_with(execution_backend='compiled-strict')
-            bench.validate(run(), Decimal(1))
-            self.assertEqual(info['backend'], 'compiled-strict')
+        self.assertEqual(info['api'], 'execute_program(preparsed_ast)')
 
     def test_prepared_route_compiles_once_before_invocations(self):
-        with patch.object(bench, 'Interpreter', wraps=bench.Interpreter) as constructor:
+        vm = bench.Interpreter()
+        self.addCleanup(vm.close)
+        with patch.object(bench, 'Interpreter', return_value=vm) as constructor, \
+                patch.object(bench, 'parse', wraps=bench.parse) as parse, \
+                patch.object(vm, 'prepare_program', wraps=vm.prepare_program) as prepare:
             run, info = bench.prepare_bsl('r=1;', 'prepared')
             constructor.assert_called_once_with()
+            parse.assert_called_once()
+            prepare.assert_called_once()
+        self.assertEqual(info['backend'], 'python-direct')
         self.assertEqual(info['api'], 'execute_prepared(plan)')
-        with patch('yadinassi.experimental_naked_collections.prepare',create=True, side_effect=AssertionError('recompiled')):
-            for _ in range(3):bench.validate(run(), Decimal(1))
+        self.assertEqual(info['preparation_api'], 'prepare_program(preparsed_ast)')
+        with patch.object(bench, 'parse', side_effect=AssertionError('reparsed')), \
+                patch.object(vm, 'prepare_program', side_effect=AssertionError('recompiled')), \
+                patch.object(vm, 'execute_prepared', wraps=vm.execute_prepared) as execute:
+            for _ in range(3):
+                bench.validate(run(), Decimal(1))
+            self.assertEqual(execute.call_count, 3)
+            plans = [call.args[0] for call in execute.call_args_list]
+            self.assertTrue(all(plan is plans[0] for plan in plans))
+
+    def test_retired_routes_are_rejected_before_parsing_or_vm_creation(self):
+        with patch.object(bench, 'parse', side_effect=AssertionError('parsed retired route')), \
+                patch.object(bench, 'Interpreter', side_effect=AssertionError('created VM')):
+            for route in ('compiled-strict', 'interpreter', 'hybrid'):
+                with self.subTest(route=route), self.assertRaises(ValueError):
+                    bench.prepare_bsl('r=1;', route)
 
     def test_edge_workload_size(self):
         for name in bench.CASES:
