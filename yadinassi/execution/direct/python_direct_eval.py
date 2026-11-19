@@ -18,6 +18,8 @@ def eval_capability(context,function,key):
                     raise BoundaryViolation('Eval implementation changed during argument evaluation')
                 return evaluate(value,context,parent,bindings,visible)
             except PermissionError as error:raise BoundaryViolation(str(error)) from error
+            # The one exit check for this call belongs here, including when
+            # argument validation or the fragment raises.
             finally:context._check()
         invoke.requires_reference=lambda index:False
         return invoke
@@ -117,4 +119,3 @@ def _evaluate(value,context,parent,bindings,visible,profile):
                      or depth[0]!=level+1 or getattr(context,'_eval_depth',None) is not depth)
             if type(depth) is list:list.__setitem__(depth,slice(None),[level])
             if changed:raise BoundaryViolation('source fragment depth changed during execution')
-        context._check()
