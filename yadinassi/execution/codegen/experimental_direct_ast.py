@@ -1304,25 +1304,24 @@ class Emitter:
             for branch in reversed(branches):branch.orelse=tail;tail=[branch]
             return tail
         if k is bsl.For:
-            if (self.static_module_kinds or (self.native_cells and node.name.casefold() in self.static_module_names)) and type(node.start) is bsl.Literal and type(node.end) is bsl.Literal:
+            if (self.static_module_kinds or (self.scope is None and node.name.casefold() in self.static_module_names and not self.authority and not self.catalog_bounds and not self.source_scopes)) and type(node.start) is bsl.Literal and type(node.end) is bsl.Literal:
                 start,end=node.start.value,node.end.value
                 pending=list(node.body);mutated=False
                 while pending:
                     value=pending.pop()
                     if type(value) is bsl.Assign and type(value.target) is bsl.Name and value.target.name.casefold()==node.name.casefold():mutated=True
-                    if type(value) is bsl.For and value.name.casefold()==node.name.casefold():mutated=True
-                    if self.native_cells and not self.static_module_kinds:
-                        if type(value) in (bsl.Execute,bsl.DynamicNew):mutated=True
-                        if type(value) is bsl.Call:
-                            callee=value.callee
-                            if type(callee) is not bsl.Name or callee.name.casefold() not in self.routines:mutated=True
-                            else:
-                                for parameter,arg in zip(self.routines[callee.name.casefold()].parameters,value.arguments):
-                                    while type(arg) is bsl.Group:arg=arg.expression
-                                    if not parameter.by_value and type(arg) is bsl.Name and arg.name.casefold()==node.name.casefold():mutated=True
-                    if isinstance(value,bsl.Node):pending.extend(getattr(value,f.name) for f in fields(value) if f.name!='token' and not (type(value) is bsl.Literal and f.name=='value'))
+                    if type(value) in (bsl.For,bsl.ForEach) and value.name.casefold()==node.name.casefold():mutated=True
+                    if not self.static_module_kinds:
+                        # Unknown calls, including known routines that may write
+                        # module globals, can change the induction variable.
+                        # A call elsewhere in the module does not affect this loop.
+                        if type(value) in (bsl.Execute,bsl.DynamicNew,bsl.Call,bsl.New):mutated=True
+                        if type(value) in (bsl.Attribute,bsl.Index):mutated=True
+                        if type(value) in (bsl.Name,bsl.Binary,bsl.Unary) and id(value) not in self.scalar_kinds:mutated=True
+                    if type(value) is bsl.Assign and type(value.target) is bsl.Name:pending.append(value.value)
+                    elif isinstance(value,bsl.Node):pending.extend(getattr(value,f.name) for f in fields(value) if f.name!='token' and not (type(value) is bsl.Literal and f.name=='value'))
                     elif type(value) in (list,tuple):pending.extend(value)
-                if not mutated and type(start) is Decimal and type(end) is Decimal and start.is_finite() and end.is_finite() and start==start.to_integral_value() and end==end.to_integral_value():
+                if not mutated and type(start) is Decimal and type(end) is Decimal and start.is_finite() and end.is_finite() and start.as_tuple().exponent==0 and end.as_tuple().exponent==0:
                     counter=self.temp()
                     initialize=self.assign_name(node.name,self.literal(start,t),t)
                     # A counter used only for native indexing need not make a
