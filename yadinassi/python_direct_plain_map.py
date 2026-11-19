@@ -61,6 +61,10 @@ def plain_map(*arguments):
     if not arguments:return PlainMap()
     if len(arguments)!=1:raise TypeError('Конструктор соответствия ожидает один аргумент')
     source=arguments[0]
+    if type(source) is PlainFixedMap:
+        result=PlainMap()
+        dict.update(result,source._items)
+        return result
     if type(source) is not BSLFixedMap:
         raise TypeError('Конструктор соответствия ожидает фиксированное соответствие')
     items=object.__getattribute__(source,'_items')
@@ -72,3 +76,41 @@ def plain_map(*arguments):
         key,value=entry
         result[key]=value
     return result
+
+
+from types import MappingProxyType
+from .structures import BSLKeyAndValue
+from .values import HostFunction
+
+class PlainFixedMap:
+    """Read-only shallow snapshot with the source's native Python key semantics."""
+    __slots__=('_items',)
+
+    def __init__(self, source):
+        if type(source) is not PlainMap:
+            raise TypeError('FixedMap requires an exact PlainMap')
+        # Exact PlainMap's supported mutation API already enforces scalar keys.
+        # Raw host mutation of its private storage is not a new admission route.
+        self._items=MappingProxyType(dict.copy(source))
+
+    def get(self,key):
+        if id(type(key)) not in _KEY_TYPE_IDS:raise TypeError('Map key requires a scalar Python value')
+        return self._items.get(key)
+
+    def get_index(self,key):
+        if id(type(key)) not in _KEY_TYPE_IDS:raise TypeError('Map key requires a scalar Python value')
+        try:return self._items[key]
+        except KeyError:raise ValueError('Ключ фиксированного соответствия не найден') from None
+
+    def __iter__(self):
+        for key,value in self._items.items():yield BSLKeyAndValue(key,value)
+
+    def get_member(self,name):raise ValueError('Поле объекта не обнаружено: '+name)
+
+    def get_method(self,name):
+        key=name.casefold()
+        if key in ('get','получить'):return HostFunction(name,self.get)
+        if key in ('count','количество'):return HostFunction(name,lambda:Decimal(len(self._items)))
+        raise ValueError('Метод соответствия не найден: '+name)
+
+    def __str__(self):return 'ФиксированноеСоответствие'

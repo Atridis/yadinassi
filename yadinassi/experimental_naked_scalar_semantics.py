@@ -199,12 +199,13 @@ def collection_not_equal(left, right):
 
 def map_identity_operators(*, array=False, structure=False):
     """Compile-time selection of exact Map identity, independent of other repairs."""
-    from .python_direct_plain_map import PlainMap
+    from .python_direct_plain_map import PlainMap, PlainFixedMap
     from .plain_value_list import PlainValueList, PlainValueListItem
     def equal(left, right):
         left_type,right_type=type(left),type(right)
         if (left_type is _TypedMap or right_type is _TypedMap or
                 left_type is PlainMap or right_type is PlainMap or
+                left_type is PlainFixedMap or right_type is PlainFixedMap or
                 left_type is PlainValueList or right_type is PlainValueList or left_type is PlainValueListItem or right_type is PlainValueListItem or
                 (array and (left_type is list or right_type is list or left_type is _PlainArray or right_type is _PlainArray)) or
                 (structure and (left_type is _DirectStructure or right_type is _DirectStructure)) or
@@ -216,6 +217,7 @@ def map_identity_operators(*, array=False, structure=False):
         left_type,right_type=type(left),type(right)
         if (left_type is _TypedMap or right_type is _TypedMap or
                 left_type is PlainMap or right_type is PlainMap or
+                left_type is PlainFixedMap or right_type is PlainFixedMap or
                 left_type is PlainValueList or right_type is PlainValueList or left_type is PlainValueListItem or right_type is PlainValueListItem or
                 (array and (left_type is list or right_type is list or left_type is _PlainArray or right_type is _PlainArray)) or
                 (structure and (left_type is _DirectStructure or right_type is _DirectStructure)) or

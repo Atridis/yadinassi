@@ -72,6 +72,7 @@ def _string_callable(context,function,*,name=None,require_value=False,allow_refe
             if function.function is not _DIRECT_TO_STRING_ABI:
                 raise BoundaryViolation('String implementation changed during argument evaluation')
             kind=type(value)
+            if kind is fixed.PlainFixedMap:return 'ФиксированноеСоответствие'
             if kind is _CallbackDescription:return 'ОписаниеОповещения'
             if kind is list:return 'Массив'
             if kind is _DirectStructureType:return 'Структура'
@@ -88,6 +89,7 @@ def _string_callable(context,function,*,name=None,require_value=False,allow_refe
 
 class ServicesBoundary:
     def get_member(self,value,name):
+        if type(value) is fixed.PlainFixedMap:return fixed.get(self,value,name)
         if type(value) is _CallbackDescription:
             self._check()
             return _callback_read(value,name)
@@ -99,6 +101,7 @@ class ServicesBoundary:
         return super().get_member(value,name)
 
     def resolve_member(self,value,name):
+        if type(value) is fixed.PlainFixedMap:return fixed.resolve(self,value,name)
         if value is None:
             self._check();raise ValueError('Значение не является значением объектного типа')
         from .python_direct_error_info import owns,resolve_query
@@ -107,6 +110,9 @@ class ServicesBoundary:
         return super().resolve_member(value,name)
 
     def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
+        if type(value) is fixed.PlainFixedMap:
+            if omitted:raise TypeError('FixedMap method argument omission is unsupported')
+            return fixed.resolve(self,value,name,require_value=require_value)
         if value is None:
             self._check();raise ValueError('Значение не является значением объектного типа')
         from .python_direct_error_info import owns,resolve_query
@@ -126,6 +132,12 @@ class ServicesBoundary:
         return invoke
 
     def resolve_set_member(self, value, name):
+        if type(value) is fixed.PlainFixedMap:
+            self._check()
+            def readonly_fixed_map(new_value):
+                self._check()
+                raise ValueError('Фиксированная коллекция недоступна для записи')
+            return readonly_fixed_map
         if type(value) is BSLTextDocument:
             text_resources.check(self,value)
             def unsupported(new_value):
@@ -263,6 +275,7 @@ class ServicesBoundary:
                 from .values import BSLType
                 kind=type(value)
                 if kind is list:return BSLType.ARRAY
+                if kind is fixed.PlainFixedMap:return BSLType.FIXED_MAP
                 if kind is _CallbackDescription:return BSLType.CALLBACK_DESCRIPTION
                 if kind is _DirectStructure:return BSLType.STRUCTURE
                 if kind is _TypedMap:return BSLType.MAP

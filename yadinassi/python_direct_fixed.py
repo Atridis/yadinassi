@@ -4,6 +4,8 @@ from .values import BSLArray, BSLFixedArray, HostFunction
 from .structures import BSLStructure, BSLFixedStructure, BSLKeyAndValue
 from .experimental_naked_boundaries import BoundaryViolation
 
+from .python_direct_plain_map import PlainMap, PlainFixedMap
+
 FACTORIES=(BSLFixedArray,BSLFixedStructure,BSLFixedMap)
 
 def construct(factory,arguments):
@@ -11,6 +13,7 @@ def construct(factory,arguments):
     from .experimental_naked_collections import _TypedMap
     if factory is BSLFixedMap and len(arguments)==1:
         source=arguments[0]
+        if type(source) is PlainMap:return PlainFixedMap(source)
         if type(source) is _TypedMap:
             view=BSLMap()
             for key,value in dict.values(source):
@@ -44,7 +47,7 @@ def _freeze(source,active):
         return result
     finally:active.remove(identity)
 
-def owns(value):return type(value) in (BSLFixedArray,BSLFixedStructure,BSLFixedMap,BSLKeyAndValue)
+def owns(value):return type(value) in (BSLFixedArray,BSLFixedStructure,BSLFixedMap,BSLKeyAndValue,PlainFixedMap)
 
 def get(boundary,value,name):
     boundary._check()
@@ -58,7 +61,7 @@ def resolve(boundary,value,name,*,require_value=False,allow_references=False):
     elif name=='__setitem__':
         def function(*args):raise ValueError('Фиксированная коллекция недоступна для записи')
     elif name=='__iter__':
-        if type(value) not in (BSLFixedArray,BSLFixedStructure,BSLFixedMap):raise BoundaryViolation('fixed entry is not iterable')
+        if type(value) not in (BSLFixedArray,BSLFixedStructure,BSLFixedMap,PlainFixedMap):raise BoundaryViolation('fixed entry is not iterable')
         function=lambda:iter(value)
     else:
         method=value.get_method(name)
