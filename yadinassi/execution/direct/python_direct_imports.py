@@ -300,7 +300,7 @@ class ImportBoundary:
         """Bind a context-free export for this generated standalone activation."""
         vm=self.vm
         if (vm._family_owner.__dict__.get('_standalone_script') is not True
-                or vm.database_context is not None or getattr(self,'_server_side',False)
+                or getattr(self,'_server_side',False)
                 or getattr(self,'module_context',True) is False):
             return None
         if len(path)<2:return None

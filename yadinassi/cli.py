@@ -378,7 +378,9 @@ def _run_selected(args, parser):
             interpreter = Interpreter(encoding=args.encoding, database_context=database_context,
                                       compilation_profile=args.preprocessor_profile,
                                       execution_backend=args.execution_backend)
-            if database_context is None and (args.file is not None or args.command is not None):
+            # This CLI owns the activation; opening SQLite is not equivalent
+            # to allowing embedded Python callbacks between BSL instructions.
+            if args.file is not None or args.command is not None:
                 interpreter._standalone_script = True
     except (BSLError, ValueError, TypeError):
         if database_context is not None:
