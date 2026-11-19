@@ -323,6 +323,12 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None):
         def resolve_optional_service(self,name,*args,**kwargs):
             key=name.casefold()
             module=getattr(vm,'_direct_routine_modules',{}).get(key)
+            if module is not None and key in module.server_names:
+                self._check()
+                if getattr(vm,'_direct_routine_modules',{}).get(key) is module:
+                    return resolve_routine(self,key,require_value=kwargs.get('require_value',False),
+                                           allow_references=kwargs.get('allow_references',False),
+                                           argument_count=kwargs.get('argument_count'),crossing_omissions=True)
             if module is not None and key not in module.server_names and key not in module.dual_names:
                 bound=self.resolve_service(name,*args,**kwargs)
                 if getattr(self.vm,'_direct_routine_modules',{}).get(key) is module:

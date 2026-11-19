@@ -123,7 +123,7 @@ def bind_omissions(bound):
     return bound
 
 
-def resolve(context, name, *, require_value=False, allow_references=False, argument_count=None):
+def resolve(context, name, *, require_value=False, allow_references=False, argument_count=None, crossing_omissions=False):
     vm=context.vm
     module=getattr(vm,'_direct_routine_modules',{}).get(name)
     if module is None:return None
@@ -137,7 +137,8 @@ def resolve(context, name, *, require_value=False, allow_references=False, argum
         return resolve_dual_client(context,module,name,require_value=require_value,allow_references=allow_references)
     if name in module.server_names:
         from .python_direct_server import resolve_server
-        return resolve_server(context,module,name,require_value=require_value,allow_references=allow_references)
+        return resolve_server(context,module,name,require_value=require_value,allow_references=allow_references,
+                              allow_omissions=crossing_omissions)
     if getattr(context,'_server_side',False) or getattr(context,'module_context',True) is False:
         raise TypeError('Вызов клиентской подпрограммы с сервера запрещён')
     def invoke(*arguments):

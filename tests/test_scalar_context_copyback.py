@@ -354,7 +354,6 @@ Procedure Change(Val Before, X = 1, Val After = 0) Message("entered"); EndProced
                      'Change(Effect(), Effect());',
                      'Change(Effect(), 1);',
                      'Change(Effect(), 1 + Effect());',
-                     'Change(Effect(), , 0);',
                      'Change(Effect());'):
             with self.subTest(call=call), self.assertRaisesRegex(
                     BSLError, 'без Знач.*имя переменной'):

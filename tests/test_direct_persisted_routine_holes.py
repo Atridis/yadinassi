@@ -54,8 +54,43 @@ class DirectPersistedRoutineHoleTests(unittest.TestCase):
         """)
         self.assertEqual(self.vm.variables['x'], 6)
 
-    def test_client_server_hole_contract_unchanged(self):
-        self.vm.execute('&AtServer\nProcedure AddServer(X, Val Amount=2) X=X+Amount; EndProcedure')
-        with self.assertRaisesRegex(BSLRuntimeError,'Пропуск аргументов'):
-            self.vm.execute('X=1; AddServer(X,);')
-        self.assertEqual(self.vm.variables['x'], 1)
+    def test_client_server_holes_use_server_defaults_and_copy_out_only_named_actuals(self):
+        self.vm.execute("""
+            &AtServer
+            Function AddServer(X, Ignored=8, Val Amount=2, Val Tail=7)
+                X=X+?(Amount=Undefined,0,Amount)+Tail;
+                Ignored=Ignored+1;
+                Return Ignored;
+            EndFunction
+        """)
+        self.vm.execute('X=1; R=AddServer(X,,,3);')
+        self.assertEqual((self.vm.variables['x'],self.vm.variables['r']),(6,9))
+        self.vm.execute('Execute "R=AddServer(X,,Undefined,3);";')
+        self.assertEqual((self.vm.variables['x'],self.vm.variables['r']),(9,9))
+
+    def test_client_server_holes_preserve_read_order_and_rightmost_copyout(self):
+        self.vm.execute('Function Change(X) X=9; Return 2; EndFunction')
+        self.vm.execute("""
+            &AtServer
+            Function Server(First, Skipped=8, Val Argument=7, Last=0)
+                First=First+Argument; Skipped=100; Return Last;
+            EndFunction
+        """)
+        self.vm.execute('X=1; R=Server(X,,Change(X),X);')
+        self.assertEqual((self.vm.variables['x'],self.vm.variables['r']),(9,9))
+
+    def test_client_server_hole_over_arity_rejects_before_actual_effects(self):
+        self.vm.execute("""
+            Function Tick() Raise "unexpected argument effect"; Return 1; EndFunction
+            &AtServer
+            Function Server(Val X, Val Y=1) Return X+Y; EndFunction
+        """)
+        with self.assertRaisesRegex(BSLRuntimeError,'получено 3'):
+            self.vm.execute('Server(Tick(),,);')
+
+    def test_omission_marker_is_not_a_transport_value(self):
+        from yadinassi.execution.codegen.experimental_naked_collections import _OMITTED_REF
+        from yadinassi.execution.direct.python_direct_server import transfer
+
+        with self.assertRaisesRegex(TypeError,'Межконтекстная передача'):
+            transfer([_OMITTED_REF])

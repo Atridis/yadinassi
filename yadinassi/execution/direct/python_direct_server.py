@@ -8,7 +8,7 @@ from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryCo
 from .python_direct_database import CatalogBoundary
 from .python_direct_services import ServicesBoundary
 from yadinassi.types.values import HostFunction, Reference, NULL
-from yadinassi.execution.codegen.experimental_naked_collections import _Cell
+from yadinassi.execution.codegen.experimental_naked_collections import _Cell, _OMITTED_REF
 from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
 
 
@@ -103,9 +103,11 @@ class _LateNamedValue:
     def __init__(self,reference):self.reference=reference
 
 
-def resolve_server(parent,module,name,*,require_value,allow_references):
+def resolve_server(parent,module,name,*,require_value,allow_references,allow_omissions=False):
     vm=parent.vm
     references=module.signatures[name][3]
+    copyout_references=references
+    omitted=()
     module_context=name not in module.nocontext_names
     server_plan=module.server_plan if module_context else module.nocontext_plan
     if not getattr(parent,'module_context',True) and module_context:
@@ -145,18 +147,22 @@ def resolve_server(parent,module,name,*,require_value,allow_references):
         parent._check()
         outputs=[]
         for i,value in enumerate(arguments):
-            if i in references:
+            if i in copyout_references:
                 if type(value) is not Reference or getattr(value,'_direct_name_sink',False) is not True:
                     raise TypeError('Межконтекстные параметры без Знач пока требуют имя переменной')
                 outputs.append((i,value))
         # Named byref actuals are storage: read only after all argument effects.
         def read_argument(index,value):
-            reference=value.reference if type(value) is _LateNamedValue else value if index in references else None
+            reference=value.reference if type(value) is _LateNamedValue else value if index in copyout_references else None
             if reference is None:return value
             parent._check()
             try:return reference.get()
             finally:parent._check()
         packet=transfer([read_argument(i,value) for i,value in enumerate(arguments)])
+        # Omission positions are call metadata, not values admitted by transfer.
+        # Restore the marker only after the validated input packet was copied.
+        if omitted:
+            for i in omitted:packet[i]=_OMITTED_REF
         for i,_ in outputs:packet[i]=_Cell(packet[i])
         context=ServerBoundary(parent,module_context=module_context)
         previous=getattr(vm,'_transaction_activation_allowed',True)
@@ -197,6 +203,13 @@ def resolve_server(parent,module,name,*,require_value,allow_references):
             if type(reference) is not Reference:raise TypeError('named server value requires a source reference')
             return _LateNamedValue(reference)
         bound.prepare_named_value=prepare_named_value
+        if allow_omissions:
+            def prepare_omissions(current,positions,count):
+                nonlocal omitted,copyout_references
+                omitted=positions
+                copyout_references=references.difference(positions)
+                return current,dict.fromkeys(positions,None)
+            bound.prepare_omissions=prepare_omissions
     return bound
 
 
