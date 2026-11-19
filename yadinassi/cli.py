@@ -379,7 +379,7 @@ def _run_selected(args, parser):
                                       compilation_profile=args.preprocessor_profile,
                                       execution_backend=args.execution_backend)
             if database_context is None and (args.file is not None or args.command is not None):
-                interpreter._standalone_import_links = True
+                interpreter._standalone_script = True
     except (BSLError, ValueError, TypeError):
         if database_context is not None:
             database_context.close()

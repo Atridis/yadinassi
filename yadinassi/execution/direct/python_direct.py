@@ -167,7 +167,7 @@ class PreparedDirectModule:
 def _contract(vm):
     return (vm.execution_backend, vm.native_target, vm.compilation_profile,
             vm.compiled_ast_contract, vm.database_context is not None,
-            vm._family_owner.__dict__.get('_standalone_import_links') is True)
+            vm._family_owner.__dict__.get('_standalone_script') is True)
 
 
 def _compile(vm,program,nodes,source_text,source_name,*,_exports=False):

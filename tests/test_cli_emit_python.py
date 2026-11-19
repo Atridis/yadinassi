@@ -41,7 +41,9 @@ class EmitPythonTests(unittest.TestCase):
         self.assertNotIn('НЕ ИСПОЛНЯТЬ', result.stdout)
         emitted = (self.out / (self.script.stem + '.py')).read_text(encoding='utf-8')
         ast.parse(emitted)
-        # Capture the actual ordinary execute() compilation, not a second emitter.
+        # Capture the actual standalone CLI compilation, not a second emitter
+        # or the library's embedding mode.
+        from yadinassi.cli import main
         from yadinassi.execution.direct import python_direct
         actual = python_direct._compile
         plans = []
@@ -49,13 +51,9 @@ class EmitPythonTests(unittest.TestCase):
             plan = actual(*args, **kwargs)
             plans.append(plan.generated_source)
             return plan
-        vm = Interpreter(output=lambda value: None, execution_backend='python-direct')
-        try:
-            with mock.patch.object(python_direct, '_compile', side_effect=capture):
-                vm.execute(text, str(self.script))
-            self.assertTrue(emitted.endswith(plans[0] + '\n'))
-        finally:
-            vm.close()
+        with mock.patch.object(python_direct, '_compile', side_effect=capture), redirect_stdout(io.StringIO()):
+            self.assertEqual(main([str(self.script)]), 0)
+        self.assertTrue(emitted.endswith(plans[0] + '\n'))
 
     def test_callbacks_execution_and_file_writes_are_not_invoked(self):
         marker = self.root / 'must-not-exist.txt'

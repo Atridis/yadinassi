@@ -193,7 +193,7 @@ class Emitter:
         self.has_goto=False;self.goto_last_expression=None
         self.local_field_facts={};self.integer_lane=False;self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.module_boundaries=0;self.range_indices={}
         self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
-        self.link_imports=False;self.import_links=[]
+        self.standalone_script=False;self.link_imports=False;self.import_links=[]
         self.import_names=frozenset();self.require_last_expression=None;self.region_active=False;self.region_ops={};self.region_states={};self.routines={};self.routine_symbols={};self.module_globals=set();self.scope=None;self.source_refs={};self.loop_increments=[];self.required=set();self.visits=0;self.python_nodes=0
     def node(self,kind,token,**fields):
         if kind is py.FunctionDef and 'type_params' in kind._fields:fields.setdefault('type_params',[])
@@ -342,7 +342,7 @@ class Emitter:
         return self.call('_reload_module' if reload else '_publish_module',[],t)
     def module_sync_body(self,t,reload):
         check=lambda:self.invoke(self.attribute(self.name("_context",t),"_check",t),[],t)
-        operations=[] if reload else [check()]
+        operations=[] if reload or self.standalone_script else [check()]
         for key,slot in self.static_module_names.items():
             if reload:
                 read=self.invoke(self.attribute(self.name('_initial',t),'get',t),[self.const(key,t),self.name('_UNSET',t)],t)
@@ -358,7 +358,7 @@ class Emitter:
                     integer=self.node(py.Compare,t,left=self.call('type',[value],t),ops=[py.Is()],comparators=[self.name('int',t)])
                     published=self.node(py.IfExp,t,test=integer,body=self.call('_Decimal',[value],t),orelse=value)
                 write=self.invoke(self.attribute(self.name('_initial',t),'__setitem__',t),[self.const(key,t),published],t)
-                checked=self.node(py.Tuple,t,elts=[write,check()],ctx=py.Load())
+                checked=write if self.standalone_script else self.node(py.Tuple,t,elts=[write,check()],ctx=py.Load())
                 operations.append(self.node(py.IfExp,t,test=present,body=checked,orelse=self.const(None,t)))
         return self.node(py.Tuple,t,elts=operations,ctx=py.Load())
     def external_receiver(self,receiver,t):
@@ -368,6 +368,12 @@ class Emitter:
         return self.node(py.Compare,t,left=kind,ops=[py.NotIn()],comparators=[self.name('_module_data_type_ids',t)])
     def receiver_boundary(self,value,receiver,t):
         if self.static_module_kinds:return value
+        if self.standalone_script:
+            # The resolver handles actual external calls. Built-in collections
+            # in a standalone script do not need synthetic liveness probes.
+            if self.static_module_names:
+                return self.module_boundary(value,t,self.external_receiver(receiver,t))
+            return value
         # Low-level containers have no authority resolver of their own. A
         # public alias may already exist; namespace copying is unnecessary but
         # liveness before/after its operation is not.
@@ -393,6 +399,7 @@ class Emitter:
         parts=self.node(py.Tuple,t,elts=[capture,check(),bind,check(),self.name(result,t)],ctx=py.Load())
         return self.node(py.Subscript,t,value=parts,slice=self.const(-1,t),ctx=py.Load())
     def live_result(self,value,t):
+        if self.standalone_script:return value
         result=self.temp()
         bind=self.node(py.NamedExpr,t,target=self.name(result,t,True),value=value)
         check=self.invoke(self.attribute(self.name('_context',t),'_check',t),[],t)
@@ -421,6 +428,7 @@ class Emitter:
     def receiver_statements(self,body,receiver,t):
         if self.static_module_kinds:return body
         if not self.static_module_names:
+            if self.standalone_script:return body
             def check():return self.node(py.Expr,t,value=self.invoke(self.attribute(self.name('_context',t),'_check',t),[],t))
             return [body[0],check(),*body[1:-1],check(),body[-1],check()]
         self.module_boundaries+=1
@@ -433,6 +441,7 @@ class Emitter:
         leave=self.node(py.If,t,test=self.name(mode,t),body=[
             self.node(py.Expr,t,value=self.module_sync(t,True)),
             self.node(py.AugAssign,t,target=self.name('_dynamic_depth',t,True),op=py.Sub(),value=self.const(1,t))],orelse=[])
+        if self.standalone_script:return [body[0],capture,enter,*body[1:],leave]
         return [body[0],capture,check,enter,*body[1:-1],check,body[-1],check,leave]
     def native_array_index(self,node):
         leaf=node
@@ -1147,7 +1156,7 @@ class Emitter:
         check=self.invoke(self.attribute(self.name('_context',t),'_check',t),[],t)
         exact=self.call('_plain_append_receiver',[bind],t)
         pair=self.node(py.Tuple,t,elts=[check,exact],ctx=py.Load())
-        eligible=self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
+        eligible=exact if self.standalone_script else self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
         if self.authority:
             # The metered path keeps its own checkpoint and error order.
             unmetered=self.call('_plain_array_loop',[self.name('_context',t)],t)
@@ -1157,7 +1166,7 @@ class Emitter:
         fast=self.node(py.While,node.token,test=deepcopy(generic.test),body=[append,self.increment(node.name,node.token)],orelse=[])
         self.checkpoint_loop(generic,node.token)
         finished=self.node(py.Expr,t,value=deepcopy(check))
-        chosen=self.node(py.If,t,test=eligible,body=[fast,finished],orelse=[generic])
+        chosen=self.node(py.If,t,test=eligible,body=[fast] if self.standalone_script else [fast,finished],orelse=[generic])
         return [*slow[:-1],chosen]
 
     def statement(self,node):
@@ -1572,8 +1581,9 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     emitter.owned_constructors=_profile is not None;emitter.configuration_calls=_configuration_calls;emitter.host_bindings=_host_bindings;emitter.catalog_bounds=_catalog_bounds;emitter.source_scopes=_source_scopes;emitter.authority=_authority;emitter.scalar_routines=_scalar_routines
     emitter.callable_externals=frozenset(_callable_externals);emitter.shadowable=frozenset(_shadowable)
     emitter.import_names=frozenset(imported);t=program[0].token
-    emitter.link_imports=bool(imported) and _profile is None and vm.database_context is None and (
-        vm._family_owner.__dict__.get('_standalone_import_links') is True)
+    emitter.standalone_script=_profile is None and not _authority and not _source_scopes and vm.database_context is None and (
+        vm._family_owner.__dict__.get('_standalone_script') is True)
+    emitter.link_imports=bool(imported) and emitter.standalone_script
     if _require_last_expression:emitter.require_last_expression=program[-1]
     from yadinassi.execution.direct.python_direct_services import CONSTRUCTORS
     from yadinassi.execution.direct.python_direct_value_tree import CONSTRUCTOR_NAMES as TREE_NAMES

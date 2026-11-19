@@ -22,7 +22,7 @@ class StandaloneImportLinksTests(unittest.TestCase):
         self.events = []
         self.vm = Interpreter(output=self.events.append)
         self.addCleanup(self.vm.close)
-        self.vm._standalone_import_links = True
+        self.vm._standalone_script = True
 
     def execute(self, body):
         return self.vm.execute('// #Import Side.bsl\n'+body, str(self.main))
@@ -108,7 +108,7 @@ class StandaloneImportLinksTests(unittest.TestCase):
             for enable in (False, True):
                 vm = Interpreter()
                 self.addCleanup(vm.close)
-                vm._standalone_import_links = enable
+                vm._standalone_script = enable
                 with self.assertRaises(BSLError) as error:
                     vm.execute('// #Import Side.bsl\n'+source, str(self.main))
                 errors.append(str(error.exception))
@@ -116,6 +116,6 @@ class StandaloneImportLinksTests(unittest.TestCase):
             self.assertNotIn('Bug', errors[0])
 
     def test_embedding_does_not_enter_standalone_path(self):
-        self.vm._standalone_import_links = False
+        self.vm._standalone_script = False
         with patch.object(ImportBoundary, 'link_import_call', side_effect=AssertionError('linked in embedding')):
             self.assertEqual(self.execute('Side.Inc(1)'), 2)
