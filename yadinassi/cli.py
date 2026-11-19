@@ -151,10 +151,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="явный runtime общих модулей и приложения; импорт не исполняет код")
     parser.add_argument("--inactive", action="store_true", help="сохранить конфигурацию без активации исполнения")
     backend = parser.add_mutually_exclusive_group()
-    backend.add_argument("--execution-backend", choices=("python-direct", "interpreter", "hybrid", "compiled-strict"), default="python-direct",
-                         help="trusted standalone execution: python-direct (default); explicit legacy backends")
-    backend.add_argument("--legacy", dest="execution_backend", action="store_const", const="compiled-strict",
-                         help="use the previous compiled-strict execution route")
+    backend.add_argument("--execution-backend", choices=("python-direct",), default="python-direct",
+                         help="direct Python execution (the only supported backend)")
     parser.add_argument("--encoding", default="utf-8-sig", help="кодировка файла (по умолчанию UTF-8)")
     parser.add_argument("--preprocessor-profile", choices=COMPILATION_PROFILES, default="standalone",
                         help="профиль условной компиляции (по умолчанию standalone)")

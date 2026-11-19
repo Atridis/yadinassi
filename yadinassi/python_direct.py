@@ -3,7 +3,7 @@
 Client execution with either supported compilation profile and an explicit
 host-selected catalog/query bridge live here. Configuration and forms use separate
 direct entry points; unsupported
-async contracts still require explicit compiled-strict. Registered host services remain trusted
+async contracts remain explicitly unsupported. Registered host services remain trusted
 Python capabilities, not a sandbox.
 """
 from dataclasses import dataclass, fields
@@ -34,7 +34,7 @@ def _nodes(value):
 
 
 def _reject(message):
-    raise PythonDirectUnsupported('python-direct: '+message+'; select --legacy or execution_backend="compiled-strict"')
+    raise PythonDirectUnsupported('python-direct: '+message)
 
 
 def _admit_vm(vm,*,_transaction_owner=None):

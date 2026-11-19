@@ -563,17 +563,8 @@ class Interpreter:
         return self._scheduler.pending
 
     def visit(self, node: ast.Node) -> object:
-        """Synchronous embedding boundary; language evaluation uses _visit."""
-        if self._execution_backend == "python-direct":
-            from .python_direct import _reject
-            _reject("single-node visit is not a direct module entry")
-        if self.execution_backend == 'compiled-strict':
-            engine = self._compiled()
-            if not engine.has_executable_node(node):
-                engine.prepare_node(node)
-            else:
-                engine.verify_node(node)
-        return self._scheduler.run_inline(self._visit(node))
+        from .python_direct import _reject
+        _reject("visit is a retired execution entrypoint; use execute or prepare")
 
     @property
     def compilation_profile(self) -> str:
@@ -690,93 +681,12 @@ class Interpreter:
         return error.info
 
     def _evaluate(self, argument: ast.Node, *, _evaluation=None) -> object:
-        evaluate = self._visit if _evaluation is None else _evaluation.evaluate
-        value = (yield from evaluate(argument))
-        # Native evidence covers a Number argument 12. Other non-string values
-        # are deliberately rejected; do not call arbitrary Python __str__ hooks.
-        if type(value) is str:
-            text = value
-        elif type(value) is Decimal and value.is_finite():
-            text = to_string(value)
-        else:
-            raise TypeError("Вычислить: ожидается строка или конечное число")
-        if len(text) > EVAL_MAX_SOURCE:
-            raise ValueError("Вычислить: превышен предел текста Yadinassi (65536 символов)")
-        if self._eval_depth[0] >= EVAL_MAX_DEPTH:
-            raise ValueError("Вычислить: превышен предел вложенности Yadinassi (16)")
-        self._eval_depth[0] += 1
-        # Native Eval does not inherit the enclosing ErrorInfo context. A handler
-        # entered by evaluated code can still establish its own diagnostic frame.
-        self._error_info_boundaries.append(len(self._handled_errors))
-        transient = None
-        try:
-            # Parse and consume the entire input before executing even its first call.
-            try:
-                expression = parse_expression(text)
-                if self._execution_backend == "compiled-strict":
-                    engine = self._compiled()
-                    if engine.FORCE_PYTHON_TRANSLATION and engine.OWNED_SNAPSHOT and not engine.ORIGIN_MUTATION_MONITOR:
-                        transient = engine.prepare_transient([expression], expression_entry=True)
-                    else:
-                        self._admit_compiled_node(expression)
-            except BSLError as error:
-                raise BSLRuntimeError(error.message, error.source, error.line, error.column) from None
-            from .safe_mode import routine_frame
-            with routine_frame(self, self):
-                return (yield from self._visit(expression))
-        except RecursionError:
-            raise ValueError("Вычислить: превышен предел глубины выражения Yadinassi") from None
-        finally:
-            if transient is not None: transient.close()
-            self._error_info_boundaries.pop()
-            self._eval_depth[0] -= 1
+        from .python_direct import _reject
+        _reject("_evaluate is a retired execution entrypoint; use execute or prepare")
 
     def semantic_execute(self, node: ast.Execute, *, _evaluation=None) -> None:
-        evaluate = self._visit if _evaluation is None else _evaluation.evaluate
-        value = (yield from evaluate(node.expression))
-        # Native checkpoint accepts Undefined as an empty fragment, not Number.
-        if value is None:
-            value = ""
-        if type(value) is not str:
-            raise TypeError("Выполнить: ожидается строка или Неопределено")
-        if len(value) > EXECUTE_MAX_SOURCE:
-            raise ValueError("Выполнить: превышен предел текста Yadinassi (65536 символов)")
-        if self._execute_depth[0] >= EXECUTE_MAX_DEPTH:
-            raise ValueError("Выполнить: превышен предел вложенности Yadinassi (16)")
-        self._execute_depth[0] += 1
-        previous = self.locals
-        transient = None
-        try:
-            try:
-                program = parse_fragment(value)
-                if self._execution_backend == "compiled-strict":
-                    engine = self._compiled()
-                    if engine.FORCE_PYTHON_TRANSLATION and engine.OWNED_SNAPSHOT and not engine.ORIGIN_MUTATION_MONITOR:
-                        transient = engine.prepare_transient(program)
-                    else:
-                        engine.prepare(program, allow_reprepare=False)
-            except BSLError as error:
-                raise BSLRuntimeError(error.message, error.source, error.line, error.column) from None
-            # Existing bindings are live references, including reference parameters.
-            # Newly assigned names belong only to this fragment. A nested fragment
-            # may see them, but does not leak its own new names back to this one.
-            scope = self.variables if previous is None else previous
-            self.locals = {
-                name: item if isinstance(item, _Reference) else _VariableReference(
-                    lambda name=name: scope[name],
-                    lambda value, name=name: scope.__setitem__(name, value))
-                for name, item in scope.items()
-            }
-            # Dynamic code may inherit restrictions, never own its caller's counter.
-            from .safe_mode import routine_frame
-            with routine_frame(self, self):
-                (yield from self.block(program))
-        except RecursionError:
-            raise ValueError("Выполнить: превышен предел глубины фрагмента Yadinassi") from None
-        finally:
-            if transient is not None: transient.close()
-            self.locals = previous
-            self._execute_depth[0] -= 1
+        from .python_direct import _reject
+        _reject("semantic_execute is a retired execution entrypoint; use execute or prepare")
 
     def _transaction_backend(self):
         return None if self.database_context is None else self.database_context.backend
@@ -808,38 +718,12 @@ class Interpreter:
         rollback(self._transaction_backend())
 
     def _compiled(self):
-        if self._compiled_engine is None:
-            from .compiled_backend import Engine, CompiledUnsupported
-            import sys
-            cls = type(self)
-            contexts = {
-                ('yadinassi.runtime', 'Interpreter'),
-                ('yadinassi.configuration_source_runtime', '_SourceInterpreter'),
-                ('yadinassi.form_runtime', '_FormInterpreter'),
-                ('yadinassi.source_forms', '_SourceFormInterpreter'),
-                ('yadinassi.source_forms', '_SourceNoContextInterpreter'),
-                ('yadinassi.document_posting', '_PostingInterpreter'),
-                ('yadinassi.catalog_object_preparation', '_ObjectInterpreter'),
-                ('yadinassi.source_constant_managers', '_ValueInterpreter'),
-                ('yadinassi.source_catalog_runtime', '_ObjectInterpreter'),
-                ('yadinassi.source_document_runtime', '_ObjectInterpreter'),
-                ('yadinassi.form_event_simulation', '_EventInterpreter'),
-                ('yadinassi.product_list_check', 'ListInterpreter'),
-                ('yadinassi.form_event_simulation', 'ProductInterpreter'),
-            }
-            if ((cls.__module__, cls.__name__) not in contexts
-                    or getattr(sys.modules.get(cls.__module__), cls.__name__, None) is not cls):
-                raise CompiledUnsupported(None, 'unregistered Python interpreter context adapter')
-            self._compiled_engine = Engine(self)
-            self._scheduler.register_compiler(self._compiled_engine)
-        return self._compiled_engine
+        from .python_direct import _reject
+        _reject("_compiled is a retired execution entrypoint; use execute or prepare")
 
     def _admit_compiled_node(self, node):
-        engine = self._compiled()
-        if engine.has_node(node):
-            engine.verify_node(node)
-        else:
-            engine.prepare_node(node)
+        from .python_direct import _reject
+        _reject("_admit_compiled_node is a retired execution entrypoint; use execute or prepare")
 
     @property
     def compiled_plain_routines(self):
@@ -880,137 +764,28 @@ class Interpreter:
         return execute_prepared(self, prepared)
 
     def execute(self, text: str, source: str = "<строка>") -> object:
-        if self._execution_backend == "python-direct":
-            from .python_direct import execute
-            return execute(self,parse(text,source,compilation_profile=self.compilation_profile),source_text=text,source_name=source)
-        return self.execute_program(parse(text, source, compilation_profile=self.compilation_profile))
+        from .python_direct import execute
+        return execute(self, parse(text, source, compilation_profile=self.compilation_profile),
+                       source_text=text, source_name=source)
 
     def execute_program(self, program: list[ast.Node]) -> object:
-        """Execute already-compiled AST; this does not select source branches."""
-        if self._execution_backend == "python-direct":
-            from .python_direct import execute
-            return execute(self,program)
-        self._require_family()
-        if self._execution_backend == 'compiled-strict':
-            engine = self._compiled()
-            engine.prepare(program, allow_reprepare=not (self._scheduler.is_active or
-                                                        engine.active_frames or self._scheduler.pending),
-                           module_entry=(engine.FORCE_PYTHON_TRANSLATION or not (self._scheduler.is_active or engine.active_frames or self._scheduler.pending)))
-        outermost = not self._scheduler.is_active
-        try:
-            from .database_transactions import admission, execution
-            with admission(getattr(self, "_transaction_activation_allowed", True)), execution(self._transaction_backend()):
-                return self._execute_program_boundary(program, outermost)
-        finally:
-            if outermost:
-                # A synchronous root failure can bypass the pump altogether.
-                # Such a failure already takes precedence over procedure errors.
-                self._scheduler.procedure_errors.clear()
+        """Compile and execute the supplied AST through the direct compiler only."""
+        from .python_direct import execute
+        return execute(self, program)
 
     def _execute_program_boundary(self, program, outermost):
-        from .execution_policy import execution_backend_policy, compiled_ast_policy
-        with target_context(self.native_target), execution_backend_policy(self.execution_backend), compiled_ast_policy(self.compiled_ast_contract):
-            if self._configuration_runtime is not None:
-                self._configuration_runtime.check_program(program)
-            # A diagnostic source label need not name a readable filesystem path.
-            if not any(isinstance(node, ast.Import) for node in program):
-                result = self._scheduler.run_inline(self._execute_program(program, module_entry=outermost))
-            else:
-                source = program[0].token.source if program else "<строка>"
-                path = None if source.startswith("<") else Path(source).resolve()
-                if path is None:
-                    result = self._scheduler.run_inline(self._execute_program(program, module_entry=outermost))
-                else:
-                    self._loading.append(path)
-                    try:
-                        result = self._scheduler.run_inline(self._execute_program(program, module_entry=outermost))
-                    finally:
-                        self._loading.pop()
-            # Native public fields and routines become available only after the
-            # first successful whole module initialization. Later REPL executions
-            # keep the same receiver, storage and public availability.
-            self._self_module.ready = True
-            if outermost:
-                from .database_transactions import forbid_transfer
-                forbid_transfer(self._transaction_backend())
-                self.run_until_idle()
-            return result
+        from .python_direct import _reject
+        _reject("_execute_program_boundary is a retired execution entrypoint; use execute or prepare")
 
     def _execute_program(self, program: list[ast.Node], *, module_entry=False) -> object:
         # Also validate callers supplying an AST directly. No import or declaration
         # effects may precede label resolution.
-        validate_labels(program)
-        validate_async(program)
-        # Reserve import names before any module initialization effects.
-        names = set(self.imports)
-        names.update(node.filename.split(".")[0].casefold()
-                     for node in program if isinstance(node, ast.Import))
-        for node in program:
-            declared = ([node.name] if isinstance(node, ast.Routine) else
-                        node.names if isinstance(node, ast.Var) else [])
-            if any(name.casefold() in names for name in declared):
-                token = node.token
-                raise BSLError("Имя импорта конфликтует с объявлением", token.source,
-                               token.line, token.column)
-        routine_groups: dict[str, list[ast.Routine]] = {}
-        for node in program:
-            if isinstance(node, ast.Routine):
-                if not self._valid_routine_context(node):
-                    token = node.token
-                    raise BSLError("Подпрограмма требует неподдерживаемый контекст исполнения",
-                                   token.source, token.line, token.column)
-                routine_groups.setdefault(node.name.casefold(), []).append(node)
-        for group in routine_groups.values():
-            first = group[0]
-            if len(group) > 1 and (not all(node.is_dual for node in group)
-                    or len(group) > 2
-                    or len({node.execution_context for node in group}) != len(group)
-                    or len({(node.token.source, node.token.line, node.token.column,
-                             node.token.kind) for node in group}) != 1):
-                token = first.token
-                raise BSLError("Одноименные подпрограммы разных объявлений в одном модуле пока не поддерживаются",
-                               token.source, token.line, token.column)
-        # Preflight the whole incoming program before publishing any replacement.
-        # A declaration family replaces both old sides and its availability marker
-        # atomically, even when preprocessing retained only one new dual variant.
-        routines = self.routines.copy()
-        server_routines = self.server_routines.copy()
-        dual_names = self._dual_routine_names.copy()
-        for key, group in routine_groups.items():
-            routines.pop(key, None)
-            server_routines.pop(key, None)
-            dual_names.discard(key)
-            if group[0].is_dual:
-                dual_names.add(key)
-            for node in group:
-                registry = server_routines if node.execution_context == "server" else routines
-                registry[key] = node
-        self.routines, self.server_routines = routines, server_routines
-        self._dual_routine_names = dual_names
-        # Register side-local storage before any module statement executes.
-        for node in program:
-            if isinstance(node, ast.ServerInitializer):
-                self.server_initializers.append(node)
-            elif isinstance(node, ast.Var):
-                if node.execution_context == "server":
-                    self.server_module_names.update(name.casefold() for name in node.names)
-                    continue
-                self.exported_variables.update(name.casefold() for name in node.exported_names)
-                for name in node.names:
-                    self.module_names.add(name.casefold())
-                    self.variables.setdefault(name.casefold(), None)
-        for node in program:
-            if isinstance(node, ast.Import):
-                yield from self._visit(node)
-        return (yield from self._planned_module_block([node for node in program
-            if not isinstance(node, (ast.Import, ast.ServerInitializer))
-            and not (isinstance(node, ast.Var) and node.execution_context == "server")], enabled=module_entry))
+        from .python_direct import _reject
+        _reject("_execute_program is a retired execution entrypoint; use execute or prepare")
 
     def _planned_module_block(self, statements, *, enabled=False):
-        if (enabled and self._execution_backend=='compiled-strict' and type(self) is Interpreter
-                and type(self).block is _PLAIN_BLOCK_ABI and 'block' not in vars(self)):
-            return (yield from self._compiled().run_module(statements))
-        return (yield from self.block(statements))
+        from .python_direct import _reject
+        _reject("_planned_module_block is a retired execution entrypoint; use execute or prepare")
 
     @staticmethod
     def _routine_plan(function):
@@ -1023,61 +798,12 @@ class Interpreter:
         return plan
 
     def _planned_routine_block(self, function):
-        if self._execution_backend == 'compiled-strict':
-            if type(self) is not Interpreter or type(self).block is not _PLAIN_BLOCK_ABI or 'block' in vars(self):
-                return (yield from self.block(function.body))
-            engine = self._compiled()
-            if not engine.has_block(function.body): engine.prepare_block(function.body)
-            return (yield from engine.run_block(function.body, plain_routine=function))
-        plan = self._routine_plan(function)
-        state = self._scheduler.active_context.state
-        entry = state.setdefault(_CONTROL_FLOW_PLANS, {'stack': []})
-        stack = entry['stack']
-        frame = [self, function, plan]
-        stack.append(frame)
-        try:
-            return (yield from self.block(function.body))
-        finally:
-            stack.pop()
-            if not stack:
-                state.pop(_CONTROL_FLOW_PLANS, None)
+        from .python_direct import _reject
+        _reject("_planned_routine_block is a retired execution entrypoint; use execute or prepare")
 
     def block(self, statements: list[ast.Node]) -> object:
-        if self._execution_backend == "python-direct":
-            from .python_direct import _reject
-            _reject("block is a legacy generator entrypoint")
-        if self._execution_backend == 'compiled-strict':
-            engine = self._compiled()
-            if not engine.has_executable_block(statements):
-                engine.prepare_block(statements)
-            return (yield from engine.run_block(statements))
-        result = None
-        prepared = None
-        entry = self._scheduler.active_context.state.get(_CONTROL_FLOW_PLANS)
-        if entry and entry['stack']:
-            frame = entry['stack'][-1]
-            if frame[0] is self:
-                prepared = frame[2].find(statements)
-                if prepared is None or not prepared.matches(statements):
-                    # Nested loop entries normally inspect only their subtree,
-                    # not every statement in the owning routine. A changed or
-                    # newly attached block revalidates its complete scope.
-                    frame[2] = self._routine_plan(frame[1])
-                    prepared = frame[2].find(statements)
-        labels = (prepared.labels if prepared is not None else
-                  {node.name.casefold(): index for index, node in enumerate(statements)
-                   if isinstance(node, ast.Label)})
-        position = 0
-        while position < len(statements):
-            try:
-                result = (yield from self._visit(statements[position]))
-            except _Goto as jump:
-                if jump.name not in labels:
-                    raise
-                position = labels[jump.name]
-            else:
-                position += 1
-        return result
+        from .python_direct import _reject
+        _reject("block is a retired execution entrypoint; use execute or prepare")
 
     def compiled_before(self, node):
         """Strict node ABI; reference context subclasses preserve their original wrappers."""
@@ -1105,38 +831,8 @@ class Interpreter:
     def _visit(self, node: ast.Node) -> object:
         # Select this frame's path on entry. Runtime backend selection is fixed
         # at construction; private mutation during a yield is not a mode API.
-        if self._execution_backend != 'compiled-strict':
-            try:
-                handler = getattr(self, f"visit_{type(node).__name__}")
-                result = handler(node)
-                if isinstance(result, GeneratorType):
-                    return (yield from result)
-                return result
-            except BSLError:
-                raise
-            except (ArithmeticError, ValueError, TypeError, IndexError, RecursionError) as error:
-                if error is self._scheduler.active_context.host_failure:
-                    raise
-                message = str(error) or type(error).__name__
-                if isinstance(error, RecursionError) and self._eval_depth[0]:
-                    message = "Вычислить: превышен предел глубины выражения Yadinassi"
-                if isinstance(error, ZeroDivisionError):
-                    message = "Деление на ноль"
-                token = node.token
-                raise BSLRuntimeError(message, token.source, token.line, token.column,
-                                      source_line=token.source_line) from None
-
-        self.compiled_before(node)
-        try:
-            result = self._compiled().run_node(node)
-            if isinstance(result, GeneratorType):
-                result = yield from result
-        except BaseException as error:
-            converted = self.compiled_exception(node, error)
-            if converted is error:
-                raise
-            raise converted from None
-        return self.compiled_after(node, result)
+        from .python_direct import _reject
+        _reject("_visit is a retired execution entrypoint; use execute or prepare")
 
     def visit_Literal(self, node: ast.Literal) -> object:
         return node.value
@@ -1436,234 +1132,8 @@ class Interpreter:
         return candidates[0] or candidates[1]
 
     def call(self, node: ast.Call, *, require_value: bool, _evaluation=None) -> object:
-        if self._execution_backend == "python-direct":
-            from .python_direct import _reject
-            _reject("call is a legacy generator entrypoint")
-        evaluate = self._visit if _evaluation is None else _evaluation.evaluate
-        receiver = self.receiver if _evaluation is None else _evaluation.receiver
-        argument_value = self.argument if _evaluation is None else _evaluation.argument
-        if self._execution_backend == "compiled-strict" and not self._compiled().has_node(node):
-            self._admit_compiled_node(node)
-        site = None if _evaluation is None else _evaluation.call_site(node)
-        site_is_name = site is not None and site.callee_kind == 'name'
-        site_is_attribute = site is not None and site.callee_kind == 'attribute'
-        site_name = None if site is None else site.name
-        callee = self.ungroup(node.callee) if site is None else site.callee
-        bound_callee = () if _evaluation is None else _evaluation.bound_callee(node.callee)
-        routine = self._resolve_routine((callee.name if site is None else site_name)) if not bound_callee and (isinstance(callee, ast.Name) if site is None else site_is_name) else None
-        if (not bound_callee and (isinstance(callee, ast.Name) if site is None else site_is_name) and routine is None
-                and (callee.name if site is None else site_name).casefold() in self._client_routine_names):
-            raise ValueError("Вызов клиентской подпрограммы с сервера недопустим")
-        owner = self
-        if not bound_callee and routine is None and (isinstance(callee, ast.Name) if site is None else site_is_name) and self._configuration_runtime is not None:
-            configured = self._configuration_runtime.resolve_global((callee.name if site is None else site_name), self)
-            if configured is not None:
-                routine, owner = configured
-        has_omissions = (any(isinstance(a, ast.OmittedArgument) for a in node.arguments)
-                         if site is None else site.has_omissions)
-        known_receiver = None
-        if (isinstance(callee, ast.Attribute) if site is None else site_is_attribute):
-            module = self.import_receiver(callee.object)
-            if module is not None:
-                if type(module) is not _Module:
-                    raise TypeError("Пространство каталога не содержит вызываемых подпрограмм")
-                owner = module.interpreter
-                routine = module.routine((callee.name if site is None else site_name))
-            elif has_omissions:
-                # Classify only stored receivers. Calling a factory to discover
-                # optional arguments would violate the host side-effect guard.
-                known_receiver = self.known_table_receiver(callee.object)
-                if type(known_receiver) is _Module:
-                    owner = known_receiver.interpreter
-                    routine = known_receiver.routine((callee.name if site is None else site_name))
-        if routine is not None:
-            return (yield from self.call_routine(routine, node.arguments, owner, require_value=require_value, qualified=(isinstance(callee, ast.Attribute) if site is None else site_is_attribute), _evaluation=_evaluation))
-        # Existing host calls reject omitted arguments before receiver effects.
-        # Native table/list methods need optional holes; admit them only for a known
-        # exact built-in receiver (a variable or its Columns property). We never
-        # execute a factory merely to discover whether it allows omissions.
-        table_receiver = None
-        table_optional = None
-        if (isinstance(callee, ast.Attribute) if site is None else site_is_attribute) and has_omissions:
-            table_receiver = known_receiver
-            table_optional = self.table_optional_arguments(table_receiver, (callee.name if site is None else site_name))
-        registered = bound_callee[0] if bound_callee else (self.functions.get((callee.name if site is None else site_name).casefold())
-                      if (isinstance(callee, ast.Name) if site is None else site_is_name) else None)
-        if table_optional is None and (registered is None or
-                (registered.function is not run_callback_marker
-                 and registered.function is not read_json
-                 and registered.function is not write_json
-                 and registered.function is not write_json_date
-                 and registered.function is not fill_property_values
-                 and registered.function is not strings.str_find
-                 and not any(registered.function is fn for fn in regex_functions.FUNCTIONS)
-                 and not any(registered.function is fn for fn in (file_io.binary_from_string, file_io.string_from_binary, file_io.find_files)))):
-            self.reject_host_omissions(node.arguments)
-        if (isinstance(callee, ast.Attribute) if site is None else site_is_attribute):
-            receiver = table_receiver if table_optional is not None else (yield from receiver(callee.object))
-            _dependency = _runtime_module('source_constant_managers')
-            SourceConstantValueManager = _dependency.SourceConstantValueManager
-            _STANDARD_METHODS = _dependency._STANDARD_METHODS
-            if type(receiver) is SourceConstantValueManager and (callee.name if site is None else site_name).casefold() not in _STANDARD_METHODS:
-                routine = receiver.exported_routine(self, (callee.name if site is None else site_name))
-                return (yield from self.call_routine(routine, node.arguments, receiver.interpreter, require_value=require_value, qualified=True, _evaluation=_evaluation))
-            _dependency = _runtime_module('source_document_runtime')
-            SourceDocumentObject = _dependency.SourceDocumentObject
-            _DOCUMENT_OBJECT_METHODS = _dependency._OBJECT_METHODS
-            if type(receiver) is SourceDocumentObject and (callee.name if site is None else site_name).casefold() not in _DOCUMENT_OBJECT_METHODS:
-                routine=receiver.exported_routine(self,(callee.name if site is None else site_name))
-                return (yield from self.call_routine(routine,node.arguments,receiver.interpreter,require_value=require_value,qualified=True, _evaluation=_evaluation))
-            _dependency = _runtime_module('source_catalog_runtime')
-            SourceCatalogObject = _dependency.SourceCatalogObject
-            _OBJECT_METHODS = _dependency._OBJECT_METHODS
-            if type(receiver) is SourceCatalogObject and (callee.name if site is None else site_name).casefold() not in _OBJECT_METHODS:
-                routine=receiver.exported_routine(self,(callee.name if site is None else site_name))
-                return (yield from self.call_routine(routine,node.arguments,receiver.interpreter,require_value=require_value,qualified=True, _evaluation=_evaluation))
-            _dependency = _runtime_module('source_references')
-            SourceReferenceManager = _dependency.SourceReferenceManager
-            _REF_METHODS = _dependency._METHODS
-            _dependency = _runtime_module('source_catalog_runtime')
-            _MANAGER_METHODS = _dependency._MANAGER_METHODS
-            reference_call = _dependency.reference_call
-            _dependency = _runtime_module('source_document_runtime')
-            _DOCUMENT_METHODS = _dependency._MANAGER_METHODS
-            document_call = _dependency.reference_call
-            if type(receiver) is SourceReferenceManager and (callee.name if site is None else site_name).casefold() not in (_REF_METHODS.keys() | (_MANAGER_METHODS.keys() if receiver.family == 'Catalog' else _DOCUMENT_METHODS.keys() if receiver.family == 'Document' else set())):
-                receiver = receiver.module(self)
-            if type(receiver) is _Module:
-                return (yield from self.call_routine(receiver.routine((callee.name if site is None else site_name)), node.arguments,
-                                         receiver.interpreter, require_value=require_value, qualified=True, _evaluation=_evaluation))
-            if not isinstance(receiver, BSLObject):
-                raise TypeError("Значение не имеет методов или свойств")
-            function = document_call(self, receiver, (callee.name if site is None else site_name)) or reference_call(self, receiver, (callee.name if site is None else site_name)) or receiver.get_method((callee.name if site is None else site_name))
-        else:
-            function = (yield from evaluate(node.callee))
-        if not isinstance(function, HostFunction):
-            raise TypeError("Значение не является функцией")
-        interpreter_call = function.function if type(function.function) is InterpreterCall else None
-        if interpreter_call is not None:
-            interpreter_call.prepare(self, len(node.arguments))
-        refresh_reusable_marker = _runtime_module('reusable_values').refresh_reusable_marker
-        refresh_call = function.function is refresh_reusable_marker
-        if refresh_call:
-            if self._configuration_runtime is None:
-                raise ValueError('reusable values require a configuration application')
-            self._configuration_runtime.reusable_values.authorize(self)
-            if node.arguments:
-                raise TypeError('RefreshReusableValues requires no arguments')
-        _ChooseItemMarker = _runtime_module('value_lists')._ChooseItemMarker
-        choosing = type(function.function) is _ChooseItemMarker
-        if choosing:
-            if self._configuration_runtime is None:
-                raise ValueError('ShowChooseItem requires an application-owned client dispatch')
-            self._configuration_runtime.require_value_selection(self)
-        _dependency = _runtime_module('common_templates')
-        get_common_template_marker = _dependency.get_common_template_marker
-        SourceTemplateCall = _dependency.SourceTemplateCall
-        if type(function.function) is SourceTemplateCall:
-            function.function.owner.authorize(self)
-            if len(node.arguments) != 1:
-                raise TypeError("GetCommonTemplate requires one argument")
-        template_call=function.function is get_common_template_marker
-        if template_call:
-            if self._configuration_runtime is None:raise ValueError('common templates require an application')
-            self._configuration_runtime.common_templates.authorize(self)
-            if len(node.arguments)!=1:raise TypeError('GetCommonTemplate arity')
-        temporary_storage = _runtime_module('temporary_storage')
-        if type(function.function) is temporary_storage.SourceTemporaryCall:
-            function.function.authorize_call(self, len(node.arguments))
-        temporary_call=any(function.function is marker for marker in temporary_storage.MARKERS)
-        if temporary_call:
-            if self._configuration_runtime is None:
-                raise ValueError('temporary storage requires an explicit application')
-            self._configuration_runtime.temporary_storage.authorize(self)
-            count=len(node.arguments)
-            if not (1<=count<=2 if function.function is temporary_storage.put_marker else count==1):
-                raise TypeError('temporary storage function arity')
-        if self._configuration_runtime is not None:
-            self._configuration_runtime.check_host_service(function, self)
-        if function.function is run_callback_marker:
-            forbid_transfer = _runtime_module('database_transactions').forbid_transfer
-            forbid_transfer(self._transaction_backend())
-            return (yield from self._run_callback(node, _evaluation=_evaluation))
-        if function.function is read_json or function.function is write_json:
-            if require_value and not function.returns_value:
-                raise TypeError(f"Процедура не возвращает значение: {function.name}")
-            return (yield from self._convert_json(node, writing=function.function is write_json, _evaluation=_evaluation))
-        if any(function.function is fn for fn in (file_io.binary_from_string, file_io.string_from_binary, file_io.find_files)):
-            self.reject_host_omissions(node.arguments[:1])
-        elif function.function is fill_property_values:
-            if not 2 <= len(node.arguments) <= 4:
-                raise TypeError("ЗаполнитьЗначенияСвойств ожидает от 2 до 4 аргументов")
-            self.reject_host_omissions(node.arguments[:2])
-        elif any(function.function is fn for fn in regex_functions.FUNCTIONS):
-            required = 3 if function.function is regex_functions.str_replace else 2
-            maximum = 7 if function.function is regex_functions.str_find else 5 if required == 3 else 4
-            if not required <= len(node.arguments) <= maximum:
-                raise TypeError("Регулярное выражение: неверное количество аргументов")
-            self.reject_host_omissions(node.arguments[:required])
-        elif function.function is write_json_date:
-            if not 2 <= len(node.arguments) <= 3:
-                raise TypeError("ЗаписатьДатуJSON ожидает от 2 до 3 аргументов")
-            self.reject_host_omissions(node.arguments[:2])
-        elif function.function is strings.str_find:
-            if not 2 <= len(node.arguments) <= 5:
-                raise TypeError("СтрНайти ожидает от 2 до 5 аргументов")
-            self.reject_host_omissions(node.arguments[:2])
-        elif table_optional is not None:
-            self.reject_host_omissions([argument for index, argument in enumerate(node.arguments)
-                                       if index not in table_optional])
-        else:
-            self.reject_host_omissions(node.arguments)
-        if require_value and not function.returns_value:
-            raise TypeError(f"Процедура не возвращает значение: {function.name}")
-        if function.function is _eval_marker:
-            if len(node.arguments) != 1:
-                raise TypeError("Вычислить ожидает 1 аргумент")
-            return (yield from self._evaluate(node.arguments[0], _evaluation=_evaluation))
-        defaults = None
-        if table_optional is not None:
-            if type(table_receiver) in (BSLValueTableColumnCollection, BSLValueTreeColumnCollection):
-                defaults = ("", None, "", Decimal(0))
-                if (callee.name if site is None else site_name).casefold() in {"insert", "вставить"}:
-                    defaults = (None,) + defaults
-            elif type(table_receiver) is BSLValueList:
-                defaults = (None, "", False)
-                if (callee.name if site is None else site_name).casefold() in {"insert", "вставить"}:
-                    defaults = (None,) + defaults
-        values = []
-        for index, argument in enumerate(node.arguments):
-            if isinstance(argument, ast.OmittedArgument):
-                value = (strings._OMITTED if (function.function is strings.str_find or
-                         any(function.function is fn for fn in regex_functions.FUNCTIONS)) else
-                         defaults[index] if defaults is not None else None)
-            elif index in function.reference_parameters:
-                value = (yield from argument_value(argument))
-            else:
-                value = (yield from evaluate(argument))
-            values.append(value)
-        if refresh_call:
-            return self._configuration_runtime.reusable_values.refresh(self)
-        if choosing:
-            return self._configuration_runtime.dispatch_value_selection(self, function.function.source, values)
-        if template_call:
-            return self._configuration_runtime.common_templates.get(self,values[0])
-        if temporary_call:
-            return self._configuration_runtime.temporary_storage.invoke(self,function.function,values)
-        if interpreter_call is not None:
-            return (yield from interpreter_call.invoke(self, values))
-        (SourceCatalogCall, SourceDocumentSectionCall, SourceDocumentCall,
-         SourceReferenceCall, ConstantCall, ConstantSetCall, SourceQueryCall,
-         ExtensionCall, SourceSessionCall, SourceTransactionCall,
-         ValueManagerCall, write_values) = _source_call_dispatch_types()
-        marker = function.function
-        if type(marker) in (SourceCatalogCall, SourceDocumentCall):
-            return (yield from marker.invoke(self, values))
-        if type(marker) in (ExtensionCall, SourceSessionCall, SourceTransactionCall,
-                            SourceQueryCall, SourceReferenceCall, SourceDocumentSectionCall,
-                            SourceTemplateCall, temporary_storage.SourceTemporaryCall):
-            return function.function.invoke(self, values)
-        return function(*values)
+        from .python_direct import _reject
+        _reject("call is a retired execution entrypoint; use execute or prepare")
 
     def _convert_json(self, node, *, writing, _evaluation=None):
         evaluate = self._visit if _evaluation is None else _evaluation.evaluate
@@ -2023,119 +1493,8 @@ class Interpreter:
 
     def call_routine(self, function: ast.Routine, arguments: list[ast.Node],
                      owner: "Interpreter", *, require_value: bool, qualified: bool = False, _evaluation=None) -> object:
-        if self._execution_backend == "python-direct":
-            from .python_direct import _reject
-            _reject("call_routine is a legacy generator entrypoint")
-        evaluate = self._visit if _evaluation is None else _evaluation.evaluate
-        argument_value = self.argument if _evaluation is None else _evaluation.argument
-        (function, authority_function, caller_side, crossing, invocation, layout) = self._admit_routine_call(
-            function, arguments, owner, require_value=require_value)
-        parameters = function.parameters if layout is None else layout.parameters
-        if self._execution_backend != 'compiled-strict':
-            self._routine_plan(function)
-        if self._execution_backend == 'compiled-strict':
-            if layout is None:
-                validate_labels(function.body)
-            elif layout.label_error is not None:
-                raise BSLError(*layout.label_error)
-            # Actuals may be host-materialized Literal plans, and defaults execute
-            # in the caller even when the declaration is owned by another VM.
-            defaults = (tuple(p.default for p in parameters if p.default is not None)
-                        if layout is None else layout.defaults)
-            for expression in arguments:
-                self._admit_compiled_node(expression)
-            for expression in defaults:
-                self._admit_compiled_node(expression)
-        if crossing:
-            # The measured copy-in/copy-out slice covers named variable actuals.
-            # Reject properties, indexes, expressions and omitted non-Val slots
-            # before evaluating even an earlier, otherwise supported argument.
-            byref_indexes = (tuple(i for i, p in enumerate(parameters) if not p.by_value)
-                             if layout is None else layout.byref_indexes)
-            for index in byref_indexes:
-                if (index >= len(arguments) or
-                        not isinstance(self.ungroup(arguments[index]), ast.Name)):
-                    raise TypeError("Межконтекстные параметры без Знач пока требуют имя переменной")
-        # Evaluate expression actuals once, left to right. At a measured crossing,
-        # named actual storage (including Val) is read after all actual effects.
-        # Same-side argument semantics remain unchanged.
-        bindings = {}
-        copyback: list[tuple[str, _VariableReference]] = []
-        late_inputs: dict[str, _VariableReference] = {}
-        for index, parameter in enumerate(parameters):
-            argument = arguments[index] if index < len(arguments) else None
-            if argument is None or isinstance(argument, ast.OmittedArgument):
-                value = (yield from evaluate(parameter.default)) if parameter.default is not None else None
-            else:
-                if crossing and isinstance(self.ungroup(argument), ast.Name):
-                    value = (yield from (self._invocation_argument(argument) if _evaluation is None else self._invocation_argument(argument, _evaluation=_evaluation))) if invocation is not None else (yield from argument_value(argument))
-                else:
-                    value = (yield from evaluate(argument)) if parameter.by_value or function.is_async else (yield from argument_value(argument))
-            if self.execution_backend == 'compiled-strict':
-                owner._compiled().verify_node(function)
-            name = parameter.name.casefold() if layout is None else parameter.name
-            if crossing and not parameter.by_value:
-                # A named caller formal may itself alias a property/index.
-                # Only dictionary variable storage has a safe copy-out setter;
-                # do not let forwarding widen the supported sink boundary.
-                if not isinstance(value, _VariableReference):
-                    raise TypeError("Межконтекстные параметры без Знач пока требуют имя переменной")
-                copyback.append((name, value))
-            if crossing and isinstance(value, _Reference):
-                if not isinstance(value, _VariableReference):
-                    raise TypeError("Межконтекстная передача ссылок на свойства пока не поддерживается")
-                late_inputs[name] = value
-            bindings[name] = value
-        # A local server cache hit cannot bypass transaction transfer admission.
-        if crossing or function.is_async:
-            from .database_transactions import forbid_transfer
-            forbid_transfer(self._transaction_backend())
-        reusable_runtime = self._configuration_runtime or getattr(self, '_source_reusable_runtime', None)
-        scalar_server_reuse = (reusable_runtime is not None
-            and reusable_runtime.is_scalar_server_reuse(authority_function))
-        if scalar_server_reuse:
-            from .invocation import _encode_scalar
-            for value in bindings.values(): _encode_scalar(value.get() if isinstance(value, _Reference) else value)
-        reuse = None
-        if reusable_runtime is not None:
-            selected = (reusable_runtime.reusable_call(self, owner, authority_function, qualified)
-                        if function is authority_function else
-                        reusable_runtime.reusable_call(self, owner, authority_function, qualified,
-                                                       execution_routine=function))
-            if selected is not None:
-                from .reusable_values import argument_key
-                cache, identity = selected
-                actuals = tuple(value.get() if isinstance(value, _Reference) else value for value in bindings.values())
-                key = argument_key(actuals)
-                if key is None:
-                    raise ValueError('unsupported reusable common-module argument')
-                key = (*identity, key)
-                found, cached = cache.lookup(key)
-                if found:
-                    try:
-                        if scalar_server_reuse: _encode_scalar(cached)
-                        cache.revalidate(key, reusable_runtime.reusable_values.measure(cached))
-                    except (TypeError, ValueError):
-                        cache.discard(key)
-                        raise
-                    return cached
-                reuse = (cache, cache.reserve(key))
-        if crossing:
-            # Native 8.3.27.1508: names remain storage, expression results remain
-            # values/handles. Clone the complete packet only after actual effects.
-            for name, reference in late_inputs.items():
-                bindings[name] = reference.get()
-            names = list(bindings)
-            copied = self._copy_context_packet([bindings[name] for name in names])
-            bindings = dict(zip(names, copied))
-            if invocation is not None:
-                return self._copy_context_packet([invocation(copied)])[0]
-            owner = (owner._new_server_activation() if function.module_context else
-                     owner._new_server_activation(module_context=False))
-        return (yield from self._invoke_bound_routine(function, owner, bindings,
-            caller_side=caller_side, crossing=crossing, copyback=copyback,
-            scalar_server_reuse=scalar_server_reuse, reuse=reuse,
-            reusable_runtime=reusable_runtime))
+        from .python_direct import _reject
+        _reject("call_routine is a retired execution entrypoint; use execute or prepare")
 
     def _invoke_bound_routine(self, function, owner, bindings, *, caller_side,
                               crossing, copyback, scalar_server_reuse, reuse,
@@ -2828,10 +2187,6 @@ class Interpreter:
         return True
 
     def visit_For(self, node: ast.For) -> None:
-        if self._execution_backend == "hybrid":
-            from .hybrid_backend import execute_for
-            if execute_for(self, node):
-                return
         start = require_number((yield from self._visit(node.start)))
         end = require_number((yield from self._visit(node.end)))
         name = node.name.casefold()
