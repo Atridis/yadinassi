@@ -17,6 +17,7 @@ for names, target in [
     (('get', 'получить'), 'get'), (('set', 'установить'), 'set'),
     (('delete', 'удалить'), 'delete'), (('clear', 'очистить'), 'clear'),
     (('count', 'количество'), 'count'), (('ubound', 'вграница'), 'ubound'),
+    (('findrows', 'найтистроки'), 'find_rows'),
     (('find', 'найти'), 'find'), (('copy', 'скопировать'), 'copy'),
     (('copycolumns', 'скопироватьколонки'), 'copy_columns'),
     (('total', 'итог'), 'total'), (('sort', 'сортировать'), 'sort'),

@@ -144,6 +144,21 @@ class BareTable:
                 return row
         return None
 
+    def find_rows(self, filters):
+        from .native_bare_collections import BareStructure, BareArray
+        if type(filters) is not BareStructure:
+            raise TypeError('Structure filter required')
+        selected = tuple((self.schema[name], value) for name, value in dict.items(filters))
+        result = BareArray()
+        if selected:
+            for row in self.rows:
+                for offset, value in selected:
+                    if row[offset] != value:
+                        break
+                else:
+                    result.add(row)
+        return result
+
     def sort(self, column, reverse=False):
         index = self.schema[column.casefold()]
         self.rows.sort(key=lambda row: row[index], reverse=reverse)

@@ -231,9 +231,24 @@ class BSLValueTable(BSLObject):
         return None
     def find_rows(self,filters):
         from .structures import BSLStructure
-        if type(filters) is not BSLStructure:raise TypeError('Structure filter required')
-        selected=tuple((self._storage.schema.offset(name),value) for name,value in filters._items.values())
-        return _array(row for row in self.rows if all(scalar_equal(list.__getitem__(row,name),value) for name,value in selected))
+        from .experimental_naked_structure import _DirectStructure
+        if type(filters) is BSLStructure:
+            fields = filters._items.values()
+        elif type(filters) is _DirectStructure:
+            fields = dict.values(filters)
+        else:
+            raise TypeError('Structure filter required')
+        selected = tuple((self._storage.schema.offset(name), value) for name, value in fields)
+        result = []
+        # Historical FindRows(empty Structure) is empty, not all rows.
+        if selected:
+            for row in self.rows:
+                for offset, value in selected:
+                    if not scalar_equal(list.__getitem__(row, offset), value):
+                        break
+                else:
+                    result.append(row)
+        return _array(result)
     def fill_values(self,value,columns=None):
         _writable(self);self._storage.fill(value,self._selection(columns))
     def unload_column(self,column):
