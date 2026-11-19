@@ -43,10 +43,12 @@ class QueryUnloadPositionalTests(unittest.TestCase):
         table.rows[0].set_member('Missing','local')
         self.assertIs(result._rows[0][1],NULL)
 
-    def test_result_wide_growth_preflight_precedes_rows(self):
+    def test_invalid_row_shape_rejected_before_allocating_rows(self):
+        from yadinassi.db.query.query_table_materialization import materialize
         result=BSLQuery(self.vm._catalogs,'SELECT Ref AS Item,Amount FROM Catalog.Products').execute()
-        with patch('yadinassi.collections.plain_value_table_runtime._MAX_CELLS',5),patch.object(BSLValueTableRow,'__init__',side_effect=AssertionError('no rows before preflight')):
-            with self.assertRaisesRegex(ValueError,'growth limit'):result.unload()
+        with patch.object(BSLValueTableRow,'__init__',side_effect=AssertionError('no rows before preflight')):
+            with self.assertRaisesRegex(TypeError,'Invalid query result shape'):
+                materialize(result._columns,(None,None),(result._rows[0],()))
 
     def test_duplicate_casefold_and_nontext_names_refused_before_rows(self):
         from dataclasses import replace
