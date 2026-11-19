@@ -24,6 +24,11 @@ from yadinassi.types.values import BSLArray, HostFunction, Reference
 D = Decimal
 LAYERS = ('python', 'python_classes', 'bsl')
 CASES = ('arithmetic', 'arithmetic.int', 'arithmetic.fractional', 'calls', 'byref', 'array', 'map')
+# Record denominator changes explicitly even when the BSL source is unchanged.
+PYTHON_REFERENCES = {
+    'arithmetic': 'native-int-arithmetic-v2',
+    'arithmetic.fractional': 'int-counter-decimal-factor-v2',
+}
 
 
 @dataclass
@@ -40,14 +45,14 @@ def workload(name, n):
         raise ValueError('iterations must be an integer in 1..100000')
     if name not in CASES:
         raise ValueError('unknown workload')
-    # Keep the historical Decimal baselines unchanged.
+    # The classes baseline still uses the Decimal numeric helpers.
     one, three, seven = D(1), D(3), D(7)
     if name == 'arithmetic':
         def native():
-            s = D(0)
+            s = 0
             for i in range(1, n + 1):
-                s = s + D(i) * three - seven
-            return s
+                s = s + i * 3 - 7
+            return D(s)
         def classes():
             s = D(0)
             for i in range(1, n + 1):
@@ -66,9 +71,9 @@ def workload(name, n):
             expected = D(3 * (n * (n + 1) // 2))
         else:
             def native():
-                s = D(0)
+                s = 0
                 for i in range(1, n + 1):
-                    s += D(i) * factor
+                    s = s + i * factor
                 return s
             expected = D(325 * (n * (n + 1) // 2)).scaleb(-2)
         def classes():
@@ -199,7 +204,8 @@ def measure(case, n, rounds=9, route='default'):
         summaries[layer] = {'median_seconds': median, 'min_seconds': min(times),
                             'max_seconds': max(times),
                             'mad_seconds': statistics.median(abs(t-median) for t in times)}
-    return {'case': case, 'iterations': n, 'route': route_info, 'expected': str(job.expected),
+    reference = {'python_reference': PYTHON_REFERENCES[case]} if case in PYTHON_REFERENCES else {}
+    return {'case': case, 'iterations': n, 'route': route_info, 'expected': str(job.expected), **reference,
             'source': job.source, 'source_sha256': hashlib.sha256(job.source.encode()).hexdigest(),
             'preparation_seconds': {'python_workload_factory': python_setup, 'bsl_parse_prepare': bsl_setup},
             'first_execution_seconds': first, 'samples': samples, 'summary': summaries,

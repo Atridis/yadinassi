@@ -8,6 +8,19 @@ from scripts import benchmark_execution_layers as bench
 
 
 class ExecutionLayerBenchmarkTests(unittest.TestCase):
+    def test_python_arithmetic_references_do_not_convert_each_counter(self):
+        for case, casts in (('arithmetic', [182]), ('arithmetic.fractional', [])):
+            with self.subTest(case=case):
+                job = bench.workload(case, 13)
+                converted = []
+                def decimal(value):
+                    self.assertIs(type(value), int)
+                    converted.append(value)
+                    return Decimal(value)
+                with patch.object(bench, 'D', decimal):
+                    bench.validate(job.native(), job.expected)
+                self.assertEqual(converted, casts)
+
     def test_triplets_match_independent_expected_values(self):
         expected = {'arithmetic': Decimal(182), 'arithmetic.int': Decimal(273),
                     'arithmetic.fractional': Decimal('295.75'), 'calls': Decimal(104),

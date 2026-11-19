@@ -38,10 +38,15 @@ def render(report):
               'API BSL указан ниже: execute_program включает выполняемую внутри него подготовку. '
               'Эти микротесты не измеряют всё приложение и не доказывают полную семантическую эквивалентность; общие машины CI дают шум.', '']
     names = {case['case'] for case in report['cases']}
+    references = {case.get('python_reference') for case in report['cases']}
     if 'arithmetic.int' in names:
         lines += ['`arithmetic.int`: Python считает на `int` и один раз преобразует итог в `Decimal`; столбец классов использует числовые операции yadinassi на `Decimal`.', '']
-    if 'arithmetic.fractional' in names:
-        lines += ['`arithmetic.fractional`: контроль с дробным множителем на `Decimal`. Исходный сценарий `arithmetic` не изменён.', '']
+    if 'native-int-arithmetic-v2' in references:
+        lines += ['`arithmetic`: Python считает на `int` и преобразует только итог. По сравнению со старыми отчётами изменился референс Python, а не BSL-сценарий.', '']
+    if 'int-counter-decimal-factor-v2' in references:
+        lines += ['`arithmetic.fractional`: в референсе счётчик `int`, множитель `Decimal`; явного преобразования счётчика на каждом витке нет.', '']
+    elif 'arithmetic.fractional' in names:
+        lines += ['`arithmetic.fractional`: контроль с дробным множителем на `Decimal`.', '']
     lines += ['| Подготовка / первый вызов | Разбор + подготовка BSL, мс | Первое исполнение BSL, мс |', '|---|---:|---:|']
     for case in report['cases']:
         if 'preparation_seconds' in case:
