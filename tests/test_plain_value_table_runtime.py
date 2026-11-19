@@ -76,18 +76,15 @@ class PlainTableRuntimeTests(unittest.TestCase):
         for action in (lambda:r.set_member('N',1),lambda:r.set(0,1),lambda:t.add(),lambda:t.clear(),lambda:t.columns.add('X')):
             with self.assertRaises(ValueError):action()
         self.assertIsNone(r.get_member('N'));self.assertEqual(t.count(),1)
-    def test_growth_limits_fail_before_mutation(self):
-        import yadinassi.collections.plain_value_table_runtime as runtime
-        t=self.table();t.add()
-        with patch.object(runtime,'_MAX_ROWS',1):
-            with self.assertRaises(ValueError):t.add()
-            with self.assertRaises(ValueError):t.insert(0)
-        with patch.object(runtime,'_MAX_COLUMNS',1):
-            with self.assertRaises(ValueError):t.columns.add('X')
-        with patch.object(runtime,'_MAX_CELLS',1):
-            with self.assertRaises(ValueError):t.add()
-            with self.assertRaises(ValueError):t.columns.add('X')
-        self.assertEqual(t.count(),1);self.assertEqual(t.columns.count(),1)
+    def test_rows_can_exceed_former_growth_limit(self):
+        table = self.table()
+        for _ in range(100_001):
+            table.add()
+        inserted = table.insert(0)
+        self.assertEqual(table.count(), 100_002)
+        self.assertIs(table.get(0), inserted)
+        self.assertIsNone(inserted.get_member('N'))
+
     def test_retained_rows_follow_schema_and_row_order(self):
         t=self.table();a=t.add();b=t.add()
         a.set_member('N',Decimal(1));b.set_member('N',Decimal(2))

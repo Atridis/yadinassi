@@ -11,16 +11,6 @@ from .plain_table_search import SearchIndexes
 from .plain_table_storage import RowStorage, TableStorage, Schema, scalar_equal
 
 
-_MAX_ROWS=100_000
-_MAX_COLUMNS=4096
-_MAX_CELLS=1_000_000
-
-def _growth(table,rows=0,columns=0):
-    nrows=len(table.rows)+rows;ncolumns=len(table.columns._items)+columns
-    if nrows>_MAX_ROWS or ncolumns>_MAX_COLUMNS or nrows*ncolumns>_MAX_CELLS:
-        raise ValueError('ValueTable growth limit exceeded')
-
-
 def _index(value,count,inserting=False):
     if type(value) is int:n=value
     elif type(value) is Decimal and value.is_finite():n=value.to_integral_value(rounding=ROUND_DOWN)
@@ -80,7 +70,7 @@ class BSLValueTableColumnCollection(BSLObject):
     def items(self):return tuple(self._items)
     def __iter__(self):return iter(self._items)
     def add(self,name='',value_type=None,title='',width=Decimal(0)):
-        _writable(self.table);_growth(self.table,columns=1)
+        _writable(self.table)
         if type(name) is not str or type(title) is not str:raise TypeError('column text must be str')
         if value_type is None:value_type=BSLTypeDescription()
         if type(value_type) is not BSLTypeDescription:raise TypeError('exact TypeDescription required')
@@ -91,7 +81,6 @@ class BSLValueTableColumnCollection(BSLObject):
         self.table._storage.add_column(name,column,None);self._items.append(column)
         return column
     def _append_materialized(self,column):
-        _growth(self.table,columns=1)
         if type(column) is not BSLValueTableColumn or column.table is not self.table:raise ValueError('foreign column')
         self.table._storage.add_column(column.name,column,None);self._items.append(column)
     def find(self,name):
@@ -210,9 +199,9 @@ class BSLValueTable(BSLObject):
         self._bounded_slice_read=False;self._storage=TableStorage(self,BSLValueTableRow)
         self.rows=self._storage.rows;self.columns=BSLValueTableColumnCollection(self);self.indexes=BSLCollectionIndexes(self)
     def add(self):
-        _writable(self);_growth(self,rows=1);return self._storage.add()
+        _writable(self);return self._storage.add()
     def insert(self,index):
-        _writable(self);_growth(self,rows=1);return self._storage.insert(_index(index,len(self.rows),True))
+        _writable(self);return self._storage.insert(_index(index,len(self.rows),True))
     def get(self,index):return self.rows[_index(index,len(self.rows))]
     get_index=get
     def set_index(self,*args):raise ValueError('rows cannot be replaced')

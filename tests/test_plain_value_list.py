@@ -72,15 +72,15 @@ class PlainValueListTests(unittest.TestCase):
             with self.assertRaises(TypeError): operation()
         self.assertEqual(called, [])
 
-    def test_growth_cap_does_not_constrain_reads_or_reordering(self):
-        from unittest.mock import patch
-        with patch('yadinassi.collections.plain_value_list._MAX_ITEMS', 2):
-            values = PlainValueList(); values.add(1); values.add(2)
-            with self.assertRaises(ValueError): values.add(3)
-            with self.assertRaises(ValueError): values.insert(0, 3)
-            with self.assertRaises(ValueError): values.load_values([1, 2, 3])
-            self.assertEqual(values.get(0)[0], 1)
-            values.move(0, 1); self.assertEqual(values.unload_values(), [2, 1])
+    def test_large_value_list_supports_add_insert_and_reordering(self):
+        values = PlainValueList()
+        values.load_values([1] * 100_001)
+        values.add(2)
+        values.insert(0, 3)
+        self.assertEqual(len(values), 100_003)
+        self.assertEqual(values.get(0)[0], 3)
+        values.move(0, 1)
+        self.assertEqual(values.get(1)[0], 3)
 
     def test_foreign_metaclass_equality_never_runs(self):
         called = []

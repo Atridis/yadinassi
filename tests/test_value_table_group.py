@@ -198,7 +198,6 @@ class GroupByTests(unittest.TestCase):
 
     def test_resource_boundaries_reject_before_mutation(self):
         for target, budget, grouping, totals in [
-                ('_MAX_GROUP_CELLS', 7, 'Key', 'Amount'),
                 ('_MAX_GROUP_TEXT', 3, 'Key', 'Amount'),
                 ('_MAX_COLUMNS', 2, 'Key,,,', 'Amount')]:
             table = sample()

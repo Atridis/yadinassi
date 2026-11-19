@@ -23,7 +23,6 @@ from .structures import BSLStructure
 from yadinassi.types.values import BSLArray, BSLType, NULL
 
 
-_MAX_SORT_ITEMS = 100_000
 _MAX_SORT_TEXT = 1_000_000
 _MAX_KEY_WEIGHTS = 8_000_000
 _MAX_NUMBER_DIGITS = 4096
@@ -116,8 +115,6 @@ def sort_list(owner, direction=None, *, by_presentation=False):
 
     if direction is not None and type(direction) is not BSLSortDirection:
         raise TypeError("Сортировка списка: ожидается НаправлениеСортировки")
-    if len(owner.items) > _MAX_SORT_ITEMS:
-        _budget("элементов")
     budget = [0, 0]
     family = None
     keyed = []

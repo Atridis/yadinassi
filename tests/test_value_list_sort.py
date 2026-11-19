@@ -270,7 +270,7 @@ class ValueListSortBoundaryTests(unittest.TestCase):
 
     def test_all_resource_limits_are_checked_before_commit(self):
         for presentation in (False, True):
-            for constant, limit in (("_MAX_SORT_ITEMS", 1), ("_MAX_SORT_TEXT", 3),
+            for constant, limit in (("_MAX_SORT_TEXT", 3),
                                     ("_MAX_KEY_WEIGHTS", 1)):
                 owner = list_for("bb", "aa", presentations=("bb", "aa"))
                 method = owner.sort_by_presentation if presentation else owner.sort_by_value

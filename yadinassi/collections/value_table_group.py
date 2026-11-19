@@ -12,7 +12,6 @@ from yadinassi.types.values import BSLType, NULL
 from .value_tables import _adjust, _text, _MAX_COLUMNS, _MAX_TOTAL_PRECISION
 
 
-_MAX_GROUP_CELLS = 1_000_000
 _MAX_GROUP_TEXT = 1_000_000
 
 
@@ -121,8 +120,6 @@ def group_by(table, grouping_columns, totaling_columns=None):
         raise ValueError('Списки колонок группировки и суммирования пересекаются')
     retained = set(groups + totals)
     # Build every key and total before touching row values or schema.
-    if len(table.rows) * len(retained) > _MAX_GROUP_CELLS:
-        raise ValueError('Свернуть: превышен предел ячеек Yadinassi')
     text_budget = 0
     for row in table.rows:
         for column in retained:

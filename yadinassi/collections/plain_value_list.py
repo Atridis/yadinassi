@@ -8,7 +8,6 @@ separate capabilities; this module does not grant access to them.
 """
 from decimal import Decimal
 
-_MAX_ITEMS = 100_000
 
 
 def _item(item):
@@ -90,7 +89,6 @@ class PlainValueList(list):
         return self is not other
 
     def add(self, value=None, presentation='', check=False, picture=None):
-        if len(self) >= _MAX_ITEMS: raise ValueError('ValueList item limit exceeded')
         item = PlainValueListItem((value, presentation, check, picture))
         if type(self._next_id) is not int: raise TypeError('Invalid ValueList identifier counter')
         item._id = self._next_id
@@ -100,7 +98,6 @@ class PlainValueList(list):
 
     def insert(self, index, value=None, presentation='', check=False, picture=None):
         position = _index(index)
-        if len(self) >= _MAX_ITEMS: raise ValueError('ValueList item limit exceeded')
         item = PlainValueListItem((value, presentation, check, picture))
         if type(self._next_id) is not int: raise TypeError('Invalid ValueList identifier counter')
         item._id = self._next_id
@@ -170,7 +167,6 @@ class PlainValueList(list):
         from yadinassi.execution.direct.python_direct_plain_array import PlainArray
         if type(values) is not list and type(values) is not PlainArray:
             raise TypeError('ValueList.LoadValues requires native array storage')
-        if len(values) > _MAX_ITEMS: raise ValueError('ValueList item limit exceeded')
         self.clear()
         for value in values:
             self.add(value)
