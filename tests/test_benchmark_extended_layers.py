@@ -32,8 +32,8 @@ class ExtendedReferenceTests(unittest.TestCase):
                     for sample in case['samples']:
                         self.assertEqual(Decimal(sample['result']),Decimal(expected[name]))
                     if name in bench.DB_CASES:
-                        self.assertEqual(set(case['summary']), set(bench.LAYERS))
-                        self.assertEqual(set(case['sql_statements']), set(bench.LAYERS))
+                        self.assertEqual(set(case['summary']), set(bench.REPORT_LAYERS))
+                        self.assertEqual(set(case['sql_statements']), set(bench.REPORT_LAYERS))
                         for sql in case['sql_statements'].values():
                             self.assertEqual(sql['total'], sum(sql['by_verb'].values()))
                         raw = case['sql_statements']['python']
@@ -173,8 +173,8 @@ class ExtendedReferenceTests(unittest.TestCase):
             data = {'schema': 'execution-layers-extended-v1', 'environment': {'git_head': 'test'}, 'cases': [case]}
             rows = [line for line in bench.render(data).splitlines() if line.startswith('| structure.fields |')]
             timing = rows[0].split('|')[1:-1]
-            self.assertFalse(any(c in ''.join(timing[:4]) for c in '🟩🟨🟧'))
-            self.assertTrue(all(any(c in cell for c in '🟩🟨🟧') for cell in timing[4:]))
+            self.assertFalse(any(c in ''.join(timing[:3]) for c in '🟩🟨🟧'))
+            self.assertTrue(all(any(c in cell for c in '🟩🟨🟧') for cell in timing[3:]))
             self.assertFalse(any(c in rows[1] for c in '🟩🟨🟧'))
         case = bench.measure('db.update', 1, 3, 'default')
         historical = copy.deepcopy(case)
@@ -185,9 +185,9 @@ class ExtendedReferenceTests(unittest.TestCase):
         text = bench.render({**data, 'cases':[historical]})
         row = next(line for line in text.splitlines() if line.startswith('| db.update |'))
         cells = [cell.strip() for cell in row.split('|')[1:-1]]
-        self.assertEqual((cells[1],cells[4],cells[5]), ('—','—','—'))
+        self.assertEqual((cells[1],cells[3]), ('—','—'))
         self.assertEqual(cells[-6:], ['—'] * 6)
-        self.assertTrue(any(c in cells[6] for c in '🟩🟨🟧'))
+        self.assertEqual(cells[3], '—')
 
     def test_db_timings_and_sql_separate_from_general_cases(self):
         regular = bench.measure('structure.fields', 1, 3, 'prepared')
@@ -260,3 +260,35 @@ class BenchmarkDecimalIsolationTests(unittest.TestCase):
             self.assertEqual(caller.rounding, saved.rounding)
             self.assertEqual(caller.traps, saved.traps)
             self.assertEqual(caller.flags, saved.flags)
+
+class TwoLayerReportTests(unittest.TestCase):
+    def test_class_workload_is_never_run_even_for_sql_diagnostics(self):
+        original = bench.make_case
+        def make(*args, **kwargs):
+            case = original(*args, **kwargs)
+            def forbidden():
+                raise AssertionError('class layer must not run')
+            case.runs['python_classes'] = forbidden
+            case.before['python_classes'] = forbidden
+            case.checks['python_classes'] = forbidden
+            return case
+        for route in ('default', 'prepared'):
+            with patch.object(bench, 'make_case', side_effect=make):
+                case = bench.measure('db.count', 1, 3, route)
+            for key in ('summary', 'first_execution_seconds', 'statuses', 'sql_statements'):
+                self.assertNotIn('python_classes', case[key])
+            self.assertEqual({s['layer'] for s in case['samples']}, {'python', 'bsl'})
+
+    def test_historical_class_measurements_are_not_rendered(self):
+        case = bench.measure('structure.fields', 1, 3, 'default')
+        case['summary']['python_classes'] = {'median_seconds': 9876}
+        case['first_execution_seconds']['python_classes'] = 9876
+        report = {'schema': 'execution-layers-extended-v1', 'environment': {'git_head':'test'}, 'cases':[case]}
+        before = copy.deepcopy(report)
+        text = bench.render(report)
+        self.assertNotIn('Классы', text)
+        self.assertNotIn('классов', text)
+        self.assertNotIn('9876', text)
+        self.assertEqual(report, before)
+        timing = next(line for line in text.splitlines() if line.startswith('| structure.fields |'))
+        self.assertEqual(len(timing.split('|')[1:-1]), 4)

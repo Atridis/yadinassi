@@ -16,13 +16,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from yadinassi import Interpreter
-from yadinassi.collections.maps import BSLMap
-from yadinassi.runtime import binary_values
 from yadinassi.syntax.parser import parse
-from yadinassi.types.values import BSLArray, HostFunction, Reference
 
 D = Decimal
-LAYERS = ('python', 'python_classes', 'bsl')
+LAYERS = ('python', 'bsl')
 CASES = ('arithmetic', 'arithmetic.int', 'arithmetic.fractional', 'calls', 'byref', 'array', 'map')
 # Record denominator changes explicitly even when the BSL source is unchanged.
 PYTHON_REFERENCES = {
@@ -38,7 +35,6 @@ class Workload:
     source: str
     expected: Decimal
     native: object
-    classes: object
 
 
 def workload(name, n):
@@ -46,19 +42,13 @@ def workload(name, n):
         raise ValueError('iterations must be an integer in 1..100000')
     if name not in CASES:
         raise ValueError('unknown workload')
-    # The classes baseline still uses the Decimal numeric helpers.
-    one, three, seven = D(1), D(3), D(7)
+    one, three = D(1), D(3)
     if name == 'arithmetic':
         def native():
             s = 0
             for i in range(1, n + 1):
                 s = s + i * 3 - 7
             return D(s)
-        def classes():
-            s = D(0)
-            for i in range(1, n + 1):
-                s = binary_values('-', binary_values('+', s, binary_values('*', D(i), three)), seven)
-            return s
         body = f'r=0;For i=1 To {n} Do r=r+i*3-7;EndDo;'
         expected = D(3*n*(n+1)//2 - 7*n)
     elif name in ('arithmetic.int', 'arithmetic.fractional'):
@@ -77,22 +67,12 @@ def workload(name, n):
                     s = s + i * factor
                 return s
             expected = D(325 * (n * (n + 1) // 2)).scaleb(-2)
-        def classes():
-            s = D(0)
-            for i in range(1, n + 1):
-                s = binary_values('+', s, binary_values('*', D(i), factor))
-            return s
         body = f'r=0;For i=1 To {n} Do r=r+i*{factor};EndDo;'
     elif name == 'calls':
         def native():
             def inc(x): return x + one
             s = D(0)
             for i in range(1, n + 1): s += inc(D(i))
-            return s
-        def classes():
-            inc = HostFunction('Inc', lambda x: binary_values('+', x, one))
-            s = D(0)
-            for i in range(1, n + 1): s = binary_values('+', s, inc(D(i)))
             return s
         body = f'Function Inc(Val x) Return x+1;EndFunction r=0;For i=1 To {n} Do r=r+Inc(i);EndDo;'
         expected = D(n*(n+1)//2+n)
@@ -101,13 +81,6 @@ def workload(name, n):
             cell = [D(0)]
             def inc(x): x[0] += one
             for _ in range(n): inc(cell)
-            return cell[0]
-        def classes():
-            cell = [D(0)]
-            ref = Reference(lambda: cell[0], lambda v: cell.__setitem__(0, v))
-            inc = HostFunction('Inc', lambda x: x.set(binary_values('+', x.get(), one)),
-                               reference_parameters=frozenset({0}), returns_value=False)
-            for _ in range(n): inc(ref)
             return cell[0]
         body = f'Procedure Inc(x) x=x+1;EndProcedure r=0;For i=1 To {n} Do Inc(r);EndDo;'
         expected = D(n)
@@ -118,12 +91,6 @@ def workload(name, n):
             s = D(0)
             for i in range(n): s += a[i]
             return s
-        def classes():
-            a = BSLArray()
-            for i in range(n): a.add(D(i))
-            s = D(0)
-            for i in range(n): s = binary_values('+', s, a.get(D(i)))
-            return s
         body = f'a=New Array;For i=0 To {n-1} Do a.Add(i);EndDo;r=0;For i=0 To {n-1} Do r=r+a[i];EndDo;'
         expected = D(n*(n-1)//2)
     else:
@@ -133,17 +100,9 @@ def workload(name, n):
             s = 0
             for i in range(n): s += m.get(i)
             return D(s)
-        def classes():
-            m = BSLMap()
-            for i in range(n):
-                value = D(i)
-                m.insert(value, value)
-            s = D(0)
-            for i in range(n): s = binary_values('+', s, m.get(D(i)))
-            return s
         body = f'm=New Map;For i=0 To {n-1} Do m.Insert(i,i);EndDo;r=0;For i=0 To {n-1} Do r=r+m.Get(i);EndDo;'
         expected = D(n*(n-1)//2)
-    return Workload(name, body, expected, native, classes)
+    return Workload(name, body, expected, native)
 
 
 def prepare_bsl(source, route):
@@ -181,7 +140,7 @@ def measure(case, n, rounds=9, route='default'):
     t = time.perf_counter_ns()
     bsl, route_info = prepare_bsl(job.source, route)
     bsl_setup = (time.perf_counter_ns()-t)/1e9
-    functions = dict(zip(LAYERS, (job.native, job.classes, bsl)))
+    functions = dict(zip(LAYERS, (job.native, bsl)))
     first = {}
     # First execution/compilation, allocator/cache warmup are separate from samples.
     for layer, run in functions.items():
@@ -191,7 +150,7 @@ def measure(case, n, rounds=9, route='default'):
         validate(run(), job.expected)
     samples = []
     for turn in range(rounds):
-        order = LAYERS[turn % 3:] + LAYERS[:turn % 3]
+        order = LAYERS[turn % len(LAYERS):] + LAYERS[:turn % len(LAYERS)]
         for layer in order:
             cpu = time.process_time_ns(); start = time.perf_counter_ns()
             result = functions[layer]()

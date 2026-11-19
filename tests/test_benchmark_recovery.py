@@ -12,9 +12,9 @@ class RecoveryTests(unittest.TestCase):
         self.assertFalse(report['complete'])
         self.assertFalse(report['historical_measurements_reused'])
         rows = report['rows']
-        self.assertEqual(len(rows), 416)
-        self.assertEqual(len({(r['case'], r['n'], r['layer']) for r in rows}), 416)
-        self.assertEqual(sum(r['status'] == 'skipped' for r in rows), 4)
+        self.assertEqual(len(rows), 312)
+        self.assertEqual(len({(r['case'], r['n'], r['layer']) for r in rows}), 312)
+        self.assertEqual(sum(r['status'] == 'skipped' for r in rows), 3)
         for r in rows:
             self.assertEqual(r['status'] == 'skipped', r['case'] == 'method.valuetable.find' and r['n'] == 4096)
             for field in ('wall_seconds', 'cpu_seconds', 'python_calls', 'c_calls', 'source_sha256'):

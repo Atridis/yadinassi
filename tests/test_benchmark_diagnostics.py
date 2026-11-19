@@ -82,12 +82,10 @@ class BenchmarkDiagnosticTests(unittest.TestCase):
             self.assertEqual(case['layers']['python']['counters']['sqlite_execute'], 2)
             # diagnose captures only after two successful unprofiled warmups.
             # Warm readonly admission reuses this connection's pinned epoch.
-            for layer in ('python_classes', 'bsl'):
-                counts = case['layers'][layer]['counters']
-                self.assertEqual(counts['configuration_read_source'], 0)
-                self.assertEqual(counts['sqlite_catalog_begin'], 2)
-            self.assertEqual(case['layers']['python_classes']['counters']['sqlite_execute'],
-                             case['layers']['bsl']['counters']['sqlite_execute'])
+            self.assertEqual(set(case['layers']), {'python', 'bsl'})
+            counts = case['layers']['bsl']['counters']
+            self.assertEqual(counts['configuration_read_source'], 0)
+            self.assertEqual(counts['sqlite_catalog_begin'], 2)
 
     def test_source_counter_observes_cold_warm_and_changed_epoch(self):
         # Set up outside capture, as the production diagnostic does. Explicitly
@@ -127,7 +125,7 @@ class BenchmarkDiagnosticTests(unittest.TestCase):
     def test_forms_have_no_false_prepared_or_native_baseline(self):
         case = bench.diagnose('form.event', 2, 'default')
         self.assertEqual(set(case['layers']), {'bsl'})
-        self.assertEqual(set(case['statuses']), {'python', 'python_classes'})
+        self.assertEqual(set(case['statuses']), {'python'})
         with self.assertRaises(ValueError): bench.diagnose('form.event', 2, 'prepared')
 
     def test_invalid_diagnostic_inputs_fail_before_any_fixture(self):
@@ -153,7 +151,10 @@ class BenchmarkDiagnosticTests(unittest.TestCase):
         self.assertIn('SourceMap.compile', text)
         old_report = deepcopy(report)
         del old_report['cases'][0]['layers']['bsl']['counters']['direct_ast_compile']
-        self.assertIn('—', bench.render(old_report))
+        old_report['cases'][0]['layers']['python_classes'] = case['layers']['python']
+        old_text = bench.render(old_report)
+        self.assertIn('—', old_text)
+        self.assertNotIn('Классы yadinassi', old_text)
         self.assertFalse(any(emoji in text for emoji in '🟩🟨🟧'))
         self.assertNotIn('median_seconds', str(case))
         self.assertNotIn('samples', case)

@@ -144,7 +144,7 @@ jobs:
 
   # Informational timings run independently of admission and all required jobs.
   performance:
-    name: Performance reference (Python / classes / BSL, no speed gate)
+    name: Performance reference (Python / BSL, no speed gate)
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:
@@ -173,7 +173,7 @@ jobs:
           fi
       - name: Check benchmark correctness and report formatting
         run: python -m unittest tests.test_benchmark_execution_layers tests.test_benchmark_summary tests.test_benchmark_report
-      - name: Measure three equivalent execution layers
+      - name: Measure Python and BSL
         run: |
           mkdir -p performance-results
           python scripts/benchmark_execution_layers.py --bsl-route default --iterations 100000 --rounds 9 > performance-results/execution-layers.json

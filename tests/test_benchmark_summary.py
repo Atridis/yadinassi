@@ -12,9 +12,9 @@ def report():
 
 
 class BenchmarkSummaryTests(unittest.TestCase):
-    def test_three_timings_and_ratios_visible(self):
+    def test_historical_report_hides_class_timing_and_ratios(self):
         text=render(report())
-        self.assertIn('| array | 1.000 | 2.000 | 4.000 | 🟨 2.00× | 🟧 4.00× | 🟨 2.00× |',text)
+        self.assertIn('| array | 1.000 | 4.000 | 🟧 4.00× |',text)
         self.assertIn('9 измеренных повторов',text)
         self.assertIn('Порогов скорости нет',text)
         self.assertIn('execute_program(preparsed_ast)',text)
@@ -59,8 +59,8 @@ class BenchmarkSummaryTests(unittest.TestCase):
                 text = render(data)
                 rows = [line for line in text.splitlines() if line.startswith('| array |')]
                 cells = rows[0].split('|')[1:-1]
-                self.assertEqual([cell.strip() for cell in cells[:4]], ['array', '1.000', '2.000', '4.000'])
-                self.assertEqual([cell.strip() for cell in cells[4:]], ['🟨 2.00×', '🟧 4.00×', '🟨 2.00×'])
+                self.assertEqual([cell.strip() for cell in cells[:3]], ['array', '1.000', '4.000'])
+                self.assertEqual([cell.strip() for cell in cells[3:]], ['🟧 4.00×'])
                 self.assertEqual(rows[1], '| array | 30.000 | 4.000 |')
                 self.assertIn('🟩 0 ≤ коэффициент < 2; 🟨 2 ≤ коэффициент ≤ 3; 🟧 коэффициент > 3', text)
                 self.assertNotIn('<', text.replace('коэффициент < 2', ''))
@@ -78,7 +78,7 @@ class BenchmarkSummaryTests(unittest.TestCase):
             self.assertEqual(text.count('100000 итераций, 9 измеренных повторов;'), 1)
             self.assertIn(f'- Все сценарии: 100000 итераций, 9 измеренных повторов; `{api}`.', text)
             self.assertEqual(data, before)
-            self.assertEqual(len([line for line in text.splitlines() if line.startswith('| ') and '1.000 | 2.000 | 4.000' in line]), 5)
+            self.assertEqual(len([line for line in text.splitlines() if line.startswith('| ') and '1.000 | 4.000' in line]), 5)
 
     def test_different_iterations_rounds_or_api_remain_visible(self):
         data = report(); base = data['cases'][0]
@@ -107,3 +107,22 @@ class BenchmarkSummaryTests(unittest.TestCase):
 
     def test_single_workload_keeps_its_name(self):
         self.assertIn('- array: 100000 итераций, 9 измеренных повторов;', render(report()))
+
+    def test_new_two_layer_report_counts_rounds_correctly(self):
+        data=report();case=data['cases'][0]
+        del case['summary']['python_classes']
+        case['samples']=[{'round':r,'layer':layer} for r in range(9) for layer in ('python','bsl')]
+        text=render(data)
+        self.assertIn('9 измеренных повторов',text)
+        self.assertIn('| array | 1.000 | 4.000 | 🟧 4.00× |',text)
+        self.assertNotIn('Классы',text)
+        self.assertNotIn('классов',text)
+
+    def test_historical_classes_are_ignored_without_mutating_input(self):
+        data=report();case=data['cases'][0]
+        case['summary']['python_classes']['median_seconds']=float('nan')
+        case['case']='arithmetic.int'
+        text=render(data)
+        self.assertNotIn('Классы',text)
+        self.assertNotIn('классов',text)
+        self.assertIn('python_classes',case['summary'])

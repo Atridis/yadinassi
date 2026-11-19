@@ -9,7 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 class PerformanceWorkflowTests(unittest.TestCase):
     def setUp(self):
         self.build = (ROOT / '.github/workflows/build.yml').read_text()
-        self.job = self.build.split('  performance:\n', 1)[1].split('\n  light:\n', 1)[0]
+        from_performance = self.build.split('  performance:\n', 1)[1]
+        self.job = re.split(r'(?m)^  [a-zA-Z0-9_-]+:\s*$', from_performance, maxsplit=1)[0]
 
     def test_no_job_dependencies_in_either_direction(self):
         self.assertNotRegex(self.job, r'(?m)^    (needs|if|continue-on-error):')
@@ -30,7 +31,10 @@ class PerformanceWorkflowTests(unittest.TestCase):
         for name in ('execution-layers.json', 'execution-layers-prepared.json',
                      'summary.md', 'summary-prepared.md'):
             self.assertIn('performance-results/' + name, self.job)
-        self.assertEqual(self.job.count('>> "$GITHUB_STEP_SUMMARY"'), 3)
+        publish = [line for line in self.job.splitlines()
+                   if 'scripts/benchmark_report.py' in line and '>> "$GITHUB_STEP_SUMMARY"' in line]
+        self.assertEqual(len(publish), 1)
+        self.assertIn('summary-paired.md', publish[0])
         self.assertIn('if: always()', self.job)
         self.assertIn('retention-days: 30', self.job)
 
@@ -50,7 +54,7 @@ class PerformanceWorkflowTests(unittest.TestCase):
 
     def test_diagnostics_are_a_separate_process_after_all_timings(self):
         marker = self.job.index('- name: Collect separate untimed execution diagnostics')
-        for name in ('- name: Measure three equivalent execution layers',
+        for name in ('- name: Measure Python and BSL',
                      '- name: Measure prepared execution separately',
                      '- name: Measure extended default reference',
                      '- name: Measure extended prepared reference'):

@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from scripts.benchmark_call_counts import capture
-from scripts.benchmark_recovery import scaffold
+from scripts.benchmark_recovery import scaffold, LAYERS
 from scripts.benchmark_summary import ratio_cell
 
 # Each Python source is the actual executed 1x baseline, not pseudocode.
@@ -154,13 +154,13 @@ def binding(case, n, layer):
 def measure_case(case, n, rounds=5):
     if type(n) is not int or n < 1 or type(rounds) is not int or rounds < 3:
         raise ValueError('positive N and at least three rounds required')
-    jobs = {layer: binding(case, n, layer) for layer in ('python','classes','default','prepared')}
+    jobs = {layer: binding(case, n, layer) for layer in LAYERS}
     samples = {layer: [] for layer in jobs}
     for reset, run, validate, _, _ in jobs.values():
         reset(); validate(run())
     for round_index in range(rounds):
         layers = list(jobs)
-        for layer in layers[round_index % 4:] + layers[:round_index % 4]:
+        for layer in layers[round_index % len(layers):] + layers[:round_index % len(layers)]:
             reset, run, validate, _, _ = jobs[layer]
             reset()
             cpu = time.process_time_ns(); wall = time.perf_counter_ns()
@@ -194,18 +194,17 @@ def summary(report):
         lines += ['Эталон Python для set/set_positional: минимальная Table с общим словарём схемы и списком строк; '
                   'Table.get возвращает rows[index], Row(list).set_member пишет self[self.schema[name]]. '
                   'Нет epoch или индексов. Named: a.get(i).set_member("n",i); positional: a.get(i)[0]=i. '
-                  'Классы positional выполняют тот же a.get(i)[0]=i на BareTable, что и BSL: это контроль трансляции. '
                   'Подготовка таблиц и полная проверка результата вне таймера. Один проход на сценарий.', '']
     if any(case == 'method.valuetable.create' for case, _, _ in measured):
         lines += ['Эталон Python для create: конструктор пустой таблицы и отдельный '
                   'add_column("N") внутри замера, без epoch или индексов.', '']
     for n in (512,4096):
-        lines += [f'### N={n}', '| Сценарий | Python мс | Классы × | Bare с компиляцией × | Готовый bare × | Python/C готового bare |', '|---|---:|---:|---:|---:|---:|']
+        lines += [f'### N={n}', '| Сценарий | Python мс | Bare с компиляцией × | Готовый bare × | Python/C готового bare |', '|---|---:|---:|---:|---:|']
         for case in CONTRACTS:
             if (case,n,'prepared') not in measured: continue
-            rows = [measured[case,n,layer] for layer in ('python','classes','default','prepared')]
+            rows = [measured[case,n,layer] for layer in LAYERS]
             ratios = ' | '.join(ratio_cell(row['ratio_to_python']) for row in rows[1:])
-            lines.append(f"| {case} | {rows[0]['wall_seconds']*1000:.4f} | {ratios} | {rows[3]['python_calls']}/{rows[3]['c_calls']} |")
+            lines.append(f"| {case} | {rows[0]['wall_seconds']*1000:.4f} | {ratios} | {rows[2]['python_calls']}/{rows[2]['c_calls']} |")
     unbound=sorted({r['case'] for r in report['rows'] if r['status']=='unbound'})
     lines += ['', 'Не восстановлены: '+(', '.join(unbound) if unbound else 'нет'), '', 'Явный пропуск: method.valuetable.find N4096 во всех слоях.']
     for r in report['rows']:
@@ -231,7 +230,7 @@ def main():
             try:
                 for row in measure_case(case,n,args.rounds): index[row['case'],n,row['layer']].update(row,reason=None)
             except Exception as exc:
-                for layer in ('python','classes','default','prepared'):
+                for layer in LAYERS:
                     index[case,n,layer].update(status='error',reason=f'{type(exc).__name__}: {exc}')
     report['complete'] = all(r['status'] in ('measured','skipped') for r in report['rows'])
     args.output.parent.mkdir(parents=True,exist_ok=True)

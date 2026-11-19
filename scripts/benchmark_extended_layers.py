@@ -39,7 +39,8 @@ from scripts.benchmark_execution_layers import metadata
 from scripts.benchmark_summary import ratio_cell
 from scripts import performance_summary_labels as labels
 
-LAYERS = ('python', 'python_classes', 'bsl')
+LAYERS = ('python', 'python_classes', 'bsl')  # Private correctness helpers / historical input.
+REPORT_LAYERS = ('python', 'bsl')
 CASES = ('structure.fields', 'valuetable.build_scan', 'valuelist.build_scan',
          'types.adjust_value', 'json.roundtrip', 'json.streaming_roundtrip', 'xml.scalar_codec', 'file.stat', 'file.binary_roundtrip', 'xml.roundtrip',
          'db.count', 'db.update', 'form.event', 'form.open')
@@ -495,7 +496,7 @@ def count_sql_statements(name, n, route):
     result = {}
     with patch.object(sqlite3, 'connect', connect), ExitStack() as stack:
         case = make_case(name, n, route, stack)
-        for layer in LAYERS:
+        for layer in REPORT_LAYERS:
             run = case.runs[layer]
             reset = case.before.get(layer)
             for _ in range(2):
@@ -523,6 +524,8 @@ def measure(name, n, rounds, route):
         start = time.perf_counter_ns(); case = make_case(name, n, route, stack)
         setup = (time.perf_counter_ns()-start)/1e9; first = {}; samples = []
         for layer, run in list(case.runs.items()):
+            if layer not in REPORT_LAYERS:
+                continue
             if layer in case.before: case.before[layer]()
             start = time.perf_counter_ns()
             try: result = run()
@@ -534,7 +537,7 @@ def measure(name, n, rounds, route):
             validate(case, layer, result)
             if layer in case.before: case.before[layer]()
             validate(case, layer, run())
-        layers = [layer for layer in LAYERS if layer in case.runs]
+        layers = [layer for layer in REPORT_LAYERS if layer in case.runs]
         if not layers:
             raise ValueError('no executable reference layers')
         for turn in range(rounds):
@@ -553,7 +556,7 @@ def measure(name, n, rounds, route):
             summary[layer] = {'median_seconds': med, 'min_seconds': min(values), 'max_seconds': max(values), 'mad_seconds': statistics.median(abs(v-med) for v in values)}
         result = {'case': name, 'iterations': n, 'operations': case.operations, 'requested_route': route, 'backend': 'python-direct', 'api': case.api, 'source': case.source,
                   'source_sha256': hashlib.sha256(case.source.encode()).hexdigest(), 'expected': str(case.expected), 'notes': case.notes,
-                  'fixture_and_prepare_seconds': setup, 'first_execution_seconds': first, 'statuses': case.statuses, 'samples': samples, 'summary': summary}
+                  'fixture_and_prepare_seconds': setup, 'first_execution_seconds': first, 'statuses': {k: v for k, v in case.statuses.items() if k in REPORT_LAYERS}, 'samples': samples, 'summary': summary}
     if name in DB_CASES:
         result['sql_statements'] = count_sql_statements(name, n, route)
     return result
@@ -567,16 +570,18 @@ def render(report, *, include_sql=True):
              'Коммит: `'+report['environment']['git_head']+'`', '']
     tables = {False: [], True: []}
     for case in report['cases']:
-        values = {k:v['median_seconds'] for k,v in case['summary'].items()}
+        if set(case['summary']) - set(LAYERS) or set(case['statuses']) - set(LAYERS):
+            raise ValueError('unknown layer')
+        values = {k:v['median_seconds'] for k,v in case['summary'].items() if k in REPORT_LAYERS}
+        statuses = {k:v for k,v in case['statuses'].items() if k in REPORT_LAYERS}
         if not values or set(values) - set(LAYERS) or any(type(v) not in (int, float) or not math.isfinite(v) or v <= 0 for v in values.values()):
             raise ValueError('invalid timing')
-        if any(status.get('status') not in ('unsupported', 'not_comparable') or not status.get('reason') for status in case['statuses'].values()):
+        if any(status.get('status') not in ('unsupported', 'not_comparable') or not status.get('reason') for status in statuses.values()):
             raise ValueError('invalid layer status')
-        if set(case['statuses']) != set(LAYERS) - set(values):
+        if set(statuses) != set(REPORT_LAYERS) - set(values):
             raise ValueError('missing or contradictory layer status')
-        cells = [f'{values[k]*1000:.3f}' if k in values else '—' for k in LAYERS]
-        ratios = [ratio_cell(values['bsl']/values[k]) if 'bsl' in values and k in values and values[k]>0 else '—' for k in ('python','python_classes')]
-        ratios.insert(0,ratio_cell(values['python_classes']/values['python']) if 'python' in values and 'python_classes' in values and values['python']>0 else '—')
+        cells = [f'{values[k]*1000:.3f}' if k in values else '—' for k in REPORT_LAYERS]
+        ratios = [ratio_cell(values['bsl']/values['python']) if 'bsl' in values and 'python' in values else '—']
         database = case['case'] in DB_CASES
         if database and include_sql:
             cells_sql = []
@@ -591,21 +596,21 @@ def render(report, *, include_sql=True):
     def add_tables(database):
         if not tables[database]:
             return
-        header = '| Сценарий | Python, мс | Классы yadinassi, мс | BSL, мс | Классы / Python | BSL / Python | BSL / классы |'
-        divider = '|---|---:|---:|---:|---:|---:|---:|'
+        header = '| Сценарий | Python, мс | BSL, мс | BSL / Python |'
+        divider = '|---|---:|---:|---:|'
         if database and include_sql:
             lines.extend(['### Операции SQLite', '', SQL_NOTE, ''])
             header += (' Запросы Python | Запросы BSL | Запросы BSL / Python |'
                        ' Все команды Python | Все команды BSL | Команды BSL / Python |')
             divider += '---:|' * 6
         lines.extend([header, divider, *tables[database], '',
-                      '| Подготовка / первый вызов | Общие тестовые данные + подготовка BSL, мс | Первый Python, мс | Первый вызов классов, мс | Первый BSL, мс |',
-                      '|---|---:|---:|---:|---:|'])
+                      '| Подготовка / первый вызов | Общие тестовые данные + подготовка BSL, мс | Первый Python, мс | Первый BSL, мс |',
+                      '|---|---:|---:|---:|'])
         for case in report['cases']:
             if (case['case'] in DB_CASES) != database:
                 continue
             first=case['first_execution_seconds']
-            cells=[f'{first[k]*1000:.3f}' if k in first else '—' for k in LAYERS]
+            cells=[f'{first[k]*1000:.3f}' if k in first else '—' for k in REPORT_LAYERS]
             lines.append('| '+case['case']+' | '+f'{case["fixture_and_prepare_seconds"]*1000:.3f}'+' | '+' | '.join(cells)+' |')
         lines.append('')
 
@@ -633,8 +638,9 @@ def render(report, *, include_sql=True):
             details.append(labels.api(case['api']) + '.')
         if case['notes']:
             details.append(labels.note(case['notes']))
-        if case['statuses']:
-            details.append('; '.join(labels.LAYERS.get(k,k)+': '+labels.STATUSES.get(v['status'],v['status'])+' ('+labels.reason(v['reason'])+')' for k,v in case['statuses'].items()))
+        statuses = {k: v for k, v in case['statuses'].items() if k in REPORT_LAYERS}
+        if statuses:
+            details.append('; '.join(labels.LAYERS.get(k,k)+': '+labels.STATUSES.get(v['status'],v['status'])+' ('+labels.reason(v['reason'])+')' for k,v in statuses.items()))
         if details:
             lines.append('- **'+case['case']+'**: ' + ' '.join(details))
     return '\n'.join(lines)+'\n'

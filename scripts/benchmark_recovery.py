@@ -9,7 +9,7 @@ from pathlib import Path
 
 MANIFEST = Path(__file__).with_name('benchmark_recovery_manifest.json')
 SIZES = (512, 4096)
-LAYERS = ('python', 'classes', 'default', 'prepared')
+LAYERS = ('python', 'default', 'prepared')
 MODES = {'default': 'Подготовка включена в замер',
          'prepared': 'План подготовлен заранее'}
 
@@ -52,11 +52,11 @@ def render(report):
              f"Коммит исходников: `{report['commit']}`", '']
     for n in SIZES:
         for api, title in MODES.items():
-            lines += [f'### N={n}: {title}', '', '| Сценарий | Python | Классы | BSL |', '|---|---|---|---|']
+            lines += [f'### N={n}: {title}', '', '| Сценарий | Python | BSL |', '|---|---|---|']
             cases = load_manifest()['core'] + load_manifest()['method']
             index = {(r['case'], r['n'], r['layer']): r for r in report['rows']}
             for case in cases:
-                states = [index[case, n, layer]['status'] for layer in ('python', 'classes', api)]
+                states = [index[case, n, layer]['status'] for layer in ('python', api)]
                 labels = ['пропуск: квадратичный поиск' if state == 'skipped' else 'не восстановлен' for state in states]
                 lines.append('| ' + case + ' | ' + ' | '.join(labels) + ' |')
             lines.append('')

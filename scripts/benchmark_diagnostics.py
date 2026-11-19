@@ -20,6 +20,7 @@ CASES = ('core.map', 'core.byref', 'structure.fields', 'valuetable.build_scan',
          'json.roundtrip', 'json.streaming_roundtrip', 'xml.scalar_codec', 'db.count', 'db.update',
          'form.event', 'form.open')
 COUNT_SIZES = (32, 128, 512)
+REPORT_LAYERS = ('python', 'bsl')
 # Keys specify exact source file AND function name, not similarly named functions
 # from unrelated subsystems. Counts are entries, including recursive calls.
 WATCHED = {
@@ -93,12 +94,12 @@ def diagnose(name, iterations, route, *, catalog_rows=32):
         if name.startswith('core.'):
             workload = core.workload(name.removeprefix('core.'), iterations)
             case = extended.Case(name, workload.expected, operations=iterations)
-            case.runs.update(python=workload.native, python_classes=workload.classes)
+            case.runs['python'] = workload.native
             extended.attach_bsl(case, workload.source, route, stack)
         else:
             case = extended.make_case(name, iterations, route, stack, catalog_rows=catalog_rows)
         layers = {}
-        for layer in extended.LAYERS:
+        for layer in REPORT_LAYERS:
             if layer not in case.runs:
                 continue
             run = case.runs[layer]
@@ -114,7 +115,8 @@ def diagnose(name, iterations, route, *, catalog_rows=32):
                 'catalog_rows': catalog_rows if name == 'db.count' else None,
                 'requested_route': route, 'api': case.api, 'expected': str(case.expected),
                 'source_sha256': hashlib.sha256(case.source.encode()).hexdigest(),
-                'statuses': case.statuses, 'notes': case.notes, 'layers': layers}
+                'statuses': {key: value for key, value in case.statuses.items() if key in REPORT_LAYERS},
+                'notes': case.notes, 'layers': layers}
 
 
 def render(report):
@@ -133,7 +135,10 @@ def render(report):
              '| Сценарий / режим / объём | Слой | Вызовы Python | Встроенный compile | Прямой AST compile_module | SourceMap.compile | API SQLite execute | read_source | Проверки DDL | Проверки конфигурации | Прямой _check | Проверки владельца |',
              '|---|---|' + '---:|' * len(columns)]
     for case in report['cases']:
-        for layer, data in case['layers'].items():
+        for layer in REPORT_LAYERS:
+            if layer not in case['layers']:
+                continue
+            data = case['layers'][layer]
             if data['result'] != case['expected'] or any(type(v) is not int or v < 0 for v in data['counters'].values()):
                 raise ValueError('invalid diagnostic result')
             label = (case['case'] + ' / ' + labels.ROUTES.get(case['requested_route'],case['requested_route'])

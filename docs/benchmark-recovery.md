@@ -4,6 +4,13 @@ This is **not** a replacement performance job or a measured report. It recovers
 identifiers and report dimensions from surviving reports, not executable sources.
 No old timings, ratios or counters are copied into new measurements.
 
+## Current report
+
+CI compares the native Python reference with both bare BSL execution modes.
+It does not time or profile a separate yadinassi classes layer. Recorded
+historical evidence remains unchanged; references to four layers below describe
+the original recovery grid, not the current report.
+
 ## Evidence
 
 `scripts/benchmark_recovery_manifest.json` records SHA-256 of three surviving

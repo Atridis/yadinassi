@@ -4,12 +4,12 @@ from scripts.benchmark_recovered_drivers import CONTRACTS, binding, measure_case
 from scripts.benchmark_recovery import scaffold
 
 class DriversTests(unittest.TestCase):
-    def test_all_bound_workloads_four_layers(self):
+    def test_all_bound_workloads_three_report_layers(self):
         for case in CONTRACTS:
             for n in (1, 7):
                 with self.subTest(case=case,n=n):
                     rows=measure_case(case,n,3)
-                    self.assertEqual([r['layer'] for r in rows],['python','classes','default','prepared'])
+                    self.assertEqual([r['layer'] for r in rows],['python','default','prepared'])
                     for row in rows:
                         self.assertEqual(row['status'],'measured')
                         self.assertEqual(len(row['samples']),3)
@@ -17,6 +17,17 @@ class DriversTests(unittest.TestCase):
                         self.assertGreaterEqual(row['c_calls'],0)
                         self.assertEqual(len(row['source_sha256']),64)
                     self.assertEqual(rows[0]['ratio_to_python'],1)
+    def test_classes_lane_is_not_bound_timed_or_profiled(self):
+        with patch('scripts.benchmark_recovered_drivers.binding', wraps=binding) as selected:
+            rows = measure_case('addition', 3, 3)
+        self.assertEqual([call.args[2] for call in selected.call_args_list],
+                         ['python', 'default', 'prepared'])
+        report = dict(commit='abc', rows=rows)
+        import json
+        self.assertNotIn('"layer": "classes"', json.dumps(report))
+        self.assertNotIn('Классы', summary(report))
+        self.assertEqual(len(rows), 3)
+
     def test_state_corruption_rejected(self):
         for case in ('method.array.add','method.valuetable.add','method.valuelist.add'):
             for layer in ('python','classes','default','prepared'):
@@ -49,11 +60,11 @@ class DriversTests(unittest.TestCase):
         rows = [
             dict(case='method.structure.get', n=512, layer=layer, status='measured',
                  wall_seconds=.000012, ratio_to_python=ratio, python_calls=9, c_calls=2)
-            for layer, ratio in zip(('python', 'classes', 'default', 'prepared'),
-                                    (1, 1.999, 3, 3.001))
+            for layer, ratio in zip(('python', 'default', 'prepared'),
+                                    (1, 1.999, 3.001))
         ]
         text = summary(dict(commit='abc', rows=rows))
-        self.assertIn('| method.structure.get | 0.0120 | 🟩 2.00× | 🟨 3.00× | 🟧 3.00× | 9/2 |', text)
+        self.assertIn('| method.structure.get | 0.0120 | 🟩 2.00× | 🟧 3.00× | 9/2 |', text)
 
     def test_limits(self):
         for n,rounds in ((0,3),(1,2),(True,3)):

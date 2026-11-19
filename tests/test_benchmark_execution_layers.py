@@ -21,7 +21,7 @@ class ExecutionLayerBenchmarkTests(unittest.TestCase):
                     bench.validate(job.native(), job.expected)
                 self.assertEqual(converted, casts)
 
-    def test_triplets_match_independent_expected_values(self):
+    def test_pairs_match_independent_expected_values(self):
         expected = {'arithmetic': Decimal(182), 'arithmetic.int': Decimal(273),
                     'arithmetic.fractional': Decimal('295.75'), 'calls': Decimal(104),
                     'byref': Decimal(13), 'array': Decimal(78), 'map': Decimal(78)}
@@ -32,7 +32,7 @@ class ExecutionLayerBenchmarkTests(unittest.TestCase):
                 for route in ('default', 'prepared'):
                     with patch.dict(os.environ, {'YADINASSI_UNSAFE_COLLECTION_ABLATION': '1'}):
                         bsl, _ = bench.prepare_bsl(job.source, route)
-                        for run in (job.native, job.classes, bsl):
+                        for run in (job.native, bsl):
                             # Reusing prepared callable must not accumulate state.
                             for _ in range(2): bench.validate(run(), result)
 
@@ -92,7 +92,6 @@ class ExecutionLayerBenchmarkTests(unittest.TestCase):
         for name in bench.CASES:
             job = bench.workload(name, 1)
             bench.validate(job.native(), job.expected)
-            bench.validate(job.classes(), job.expected)
 
     def test_invalid_inputs_and_wrong_results_fail(self):
         for n in (0, -1, True, 1.5, 100001):
@@ -106,10 +105,10 @@ class ExecutionLayerBenchmarkTests(unittest.TestCase):
 
     def test_report_retains_samples_results_and_rotates_order(self):
         report = bench.measure('array', 3, 3)
-        self.assertEqual(len(report['samples']), 9)
+        self.assertEqual(len(report['samples']), 6)
         for turn in range(3):
-            rows = report['samples'][turn*3:(turn+1)*3]
-            self.assertEqual(tuple(row['layer'] for row in rows), bench.LAYERS[turn:]+bench.LAYERS[:turn])
+            rows = report['samples'][turn*2:(turn+1)*2]
+            self.assertEqual(tuple(row['layer'] for row in rows), bench.LAYERS[turn%2:]+bench.LAYERS[:turn%2])
             self.assertTrue(all(row['result'] == '3' for row in rows))
         self.assertEqual(set(report['first_execution_seconds']), set(bench.LAYERS))
         self.assertEqual(report['ratios_to_python']['python'], 1)
@@ -125,3 +124,12 @@ class ExecutionLayerBenchmarkTests(unittest.TestCase):
     def test_no_results_are_accepted_on_semantic_mismatch(self):
         with patch.object(bench, 'prepare_bsl', return_value=(lambda: Decimal(-99), {})):
             with self.assertRaises(AssertionError): bench.measure('array', 3, 3)
+
+    def test_new_reports_never_include_class_layer_data(self):
+        for route in ('default','prepared'):
+            report=bench.measure('arithmetic.int',3,3,route)
+            self.assertEqual(bench.LAYERS,('python','bsl'))
+            self.assertFalse(hasattr(bench.workload('arithmetic.int',3),'classes'))
+            for field in ('summary','ratios_to_python','first_execution_seconds'):
+                self.assertEqual(set(report[field]),{'python','bsl'})
+            self.assertEqual({sample['layer'] for sample in report['samples']},{'python','bsl'})

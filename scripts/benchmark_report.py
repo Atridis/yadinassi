@@ -107,15 +107,15 @@ def environment_lines(environments):
 
 def sql_counts(cases):
     """One independent complete sample per layer, never a timing-round sum."""
-    lines = ['| Сценарий | Счётчик | Сырой Python | Классы yadinassi | BSL | Классы / Python | BSL / Python | BSL / классы |',
-             '|---|---|---:|---:|---:|---:|---:|---:|']
-    layers = ('python', 'python_classes', 'bsl')
+    lines = ['| Сценарий | Счётчик | Сырой Python | BSL | BSL / Python |',
+             '|---|---|---:|---:|---:|']
+    layers = ('python', 'bsl')
     for case in cases:
         for metric, totals in sql_metrics(case):
             def ratio(left, right):
                 return f'{totals[left] / totals[right]:.2f}×' if left in totals and totals.get(right, 0) > 0 else '—'
             cells = [str(totals[layer]) if layer in totals else '—' for layer in layers]
-            cells += [ratio('python_classes', 'python'), ratio('bsl', 'python'), ratio('bsl', 'python_classes')]
+            cells += [ratio('bsl', 'python')]
             lines.append('| ' + ' | '.join([case['case'], metric, *cells]) + ' |')
     return '\n'.join(lines)
 
@@ -172,7 +172,7 @@ def assemble(reports):
              '**Подготовка включена в замер** — execute_program(preparsed_ast), включая выполняемую внутри него подготовку; '
              'предварительный разбор исходного BSL в AST не входит в это время. '
              '**План подготовлен заранее** — execute_prepared(plan), подготовка плана в замер не входит. '
-             'Эти названия описывают границы времени BSL в основных таблицах; Python и классы измеряются как прежде. '
+             'Эти названия описывают границы времени BSL в основных таблицах; Python измеряется как прежде. '
              'В таблицах подготовки и первого вызова затраты показаны отдельно для соответствующего режима. '
              'Оба режима измеряются после проверочных вызовов и прогрева. '
              'Сценарии form.event и form.open используют отдельный жизненный цикл FormSession, '

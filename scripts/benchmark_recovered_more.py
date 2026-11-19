@@ -78,7 +78,7 @@ case('method.structure.delete', 'For I=0 To N-1 Do A.Delete("X"); EndDo; R=A;',
      'structure_full', 'empty_structure', 'N deletes of X: first exists, remaining missing; not N distinct deletes')
 case('method.structure.iterate', 'R=0; For Each P In A Do R=R+P.Value; EndDo;',
      'r=0\nfor v in a.values():\n    r += v', 'r=0\nfor p in a:\n    r += p.get_member("value")',
-     'structure_many_read', 'sum', 'One traversal of N fields; Python values, classes lightweight pairs, BSL projections')
+     'structure_many_read', 'sum', 'One traversal of N fields; Python values and BSL projections')
 case('calls', 'Function F(Val X) Return X+1; EndFunction; R=0; For I=0 To N-1 Do R=R+F(I); EndDo;',
      'def f(x):\n    return x+1\nr=0\nfor i in range(n):\n    r += f(i)', None,
      'none', 'sum_plus_n', 'N value-argument function calls; definition included in all timed layers')
@@ -149,7 +149,7 @@ case('array', 'For I=0 To N-1 Do A.Add(I); EndDo; R=0; For Each X In A Do R=R+X;
 case('map', 'For I=0 To N-1 Do A.Insert(I,I); EndDo; R=0; For Each P In A Do R=R+P.Value; EndDo;',
      'for i in range(n):\n    a[i]=i\nr=0\nfor value in a.values():\n    r += value',
      'for i in range(n):\n    a.insert(i,i)\nr=0\nfor pair in a:\n    r += pair.get_member("value")',
-     'map_empty', 'map_sum', 'Build N integer entries then sum values; Python values/classes pairs/BSL field projection; empty fixture excluded')
+     'map_empty', 'map_sum', 'Build N integer entries then sum values; Python values and BSL field projection; empty fixture excluded')
 
 case('string.slice', 'R=""; For I=0 To N-1 Do R=Mid("abcdef",2,3); EndDo;',
      'r=""\nfor i in range(n):\n    r="abcdef"[1:4]', None,
