@@ -10,6 +10,7 @@ reproduced; real generated-source and executable-AST audit gates run before
 source effects. Replacement parity is still being established by the full suite.
 """
 import ast as py
+from copy import deepcopy
 import _operator as _OPERATOR_MODULE
 from types import ModuleType as _ModuleType
 from _operator import add as _NATIVE_ADD, getitem as _NATIVE_GETITEM
@@ -26,7 +27,7 @@ from .experimental_naked_structure import prepare_structure_schema,new_structure
 from decimal import Decimal
 from .syntax import ast as bsl
 from .experimental_naked_collections import Program, _host_name_reference, _host_omission_values
-from .experimental_naked_boundaries import _MISSING
+from .experimental_naked_boundaries import BoundaryContext, _MISSING
 from .experimental_naked_live_state import UNSET,missing,readonly,host_reference,source_reference,_SlotReference
 from . import experimental_naked_scalar_semantics as scalar
 from .experimental_naked_errors import handled_error,reraise_handled
@@ -168,6 +169,22 @@ def _bounds(program):
         elif type(value) is list or type(value) is tuple:
             pending.extend((item,depth+1) for item in value)
     return count,has_goto,has_label
+
+
+_BASE_LOOP_CHECKPOINT = BoundaryContext.checkpoint
+
+
+def _plain_array_loop(context):
+    # No special loop budget or metered owner may take the unmetered arm.
+    return (type(context).checkpoint is _BASE_LOOP_CHECKPOINT
+            and context.loop_budget is None and 'checkpoint' not in vars(context))
+
+
+def _plain_append_receiver(value):
+    kind=type(value)
+    return kind is list or (kind is _PlainArray
+                            and _PlainArray.__getattribute__ is list.__getattribute__
+                            and _PlainArray.__dict__.get('append',list.append) is list.append)
 
 
 class Emitter:
@@ -1017,6 +1034,59 @@ class Emitter:
     def increment(self,name,t):
         value=self.node(py.BinOp,t,left=self.read(name,t),op=py.Add(),right=self.const(1,t))
         return self.assign_name(name,value,t)
+    def checkpoint_loop(self,loop,t):
+        if self.authority:
+            call=self.invoke(self.attribute(self.name('_context',t),'checkpoint',t),[],t)
+            pair=self.node(py.Tuple,t,elts=[call,loop.test],ctx=py.Load())
+            loop.test=self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
+        return loop
+
+    def plain_array_loop(self,node,slow):
+        """Move liveness checks out of an exact native append loop."""
+        if self.has_goto or self.catalog_bounds or self.region_active or len(node.body)!=1:
+            return slow
+        start,end=node.start,node.end
+        if (type(start) is not bsl.Literal or type(end) is not bsl.Literal
+                or type(start.value) is not Decimal or type(end.value) is not Decimal
+                or not start.value.is_finite() or not end.value.is_finite() or start.value>end.value):
+            return slow
+        statement=node.body[0]
+        call=statement.expression if type(statement) is bsl.ExpressionStatement else None
+        if type(call) is not bsl.Call or type(call.callee) is not bsl.Attribute or len(call.arguments)!=1:
+            return slow
+        member=call.callee;array=member.object;value=call.arguments[0]
+        if (member.name.casefold() not in ('add','добавить') or type(array) is not bsl.Name
+                or type(value) is not bsl.Name or value.name.casefold()!=node.name.casefold()
+                or array.name.casefold()==node.name.casefold()):
+            return slow
+        for name in (array.name,node.name):
+            key=name.casefold()
+            if (self.external_name(name) or key in self.import_names or key in self.shadowable
+                    or key in self.module_cells or key in ('thisobject','этотобъект')
+                    or self.scope is not None and (key in self.scope['boxed'] or key in self.scope['shadows'])):
+                return slow
+
+        # Prefix (including the initial counter write) is identical. In
+        # particular, dropping the old value can invoke a Python finalizer.
+        t=array.token;receiver=self.temp()
+        value_of_array=self.read(array.name,t)
+        bind=self.node(py.NamedExpr,t,target=self.name(receiver,t,True),value=value_of_array)
+        check=self.invoke(self.attribute(self.name('_context',t),'_check',t),[],t)
+        exact=self.call('_plain_append_receiver',[bind],t)
+        pair=self.node(py.Tuple,t,elts=[check,exact],ctx=py.Load())
+        eligible=self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
+        if self.authority:
+            # The metered path keeps its own checkpoint and error order.
+            unmetered=self.call('_plain_array_loop',[self.name('_context',t)],t)
+            eligible=self.node(py.BoolOp,t,op=py.And(),values=[unmetered,eligible])
+        append=self.node(py.Expr,member.token,value=self.call('_list_append',[self.name(receiver,t),self.read(node.name,value.token)],member.token))
+        generic=slow[-1]
+        fast=self.node(py.While,node.token,test=deepcopy(generic.test),body=[append,self.increment(node.name,node.token)],orelse=[])
+        self.checkpoint_loop(generic,node.token)
+        finished=self.node(py.Expr,t,value=deepcopy(check))
+        chosen=self.node(py.If,t,test=eligible,body=[fast,finished],orelse=[generic])
+        return [*slow[:-1],chosen]
+
     def statement(self,node):
         t=node.token
         before_boundaries=self.module_boundaries
@@ -1049,9 +1119,7 @@ class Emitter:
         emitted=self._statement(node)
         if self.authority and type(node) in (bsl.For,bsl.While,bsl.ForEach):
             for loop in emitted:
-                if type(loop) is py.While:
-                    check=self.invoke(self.attribute(self.name('_context',t),'checkpoint',t),[],t)
-                    loop.test=self.node(py.Subscript,t,value=self.node(py.Tuple,t,elts=[check,loop.test],ctx=py.Load()),slice=self.const(-1,t),ctx=py.Load())
+                if type(loop) is py.While:self.checkpoint_loop(loop,t)
         result.extend(emitted)
         if statement_boundary:
             result.append(self.node(py.Expr,t,value=self.module_sync(t,True)))
@@ -1248,7 +1316,7 @@ class Emitter:
             body=self.loop_body(node.body,(node.name,t))
             body.append(self.increment(node.name,t))
             condition=self.node(py.Compare,t,left=self.read(node.name,t),ops=[py.LtE()],comparators=[self.name(last,t)])
-            result.append(self.node(py.While,t,test=condition,body=body,orelse=[]));return result
+            result.append(self.node(py.While,t,test=condition,body=body,orelse=[]));return self.plain_array_loop(node,result)
         if k is bsl.ForEach:
             self.check_name(node.name)
             receiver=self.temp();bound=self.temp();iterator=self.temp();key=self.temp();value=self.temp()
@@ -1652,7 +1720,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     data_types=(list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure,_MapEntry,
         _vt.BSLValueTable,_vt.BSLValueTableRow,_vt.BSLValueTableColumnCollection,_vt.BSLValueTableColumn,
         _vt.BSLCollectionIndexes,_vt.BSLCollectionIndex,_vl.BSLValueList,_vl.BSLValueListItem)
-    namespace=dict(_native_host_reference=_native_host_reference,_native_cell_reference=_native_cell_reference,_native_fragment_binding=_native_fragment_binding,_NativeCell=_NativeCell,_adapt_native_cell=_adapt_native_cell,_PrivateTable=_vt.BSLValueTable,_PrivateValueList=PlainValueList,_PlainValueList=PlainValueList,_PlainValueListItem=PlainValueListItem,_module_primitive_type_ids=frozenset(id(kind) for kind in (list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure)),_module_data_types=data_types,_module_data_type_ids=frozenset(id(kind) for kind in data_types),_native_dict_get=dict.get,_native_dict_setitem=dict.__setitem__,_PlainArray=_PlainArray,_Decimal=Decimal,_PlainMap=PlainMap,_plain_map=plain_map,_execute_fragment=execute_fragment,_fragment_binding=_fragment_binding,_bind_eval=bind_eval,_raise_arity_error=raise_arity_error,_host_omission_error=_host_omission_error,_host_omission_values=_host_omission_values,_dynamic_construct=dynamic_construct,_invalid_native_arity=_invalid_native_arity,_typed_find=scalar.typed_find,_list_delete=_list_delete,_native_ubound=_native_ubound,_readonly=readonly,_array_set_checked=_array_set_checked,_bounded_insert=bounded_insert,_structure_insert=structure_insert,_array_constructor_bounds=bounded_array,_new_structure=new_structure,_structure_from_schema=structure_from_schema,_host_name_reference=_host_name_reference,_Cell=_Cell,_as_ref=_as_ref,_bound_ref=_bound_ref,_UNSET_REF=_UNSET_REF,_OMITTED_REF=_OMITTED_REF,_argument_count_error=_argument_count_error,_routine_value_error=_routine_value_error,_procedure_value_error=_procedure_value_error,_identity_reference=_identity_reference,_IndexRef=_IndexRef,_AttributeRef=_AttributeRef,_SlotReference=live_state._SlotReference,_source_reference=source_reference,_canonical_reference=_canonical_reference,_structure_property=structure_property,_native_method_missing=_native_method_missing,_native_count=_native_count,_MapEntry=_MapEntry,_array_member=_array_member,_native_property_missing=_native_property_missing,_structure_get_known=structure_get_known,_native_property_write_missing=_native_property_write_missing,_checked_array_index=_checked_array_index,_partial=partial,_native_getitem=_NATIVE_GETITEM,_list_get=_list_get,_TypedMap=_TypedMap,_NakedMap=_NakedMap,_DirectStructure=_DirectStructure,_host_reference=host_reference,_UNSET=UNSET,_missing=missing,_native_add=_NATIVE_ADD,_concatenate=scalar.concatenate,_divide=scalar.decimal_divide,_sign=scalar.decimal_sign,_order=scalar.uca_order,_truth=scalar.truth,_equal=equal,_not_equal=not_equal,_MISSING=_MISSING,_handled_error=handled_error,_reraise_handled=reraise_handled,_raise_error=raise_error,_presentation=scalar.presentation,_BSLRuntimeError=BSLRuntimeError)
+    namespace=dict(_plain_array_loop=_plain_array_loop,_plain_append_receiver=_plain_append_receiver,_list_append=list.append,_native_host_reference=_native_host_reference,_native_cell_reference=_native_cell_reference,_native_fragment_binding=_native_fragment_binding,_NativeCell=_NativeCell,_adapt_native_cell=_adapt_native_cell,_PrivateTable=_vt.BSLValueTable,_PrivateValueList=PlainValueList,_PlainValueList=PlainValueList,_PlainValueListItem=PlainValueListItem,_module_primitive_type_ids=frozenset(id(kind) for kind in (list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure)),_module_data_types=data_types,_module_data_type_ids=frozenset(id(kind) for kind in data_types),_native_dict_get=dict.get,_native_dict_setitem=dict.__setitem__,_PlainArray=_PlainArray,_Decimal=Decimal,_PlainMap=PlainMap,_plain_map=plain_map,_execute_fragment=execute_fragment,_fragment_binding=_fragment_binding,_bind_eval=bind_eval,_raise_arity_error=raise_arity_error,_host_omission_error=_host_omission_error,_host_omission_values=_host_omission_values,_dynamic_construct=dynamic_construct,_invalid_native_arity=_invalid_native_arity,_typed_find=scalar.typed_find,_list_delete=_list_delete,_native_ubound=_native_ubound,_readonly=readonly,_array_set_checked=_array_set_checked,_bounded_insert=bounded_insert,_structure_insert=structure_insert,_array_constructor_bounds=bounded_array,_new_structure=new_structure,_structure_from_schema=structure_from_schema,_host_name_reference=_host_name_reference,_Cell=_Cell,_as_ref=_as_ref,_bound_ref=_bound_ref,_UNSET_REF=_UNSET_REF,_OMITTED_REF=_OMITTED_REF,_argument_count_error=_argument_count_error,_routine_value_error=_routine_value_error,_procedure_value_error=_procedure_value_error,_identity_reference=_identity_reference,_IndexRef=_IndexRef,_AttributeRef=_AttributeRef,_SlotReference=live_state._SlotReference,_source_reference=source_reference,_canonical_reference=_canonical_reference,_structure_property=structure_property,_native_method_missing=_native_method_missing,_native_count=_native_count,_MapEntry=_MapEntry,_array_member=_array_member,_native_property_missing=_native_property_missing,_structure_get_known=structure_get_known,_native_property_write_missing=_native_property_write_missing,_checked_array_index=_checked_array_index,_partial=partial,_native_getitem=_NATIVE_GETITEM,_list_get=_list_get,_TypedMap=_TypedMap,_NakedMap=_NakedMap,_DirectStructure=_DirectStructure,_host_reference=host_reference,_UNSET=UNSET,_missing=missing,_native_add=_NATIVE_ADD,_concatenate=scalar.concatenate,_divide=scalar.decimal_divide,_sign=scalar.decimal_sign,_order=scalar.uca_order,_truth=scalar.truth,_equal=equal,_not_equal=not_equal,_MISSING=_MISSING,_handled_error=handled_error,_reraise_handled=reraise_handled,_raise_error=raise_error,_presentation=scalar.presentation,_BSLRuntimeError=BSLRuntimeError)
     if region_end or any_region:namespace.update(_collection_admitted=admitted,_collection_helpers=helpers(),_routine_region_state_safe=_routine_region_state_safe)
     # Every route genuinely compiles executable code before source effects.
     # Whole-source research additionally parses the actual source, not a fake
