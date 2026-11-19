@@ -122,12 +122,22 @@ class TableListDriversTests(unittest.TestCase):
                 with self.subTest(name=name,layer=layer):
                     reset,run,validate,_,_=binding(name,5,layer)
                     reset(); value=run(); validate(value)
-                    if name=='method.valuetable.create' and layer=='python': value['schema']['extra']=1
+                    if name=='method.valuetable.create' and layer=='python': value.schema['extra']=1
                     elif 'valuetable' in name and layer!='python': value.schema['extra']=1
                     elif len(value): value[0][0]=999
                     else: value.append([999])
                     with self.assertRaises(AssertionError): validate(value)
                     reset(); validate(run())
+    def test_create_reference_constructs_then_adds_column(self):
+        from scripts.benchmark_recovered_more import ReferenceTable
+        reset, run, validate, source, _ = binding('method.valuetable.create', 7, 'python')
+        self.assertIn('r=ReferenceTable()', source)
+        self.assertIn('r.add_column("N")', source)
+        reset()
+        result = run()
+        validate(result)
+        self.assertIs(type(result), ReferenceTable)
+        self.assertEqual((result.schema, result.rows), ({'n': 0}, []))
     def test_all_method_ids_bound(self):
         from scripts.benchmark_recovery import load_manifest
         self.assertEqual(set(load_manifest()['method']) - set(CONTRACTS),set())

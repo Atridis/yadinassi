@@ -16,9 +16,17 @@ class ReferenceRow(list):
 
 
 class ReferenceTable:
-    def __init__(self, values):
-        self.schema = {'n': 0}
-        self.rows = [ReferenceRow(self.schema, value) for value in values]
+    def __init__(self):
+        self.schema = {}
+        self.rows = []
+
+    def add_column(self, name):
+        name = name.casefold()
+        if name in self.schema:
+            raise ValueError('duplicate column')
+        self.schema[name] = len(self.schema)
+        for row in self.rows:
+            row.append(None)
 
     def get(self, index):
         return self.rows[index]
@@ -105,9 +113,9 @@ case('method.valuelist.find', 'R=0; For I=0 To N-1 Do R=R+A.FindByValue(I).Value
      'r=0\nfor i in range(n):\n    r += a.find_by_value(i).get_member("value")',
      'list_read', 'sum', 'N successful linear searches plus returned Value read; quadratic total work')
 case('method.valuetable.create', 'For I=0 To N-1 Do R=New ValueTable; R.Columns.Add("N"); EndDo;',
-     'for i in range(n):\n    r={"schema":{"n":0},"rows":[]}',
+     'for i in range(n):\n    r=ReferenceTable()\n    r.add_column("N")',
      'for i in range(n):\n    r=BareTable()\n    r.add_column("N")',
-     'none', 'table_empty', 'N one-column table constructions; Python allocates schema and rows, last table retained')
+     'none', 'table_empty', 'N empty tables and one added column each; Python minimal class without indexes, last table retained')
 case('method.valuetable.delete', 'For I=0 To N-1 Do A.Delete(N-I-1); EndDo; R=A;',
      'for i in range(n):\n    del a[n-i-1]\nr=a', 'for i in range(n):\n    a.delete(n-i-1)\nr=a',
      'table_full', 'table_empty', 'N deletions at computed descending row indices')
@@ -167,8 +175,12 @@ def bind(name, n, layer):
             data = ([] if fixture_kind.endswith('empty') else [0]*n if fixture_kind.endswith('zero')
                     else list(reversed(range(n))) if fixture_kind.endswith('reverse') else list(range(n)))
             if layer == 'python':
-                value = (ReferenceTable(data) if name in ('method.valuetable.set', 'method.valuetable.set_positional')
-                         else [[i] if table else [i,'',False,None] for i in data])
+                if name in ('method.valuetable.set', 'method.valuetable.set_positional'):
+                    value = ReferenceTable()
+                    value.add_column('N')
+                    value.rows = [ReferenceRow(value.schema, i) for i in data]
+                else:
+                    value = [[i] if table else [i,'',False,None] for i in data]
             else:
                 value = BareTable() if table else BareValueList()
                 if table: value.add_column('N')
@@ -188,7 +200,7 @@ def bind(name, n, layer):
         return value
     if layer in ('python','classes'):
         source = py if layer == 'python' else cls
-        namespace = {'BareArray': BareArray, 'BareStructure': BareStructure, 'BareMap':BareMap, 'BareValueList':BareValueList, 'BareTable':BareTable}
+        namespace = {'BareArray': BareArray, 'BareStructure': BareStructure, 'BareMap':BareMap, 'BareValueList':BareValueList, 'BareTable':BareTable, 'ReferenceTable':ReferenceTable}
         exec('def run(n,a):\n'+'\n'.join('    '+line for line in source.splitlines())+'\n    return r', namespace)
         function = namespace['run']
         def reset(): reset_fixture()
@@ -227,8 +239,8 @@ def bind(name, n, layer):
             if result_kind.startswith('table') and layer != 'python':
                 if value.schema != {'n':0} or any(row.table is not value for row in value): raise AssertionError('table result metadata')
             if name=='method.valuetable.create' and layer=='python':
-                if value['schema'] != {'n':0}: raise AssertionError('Python schema')
-                actual=value['rows']
+                if type(value) is not ReferenceTable or value.schema != {'n':0}: raise AssertionError('Python schema')
+                actual=value.rows
             else: actual=[list(row) for row in value]
             if actual != expected: raise AssertionError('full nested collection state')
         elif result_kind in ('n','sum','sum_plus_n'):

@@ -196,6 +196,9 @@ def summary(report):
                   'Нет epoch или индексов. Named: a.get(i).set_member("n",i); positional: a.get(i)[0]=i. '
                   'Классы positional выполняют тот же a.get(i)[0]=i на BareTable, что и BSL: это контроль трансляции. '
                   'Подготовка таблиц и полная проверка результата вне таймера. Один проход на сценарий.', '']
+    if any(case == 'method.valuetable.create' for case, _, _ in measured):
+        lines += ['Эталон Python для create: конструктор пустой таблицы и отдельный '
+                  'add_column("N") внутри замера, без epoch или индексов.', '']
     for n in (512,4096):
         lines += [f'### N={n}', '| Сценарий | Python мс | Классы × | Bare с компиляцией × | Готовый bare × | Python/C готового bare |', '|---|---:|---:|---:|---:|---:|']
         for case in CONTRACTS:
