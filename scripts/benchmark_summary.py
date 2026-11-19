@@ -37,6 +37,11 @@ def render(report):
               'Подготовка и первое исполнение записаны отдельно в исходном JSON. '
               'API BSL указан ниже: execute_program включает выполняемую внутри него подготовку. '
               'Эти микротесты не измеряют всё приложение и не доказывают полную семантическую эквивалентность; общие машины CI дают шум.', '']
+    names = {case['case'] for case in report['cases']}
+    if 'arithmetic.int' in names:
+        lines += ['`arithmetic.int`: Python считает на `int` и один раз преобразует итог в `Decimal`; столбец классов использует числовые операции yadinassi на `Decimal`.', '']
+    if 'arithmetic.fractional' in names:
+        lines += ['`arithmetic.fractional`: контроль с дробным множителем на `Decimal`. Исходный сценарий `arithmetic` не изменён.', '']
     lines += ['| Подготовка / первый вызов | Разбор + подготовка BSL, мс | Первое исполнение BSL, мс |', '|---|---:|---:|']
     for case in report['cases']:
         if 'preparation_seconds' in case:

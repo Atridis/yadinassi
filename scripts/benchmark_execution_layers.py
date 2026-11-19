@@ -23,7 +23,7 @@ from yadinassi.types.values import BSLArray, HostFunction, Reference
 
 D = Decimal
 LAYERS = ('python', 'python_classes', 'bsl')
-CASES = ('arithmetic', 'calls', 'byref', 'array', 'map')
+CASES = ('arithmetic', 'arithmetic.int', 'arithmetic.fractional', 'calls', 'byref', 'array', 'map')
 
 
 @dataclass
@@ -40,7 +40,7 @@ def workload(name, n):
         raise ValueError('iterations must be an integer in 1..100000')
     if name not in CASES:
         raise ValueError('unknown workload')
-    # Decimal throughout: no int/float speed advantage or rounding mismatch.
+    # Keep the historical Decimal baselines unchanged.
     one, three, seven = D(1), D(3), D(7)
     if name == 'arithmetic':
         def native():
@@ -55,6 +55,28 @@ def workload(name, n):
             return s
         body = f'r=0;For i=1 To {n} Do r=r+i*3-7;EndDo;'
         expected = D(3*n*(n+1)//2 - 7*n)
+    elif name in ('arithmetic.int', 'arithmetic.fractional'):
+        factor = three if name == 'arithmetic.int' else D('3.25')
+        if name == 'arithmetic.int':
+            def native():
+                s = 0
+                for i in range(1, n + 1):
+                    s += i * 3
+                return D(s)
+            expected = D(3 * (n * (n + 1) // 2))
+        else:
+            def native():
+                s = D(0)
+                for i in range(1, n + 1):
+                    s += D(i) * factor
+                return s
+            expected = D(325 * (n * (n + 1) // 2)).scaleb(-2)
+        def classes():
+            s = D(0)
+            for i in range(1, n + 1):
+                s = binary_values('+', s, binary_values('*', D(i), factor))
+            return s
+        body = f'r=0;For i=1 To {n} Do r=r+i*{factor};EndDo;'
     elif name == 'calls':
         def native():
             def inc(x): return x + one

@@ -27,6 +27,8 @@ Each workload has three hand-written, result-equivalent implementations:
 | Workload | Native Python | Python using yadinassi | BSL |
 |---|---|---|---|
 | arithmetic | Decimal operators | `binary_values` operators | arithmetic loop |
+| arithmetic.int | `int` multiply/add; final result converted once to Decimal | `binary_values` on Decimal | closed integer accumulator, eligible for native lowering |
+| arithmetic.fractional | Decimal multiply/add | `binary_values` on Decimal | same loop shape with a fractional multiplier |
 | calls | local Python value function | `HostFunction` plus numeric operators | source `Function`, `Val` argument |
 | byref | explicit mutable one-slot cell | `Reference` and reference-declared `HostFunction` | default by-reference source procedure |
 | array | `list.append` and index reads | `BSLArray.add/get` and numeric operators | `Array.Add` and index reads |
@@ -34,9 +36,10 @@ Each workload has three hand-written, result-equivalent implementations:
 
 There is no yadinassi scalar-number wrapper class: BSL numbers are `Decimal`.
 Therefore the classes column uses the actual numeric operator helper rather than
-inventing a proxy. All three columns use Decimal values and exact bounded integer
-arithmetic; the native column is not quietly using faster floats or ints for the
-workload's data. Python loop control uses `range`; BSL loop control uses its actual
+inventing a proxy. The original arithmetic scenario and its Decimal baseline
+are unchanged. Only the explicitly labeled `arithmetic.int` native reference uses
+integers for the workload's data; none of these cases uses floats.
+Python loop control uses `range`; BSL loop control uses its actual
 backend implementation. Numeric indices are converted according to the API.
 
 This is **equivalence on these workloads**, not general Python/BSL parity.

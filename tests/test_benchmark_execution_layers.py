@@ -1,4 +1,5 @@
 """Correctness and reporting tests, deliberately no timing thresholds."""
+import ast
 import os
 import unittest
 from decimal import Decimal
@@ -8,7 +9,8 @@ from scripts import benchmark_execution_layers as bench
 
 class ExecutionLayerBenchmarkTests(unittest.TestCase):
     def test_triplets_match_independent_expected_values(self):
-        expected = {'arithmetic': Decimal(182), 'calls': Decimal(104),
+        expected = {'arithmetic': Decimal(182), 'arithmetic.int': Decimal(273),
+                    'arithmetic.fractional': Decimal('295.75'), 'calls': Decimal(104),
                     'byref': Decimal(13), 'array': Decimal(78), 'map': Decimal(78)}
         for name, result in expected.items():
             with self.subTest(case=name):
@@ -20,6 +22,20 @@ class ExecutionLayerBenchmarkTests(unittest.TestCase):
                         for run in (job.native, job.classes, bsl):
                             # Reusing prepared callable must not accumulate state.
                             for _ in range(2): bench.validate(run(), result)
+
+    def test_ci_integer_workload_emits_a_native_loop_and_fractional_control_does_not(self):
+        vm = bench.Interpreter()
+        self.addCleanup(vm.close)
+        for name in ('arithmetic', 'arithmetic.int', 'arithmetic.fractional'):
+            with self.subTest(case=name):
+                job = bench.workload(name, 100000)
+                plan = vm.prepare(job.source)
+                tree = ast.parse(plan._plan.generated_source)
+                loops = [node for node in ast.walk(tree) if isinstance(node, ast.For)]
+                self.assertTrue(loops)
+                names = {node.id for node in ast.walk(loops[0]) if isinstance(node, ast.Name)}
+                self.assertEqual('_constants' not in names and '_Decimal' not in names,
+                                 name == 'arithmetic.int')
 
     def test_default_route_uses_public_constructor_without_override(self):
         with patch.object(bench, 'Interpreter', wraps=bench.Interpreter) as constructor:
