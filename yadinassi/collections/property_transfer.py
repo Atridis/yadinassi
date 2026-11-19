@@ -82,8 +82,8 @@ def _instance(value, expected):
                 _invalid('подмена метода объекта не поддерживается')
 
 
-def _sequence(value, kind, maximum):
-    if type(value) is not kind or len(value) > maximum:
+def _sequence(value, kind, maximum=None):
+    if type(value) is not kind or (maximum is not None and len(value) > maximum):
         _invalid('недопустимый состав или превышен предел ресурсов')
     return value
 
@@ -218,7 +218,8 @@ def _row_endpoint(row, budget, target, readable_rows=False):
     _instance(columns, BSLValueTreeColumnCollection if tree_row else BSLValueTableColumnCollection)
     if columns.table is not owner:
         _invalid('неверный владелец колонок')
-    items = _sequence(columns.items if tree_row else _get(columns, '_items'), list, MAX_FIELDS)
+    items = (_sequence(columns.items, list, MAX_FIELDS) if tree_row
+             else _sequence(_get(columns, '_items'), list))
     if tree_row:
         collection = row.collection
         _instance(collection, BSLValueTreeRowCollection)
@@ -254,9 +255,9 @@ def _row_endpoint(row, budget, target, readable_rows=False):
         schema = kernel.schema
         if _get(row, '_owner') is not owner or _get(row, 'schema') is not schema:
             _invalid('неверная схема или владелец строки')
-        keys = _sequence(schema._keys, list, MAX_FIELDS)
-        offsets = _sequence(schema._offsets, dict, MAX_FIELDS)
-        metadata = _sequence(schema._metadata, list, MAX_FIELDS)
+        keys = _sequence(schema._keys, list)
+        offsets = _sequence(schema._offsets, dict)
+        metadata = _sequence(schema._metadata, list)
         if not len(keys)==len(offsets)==len(metadata)==len(items)==list.__len__(row):
             _invalid('состав ячеек не соответствует колонкам')
         if any(type(k) is not str for k in keys) or any(type(k) is not str for k in offsets):

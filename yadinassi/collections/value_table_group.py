@@ -9,7 +9,7 @@ from decimal import Decimal, localcontext
 from yadinassi.temporal.dates import BSLDate
 from yadinassi.types.type_descriptions import _number_value
 from yadinassi.types.values import BSLType, NULL
-from .value_tables import _adjust, _text, _MAX_COLUMNS, _MAX_TOTAL_PRECISION
+from .value_tables import _adjust, _text, _MAX_TOTAL_PRECISION
 
 
 _MAX_GROUP_TEXT = 1_000_000
@@ -19,9 +19,6 @@ def _columns(table, specification):
     if specification is None:
         return []
     specification = _text(specification)
-    # Check before split allocates a potentially huge list of empty names.
-    if specification.count(',') + 1 > _MAX_COLUMNS:
-        raise ValueError('Свернуть: превышен предел колонок Yadinassi')
     names = specification.split(',')
     result = []
     for name in names:

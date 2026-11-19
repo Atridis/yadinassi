@@ -214,7 +214,7 @@ def _admitted(context, state, specification, writes):
             if not description(data['value_type']):return False
             cache=data['_text_cache']
             if cache is not None and (type(cache) is not tuple or len(cache)!=2 or type(cache[0]) is not int or type(cache[1]) is not str):return False
-            if type(items) is not list or type(ids) is not dict or len(ids)!=len(items) or len(items)>values._MAX_ITEMS:return False
+            if type(items) is not list or type(ids) is not dict or len(ids)!=len(items):return False
             if type(data.get('_next_id')) is not int or data['_next_id']!=len(items) or type(data.get('_revision')) is not int or data['_revision']!=len(items):return False
             if any(type(k) is not int for k in ids):return False
             for index,item in enumerate(items):
@@ -245,9 +245,8 @@ def helpers():
     ref=v._DIRECT_REGION_WEAKREF
     table_type,row_type,column_type,columns_type=t._DIRECT_ITERATION_TYPES[0],t._DIRECT_ITERATION_TYPES[2],t._DIRECT_ITERATION_TYPES[3],t._DIRECT_ITERATION_TYPES[1]
     list_type,item_type=v._DIRECT_REGION_TYPES
-    table_limits=dict(t._DIRECT_REGION_LIMITS); list_limits=dict(v._DIRECT_REGION_LIMITS)
+    list_limits=dict(v._DIRECT_REGION_LIMITS)
     def table_add(value):
-        if len(value.rows)>=table_limits["_MAX_ROWS"] or len(value.columns._items)>table_limits["_MAX_COLUMNS"] or (len(value.rows)+1)*len(value.columns._items)>table_limits["_MAX_CELLS"]:raise ValueError("ValueTable growth limit exceeded")
         row=row_type(value,value._storage.schema)
         value._storage.epoch += 1
         value.rows.append(row)
@@ -264,8 +263,6 @@ def helpers():
         row.table._storage.epoch += 1
         list.__setitem__(row,row.schema._offsets[key],value)
     def list_add(value,number):
-        count=len(value.items)
-        if count+1>list_limits['_MAX_ITEMS']:raise ValueError('СписокЗначений: превышен предел ресурсов Yadinassi')
         if value._next_id+1>list_limits['_MAX_ID']:raise ValueError('СписокЗначений: превышен предел идентификаторов Yadinassi')
         if type(number) is Decimal:
             if not number.is_finite():raise ValueError('СписокЗначений: ожидается конечное число')

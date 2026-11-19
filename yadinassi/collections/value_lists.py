@@ -16,7 +16,6 @@ from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.types.values import BSLArray, BSLObject, HostFunction, NULL, equal, to_string
 
 
-_MAX_ITEMS = 100_000
 _MAX_TEXT = 1_000_000
 _MAX_NUMBER_DIGITS = 4096
 _MAX_INTEGER = 2 ** 32
@@ -243,8 +242,6 @@ class BSLValueList(BSLObject):
     def __str__(self):
         if type(self.items) is not list:
             _unsupported("этот контейнер элементов")
-        if len(self.items) > _MAX_ITEMS:
-            _budget()
         cached = self._text_cache
         if cached is not None and cached[0] == self._revision:
             text = cached[1]
@@ -298,9 +295,7 @@ class BSLValueList(BSLObject):
     def set_index(self, index, value):
         raise ValueError("Элементы списка значений недоступны для замены")
 
-    def _allocation(self, count, *, replacing=False):
-        if count + (0 if replacing else len(self.items)) > _MAX_ITEMS:
-            _budget()
+    def _allocation(self, count):
         if self._next_id + count > _MAX_ID:
             _budget("превышен предел идентификаторов")
 
@@ -394,7 +389,7 @@ class BSLValueList(BSLObject):
     def load_values(self, values):
         if type(values) is not BSLArray:
             raise TypeError("ЗагрузитьЗначения ожидает Массив")
-        self._allocation(len(values.items), replacing=True)
+        self._allocation(len(values.items))
         # Validate and allocate the replacement before detaching any live item.
         for value in values.items:
             _value(value)

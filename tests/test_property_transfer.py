@@ -61,6 +61,14 @@ class PropertyTransferRowTests(unittest.TestCase):
         self.assertEqual(last.get_member('Amount'), D(7))
         self.assertEqual(table.count(), D(100_001))
 
+    def test_table_fill_accepts_columns_beyond_former_width_limit(self):
+        table = BSLValueTable()
+        for i in range(4097):
+            table.columns.add(f'C{i}')
+        target = table.add()
+        fill_property_values(target, BSLStructure('C4096', D(7)))
+        self.assertEqual(target.get(4096), D(7))
+
     def test_both_row_families_to_structure_without_adding_properties(self):
         for family in ('table', 'tree'):
             source = row(family, values=('new', D(7)))

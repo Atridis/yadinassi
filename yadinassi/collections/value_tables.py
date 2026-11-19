@@ -13,9 +13,6 @@ from yadinassi.types.type_qualifiers import BSLAllowedLength
 from yadinassi.types.values import (BSLArray, BSLFixedCollection, BSLObject, BSLType,
                      HostFunction, NULL, equal, number)
 
-_MAX_CELLS = 1_000_000
-_MAX_COLUMNS = 4096
-_MAX_ROWS = 100_000
 _MAX_TEXT = 1_000_000
 _MAX_TOTAL_PRECISION = 16_384
 _MAX_INDEXES = 256
@@ -612,7 +609,6 @@ class BSLValueTableColumnCollection(BSLObject):
             raise TypeError("Ожидается ОписаниеТипов")
         title = _text(title)
         width = Decimal(_integer(width) % (2 ** 32))
-        self.table._budget(len(self.table.rows), len(self._items) + 1)
         default = _default(value_type)
         column = BSLValueTableColumn(self.table, name, value_type, title, width)
         self._items.insert(position, column)
@@ -743,11 +739,6 @@ class BSLValueTable(BSLObject):
     def __iter__(self):
         return iter(self.rows)
 
-    @staticmethod
-    def _budget(rows, columns):
-        if rows > _MAX_ROWS or columns > _MAX_COLUMNS or rows * columns > _MAX_CELLS:
-            raise ValueError("ТаблицаЗначений: превышен предел ресурсов Yadinassi")
-
     def get(self, index):
         return self.rows[_position(index, len(self.rows))]
 
@@ -765,7 +756,6 @@ class BSLValueTable(BSLObject):
     def _insert_at(self, position):
         if self.indexes.items and position != len(self.rows):
             raise ValueError("Вставка не в конец таблицы с индексами пока не подтверждена")
-        self._budget(len(self.rows) + 1, len(self.columns._items))
         if self.indexes.items:
             self.indexes._budget(rows=len(self.rows) + 1)
         row = BSLValueTableRow(self)
@@ -812,8 +802,6 @@ class BSLValueTable(BSLObject):
             return list(self.columns._items)
         _text(columns)
         names = columns.split(",")
-        if len(names) > _MAX_COLUMNS:
-            raise ValueError("ТаблицаЗначений: превышен предел ресурсов Yadinassi")
         if any(not n or n != n.strip() for n in names):
             raise ValueError("Пустые имена и пробелы в списке колонок пока не поддерживаются")
         return [self.columns.get_index(name) for name in names]
@@ -929,7 +917,6 @@ class BSLValueTable(BSLObject):
             source = rows.items
         else:
             raise TypeError("Ожидается Массив строк или Структура отбора")
-        self._budget(len(source), len(selected))
         for row in source:
             if type(row) is not BSLValueTableRow:
                 raise TypeError("Ожидается строка таблицы")

@@ -159,14 +159,17 @@ class CollectionRegionsTests(unittest.TestCase):
             outputs.append((snapshot(vm),error))
         self.assertEqual(*outputs);self.assertEqual(len(outputs[1][0]['t'][1]),1)
 
-    def test_budget_limit_override_keeps_partial_state(self):
-        from yadinassi.collections import value_lists as lists,value_tables as tables
-        with patch.object(lists,'_MAX_ITEMS',3):
-            values,error=self.paired('T=New ValueList;For I=0 To 5 Do T.Add(I);EndDo;')
-            self.assertIsNotNone(error);self.assertEqual(len(values['t'][1]),3)
-        with patch.object(tables,'_MAX_ROWS',3):
-            values,error=self.paired('T=New ValueTable;T.Columns.Add("N");For I=0 To 5 Do Row=T.Add();Row.N=I;EndDo;')
-            self.assertIsNotNone(error);self.assertEqual(len(values['t'][2]),3)
+    def test_list_leaf_keeps_identifier_limit(self):
+        from yadinassi.collections import value_lists as lists
+        from yadinassi.execution.direct.python_direct_collection_regions import helpers
+        class Context:
+            def _check(self): pass
+        values = lists.BSLValueList()
+        values._next_id = lists._MAX_ID
+        with self.assertRaisesRegex(ValueError, 'идентификаторов'):
+            helpers()['list_add'](Context(), values, Decimal(1))
+        self.assertEqual(values.items, [])
+        self.assertEqual(values._next_id, lists._MAX_ID)
 
     def test_mutated_registration_never_becomes_raw_receiver(self):
         def install(vm):
