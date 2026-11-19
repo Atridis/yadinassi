@@ -293,8 +293,10 @@ class ScanOptimizationTests(unittest.TestCase):
         self.assertTrue(all(type(card) is CatalogCard and card.tabular_sections == self.expected()
                             for card in cards))
         self.assertLessEqual(len(statements), 52, statements)
+        # Schema admission happened before tracing; selection reuses that
+        # snapshot while the total statement bound still guards batching.
         self.assertEqual(sum(sql.startswith('SELECT definition FROM catalog_schema')
-                             for sql in statements), 1)
+                             for sql in statements), 0)
 
     def test_selection_corruption_refuses_before_constructing_cards(self):
         from yadinassi.db.catalog.catalog_backend import CatalogSelection

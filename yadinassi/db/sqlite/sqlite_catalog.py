@@ -1086,6 +1086,22 @@ class SQLiteCatalogBackend:
         if self.format_version == 16:
             from yadinassi.configuration.configuration_main_demo import MainDemoConfiguration
             if type(self.accumulation_configuration) is MainDemoConfiguration:
+                config = self.accumulation_configuration
+                # This is only policy selection, not permission to write. For an
+                # already admitted catalog with no handler, avoid opening another
+                # read transaction merely to discover that absence. begin_write
+                # still validates current source/schema under BEGIN IMMEDIATE
+                # before any row mutation. Active leases and expected-source
+                # requests retain their existing validation path.
+                if (self._active is None and expected is None
+                        and type(config.catalog_handlers) is tuple
+                        and all(type(g) is tuple and len(g) == 3 and type(g[0]) is UUID
+                                for g in config.catalog_handlers)
+                        and not any(g[0] == catalog_id for g in config.catalog_handlers)
+                        and type(self._schemas) is tuple
+                        and any(type(c) is CatalogSchema and type(c.identity) is UUID
+                                and c.identity == catalog_id for c in self._schemas)):
+                    return None
                 return self._main_demo_write_source(catalog_id, expected=expected)
         profile = _source_profile_for_issues(self.activation_issues)
         business = profile in (BUSINESS_PROFILE, REFERENCE_PROFILE)
@@ -2029,7 +2045,10 @@ class _View:
         if type(row[1]) is not int or not 1 <= row[1] < 2**63 or type(row[2]) is not str or len(row[2]) > schema.code_length or type(row[3]) is not str or len(row[3]) > schema.description_length or type(row[4]) is not int or row[4] not in (0,1): raise BackendError('integrity')
         validate_string(row[2], schema.code_length)
         validate_string(row[3], schema.description_length)
-        key = CatalogKey(self.database_id, catalog_id, UUID(row[0]))
+        raw_id = row[0]
+        if type(raw_id) is not str or len(raw_id) > 36:
+            raise BackendError('integrity')
+        key = CatalogKey(self.database_id, catalog_id, UUID(raw_id))
         _uuid(key.record_id)
         revision = Revision(self.database_id,self.configuration_generation,catalog_id,key.record_id,str(row[1]))
         parent, is_folder = hierarchy_storage.values(self,schema,key.record_id)
@@ -2388,7 +2407,8 @@ class _View:
         proof=self.aggregate_catalog(catalog_id,CatalogAggregateRequest())
         if proof is None:return None
         table,_,where,args=self._source(schema)
-        row=self._connection.execute('SELECT COUNT(*),'+','.join(expressions)+' FROM '+table+' WHERE '+where,args).fetchone()
+        clause = '' if where == '1' and not args else ' WHERE ' + where
+        row=self._connection.execute('SELECT COUNT(*),'+','.join(expressions)+' FROM '+table+clause,args).fetchone()
         if type(row) is not tuple or len(row)!=len(expressions)+1 or type(row[0]) is not int or row[0]!=proof.count:
             raise BackendError('integrity')
         return CatalogNumericAggregateResult(proof.count,row[1:])
@@ -2412,6 +2432,9 @@ class _View:
             return None
         self._validate_scan_scalars(catalog_id, schema)
         table, _, where, args = self._source(schema)
+        # An unconditional WHERE disables SQLite's dedicated Count opcode.
+        # Keep actual source predicates (notably the shared-table v1 filter).
+        clause = '' if where == '1' and not args else ' WHERE ' + where
         proof = ('catalog-count-unique-v1', catalog_id, schema)
         previous = self._validated_sources.get(proof) if self._cache_validation_allowed() else None
         if previous is None:
@@ -2419,7 +2442,7 @@ class _View:
             # can normalize to one logical identity. Match relational seen-set.
             row = self._connection.execute(
                 'SELECT COUNT(*), COUNT(DISTINCT record_id COLLATE yadinassi_uuid_v1) '
-                'FROM %s WHERE %s' % (table, where), args).fetchone()
+                'FROM %s%s' % (table, clause), args).fetchone()
             if (type(row) is not tuple or len(row) != 2
                     or any(type(value) is not int for value in row)
                     or not 0 <= row[0] <= _MAX_ROWS or row[0] != row[1]):
@@ -2427,7 +2450,7 @@ class _View:
             count = row[0]
             if self._cache_validation_allowed():self._validated_sources[proof] = (count,)
         else:
-            row = self._connection.execute('SELECT COUNT(*) FROM %s WHERE %s' % (table,where),args).fetchone()
+            row = self._connection.execute('SELECT COUNT(*) FROM %s%s' % (table,clause),args).fetchone()
             if (type(previous) is not tuple or len(previous) != 1 or type(previous[0]) is not int
                     or type(row) is not tuple or len(row) != 1 or type(row[0]) is not int
                     or row != previous):
@@ -2866,7 +2889,8 @@ class _View:
         sections = self._draft_sections(draft); self._section_write_budget(sections)
         schema = self.catalog_schema(draft.key.catalog_id)
         table, columns, where, args = self._source(schema)
-        if self._connection.execute('SELECT COUNT(*) FROM %s WHERE %s' % (table,where),args).fetchone()[0] >= _MAX_ROWS:
+        clause = '' if where == '1' and not args else ' WHERE ' + where
+        if self._connection.execute('SELECT COUNT(*) FROM %s%s' % (table,clause),args).fetchone()[0] >= _MAX_ROWS:
             raise BackendError('unsupported')
         with self._atomic_record():
             hierarchy_storage.prepare(self,schema,draft,creating=True)
