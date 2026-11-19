@@ -22,7 +22,7 @@ def _flag(value):
 
 
 def _index(value):
-    if type(value) not in (int, Decimal) or not 0 <= value <= MAX_UNITS:
+    if (type(value) is not int and type(value) is not Decimal) or not 0 <= value <= MAX_UNITS:
         raise ValueError('DOM: неверный индекс')
     if int(value) != value: raise ValueError('DOM: индекс должен быть целым')
     return int(value)
@@ -67,7 +67,7 @@ K = BSLDOMNodeType
 
 
 def _node(value):
-    if type(value) not in _NODE_CLASSES: raise TypeError('DOM: ожидается узел DOM')
+    if not any(type(value) is kind for kind in _NODE_CLASSES): raise TypeError('DOM: ожидается узел DOM')
     return value
 
 

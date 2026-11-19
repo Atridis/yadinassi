@@ -299,6 +299,11 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         return _ForwardReference(canonical)
     def resolve_service(self,name,*args,**kwargs):
         self._check();key=name.casefold()
+        if key in ('new:xmlreadersettings','new:параметрычтенияxml',
+                'new:xmlwritersettings','new:параметрызаписиxml','new:dombuilder',
+                'new:построительdom','new:domwriter','new:записьdom','new:domdocument',
+                'new:документdom','new:domnamespaceresolver','new:разыменователь пространств имен dom xpath'):
+            raise BoundaryViolation('standalone XML/DOM constructor is not admitted in source scope')
         if key.startswith('new:') and key[4:] in xdto_json.CONSTRUCTOR_NAMES:
             return xdto_json.resolve_constructor(self,key,**kwargs)
         if key.startswith('new:') and key[4:] in xdto_xml.CONSTRUCTOR_NAMES:

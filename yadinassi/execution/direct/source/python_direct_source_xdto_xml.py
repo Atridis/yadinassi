@@ -155,6 +155,8 @@ def resolve_constructor(boundary,name,*,argument_count=None,require_value=False,
     check(argument_count)
     def create(*args):
         check(len(args));value=kind();_state(value);_COUNTS[app]=_COUNTS.get(app,0)+1
+        from ..python_direct_xml_ownership import mark_source_owned
+        mark_source_owned(value)
         _save(boundary,value);return value
     if allow_references:create.requires_reference=lambda index:False
     return create

@@ -16,6 +16,12 @@ from yadinassi.db.document.document_posting_values import DOCUMENT_WRITE_MODES
 from yadinassi.collections.structures import BSLStructure, BSLFixedStructure, BSLKeyAndValue
 from yadinassi.types.values import HostFunction, BSLArray, BSLFixedArray
 from decimal import Decimal
+from .python_direct_xml_ownership import reject_source_owned as _reject_source_xml
+from yadinassi.formats.xml.dom_io import BSLDOMBuilder, BSLDOMWriter
+from yadinassi.formats.xml.dom_nodes import _NODE_CLASSES, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap
+from yadinassi.formats.xml.dom_xpath import BSLDOMNamespaceResolver, BSLDOMXPathResult
+from yadinassi.formats.xml.xml_io import BSLXMLReader, BSLXMLReaderSettings, BSLXMLNamespaceContext
+from yadinassi.formats.xml.xml_writer import BSLXMLWriter, BSLXMLWriterSettings
 from yadinassi.formats.regex.regex_functions import BSLRegexResult, BSLRegexGroup
 from yadinassi.streams.file_io import BSLFile, BSLBinaryData
 from yadinassi.http.http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse
@@ -37,7 +43,8 @@ NAMES=('metadata','метаданные','catalogs','справочники','do
 
 # Canonical detached receivers only; child rows/items and database owners still
 # traverse live ownership validation. Public protocols retain resource guards.
-_DETACHED_TYPES=(BSLValueList, BSLValueTable, BSLTypeDescription, BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers, BSLQueryResult, BSLQueryResultSelection, BSLStructure, BSLFixedStructure, BSLKeyAndValue, BSLArray, BSLFixedArray, BSLFixedMap, BSLRegexResult, BSLRegexGroup, BSLFile, BSLBinaryData, BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BSLBinaryDataBuffer, BSLMemoryStream, BSLStream, BSLMap, BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings)
+_DOM_LISTS=(BSLDOMNodeList,BSLDOMElementList,BSLDOMAttributeMap)
+_DETACHED_TYPES=(*_NODE_CLASSES,*_DOM_LISTS,BSLDOMBuilder,BSLDOMWriter,BSLDOMNamespaceResolver,BSLDOMXPathResult,BSLXMLReader, BSLXMLReaderSettings, BSLXMLNamespaceContext, BSLXMLWriter, BSLXMLWriterSettings, BSLValueList, BSLValueTable, BSLTypeDescription, BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers, BSLQueryResult, BSLQueryResultSelection, BSLStructure, BSLFixedStructure, BSLKeyAndValue, BSLArray, BSLFixedArray, BSLFixedMap, BSLRegexResult, BSLRegexGroup, BSLFile, BSLBinaryData, BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BSLBinaryDataBuffer, BSLMemoryStream, BSLStream, BSLMap, BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings)
 _DETACHED_TYPE_IDS=frozenset(map(id,_DETACHED_TYPES))
 
 class CatalogBoundary:
@@ -50,6 +57,7 @@ class CatalogBoundary:
         if id(value) in SYSTEM_VALUE_IDS:return
         root=self.vm._catalogs
         kind=type(value)
+        if kind is BSLXMLReader or kind is BSLXMLWriter:_reject_source_xml(value)
         if id(kind) in _DETACHED_TYPE_IDS:return
         if value is DOCUMENT_WRITE_MODES:return
         if kind is BSLDocuments: owner=value._catalogs
@@ -177,6 +185,28 @@ class CatalogBoundary:
         return super().reference_index(value,index)
 
     def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
+        if type(value) is BSLXMLReader or type(value) is BSLXMLWriter:
+            self._catalog_owner(value)
+            function=value.get_method(name)
+            if type(function) is not HostFunction:raise BoundaryViolation('XML method requires canonical wrapper')
+            self._validate_host_function(function,require_value)
+            key=name.casefold();optional=()
+            if key in ('openfile','открытьфайл','openstream','открытьпоток'):
+                optional=(1,2,3) if type(value) is BSLXMLReader else (1,2)
+            elif key in ('setstring','установитьстроку'):
+                optional=(1,2) if type(value) is BSLXMLReader else (0,)
+            elif type(value) is BSLXMLReader and key in ('movetocontent','перейтиксодержимому'):
+                optional=(0,)
+            if any(index not in optional for index in omitted):raise TypeError('XML required argument omitted')
+            def invoke(*args):
+                self._catalog_owner(value)
+                values=list(args) if omitted else args
+                for index in omitted:values[index]=None
+                for argument in values:
+                    if type(argument) is BSLXMLReader or type(argument) is BSLXMLWriter:_reject_source_xml(argument)
+                try:return function(*values)
+                finally:self._check()
+            return invoke
         # Preserve the public JSON function/procedure contract before argument
         # evaluation. This is only a restriction on an already admitted surface.
         if require_value and any(type(value) is cls for cls in (BSLJSONReader, BSLJSONWriter)):
@@ -243,12 +273,14 @@ class CatalogBoundary:
         self._catalog_owner(value)
         if type(value) in (BSLArray, BSLFixedArray) and name.casefold() in ('get','получить'):
             function=value.get
+        elif name=='__getitem__' and any(type(value) is kind for kind in _DOM_LISTS):
+            function=value.item
         elif name=='__getitem__':
             function=value.get if type(value) in (BSLArray, BSLFixedArray, BSLMap, BSLFixedStructure) else lambda index:value.get_index(index)
         elif name=='__setitem__':
             function=value.set if type(value) in (BSLArray, BSLFixedArray, BSLMap, BSLFixedMap, BSLFixedStructure) else lambda index,new:value.set_index(index,new)
         elif name=='__iter__':
-            if type(value) not in (BSLArray, BSLFixedArray, BSLFixedStructure, BSLFixedMap, BSLValueList, BSLCollectionIndex, BSLCollectionIndexes) and not any(value is item for item in ITERABLES):
+            if type(value) not in (BSLArray, BSLFixedArray, BSLFixedStructure, BSLFixedMap, BSLValueList, BSLCollectionIndex, BSLCollectionIndexes) and not any(value is item for item in ITERABLES) and not any(type(value) is kind for kind in _DOM_LISTS):
                 raise BoundaryViolation('direct database iterator not connected')
             function=lambda:iter(value)
         else:
@@ -258,6 +290,9 @@ class CatalogBoundary:
         self._check()
         def invoke(*args):
             self._catalog_owner(value)
+            if type(value) is BSLDOMBuilder or type(value) is BSLDOMWriter:
+                for argument in args:
+                    if type(argument) is BSLXMLReader or type(argument) is BSLXMLWriter:_reject_source_xml(argument)
             try:return function(*args)
             finally:self._check()
         return invoke

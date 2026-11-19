@@ -1,4 +1,9 @@
 """Finite canonical constructors for direct JSON, regex and HTTP/file protocols."""
+from yadinassi.formats.xml.dom_io import BSLDOMBuilder, BSLDOMWriter
+from yadinassi.formats.xml.dom_nodes import BSLDOMDocument
+from yadinassi.formats.xml.dom_xpath import BSLDOMNamespaceResolver
+from yadinassi.formats.xml.xml_io import BSLXMLReader, BSLXMLReaderSettings
+from yadinassi.formats.xml.xml_writer import BSLXMLWriter, BSLXMLWriterSettings
 from yadinassi.streams.file_io import BSLFile, BSLBinaryData
 from yadinassi.streams.text_documents import BSLTextDocument
 from .source import python_direct_source_resources as text_resources
@@ -53,6 +58,14 @@ CONSTRUCTORS = {
         (('binarydatabuffer','буфердвоичныхданных'),BSLBinaryDataBuffer),
         (('httpconnection','httpсоединение'),BSLHTTPConnection),
         (('httprequest','httpзапрос'),BSLHTTPRequest),
+        (('dombuilder','построительdom'),BSLDOMBuilder),
+        (('domwriter','записьdom'),BSLDOMWriter),
+        (('domdocument','документdom'),BSLDOMDocument),
+        (('domnamespaceresolver','разыменователь пространств имен dom xpath'),BSLDOMNamespaceResolver),
+        (('xmlreader','чтениеxml'),BSLXMLReader),
+        (('xmlwriter','записьxml'),BSLXMLWriter),
+        (('xmlreadersettings','параметрычтенияxml'),BSLXMLReaderSettings),
+        (('xmlwritersettings','параметрызаписиxml'),BSLXMLWriterSettings),
         (('jsonreader','чтениеjson'),BSLJSONReader),
         (('jsonwriter','записьjson'),BSLJSONWriter),
         (('jsonwritersettings','параметрызаписиjson'),BSLJSONWriterSettings),
@@ -251,10 +264,12 @@ class ServicesBoundary:
             if expected is None:
                 raise ValueError('Тип не определен: '+name[4:])
             factory=self.vm.types.get(key[4:])
+            if factory is None and expected in (BSLDOMBuilder,BSLDOMWriter,BSLDOMDocument,BSLDOMNamespaceResolver,BSLXMLReader,BSLXMLReaderSettings,BSLXMLWriter,BSLXMLWriterSettings):
+                raise ValueError('Тип не определен: '+name[4:])
             if type(factory) is not HostFunction or factory.function is not expected:
                 raise BoundaryViolation('direct constructor requires canonical registration: '+key[4:])
             bound=super().resolve_callable(factory)
-            if expected in (BSLHTTPConnection,BSLHTTPRequest,BSLFile,BSLBinaryData,BSLBinaryDataBuffer,BSLValueList,BSLValueTable,BSLTypeDescription,BSLNumberQualifiers,BSLStringQualifiers,BSLDateQualifiers,BSLBinaryDataQualifiers):
+            if expected in (BSLDOMBuilder,BSLDOMWriter,BSLDOMDocument,BSLDOMNamespaceResolver,BSLXMLReader,BSLXMLWriter,BSLXMLReaderSettings,BSLXMLWriterSettings,BSLHTTPConnection,BSLHTTPRequest,BSLFile,BSLBinaryData,BSLBinaryDataBuffer,BSLValueList,BSLValueTable,BSLTypeDescription,BSLNumberQualifiers,BSLStringQualifiers,BSLDateQualifiers,BSLBinaryDataQualifiers):
                 original=bound
                 def guarded(*values):
                     self._check()
@@ -291,7 +306,7 @@ class ServicesBoundary:
                     return bound,{index:None for index in positions}
                 callback_constructor.prepare_omissions=prepare_omissions
                 bound=callback_constructor
-            if expected is BSLTypeDescription:
+            if expected in (BSLTypeDescription,BSLXMLReaderSettings,BSLXMLWriterSettings):
                 def prepare_omissions(bound,positions,count):
                     self._check()
                     return bound,{index:None for index in positions}
