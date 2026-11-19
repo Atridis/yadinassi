@@ -216,6 +216,7 @@ def main():
     index={(r['case'],r['n'],r['layer']): r for r in report['rows']}
     for case in CONTRACTS:
         for n in (512,4096):
+            if case == 'method.valuetable.find' and n == 4096: continue
             try:
                 for row in measure_case(case,n,args.rounds): index[row['case'],n,row['layer']].update(row,reason=None)
             except Exception as exc:

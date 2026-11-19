@@ -1,7 +1,8 @@
 """Explicit new contracts for the next recovery slice, not historical source parity."""
 from yadinassi import Interpreter, native_bare_compiler as bare
 from yadinassi.syntax.parser import parse
-from yadinassi.native_bare_collections import BareArray, BareStructure
+from yadinassi.native_bare_collections import BareArray, BareStructure, BareMap, BareValueList
+from yadinassi.native_bare_table import BareTable
 
 # BSL source, Python source, classes source, fixture kind, result kind, description.
 CASES = {}
@@ -49,14 +50,78 @@ case('byref', 'Procedure Inc(X) X=X+1; EndProcedure; R=0; For I=0 To N-1 Do Inc(
      'none', 'n', 'N scalar byref increments; Python uses one mutable list cell, not a scalar-return substitute')
 
 
+case('method.map.create', 'For I=0 To N-1 Do R=New Map; EndDo;',
+     'for i in range(n):\n    r={}', 'for i in range(n):\n    r=BareMap()',
+     'none', 'empty_structure', 'N empty Map constructions; last result retained')
+case('method.map.delete', 'For I=0 To N-1 Do A.Delete(I); EndDo; R=A;',
+     'for i in range(n):\n    a.pop(i,None)\nr=a', 'for i in range(n):\n    a.delete(i)\nr=a',
+     'map_full', 'empty_structure', 'N distinct integer key deletions, prefilled Map')
+case('method.valuelist.create', 'For I=0 To N-1 Do R=New ValueList; EndDo;',
+     'for i in range(n):\n    r=[]', 'for i in range(n):\n    r=BareValueList()',
+     'none', 'empty_array', 'N empty ValueList constructions; last result retained')
+case('method.valuelist.delete', 'For I=0 To N-1 Do A.Delete(N-I-1); EndDo; R=A;',
+     'for i in range(n):\n    del a[n-i-1]\nr=a', 'for i in range(n):\n    a.delete(n-i-1)\nr=a',
+     'list_full', 'empty_array', 'N deletions at computed descending item indices')
+case('method.valuelist.insert', 'For I=0 To N-1 Do A.Insert(0,I); EndDo; R=A;',
+     'for i in range(n):\n    a.insert(0,[i,"",False,None])\nr=a', 'for i in range(n):\n    a.insert(0,i)\nr=a',
+     'list_empty', 'list_reverse', 'N insertions at index zero; four default fields retained')
+case('method.valuelist.set', 'For I=0 To N-1 Do A.Get(I).Value=I; EndDo; R=A;',
+     'for i in range(n):\n    a[i][0]=i\nr=a', 'for i in range(n):\n    a.get(i).set_member("value",i)\nr=a',
+     'list_zero', 'list_ascending', 'N Value field writes on existing four-field items')
+case('method.valuelist.sort', 'A.SortByValue(); R=A;',
+     'a.sort(key=lambda item:item[0])\nr=a', 'a.sort_by_value()\nr=a',
+     'list_reverse', 'list_ascending', 'One ascending value sort of N reverse-ordered items')
+case('method.valuelist.find', 'R=0; For I=0 To N-1 Do R=R+A.FindByValue(I).Value; EndDo;',
+     'r=0\nfor i in range(n):\n    r += next(item for item in a if item[0]==i)[0]',
+     'r=0\nfor i in range(n):\n    r += a.find_by_value(i).get_member("value")',
+     'list_read', 'sum', 'N successful linear searches plus returned Value read; quadratic total work')
+case('method.valuetable.create', 'For I=0 To N-1 Do R=New ValueTable; R.Columns.Add("N"); EndDo;',
+     'for i in range(n):\n    r={"schema":{"n":0},"rows":[]}',
+     'for i in range(n):\n    r=BareTable()\n    r.add_column("N")',
+     'none', 'table_empty', 'N one-column table constructions; Python allocates schema and rows, last table retained')
+case('method.valuetable.delete', 'For I=0 To N-1 Do A.Delete(N-I-1); EndDo; R=A;',
+     'for i in range(n):\n    del a[n-i-1]\nr=a', 'for i in range(n):\n    a.delete(n-i-1)\nr=a',
+     'table_full', 'table_empty', 'N deletions at computed descending row indices')
+case('method.valuetable.insert', 'For I=0 To N-1 Do A.Insert(0); EndDo; R=A;',
+     'for i in range(n):\n    a.insert(0,[None])\nr=a', 'for i in range(n):\n    a.insert(0)\nr=a',
+     'table_empty', 'table_null', 'N default one-cell row insertions at zero')
+case('method.valuetable.set', 'For I=0 To N-1 Do A.Get(I).N=I; EndDo; R=A;',
+     'for i in range(n):\n    a[i][0]=i\nr=a', 'for i in range(n):\n    a.get(i).set_member("n",i)\nr=a',
+     'table_zero', 'table_ascending', 'N named cell writes in prefilled one-column table')
+case('method.valuetable.set_positional', 'For I=0 To N-1 Do A.Get(I)[0]=I; EndDo; R=A;',
+     'for i in range(n):\n    a[i][0]=i\nr=a', 'for i in range(n):\n    a.get(i).set(0,i)\nr=a',
+     'table_zero', 'table_ascending', 'N positional cell writes in prefilled one-column table')
+case('method.valuetable.sort', 'A.Sort("N"); R=A;',
+     'a.sort(key=lambda row:row[0])\nr=a', 'a.sort("N")\nr=a',
+     'table_reverse', 'table_ascending', 'One ascending named-column sort of N reverse-ordered rows')
+case('method.valuetable.find', 'R=0; For I=0 To N-1 Do R=R+A.Find(I,"N").N; EndDo;',
+     'r=0\nfor i in range(n):\n    r += next(row for row in a if row[0]==i)[0]',
+     'r=0\nfor i in range(n):\n    r += a.find(i,"N").get_member("n")',
+     'table_read', 'sum', 'N successful linear searches and named cell reads; N4096 deliberately skipped')
+
+
 def bind(name, n, layer):
     bsl, py, cls, fixture_kind, result_kind, note = CASES[name]
     current = [None]
     before = [None]
     def snapshot(value):
-        return list(dict.items(value)) if fixture_kind.startswith('structure') else list(value)
+        return list(dict.items(value)) if fixture_kind.startswith(('structure','map')) else [list(row) for row in value] if fixture_kind.startswith(('table','list')) else list(value)
     def reset_fixture():
         if fixture_kind == 'none': value = None
+        elif fixture_kind == 'map_full':
+            data = {i:i for i in range(n)}
+            value = data if layer=='python' else BareMap(data)
+        elif fixture_kind.startswith(('table','list')):
+            table = fixture_kind.startswith('table')
+            data = ([] if fixture_kind.endswith('empty') else [0]*n if fixture_kind.endswith('zero')
+                    else list(reversed(range(n))) if fixture_kind.endswith('reverse') else list(range(n)))
+            if layer == 'python': value = [[i] if table else [i,'',False,None] for i in data]
+            else:
+                value = BareTable() if table else BareValueList()
+                if table: value.add_column('N')
+                for i in data:
+                    if table: value.add()[0]=i
+                    else: value.add(i)
         elif fixture_kind.startswith('array'):
             data = [] if fixture_kind == 'array_empty' else list(range(n))
             if layer == 'python': value = data
@@ -70,7 +135,7 @@ def bind(name, n, layer):
         return value
     if layer in ('python','classes'):
         source = py if layer == 'python' else cls
-        namespace = {'BareArray': BareArray, 'BareStructure': BareStructure}
+        namespace = {'BareArray': BareArray, 'BareStructure': BareStructure, 'BareMap':BareMap, 'BareValueList':BareValueList, 'BareTable':BareTable}
         exec('def run(n,a):\n'+'\n'.join('    '+line for line in source.splitlines())+'\n    return r', namespace)
         function = namespace['run']
         def reset(): reset_fixture()
@@ -87,7 +152,22 @@ def bind(name, n, layer):
     def validate(value):
         if fixture_kind.endswith('read') and snapshot(current[0]) != before[0]:
             raise AssertionError('read workload mutated fixture')
-        if result_kind in ('n','sum','sum_plus_n'):
+        if fixture_kind.startswith('table') and layer != 'python':
+            if current[0].schema != {'n':0} or any(row.table is not current[0] for row in current[0]):
+                raise AssertionError('table schema/row ownership changed')
+        if result_kind.startswith(('table_','list_')):
+            if result_kind == 'table_empty': expected=[]
+            elif result_kind == 'table_null': expected=[[None] for _ in range(n)]
+            elif result_kind == 'table_ascending': expected=[[i] for i in range(n)]
+            else: expected=[[i,'',False,None] for i in (reversed(range(n)) if result_kind=='list_reverse' else range(n))]
+            if result_kind.startswith('table') and layer != 'python':
+                if value.schema != {'n':0} or any(row.table is not value for row in value): raise AssertionError('table result metadata')
+            if name=='method.valuetable.create' and layer=='python':
+                if value['schema'] != {'n':0}: raise AssertionError('Python schema')
+                actual=value['rows']
+            else: actual=[list(row) for row in value]
+            if actual != expected: raise AssertionError('full nested collection state')
+        elif result_kind in ('n','sum','sum_plus_n'):
             expected = {'n':n,'sum':n*(n-1)//2,'sum_plus_n':n*(n+1)//2}[result_kind]
             if type(value) is not int or value != expected: raise AssertionError((name,value,expected))
         elif result_kind in ('empty_structure','last_structure'):

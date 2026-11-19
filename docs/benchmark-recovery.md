@@ -115,3 +115,18 @@ function in each timed call; byref uses an explicit mutable cell in Python and a
 BSL procedure incrementing its actual argument. Fixture creation and validation
 remain outside timing; both compilation-included and preprepared bare paths are
 checked. All raw workload sources and their hashes remain in the JSON.
+
+## All method identifiers bound (46 total)
+
+The next slice adds Map.Create/Delete, six remaining ValueList methods and seven
+remaining ValueTable methods. These are newly specified contracts; old bound
+workloads are unchanged. Empty constructors retain only their final result;
+Table.Create allocates a one-column schema in every layer. Insert prepends, Delete
+uses computed descending indices, Set mutates existing cells/items, Sort sorts
+reverse-ordered fixtures once, and Find performs N successful searches plus a
+returned field read. Table.Find N4096 remains an explicit skip and is never run by
+the matrix runner. ValueList.Find N4096 is measured (quadratic total work).
+Nested row/item fields, table schema and row owners are validated after execution;
+read-only search fixtures are checked for mutation. No adapters or runtime changes
+are introduced. Six core IDs remain unbound rather than pretending their original
+workload bodies survived: arithmetic, array, map, string.concat/replace/slice.

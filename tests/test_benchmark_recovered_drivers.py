@@ -74,3 +74,28 @@ class MoreDriversTests(unittest.TestCase):
         self.assertIn('remaining missing',CONTRACTS['method.structure.delete'][3])
         self.assertIn('quadratic',CONTRACTS['method.array.find'][3])
         self.assertIn('mutable list cell',CONTRACTS['byref'][3])
+
+class TableListDriversTests(unittest.TestCase):
+    def test_nested_result_corruption_and_reset(self):
+        names=('method.valuetable.create','method.valuetable.delete','method.valuetable.insert',
+               'method.valuetable.set','method.valuetable.set_positional','method.valuetable.sort',
+               'method.valuelist.insert','method.valuelist.set','method.valuelist.sort')
+        for name in names:
+            for layer in ('python','classes','default','prepared'):
+                with self.subTest(name=name,layer=layer):
+                    reset,run,validate,_,_=binding(name,5,layer)
+                    reset(); value=run(); validate(value)
+                    if name=='method.valuetable.create' and layer=='python': value['schema']['extra']=1
+                    elif 'valuetable' in name and layer!='python': value.schema['extra']=1
+                    elif len(value): value[0][0]=999
+                    else: value.append([999])
+                    with self.assertRaises(AssertionError): validate(value)
+                    reset(); validate(run())
+    def test_all_method_ids_bound(self):
+        from scripts.benchmark_recovery import load_manifest
+        self.assertEqual(set(load_manifest()['method']) - set(CONTRACTS),set())
+    def test_searches_exact_results_small_sizes(self):
+        for name in ('method.valuelist.find','method.valuetable.find'):
+            for layer in ('python','classes','default','prepared'):
+                reset,run,validate,_,_=binding(name,11,layer)
+                reset(); result=run(); self.assertEqual(result,55); validate(result)
