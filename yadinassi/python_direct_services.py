@@ -21,12 +21,15 @@ from .experimental_naked_structure import _DirectStructure as _DirectStructureTy
 from .type_values import _DIRECT_TYPE_OF_ABI
 from .serialization import _DIRECT_VALUE_TO_STRING_ABI, _direct_value_to_string_internal
 from .runtime import _eval_marker
+from .callbacks import callback_description_marker
+from .direct_callbacks import CallbackDescription as _CallbackDescription, construct as _new_callback, read as _callback_read
 
 _REGEX_IMPLEMENTATIONS=tuple(regex_functions.FUNCTIONS)
 _REGEX_IDENTITIES=frozenset(map(id,_REGEX_IMPLEMENTATIONS))
 
 CONSTRUCTORS = {
     alias: factory for aliases,factory in (
+        (('callbackdescription','описаниеоповещения'),callback_description_marker),
         (('fixedmap','фиксированноесоответствие'),BSLFixedMap),
         (('fixedarray','фиксированныймассив'),BSLFixedArray),
         (('fixedstructure','фиксированнаяструктура'),BSLFixedStructure),
@@ -69,6 +72,7 @@ def _string_callable(context,function,*,name=None,require_value=False,allow_refe
             if function.function is not _DIRECT_TO_STRING_ABI:
                 raise BoundaryViolation('String implementation changed during argument evaluation')
             kind=type(value)
+            if kind is _CallbackDescription:return 'ОписаниеОповещения'
             if kind is list:return 'Массив'
             if kind is _DirectStructureType:return 'Структура'
             if kind is _DirectMapType:return 'Соответствие'
@@ -84,6 +88,9 @@ def _string_callable(context,function,*,name=None,require_value=False,allow_refe
 
 class ServicesBoundary:
     def get_member(self,value,name):
+        if type(value) is _CallbackDescription:
+            self._check()
+            return _callback_read(value,name)
         if value is None:
             self._check();raise ValueError('Значение не является значением объектного типа')
         from .python_direct_error_info import owns, read
@@ -216,6 +223,22 @@ class ServicesBoundary:
                     except PermissionError as error:raise BoundaryViolation(str(error)) from error
                     finally:self._check()
                 bound=fixed_constructor
+            if expected is callback_description_marker:
+                def callback_constructor(*values):
+                    self._check()
+                    if factory.function is not expected:
+                        raise BoundaryViolation('canonical callback constructor changed')
+                    self._before('call_value',factory.name.casefold())
+                    if factory.function is not expected:
+                        raise BoundaryViolation('canonical callback constructor changed at policy boundary')
+                    try:return _new_callback(*values)
+                    finally:self._check()
+                def prepare_omissions(bound,positions,count):
+                    self._check()
+                    if count>5:raise TypeError('ОписаниеОповещения ожидает от 0 до 5 аргументов')
+                    return bound,{index:None for index in positions}
+                callback_constructor.prepare_omissions=prepare_omissions
+                bound=callback_constructor
             if expected is BSLTypeDescription:
                 def prepare_omissions(bound,positions,count):
                     self._check()
@@ -240,6 +263,7 @@ class ServicesBoundary:
                 from .values import BSLType
                 kind=type(value)
                 if kind is list:return BSLType.ARRAY
+                if kind is _CallbackDescription:return BSLType.CALLBACK_DESCRIPTION
                 if kind is _DirectStructure:return BSLType.STRUCTURE
                 if kind is _TypedMap:return BSLType.MAP
                 if kind is _CanonicalMapEntry:return BSLType.KEY_AND_VALUE
