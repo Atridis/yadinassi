@@ -137,8 +137,7 @@ def unload(columns, rows):
     """Build a fully validated report without invoking or inventing defaults."""
     from .queries import _description as scalar_description
     from .type_descriptions import _query_nullable_description
-    from .value_tables import BSLValueTable, BSLValueTableColumn, BSLValueTableRow
-    from decimal import Decimal
+    from .query_table_materialization import materialize
     descriptions = tuple(_description(c.reference_binding) if c.reference_binding is not None
                          else _query_nullable_description(scalar_description(c)) for c in columns)
     for values in rows:
@@ -147,17 +146,7 @@ def unload(columns, rows):
         for column, value in zip(columns, values):
             if value is not NULL and column.reference_binding is not None:
                 column.reference_binding.value(value)
-    table = BSLValueTable()
-    table._budget(len(rows), len(columns))
-    for column, description in zip(columns, descriptions):
-        table.columns._validate_name(column.name)
-        table.columns._append_materialized(BSLValueTableColumn(table, column.name, description, '', Decimal(0)))
-    for values in rows:
-        row = object.__new__(BSLValueTableRow)
-        row.table, row._deleted = table, False
-        row.cells = dict(zip(table.columns.items, values))
-        table.rows.append(row)
-    return table
+    return materialize(columns, descriptions, rows)
 
 
 def input_bindings(tables, catalogs, documents):

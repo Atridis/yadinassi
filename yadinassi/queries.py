@@ -417,19 +417,10 @@ class BSLQueryResult(BSLObject):
         if any(column.reference_binding is not None for column in self._columns):
             from .query_reference_tables import unload
             return unload(self._columns, self._rows)
-        descriptions = tuple(_description(column) for column in self._columns)
-        table = BSLValueTable()
-        for column, description in zip(self._columns, descriptions):
-            table.columns.add(column.name, description)
-        for values in self._rows:
-            row = table.add()
-            for column, value in zip(table.columns.items, values):
-                row.cells[column] = value
-        # Build data using known scalar defaults first. Only then expose the
-        # measured nullable metadata. New-row defaults/coercions remain refused.
-        for column, description in zip(table.columns.items, descriptions):
-            column.value_type = _query_nullable_description(description)
-        return table
+        from .query_table_materialization import materialize
+        descriptions = tuple(_query_nullable_description(_description(column))
+                             for column in self._columns)
+        return materialize(self._columns, descriptions, self._rows)
 
 
 class BSLQueryResultSelection(BSLObject):
