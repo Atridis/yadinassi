@@ -191,7 +191,7 @@ class Emitter:
     def __init__(self,filename,source):
         self.filename=filename;self.source=source;self.constants=[];self.serial=0
         self.has_goto=False;self.goto_last_expression=None
-        self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.module_boundaries=0;self.range_indices={}
+        self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.module_boundaries=0;self.range_indices={}
         self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
         self.import_names=frozenset();self.require_last_expression=None;self.region_active=False;self.region_ops={};self.region_states={};self.routines={};self.routine_symbols={};self.module_globals=set();self.scope=None;self.source_refs={};self.loop_increments=[];self.required=set();self.visits=0;self.python_nodes=0
     def node(self,kind,token,**fields):
@@ -416,7 +416,7 @@ class Emitter:
             external=(type(node) is bsl.Call and type(callee) is not bsl.Attribute and not internal) or type(node) is bsl.DynamicNew
             external=external or (type(node) is bsl.New and node.name.casefold() not in ('array','массив','map','соответствие','structure','структура'))
             if external:value=self.module_boundary(value,node.token)
-            elif type(node) in (bsl.Binary,bsl.Unary):value=self.live_result(value,node.token)
+            elif type(node) in (bsl.Binary,bsl.Unary) and id(node) not in self.scalar_kinds:value=self.live_result(value,node.token)
         if not self.catalog_bounds:return value
         t=node.token
         step=self.invoke(self.attribute(self.name('_context',t),'preparation_step',t),[],t)
@@ -494,6 +494,15 @@ class Emitter:
             if op in ('AND','OR'):
                 return self.node(py.BoolOp,t,op=py.And() if op=='AND' else py.Or(),values=[self.truth(node.left,t),self.truth(node.right,t)])
             left=self.expr(node.left);right=self.expr(node.right)
+            left_kind=self.scalar_kinds.get(id(node.left))
+            right_kind=self.scalar_kinds.get(id(node.right))
+            if id(node) in self.scalar_kinds and left_kind==right_kind:
+                if op=='+' and left_kind=='number':
+                    return self.node(py.BinOp,t,left=left,op=py.Add(),right=right)
+                if left_kind in ('number','bool'):
+                    relation={'=':py.Eq,'<>':py.NotEq,'<':py.Lt,'<=':py.LtE,'>':py.Gt,'>=':py.GtE}.get(op)
+                    if relation is not None:
+                        return self.node(py.Compare,t,left=left,ops=[relation()],comparators=[right])
             if op=='+':
                 if (type(node.left) is bsl.Literal and type(node.left.value) is not str) or (self.native_cells and type(node.right) is bsl.Literal and type(node.right.value) is Decimal):
                     return self.node(py.BinOp,t,left=left,op=py.Add(),right=right)
@@ -990,6 +999,10 @@ class Emitter:
         if type(node) is bsl.Literal:
             if type(node.value) is bool:return self.expr(node)
             if not self.catalog_bounds and type(node.value) is Decimal:return self.literal(node.value!=0,token)
+        kind=self.scalar_kinds.get(id(node))
+        if kind=='bool':return self.expr(node)
+        if kind=='number':
+            return self.node(py.Compare,token,left=self.expr(node),ops=[py.NotEq()],comparators=[self.const(0,token)])
         return self.call('_truth',[self.expr(node)],token)
     def sequence(self,nodes):
         if self.has_goto and any(type(node) is bsl.Goto for node in nodes):
@@ -1659,6 +1672,9 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             elif type(value) in (list,tuple):pending.extend(value)
         names-=emitter.external_names|emitter.module_globals|{'thisobject','этотобъект'}
         emitter.module_cells.intersection_update(names)
+        if not has_goto:
+            opaque=emitter.external_names|emitter.module_globals|emitter.module_cells
+            emitter.scalar_kinds=analyze_static(program,opaque_names=opaque,scalar_prefix=True)
         if names:
             static_facts=analyze_static(program,opaque_names=emitter.external_names|emitter.module_globals)
             emitter.static_module_kinds={} if static_facts is None else static_facts[1]

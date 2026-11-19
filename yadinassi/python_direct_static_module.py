@@ -10,12 +10,14 @@ from .syntax import ast as bsl
 class _Decline(Exception):pass
 
 
-def analyze(program, opaque_names=()):
+def analyze(program, opaque_names=(), *, scalar_prefix=False):
     kinds={};names=set();opaque=set(opaque_names)|{'thisobject','этотобъект'}
     def require(condition):
         if not condition:raise _Decline
     def expression(node,env):
         k=type(node)
+        if scalar_prefix:
+            require(k in (bsl.Group,bsl.Literal,bsl.Name,bsl.Binary,bsl.Unary,bsl.Conditional))
         if k is bsl.Group:kind=expression(node.expression,env)
         elif k is bsl.Literal:
             require(type(node.value) in (Decimal,bool,str));kind='number' if type(node.value) is Decimal else 'bool' if type(node.value) is bool else 'string'
@@ -75,6 +77,7 @@ def analyze(program, opaque_names=()):
         for node in nodes:
             k=type(node)
             if k is bsl.Assign:
+                if scalar_prefix:require(type(node.target) is bsl.Name)
                 kind=expression(node.value,env)
                 if type(node.target) is bsl.Name:assign(node.target.name,kind,env)
                 elif type(node.target) is bsl.Index:
@@ -88,7 +91,8 @@ def analyze(program, opaque_names=()):
                 else:raise _Decline
             elif k is bsl.ExpressionStatement:
                 call=node.expression
-                if type(call) is bsl.Call and type(call.callee) is bsl.Attribute and call.callee.name.casefold() in ('add','добавить') and expression(call.callee.object,env)=='array':
+                if scalar_prefix:expression(call,env)
+                elif type(call) is bsl.Call and type(call.callee) is bsl.Attribute and call.callee.name.casefold() in ('add','добавить') and expression(call.callee.object,env)=='array':
                     require(expression(call.callee.object,env)=='array' and len(call.arguments)==1)
                     require(expression(call.arguments[0],env)=='number');kinds[id(call)]='append'
                 elif type(call) is bsl.Call and type(call.callee) is bsl.Attribute and call.callee.name.casefold() in ('insert','вставить'):
@@ -114,6 +118,17 @@ def analyze(program, opaque_names=()):
             elif k in (bsl.Break,bsl.Continue):pass
             else:raise _Decline
         return env
+    if scalar_prefix:
+        # Reuse the existing transfer rules. An unknown statement is a
+        # boundary for following code, never for an already proven prefix.
+        env={}
+        for node in program:
+            committed=len(kinds)
+            try:sequence((node,),env)
+            except _Decline:
+                while len(kinds)>committed:kinds.popitem()
+                break
+        return kinds
     try:sequence(program,{})
     except _Decline:return None
     return tuple(sorted(names)),kinds
