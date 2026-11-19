@@ -16,7 +16,7 @@ from types import ModuleType as _ModuleType
 from _operator import add as _NATIVE_ADD, getitem as _NATIVE_GETITEM
 from functools import partial
 from .experimental_naked_collections import _TypedMap, _NakedMap, _checked_array_index, _native_property_write_missing, _native_property_missing, _MapEntry, _array_insert_shape, _native_method_missing, _ALIASES, _canonical_reference, _IndexRef, _AttributeRef, _procedure_value_error, _routine_value_error, _argument_count_error, _OMITTED_REF, _Cell, _as_ref, _bound_ref, _UNSET_REF
-from .experimental_naked_structure import _DirectStructure, structure_get_known, structure_property
+from .experimental_naked_structure import _DirectStructure, structure_get_known, structure_set_known, structure_property
 from .experimental_naked_array_methods import array_method_value
 from yadinassi.execution.direct.python_direct_cells import host_reference as _native_host_reference
 from yadinassi.execution.direct.python_direct_cells import NativeCell as _NativeCell,adapt as _adapt_native_cell,reference as _native_cell_reference,fragment_binding as _native_fragment_binding
@@ -191,7 +191,7 @@ class Emitter:
     def __init__(self,filename,source):
         self.filename=filename;self.source=source;self.constants=[];self.serial=0
         self.has_goto=False;self.goto_last_expression=None
-        self.integer_lane=False;self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.module_boundaries=0;self.range_indices={}
+        self.local_field_facts={};self.integer_lane=False;self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.module_boundaries=0;self.range_indices={}
         self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
         self.import_names=frozenset();self.require_last_expression=None;self.region_active=False;self.region_ops={};self.region_states={};self.routines={};self.routine_symbols={};self.module_globals=set();self.scope=None;self.source_refs={};self.loop_increments=[];self.required=set();self.visits=0;self.python_nodes=0
     def node(self,kind,token,**fields):
@@ -526,6 +526,8 @@ class Emitter:
             left=self.expr(node.left);right=self.expr(node.right)
             left_kind=self.scalar_kinds.get(id(node.left))
             right_kind=self.scalar_kinds.get(id(node.right))
+            if id(node) in self.scalar_kinds and op=='+' and left_kind=='string':
+                return self.call('_concatenate',[left,right],t)
             if id(node) in self.scalar_kinds and left_kind==right_kind:
                 if op=='+' and left_kind=='number':
                     return self.node(py.BinOp,t,left=left,op=py.Add(),right=right)
@@ -535,6 +537,8 @@ class Emitter:
                         return self.node(py.Compare,t,left=left,ops=[relation()],comparators=[right])
             if op=='+':
                 if (type(node.left) is bsl.Literal and type(node.left.value) is not str) or (self.native_cells and type(node.right) is bsl.Literal and type(node.right.value) is Decimal):
+                    return self.node(py.BinOp,t,left=left,op=py.Add(),right=right)
+                if not (self.owned_constructors or self.authority or self.source_scopes or self.catalog_bounds or self.host_bindings):
                     return self.node(py.BinOp,t,left=left,op=py.Add(),right=right)
                 # Preserve ordinary-direct left-temporary lifetime, evaluate
                 # the type decision before RHS, and emit RHS only once.
@@ -588,6 +592,8 @@ class Emitter:
                     [self.node(py.keyword,t,arg='argument_count',value=self.const(len(node.arguments),t))] if self.source_scopes else [])
             return self.invoke(bound,args,t)
         if k is bsl.Attribute:
+            if self.local_field_facts.get(id(node))=='structure':
+                return self.call('_structure_get_known',[self.expr(node.object),self.const(node.name.casefold(),t),self.const(node.name,t)],t)
             receiver=self.temp()
             bind=self.node(py.NamedExpr,t,target=self.name(receiver,t,True),value=self.expr(node.object))
             def exact(kind):return self.exact_native(kind,self.name(receiver,t),t)
@@ -1223,6 +1229,10 @@ class Emitter:
             test=self.node(py.Compare,t,left=self.name(writer,t),ops=[py.IsNot()],comparators=[self.const(None,t)])
             body.append(self.node(py.If,t,test=test,body=[invoke],orelse=[write]));return self.receiver_statements(body,receiver,t)
         if k is bsl.Assign and type(node.target) is bsl.Attribute:
+            if self.local_field_facts.get(id(node))=='structure':
+                target=node.target
+                call=self.call('_structure_set_known',[self.expr(target.object),self.const(target.name.casefold(),t),self.const(target.name,t),self.expr(node.value)],t)
+                return [self.node(py.Expr,t,value=call)]
             if self.static_module_kinds:
                 target=node.target;owner=self.static_module_kinds[id(target.object)]
                 receiver=self.expr(target.object);value=self.expr(node.value)
@@ -1304,21 +1314,36 @@ class Emitter:
             for branch in reversed(branches):branch.orelse=tail;tail=[branch]
             return tail
         if k is bsl.For:
-            if (self.static_module_kinds or (self.scope is None and node.name.casefold() in self.static_module_names and not self.authority and not self.catalog_bounds and not self.source_scopes)) and type(node.start) is bsl.Literal and type(node.end) is bsl.Literal:
+            routine_path=self.native_cells and bool(self.routines) and node.name.casefold() in self.static_module_names
+            local_path=self.scope is None and node.name.casefold() in self.static_module_names and not self.authority and not self.catalog_bounds and not self.source_scopes
+            if (self.static_module_kinds or routine_path or local_path) and type(node.start) is bsl.Literal and type(node.end) is bsl.Literal:
                 start,end=node.start.value,node.end.value
                 pending=list(node.body);mutated=False
                 while pending:
                     value=pending.pop()
                     if type(value) is bsl.Assign and type(value.target) is bsl.Name and value.target.name.casefold()==node.name.casefold():mutated=True
                     if type(value) in (bsl.For,bsl.ForEach) and value.name.casefold()==node.name.casefold():mutated=True
-                    if not self.static_module_kinds:
+                    if routine_path and not self.static_module_kinds:
+                        # Preserve the existing direct-routine path: an
+                        # opaque call or passing the counter by reference
+                        # still requires the live counter loop.
+                        if type(value) in (bsl.Execute,bsl.DynamicNew):mutated=True
+                        if type(value) is bsl.Call:
+                            callee=value.callee
+                            if type(callee) is not bsl.Name or callee.name.casefold() not in self.routines:mutated=True
+                            else:
+                                for parameter,arg in zip(self.routines[callee.name.casefold()].parameters,value.arguments):
+                                    while type(arg) is bsl.Group:arg=arg.expression
+                                    if not parameter.by_value and type(arg) is bsl.Name and arg.name.casefold()==node.name.casefold():mutated=True
+                    elif not self.static_module_kinds:
                         # Unknown calls, including known routines that may write
                         # module globals, can change the induction variable.
                         # A call elsewhere in the module does not affect this loop.
                         if type(value) in (bsl.Execute,bsl.DynamicNew,bsl.Call,bsl.New):mutated=True
+                        if type(value) is bsl.Attribute and id(value) in self.local_field_facts:continue
                         if type(value) in (bsl.Attribute,bsl.Index):mutated=True
                         if type(value) in (bsl.Name,bsl.Binary,bsl.Unary) and id(value) not in self.scalar_kinds:mutated=True
-                    if type(value) is bsl.Assign and type(value.target) is bsl.Name:pending.append(value.value)
+                    if type(value) is bsl.Assign and (type(value.target) is bsl.Name or id(value) in self.local_field_facts):pending.append(value.value)
                     elif isinstance(value,bsl.Node):pending.extend(getattr(value,f.name) for f in fields(value) if f.name!='token' and not (type(value) is bsl.Literal and f.name=='value'))
                     elif type(value) in (list,tuple):pending.extend(value)
                 if not mutated and type(start) is Decimal and type(end) is Decimal and start.is_finite() and end.is_finite() and start.as_tuple().exponent==0 and end.as_tuple().exponent==0:
@@ -1714,6 +1739,11 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             static_facts=analyze_static(program,opaque_names=emitter.external_names|emitter.module_globals)
             emitter.static_module_kinds={} if static_facts is None else static_facts[1]
             emitter.static_module_names={key:emitter.temp() for key in sorted(names)}
+        if (not has_goto and static_facts is None and not emitter.authority and not emitter.source_scopes
+                and not emitter.catalog_bounds and (not emitter.routines or emitter.native_cells)):
+            from yadinassi.execution.direct.python_direct_local_facts import analyze as analyze_local
+            emitter.local_field_facts,local_scalars=analyze_local(program,opaque_names=opaque,routines=emitter.routines)
+            emitter.scalar_kinds.update(local_scalars)
     if static_facts is not None and not emitter.routines and not emitter.module_cells and not emitter.authority and not emitter.catalog_bounds:
         emitter.integer_lane=bool(static_facts[1]) and all(kind in ('number','bool','string','table','row','columns','column') for kind in static_facts[1].values())
         if emitter.integer_lane:emitter.scalar_kinds.update(static_facts[1])
@@ -1778,7 +1808,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         _vt.BSLCollectionIndexes,_vt.BSLCollectionIndex,_vl.BSLValueList,_vl.BSLValueListItem)
     from yadinassi.execution.direct.python_direct_numbers import divide, remainder, sign, public_number
     from yadinassi.collections.plain_table_storage import RowStorage
-    namespace=dict(_raw_table_value=RowStorage.get_value,_raw_table_positional=_vt.BSLValueTableRow._positional_value,_dynamic_remainder=remainder,_dynamic_divide=divide,_dynamic_sign=sign,_dynamic_public_number=public_number,_plain_array_loop=_plain_array_loop,_plain_append_receiver=_plain_append_receiver,_list_append=list.append,_native_host_reference=_native_host_reference,_native_cell_reference=_native_cell_reference,_native_fragment_binding=_native_fragment_binding,_NativeCell=_NativeCell,_adapt_native_cell=_adapt_native_cell,_PrivateTable=_vt.BSLValueTable,_PrivateValueList=PlainValueList,_PlainValueList=PlainValueList,_PlainValueListItem=PlainValueListItem,_module_primitive_type_ids=frozenset(id(kind) for kind in (list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure)),_module_data_types=data_types,_module_data_type_ids=frozenset(id(kind) for kind in data_types),_native_dict_get=dict.get,_native_dict_setitem=dict.__setitem__,_PlainArray=_PlainArray,_Decimal=Decimal,_PlainMap=PlainMap,_plain_map=plain_map,_execute_fragment=execute_fragment,_fragment_binding=_fragment_binding,_bind_eval=bind_eval,_raise_arity_error=raise_arity_error,_host_omission_error=_host_omission_error,_host_omission_values=_host_omission_values,_dynamic_construct=dynamic_construct,_invalid_native_arity=_invalid_native_arity,_typed_find=scalar.typed_find,_list_delete=_list_delete,_native_ubound=_native_ubound,_readonly=readonly,_array_set_checked=_array_set_checked,_bounded_insert=bounded_insert,_structure_insert=structure_insert,_array_constructor_bounds=bounded_array,_new_structure=new_structure,_structure_from_schema=structure_from_schema,_host_name_reference=_host_name_reference,_Cell=_Cell,_as_ref=_as_ref,_bound_ref=_bound_ref,_UNSET_REF=_UNSET_REF,_OMITTED_REF=_OMITTED_REF,_argument_count_error=_argument_count_error,_routine_value_error=_routine_value_error,_procedure_value_error=_procedure_value_error,_identity_reference=_identity_reference,_IndexRef=_IndexRef,_AttributeRef=_AttributeRef,_SlotReference=live_state._SlotReference,_source_reference=source_reference,_canonical_reference=_canonical_reference,_structure_property=structure_property,_native_method_missing=_native_method_missing,_native_count=_native_count,_MapEntry=_MapEntry,_array_member=_array_member,_native_property_missing=_native_property_missing,_structure_get_known=structure_get_known,_native_property_write_missing=_native_property_write_missing,_checked_array_index=_checked_array_index,_partial=partial,_native_getitem=_NATIVE_GETITEM,_list_get=_list_get,_TypedMap=_TypedMap,_NakedMap=_NakedMap,_DirectStructure=_DirectStructure,_host_reference=host_reference,_UNSET=UNSET,_missing=missing,_native_add=_NATIVE_ADD,_concatenate=scalar.concatenate,_divide=scalar.decimal_divide,_sign=scalar.decimal_sign,_order=scalar.uca_order,_truth=scalar.truth,_equal=equal,_not_equal=not_equal,_MISSING=_MISSING,_handled_error=handled_error,_reraise_handled=reraise_handled,_raise_error=raise_error,_presentation=scalar.presentation,_BSLRuntimeError=BSLRuntimeError)
+    namespace=dict(_raw_table_value=RowStorage.get_value,_raw_table_positional=_vt.BSLValueTableRow._positional_value,_dynamic_remainder=remainder,_dynamic_divide=divide,_dynamic_sign=sign,_dynamic_public_number=public_number,_plain_array_loop=_plain_array_loop,_plain_append_receiver=_plain_append_receiver,_list_append=list.append,_native_host_reference=_native_host_reference,_native_cell_reference=_native_cell_reference,_native_fragment_binding=_native_fragment_binding,_NativeCell=_NativeCell,_adapt_native_cell=_adapt_native_cell,_PrivateTable=_vt.BSLValueTable,_PrivateValueList=PlainValueList,_PlainValueList=PlainValueList,_PlainValueListItem=PlainValueListItem,_module_primitive_type_ids=frozenset(id(kind) for kind in (list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure)),_module_data_types=data_types,_module_data_type_ids=frozenset(id(kind) for kind in data_types),_native_dict_get=dict.get,_native_dict_setitem=dict.__setitem__,_PlainArray=_PlainArray,_Decimal=Decimal,_PlainMap=PlainMap,_plain_map=plain_map,_execute_fragment=execute_fragment,_fragment_binding=_fragment_binding,_bind_eval=bind_eval,_raise_arity_error=raise_arity_error,_host_omission_error=_host_omission_error,_host_omission_values=_host_omission_values,_dynamic_construct=dynamic_construct,_invalid_native_arity=_invalid_native_arity,_typed_find=scalar.typed_find,_list_delete=_list_delete,_native_ubound=_native_ubound,_readonly=readonly,_array_set_checked=_array_set_checked,_bounded_insert=bounded_insert,_structure_insert=structure_insert,_array_constructor_bounds=bounded_array,_new_structure=new_structure,_structure_from_schema=structure_from_schema,_host_name_reference=_host_name_reference,_Cell=_Cell,_as_ref=_as_ref,_bound_ref=_bound_ref,_UNSET_REF=_UNSET_REF,_OMITTED_REF=_OMITTED_REF,_argument_count_error=_argument_count_error,_routine_value_error=_routine_value_error,_procedure_value_error=_procedure_value_error,_identity_reference=_identity_reference,_IndexRef=_IndexRef,_AttributeRef=_AttributeRef,_SlotReference=live_state._SlotReference,_source_reference=source_reference,_canonical_reference=_canonical_reference,_structure_property=structure_property,_native_method_missing=_native_method_missing,_native_count=_native_count,_MapEntry=_MapEntry,_array_member=_array_member,_native_property_missing=_native_property_missing,_structure_get_known=structure_get_known,_structure_set_known=structure_set_known,_native_property_write_missing=_native_property_write_missing,_checked_array_index=_checked_array_index,_partial=partial,_native_getitem=_NATIVE_GETITEM,_list_get=_list_get,_TypedMap=_TypedMap,_NakedMap=_NakedMap,_DirectStructure=_DirectStructure,_host_reference=host_reference,_UNSET=UNSET,_missing=missing,_native_add=_NATIVE_ADD,_concatenate=scalar.concatenate,_divide=scalar.decimal_divide,_sign=scalar.decimal_sign,_order=scalar.uca_order,_truth=scalar.truth,_equal=equal,_not_equal=not_equal,_MISSING=_MISSING,_handled_error=handled_error,_reraise_handled=reraise_handled,_raise_error=raise_error,_presentation=scalar.presentation,_BSLRuntimeError=BSLRuntimeError)
     if region_end or any_region:namespace.update(_collection_admitted=admitted,_collection_helpers=helpers(),_routine_region_state_safe=_routine_region_state_safe)
     # Every route genuinely compiles executable code before source effects.
     # Whole-source research additionally parses the actual source, not a fake
