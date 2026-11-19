@@ -148,3 +148,61 @@ class ExplanationDedupTests(unittest.TestCase):
         self.assertEqual(text.count('N/A reason'),1)
         self.assertIn('**form.event**: dispatch.',text)
         self.assertIn('**form.open**: open/close.',text)
+
+
+class DatabaseSectionTests(unittest.TestCase):
+    def db_reports(self):
+        data = reports()
+        for route in ('default', 'prepared'):
+            cases = data['extended-' + route + '.json']['cases']
+            for name in ('db.count', 'db.update'):
+                case = deepcopy(cases[0])
+                case['case'] = name
+                cases.append(case)
+        return data
+
+    def test_db_timings_setup_and_counts_are_separate_for_both_routes(self):
+        data = self.db_reports()
+        for route in ('default', 'prepared'):
+            for case in data['extended-' + route + '.json']['cases'][1:]:
+                case['sql_statements'] = {layer: {'total': count, 'by_verb': {'SELECT': count - 1, 'PRAGMA': 1}}
+                                          for layer, count in [('python', 2), ('python_classes', 6), ('bsl', 10)]}
+        before = deepcopy(data)
+        text, errors = paired.assemble(data)
+        self.assertFalse(errors)
+        self.assertEqual(data, before)
+        extended, db = text.split('### Расширенные сценарии', 1)[1].split('### База данных', 1)
+        self.assertNotIn('| db.count |', extended)
+        self.assertNotIn('| db.update |', extended)
+        for route in ('default', 'prepared'):
+            report = data['extended-' + route + '.json']
+            timing, first, _ = paired.sections(
+                paired.render_extended(dict(report, cases=report['cases'][1:]), include_sql=False))
+            for table in (timing, first):
+                for row in table.splitlines():
+                    if row.startswith(('| db.count |', '| db.update |')):
+                        self.assertIn(row, db)
+        counts = db.split('#### SQL-команды за один замер', 1)[1]
+        self.assertEqual(counts.count('| db.count | 2 | 6 | 10 | 3.00× | 5.00× | 1.67× |'), 2)
+        self.assertIn('Итераций на замер: db.count: 64, db.update: 64.', counts)
+        self.assertIn('без подготовки, сброса', counts)
+
+    def test_historical_absence_zero_and_partial_route_are_not_invented(self):
+        data = self.db_reports()
+        data['extended-prepared.json'] = None
+        case = data['extended-default.json']['cases'][1]
+        case['sql_statements'] = {'python': {'total': 0, 'by_verb': {}}}
+        text, errors = paired.assemble(data)
+        self.assertEqual(errors, ['extended-prepared.json'])
+        self.assertIn('| db.count | 0 | — | — | — | — | — |', text)
+        self.assertIn('| db.update | — | — | — | — | — | — |', text)
+        self.assertIn('Неполный отчёт', text)
+
+    def test_malformed_counts_do_not_masquerade_as_valid_diagnostics(self):
+        data = self.db_reports()
+        data['extended-default.json']['cases'][1]['sql_statements'] = {'bsl': {'total': 9, 'by_verb': {'SELECT': 1}}}
+        text, errors = paired.assemble(data)
+        self.assertEqual(errors, ['extended-default.json'])
+        self.assertIn('### База данных', text)
+        self.assertIn('| db.count |', text)
+        self.assertNotIn('| db.count | 9 |', text)

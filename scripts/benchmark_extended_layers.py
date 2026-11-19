@@ -1,5 +1,6 @@
 """Extended Python/classes/direct reference; no performance thresholds."""
 import argparse
+from collections import Counter
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from decimal import Decimal as D, ROUND_HALF_UP
@@ -16,6 +17,7 @@ import statistics
 import sys
 import time
 import xml.etree.ElementTree as ET
+from unittest.mock import patch
 
 ROOT = next(parent for parent in Path(__file__).resolve().parents
             if (parent / 'pyproject.toml').is_file() and (parent / 'yadinassi').is_dir())
@@ -42,6 +44,9 @@ CASES = ('structure.fields', 'valuetable.build_scan', 'valuelist.build_scan',
          'types.adjust_value', 'json.roundtrip', 'json.streaming_roundtrip', 'xml.scalar_codec', 'file.stat', 'file.binary_roundtrip', 'xml.roundtrip',
          'db.count', 'db.update', 'form.event', 'form.open')
 PREPARED_CASES = tuple(name for name in CASES if not name.startswith('form.'))
+DB_CASES = ('db.count', 'db.update')
+SQL_NOTE = ('SQL-команды за один прогретый замер: включая PRAGMA и команды транзакций; '
+            'без подготовки, сброса и проверки результата. Счётчик запускается отдельно от таймера.')
 
 
 def q(value):
@@ -362,17 +367,21 @@ def make_case(name, n, route, stack, *, catalog_rows=32):
                     value = ref.get_object(ref); value.set_member('Description', str(i)); value.write(); result += 1
                 return result
             source = f'R=0;For I=1 To {n} Do A=Ref.GetObject();A.Description=String(I);A.Write();R=R+1;EndDo;'
-            case.statuses['python'] = {'status': 'not_comparable', 'reason': 'Raw SQLite UPDATE omits catalog writer semantics.'}
+            from scripts.benchmark_sqlite_update_reference import make_update_reference
+            native = make_update_reference(path, str(manager._schema.identity), str(ref.reference_uuid), n)
             def verify(): exact(ref.get_object(ref).get_member('Description'), str(n))
-            case.checks = {'python_classes': verify, 'bsl': verify}
+            def verify_native():
+                native.verify()
+                verify()
+            case.checks = {'python': verify_native, 'python_classes': verify, 'bsl': verify}
             def reset():
                 value=ref.get_object(ref);value.set_member('Description','Before sample');value.write()
-            case.before={'python_classes':reset,'bsl':reset}
+            case.before=dict.fromkeys(LAYERS, reset)
             vm = attach_bsl(case, source, route, stack, context); 
             from yadinassi.types.unique_identifiers import BSLUUID
             vm.variables['ref'] = vm._catalogs.get_member('Склады').get_ref(BSLUUID(str(ref.reference_uuid)))
-            case.runs['python_classes'] = classes
-            case.notes = 'Read/modify/write one existing catalog item; canonical persisted-value readback after every sample; no raw-SQL speed ratio.'
+            case.runs.update(python=native, python_classes=classes)
+            case.notes = labels.SQLITE_UPDATE_NOTE
             return case
         case.runs.update(python=native, python_classes=classes)
         attach_bsl(case, source, route, stack, context)
@@ -446,6 +455,45 @@ def validate(case, layer, result):
     if layer in case.checks: case.checks[layer]()
 
 
+def count_sql_statements(name, n, route):
+    """Trace one warm sample per layer in a fresh fixture, outside timing."""
+    counts = Counter()
+    recording = False
+    original_connect = sqlite3.connect
+
+    def record(statement):
+        if recording:
+            counts[statement.lstrip().split(maxsplit=1)[0].upper()] += 1
+
+    def connect(*args, **kwargs):
+        connection = original_connect(*args, **kwargs)
+        connection.set_trace_callback(record)
+        return connection
+
+    result = {}
+    with patch.object(sqlite3, 'connect', connect), ExitStack() as stack:
+        case = make_case(name, n, route, stack)
+        for layer in LAYERS:
+            run = case.runs[layer]
+            reset = case.before.get(layer)
+            for _ in range(2):
+                if reset: reset()
+                validate(case, layer, run())
+            if reset: reset()
+            counts.clear()
+            recording = True
+            try:
+                value = run()
+            finally:
+                recording = False
+            validate(case, layer, value)
+            total = sum(counts.values())
+            if not total:
+                raise AssertionError(f'{name}: SQL trace missed {layer}')
+            result[layer] = {'total': total, 'by_verb': dict(sorted(counts.items()))}
+    return result
+
+
 def measure(name, n, rounds, route):
     if type(rounds) is not int or not 3 <= rounds <= 20:
         raise ValueError('rounds must be an integer in 3..20')
@@ -481,17 +529,21 @@ def measure(name, n, rounds, route):
         for layer in layers:
             values = [s['seconds'] for s in samples if s['layer'] == layer]; med = statistics.median(values)
             summary[layer] = {'median_seconds': med, 'min_seconds': min(values), 'max_seconds': max(values), 'mad_seconds': statistics.median(abs(v-med) for v in values)}
-        return {'case': name, 'iterations': n, 'operations': case.operations, 'requested_route': route, 'backend': 'python-direct', 'api': case.api, 'source': case.source,
-                'source_sha256': hashlib.sha256(case.source.encode()).hexdigest(), 'expected': str(case.expected), 'notes': case.notes,
-                'fixture_and_prepare_seconds': setup, 'first_execution_seconds': first, 'statuses': case.statuses, 'samples': samples, 'summary': summary}
+        result = {'case': name, 'iterations': n, 'operations': case.operations, 'requested_route': route, 'backend': 'python-direct', 'api': case.api, 'source': case.source,
+                  'source_sha256': hashlib.sha256(case.source.encode()).hexdigest(), 'expected': str(case.expected), 'notes': case.notes,
+                  'fixture_and_prepare_seconds': setup, 'first_execution_seconds': first, 'statuses': case.statuses, 'samples': samples, 'summary': summary}
+    if name in DB_CASES:
+        result['sql_statements'] = count_sql_statements(name, n, route)
+    return result
 
 
-def render(report):
+def render(report, *, include_sql=True):
     if report.get('schema') != 'execution-layers-extended-v1' or not report['cases']:
         raise ValueError('invalid extended report')
     routes=' / '.join(labels.ROUTES.get(route, route) for route in sorted({case['requested_route'] for case in report['cases']}))
     lines = ['## Расширенное сравнение производительности: '+routes, '',
-             'Коммит: `'+report['environment']['git_head']+'`', '', '| Сценарий | Python, мс | Классы yadinassi, мс | BSL, мс | Классы / Python | BSL / Python | BSL / классы |', '|---|---:|---:|---:|---:|---:|---:|']
+             'Коммит: `'+report['environment']['git_head']+'`', '']
+    tables = {False: [], True: []}
     for case in report['cases']:
         values = {k:v['median_seconds'] for k,v in case['summary'].items()}
         if not values or set(values) - set(LAYERS) or any(type(v) not in (int, float) or not math.isfinite(v) or v <= 0 for v in values.values()):
@@ -503,14 +555,39 @@ def render(report):
         cells = [f'{values[k]*1000:.3f}' if k in values else '—' for k in LAYERS]
         ratios = [ratio_cell(values['bsl']/values[k]) if 'bsl' in values and k in values and values[k]>0 else '—' for k in ('python','python_classes')]
         ratios.insert(0,ratio_cell(values['python_classes']/values['python']) if 'python' in values and 'python_classes' in values and values['python']>0 else '—')
-        lines.append('| '+case['case']+' | '+' | '.join(cells+ratios)+' |')
+        database = case['case'] in DB_CASES
+        if database and include_sql:
+            sql = case.get('sql_statements', {})
+            python = sql.get('python', {}).get('total')
+            bsl = sql.get('bsl', {}).get('total')
+            cells_sql = [str(count) if count is not None else '—' for count in (python, bsl)]
+            cells_sql.append(ratio_cell(bsl/python) if python and bsl is not None else '—')
+        else:
+            cells_sql = []
+        tables[database].append('| '+case['case']+' | '+' | '.join(cells+ratios+cells_sql)+' |')
     lines += ['', 'Индикаторы коэффициентов (до округления): 🟩 0 ≤ коэффициент < 2; 🟨 2 ≤ коэффициент ≤ 3; 🟧 коэффициент > 3. Ячейки времени не окрашиваются.', '', 'Медианы после прогрева; подготовка, первые вызовы и все замеры сохранены в JSON. Порогов скорости нет. Недоступные сравнения обозначены явно, а не нулём.', '']
-    lines += ['| Подготовка / первый вызов | Общие тестовые данные + подготовка BSL, мс | Первый Python, мс | Первый вызов классов, мс | Первый BSL, мс |', '|---|---:|---:|---:|---:|']
-    for case in report['cases']:
-        first=case['first_execution_seconds']
-        cells=[f'{first[k]*1000:.3f}' if k in first else '—' for k in LAYERS]
-        lines.append('| '+case['case']+' | '+f'{case["fixture_and_prepare_seconds"]*1000:.3f}'+' | '+' | '.join(cells)+' |')
-    lines.append('')
+    def add_tables(database):
+        if not tables[database]:
+            return
+        header = '| Сценарий | Python, мс | Классы yadinassi, мс | BSL, мс | Классы / Python | BSL / Python | BSL / классы |'
+        divider = '|---|---:|---:|---:|---:|---:|---:|'
+        if database and include_sql:
+            lines.extend(['### Операции SQLite', '', SQL_NOTE, ''])
+            header += ' SQL Python | SQL yadinassi (BSL) | SQL BSL / Python |'
+            divider += '---:|---:|---:|'
+        lines.extend([header, divider, *tables[database], '',
+                      '| Подготовка / первый вызов | Общие тестовые данные + подготовка BSL, мс | Первый Python, мс | Первый вызов классов, мс | Первый BSL, мс |',
+                      '|---|---:|---:|---:|---:|'])
+        for case in report['cases']:
+            if (case['case'] in DB_CASES) != database:
+                continue
+            first=case['first_execution_seconds']
+            cells=[f'{first[k]*1000:.3f}' if k in first else '—' for k in LAYERS]
+            lines.append('| '+case['case']+' | '+f'{case["fixture_and_prepare_seconds"]*1000:.3f}'+' | '+' | '.join(cells)+' |')
+        lines.append('')
+
+    add_tables(False)
+    add_tables(True)
     api_groups = {}
     for case in report['cases']:
         api_groups.setdefault((case['api'], case['requested_route']), []).append(case['case'])

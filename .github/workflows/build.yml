@@ -185,7 +185,7 @@ jobs:
           python scripts/benchmark_execution_layers.py --bsl-route prepared --iterations 100000 --rounds 9 > performance-results/execution-layers-prepared.json
           python scripts/benchmark_summary.py performance-results/execution-layers-prepared.json > performance-results/summary-prepared.md
       - name: Check extended benchmark correctness
-        run: python -m unittest tests.test_benchmark_extended_layers
+        run: python -m unittest tests.test_benchmark_extended_layers tests.test_benchmark_sqlite_update_reference
       - name: Measure extended default reference
         run: |
           python scripts/benchmark_extended_layers.py --iterations 64 --rounds 5 --bsl-route default --output performance-results/extended-default.json --summary performance-results/extended-default.md

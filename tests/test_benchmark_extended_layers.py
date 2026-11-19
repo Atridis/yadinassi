@@ -31,7 +31,22 @@ class ExtendedReferenceTests(unittest.TestCase):
                     self.assertTrue(case['samples'])
                     for sample in case['samples']:
                         self.assertEqual(Decimal(sample['result']),Decimal(expected[name]))
-                    if name=='db.update':self.assertNotIn('python',case['summary'])
+                    if name in bench.DB_CASES:
+                        self.assertEqual(set(case['summary']), set(bench.LAYERS))
+                        self.assertEqual(set(case['sql_statements']), set(bench.LAYERS))
+                        for sql in case['sql_statements'].values():
+                            self.assertEqual(sql['total'], sum(sql['by_verb'].values()))
+                        raw = case['sql_statements']['python']
+                        if name == 'db.count':
+                            self.assertEqual(raw, {'total': 3, 'by_verb': {'SELECT': 3}})
+                        else:
+                            for sql in case['sql_statements'].values():
+                                self.assertEqual(sql['by_verb']['UPDATE'], 3)
+                                self.assertEqual(sql['by_verb']['INSERT'], 3)
+                            self.assertEqual(raw['total'], 39)
+                            self.assertEqual(raw['by_verb']['COMMIT'], 6)
+                    else:
+                        self.assertNotIn('sql_statements', case)
                     if name.startswith('form.'):
                         self.assertEqual(set(case['summary']),{'bsl'})
                         self.assertIn('FormSession',case['api'])
@@ -162,11 +177,31 @@ class ExtendedReferenceTests(unittest.TestCase):
             self.assertTrue(all(any(c in cell for c in '🟩🟨🟧') for cell in timing[4:]))
             self.assertFalse(any(c in rows[1] for c in '🟩🟨🟧'))
         case = bench.measure('db.update', 1, 3, 'default')
-        text = bench.render({**data, 'cases':[case]})
+        historical = copy.deepcopy(case)
+        historical['summary'].pop('python')
+        historical['first_execution_seconds'].pop('python')
+        historical.pop('sql_statements')
+        historical['statuses']['python'] = {'status': 'not_comparable', 'reason': 'no baseline'}
+        text = bench.render({**data, 'cases':[historical]})
         row = next(line for line in text.splitlines() if line.startswith('| db.update |'))
         cells = [cell.strip() for cell in row.split('|')[1:-1]]
         self.assertEqual((cells[1],cells[4],cells[5]), ('—','—','—'))
+        self.assertEqual(cells[-3:], ['—','—','—'])
         self.assertTrue(any(c in cells[6] for c in '🟩🟨🟧'))
+
+    def test_db_timings_and_sql_separate_from_general_cases(self):
+        regular = bench.measure('structure.fields', 1, 3, 'prepared')
+        db = bench.measure('db.count', 1, 3, 'prepared')
+        text = bench.render({'schema': 'execution-layers-extended-v1',
+                             'environment': {'git_head': 'test'}, 'cases': [regular, db]})
+        main, sql = text.split('### Операции SQLite', 1)
+        self.assertNotIn('| db.count |', main)
+        self.assertNotIn('| structure.fields |', sql)
+        self.assertEqual(sql.count('| db.count |'), 2)  # timings and first call
+        row = next(line for line in sql.splitlines() if line.startswith('| db.count |'))
+        n = db['sql_statements']['bsl']['total']
+        self.assertEqual([cell.strip() for cell in row.split('|')[1:-1]][-3:],
+                         ['1', str(n), bench.ratio_cell(n)])
 
     def test_xml_reader_wrong_order_with_same_checksum_is_rejected(self):
         with ExitStack() as stack:

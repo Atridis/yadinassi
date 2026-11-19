@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from scripts.benchmark_summary import render as render_core
-from scripts.benchmark_extended_layers import render as render_extended
+from scripts.benchmark_extended_layers import DB_CASES, SQL_NOTE, render as render_extended
 
 INPUTS = (
     ('core', 'default', 'execution-layers.json', render_core),
@@ -105,16 +105,47 @@ def environment_lines(environments):
     return lines
 
 
+def sql_counts(cases):
+    """One independent complete sample per layer, never a timing-round sum."""
+    lines = ['| Сценарий | SQL: сырой Python | SQL: классы yadinassi | SQL: BSL | Классы / Python | BSL / Python | BSL / классы |',
+             '|---|---:|---:|---:|---:|---:|---:|']
+    layers = ('python', 'python_classes', 'bsl')
+    for case in cases:
+        counts = case.get('sql_statements', {})
+        if not isinstance(counts, dict) or set(counts) - set(layers):
+            raise ValueError('invalid SQL counts')
+        totals = {}
+        for layer, count in counts.items():
+            if not isinstance(count, dict) or type(count.get('total')) is not int or count['total'] < 0:
+                raise ValueError('invalid SQL total')
+            verbs = count.get('by_verb')
+            if not isinstance(verbs, dict) or any(type(k) is not str or type(v) is not int or v < 0 for k, v in verbs.items()):
+                raise ValueError('invalid SQL verb counts')
+            if sum(verbs.values()) != count['total'] or layer not in case['summary']:
+                raise ValueError('contradictory SQL counts')
+            totals[layer] = count['total']
+        def ratio(left, right):
+            return f'{totals[left] / totals[right]:.2f}×' if left in totals and totals.get(right, 0) > 0 else '—'
+        cells = [str(totals[layer]) if layer in totals else '—' for layer in layers]
+        cells += [ratio('python_classes', 'python'), ratio('bsl', 'python'), ratio('bsl', 'python_classes')]
+        lines.append('| ' + case['case'] + ' | ' + ' | '.join(cells) + ' |')
+    return '\n'.join(lines)
+
+
 def assemble(reports):
     """Available reports are rendered independently, even if another failed."""
     rendered = {}
     errors = []
+    db_counts = {}
+    has_db = False
     commits = set()
     environments = {}
     for family, route, filename, renderer in INPUTS:
         report = reports.get(filename)
         if report is None:
             rendered[family, route] = None
+            if family == 'extended':
+                rendered['db', route] = None
             errors.append(filename)
             continue
         try:
@@ -125,12 +156,27 @@ def assemble(reports):
                       else case['requested_route'] for case in report['cases']}
             if routes != {route}:
                 raise ValueError('report route does not match its label')
-            rendered[family, route] = sections(renderer(report))
+            if family == 'extended':
+                db = [case for case in report['cases'] if case['case'] in DB_CASES]
+                other = [case for case in report['cases'] if case['case'] not in DB_CASES]
+                # Validate/count before accepting either subset; never mutate the input.
+                count_table = sql_counts(db)
+                rendered[family, route] = sections(renderer(dict(report, cases=other))) if other else ('Сценариев нет.', '', '')
+                rendered['db', route] = (
+                    sections(renderer(dict(report, cases=db), include_sql=False))
+                    if db else ('Сценариев БД нет.', '', '')
+                )
+                db_counts[route] = count_table if db else ''
+                has_db = has_db or bool(db)
+            else:
+                rendered[family, route] = sections(renderer(report))
             commits.add(sha)
             scope = ('основные' if family == 'core' else 'расширенные') + ' / ' + MODES[route]
             environments[scope] = report['environment']
         except (KeyError, TypeError, ValueError, IndexError, AttributeError):
             rendered[family, route] = None
+            if family == 'extended':
+                rendered['db', route] = None
             errors.append(filename)
     if len(commits) > 1:
         raise ValueError('reports have different source commits')
@@ -146,7 +192,10 @@ def assemble(reports):
     if commits:
         lines += ['Коммит: `' + next(iter(commits)) + '`', '']
     lines += environment_lines(environments)
-    for family, title in (('core', 'Основные сценарии'), ('extended', 'Расширенные сценарии')):
+    families = [('core', 'Основные сценарии'), ('extended', 'Расширенные сценарии')]
+    if has_db:
+        families.append(('db', 'База данных'))
+    for family, title in families:
         lines += ['### ' + title, '']
         for route in ('default', 'prepared'):
             lines += ['#### ' + MODES[route], '']
@@ -157,6 +206,15 @@ def assemble(reports):
             part = rendered[family, route]
             if part:
                 lines += ['**' + MODES[route] + '**', '', part[1], '']
+        if family == 'db':
+            lines += ['#### SQL-команды за один замер', '', SQL_NOTE,
+                      'Разбивка по видам команд сохранена в JSON. '
+                      '— означает отсутствие измерения или неопределимый коэффициент, не ноль.', '']
+            for route in ('default', 'prepared'):
+                if rendered['db', route] and db_counts.get(route):
+                    cases = reports['extended-' + route + '.json']['cases']
+                    samples = ', '.join(case['case'] + ': ' + str(case['iterations']) for case in cases if case['case'] in DB_CASES)
+                    lines += ['**' + MODES[route] + '**', '', 'Итераций на замер: ' + samples + '.', '', db_counts[route], '']
         lines += explanations({route: rendered[family, route] for route in ('default', 'prepared')})
     if errors:
         lines += ['**Неполный отчёт.** Недоступные или некорректные файлы: '
