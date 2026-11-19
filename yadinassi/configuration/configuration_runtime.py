@@ -105,7 +105,7 @@ class ConfigurationApplication:
         self.state = 'prepared'
         self.last_exit_warning = ''
         self.interpreter = Interpreter(self._message, native_target=native_target,
-                                       database_context=database_context)
+                                       database_context=database_context, allow_extensions=True)
         from yadinassi.formats.xml.xdto_packages import load_packages
         self._xdto_factory = load_packages(self.interpreter._xdto_factory, configuration.xdto_packages)
         if side == 'server':

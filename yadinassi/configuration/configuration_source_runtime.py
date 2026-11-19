@@ -21,6 +21,7 @@ class _SourceInterpreter(Interpreter):
         selected = kwargs.setdefault('compilation_profile', application.compilation_profile)
         if selected != application.compilation_profile:
             raise ValueError('source interpreter compilation profile mismatch')
+        kwargs.setdefault('allow_extensions', True)
         super().__init__(*args, output=kwargs.pop('output', application.output), **kwargs)
         self.application = application
         from .common_templates import SourceTemplateCall

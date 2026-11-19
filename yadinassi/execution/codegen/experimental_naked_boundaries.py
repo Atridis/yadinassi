@@ -82,7 +82,7 @@ class BoundaryContext:
         self._check();key=name.casefold()
         if key not in self._services:
             if fallback is not _MISSING:
-                return self.resolve_callable(fallback,require_value=require_value,allow_references=allow_references)
+                return self.resolve_extension_value(fallback,require_value=require_value,allow_references=allow_references)
             raise BoundaryViolation('unregistered host service: '+name)
         function=self._services[key]  # Registered service outranks a variable.
         if key in ('errordescription','описаниеошибки','errorinfo','информацияобошибке') and type(function) is HostFunction:
@@ -119,6 +119,12 @@ class BoundaryContext:
         return invoke
 
 
+
+    def resolve_extension_value(self,value,*,require_value=False,allow_references=False):
+        if getattr(self,'_restrict_python_extensions',False) and type(value) is HostFunction:
+            self._check()
+            raise BoundaryViolation('callable Python values require allow_extensions=True')
+        return self.resolve_callable(value,require_value=require_value,allow_references=allow_references)
 
     def resolve_callable(self,value,*,require_value=False,allow_references=False):
         self._check()

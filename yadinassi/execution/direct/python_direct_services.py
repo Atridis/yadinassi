@@ -90,7 +90,31 @@ def _string_callable(context,function,*,name=None,require_value=False,allow_refe
     return stringify
 
 
+def builtin_binding(value, entry):
+    return (entry is not None and type(value) is HostFunction and value is entry[0]
+            and value.function is entry[1] and value.name is entry[2]
+            and value.reference_parameters is entry[3] and value.returns_value is entry[4])
+
+
 class ServicesBoundary:
+    def _check_extension_binding(self, key):
+        if not getattr(self,'_restrict_python_extensions',False):
+            return
+        vm=self.vm
+        if self._services is not vm.functions:
+            raise BoundaryViolation('host registry changed during plain BSL execution')
+        if key.startswith('new:'):
+            key=key[4:]
+            registry,snapshot=vm.types,vm._builtin_types
+        else:
+            registry,snapshot=vm.functions,vm._builtin_functions
+        if key in registry and not builtin_binding(registry[key],snapshot.get(key)):
+            raise BoundaryViolation('custom host registry entries require allow_extensions=True')
+
+    def _before(self,operation,name):
+        if operation=='call':self._check_extension_binding(name)
+        return super()._before(operation,name)
+
     def get_member(self,value,name):
         if type(value) is user_messages.BSLUserMessage:return user_messages.get(self,value,name)
         if type(value) is fixed.PlainFixedMap:return fixed.get(self,value,name)
@@ -203,6 +227,7 @@ class ServicesBoundary:
 
     def resolve_service(self,name,*args,**kwargs):
         key=name.casefold()
+        self._check_extension_binding(key)
         if key.startswith('new:') and key[4:] in user_messages.NAMES:
             return user_messages.constructor(self,key,**kwargs)
         from yadinassi.application.temporary_storage import SourceTemporaryCall

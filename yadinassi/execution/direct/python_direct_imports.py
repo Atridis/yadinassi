@@ -299,7 +299,7 @@ class ImportBoundary:
     def link_import_call(self,path,*,require_value,argument_count):
         """Bind a context-free export for this generated standalone activation."""
         vm=self.vm
-        if (vm._family_owner.__dict__.get('_standalone_script') is not True
+        if (vm.allow_extensions or vm._family_owner.__dict__.get('_standalone_script') is not True
                 or getattr(self,'_server_side',False)
                 or getattr(self,'module_context',True) is False):
             return None

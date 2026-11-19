@@ -72,9 +72,11 @@ def _admit_vm(vm,*,_transaction_owner=None):
         _reject('legacy imports/routine registries are not direct modules')
     if type(vm.variables) is not dict or type(vm.functions) is not dict or type(vm.types) is not dict or type(vm.module_names) is not set:
         _reject('custom namespace mappings are not supported')
-    for key,value in vm.functions.items():
-        if type(key) is not str or type(value) is not HostFunction:
-            _reject('host registry requires canonical HostFunction entries')
+    if vm.allow_extensions:
+        for key,value in vm.functions.items():
+            if type(key) is not str or type(value) is not HostFunction:
+                _reject('host registry requires canonical HostFunction entries')
+    # Plain mode validates the actual effectful lookup, not unused entries.
 
 
 def _source_facts(program):
@@ -167,7 +169,7 @@ class PreparedDirectModule:
 def _contract(vm):
     return (vm.execution_backend, vm.native_target, vm.compilation_profile,
             vm.compiled_ast_contract, vm.database_context is not None,
-            vm._family_owner.__dict__.get('_standalone_script') is True)
+            vm.allow_extensions, vm._family_owner.__dict__.get('_standalone_script') is True)
 
 
 def _compile(vm,program,nodes,source_text,source_name,*,_exports=False):
@@ -355,6 +357,7 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None):
     # nothing and must not be rebuilt on every invocation.
     context=DirectBoundary()
     context.vm=vm
+    context._restrict_python_extensions=not vm.allow_extensions
     context._direct_transaction_owner=_transaction_owner
     context._import_check_required=bool(vm.imports)
     context._routine_exports={}

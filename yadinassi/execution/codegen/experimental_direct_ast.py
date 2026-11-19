@@ -897,7 +897,7 @@ class Emitter:
             location=node.callee
             while type(location) in (bsl.Call,bsl.Group,bsl.Attribute):location=location.callee if type(location) is bsl.Call else location.expression if type(location) is bsl.Group else location.object
             t=location.token
-            bound=self.invoke(self.attribute(self.name('_context',t),'resolve_callable',t),[self.expr(node.callee)],t,[self.node(py.keyword,t,arg='require_value',value=self.const(require_value,t)),self.node(py.keyword,t,arg='allow_references',value=self.const(True,t))])
+            bound=self.invoke(self.attribute(self.name('_context',t),'resolve_extension_value',t),[self.expr(node.callee)],t,[self.node(py.keyword,t,arg='require_value',value=self.const(require_value,t)),self.node(py.keyword,t,arg='allow_references',value=self.const(True,t))])
             return self.dynamic_call(bound,node,call_token=t)
         _reject('unsupported expression '+k.__name__)
     def output_reference(self,node,reference_token=None):
@@ -1581,9 +1581,9 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     emitter.owned_constructors=_profile is not None;emitter.configuration_calls=_configuration_calls;emitter.host_bindings=_host_bindings;emitter.catalog_bounds=_catalog_bounds;emitter.source_scopes=_source_scopes;emitter.authority=_authority;emitter.scalar_routines=_scalar_routines
     emitter.callable_externals=frozenset(_callable_externals);emitter.shadowable=frozenset(_shadowable)
     emitter.import_names=frozenset(imported);t=program[0].token
-    emitter.standalone_script=_profile is None and not _authority and not _source_scopes and (
+    emitter.standalone_script=_profile is None and not _authority and not _source_scopes and not vm.allow_extensions
+    emitter.link_imports=bool(imported) and emitter.standalone_script and (
         vm._family_owner.__dict__.get('_standalone_script') is True)
-    emitter.link_imports=bool(imported) and emitter.standalone_script
     if _require_last_expression:emitter.require_last_expression=program[-1]
     from yadinassi.execution.direct.python_direct_services import CONSTRUCTORS
     from yadinassi.execution.direct.python_direct_value_tree import CONSTRUCTOR_NAMES as TREE_NAMES

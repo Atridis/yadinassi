@@ -202,7 +202,8 @@ class Interpreter:
                  family_owner: "Interpreter | None" = None,
                  execution_backend: str | None = None,
                  compiled_ast_contract: str | None = None,
-                 compiled_plain_routines: bool | None = None):
+                 compiled_plain_routines: bool | None = None,
+                 allow_extensions: bool | None = None):
         from .execution.execution_policy import current_backend, BACKENDS, current_ast_contract, AST_CONTRACTS
         if execution_backend is None:
             execution_backend = (family_owner.execution_backend if isinstance(family_owner, Interpreter)
@@ -228,6 +229,14 @@ class Interpreter:
         if type(compiled_plain_routines) is not bool:
             raise ValueError('compiled_plain_routines must be bool')
         self._compiled_plain_routines = compiled_plain_routines
+        inherited_extensions = family_owner.allow_extensions if isinstance(family_owner, Interpreter) else False
+        if allow_extensions is None:
+            allow_extensions = inherited_extensions
+        if type(allow_extensions) is not bool:
+            raise TypeError('allow_extensions must be bool')
+        if isinstance(family_owner, Interpreter) and allow_extensions != inherited_extensions:
+            raise ValueError('interpreter family cannot change extension policy')
+        self._allow_extensions = allow_extensions
         self._compiled_engine = None
         self._execution_backend = execution_backend
         self._hybrid_stats = {"compiled": 0, "fallback": 0, "compile_seconds": 0.0}
@@ -289,112 +298,128 @@ class Interpreter:
         self._handled_errors: list[BSLRuntimeError | None] = []
         self._error_info_boundaries: list[int] = []
         self._execute_depth = [0]
+        register_function = self._register_function
+        register_type = self._register_type
         from .configuration.common_templates import get_common_template_marker
-        self.register_function('ПолучитьОбщийМакет',get_common_template_marker,'GetCommonTemplate')
+        register_function('ПолучитьОбщийМакет',get_common_template_marker,'GetCommonTemplate')
         from .application.reusable_values import refresh_reusable_marker
-        self.register_function('ОбновитьПовторноИспользуемыеЗначения',refresh_reusable_marker,'RefreshReusableValues',returns_value=False)
+        register_function('ОбновитьПовторноИспользуемыеЗначения',refresh_reusable_marker,'RefreshReusableValues',returns_value=False)
         self._eval_depth = [0]  # Shared by imported modules, like the handler stack.
         from .application import temporary_storage
-        self.register_function('ПоместитьВоВременноеХранилище',temporary_storage.put_marker,'PutToTempStorage')
-        self.register_function('ПолучитьИзВременногоХранилища',temporary_storage.get_marker,'GetFromTempStorage')
-        self.register_function('УдалитьИзВременногоХранилища',temporary_storage.delete_marker,'DeleteFromTempStorage',returns_value=False)
-        self.register_function('ЭтоАдресВременногоХранилища',temporary_storage.recognize_marker,'IsTempStorageURL')
-        self.register_function("Вычислить", _eval_marker, "Eval")
-        self.register_function("ВыполнитьОбработкуОповещения", run_callback_marker, "RunCallback")
-        self.register_type("ОписаниеОповещения", callback_description_marker, "CallbackDescription")
-        self.register_function("Сообщить", self._message, "Message")
-        self.register_function("Строка", to_string, "String")
-        self.register_function("Число", number, "Number")
-        self.register_function("Булево", boolean, "Boolean")
+        register_function('ПоместитьВоВременноеХранилище',temporary_storage.put_marker,'PutToTempStorage')
+        register_function('ПолучитьИзВременногоХранилища',temporary_storage.get_marker,'GetFromTempStorage')
+        register_function('УдалитьИзВременногоХранилища',temporary_storage.delete_marker,'DeleteFromTempStorage',returns_value=False)
+        register_function('ЭтоАдресВременногоХранилища',temporary_storage.recognize_marker,'IsTempStorageURL')
+        register_function("Вычислить", _eval_marker, "Eval")
+        register_function("ВыполнитьОбработкуОповещения", run_callback_marker, "RunCallback")
+        register_type("ОписаниеОповещения", callback_description_marker, "CallbackDescription")
+        register_function("Сообщить", self._message, "Message")
+        register_function("Строка", to_string, "String")
+        register_function("Число", number, "Number")
+        register_function("Булево", boolean, "Boolean")
         # Bind only immutable startup data, never the interpreter's client frame.
         connection_string = (database_context.connection_string if database_context is not None
                              else require_database_context)
-        self.register_function("НачатьТранзакцию", self._begin_transaction, "BeginTransaction", returns_value=False)
-        self.register_function("ЗафиксироватьТранзакцию", self._commit_transaction, "CommitTransaction", returns_value=False)
-        self.register_function("ОтменитьТранзакцию", self._rollback_transaction, "RollbackTransaction", returns_value=False)
-        self.register_function("ТранзакцияАктивна", self._transaction_active, "TransactionActive")
-        self.register_function("СтрокаСоединенияИнформационнойБазы", connection_string,
+        register_function("НачатьТранзакцию", self._begin_transaction, "BeginTransaction", returns_value=False)
+        register_function("ЗафиксироватьТранзакцию", self._commit_transaction, "CommitTransaction", returns_value=False)
+        register_function("ОтменитьТранзакцию", self._rollback_transaction, "RollbackTransaction", returns_value=False)
+        register_function("ТранзакцияАктивна", self._transaction_active, "TransactionActive")
+        register_function("СтрокаСоединенияИнформационнойБазы", connection_string,
                                "InfoBaseConnectionString")
-        self.register_function("ЗаполнитьЗначенияСвойств", fill_property_values,
+        register_function("ЗаполнитьЗначенияСвойств", fill_property_values,
                                "FillPropertyValues", returns_value=False)
-        self.register_function("ЗначениеЗаполнено", value_checks.value_is_filled, "ValueIsFilled")
-        self.register_function("Тип", self._type_by_name, "Type")
-        self.register_function("ТипЗнч", type_values.type_of, "TypeOf")
-        self.register_function("ЗначениеВСтрокуВнутр", serialization.value_to_string_internal,
+        register_function("ЗначениеЗаполнено", value_checks.value_is_filled, "ValueIsFilled")
+        register_function("Тип", self._type_by_name, "Type")
+        register_function("ТипЗнч", type_values.type_of, "TypeOf")
+        register_function("ЗначениеВСтрокуВнутр", serialization.value_to_string_internal,
                                "ValueToStringInternal")
-        self.register_function("ЗначениеИзСтрокиВнутр", serialization.value_from_string_internal,
+        register_function("ЗначениеИзСтрокиВнутр", serialization.value_from_string_internal,
                                "ValueFromStringInternal")
         for name, function, alias in (*regex_functions.BUILTINS, *strings.BUILTINS, *formatting.BUILTINS, *number_in_words.BUILTINS, *period_presentation.BUILTINS, *numbers.BUILTINS,
                                       *xml_values.BUILTINS, *bits.BUILTINS, *elementary.BUILTINS,
                                       *dates.BUILTINS, *clocks.BUILTINS,
                                       *date_time_conversions.BUILTINS):
-            self.register_function(name, function, alias)
-        self.register_function("ОписаниеОшибки", self._error_description, "ErrorDescription")
-        self.register_function("ИнформацияОбОшибке", self._error_info, "ErrorInfo")
-        self.register_type("ПараметрыЗаписиJSON", BSLJSONWriterSettings, "JSONWriterSettings")
-        self.register_type("НастройкиСериализацииJSON", BSLJSONSerializerSettings, "JSONSerializerSettings")
-        self.register_function("ПрочитатьДатуJSON", read_json_date, "ReadJSONDate")
-        self.register_function("ЗаписатьДатуJSON", write_json_date, "WriteJSONDate")
-        self.register_type("ЧтениеXML", BSLXMLReader, "XMLReader")
-        self.register_type("ЗаписьXML", BSLXMLWriter, "XMLWriter")
-        self.register_type("ПараметрыЧтенияXML", BSLXMLReaderSettings, "XMLReaderSettings")
-        self.register_type("ПараметрыЗаписиXML", BSLXMLWriterSettings, "XMLWriterSettings")
-        self.register_type("ФабрикаXDTO", BSLXDTOFactory, "XDTOFactory")
-        self.register_function("СоздатьФабрикуXDTO", create_xdto_factory, "CreateXDTOFactory")
-        self.register_type("Разыменователь пространств имен DOM XPath", BSLDOMNamespaceResolver, "DOMNamespaceResolver")
-        self.register_type("ДокументDOM", BSLDOMDocument, "DOMDocument")
-        self.register_type("ПостроительDOM", BSLDOMBuilder, "DOMBuilder")
-        self.register_type("ЗаписьDOM", BSLDOMWriter, "DOMWriter")
-        self.register_type("ЗащищенноеСоединениеOpenSSL", BSLOpenSSLSecureConnection, "OpenSSLSecureConnection")
-        self.register_type("СертификатыУдостоверяющихЦентровФайл", BSLFileCertificationAuthorityCertificates, "FileCertificationAuthorityCertificates")
-        self.register_type("СертификатыУдостоверяющихЦентровОС", BSLOSCertificationAuthorityCertificates, "OSCertificationAuthorityCertificates")
-        self.register_type("ИнтернетПрокси", BSLInternetProxy, "InternetProxy")
-        self.register_type("HTTPСоединение", BSLHTTPConnection, "HTTPConnection")
-        self.register_type("HTTPЗапрос", BSLHTTPRequest, "HTTPRequest")
-        self.register_type("ХешированиеДанных", BSLDataHashing, "DataHashing")
-        self.register_type("ЧтениеДанных", BSLDataReader, "DataReader")
-        self.register_type("ЗаписьДанных", BSLDataWriter, "DataWriter")
-        self.register_type("ЧтениеZipФайла", BSLZipFileReader, "ZipFileReader")
-        self.register_type("ЗаписьZipФайла", BSLZipFileWriter, "ZipFileWriter")
-        self.register_type("ЧтениеJSON", BSLJSONReader, "JSONReader")
-        self.register_type("ЗаписьJSON", BSLJSONWriter, "JSONWriter")
-        self.register_function("ПрочитатьJSON", read_json, "ReadJSON")
-        self.register_function("ЗаписатьJSON", write_json, "WriteJSON", returns_value=False)
+            register_function(name, function, alias)
+        register_function("ОписаниеОшибки", self._error_description, "ErrorDescription")
+        register_function("ИнформацияОбОшибке", self._error_info, "ErrorInfo")
+        register_type("ПараметрыЗаписиJSON", BSLJSONWriterSettings, "JSONWriterSettings")
+        register_type("НастройкиСериализацииJSON", BSLJSONSerializerSettings, "JSONSerializerSettings")
+        register_function("ПрочитатьДатуJSON", read_json_date, "ReadJSONDate")
+        register_function("ЗаписатьДатуJSON", write_json_date, "WriteJSONDate")
+        register_type("ЧтениеXML", BSLXMLReader, "XMLReader")
+        register_type("ЗаписьXML", BSLXMLWriter, "XMLWriter")
+        register_type("ПараметрыЧтенияXML", BSLXMLReaderSettings, "XMLReaderSettings")
+        register_type("ПараметрыЗаписиXML", BSLXMLWriterSettings, "XMLWriterSettings")
+        register_type("ФабрикаXDTO", BSLXDTOFactory, "XDTOFactory")
+        register_function("СоздатьФабрикуXDTO", create_xdto_factory, "CreateXDTOFactory")
+        register_type("Разыменователь пространств имен DOM XPath", BSLDOMNamespaceResolver, "DOMNamespaceResolver")
+        register_type("ДокументDOM", BSLDOMDocument, "DOMDocument")
+        register_type("ПостроительDOM", BSLDOMBuilder, "DOMBuilder")
+        register_type("ЗаписьDOM", BSLDOMWriter, "DOMWriter")
+        register_type("ЗащищенноеСоединениеOpenSSL", BSLOpenSSLSecureConnection, "OpenSSLSecureConnection")
+        register_type("СертификатыУдостоверяющихЦентровФайл", BSLFileCertificationAuthorityCertificates, "FileCertificationAuthorityCertificates")
+        register_type("СертификатыУдостоверяющихЦентровОС", BSLOSCertificationAuthorityCertificates, "OSCertificationAuthorityCertificates")
+        register_type("ИнтернетПрокси", BSLInternetProxy, "InternetProxy")
+        register_type("HTTPСоединение", BSLHTTPConnection, "HTTPConnection")
+        register_type("HTTPЗапрос", BSLHTTPRequest, "HTTPRequest")
+        register_type("ХешированиеДанных", BSLDataHashing, "DataHashing")
+        register_type("ЧтениеДанных", BSLDataReader, "DataReader")
+        register_type("ЗаписьДанных", BSLDataWriter, "DataWriter")
+        register_type("ЧтениеZipФайла", BSLZipFileReader, "ZipFileReader")
+        register_type("ЗаписьZipФайла", BSLZipFileWriter, "ZipFileWriter")
+        register_type("ЧтениеJSON", BSLJSONReader, "JSONReader")
+        register_type("ЗаписьJSON", BSLJSONWriter, "JSONWriter")
+        register_function("ПрочитатьJSON", read_json, "ReadJSON")
+        register_function("ЗаписатьJSON", write_json, "WriteJSON", returns_value=False)
         for ru, factory, en in (("Файл", BSLFile, "File"),
                                 ("ЧтениеТекста", BSLTextReader, "TextReader"),
                                 ("ЗаписьТекста", BSLTextWriter, "TextWriter"),
                                 ("ДвоичныеДанные", BSLBinaryData, "BinaryData")):
-            self.register_type(ru, factory, en)
+            register_type(ru, factory, en)
         for ru, factory, en in (("БуферДвоичныхДанных", BSLBinaryDataBuffer, "BinaryDataBuffer"),
                                 ("ПотокВПамяти", BSLMemoryStream, "MemoryStream"),
                                 ("ФайловыйПоток", BSLFileStream, "FileStream")):
-            self.register_type(ru, factory, en)
+            register_type(ru, factory, en)
         for ru, function, en in binary_streams.FUNCTIONS:
-            self.register_function(ru, function, en)
+            register_function(ru, function, en)
         for ru, function, en, returns_value in file_io.FUNCTIONS:
-            self.register_function(ru, function, en, returns_value=returns_value)
-        self.register_type("ТекстовыйДокумент", BSLTextDocument, "TextDocument")
-        self.register_type("СообщениеПользователю", self._new_user_message, "UserMessage")
-        self.register_type("ХранилищеЗначения", BSLValueStorage, "ValueStorage")
-        self.register_type("СжатиеДанных", BSLDeflation, "Deflation")
-        self.register_type("УникальныйИдентификатор", BSLUUID, "UUID")
-        self.register_type("Массив", BSLArray, "Array")
-        self.register_type("Структура", BSLStructure, "Structure")
-        self.register_type("Соответствие", BSLMap, "Map")
-        self.register_type("ФиксированныйМассив", BSLFixedArray, "FixedArray")
-        self.register_type("ФиксированнаяСтруктура", BSLFixedStructure, "FixedStructure")
-        self.register_type("ФиксированноеСоответствие", BSLFixedMap, "FixedMap")
+            register_function(ru, function, en, returns_value=returns_value)
+        register_type("ТекстовыйДокумент", BSLTextDocument, "TextDocument")
+        register_type("СообщениеПользователю", self._new_user_message, "UserMessage")
+        register_type("ХранилищеЗначения", BSLValueStorage, "ValueStorage")
+        register_type("СжатиеДанных", BSLDeflation, "Deflation")
+        register_type("УникальныйИдентификатор", BSLUUID, "UUID")
+        register_type("Массив", BSLArray, "Array")
+        register_type("Структура", BSLStructure, "Structure")
+        register_type("Соответствие", BSLMap, "Map")
+        register_type("ФиксированныйМассив", BSLFixedArray, "FixedArray")
+        register_type("ФиксированнаяСтруктура", BSLFixedStructure, "FixedStructure")
+        register_type("ФиксированноеСоответствие", BSLFixedMap, "FixedMap")
 
-        self.register_type("МенеджерВременныхТаблиц", self._new_temp_tables_manager, "TempTablesManager")
-        self.register_type("Запрос", self._new_query, "Query")
-        self.register_type("ТаблицаЗначений", BSLValueTable, "ValueTable")
-        self.register_type("ДеревоЗначений", BSLValueTree, "ValueTree")
-        self.register_type("СписокЗначений", BSLValueList, "ValueList")
-        self.register_type("ОписаниеТипов", BSLTypeDescription, "TypeDescription")
-        self.register_type("КвалификаторыЧисла", BSLNumberQualifiers, "NumberQualifiers")
-        self.register_type("КвалификаторыСтроки", BSLStringQualifiers, "StringQualifiers")
-        self.register_type("КвалификаторыДаты", BSLDateQualifiers, "DateQualifiers")
-        self.register_type("КвалификаторыДвоичныхДанных", BSLBinaryDataQualifiers, "BinaryDataQualifiers")
+        register_type("МенеджерВременныхТаблиц", self._new_temp_tables_manager, "TempTablesManager")
+        register_type("Запрос", self._new_query, "Query")
+        register_type("ТаблицаЗначений", BSLValueTable, "ValueTable")
+        register_type("ДеревоЗначений", BSLValueTree, "ValueTree")
+        register_type("СписокЗначений", BSLValueList, "ValueList")
+        register_type("ОписаниеТипов", BSLTypeDescription, "TypeDescription")
+        register_type("КвалификаторыЧисла", BSLNumberQualifiers, "NumberQualifiers")
+        register_type("КвалификаторыСтроки", BSLStringQualifiers, "StringQualifiers")
+        register_type("КвалификаторыДаты", BSLDateQualifiers, "DateQualifiers")
+        register_type("КвалификаторыДвоичныхДанных", BSLBinaryDataQualifiers, "BinaryDataQualifiers")
+
+        if not self.allow_extensions:
+            self._builtin_functions = self._binding_snapshot(self.functions)
+            self._builtin_types = self._binding_snapshot(self.types)
+
+    @staticmethod
+    def _binding_snapshot(registry):
+        return {key: (value, value.function, value.name, value.reference_parameters, value.returns_value)
+                for key, value in registry.items()}
+
+    @property
+    def allow_extensions(self) -> bool:
+        """Allow custom host registrations and extension-aware code generation."""
+        return self._allow_extensions
 
     @property
     def database_context(self) -> SQLiteDBContext | None:
@@ -587,11 +612,21 @@ class Interpreter:
 
     def register_function(self, name: str, function: Callable, *aliases: str,
                           returns_value: bool = True) -> None:
+        if not self.allow_extensions:
+            raise ValueError('register_function requires allow_extensions=True')
+        Interpreter._register_function(self, name, function, *aliases, returns_value=returns_value)
+
+    def _register_function(self, name, function, *aliases, returns_value=True):
         wrapper = HostFunction(name, function, returns_value=returns_value)
         for alias in (name, *aliases):
             self.functions[alias.casefold()] = wrapper
 
     def register_type(self, name: str, factory: Callable, *aliases: str) -> None:
+        if not self.allow_extensions:
+            raise ValueError('register_type requires allow_extensions=True')
+        Interpreter._register_type(self, name, factory, *aliases)
+
+    def _register_type(self, name, factory, *aliases):
         wrapper = HostFunction(name, factory)
         for alias in (name, *aliases):
             self.types[alias.casefold()] = wrapper
@@ -633,6 +668,9 @@ class Interpreter:
         bound Type or Query factory crosses that boundary even with the same DB.
         Explicit host overrides remain untouched; names alone grant no rebinding.
         """
+        # Plain children already have their own canonical registrations.
+        if not self.allow_extensions:
+            return
         core_helpers = (Interpreter._message, Interpreter._error_description,
                         Interpreter._error_info, Interpreter._type_by_name,
                         Interpreter._new_query, Interpreter._new_temp_tables_manager,

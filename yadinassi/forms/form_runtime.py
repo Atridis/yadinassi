@@ -87,6 +87,7 @@ class _FormInterpreter(Interpreter):
 
     def __init__(self, session, *args, **kwargs):
         self._form_session = session
+        kwargs.setdefault('allow_extensions', True)
         super().__init__(*args, **kwargs)
         self.register_type('РеквизитФормы', self._make_attribute, 'FormAttribute')
         form = session.form
