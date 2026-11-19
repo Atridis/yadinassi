@@ -221,7 +221,7 @@ class Emitter:
         helper=self.call('_partial',[self.region_helper(operation,token),self.name('_context',token),self.name(receiver,token),*extra],token)
         return self.node(py.IfExp,token,test=self.name('_collection_fast',token),body=helper,orelse=selected)
     def literal(self,value,token):
-        if self.integer_lane and type(value) is Decimal:return self.const(int(value),token)
+        if self.integer_lane and type(value) is Decimal and value.is_finite() and value.as_tuple().exponent == 0 and not (value.is_zero() and value.is_signed()):return self.const(int(value),token)
         index=len(self.constants);self.constants.append(value)
         return self.node(py.Subscript,token,value=self.name('_constants',token),slice=self.const(index,token),ctx=py.Load())
     def initialize_local(self,key):
@@ -443,18 +443,28 @@ class Emitter:
                 owner=self.static_module_kinds[id(node.object)];receiver=self.expr(node.object)
                 if owner=='table':return self.attribute(receiver,'columns',t)
                 if owner=='item':return self.node(py.Subscript,t,value=receiver,slice=self.const(0,t),ctx=py.Load())
+                if self.integer_lane and owner=='row':return self.call('_raw_table_value',[receiver,self.const(node.name,t)],t)
                 return self.invoke(self.attribute(receiver,'get_member',t),[self.const(node.name,t)],t)
             if k is bsl.Index:
                 owner=self.static_module_kinds[id(node.object)]
-                if owner in ('table','valuelist','row'):
-                    return self.invoke(self.attribute(self.expr(node.object),'get_member' if owner=='row' else 'get',t),[self.expr(node.index)],t)
+                if owner=='row':
+                    if self.integer_lane:
+                        getter='_raw_table_positional' if self.static_module_kinds[id(node.index)]=='number' else '_raw_table_value'
+                        return self.call(getter,[self.expr(node.object),self.expr(node.index)],t)
+                    return self.invoke(self.attribute(self.expr(node.object),'get_index',t),[self.expr(node.index)],t)
+                if owner in ('table','valuelist'):
+                    return self.invoke(self.attribute(self.expr(node.object),'get',t),[self.expr(node.index)],t)
                 if self.static_module_kinds[id(node.object)]=='map':return self.call('_native_dict_get',[self.expr(node.object),self.expr(node.index)],t)
                 return self.node(py.Subscript,t,value=self.expr(node.object),slice=self.native_array_index(node.index),ctx=py.Load())
             if k is bsl.Call and type(node.callee) is bsl.Attribute:
                 receiver=self.expr(node.callee.object);method=node.callee.name.casefold()
                 owner=self.static_module_kinds[id(node.callee.object)]
+                if owner=='row' and self.integer_lane:
+                    return self.call('_raw_table_positional',[receiver,self.expr(node.arguments[0])],t)
+                if owner=='row':
+                    return self.invoke(self.attribute(receiver,'get',t),[self.expr(node.arguments[0])],t)
                 if owner in ('table','valuelist','columns'):
-                    name={'add':'add','добавить':'add','get':'get','получить':'get','count':'count','количество':'count'}[method]
+                    name={'add':'add','добавить':'add','get':'get','получить':'get','count':'count','количество':'count','total':'total','итог':'total'}[method]
                     return self.invoke(self.attribute(receiver,name,t),[self.expr(arg) for arg in node.arguments],t)
                 if method in ('add','добавить'):
                     return self.invoke(self.attribute(receiver,'append',t),[self.expr(node.arguments[0])],t)
@@ -491,7 +501,7 @@ class Emitter:
         if k is bsl.Group:return self.expr(node.expression,require_value)
         if k is bsl.Unary:
             if self.integer_lane and node.operator in ('+','-'):
-                return self.node(py.UnaryOp,t,op=py.UAdd() if node.operator=='+' else py.USub(),operand=self.expr(node.operand))
+                return self.call('_dynamic_sign',[self.expr(node.operand),self.const(node.operator,t)],t)
             if node.operator in ('+','-'):return self.call('_sign',[self.expr(node.operand),self.const(node.operator,t)],t)
             if node.operator=='NOT':return self.node(py.UnaryOp,t,op=py.Not(),operand=self.truth(node.operand,t))
         if k is bsl.Binary:
@@ -522,8 +532,9 @@ class Emitter:
                 operation=self.node(py.IfExp,t,test=test,body=self.name('_concatenate',t),orelse=self.name('_native_add',t))
                 return self.invoke(operation,[self.name(temporary,t),right],t)
             helpers={'/':'_divide','=':'_equal','<>':'_not_equal'}
-            if op in helpers:return self.call(helpers[op],[left,right],t)
+            if op in helpers:return self.call('_dynamic_divide' if self.integer_lane and op=='/' else helpers[op],[left,right],t)
             if op in ('<','<=','>','>='):return self.call('_order',[left,right,self.const(op,t)],t)
+            if self.integer_lane and op=='%':return self.call('_dynamic_remainder',[left,right],t)
             operators={'-':py.Sub,'*':py.Mult,'%':py.Mod}
             if op in operators:return self.node(py.BinOp,t,left=left,op=operators[op](),right=right)
         if k is bsl.DynamicNew:
@@ -1688,8 +1699,8 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             emitter.static_module_kinds={} if static_facts is None else static_facts[1]
             emitter.static_module_names={key:emitter.temp() for key in sorted(names)}
     if static_facts is not None and not emitter.routines and not emitter.module_cells and not emitter.authority and not emitter.catalog_bounds:
-        from yadinassi.execution.direct.python_direct_integer_lane import analyze as analyze_integers
-        emitter.integer_lane=analyze_integers(program)
+        emitter.integer_lane=bool(static_facts[1]) and all(kind in ('number','bool','string','table','row','columns','column') for kind in static_facts[1].values())
+        if emitter.integer_lane:emitter.scalar_kinds.update(static_facts[1])
     from yadinassi.execution.direct.python_direct_collection_regions import analyze,admitted,helpers
     region_end=0
     if not has_goto and not emitter.static_module_names and not emitter.routines and not emitter.authority and not emitter.source_scopes:
@@ -1703,24 +1714,11 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     if region_end:body.insert(0,emitter.node(py.Assign,t,targets=[emitter.name('_collection_fast',t,True)],value=emitter.const(False,t)))
     if not has_goto and type(program[-1]) is bsl.ExpressionStatement:
         last=body.pop()
-        if emitter.integer_lane:last.value=emitter.call('_Decimal',[last.value],program[-1].token)
+        if emitter.integer_lane:last.value=emitter.call('_dynamic_public_number',[last.value],program[-1].token)
         if type(last) is py.Try and emitter.static_module_names:
             last.body[-1]=emitter.node(py.Return,program[-1].token,value=last.body[-1].value);body.append(last)
         else:body.append(emitter.node(py.Return,program[-1].token,value=last.value))
     else:body.append(emitter.node(py.Return,t,value=emitter.node(py.Dict,t,keys=[],values=[]) if _exports and not emitter.routines else emitter.name('_initial',t)))
-    if emitter.integer_lane:
-        # Context changes between prepare and execution retain the ordinary
-        # direct Decimal body. This is one kernel-entry decision, never a
-        # per-operation type/precision dispatcher.
-        integer_body=body
-        emitter.integer_lane=False
-        decimal_body=emitter.sequence(program)
-        if type(program[-1]) is bsl.ExpressionStatement:
-            last=decimal_body.pop()
-            decimal_body.append(emitter.node(py.Return,program[-1].token,value=last.value))
-        else:decimal_body.append(emitter.node(py.Return,t,value=emitter.name('_initial',t)))
-        emitter.integer_lane=True
-        body=[emitter.node(py.If,t,test=emitter.call('_integer_context_ok',[],t),body=integer_body,orelse=decimal_body)]
     if emitter.static_module_names:
         load=[]
         for key,slot in emitter.static_module_names.items():
@@ -1761,8 +1759,9 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     data_types=(list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure,_MapEntry,
         _vt.BSLValueTable,_vt.BSLValueTableRow,_vt.BSLValueTableColumnCollection,_vt.BSLValueTableColumn,
         _vt.BSLCollectionIndexes,_vt.BSLCollectionIndex,_vl.BSLValueList,_vl.BSLValueListItem)
-    from yadinassi.execution.direct.python_direct_integer_lane import context_allows_integer_lane
-    namespace=dict(_integer_context_ok=context_allows_integer_lane,_plain_array_loop=_plain_array_loop,_plain_append_receiver=_plain_append_receiver,_list_append=list.append,_native_host_reference=_native_host_reference,_native_cell_reference=_native_cell_reference,_native_fragment_binding=_native_fragment_binding,_NativeCell=_NativeCell,_adapt_native_cell=_adapt_native_cell,_PrivateTable=_vt.BSLValueTable,_PrivateValueList=PlainValueList,_PlainValueList=PlainValueList,_PlainValueListItem=PlainValueListItem,_module_primitive_type_ids=frozenset(id(kind) for kind in (list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure)),_module_data_types=data_types,_module_data_type_ids=frozenset(id(kind) for kind in data_types),_native_dict_get=dict.get,_native_dict_setitem=dict.__setitem__,_PlainArray=_PlainArray,_Decimal=Decimal,_PlainMap=PlainMap,_plain_map=plain_map,_execute_fragment=execute_fragment,_fragment_binding=_fragment_binding,_bind_eval=bind_eval,_raise_arity_error=raise_arity_error,_host_omission_error=_host_omission_error,_host_omission_values=_host_omission_values,_dynamic_construct=dynamic_construct,_invalid_native_arity=_invalid_native_arity,_typed_find=scalar.typed_find,_list_delete=_list_delete,_native_ubound=_native_ubound,_readonly=readonly,_array_set_checked=_array_set_checked,_bounded_insert=bounded_insert,_structure_insert=structure_insert,_array_constructor_bounds=bounded_array,_new_structure=new_structure,_structure_from_schema=structure_from_schema,_host_name_reference=_host_name_reference,_Cell=_Cell,_as_ref=_as_ref,_bound_ref=_bound_ref,_UNSET_REF=_UNSET_REF,_OMITTED_REF=_OMITTED_REF,_argument_count_error=_argument_count_error,_routine_value_error=_routine_value_error,_procedure_value_error=_procedure_value_error,_identity_reference=_identity_reference,_IndexRef=_IndexRef,_AttributeRef=_AttributeRef,_SlotReference=live_state._SlotReference,_source_reference=source_reference,_canonical_reference=_canonical_reference,_structure_property=structure_property,_native_method_missing=_native_method_missing,_native_count=_native_count,_MapEntry=_MapEntry,_array_member=_array_member,_native_property_missing=_native_property_missing,_structure_get_known=structure_get_known,_native_property_write_missing=_native_property_write_missing,_checked_array_index=_checked_array_index,_partial=partial,_native_getitem=_NATIVE_GETITEM,_list_get=_list_get,_TypedMap=_TypedMap,_NakedMap=_NakedMap,_DirectStructure=_DirectStructure,_host_reference=host_reference,_UNSET=UNSET,_missing=missing,_native_add=_NATIVE_ADD,_concatenate=scalar.concatenate,_divide=scalar.decimal_divide,_sign=scalar.decimal_sign,_order=scalar.uca_order,_truth=scalar.truth,_equal=equal,_not_equal=not_equal,_MISSING=_MISSING,_handled_error=handled_error,_reraise_handled=reraise_handled,_raise_error=raise_error,_presentation=scalar.presentation,_BSLRuntimeError=BSLRuntimeError)
+    from yadinassi.execution.direct.python_direct_numbers import divide, remainder, sign, public_number
+    from yadinassi.collections.plain_table_storage import RowStorage
+    namespace=dict(_raw_table_value=RowStorage.get_value,_raw_table_positional=_vt.BSLValueTableRow._positional_value,_dynamic_remainder=remainder,_dynamic_divide=divide,_dynamic_sign=sign,_dynamic_public_number=public_number,_plain_array_loop=_plain_array_loop,_plain_append_receiver=_plain_append_receiver,_list_append=list.append,_native_host_reference=_native_host_reference,_native_cell_reference=_native_cell_reference,_native_fragment_binding=_native_fragment_binding,_NativeCell=_NativeCell,_adapt_native_cell=_adapt_native_cell,_PrivateTable=_vt.BSLValueTable,_PrivateValueList=PlainValueList,_PlainValueList=PlainValueList,_PlainValueListItem=PlainValueListItem,_module_primitive_type_ids=frozenset(id(kind) for kind in (list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure)),_module_data_types=data_types,_module_data_type_ids=frozenset(id(kind) for kind in data_types),_native_dict_get=dict.get,_native_dict_setitem=dict.__setitem__,_PlainArray=_PlainArray,_Decimal=Decimal,_PlainMap=PlainMap,_plain_map=plain_map,_execute_fragment=execute_fragment,_fragment_binding=_fragment_binding,_bind_eval=bind_eval,_raise_arity_error=raise_arity_error,_host_omission_error=_host_omission_error,_host_omission_values=_host_omission_values,_dynamic_construct=dynamic_construct,_invalid_native_arity=_invalid_native_arity,_typed_find=scalar.typed_find,_list_delete=_list_delete,_native_ubound=_native_ubound,_readonly=readonly,_array_set_checked=_array_set_checked,_bounded_insert=bounded_insert,_structure_insert=structure_insert,_array_constructor_bounds=bounded_array,_new_structure=new_structure,_structure_from_schema=structure_from_schema,_host_name_reference=_host_name_reference,_Cell=_Cell,_as_ref=_as_ref,_bound_ref=_bound_ref,_UNSET_REF=_UNSET_REF,_OMITTED_REF=_OMITTED_REF,_argument_count_error=_argument_count_error,_routine_value_error=_routine_value_error,_procedure_value_error=_procedure_value_error,_identity_reference=_identity_reference,_IndexRef=_IndexRef,_AttributeRef=_AttributeRef,_SlotReference=live_state._SlotReference,_source_reference=source_reference,_canonical_reference=_canonical_reference,_structure_property=structure_property,_native_method_missing=_native_method_missing,_native_count=_native_count,_MapEntry=_MapEntry,_array_member=_array_member,_native_property_missing=_native_property_missing,_structure_get_known=structure_get_known,_native_property_write_missing=_native_property_write_missing,_checked_array_index=_checked_array_index,_partial=partial,_native_getitem=_NATIVE_GETITEM,_list_get=_list_get,_TypedMap=_TypedMap,_NakedMap=_NakedMap,_DirectStructure=_DirectStructure,_host_reference=host_reference,_UNSET=UNSET,_missing=missing,_native_add=_NATIVE_ADD,_concatenate=scalar.concatenate,_divide=scalar.decimal_divide,_sign=scalar.decimal_sign,_order=scalar.uca_order,_truth=scalar.truth,_equal=equal,_not_equal=not_equal,_MISSING=_MISSING,_handled_error=handled_error,_reraise_handled=reraise_handled,_raise_error=raise_error,_presentation=scalar.presentation,_BSLRuntimeError=BSLRuntimeError)
     if region_end or any_region:namespace.update(_collection_admitted=admitted,_collection_helpers=helpers(),_routine_region_state_safe=_routine_region_state_safe)
     # Every route genuinely compiles executable code before source effects.
     # Whole-source research additionally parses the actual source, not a fake

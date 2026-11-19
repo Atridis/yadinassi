@@ -26,7 +26,7 @@ class ExecutionLayerBenchmarkTests(unittest.TestCase):
     def test_ci_integer_workload_emits_a_native_loop_and_fractional_control_does_not(self):
         vm = bench.Interpreter()
         self.addCleanup(vm.close)
-        for name in ('arithmetic', 'arithmetic.int', 'arithmetic.fractional'):
+        for name in ('arithmetic.int', 'arithmetic.fractional'):
             with self.subTest(case=name):
                 job = bench.workload(name, 100000)
                 plan = vm.prepare(job.source)

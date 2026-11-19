@@ -1,11 +1,10 @@
-"""Closed integer arithmetic is native internally and Decimal at public edges."""
+"""Closed dynamic numbers are native internally and Decimal at public edges."""
 import ast
 import sys
 from decimal import Decimal as D, localcontext
 import unittest
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.execution.direct.python_direct_integer_lane import analyze
 
 class IntegerLaneTests(unittest.TestCase):
     def run_source(self, text):
@@ -29,22 +28,15 @@ class IntegerLaneTests(unittest.TestCase):
         self.assertEqual(result,D(-83))
         self.assertEqual(vm.execute_prepared(plan),D(-83))
 
-    def test_bound_overflow_declines(self):
-        for text in ('S=99999999999999999999999999999999999999; S=S+1;',
-                     'S=1; For i=1 To 100 Do S=S*2; EndDo;',
-                     'S=0; For i=1 To 99999999999999999999999999999999999999 Do S=S+i; EndDo;'):
-            self.assertFalse(analyze(parse(text)))
+    def test_integer_intermediates_are_unbounded(self):
         vm,_,_=self.run_source('S=99999999999999999999999999999999999999; S=S+2;')
-        with localcontext() as ctx:
-            ctx.prec=38;expected=D('99999999999999999999999999999999999999')+2
-        self.assertEqual(vm.variables['s'],expected)
+        self.assertEqual(vm.variables['s'],D('100000000000000000000000000000000000001'))
 
     def test_fraction_mixed_and_division_stay_decimal(self):
         cases=(('S=0.1; For i=1 To 10 Do S=S+i; EndDo;',D('55.1')),
                ('S=1; S=S/8;',D('.125')),
                ('S=1.25; S=S*2;',D('2.50')))
         for text,expected in cases:
-            self.assertFalse(analyze(parse(text)))
             vm,_,_=self.run_source(text)
             self.assertEqual(vm.variables['s'],expected);self.assertIs(type(vm.variables['s']),D)
 
@@ -54,15 +46,6 @@ class IntegerLaneTests(unittest.TestCase):
             vm.execute('S=5; X=1/0; After=1;')
         self.assertEqual(vm.variables,{'s':D(5)})
 
-    def test_dynamic_and_control_cases_decline(self):
-        for text in ('S=Input+1;', 'S=0; Host(S);', 'S=New Array;',
-                     'S=0; For i=2 To 1 Do S=S+i; EndDo;',
-                     'S=0; For i=1 To 2 Do i=3; EndDo;',
-                     'S=0; T=0; For i=1 To 3 Do S=S+T; T=T+1; EndDo;',
-                     'S=0; While S<2 Do S=S+1; EndDo;',
-                     'S=True; S=S+1;', 'S=1.00;', 'S=-1*0;'):
-            self.assertFalse(analyze(parse(text)),text)
-
     def test_host_boundary_observes_decimal(self):
         vm=Interpreter();self.addCleanup(vm.close);seen=[]
         vm.register_function('Observe',lambda x:seen.append(type(x)))
@@ -70,9 +53,8 @@ class IntegerLaneTests(unittest.TestCase):
         self.assertEqual(seen,[D])
 
     def test_scale_and_signed_zero_stay_decimal(self):
-        for tail,expected in (('S=1.0; S;',D('1.0')), ('S=-0; S;',D('-0')), ('S=-1*0; S;',D('-0'))):
+        for tail,expected in (('S=1.0; S;',D('1.0')), ('S=-0; S;',D('-0'))):
             source='S=0; For i=1 To 2 Do S=S+i; EndDo; '+tail
-            self.assertFalse(analyze(parse(source)))
             vm,_,result=self.run_source(source)
             self.assertEqual(result.as_tuple(),expected.as_tuple())
             self.assertEqual(vm.variables['s'].as_tuple(),expected.as_tuple())
@@ -96,38 +78,55 @@ class IntegerLaneTests(unittest.TestCase):
         self.assertEqual(vm.variables['preserved'],D(42))
         self.assertTrue(all(type(value) is D for value in vm.variables.values()))
 
-    def test_cancellation_keeps_decimal_rounding_and_negative_zero(self):
+    def test_native_integer_context_divergence_is_explicit(self):
         from decimal import ROUND_FLOOR
-        for tail in ('S=1-1; S;', 'S=-1+1; S;'):
-            source='S=0; For i=1 To 2 Do S=S+i; EndDo; '+tail
-            self.assertFalse(analyze(parse(source)))
-            with localcontext() as ctx:
-                ctx.rounding=ROUND_FLOOR
-                vm,_,result=self.run_source(source)
-            self.assertEqual(result.as_tuple(),D('-0').as_tuple())
+        with localcontext() as ctx:
+            ctx.rounding=ROUND_FLOOR;ctx.Emax=1
+            _,plan,result=self.run_source('S=0; For i=1 To 10 Do S=S+i*i; EndDo; S;')
+            self.assertEqual(result,D(385))
+            self.assertNotIn('_integer_context_ok',plan._plan.generated_source)
+        _,_,result=self.run_source('S=-1*0; S;')
+        self.assertEqual(result.as_tuple(),D(0).as_tuple())
 
-    def test_prepared_context_change_retains_decimal_errors_and_results(self):
-        from unittest.mock import patch
-        from decimal import Overflow, Subnormal
-        source='S=100; For i=1 To 10 Do S=S+i*i; EndDo; S;'
+    def test_remainder_has_dividend_sign_and_decimal_errors(self):
+        for source,expected in (('S=-7%3; S;',D(-1)),('S=7%-3; S;',D(1)),('S=-6%3; S;',D('-0')),('S=-7.5%3; S;',D('-1.5'))):
+            _,_,result=self.run_source(source)
+            self.assertEqual(result.as_tuple(),expected.as_tuple())
         vm=Interpreter();self.addCleanup(vm.close)
-        fast=vm.prepare(source)
-        with patch('yadinassi.execution.direct.python_direct_integer_lane.analyze',return_value=False):
-            other=Interpreter();self.addCleanup(other.close)
-            ordinary=other.prepare(source)
-        for settings in ({'Emax':1}, {'Emin':0}, {'clamp':1}):
-            results=[]
-            for owner,plan in ((vm,fast),(other,ordinary)):
-                with localcontext() as ctx:
-                    for name,value in settings.items():setattr(ctx,name,value)
-                    ctx.traps[Overflow]=True;ctx.traps[Subnormal]=True
-                    try:result=owner.execute_prepared(plan);results.append(('value',result.as_tuple()))
-                    except Exception as error:results.append(('error',type(error),str(error)))
-            self.assertEqual(results[0],results[1],settings)
-        self.assertEqual(vm.execute_prepared(fast),D(485))
+        with self.assertRaises(Exception):vm.execute('S=3; X=5%0; After=1;')
+        self.assertEqual(vm.variables,{'s':D(3)})
+
+    def test_boolean_and_fractional_counter(self):
+        _,_,result=self.run_source('S=True; S;')
+        self.assertIs(result,True)
+        vm,_,result=self.run_source('S=0; For i=0.5 To 2.5 Do S=S+i; EndDo; S;')
+        self.assertEqual(result,D('4.5'));self.assertEqual(vm.variables['i'],D('3.5'))
 
     def test_no_two_body_cost_for_one_off_or_nonarithmetic_loop(self):
         for source in ('S=1;', 'S=10*20+3; S;', 'For i=1 To 100 Do S=i; EndDo;'):
-            self.assertFalse(analyze(parse(source)))
             vm,plan,_=self.run_source(source)
             self.assertNotIn('_integer_context_ok',plan._plan.generated_source)
+
+    def test_table_raw_numbers_publish_through_public_access(self):
+        from yadinassi.collections.plain_table_storage import RowStorage
+        source='T=New ValueTable; T.Columns.Add("N"); For i=0 To 3 Do R=T.Add(); R.N=i*2; EndDo; S=0; For i=0 To 3 Do If T[i].N>=0 Then S=S+T[i]["N"]; EndIf; EndDo; S;'
+        for mode in ('default','prepared'):
+            vm=Interpreter();self.addCleanup(vm.close)
+            plan=vm.prepare(source)
+            self.assertIn('_raw_table_value',plan._plan.generated_source)
+            result=vm.execute_prepared(plan) if mode=='prepared' else vm.execute_program(parse(source))
+            self.assertEqual(result,D(12));self.assertIs(type(result),D)
+            table=vm.variables['t']
+            self.assertIs(type(RowStorage.get_value(table.get(1),'N')),int)
+            self.assertIs(type(table.get(1).get_member('N')),D)
+            seen=[];vm.register_function('Observe',lambda value:seen.append(type(value)))
+            vm.execute('Observe(T[1].N); Kind=TypeOf(T[1].N);')
+            self.assertEqual(seen,[D])
+            from yadinassi.types.values import BSLType
+            self.assertIs(vm.variables['kind'],BSLType.NUMBER)
+
+    def test_array_remains_decimal_and_single_body(self):
+        vm,plan,_=self.run_source('A=New Array; For i=1 To 2 Do A.Add(i); EndDo;')
+        self.assertTrue(all(type(value) is D for value in vm.variables['a']))
+        _,plan,_=self.run_source('S=0; For i=1 To 2 Do S=S+i; EndDo; S;')
+        self.assertEqual(sum(isinstance(node,ast.For) for node in ast.walk(ast.parse(plan._plan.generated_source))),1)

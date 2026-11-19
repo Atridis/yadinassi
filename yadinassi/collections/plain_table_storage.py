@@ -129,7 +129,8 @@ def scalar_equal(left, right):
     if (not any(left_kind is kind for kind in scalar_types)
             or not any(right_kind is kind for kind in scalar_types)):
         raise NotImplementedError('comparison of opaque values is not supported')
-    if left_kind is not right_kind:
+    if left_kind is not right_kind and not (
+            left_kind in (int, Decimal) and right_kind in (int, Decimal)):
         return False
     return left == right
 

@@ -9,6 +9,7 @@ from decimal import Decimal
 from yadinassi.temporal.dates import BSLDate
 from yadinassi.collections.plain_table_storage import Schema, TableStorage
 from yadinassi.collections.plain_table_search import SearchIndexes
+from yadinassi.collections.plain_value_table_runtime import public_cell
 from yadinassi.collections.structures import _key
 from yadinassi.types.type_descriptions import BSLTypeDescription, _query_nullable_description
 from yadinassi.types.type_qualifiers import (BSLAllowedLength, BSLAllowedSign, BSLBinaryDataQualifiers,
@@ -366,7 +367,7 @@ def take_table(table, *, encode, charge_text, reserve):
             row_ids.add(id(row))
             cells = []
             for position, (column, description) in enumerate(zip(col_items, descriptions)):
-                value = list.__getitem__(row, position)
+                value = public_cell(list.__getitem__(row, position))
                 node = encode(value)  # Parent admission/bounds precede scalar adjustment.
                 if not _cell_matches(description, value):
                     raise TableSnapshotError('cell does not match scalar schema')

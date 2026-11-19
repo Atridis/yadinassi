@@ -28,7 +28,8 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False):
             require(node.name.casefold() in constructors and not node.arguments);kind=constructors[node.name.casefold()]
         elif k is bsl.Index:
             owner=expression(node.object,env);index=expression(node.index,env)
-            require(owner in ('array','map','table','valuelist','row') and index==('string' if owner=='row' else 'number'))
+            require(owner in ('array','map','table','valuelist','row') and
+                    (index in ('number','string') if owner=='row' else index=='number'))
             kind={'table':'row','valuelist':'item'}.get(owner,'number')
         elif k is bsl.Attribute:
             owner=expression(node.object,env);name=node.name.casefold()
@@ -55,7 +56,7 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False):
             require(expression(node.condition,env) in ('number','bool'))
             kind=expression(node.when_true,env);require(kind==expression(node.when_false,env))
         elif k is bsl.Call and type(node.callee) is bsl.Attribute:
-            receiver_kind=expression(node.callee.object,env);require(receiver_kind in ('array','map','table','valuelist','columns'))
+            receiver_kind=expression(node.callee.object,env);require(receiver_kind in ('array','map','table','valuelist','columns','row'))
             method=node.callee.name.casefold()
             if method in ('get','получить'):
                 require(receiver_kind!='columns' and len(node.arguments)==1 and expression(node.arguments[0],env)=='number');kind={'table':'row','valuelist':'item'}.get(receiver_kind,'number')
@@ -65,7 +66,9 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False):
                 elif receiver_kind=='valuelist':require(len(node.arguments)==1 and expression(node.arguments[0],env)=='number');kind='item'
                 else:raise _Decline
             elif method in ('count','количество','ubound','вграница'):
-                require(not node.arguments and (receiver_kind=='array' or method in ('count','количество')));kind='number'
+                require(receiver_kind!='row' and not node.arguments and (receiver_kind=='array' or method in ('count','количество')));kind='number'
+            elif method in ('total','итог'):
+                require(receiver_kind=='table' and len(node.arguments)==1 and expression(node.arguments[0],env)=='string');kind='number'
             else:raise _Decline
         else:raise _Decline
         kinds[id(node)]=kind;return kind

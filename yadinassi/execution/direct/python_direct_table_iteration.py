@@ -1,5 +1,6 @@
 """Detached canonical table iteration, without invoking receiver or payload hooks."""
 from yadinassi.collections.value_tables import _DIRECT_ITERATION_TYPES, _DIRECT_ITERATION_DICT
+from yadinassi.collections.plain_value_table_runtime import public_cell
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 _TABLE, _COLUMNS, _ROW, _COLUMN = _DIRECT_ITERATION_TYPES
@@ -53,6 +54,6 @@ def resolve(boundary,value):
                 if index>=len(items):return
                 item=items[index];index+=1
                 if expected is not None and (type(item) is not expected or owner(item) is not root):invalid()
-                yield item
+                yield public_cell(item) if expected is None else item
         return iterator()
     return invoke

@@ -12,7 +12,9 @@ from .plain_table_storage import RowStorage, TableStorage, Schema, scalar_equal
 
 
 def _index(value,count,inserting=False):
-    if type(value) is int:n=value
+    if type(value) is int:
+        if not 0 <= value < count + inserting:raise IndexError("table index out of range")
+        return value
     elif type(value) is Decimal and value.is_finite():n=value.to_integral_value(rounding=ROUND_DOWN)
     else:raise TypeError('table index must be a finite number')
     if not 0<=n<count+int(inserting):raise IndexError('table index out of range')
@@ -25,6 +27,10 @@ def _writable(table):
 
 def _array(values):
     result=BSLArray();result.items=list(values);return result
+
+
+def public_cell(value):
+    return Decimal(value) if type(value) is int else value
 
 
 def _method(value,name,groups):
@@ -139,12 +145,17 @@ class BSLValueTableRow(RowStorage,BSLObject):
     __ne__=object.__ne__
     def __init__(self,owner,schema,values=None):
         RowStorage.__init__(self,owner,schema,values);self.table=owner
-    get_member=RowStorage.get_value
+    def get_member(self,name):
+        value = RowStorage.get_value(self,name)
+        return Decimal(value) if type(value) is int else value
     def set_member(self,name,value):
         _writable(self.table);return RowStorage.set_value(self,name,value)
-    def get(self,index):
+    def _positional_value(self,index):
         if self._deleted:raise ValueError("row is deleted")
         return list.__getitem__(self,_index(index,len(self.schema._keys)))
+    def get(self,index):
+        value = self._positional_value(index)
+        return Decimal(value) if type(value) is int else value
     def set(self,index,value):
         if self._deleted:raise ValueError("row is deleted")
         _writable(self.table)
@@ -159,7 +170,7 @@ class BSLValueTableRow(RowStorage,BSLObject):
     @property
     def cells(self):
         # Readonly cold snapshot for inspection; not a second authoritative map.
-        return MappingProxyType({c:list.__getitem__(self,i) for i,c in enumerate(self.table.columns._items)})
+        return MappingProxyType({c:public_cell(list.__getitem__(self,i)) for i,c in enumerate(self.table.columns._items)})
     @cells.setter
     def cells(self,values):
         if type(values) is not dict:raise TypeError('materialized cells must be dict')
@@ -171,7 +182,7 @@ class BSLValueTableRow(RowStorage,BSLObject):
         _writable(self.table)
         self.table._storage.epoch += 1
         list.__setitem__(self,slice(None),[prepared[k] for k in self.schema._keys])
-    def __iter__(self):return list.__iter__(self)
+    def __iter__(self):return map(public_cell,list.__iter__(self))
     def get_method(self,name):return _method(self,name,(
         (('get','получить'),'get',True),(('set','установить'),'set',False),(('owner','владелец'),'owner',True)))
     def __str__(self):return 'СтрокаТаблицыЗначений'
@@ -210,9 +221,9 @@ class BSLValueTable(BSLObject):
     def index_of(self,row):return Decimal(next((i for i,r in enumerate(self.rows) if r is row),-1))
     def _row_index(self,row):
         if type(row) is BSLValueTableRow:
-            index=self.index_of(row)
-            if index<0:raise ValueError('foreign row')
-            return int(index)
+            for index,item in enumerate(self.rows):
+                if item is row:return index
+            raise ValueError('foreign row')
         return _index(row,len(self.rows))
     def delete(self,row):
         _writable(self);self._storage.delete(self._row_index(row))
@@ -232,10 +243,11 @@ class BSLValueTable(BSLObject):
         for name in result:self._storage.schema.resolve(name)
         return result
     def find(self,value,columns=None):
-        selected=self._selection(columns)
+        schema=self._storage.schema
+        selected=tuple(schema.offset(name) for name in self._selection(columns))
         for row in self.rows:
-            for name in selected:
-                if scalar_equal(row.get_member(name),value):return row
+            for position in selected:
+                if scalar_equal(list.__getitem__(row,position),value):return row
         return None
     def find_rows(self,filters):
         from .structures import BSLStructure
@@ -269,8 +281,9 @@ class BSLValueTable(BSLObject):
         name=self.columns.resolve(column).name
         for row,value in zip(self.rows,values.items):row.set_member(name,value)
     def total(self,column):
-        name=self.columns.resolve(column).name
-        return sum((v for row in self.rows if type(v:=row.get_member(name)) is Decimal),Decimal(0))
+        position=self._storage.schema.offset(self.columns.resolve(column).name)
+        result=sum((v for row in self.rows if type(v:=list.__getitem__(row,position)) in (int,Decimal)),0)
+        return public_cell(result)
     def sort(self,order,comparator=None):
         _writable(self)
         if comparator is not None:raise NotImplementedError('custom comparator is parked')

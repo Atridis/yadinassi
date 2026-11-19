@@ -34,7 +34,8 @@ class LinearFindRows(unittest.TestCase):
         t=BSLValueTable();t.columns.add('K')
         for value in (True,1,Decimal(1)):
             t.add().set_member('K',value)
-        self.assertIs(t.find_rows(BSLStructure('K',Decimal(1))).items[0],t.rows[2])
+        self.assertEqual(t.find_rows(BSLStructure('K',Decimal(1))).items,t.rows[1:])
+        self.assertEqual(t.find_rows(BSLStructure('K',True)).items,t.rows[:1])
         self.assertEqual(t.find_rows(BSLStructure()).items,[])
         with self.assertRaises(ValueError):t.find_rows(BSLStructure('Missing',1))
         with self.assertRaises(TypeError):t.find_rows({'K':1})
@@ -114,12 +115,14 @@ class LazyFindRows(unittest.TestCase):
         t=BSLValueTable();t.columns.add('K');t.add().set_member('K',1);t.indexes.add('K')
         f=BSLStructure('K',1);t.find_rows(f)
         entry=t._search.cache[(0,)]
-        with self.assertRaises(TypeError):entry.buckets[((int,1),)]=(0,)
+        key=((Decimal,1),)
+        self.assertEqual(entry.buckets[key],(0,))
+        with self.assertRaises(TypeError):entry.buckets[key]=(0,)
         class Foreign:
             def __index__(self):raise AssertionError('foreign index hook')
-        t._search.cache[(0,)]=_Entry(entry.epoch,MappingProxyType({((int,1),):(Foreign(),)}))
+        t._search.cache[(0,)]=_Entry(entry.epoch,MappingProxyType({key:(Foreign(),)}))
         with self.assertRaises(ValueError):t.find_rows(f)
-        t._search.cache[(0,)]=_Entry(entry.epoch,MappingProxyType({((int,1),):(9,)}))
+        t._search.cache[(0,)]=_Entry(entry.epoch,MappingProxyType({key:(9,)}))
         with self.assertRaises(ValueError):t.find_rows(f)
     def test_retained_slot_accounting(self):
         t=BSLValueTable();t.columns.add('K');t.columns.add('V')

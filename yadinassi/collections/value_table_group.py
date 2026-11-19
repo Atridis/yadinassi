@@ -37,6 +37,8 @@ def _scalar_key(value):
         if type(value) is str:
             _text(value)
         return (type(value), value)
+    if type(value) is int:
+        return (Decimal, value)
     if type(value) is Decimal:
         _number_value(value)
         if abs(value.adjusted()) > 4096:
@@ -51,6 +53,9 @@ def _scalar_key(value):
 def _sum(values):
     if not values:
         return Decimal(0)
+    if all(type(value) is int for value in values):
+        return Decimal(sum(values))
+    values = [Decimal(value) if type(value) is int else value for value in values]
     for value in values:
         _number_value(value)
         if abs(value.adjusted()) > 4096:
@@ -67,6 +72,8 @@ def _sum(values):
 
 
 def _numeric(value):
+    if type(value) is int:
+        return value
     if type(value) in (Decimal, str, bool) or value is None:
         return _number_value(value)
     if type(value) is BSLDate:
@@ -97,7 +104,7 @@ def _total(column, rows):
             from yadinassi.types.type_descriptions import _qualified_string
             return _qualified_string(Decimal(0), description.string_qualifiers)
         raise ValueError('Свернуть: нулевая сумма этого составного типа пока не подтверждена')
-    numeric = [v for v in values if type(v) is Decimal]
+    numeric = [v for v in values if type(v) in (int, Decimal)]
     result = _adjust(description, _sum(numeric))
     if kinds:
         # The supplement proves per-merge qualification for a single Number

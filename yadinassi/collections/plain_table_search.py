@@ -11,7 +11,7 @@ def token(value, typed):
         return _UNSUPPORTED
     if kind is Decimal and not value.is_finite():
         return _UNSUPPORTED
-    return (kind, value) if typed else value
+    return (Decimal if kind is int else kind, value) if typed else value
 
 @dataclass(frozen=True, slots=True)
 class _Entry:

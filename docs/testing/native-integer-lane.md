@@ -34,3 +34,26 @@ This is not a legacy interpreter fallback and does not catch or retry failures.
 Literal scale/scientific notation and signed zero are preserved by declining the
 lane; possible negative-zero products, negation and additive cancellation are
 also left to Decimal, including the ambient ROUND_FLOOR case.
+
+## Current implementation: one mixed numeric body
+
+The bounded analysis above describes the first iteration. The current direct
+compiler uses its existing static scalar and local ValueTable facts to choose a
+single body. It does not prove that every intermediate stays integer, emit a
+second body, or choose a body at runtime. Integral unscaled literals and integer
+loop counters use Python integers; scaled literals retain Decimal. Python
+operators promote mixed operands to Decimal. Division and remainder retain the
+existing Decimal semantics (including negative remainder); no float is emitted.
+
+Only the selected direct scalar/local-table paths use the new representation.
+Public scalar values and table cell read/iteration/snapshot boundaries expose
+Decimal. Tables do not copy or walk their rows on publication. Positional row
+indices remain zero-based, reject Boolean and out-of-range offsets, and retain
+the existing fractional conversion for Decimal indexes. Numeric search keys
+compare int and Decimal together while keeping Boolean separate.
+
+For this representation ordinary int-only operators do not round at an
+intermediate 38-digit boundary or pick up the ambient Decimal exponent/trap
+settings. Signed zeros from int-only arithmetic can differ from Decimal;
+explicit unary negative zero remains Decimal. These are explicit compatibility
+differences, not timing or correctness gates for unrelated programs.
