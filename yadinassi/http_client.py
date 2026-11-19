@@ -56,12 +56,15 @@ def _body(data):
 
 def _headers(value):
     from .experimental_naked_collections import _TypedMap
-    if type(value) is BSLMap: entries=value._items
-    elif type(value) is _TypedMap: entries=value
+    from .python_direct_plain_map import PlainMap
+    kind = type(value)
+    if kind is BSLMap: entries = value._items
+    elif kind is PlainMap or kind is _TypedMap: entries = value
     else: raise TypeError('HTTP: заголовки должны быть Соответствием')
     if len(entries) > MAX_HEADERS: raise ValueError('HTTP: слишком много заголовков')
+    pairs = dict.items(entries) if kind is PlainMap else dict.values(entries)
     result = []; seen = set(); size = 0
-    for key, val in dict.values(entries):
+    for key, val in pairs:
         key = _text(key, 256); val = _text(val, MAX_HEADER_BYTES)
         if not _TOKEN.fullmatch(key) or any(ord(c) < 32 or ord(c) == 127 for c in val):
             raise ValueError('HTTP: недопустимый заголовок')
