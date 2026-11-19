@@ -16,8 +16,9 @@ are not fallback routes. Public execute/execute_program compile directly.
 ## Deliberately remaining work
 
 This is not a claim that every historical execution-related definition is gone.
-Runtime still contains semantic helpers and individual visit methods, async body
-and activation helpers, callback machinery, module import helpers and the shared
+After the second slice, individual tree-walk visit methods and the old async
+routine body/invocation activation executor are physically removed too. Runtime
+still contains semantic helpers, callback machinery, module import helpers and the shared
 Scheduler/ExecutionContext. Direct source/ownership adapters consume parts of
 these types, field layouts and definition-time ABIs. Owning interpreter subclasses
 also retain historical compiled branches. These require a separate dependency
@@ -31,3 +32,8 @@ select retired backends are not migrated by this slice. Ordinary CI/full-suite
 success is NOT claimed. New focused tests prove physical engine-module absence,
 backend rejection, direct execute/prepared/AST execution, and fail-closed old
 entrypoints. Twelve focused tests pass in normal and optimized Python.
+
+Second-slice validation: 13 focused tests pass normal/-O. A broader imports,
+prepared and source cohort runs 58 tests with one expected obsolete test setup
+error: it explicitly constructs compiled-strict. This assertion is not weakened
+or silently skipped; remaining 57 tests pass. No full-suite claim.

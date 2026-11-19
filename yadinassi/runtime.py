@@ -15,7 +15,7 @@ from .data_hashing import BSLDataHashing, HASH_FUNCTIONS
 from .data_io import BSLDataReader, BSLDataWriter
 from . import zip_archives
 from .zip_archives import BSLZipFileReader, BSLZipFileWriter, BSLZipFileEntries
-"""Tree-walking interpreter with persistent state and injectable builtins."""
+"""Direct runtime state, canonical services and live ownership boundaries."""
 
 from decimal import Decimal, localcontext
 from types import GeneratorType, MethodType
@@ -787,15 +787,6 @@ class Interpreter:
         from .python_direct import _reject
         _reject("_planned_module_block is a retired execution entrypoint; use execute or prepare")
 
-    @staticmethod
-    def _routine_plan(function):
-        plan = getattr(function, '_prepared_control_flow', None)
-        if type(plan) is not PreparedBlock or not plan.matches(function.body):
-            # Validation completes before publication: invalid mutations do not
-            # install a partially prepared plan or reach argument side effects.
-            plan = prepare_control_flow(function.body)
-            function._prepared_control_flow = plan
-        return plan
 
     def _planned_routine_block(self, function):
         from .python_direct import _reject
@@ -834,8 +825,6 @@ class Interpreter:
         from .python_direct import _reject
         _reject("_visit is a retired execution entrypoint; use execute or prepare")
 
-    def visit_Literal(self, node: ast.Literal) -> object:
-        return node.value
 
     def semantic_name(self, node: ast.Name) -> object:
         name = node.name.casefold()
@@ -935,80 +924,9 @@ class Interpreter:
             return SORT_DIRECTIONS
         raise ValueError(f"Переменная или функция не определена: {node.name}")
 
-    def visit_Group(self, node: ast.Group) -> object:
-        return (yield from self._visit(node.expression))
 
-    def visit_Unary(self, node: ast.Unary) -> object:
-        value = (yield from self._visit(node.operand))
-        if node.operator == "NOT":
-            return not boolean(value)
-        value = require_number(value)
-        return value if node.operator == "+" else value.copy_negate()
 
-    def visit_Binary(self, node: ast.Binary) -> object:
-        left = (yield from self._visit(node.left))
-        operator = node.operator
-        if operator == "AND":
-            return boolean(left) and boolean((yield from self._visit(node.right)))
-        if operator == "OR":
-            return boolean(left) or boolean((yield from self._visit(node.right)))
-        right = (yield from self._visit(node.right))
-        if operator in ("=", "<>", "<", "<=", ">", ">="):
-            if type(left) is dates.BSLDate:
-                left.require_known()
-            if type(right) is dates.BSLDate:
-                right.require_known()
-        if (operator in ("=", "<>", "<", "<=", ">", ">=")
-                and ((type(left) is Decimal and type(right) is bool)
-                     or (type(left) is bool and type(right) is Decimal))):
-            # BSL operator comparisons convert Boolean to Number (0 or 1).
-            # Keep this separate from typed collection lookup equality.
-            left = Decimal(1 if left else 0) if type(left) is bool else left
-            right = Decimal(1 if right else 0) if type(right) is bool else right
-        if operator == "=":
-            return equal(left, right)
-        if operator == "<>":
-            return not equal(left, right)
-        if operator in ("<", "<=", ">", ">="):
-            if type(left) is dates.BSLDate and type(right) is dates.BSLDate:
-                left, right = Decimal(left.ticks), Decimal(right.ticks)
-            if type(left) is not type(right) or not isinstance(left, (Decimal, str, bool)):
-                raise TypeError("Значения несовместимы для сравнения")
-            if isinstance(left, str):
-                left, right = string_key(left), string_key(right)
-            if operator == "<":
-                return left < right
-            if operator == "<=":
-                return left <= right
-            if operator == ">":
-                return left > right
-            return left >= right
-        if operator == "+" and isinstance(left, str):
-            return strings.concatenate(left, to_string(right))
-        if type(left) is dates.BSLDate and operator in ("+", "-"):
-            if operator == "-" and type(right) is dates.BSLDate:
-                return dates.date_difference(left, right)
-            if type(right) is not Decimal:
-                raise TypeError("Арифметика даты: ожидается число секунд")
-            return dates.shift_date(left, right if operator == "+" else right.copy_negate())
-        left, right = require_number(left), require_number(right)
-        if operator == "+":
-            return left + right
-        if operator == "-":
-            return left - right
-        if operator == "*":
-            return left * right
-        if operator == "/":
-            return divide(left, right)
-        if operator == "%":
-            if right == 0:
-                raise ZeroDivisionError
-            return left % right
-        raise ValueError(f"Неизвестный оператор: {operator}")
 
-    def visit_Conditional(self, node: ast.Conditional) -> object:
-        branch = node.when_true if boolean((yield from self._visit(node.condition))) else node.when_false
-        return (yield from self._visit(branch))
 
     def semantic_attribute(self, node: ast.Attribute) -> object:
         value = (yield from self.receiver(node.object))
@@ -1093,8 +1011,6 @@ class Interpreter:
             return value.get_index(index)
         return value.get(index)
 
-    def visit_Call(self, node: ast.Call) -> object:
-        return (yield from self.call(node, require_value=True))
 
     @staticmethod
     def _valid_routine_context(function: ast.Routine) -> bool:
@@ -1438,158 +1354,15 @@ class Interpreter:
             return child
         return None
 
-    def _admit_routine_call(self, function: ast.Routine, arguments: list[ast.Node],
-                            owner: "Interpreter", *, require_value: bool):
-        """Live per-invocation checks, not a reusable permission/plan cache.
-
-        Keep check order before actual argument effects. This transient result
-        must be consumed immediately by the same invocation; no authority is
-        stored in an immutable compilation plan.
-        """
-        self._require_family()
-        owner._require_family()
-        # Authority registries key the original declaration object. An optional
-        # owned compilation view snapshots execution fields, never grants.
-        authority_function = function
-        layout = None
-        if owner._execution_backend == 'compiled-strict':
-            owner._admit_compiled_node(function)
-            authority_function = owner._compiled().origin_node(function)
-            function = owner._compiled().execution_view(function)
-            if self._execution_backend == 'compiled-strict':
-                layout = owner._compiled().routine_call_metadata(function)
-        if self._configuration_runtime is not None:
-            self._configuration_runtime.check_call(function, self)
-        if function.is_async and function.execution_context != "client":
-            raise ValueError("Асинхронные подпрограммы допустимы только на клиенте")
-        if not self._valid_routine_context(function):
-            raise ValueError("Подпрограмма требует неподдерживаемый контекст исполнения")
-        caller_side = self.execution_context
-        if function.is_dual and function.execution_context != caller_side:
-            raise ValueError(f"Двухконтекстная подпрограмма недоступна на стороне {caller_side}: {function.name}")
-        if caller_side == "server" and function.execution_context == "client":
-            raise ValueError("Вызов клиентской подпрограммы с сервера недопустим")
-        if (not self._has_module_context and function.module_context
-                and not (self._configuration_runtime is not None
-                         and self._configuration_runtime.is_common_routine(authority_function))):
-            raise ValueError("Подпрограмма без контекста не может вызывать контекстную подпрограмму")
-        crossing = caller_side == "client" and function.execution_context == "server"
-        if crossing or function.is_async:
-            from .safe_mode import require_transfer
-            require_transfer('cross-context or asynchronous calls')
-        invocation = owner._invocation_bindings.get(function.name.casefold())
-        invocation = invocation[1] if invocation and invocation[0] is authority_function else None
-        if invocation is not None and not crossing:
-            raise ValueError("InvocationPort доступен только с логического клиента")
-        if require_value and not function.is_function:
-            raise TypeError(f"Процедура не возвращает значение: {function.name}")
-        required = (layout.required if layout is not None else
-                    max((index + 1 for index, parameter in enumerate(function.parameters)
-                         if parameter.default is None), default=0))
-        if not required <= len(arguments) <= len(function.parameters):
-            raise TypeError(f"{function.name} ожидает {len(function.parameters)} аргументов, "
-                            f"получено {len(arguments)}")
-        return function, authority_function, caller_side, crossing, invocation, layout
 
     def call_routine(self, function: ast.Routine, arguments: list[ast.Node],
                      owner: "Interpreter", *, require_value: bool, qualified: bool = False, _evaluation=None) -> object:
         from .python_direct import _reject
         _reject("call_routine is a retired execution entrypoint; use execute or prepare")
 
-    def _invoke_bound_routine(self, function, owner, bindings, *, caller_side,
-                              crossing, copyback, scalar_server_reuse, reuse,
-                              reusable_runtime):
-        """Execute one already-admitted, already-bound invocation.
 
-        Shared by calling paths, never an authorization cache or a public call
-        bypass. Preserve suspension, policy callbacks, cleanup and copyback;
-        callers must not repeat argument effects if optimized dispatch deopts.
-        """
-        if scalar_server_reuse:
-            from .invocation import _encode_scalar
-        if function.is_async:
-            promise = self._scheduler.start(owner._async_body(function, bindings),
-                                            procedure=not function.is_function)
-            return promise if function.is_function else None
-        input_call = (nullcontext() if self._configuration_runtime is None else
-                      self._configuration_runtime.input_call(self, owner,
-                          not crossing and caller_side == 'client' and function.execution_context == 'client'
-                          and function.module_context))
-        with self._routine_activation(owner, function, bindings, crossing, input_call):
-            if crossing:
-                for initializer in owner.server_initializers:
-                    yield from owner.block(initializer.body)
-                owner.locals = bindings
-            result = None
-            try:
-                (yield from owner._planned_routine_block(function))
-            except _Return as returned:
-                result = returned.value
-            if scalar_server_reuse: _encode_scalar(result)
-            if crossing:
-                # Validate the entire outgoing packet before touching caller
-                # storage. Escaping errors never reach this normal-return path.
-                packet = self._copy_context_packet(
-                    [result] + [bindings[name] for name, _ in copyback])
-                result = packet[0]
-                # Every output/result gets an independent per-occurrence copy.
-                # Publish only after the whole packet validates and allocates.
-                for (_, reference), value in zip(copyback, packet[1:]):
-                    reference.set(value)
-            if reuse is not None:
-                reusable_runtime.reusable_values.authorize(self)
-                cache, reservation = reuse
-                cache.publish(reservation, result, reusable_runtime.reusable_values.measure(result))
-            return result
 
-    @contextmanager
-    def _routine_activation(self, owner, function, bindings, crossing, input_call):
-        """Shared live activation/cleanup boundary, never a stored grant."""
-        previous = owner.locals
-        # Fresh server module initialization precedes formal parameter storage.
-        owner.locals = None if crossing else bindings
-        owner._context_stack.append(function.execution_context)
-        owner._module_context_stack.append(function.module_context)
-        from .database_transactions import admission
-        with admission(not crossing and getattr(self, '_transaction_activation_allowed', True)):
-            try:
-                from .safe_mode import routine_frame
-                with input_call, routine_frame(self, owner):
-                    yield
-            finally:
-                owner._module_context_stack.pop()
-                owner._context_stack.pop()
-                owner.locals = previous
-                if crossing:
-                    self._scheduler.active_context.state.pop(owner._diagnostic_owner, None)
 
-    def _async_body(self, function: ast.Routine, bindings: dict):
-        if self._execution_backend == "compiled-strict":
-            self._admit_compiled_node(function)
-        previous = self.locals
-        self.locals = bindings
-        self._context_stack.append("client")
-        self._module_context_stack.append(True)
-        try:
-            try:
-                yield from self._planned_routine_block(function)
-            except _Return as returned:
-                return returned.value
-            return None
-        finally:
-            self._module_context_stack.pop()
-            self._context_stack.pop()
-            self.locals = previous
-
-    def visit_Await(self, node: ast.Await):
-        from .safe_mode import require_transfer
-        require_transfer('Await')
-        from .database_transactions import forbid_transfer
-        forbid_transfer(self._transaction_backend())
-        value = yield from self._visit(node.operand)
-        # Even settled promises suspend in the measured client profile.
-        # Scalar operands also resume as themselves; no synchronous unwrap.
-        return (yield AwaitRequest(value))
 
     @staticmethod
     def _copy_context_packet(values: list[object]) -> list[object]:
@@ -2077,29 +1850,9 @@ class Interpreter:
                 self._module_cache[path] = module
         return module
 
-    def visit_Label(self, node: ast.Label) -> None:
-        pass
 
-    def visit_Goto(self, node: ast.Goto) -> None:
-        raise _Goto(node)
 
-    def visit_Routine(self, node: ast.Routine) -> None:
-        # Declarations are registered by execute_program, never executed in place.
-        pass
 
-    def visit_Try(self, node: ast.Try) -> None:
-        try:
-            (yield from self.block(node.body))
-        except BSLRuntimeError as error:
-            # 1C discards parent diagnostic information on entering a nested handler.
-            # Keep frames for reliable unwinding, but never revive their stale errors.
-            for index in range(len(self._handled_errors)):
-                self._handled_errors[index] = None
-            self._handled_errors.append(error)
-            try:
-                (yield from self.block(node.handler))
-            finally:
-                self._handled_errors.pop()
 
     def semantic_raise(self, node: ast.Raise, *, _evaluation=None) -> None:
         evaluate = self._visit if _evaluation is None else _evaluation.evaluate
@@ -2154,47 +1907,11 @@ class Interpreter:
                             frozenset(categories), token.source, token.line, token.source_line)
         raise BSLRuntimeError(message, token.source, token.line, token.column, info=info)
 
-    def visit_Return(self, node: ast.Return) -> None:
-        raise _Return((yield from self._visit(node.value)) if node.value is not None else None)
 
-    def visit_ExpressionStatement(self, node: ast.ExpressionStatement) -> object:
-        expression = self.ungroup(node.expression)
-        if isinstance(expression, ast.Call):
-            # A procedure is allowed only when its result is discarded.
-            return (yield from self.call(expression, require_value=False))
-        return (yield from self._visit(node.expression))
 
-    def visit_Var(self, node: ast.Var) -> None:
-        if self.locals is None and any(name.casefold() in self.imports for name in node.names):
-            raise ValueError("Имя импорта конфликтует с объявлением")
-        for name in node.names:
-            (self.variables if self.locals is None else self.locals).setdefault(name.casefold(), None)
 
-    def visit_If(self, node: ast.If) -> None:
-        for condition, body in node.branches:
-            if boolean((yield from self._visit(condition))):
-                (yield from self.block(body))
-                return
-        (yield from self.block(node.otherwise))
 
-    def iteration(self, body: list[ast.Node]) -> bool:
-        try:
-            (yield from self.block(body))
-        except _Continue:
-            pass
-        except _Break:
-            return False
-        return True
 
-    def visit_For(self, node: ast.For) -> None:
-        start = require_number((yield from self._visit(node.start)))
-        end = require_number((yield from self._visit(node.end)))
-        name = node.name.casefold()
-        self.set_variable(name, start)
-        while require_number(self.visit_Name(ast.Name(node.token, name))) <= end:
-            if not (yield from self.iteration(node.body)):
-                break
-            self.set_variable(name, require_number(self.visit_Name(ast.Name(node.token, name))) + Decimal(1))
 
     def compiled_iterable(self, collection):
         from .source_document_sections import SourceDocumentSection
@@ -2214,23 +1931,9 @@ class Interpreter:
             raise TypeError("Для Каждого ожидает массив, структуру, соответствие или поддержанное пространство системного перечисления")
         return collection
 
-    def visit_ForEach(self, node: ast.ForEach) -> None:
-        collection = (yield from self._visit(node.collection))
-        for item in self.compiled_iterable(collection):
-            self.set_variable(node.name, item)
-            if not (yield from self.iteration(node.body)):
-                break
 
-    def visit_While(self, node: ast.While) -> None:
-        while boolean((yield from self._visit(node.condition))):
-            if not (yield from self.iteration(node.body)):
-                break
 
-    def visit_Break(self, node: ast.Break) -> None:
-        raise _Break
 
-    def visit_Continue(self, node: ast.Continue) -> None:
-        raise _Continue
 
     # Independent dispatch names share implementations, not forwarding frames.
     # Legacy hooks are visit_*; compiled adapters resolve semantic_* directly.
@@ -2245,12 +1948,8 @@ class Interpreter:
     visit_Execute = semantic_execute
 
 
-# Fail closed when embedders instrument dispatch after class definition. These
-# identities are admission guards, never authority or caller state caches.
-_HYBRID_RUNTIME_HOOKS = {name: Interpreter.__dict__[name] for name in (
-    '_visit', 'visit_For', 'visit_Name', 'set_variable', 'block', 'iteration',
-    'visit_Assign', 'visit_Binary', 'visit_Unary', 'visit_Literal', 'visit_Group',
-    'locals', '_has_module_context', '_eval_depth', 'semantic_name')}
+# Definition-time direct admission guard; no visitor evaluator is retained.
+_DIRECT_VISITOR_ABI = Interpreter._visit
 
 
 def unary_value(operator, value):

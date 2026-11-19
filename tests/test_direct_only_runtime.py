@@ -14,6 +14,11 @@ class DirectOnlyRuntimeTests(unittest.TestCase):
                      'python_translation_blocks', 'python_translation_expressions'):
             self.assertIsNone(importlib.util.find_spec('yadinassi.' + name))
 
+    def test_tree_walk_and_async_bodies_are_removed(self):
+        for name in ("visit_For", "visit_Binary", "visit_Await", "iteration",
+                     "_async_body", "_invoke_bound_routine", "_routine_activation"):
+            self.assertNotIn(name, vars(Interpreter))
+
     def test_old_backend_choices_rejected(self):
         for backend in ('interpreter', 'hybrid', 'compiled-strict'):
             with self.assertRaises(ValueError): Interpreter(execution_backend=backend)

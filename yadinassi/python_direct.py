@@ -38,13 +38,13 @@ def _reject(message):
 
 
 def _admit_vm(vm,*,_transaction_owner=None):
-    from .runtime import Interpreter, _COMPILED_BASE_ABI_NAMES, _COMPILED_BASE_ABI, _HYBRID_RUNTIME_HOOKS
+    from .runtime import Interpreter, _COMPILED_BASE_ABI_NAMES, _COMPILED_BASE_ABI, _DIRECT_VISITOR_ABI
     if type(vm) is not Interpreter:
         _reject('specialized Interpreter contexts are not integrated')
     for name,expected in zip(_COMPILED_BASE_ABI_NAMES,_COMPILED_BASE_ABI):
         if name in vars(vm) or vars(Interpreter).get(name) is not expected:
             _reject('custom policy/storage hooks are not integrated')
-    if '_visit' in vars(vm) or vars(Interpreter).get('_visit') is not _HYBRID_RUNTIME_HOOKS['_visit']:
+    if '_visit' in vars(vm) or vars(Interpreter).get('_visit') is not _DIRECT_VISITOR_ABI:
         _reject('custom visitor hooks are not integrated')
     from . import safe_mode, source_transactions, database_transactions
     if safe_mode._CURRENT.get() is not None or source_transactions._current.get() is not None:
