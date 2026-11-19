@@ -44,7 +44,7 @@ class DispatchImportTests(unittest.TestCase):
     def test_import_failure_is_not_cached(self):
         original=builtins.__import__
         def importing(name,*args,**kwargs):
-            if name=='source_constant_queries':raise ImportError('synthetic unavailable dependency')
+            if name=='db.query.source_constant_queries':raise ImportError('synthetic unavailable dependency')
             return original(name,*args,**kwargs)
         with patch('builtins.__import__',side_effect=importing):
             with self.assertRaises(ImportError):runtime._source_call_dispatch_types()
