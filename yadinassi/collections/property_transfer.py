@@ -16,6 +16,9 @@ from yadinassi.db.document.document_backend import DocumentSchema
 from yadinassi.db.document.document_lines import BSLDocumentLine, BSLDocumentLines
 from yadinassi.db.document.documents import BSLDocumentManager, BSLDocumentObject
 from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508, current_native_target
+from yadinassi.execution.codegen.experimental_naked_structure import (
+    _DirectStructure, structure_get, structure_set,
+)
 from .structures import BSLFixedStructure, BSLStructure, _key
 from yadinassi.types.type_descriptions import BSLTypeDescription, _canonical, _query_nullable_description
 from yadinassi.types.type_qualifiers import (BSLAllowedLength, BSLAllowedSign, BSLBinaryDataQualifiers,
@@ -370,22 +373,28 @@ def _section_endpoint(row, budget, target):
     return _Endpoint(row, tuple(fields), cls.get_member, cls.set_member)
 
 
-def _endpoint(value, budget, target=False, readable_rows=False):
+def _endpoint(value, budget, target=False, readable_rows=False, *, direct_tree=False):
     kind = type(value)
-    if kind is BSLStructure or kind is BSLFixedStructure:
-        _instance(value, kind)
-        if target and kind is BSLFixedStructure:
-            _invalid('фиксированный приемник нового профиля недоступен для записи')
-        _sequence(value._items, dict, MAX_FIELDS)
+    direct = direct_tree and kind is _DirectStructure
+    if direct or kind is BSLStructure or kind is BSLFixedStructure:
+        if direct:
+            entries = dict.items(value)
+            getter, setter = structure_get, structure_set
+        else:
+            _instance(value, kind)
+            if target and kind is BSLFixedStructure:
+                _invalid('фиксированный приемник нового профиля недоступен для записи')
+            entries = _sequence(value._items, dict, MAX_FIELDS).items()
+            getter, setter = kind.get_member, kind.set_member
         fields = []
-        for key, pair in value._items.items():
+        for key, pair in entries:
             if type(key) is not str or type(pair) is not tuple or len(pair) != 2:
                 _invalid('недопустимое свойство структуры')
             folded = budget.name(pair[0])
             if key != folded:
                 _invalid('имя свойства не соответствует ключу')
             fields.append(_Field(pair[0], key))
-        return _Endpoint(value, tuple(fields), kind.get_member, kind.set_member)
+        return _Endpoint(value, tuple(fields), getter, setter)
     if kind is BSLValueTableRow or kind is BSLValueTreeRow:
         return _row_endpoint(value, budget, target, readable_rows)
     if kind is BSLCatalogObject or kind is BSLDocumentObject:
@@ -434,11 +443,24 @@ def fill_property_values(target, source, properties=None, exclude=None):
     Linux ordinary-row INCLUDE checks presence/readonly lazily, right to left.
     Other endpoint/target combinations retain the original preflight policy.
     """
-    linux_rows = _ordinary_linux_transfer(target, source)
+    return _fill_property_values(target, source, properties, exclude, direct_tree=False)
+
+
+def fill_structure_tree(target, source, properties, exclude):
+    target_kind, source_kind = type(target), type(source)
+    if not ((target_kind is _DirectStructure and source_kind is BSLValueTreeRow)
+            or (target_kind is BSLValueTreeRow and source_kind is _DirectStructure)):
+        raise TypeError('ЗаполнитьЗначенияСвойств: неподдерживаемый тип объекта')
+    return _fill_property_values(target, source, properties, exclude, direct_tree=True)
+
+
+def _fill_property_values(target, source, properties, exclude, *, direct_tree):
+    linux_rows = (current_native_target() == LINUX_8_3_27_1508 if direct_tree
+                  else _ordinary_linux_transfer(target, source))
     budget = _Budget()
     try:
-        destination = _endpoint(target, budget, True)
-        origin = _endpoint(source, budget, readable_rows=linux_rows)
+        destination = _endpoint(target, budget, True, direct_tree=direct_tree)
+        origin = _endpoint(source, budget, readable_rows=linux_rows, direct_tree=direct_tree)
     except (AttributeError, KeyError):
         _invalid('неполное внутреннее состояние объекта')
     if linux_rows:
@@ -482,7 +504,9 @@ def fill_property_values(target, source, properties=None, exclude=None):
                     # when reached in source order, after preceding assignments.
                     # !todo Measure multiple/mixed missing exclusions and other
                     # source kinds; do not extrapolate the partial-write rule.
-                    if not linux_rows or type(source) is not BSLStructure or deferred is not None:
+                    mutable_source = (type(source) is BSLStructure
+                                      or (direct_tree and type(source) is _DirectStructure))
+                    if not linux_rows or not mutable_source or deferred is not None:
                         _invalid('исключаемое свойство отсутствует в одном из объектов')
                     deferred = key
                 excluded.add(key)

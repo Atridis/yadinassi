@@ -1,4 +1,4 @@
-"""Finite structure-only FillPropertyValues; no object/database admission."""
+"""Direct FillPropertyValues for structures and mixed detached tree rows."""
 from yadinassi.collections.structures import _DIRECT_FILL_STRUCTURE_ABI
 from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure, structure_key
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
@@ -29,11 +29,20 @@ def _storage(value, role):
 def fill(target,source,properties=None,exclude=None):
     # Preserve the already-registered canonical host contract when no direct
     # storage participates. This is not a conversion or retry: direct storage
-    # never reaches object/database adapters or the runtime evaluator.
-    if type(target) is not _DirectStructure and type(source) is not _DirectStructure:
+    # never reaches database adapters or the runtime evaluator.
+    target_direct = type(target) is _DirectStructure
+    source_direct = type(source) is _DirectStructure
+    if not target_direct and not source_direct:
         if not ((type(target) is _STRUCTURE or type(target) is _FIXED)
                 and (type(source) is _STRUCTURE or type(source) is _FIXED)):
             return _FILL(target,source,properties,exclude)
+    elif target_direct != source_direct:
+        other = source if target_direct else target
+        if type(other) is not _STRUCTURE and type(other) is not _FIXED:
+            from yadinassi.collections.value_trees import BSLValueTreeRow
+            if type(other) is BSLValueTreeRow:
+                from yadinassi.collections.property_transfer import fill_structure_tree
+                return fill_structure_tree(target, source, properties, exclude)
     target_items=_storage(target,'приемник')
     source_items=_storage(source,'источник')
     return _COPY(target_items,source_items,properties,exclude,

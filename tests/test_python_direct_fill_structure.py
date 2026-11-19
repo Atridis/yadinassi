@@ -101,6 +101,44 @@ class DirectFillStructureTests(TestCase):
                 fill(target,source)
             self.assertEqual(target.get('a'),9)
 
+    def test_direct_structure_fills_tree_row_shallowly(self):
+        vm = self.vm(target=LINUX_8_3_27_1508)
+        self.addCleanup(vm.close)
+        vm.execute('Tree=New ValueTree; Tree.Columns.Add("First"); Tree.Columns.Add("Last");'
+                   'R=Tree.Rows.Add(); R.First=1; R.Last="old";'
+                   'Shared=New Array; S=New Structure("Last,First",Shared,10);'
+                   'FillPropertyValues(R,S); Shared.Add(7);')
+        self.assertEqual(vm.execute('R.First'), 10)
+        self.assertIs(vm.execute('R.Last'), vm.variables['shared'])
+        self.assertEqual(vm.execute('R.Last[0]'), 7)
+
+    def test_tree_row_fills_existing_direct_structure_properties(self):
+        vm = self.vm(target=LINUX_8_3_27_1508)
+        self.addCleanup(vm.close)
+        vm.execute('Tree=New ValueTree; Tree.Columns.Add("First"); Tree.Columns.Add("Last");'
+                   'P=Tree.Rows.Add(); R=P.Rows.Add(); R.First=10; R.Last="new";'
+                   'S=New Structure("First,Last,Keep,Parent,Rows",1,"old",3);'
+                   'FillPropertyValues(S,R,"First,Parent,Rows,Last");')
+        self.assertEqual(vm.execute('S.First'), 10)
+        self.assertEqual(vm.execute('S.Last'), 'new')
+        self.assertEqual(vm.execute('S.Keep'), 3)
+        self.assertIs(vm.execute('S.Parent'), vm.variables['p'])
+        self.assertIs(vm.execute('S.Rows'), vm.execute('R.Rows'))
+
+    def test_direct_tree_transfer_retains_linux_partial_writes(self):
+        vm = self.vm(target=LINUX_8_3_27_1508)
+        self.addCleanup(vm.close)
+        vm.execute('Tree=New ValueTree; Tree.Columns.Add("First"); Tree.Columns.Add("Last");'
+                   'R=Tree.Rows.Add(); R.First=1; R.Last="old";'
+                   'S=New Structure("First,Last,Extra",10,"new",9);')
+        with self.assertRaisesRegex(BSLRuntimeError, 'включенное свойство отсутствует'):
+            vm.execute('FillPropertyValues(R,S,"First,Extra,Last");')
+        self.assertEqual(vm.execute('R.First'), 1)
+        self.assertEqual(vm.execute('R.Last'), 'new')
+        with self.assertRaisesRegex(BSLRuntimeError, 'исключаемое свойство отсутствует'):
+            vm.execute('FillPropertyValues(R,S,Undefined,"Extra");')
+        self.assertEqual(vm.execute('R.First'), 10)
+
     def test_corrupt_storage_fails_before_mutation_without_hooks(self):
         target=new_structure('A',1)
         for corrupt in ({'a':('A',2),'b':['B',3]}, {'a':('Other',2)}, {'a':('A',2,3)}):
