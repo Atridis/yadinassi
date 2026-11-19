@@ -63,13 +63,8 @@ class _EventInterpreter(Interpreter):
         self._remaining = 256
 
     def _visit(self, node):
-        if self.execution_backend == 'compiled-strict':
-            return (yield from super()._visit(node))
-        # Preserve the original reference-backend context wrapper. The base
-        # interpreter does not pay for or promise the new strict-only ABI.
-        self.compiled_before(node)
-        result = yield from super()._visit(node)
-        return self.compiled_after(node, result)
+        from .python_direct import _reject
+        _reject("single-node adapter evaluation is retired; use the direct entrypoint")
 
     def compiled_before(self, node):
         self._remaining -= 1
@@ -211,12 +206,8 @@ def simulate_form_event(source, binding, *, catalog_xml, form_xml, definition_xm
         vm.variables = {'объект': receiver, 'элемент': None, 'отказ': cancel,
                         'текущийобъект': receiver, 'параметрызаписи': None}
         vm.module_names = set(vm.variables)
-        arguments = [ast.Name(p.token, p.name) for p in routine.parameters]
-        if vm.execution_backend=='python-direct':
-            from .python_direct_form_events import run_event
-            run_event(vm,program,routine,source.decode('utf-8-sig'),prepared_owner=_prepared_owner)
-        else:
-            vm._scheduler.run_inline(vm.call_routine(routine, arguments, vm, require_value=False))
+        from .python_direct_form_events import run_event
+        run_event(vm,program,routine,source.decode('utf-8-sig'),prepared_owner=_prepared_owner)
         if type(vm.variables['отказ']) is not bool:
             raise ValueError('form event: invalid cancellation')
         return FormEventResult(receiver.snapshot(), vm.variables['отказ'], tuple(messages))
@@ -566,22 +557,17 @@ def simulate_product_form_event(form_source, object_source, receiver, *, event,
     routine = next(node for node in program if node.name == handlers[event])
     vm = ProductInterpreter(receiver, sink, object_source)
     try:
-        # Register original routines only; invoke selected routine on its own side.
-        if vm.execution_backend!='python-direct':vm.execute_program(program)
+        # Invoke the selected routine on its own side through direct compilation.
         vm._logical_side = routine.execution_context
         vm._context_stack = [routine.execution_context]
         vm.variables.update({'объект': receiver, 'элемент': None, 'отказ': cancel,
             'текущийобъект': receiver, 'параметрызаписи': None,
             'элементы': Members({'склады': Members({'текущиеданные': current})})})
         vm.module_names.update(vm.variables)
-        arguments = [ast.Name(p.token, p.name) for p in routine.parameters]
-        if vm.execution_backend=='python-direct':
-            from .python_direct_form_events import run_event
-            controls=vm.variables['элементы']
-            run_event(vm,program,routine,form_source.decode('utf-8-sig'),product=True,
-                      controls=(controls,controls.members['склады']))
-        else:
-            vm._scheduler.run_inline(vm.call_routine(routine, arguments, vm, require_value=False))
+        from .python_direct_form_events import run_event
+        controls=vm.variables['элементы']
+        run_event(vm,program,routine,form_source.decode('utf-8-sig'),product=True,
+                  controls=(controls,controls.members['склады']))
         if type(vm.variables['отказ']) is not bool:
             raise ValueError('product form: invalid cancellation')
         return ProductFormEventResult(vm.variables['отказ'], tuple(records))

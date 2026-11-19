@@ -295,11 +295,8 @@ class ConfigurationApplication:
             self.bind_interpreter(child)
             if side == 'server':
                 child._logical_side = 'server'
-            if child.execution_backend == 'python-direct':
-                from .python_direct_configuration import install
-                install(self, child, program, sources[self._definitions[name].path].decode('utf-8-sig'))
-            else:
-                child.execute_program(program)  # declarations only; validated above
+            from .python_direct_configuration import install
+            install(self, child, program, sources[self._definitions[name].path].decode('utf-8-sig'))
             self._modules[name, side] = child._self_module
             definition = self._definitions[name]
             if definition.return_values_reuse != 'DontUse':
@@ -329,10 +326,7 @@ class ConfigurationApplication:
             for routine in self._session_program:
                 self._common_routines[id(routine)]=routine
                 self._declared_routines[id(routine)]=routine
-            if child.execution_backend == 'python-direct':
-                raise ValueError('direct session initialization is not connected')
-            child.execute_program(self._session_program)  # declarations only
-            self._session_owner=child
+            raise ValueError('direct session initialization is not connected')
         # Application exports are visible to the same logical client context.
         for key, routine in app_routines.items():
             if routine.exported:
@@ -386,13 +380,8 @@ class ConfigurationApplication:
     def _invoke_remote(self, owner, routine, values):
         if self.side != 'server' or self.state != 'running':
             raise ValueError('server application is not running')
-        if owner.execution_backend == 'python-direct':
-            from .python_direct_configuration import invoke_routine
-            return invoke_routine(self, owner, routine, values)
-        arguments = [ast.Literal(routine.token, value) for value in values]
-        with target_context(owner.native_target), localcontext():
-            return owner._scheduler.run_inline(owner.call_routine(
-                routine, arguments, owner, require_value=routine.is_function))
+        from .python_direct_configuration import invoke_routine
+        return invoke_routine(self, owner, routine, values)
 
     def bind_interpreter(self, interpreter):
         """Host seam for application-owned modules, never a BSL method."""
@@ -540,32 +529,18 @@ class ConfigurationApplication:
         routine = self._events.get(event)
         if routine is None:
             return
-        if self.interpreter.execution_backend == 'python-direct':
-            from .python_direct_configuration import invoke_event
-            return invoke_event(self, routine, values)
-        arguments = [ast.Attribute(routine.token, ast.Literal(routine.token, obj), name)
-                     for obj, name in values]
-        call = ast.Call(routine.token, ast.Name(routine.token, routine.name), arguments)
-        self.interpreter.execute_program([ast.ExpressionStatement(routine.token, call)])
+        from .python_direct_configuration import invoke_event
+        return invoke_event(self, routine, values)
 
     def initialize_session_parameters(self, caller, names):
         self.session_parameters._authorize(caller)
         if self._session_owner is None:
             raise ValueError('session initialization belongs to the server application')
-        routine=self._session_handler
-        if routine is not None:
-            arguments=[ast.Literal(routine.token,names)]
-            yield from caller.call_routine(routine,arguments,self._session_owner,require_value=False)
+        raise ValueError('direct session initialization is not connected')
 
     def _start_session(self):
         if self._session_owner is not None:
-            owner=self._session_owner
-            with target_context(owner.native_target),localcontext():
-                owner._context_stack.append('server')
-                try:
-                    owner._scheduler.run_inline(self.initialize_session_parameters(owner,None))
-                finally:
-                    owner._context_stack.pop()
+            raise ValueError('direct session initialization is not connected')
 
     def is_scalar_server_reuse(self, routine):
         entry = self._reuse_routines.get(id(routine))
@@ -595,11 +570,8 @@ class ConfigurationApplication:
             if self.side == 'server':
                 self.state = 'running'
                 return True
-            if self.interpreter.execution_backend == 'python-direct':
-                from .python_direct_configuration import install
-                install(self, self.interpreter, self._program)
-            else:
-                self.interpreter.execute_program(self._program)
+            from .python_direct_configuration import install
+            install(self, self.interpreter, self._program)
             cancel = BSLStructure('Cancel', False)
             self._invoke('before_start', ((cancel, 'Cancel'),))
             if type(cancel.get_member('Cancel')) is not bool:
@@ -624,10 +596,8 @@ class ConfigurationApplication:
     def execute(self, text, source='<application command>'):
         if self.state != 'running':
             raise ValueError('configuration application must be running')
-        if self.interpreter.execution_backend == 'python-direct':
-            from .python_direct_configuration_commands import execute_command
-            return execute_command(self,text,source)
-        return self.interpreter.execute(text, source)
+        from .python_direct_configuration_commands import execute_command
+        return execute_command(self,text,source)
 
     def close(self, *, force=False):
         if type(force) is not bool:

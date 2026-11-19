@@ -62,13 +62,8 @@ class _ObjectInterpreter(Interpreter):
                 and not (self.locals is not None and name in self.locals))
 
     def _visit(self, node):
-        if self.execution_backend == 'compiled-strict':
-            return (yield from super()._visit(node))
-        # Preserve the original reference-backend context wrapper. The base
-        # interpreter does not pay for or promise the new strict-only ABI.
-        self.compiled_before(node)
-        result = yield from super()._visit(node)
-        return self.compiled_after(node, result)
+        from .python_direct import _reject
+        _reject("single-node adapter evaluation is retired; use the direct entrypoint")
 
     def compiled_before(self, node):
         self.remaining -= 1
@@ -283,20 +278,14 @@ def _prepare_catalog_object(source, receiver, *, cancel=False, write_view=None, 
     try:
         if _transaction_scope is not None:
             _transaction_scope.check()
-            if vm.execution_backend!='python-direct':
+            if vm.execution_backend != "python-direct":
                 from .experimental_naked_boundaries import BoundaryViolation
-                raise BoundaryViolation('catalog preparation requires direct execution')
+                raise BoundaryViolation("catalog preparation requires direct execution")
         if any(n.name.casefold() in vm.object_names | _SELF | set(vm.functions)
                for n in program):
             raise ValueError('catalog preparation: routine collision')
-        if vm.execution_backend == 'python-direct':
-            from .python_direct_catalog_preparation import run_catalog_preparation
-            result = run_catalog_preparation(source, program, vm, cancel, prepared=prepared)
-        else:
-            vm.execute_program(program)
-            vm.variables['отказ'] = cancel
-            vm.execute('ПередЗаписью(Отказ);')
-            result = vm.variables['отказ']
+        from .python_direct_catalog_preparation import run_catalog_preparation
+        result = run_catalog_preparation(source, program, vm, cancel, prepared=prepared)
         if type(result) is not bool:
             raise ValueError('catalog preparation: Boolean cancellation required')
         return result, tuple(records)

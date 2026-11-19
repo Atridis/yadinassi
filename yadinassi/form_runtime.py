@@ -111,13 +111,8 @@ class _FormInterpreter(Interpreter):
         return child
 
     def _visit(self, node):
-        if self.execution_backend == 'compiled-strict':
-            return (yield from super()._visit(node))
-        # Preserve the original reference-backend context wrapper. The base
-        # interpreter does not pay for or promise the new strict-only ABI.
-        self.compiled_before(node)
-        result = yield from super()._visit(node)
-        return self.compiled_after(node, result)
+        from .python_direct import _reject
+        _reject("single-node adapter evaluation is retired; use the direct entrypoint")
 
     def compiled_before(self, node):
         session = self._form_session
@@ -323,13 +318,10 @@ class FormSession:
         self._busy = True
         try:
             self._direct_handlers = None
-            if self.interpreter.execution_backend == "python-direct":
-                from .python_direct_forms import prepare_form
-                self._direct_handlers = prepare_form(self, program, source, attributes, tables,
-                    local_server_calls=(interpreter_factory is None and database_context is None
-                                        and reference_scope is None))
-            else:
-                self.interpreter.execute_program(program)
+            from .python_direct_forms import prepare_form
+            self._direct_handlers = prepare_form(self, program, source, attributes, tables,
+                local_server_calls=(interpreter_factory is None and database_context is None
+                                    and reference_scope is None))
             for identity, schema in enumerate(tables, 1):
                 key = schema.name.casefold()
                 if key in self.reserved_names or key in self.form._tables:
@@ -382,30 +374,11 @@ class FormSession:
 
     def _invoke(self, handler, side, arguments):
         routine = self._bind(handler, side, len(arguments))
-        if self._direct_handlers is not None:
-            from .python_direct_forms import invoke_form
-            with target_context(self.interpreter.native_target), localcontext():
-                return invoke_form(self, handler, side, arguments)
-        interpreter = (self.interpreter._new_server_activation() if side == 'server' else self.interpreter)
-        # Host-created slots only, never renderer-selected name or generated AST.
-        slots = list(arguments); bindings = {}
-        for index, parameter in enumerate(routine.parameters):
-            bindings[parameter.name.casefold()] = (slots[index] if parameter.by_value else
-                Reference(lambda i=index: slots[i], lambda v,i=index: slots.__setitem__(i,v)))
-        def execute():
-            previous = interpreter.locals
-            interpreter.locals = bindings
-            interpreter._context_stack.append(side)
-            interpreter._module_context_stack.append(True)
-            try:
-                try: yield from interpreter.block(routine.body)
-                except _Return: pass
-            finally:
-                interpreter._module_context_stack.pop(); interpreter._context_stack.pop()
-                interpreter.locals = previous
-        with target_context(interpreter.native_target), localcontext():
-            interpreter._scheduler.run_inline(execute())
-        return slots
+        if self._direct_handlers is None:
+            raise ValueError('direct form handlers are not prepared')
+        from .python_direct_forms import invoke_form
+        with target_context(self.interpreter.native_target), localcontext():
+            return invoke_form(self, handler, side, arguments)
 
     def _application_action(self, command):
         action = self._application_actions.get(command.name.casefold())
@@ -473,13 +446,8 @@ class FormSession:
         self._completion_active = True
         try:
             with target_context(self.interpreter.native_target), localcontext():
-                if self._direct_handlers is not None:
-                    values=([result] if result_argument else [])+[description.additional_parameters]
-                    self._invoke(routine.name, 'client', values)
-                else:
-                    self.interpreter._scheduler.run_inline(
-                        self.interpreter.dispatch_callback(description, result, routine.token,
-                                                           result_argument=result_argument))
+                values=([result] if result_argument else [])+[description.additional_parameters]
+                self._invoke(routine.name, 'client', values)
         finally:
             self._completion_active = False
             self.revision += 1; self._busy = False; self._gate.release()

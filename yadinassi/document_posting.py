@@ -45,13 +45,8 @@ class _PostingInterpreter(Interpreter):
         self._information_registers = parent._information_registers
         self.routines = {routine.name.casefold():routine for routine in program}
     def _visit(self, node):
-        if self.execution_backend == 'compiled-strict':
-            return (yield from super()._visit(node))
-        # Preserve the original reference-backend context wrapper. The base
-        # interpreter does not pay for or promise the new strict-only ABI.
-        self.compiled_before(node)
-        result = yield from super()._visit(node)
-        return self.compiled_after(node, result)
+        from .python_direct import _reject
+        _reject("single-node adapter evaluation is retired; use the direct entrypoint")
 
     def compiled_before(self, node):
         self._steps += 1
@@ -98,32 +93,16 @@ class _PostingInterpreter(Interpreter):
 
     def invoke(self, routine, values):
         if routine is None: return
-        if self.execution_backend == 'python-direct':
-            from .python_direct_posting import invoke_posting
-            self._context_stack.append('server')
-            self._module_context_stack.append(True)
-            try:invoke_posting(self,routine,values)
-            finally:
-                self._module_context_stack.pop();self._context_stack.pop()
-            cancel=values.get_member('Cancel')
-            if type(cancel) is not bool:raise TypeError('document cancellation requires Boolean')
-            if cancel:raise ValueError('document write cancelled')
-            return
-        arguments = [ast.Attribute(routine.token,ast.Literal(routine.token,values),name)
-                     for name in ('Cancel','WriteMode','PostingMode')[:len(routine.parameters)]]
-        # Posting has Cancel, PostingMode rather than BeforeWrite's three slots.
-        if len(routine.parameters)==2:
-            arguments[1] = ast.Attribute(routine.token,ast.Literal(routine.token,values),'PostingMode')
+        from .python_direct_posting import invoke_posting
         self._context_stack.append('server')
         self._module_context_stack.append(True)
-        try:
-            with admission(False):
-                self._scheduler.run_inline(self.call_routine(routine,arguments,self,require_value=False))
+        try:invoke_posting(self,routine,values)
         finally:
-            self._module_context_stack.pop(); self._context_stack.pop()
-        cancel = values.get_member('Cancel')
-        if type(cancel) is not bool: raise TypeError('document cancellation requires Boolean')
-        if cancel: raise ValueError('document write cancelled')
+            self._module_context_stack.pop();self._context_stack.pop()
+        cancel=values.get_member('Cancel')
+        if type(cancel) is not bool:raise TypeError('document cancellation requires Boolean')
+        if cancel:raise ValueError('document write cancelled')
+        return
 
 
 class PostingRuntime:

@@ -37,3 +37,20 @@ Second-slice validation: 13 focused tests pass normal/-O. A broader imports,
 prepared and source cohort runs 58 tests with one expected obsolete test setup
 error: it explicitly constructs compiled-strict. This assertion is not weakened
 or silently skipped; remaining 57 tests pass. No full-suite claim.
+
+## Product adapter checkpoint
+
+The form event, source form, document posting, catalog preparation, form session
+and configuration application adapters now call their direct entrypoints without
+retaining a second scheduler/tree-walk execution arm. Single-node adapter entry
+names explicitly reject; budget/ownership hooks used by direct compilation remain.
+Form sessions without prepared direct handlers fail rather than constructing an
+old activation. Unconnected configuration session initialization remains an
+explicit error, including its pre-existing caller authorization.
+
+No source metadata, safe-mode execution, ownership checks, transaction checks,
+revoke checks or direct compiler changes are introduced by this checkpoint.
+This does not migrate unrelated semantic helper methods or enable unsupported
+session initialization. Three new focused tests cover explicit errors and absence
+of old dispatch; existing owning/form/configuration/NoContext tests cover the
+actual direct lanes. Full Light/legacy-test compatibility is not claimed.
