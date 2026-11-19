@@ -22,6 +22,7 @@ from .type_qualifiers import (BSLAllowedLength, BSLAllowedSign, BSLBinaryDataQua
                               BSLDateFractions, BSLDateQualifiers, BSLNumberQualifiers,
                               BSLStringQualifiers, _MAX_LENGTH_UNITS, _MAX_NUMBER_DIGITS)
 from .values import BSLType
+from .plain_table_storage import Schema, TableStorage
 from .value_tables import (BSLCollectionIndex, BSLCollectionIndexes, BSLValueTable,
                            BSLValueTableColumn, BSLValueTableColumnCollection, BSLValueTableRow)
 from .value_trees import (BSLValueTree, BSLValueTreeColumn, BSLValueTreeColumnCollection,
@@ -219,7 +220,7 @@ def _row_endpoint(row, budget, target, readable_rows=False):
     _instance(columns, BSLValueTreeColumnCollection if tree_row else BSLValueTableColumnCollection)
     if columns.table is not owner:
         _invalid('неверный владелец колонок')
-    items = _sequence(columns.items, list, MAX_FIELDS)
+    items = _sequence(columns.items if tree_row else _get(columns, '_items'), list, MAX_FIELDS)
     if tree_row:
         collection = row.collection
         _instance(collection, BSLValueTreeRowCollection)
@@ -246,8 +247,29 @@ def _row_endpoint(row, budget, target, readable_rows=False):
             _invalid('недопустимое состояние таблицы')
         if target and owner._bounded_slice_read:
             _invalid('строка снимка доступна только для чтения')
+        kernel = _get(owner, '_storage')
+        if (type(kernel) is not TableStorage or kernel.owner is not owner
+                or kernel.rows is not owner.rows or kernel.row_factory is not BSLValueTableRow
+                or type(kernel.schema) is not Schema):
+            _invalid('неверное хранилище таблицы')
+        schema = kernel.schema
+        if _get(row, '_owner') is not owner or _get(row, 'schema') is not schema:
+            _invalid('неверная схема или владелец строки')
+        keys = _sequence(schema._keys, list, MAX_FIELDS)
+        offsets = _sequence(schema._offsets, dict, MAX_FIELDS)
+        metadata = _sequence(schema._metadata, list, MAX_FIELDS)
+        if not len(keys)==len(offsets)==len(metadata)==len(items)==list.__len__(row):
+            _invalid('состав ячеек не соответствует колонкам')
+        if any(type(k) is not str for k in keys) or any(type(k) is not str for k in offsets):
+            _invalid('неверные имена в схеме')
+        if type(schema.data_epoch) is not int or schema.data_epoch<0:
+            _invalid('неверное состояние строки')
+        for position,key in enumerate(keys):
+            offset=offsets.get(key)
+            if type(offset) is not int or offset!=position or metadata[position] is not items[position]:
+                _invalid('неверная позиция колонки')
     fields, ids, names = [], set(), set()
-    for column in items:
+    for position,column in enumerate(items):
         _instance(column, BSLValueTreeColumn if tree_row else BSLValueTableColumn)
         if column.table is not owner or column._deleted is not False or id(column) in ids:
             _invalid('неверный владелец колонки')
@@ -256,33 +278,19 @@ def _row_endpoint(row, budget, target, readable_rows=False):
         if key in names or (tree_row and key in ('parent', 'родитель', 'rows', 'строки')):
             _invalid('повторное или зарезервированное имя колонки')
         names.add(key)
+        if not tree_row and keys[position]!=key:
+            _invalid('имя колонки не соответствует схеме')
         if target:
             _descriptor(column.value_type)
         fields.append(_Field(column.name, key))
-    cells = _sequence(row.cells, dict, MAX_FIELDS)
-    if len(cells) != len(items) or any(type(c) is not (BSLValueTreeColumn if tree_row else BSLValueTableColumn)
-                                    or id(c) not in ids for c in cells):
-        _invalid('состав ячеек не соответствует колонкам')
     if tree_row:
+        cells = _sequence(row.cells, dict, MAX_FIELDS)
+        if len(cells) != len(items) or any(type(c) is not BSLValueTreeColumn or id(c) not in ids for c in cells):
+            _invalid('состав ячеек не соответствует колонкам')
         fields.extend(_Field(name, budget.name(name), True, name == 'parent' or readable_rows, False)
                       for name in ('parent', 'rows'))
-    elif target:
-        indexes = owner.indexes
-        _instance(indexes, BSLCollectionIndexes)
-        if indexes.table is not owner:
-            _invalid('неверный владелец индексов')
-        _sequence(indexes.items, list, MAX_INDEXES)
-        positions = 0
-        for index in indexes.items:
-            _instance(index, BSLCollectionIndex)
-            selected = _sequence(index.columns, list, MAX_INDEX_COLUMNS)
-            positions += max(1, len(selected))
-            if (positions > MAX_INDEX_COLUMNS or index.table is not owner
-                    or index._deleted is not False or index._cleared is not False
-                    or any(type(c) is not BSLValueTableColumn or id(c) not in ids for c in selected)
-                    or type(index._keys) is not dict or type(index._buckets) is not dict
-                    or type(index._units) is not int or index._units < 0):
-                _invalid('недопустимое состояние индекса')
+    # Positional row setters only update cells and the schema epoch. Index
+    # declarations and lazy buckets are not consumed by this endpoint.
     return _Endpoint(row, tuple(fields), row_type.get_member, row_type.set_member)
 
 
