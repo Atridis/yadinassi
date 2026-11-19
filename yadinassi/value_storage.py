@@ -458,7 +458,7 @@ _DIRECT_VALUE_STORAGE_RECEIVER_BINDINGS=tuple(
     (module,name,value)
     for module in (sys.modules[__name__],_direct_table_snapshot)
     for name,value in tuple(vars(module).items())
-    if name.startswith('BSL') and isinstance(value,type)
+    if (name.startswith('BSL') or (module is _direct_table_snapshot and name in ('Schema','TableStorage','SearchIndexes'))) and isinstance(value,type)
 )
 _DIRECT_VALUE_STORAGE_RECEIVER_CLASSES=tuple(
     (cls,tuple(vars(cls).items()),cls.__mro__)

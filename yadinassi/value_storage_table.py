@@ -7,6 +7,8 @@ Owner graphs are rebuilt; cached index buckets and host objects are never copied
 from decimal import Decimal
 
 from .dates import BSLDate
+from .plain_table_storage import Schema, TableStorage
+from .plain_table_search import SearchIndexes
 from .structures import _key
 from .type_descriptions import BSLTypeDescription, _query_nullable_description
 from .type_qualifiers import (BSLAllowedLength, BSLAllowedSign, BSLBinaryDataQualifiers,
@@ -193,24 +195,18 @@ def _take_indexes(table, indexes, column_positions, row_count, reserve):
     _index_bounds(len(indexes), 0, row_count)
     definitions, seen, positions = [], set(), 0
     reserve(len(indexes))
-    for index in indexes:
-        if (type(index) is not BSLCollectionIndex or _field(index, 'table') is not table
-                or _field(index, '_deleted') is not False
-                or _field(index, '_cleared') is not False or id(index) in seen):
-            raise TableSnapshotError('invalid table index owner')
-        seen.add(id(index))
-        columns = _field(index, 'columns')
-        if type(columns) is not list:
-            raise TableSnapshotError('invalid index column list')
-        positions += max(1, len(columns))
+    for definition in indexes:
+        if type(definition) is not tuple or not definition:
+            raise TableSnapshotError('invalid direct index definition')
+        positions += len(definition)
         _index_bounds(len(indexes), positions, row_count)
-        reserve(len(columns))
-        definition = []
-        for column in columns:
-            if type(column) is not BSLValueTableColumn or id(column) not in column_positions:
-                raise TableSnapshotError('invalid index column owner')
-            definition.append(column_positions[id(column)])
-        definitions.append(tuple(definition))
+        reserve(len(definition))
+        for position in definition:
+            _integer(position, len(column_positions)-1)
+        if tuple(sorted(set(definition))) != definition or definition in seen:
+            raise TableSnapshotError('duplicate or noncanonical index definition')
+        seen.add(definition)
+        definitions.append(definition)
     # Cached buckets/keys/units are intentionally neither read nor copied.
     return tuple(definitions)
 
@@ -222,13 +218,17 @@ def _restore_indexes(indexes, columns, rows, reserve):
     reserve(len(indexes))
     positions = 0
     for definition in indexes:
-        if type(definition) is not tuple:
+        if type(definition) is not tuple or not definition:
             raise TableSnapshotError('invalid index definition snapshot')
         positions += max(1, len(definition))
         _index_bounds(len(indexes), positions, rows)
         reserve(len(definition))
         for position in definition:
             _integer(position, columns - 1)
+        if tuple(sorted(set(definition))) != definition:
+            raise TableSnapshotError('noncanonical direct index snapshot')
+    if len(set(indexes)) != len(indexes):
+        raise TableSnapshotError('duplicate index snapshot')
 
 
 def _cell_matches(description, value):
@@ -279,13 +279,37 @@ def take_table(table, *, encode, charge_text, reserve):
         columns, indexes, rows = (_field(table, name) for name in ('columns', 'indexes', 'rows'))
         if (type(columns) is not BSLValueTableColumnCollection or columns.table is not table
                 or type(indexes) is not BSLCollectionIndexes or indexes.table is not table
-                or type(columns.items) is not list or type(indexes.items) is not list
+                or type(_field(columns, '_items')) is not list or type(indexes.items) is not list
                 or type(rows) is not list):
             raise TableSnapshotError('invalid table owner or indexes')
-        col_items = columns.items
+        col_items = _field(columns, '_items')
+        kernel = _field(table, '_storage')
+        if (type(kernel) is not TableStorage or kernel.owner is not table
+                or kernel.rows is not rows or kernel.row_factory is not BSLValueTableRow
+                or type(kernel.schema) is not Schema):
+            raise TableSnapshotError('invalid direct table storage')
+        schema_storage = kernel.schema
         if (len(col_items) > MAX_COLUMNS or len(rows) > MAX_ROWS
                 or len(col_items) * len(rows) > MAX_CELLS or (not col_items and rows)):
             raise TableSnapshotError('invalid or oversized table shape')
+        names, keys, offsets, metadata, defaults = (
+            _field(schema_storage, name) for name in
+            ('_names','_keys','_offsets','_metadata','_defaults'))
+        if (type(names) is not list or type(keys) is not list
+                or type(offsets) is not dict or type(metadata) is not list
+                or type(defaults) is not list
+                or not len(names)==len(keys)==len(offsets)==len(metadata)==len(defaults)==len(col_items)):
+            raise TableSnapshotError('invalid direct table schema')
+        if (any(type(name) is not str for name in names)
+                or any(type(key) is not str for key in keys)
+                or any(type(key) is not str for key in offsets)):
+            raise TableSnapshotError('invalid direct schema keys')
+        if len(set(keys))!=len(keys) or [name.casefold() for name in names]!=keys:
+            raise TableSnapshotError('inconsistent direct schema names')
+        for position,key in enumerate(keys):
+            offset=offsets.get(key)
+            if type(offset) is not int or offset!=position:
+                raise TableSnapshotError('invalid direct schema offset')
         _index_bounds(len(indexes.items), 0, len(rows))
         reserve(len(col_items) + len(rows))
         schema, descriptions, seen_names, column_positions = [], [], set(), {}
@@ -298,6 +322,9 @@ def take_table(table, *, encode, charge_text, reserve):
             if folded in seen_names:
                 raise TableSnapshotError('duplicate column name')
             seen_names.add(folded)
+            if (schema_storage._names[position] != column.name
+                    or schema_storage._metadata[position] is not column):
+                raise TableSnapshotError('direct column metadata mismatch')
             column_positions[id(column)] = position
             title, width = _title(column.title), _count(column.width, 2 ** 32 - 1)
             payload, description = _take_description(column.value_type)
@@ -309,6 +336,20 @@ def take_table(table, *, encode, charge_text, reserve):
         if not plain:
             reserve(sum(_schema_extra(column[1]) for column in schema))
         definitions = _take_indexes(table, indexes.items, column_positions, len(rows), reserve)
+        search = _field(table, '_search')
+        if type(search) is not SearchIndexes or type(search.declarations) is not set:
+            raise TableSnapshotError('invalid direct index declarations')
+        _index_bounds(len(search.declarations),0,len(rows))
+        declaration_positions=0
+        for definition in search.declarations:
+            if type(definition) is not tuple:
+                raise TableSnapshotError('invalid direct index declaration')
+            declaration_positions+=max(1,len(definition))
+            _index_bounds(len(search.declarations),declaration_positions,len(rows))
+            if any(type(i) is not int for i in definition):
+                raise TableSnapshotError('invalid direct index declaration')
+        if search.declarations != set(definitions):
+            raise TableSnapshotError('inconsistent direct index declarations')
         weights = [0] * len(col_items)
         for definition in definitions:
             for position in definition:
@@ -318,17 +359,14 @@ def take_table(table, *, encode, charge_text, reserve):
         for row in rows:
             if (type(row) is not BSLValueTableRow or row.table is not table
                     or row._deleted is not False or id(row) in row_ids
-                    or type(row.cells) is not dict or len(row.cells) != len(col_items)):
+                    or _field(row, '_owner') is not table
+                    or _field(row, 'schema') is not schema_storage
+                    or list.__len__(row) != len(col_items)):
                 raise TableSnapshotError('invalid table row')
             row_ids.add(id(row))
-            values = {}
-            for key, value in row.cells.items():
-                if type(key) is not BSLValueTableColumn or id(key) not in column_positions:
-                    raise TableSnapshotError('invalid table cell owner')
-                values[id(key)] = value
             cells = []
             for position, (column, description) in enumerate(zip(col_items, descriptions)):
-                value = values[id(column)]
+                value = list.__getitem__(row, position)
                 node = encode(value)  # Parent admission/bounds precede scalar adjustment.
                 if not _cell_matches(description, value):
                     raise TableSnapshotError('cell does not match scalar schema')
@@ -401,7 +439,7 @@ def restore_table(node, *, decode, charge_text, reserve):
         column.value_type = description
     try:
         for definition in definitions:
-            table.indexes._add_columns([table.columns.items[position] for position in definition])
+            table.indexes.add(','.join(schema[position][0] for position in definition))
     except (TypeError, ValueError, ArithmeticError):
         raise TableSnapshotError('table index cannot be rebuilt within runtime limits') from None
     return table
