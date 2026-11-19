@@ -1,18 +1,16 @@
-# Python-direct is the default (breaking transition)
+# Python-direct is the only execution backend
 
-`Interpreter()` and ordinary CLI execution now choose `python-direct`.
+`Interpreter()` and the CLI use `python-direct`.
 Source is parsed once, lowered to Python, and executed against the same
 `vm.variables` dictionary. Arrays/Maps/Structures use the direct representations;
 source-local functions call Python functions, not the VM dispatcher. There is no
 silent fallback when lowering or admission fails.
 
-Use `yadinassi --legacy file.bsl` or
-`Interpreter(execution_backend="compiled-strict")` for the preceding backend.
-The reference oracle remains `execution_backend="interpreter"`. UI launcher
-backend selection also accepts `--legacy`; default UI/configuration execution
-may now refuse startup or events until its boundaries are integrated. This is
-an intentional compatibility break, not evidence that existing product tests
-all pass.
+The old interpreter, hybrid and compiled execution engines were removed.
+Old backend selections are rejected, not redirected to another mode. UI and
+configuration entrypoints report unsupported features explicitly. This is an
+intentional compatibility break, not evidence that all product tests pass.
+See [what was removed and what remains to migrate](direct-only-runtime-retirement.md).
 
 The default route does not require or modify
 `YADINASSI_UNSAFE_COLLECTION_ABLATION`. Its internal trusted-entry parameter
@@ -61,7 +59,7 @@ reported, not interpreted as permission to remove configuration or host policy.
 
 ## Verified transition checks
 
-Focused default/API/CLI tests cover explicit legacy selection, live namespace,
+Focused default/API/CLI tests cover rejection of removed backends, live namespace,
 AST lowering without reparsing, source-local calls, and fail-before-source-effect
 admission. Public `visit`, `block`, `call` and `call_routine` cannot silently enter
 legacy evaluation on a python-direct VM. Installing a restricted application or

@@ -1,10 +1,9 @@
 # yadinassi
 
-> **Breaking default:** standalone execution now uses `python-direct` (direct
-> Python lowering, no silent legacy fallback). Use `--legacy` or
-> `Interpreter(execution_backend="compiled-strict")` for the previous route.
-> Configuration/UI/async integration is not complete and can explicitly refuse
-> execution. See [the direct-default contract and gaps](docs/python-direct-default.md).
+> **Breaking change:** `python-direct` is the only execution backend.
+> The old interpreter, hybrid and compiled backends have been removed.
+> Unsupported BSL features fail explicitly, including configuration, UI and
+> async cases that have not been migrated. See [the execution contract and gaps](docs/python-direct-default.md).
 
 
 ![yadinassi logo](.github/large.png)
@@ -361,10 +360,3 @@ CatalogRef в карточке справочника, шапке докумен
 Пример `examples/configuration-scalar-editors` сохраняет DateTime справочника,
 шапки документа и строк в существующем явном reference-профиле. Схемы хранения,
 generic Invocation, миграции и права транзакций не расширяются.
-
-### Opt-in hybrid execution
-
-Standalone numeric loops can be tried with
-`yadinassi --execution-backend hybrid file.bsl`; the default is now
-`python-direct`. Unsupported contexts fall back before loop effects. See
-[the bounded hybrid backend contract and benchmark](docs/hybrid-backend.md).
