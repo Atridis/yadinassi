@@ -1,7 +1,7 @@
 import unittest
 from decimal import Decimal
 from unittest.mock import patch
-from yadinassi import Interpreter
+from yadinassi import Interpreter, BSLError
 from tests.retired_text_compiler import prepare
 from yadinassi.python_direct import REPAIRS
 
@@ -46,13 +46,47 @@ class ArraySpecializationTests(unittest.TestCase):
             vm.execute('a=New Array;b=a;a.Add(Change());r=b.Get(0);')
             self.assertEqual(vm.variables['r'],7);self.assertEqual(vm.variables['a'],99)
 
-    def test_callback_deletion_and_counter_write_decline_proof(self):
+    def test_callback_argument_effects_decline_proof(self):
         code='a=New Array;For i=0 To 2 Do a.Add(Observe(i));EndDo;r=a.Count();'
         self.assertEqual(self.pair(code)[:2],(3,[0,1,2]))
         self.assertIn('id(type(',self.source(code))
-        code='a=New Array;a.Add(7);r=0;For i=0 To 0 Do i=-1;r=a.Get(i);EndDo;'
-        self.assertIsNotNone(self.pair(code)[2])
+
+    def test_callback_deletion_keeps_captured_array_bounds_checked(self):
+        code='a=New Array;a.Add(7);r=a.Get(Erase());'
         self.assertIn('_checked_array_index(',self.source(code))
+        for backend in ('interpreter','python-direct'):
+            with self.subTest(backend=backend):
+                vm=Interpreter(execution_backend=backend);events=[]
+                def erase():
+                    array=vm.variables['a']
+                    if backend=='interpreter':array.items.clear()
+                    else:list.clear(array)
+                    events.append('erased')
+                    return Decimal(0)
+                vm.register_function('Erase',erase)
+                with self.assertRaises(BSLError):vm.execute(code)
+                self.assertEqual(events,['erased'])
+
+    def test_counter_write_declines_nonnegative_index_proof(self):
+        # The changed counter terminates even if array bounds behavior changes.
+        # Resetting it to -1 in For 0..0 relied on Get(-1) raising to terminate.
+        code='a=New Array;a.Add(7);a.Add(11);r=0;For i=0 To 1 Do i=1;r=r+a.Get(i);EndDo;'
+        self.assertEqual(self.pair(code),(11,[],None))
+        self.assertIn('_checked_array_index(',self.source(code))
+
+    def test_negative_index_difference_is_finite_and_explicit(self):
+        # Lightweight arrays use Python negative indexing. This is separate
+        # from loop-counter progress and from the retired compiler's proof.
+        code='a=New Array;a.Add(7);r=0;For i=0 To 0 Do i=-1;r=a.Get(i);Break;EndDo;'
+        legacy=Interpreter(execution_backend='interpreter')
+        with self.assertRaises(BSLError):legacy.execute(code)
+        direct=Interpreter(execution_backend='python-direct');direct.execute(code)
+        self.assertEqual(direct.variables['r'],7)
+        self.assertEqual(direct.variables['i'],-1)
+        plan=prepare(code,repairs=REPAIRS,_trusted_entry=True)
+        self.assertIn('_checked_array_index(',plan.generated_source)
+        from yadinassi.experimental_naked_boundaries import BoundaryContext
+        with self.assertRaises(BSLError):plan.run({},context=BoundaryContext())
 
     def test_opaque_contents_stop_operator_proof(self):
         code='a=New Array;a.Add(host);r=a.Get(0);'
