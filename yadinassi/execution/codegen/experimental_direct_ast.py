@@ -191,7 +191,7 @@ class Emitter:
     def __init__(self,filename,source):
         self.filename=filename;self.source=source;self.constants=[];self.serial=0
         self.has_goto=False;self.goto_last_expression=None
-        self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.module_boundaries=0;self.range_indices={}
+        self.integer_lane=False;self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.module_boundaries=0;self.range_indices={}
         self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
         self.import_names=frozenset();self.require_last_expression=None;self.region_active=False;self.region_ops={};self.region_states={};self.routines={};self.routine_symbols={};self.module_globals=set();self.scope=None;self.source_refs={};self.loop_increments=[];self.required=set();self.visits=0;self.python_nodes=0
     def node(self,kind,token,**fields):
@@ -221,6 +221,7 @@ class Emitter:
         helper=self.call('_partial',[self.region_helper(operation,token),self.name('_context',token),self.name(receiver,token),*extra],token)
         return self.node(py.IfExp,token,test=self.name('_collection_fast',token),body=helper,orelse=selected)
     def literal(self,value,token):
+        if self.integer_lane and type(value) is Decimal:return self.const(int(value),token)
         index=len(self.constants);self.constants.append(value)
         return self.node(py.Subscript,token,value=self.name('_constants',token),slice=self.const(index,token),ctx=py.Load())
     def initialize_local(self,key):
@@ -324,7 +325,11 @@ class Emitter:
                 value=self.name(slot,t)
                 if key in self.module_cells:value=self.node(py.Subscript,t,value=value,slice=self.const(0,t),ctx=py.Load())
                 present=self.node(py.Compare,t,left=value,ops=[py.IsNot()],comparators=[self.name('_UNSET',t)])
-                write=self.invoke(self.attribute(self.name('_initial',t),'__setitem__',t),[self.const(key,t),value],t)
+                published=value
+                if self.integer_lane:
+                    integer=self.node(py.Compare,t,left=self.call('type',[value],t),ops=[py.Is()],comparators=[self.name('int',t)])
+                    published=self.node(py.IfExp,t,test=integer,body=self.call('_Decimal',[value],t),orelse=value)
+                write=self.invoke(self.attribute(self.name('_initial',t),'__setitem__',t),[self.const(key,t),published],t)
                 checked=self.node(py.Tuple,t,elts=[write,check()],ctx=py.Load())
                 operations.append(self.node(py.IfExp,t,test=present,body=checked,orelse=self.const(None,t)))
         return self.node(py.Tuple,t,elts=operations,ctx=py.Load())
@@ -485,6 +490,8 @@ class Emitter:
             return self.read(node.name,t)
         if k is bsl.Group:return self.expr(node.expression,require_value)
         if k is bsl.Unary:
+            if self.integer_lane and node.operator in ('+','-'):
+                return self.node(py.UnaryOp,t,op=py.UAdd() if node.operator=='+' else py.USub(),operand=self.expr(node.operand))
             if node.operator in ('+','-'):return self.call('_sign',[self.expr(node.operand),self.const(node.operator,t)],t)
             if node.operator=='NOT':return self.node(py.UnaryOp,t,op=py.Not(),operand=self.truth(node.operand,t))
         if k is bsl.Binary:
@@ -1307,7 +1314,7 @@ class Emitter:
                         if isinstance(value,bsl.Node):pending.extend(getattr(value,f.name) for f in fields(value) if f.name!='token' and not (type(value) is bsl.Literal and f.name=='value'))
                         elif type(value) in (list,tuple):pending.extend(value)
                     raw=self.name(counter,t)
-                    advance=self.assign_name(node.name,self.call('_Decimal',[raw],t) if decimal_use else raw,t)
+                    advance=self.assign_name(node.name,self.call('_Decimal',[raw],t) if decimal_use and not self.integer_lane else raw,t)
                     previous=self.range_indices.get(name);self.range_indices[name]=counter
                     body=self.loop_body(node.body,None)
                     if previous is None:self.range_indices.pop(name)
@@ -1323,6 +1330,7 @@ class Emitter:
                     integer=self.node(py.Compare,t,left=self.call('type',[slot],t),ops=[py.Is()],comparators=[self.name('int',t)])
                     normalize=self.assign_name(node.name,self.call('_Decimal',[slot],t),t)
                     cleanup=self.node(py.If,t,test=integer,body=[normalize],orelse=[])
+                    if self.integer_lane:return [initialize,loop]
                     return [initialize,self.node(py.Try,t,body=[loop],handlers=[],orelse=[],finalbody=[cleanup])]
             first=self.temp();last=self.temp()
             result=[self.node(py.Assign,t,targets=[self.name(first,t,True)],value=self.expr(node.start)),self.node(py.Assign,t,targets=[self.name(last,t,True)],value=self.expr(node.end)),self.assign_name(node.name,self.name(first,t),t)]
@@ -1679,6 +1687,9 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             static_facts=analyze_static(program,opaque_names=emitter.external_names|emitter.module_globals)
             emitter.static_module_kinds={} if static_facts is None else static_facts[1]
             emitter.static_module_names={key:emitter.temp() for key in sorted(names)}
+    if static_facts is not None and not emitter.routines and not emitter.module_cells and not emitter.authority and not emitter.catalog_bounds:
+        from yadinassi.execution.direct.python_direct_integer_lane import analyze as analyze_integers
+        emitter.integer_lane=analyze_integers(program)
     from yadinassi.execution.direct.python_direct_collection_regions import analyze,admitted,helpers
     region_end=0
     if not has_goto and not emitter.static_module_names and not emitter.routines and not emitter.authority and not emitter.source_scopes:
@@ -1692,10 +1703,24 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     if region_end:body.insert(0,emitter.node(py.Assign,t,targets=[emitter.name('_collection_fast',t,True)],value=emitter.const(False,t)))
     if not has_goto and type(program[-1]) is bsl.ExpressionStatement:
         last=body.pop()
+        if emitter.integer_lane:last.value=emitter.call('_Decimal',[last.value],program[-1].token)
         if type(last) is py.Try and emitter.static_module_names:
             last.body[-1]=emitter.node(py.Return,program[-1].token,value=last.body[-1].value);body.append(last)
         else:body.append(emitter.node(py.Return,program[-1].token,value=last.value))
     else:body.append(emitter.node(py.Return,t,value=emitter.node(py.Dict,t,keys=[],values=[]) if _exports and not emitter.routines else emitter.name('_initial',t)))
+    if emitter.integer_lane:
+        # Context changes between prepare and execution retain the ordinary
+        # direct Decimal body. This is one kernel-entry decision, never a
+        # per-operation type/precision dispatcher.
+        integer_body=body
+        emitter.integer_lane=False
+        decimal_body=emitter.sequence(program)
+        if type(program[-1]) is bsl.ExpressionStatement:
+            last=decimal_body.pop()
+            decimal_body.append(emitter.node(py.Return,program[-1].token,value=last.value))
+        else:decimal_body.append(emitter.node(py.Return,t,value=emitter.name('_initial',t)))
+        emitter.integer_lane=True
+        body=[emitter.node(py.If,t,test=emitter.call('_integer_context_ok',[],t),body=integer_body,orelse=decimal_body)]
     if emitter.static_module_names:
         load=[]
         for key,slot in emitter.static_module_names.items():
@@ -1736,7 +1761,8 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     data_types=(list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure,_MapEntry,
         _vt.BSLValueTable,_vt.BSLValueTableRow,_vt.BSLValueTableColumnCollection,_vt.BSLValueTableColumn,
         _vt.BSLCollectionIndexes,_vt.BSLCollectionIndex,_vl.BSLValueList,_vl.BSLValueListItem)
-    namespace=dict(_plain_array_loop=_plain_array_loop,_plain_append_receiver=_plain_append_receiver,_list_append=list.append,_native_host_reference=_native_host_reference,_native_cell_reference=_native_cell_reference,_native_fragment_binding=_native_fragment_binding,_NativeCell=_NativeCell,_adapt_native_cell=_adapt_native_cell,_PrivateTable=_vt.BSLValueTable,_PrivateValueList=PlainValueList,_PlainValueList=PlainValueList,_PlainValueListItem=PlainValueListItem,_module_primitive_type_ids=frozenset(id(kind) for kind in (list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure)),_module_data_types=data_types,_module_data_type_ids=frozenset(id(kind) for kind in data_types),_native_dict_get=dict.get,_native_dict_setitem=dict.__setitem__,_PlainArray=_PlainArray,_Decimal=Decimal,_PlainMap=PlainMap,_plain_map=plain_map,_execute_fragment=execute_fragment,_fragment_binding=_fragment_binding,_bind_eval=bind_eval,_raise_arity_error=raise_arity_error,_host_omission_error=_host_omission_error,_host_omission_values=_host_omission_values,_dynamic_construct=dynamic_construct,_invalid_native_arity=_invalid_native_arity,_typed_find=scalar.typed_find,_list_delete=_list_delete,_native_ubound=_native_ubound,_readonly=readonly,_array_set_checked=_array_set_checked,_bounded_insert=bounded_insert,_structure_insert=structure_insert,_array_constructor_bounds=bounded_array,_new_structure=new_structure,_structure_from_schema=structure_from_schema,_host_name_reference=_host_name_reference,_Cell=_Cell,_as_ref=_as_ref,_bound_ref=_bound_ref,_UNSET_REF=_UNSET_REF,_OMITTED_REF=_OMITTED_REF,_argument_count_error=_argument_count_error,_routine_value_error=_routine_value_error,_procedure_value_error=_procedure_value_error,_identity_reference=_identity_reference,_IndexRef=_IndexRef,_AttributeRef=_AttributeRef,_SlotReference=live_state._SlotReference,_source_reference=source_reference,_canonical_reference=_canonical_reference,_structure_property=structure_property,_native_method_missing=_native_method_missing,_native_count=_native_count,_MapEntry=_MapEntry,_array_member=_array_member,_native_property_missing=_native_property_missing,_structure_get_known=structure_get_known,_native_property_write_missing=_native_property_write_missing,_checked_array_index=_checked_array_index,_partial=partial,_native_getitem=_NATIVE_GETITEM,_list_get=_list_get,_TypedMap=_TypedMap,_NakedMap=_NakedMap,_DirectStructure=_DirectStructure,_host_reference=host_reference,_UNSET=UNSET,_missing=missing,_native_add=_NATIVE_ADD,_concatenate=scalar.concatenate,_divide=scalar.decimal_divide,_sign=scalar.decimal_sign,_order=scalar.uca_order,_truth=scalar.truth,_equal=equal,_not_equal=not_equal,_MISSING=_MISSING,_handled_error=handled_error,_reraise_handled=reraise_handled,_raise_error=raise_error,_presentation=scalar.presentation,_BSLRuntimeError=BSLRuntimeError)
+    from yadinassi.execution.direct.python_direct_integer_lane import context_allows_integer_lane
+    namespace=dict(_integer_context_ok=context_allows_integer_lane,_plain_array_loop=_plain_array_loop,_plain_append_receiver=_plain_append_receiver,_list_append=list.append,_native_host_reference=_native_host_reference,_native_cell_reference=_native_cell_reference,_native_fragment_binding=_native_fragment_binding,_NativeCell=_NativeCell,_adapt_native_cell=_adapt_native_cell,_PrivateTable=_vt.BSLValueTable,_PrivateValueList=PlainValueList,_PlainValueList=PlainValueList,_PlainValueListItem=PlainValueListItem,_module_primitive_type_ids=frozenset(id(kind) for kind in (list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure)),_module_data_types=data_types,_module_data_type_ids=frozenset(id(kind) for kind in data_types),_native_dict_get=dict.get,_native_dict_setitem=dict.__setitem__,_PlainArray=_PlainArray,_Decimal=Decimal,_PlainMap=PlainMap,_plain_map=plain_map,_execute_fragment=execute_fragment,_fragment_binding=_fragment_binding,_bind_eval=bind_eval,_raise_arity_error=raise_arity_error,_host_omission_error=_host_omission_error,_host_omission_values=_host_omission_values,_dynamic_construct=dynamic_construct,_invalid_native_arity=_invalid_native_arity,_typed_find=scalar.typed_find,_list_delete=_list_delete,_native_ubound=_native_ubound,_readonly=readonly,_array_set_checked=_array_set_checked,_bounded_insert=bounded_insert,_structure_insert=structure_insert,_array_constructor_bounds=bounded_array,_new_structure=new_structure,_structure_from_schema=structure_from_schema,_host_name_reference=_host_name_reference,_Cell=_Cell,_as_ref=_as_ref,_bound_ref=_bound_ref,_UNSET_REF=_UNSET_REF,_OMITTED_REF=_OMITTED_REF,_argument_count_error=_argument_count_error,_routine_value_error=_routine_value_error,_procedure_value_error=_procedure_value_error,_identity_reference=_identity_reference,_IndexRef=_IndexRef,_AttributeRef=_AttributeRef,_SlotReference=live_state._SlotReference,_source_reference=source_reference,_canonical_reference=_canonical_reference,_structure_property=structure_property,_native_method_missing=_native_method_missing,_native_count=_native_count,_MapEntry=_MapEntry,_array_member=_array_member,_native_property_missing=_native_property_missing,_structure_get_known=structure_get_known,_native_property_write_missing=_native_property_write_missing,_checked_array_index=_checked_array_index,_partial=partial,_native_getitem=_NATIVE_GETITEM,_list_get=_list_get,_TypedMap=_TypedMap,_NakedMap=_NakedMap,_DirectStructure=_DirectStructure,_host_reference=host_reference,_UNSET=UNSET,_missing=missing,_native_add=_NATIVE_ADD,_concatenate=scalar.concatenate,_divide=scalar.decimal_divide,_sign=scalar.decimal_sign,_order=scalar.uca_order,_truth=scalar.truth,_equal=equal,_not_equal=not_equal,_MISSING=_MISSING,_handled_error=handled_error,_reraise_handled=reraise_handled,_raise_error=raise_error,_presentation=scalar.presentation,_BSLRuntimeError=BSLRuntimeError)
     if region_end or any_region:namespace.update(_collection_admitted=admitted,_collection_helpers=helpers(),_routine_region_state_safe=_routine_region_state_safe)
     # Every route genuinely compiles executable code before source effects.
     # Whole-source research additionally parses the actual source, not a fake
