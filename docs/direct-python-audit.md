@@ -65,7 +65,7 @@ regression is not acceptable as the goal of this work.
 
 ## Evidence and honest limits
 
-`experiments/naked_translation/business` contains self-contained invoice and
+[`experiments/naked_translation/business`](https://github.com/Atridis/yadinassi/tree/713fb157cac984d8918681524848efa5f64f6b70/experiments/naked_translation/business) contains self-contained invoice and
 cyclic-graph workloads, output/alias/full-event controls, cold setup+execution and
 warm execution samples. These are synthetic business workloads, NOT complete
 product applications, native-1C runs or security equivalence. Three rotating

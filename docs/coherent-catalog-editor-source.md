@@ -26,8 +26,8 @@ custom backend refusal. Existing imported product/kind editor fault injections
 now target the new source-pair seam; receipt no-replay assertions are retained.
 
 Measurement uses the unchanged original UI Description/Save harness from
-`experiments/canonical_validation/measure.py`, copied into
-`experiments/coherent_editor_source`. Baseline 01306fc2 is tree-equivalent to
+[`experiments/canonical_validation/measure.py`](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/canonical_validation/measure.py), copied into
+[`experiments/coherent_editor_source`](https://github.com/Atridis/yadinassi/tree/713fb157cac984d8918681524848efa5f64f6b70/experiments/coherent_editor_source). Baseline 01306fc2 is tree-equivalent to
 public 07d52635. Results describe these real UI actions, not all database work.
 
 Verification now also rejects an unexpected `None` → object-policy transition,

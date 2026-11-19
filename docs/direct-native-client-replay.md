@@ -43,8 +43,8 @@ path or unrelated performance work is included.
 - The unmodified `verify_client_interpreter` passes with the genuine owned SQLite
   fixture and original whole client source:138/138 observations, exact output bytes.
   Both managed-thick-file and standalone/preprocessor-measurement modes passed.
-- [Reproducer](../experiments/direct_native_types/replay.py) and
-  [report](../experiments/direct_native_types/result.json) record source/output
+- [Reproducer](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/direct_native_types/replay.py) and
+  [report](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/direct_native_types/result.json) record source/output
   hashes, expected hashes and zero differences for both profiles. Fixture modes
   must run sequentially; an overlapping diagnostic attempt produced
   `fixture_collision` and was rerun successfully after the other jobs ended.
@@ -55,6 +55,8 @@ This is local exact replay of the bounded whole-client witness, not a new run of
 versus baseline30/2), including other constructor/presentation/collection gaps.
 Source, schema and transaction gates were not relaxed. Errors/boundaries modules
 and the parallel lazy-error performance candidate were not modified.
+
+Run this historical reproducer from [its archived source checkpoint](https://github.com/Atridis/yadinassi/tree/713fb157cac984d8918681524848efa5f64f6b70).
 
 ```sh
 PYTHONPATH=tests:scripts:. python -O -m unittest test_python_direct_native_types test_python_direct_server_byref test_python_direct_regex_services

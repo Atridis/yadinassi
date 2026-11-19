@@ -59,4 +59,4 @@ calls 1.999 / 10.438 / 6.558; byref 1.182 / 6.946 / 7.161;
 array 1.818 / 11.236 / 9.907; map 6.309 / 15.711 / 22.574.
 This short combined run is not a paired speedup claim. Public execution includes
 its repeated lowering/compile cost. Raw source hashes, setup/first execution and
-samples are in `experiments/array_byref/default-triplet.json`.
+samples are in [`experiments/array_byref/default-triplet.json`](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/array_byref/default-triplet.json).

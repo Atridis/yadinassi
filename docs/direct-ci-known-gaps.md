@@ -418,7 +418,7 @@ change. Source SELECT count for read/write/read: 6 -> 3.
 pass, no blockers. Seven alternating actual MainDemoHost pairs show Product Save
 55.643 -> 43.161ms, with all pair medians improved. Other operations have small
 or negative/noisy changes; no generic speedup claimed. Current-snapshot and
-corruption cases pass. [Raw results, reproducer, limits and next-candidate profile](../experiments/transaction_source_read/README.md) accompany this slice.
+corruption cases pass. [Raw results, reproducer, limits and next-candidate profile](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/transaction_source_read/README.md) accompany this slice.
 
 ### Current-layout validation without creation preflight (audit8, 2026-11-17)
 
@@ -432,7 +432,7 @@ no cache or change to transaction/data-row validation.
 98 normal + 98 optimized tests pass; independent review: 47 optimized, no blockers.
 Seven alternating actual host pairs: Kind Save 31.255 -> 27.493ms, Product Save
 42.692 -> 36.484ms. Six of seven pair medians improve; noise and all raw samples
-are retained. [Reproducer, results and scope](../experiments/current_catalog_shape/README.md).
+are retained. [Reproducer, results and scope](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/current_catalog_shape/README.md).
 No general speedup/full CI/native parity claim.
 
 ### Array presence proofs; Map candidate rejected (audit8, 2026-11-17)
@@ -447,7 +447,7 @@ Seven paired representative 10k-entry aggregations improve in every pair:
 prepared sum 9.151 -> 7.369ms, alias 11.125 -> 8.426ms; public execute also improves.
 Private routine control has no gain. A separate 20k-event Map token prototype
 showed no stable meaningful prepared gain and was removed from production.
-[Sources, all samples, rejected candidate and limitations](../experiments/array_map_audit8/README.md).
+[Sources, all samples, rejected candidate and limitations](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/array_map_audit8/README.md).
 Canonical BSLMap semantics, source/schema/transaction gates and VM dispatch are
 unchanged. Full compatibility/CI/native parity remain outside this evidence.
 
@@ -541,7 +541,7 @@ the second compilation introduced by 6b060d62 is removed. Current globals and
 boundary are rebound without module initialization or statements. Cold unchanged
 regex median **843.19→485.87ms** in five alternating pairs; 118 normal/118 optimized
 regressions pass, independent review 66 optimized. Server/NoContext gaps remain.
-[Mechanism, raw samples and reproducer](../experiments/direct_routine_compile/README.md).
+[Mechanism, raw samples and reproducer](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/direct_routine_compile/README.md).
 
 ### Audit9 host access (2026-11-17)
 
@@ -550,7 +550,7 @@ selection remove repeated scan/method wrappers; current boundary checks remain.
 No array copy, Find change or relaxed readonly/index/owner rules. Representative
 2000-token StrSplit/Get processing: **35.10→25.02ms**, five alternating rounds;
 regex/SQLite Save show no stable gain. 45 tests pass normal and optimized,
-independent review 40 optimized. [Raw, controls and limits](../experiments/direct_host_access_audit9/README.md).
+independent review 40 optimized. [Raw, controls and limits](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/direct_host_access_audit9/README.md).
 
 ### Remaining audit9 candidates (2026-11-17)
 
@@ -563,7 +563,7 @@ validation remains fresh. Actual Product Save improves in seven final pairs
 Map inlining is rejected as mixed/noisy. Module locals are rejected despite
 compute-only gains: a live callback counterexample returns3 instead of10.
 No production Map rewrite or flush/snapshot layer was added.
-[All samples, rejection evidence and reproducer](../experiments/audit9_remaining/README.md).
+[All samples, rejection evidence and reproducer](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/audit9_remaining/README.md).
 
 ### Named server byref copyback (2026-11-17)
 
@@ -680,7 +680,7 @@ Unchanged logical-model replay matches accepted native artifact14334693411 exact
 24 records,513 bytes,SHA256 2a0a0e7db4025a5babc7ece3edd833feddba7ccffc16027bd6139cc184aa5c84.
 No fixture, schema gate or VM dispatch change. This is local replay against the
 existing native run44098520311, not a new1C run or full CI success.
-[Reproducer, evidence and remaining scope](../experiments/direct_query_table/README.md).
+[Reproducer, evidence and remaining scope](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/direct_query_table/README.md).
 
 ### Direct HTTP owned-loopback replay (2026-11-17)
 
@@ -692,7 +692,7 @@ Original owned-loopback replay now matches native40 plus controls exactly:
 1838bytes,SHA256 d159e9a8b3a11329b453871870e44794478edd30a4ea4681ffa1e31ecb91d971.
 107normal/107optimized tests and30 independent optimized tests PASS. No native
 fixture/security gate changes; TLS/client-context/full-CI parity not claimed.
-[Reproducer, evidence and limits](../experiments/direct_http_protocol/README.md).
+[Reproducer, evidence and limits](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/direct_http_protocol/README.md).
 
 ### Associative comparator evidence ordering (2026-11-17)
 

@@ -49,9 +49,11 @@ the remaining difference is Date/Null graph token `dn.v1:22222288` versus
 `dn.v1:22222277`. Dual, infobase arity and preprocessor tokens match. This diagnostic
 alignment is not used by the unchanged strict gate; native parity is not claimed.
 
-[Reproducer](../experiments/direct_execute/replay.py) and
-[exact observed report](../experiments/direct_execute/result.json) record the
+[Reproducer](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/direct_execute/replay.py) and
+[exact observed report](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/direct_execute/result.json) record the
 source/output hashes and differences. Native source and expected fixtures are unchanged.
+
+Run this historical reproducer from [its archived source checkpoint](https://github.com/Atridis/yadinassi/tree/713fb157cac984d8918681524848efa5f64f6b70).
 
 ```sh
 PYTHONPATH=tests:scripts:. python -O -m unittest test_python_direct_execute test_python_direct_regex_services test_python_direct_error_description test_python_direct_server_byref test_python_direct_managed_profile

@@ -53,4 +53,4 @@ byref 1.09 / 6.23 / 8.42; array 1.82 / 10.75 / 16.67;
 map 6.37 / 15.34 / 23.60. This short run is not a paired speedup claim.
 Default execute_program still includes lowering/compile on each invocation;
 that cost is not silently removed. Raw setup, first execution, samples and
-source hashes are in `experiments/audit2/default-triplet.json`.
+source hashes are in [`experiments/audit2/default-triplet.json`](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/audit2/default-triplet.json).

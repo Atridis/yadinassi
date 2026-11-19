@@ -29,7 +29,7 @@ Five alternating fresh-process pairs on shared Linux/CPython 3.12.14; 10,000-
 iteration kernels, median of three repetitions per cell. Database setup is
 excluded. Prepared timings include execute_prepared admission but not initial
 compilation; execute(source) includes parse and compilation. Final changed-file
-SHA256, raw pairs and reproducible commands are in experiments/db_independent_facts.
+SHA256, raw pairs and reproducible commands are in [`experiments/db_independent_facts`](https://github.com/Atridis/yadinassi/tree/713fb157cac984d8918681524848efa5f64f6b70/experiments/db_independent_facts).
 
 Median milliseconds, baseline → candidate:
 

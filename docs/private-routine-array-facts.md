@@ -24,7 +24,7 @@ module names and historical experiment documents are unchanged.
 
 ## Measurement
 
-See experiments/routine_array_facts. Baseline b38dee3d is exact-tree equivalent
+See [`experiments/routine_array_facts`](https://github.com/Atridis/yadinassi/tree/713fb157cac984d8918681524848efa5f64f6b70/experiments/routine_array_facts). Baseline b38dee3d is exact-tree equivalent
 to public 3afcec50. CPython 3.12.14 on a shared Linux host, no CPU isolation.
 Five alternating fresh-process pairs; each cell is median of three runs. All
 three 10,000-element kernels check sum 49,995,000. Prepared and execute(source)

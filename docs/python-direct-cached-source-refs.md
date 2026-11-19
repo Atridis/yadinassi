@@ -26,7 +26,7 @@ unchanged.
 Seven alternating process pairs, 10,000 iterations each, no thresholds. The
 public default API includes parsing/preparation; the prepared variant excludes
 preparation. Result controls agree in every case. Scripts and raw results are
-in `experiments/direct_cached_refs/`.
+in [`experiments/direct_cached_refs/`](https://github.com/Atridis/yadinassi/tree/713fb157cac984d8918681524848efa5f64f6b70/experiments/direct_cached_refs).
 
 | Case | Public before / after ms | Prepared before / after ms |
 | --- | --- | --- |

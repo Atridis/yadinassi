@@ -29,13 +29,13 @@ this slice.
 
 ## Measurement
 
-`experiments/direct_prepared_validator/measure.py`, run with `PYTHONPATH=.:tests`,
+[`experiments/direct_prepared_validator/measure.py`](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/direct_prepared_validator/measure.py), run with `PYTHONPATH=.:tests`,
 uses a real temporary SQLite main-demo database and the original product source.
 Five alternating baseline/candidate fresh-process pairs compare baseline
 `a50c2de9` (local exact-tree equivalent of public `4858b78e`) with this change. Setup is excluded; first write is measured separately,
 then ten real updates are timed. Each process reopens the stored object and
 checks the final name, one warehouse row and no active transaction. Raw rows are
-in `experiments/direct_prepared_validator/paired.json`.
+in [`experiments/direct_prepared_validator/paired.json`](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/direct_prepared_validator/paired.json).
 
 - Ten warm updates, median: **821.15 → 164.50 ms**, about **4.99× faster**.
 - First write, median: **77.52 → 69.69 ms**; noisy, no cold-speed claim.

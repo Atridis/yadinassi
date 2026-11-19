@@ -72,6 +72,8 @@ policy. Production #336 is unchanged by this research clarification.
 Install the repository's normal pinned dependencies in an isolated environment.
 From the checkout root:
 
+Run this historical reproducer from [its archived source checkpoint](https://github.com/Atridis/yadinassi/tree/713fb157cac984d8918681524848efa5f64f6b70).
+
 ```sh
 PYTHONPATH=.:tests python -m unittest discover -s tests -p 'test_experimental_naked*.py'
 PYTHONPATH=.:tests python -O -m unittest discover -s tests -p 'test_experimental_naked*.py'

@@ -51,7 +51,7 @@ or persistence of source routines across independent modules.
 
 ## Measurements
 
-`experiments/direct_prepared/benchmark.py` records explicit preparation, first
+[`experiments/direct_prepared/benchmark.py`](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/direct_prepared/benchmark.py) records explicit preparation, first
 execution, and seven alternating warm pairs. The baseline is
 `execute(source)`, including parsing and compilation, not
 `execute_program(preparsed_ast)`. All invoice/graph result fields

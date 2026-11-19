@@ -1,9 +1,0 @@
-{
-  "baseline": "2f29a70c",
-  "python": "Python 3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
-  "host": "shared Linux, no CPU isolation",
-  "candidate_sha256": {
-    "yadinassi/document_posting.py": "7638c0c0d3cf84a2893f8596fa05a5febc63576411cefe8f7276f9dd579c40b1",
-    "yadinassi/python_direct_posting.py": "3fd678f72a727de927fb37043fc30a2cb4be5d242b9117a5016516b582fa4917"
-  }
-}

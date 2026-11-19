@@ -34,7 +34,7 @@ not changed or used as a false receipt-success test.
 
 ## Measurement
 
-See experiments/prepared_posting. Five alternating fresh-process pairs against
+See [`experiments/prepared_posting`](https://github.com/Atridis/yadinassi/tree/713fb157cac984d8918681524848efa5f64f6b70/experiments/prepared_posting). Five alternating fresh-process pairs against
 local base 2f29a70c; CPython 3.12.14 on shared Linux, no CPU isolation. Setup is
 excluded, first posting is separate, and warm totals include ten actual SQLite
 reposts and all existing writer/source/transaction checks. Final changed runtime
