@@ -4,11 +4,17 @@ Copy construction is an explicit canonical input boundary, not arbitrary Python
 iterable expansion. Normal empty construction uses a dict subclass with native key/value storage.
 """
 from yadinassi.collections.maps import BSLFixedMap
+from yadinassi.execution.codegen.experimental_naked_collections import _reject_opaque_date_key
 from decimal import Decimal
 from .python_direct_numbers import public_number
 
 _KEY_TYPES=(Decimal,str,bool,int,float,type(None))
 _KEY_TYPE_IDS=frozenset(id(kind) for kind in _KEY_TYPES)
+
+def _reject_key(key):
+    # Only on the non-scalar path. Known dates remain unsupported here.
+    _reject_opaque_date_key(key)
+    raise TypeError("Map key requires a scalar Python value")
 
 class PlainMap(dict):
     """Native storage, scalar keys; no type-tag tuples or wrapped values."""
@@ -28,7 +34,7 @@ class PlainMap(dict):
         for key,value in keywords.items():self[key]=value
 
     def setdefault(self,key,default=None):
-        if id(type(key)) not in _KEY_TYPE_IDS:raise TypeError("Map key requires a scalar Python value")
+        if id(type(key)) not in _KEY_TYPE_IDS:_reject_key(key)
         return dict.setdefault(self,key,default)
 
     def __ior__(self,other):
@@ -39,21 +45,21 @@ class PlainMap(dict):
     def __ne__(self,other):return self is not other
 
     def __setitem__(self,key,value):
-        if id(type(key)) not in _KEY_TYPE_IDS:raise TypeError("Map key requires a scalar Python value")
+        if id(type(key)) not in _KEY_TYPE_IDS:_reject_key(key)
         dict.__setitem__(self,key,value)
 
     def get(self,key,default=None):
-        if id(type(key)) not in _KEY_TYPE_IDS:raise TypeError("Map key requires a scalar Python value")
+        if id(type(key)) not in _KEY_TYPE_IDS:_reject_key(key)
         return public_number(dict.get(self,key,default))
 
     __getitem__=get
 
     def __delitem__(self,key):
-        if id(type(key)) not in _KEY_TYPE_IDS:raise TypeError("Map key requires a scalar Python value")
+        if id(type(key)) not in _KEY_TYPE_IDS:_reject_key(key)
         dict.pop(self,key,None)
 
     def __contains__(self,key):
-        if id(type(key)) not in _KEY_TYPE_IDS:raise TypeError("Map key requires a scalar Python value")
+        if id(type(key)) not in _KEY_TYPE_IDS:_reject_key(key)
         return dict.__contains__(self,key)
 
 
@@ -94,11 +100,11 @@ class PlainFixedMap:
         self._items=MappingProxyType(dict.copy(source))
 
     def get(self,key):
-        if id(type(key)) not in _KEY_TYPE_IDS:raise TypeError('Map key requires a scalar Python value')
+        if id(type(key)) not in _KEY_TYPE_IDS:_reject_key(key)
         return public_number(self._items.get(key))
 
     def get_index(self,key):
-        if id(type(key)) not in _KEY_TYPE_IDS:raise TypeError('Map key requires a scalar Python value')
+        if id(type(key)) not in _KEY_TYPE_IDS:_reject_key(key)
         try:return public_number(self._items[key])
         except KeyError:raise ValueError('Ключ фиксированного соответствия не найден') from None
 

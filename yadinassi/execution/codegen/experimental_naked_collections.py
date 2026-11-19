@@ -93,19 +93,23 @@ REPAIRS=frozenset(('typed_map_keys','array_index_contract','array_insert_shape',
 class _NakedMap(dict):
     """Map kind only, needed for valid missing-key reference outputs."""
 
+def _reject_opaque_date_key(key):
+    if type(key) is not _MAP_DATE_TYPE:
+        return
+    try:boundary=_MAP_DATE_BOUNDARY.__get__(key,_MAP_DATE_TYPE)
+    except AttributeError:
+        raise BoundaryViolation('invalid exact date boundary state') from None
+    if type(boundary) is not bool:
+        raise BoundaryViolation('invalid exact date boundary state')
+    if boundary:
+        raise UnsupportedDateRange(
+            'Дата: после выхода за диапазон известно только скалярное '
+            'внутреннее представление; дальнейшая операция пока не поддерживается')
+
 class _TypedMap(dict):
     @staticmethod
     def token(key):
-        if type(key) is _MAP_DATE_TYPE:
-            try:boundary=_MAP_DATE_BOUNDARY.__get__(key,_MAP_DATE_TYPE)
-            except AttributeError:
-                raise BoundaryViolation('invalid exact date boundary state') from None
-            if type(boundary) is not bool:
-                raise BoundaryViolation('invalid exact date boundary state')
-            if boundary:
-                raise UnsupportedDateRange(
-                    'Дата: после выхода за диапазон известно только скалярное '
-                    'внутреннее представление; дальнейшая операция пока не поддерживается')
+        if type(key) is _MAP_DATE_TYPE:_reject_opaque_date_key(key)
         if type(key) is Decimal or type(key) is bool or type(key) is str or key is None:
             return type(key),key
         return object,id(key)
