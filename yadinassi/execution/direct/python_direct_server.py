@@ -78,6 +78,17 @@ class ServerBoundary(ServicesBoundary,CatalogBoundary,BoundaryContext):
                 or source_transactions._current.get() is not None
                 or database_transactions._execution.get() is not None):
             raise BoundaryViolation('direct server context changed at a host boundary')
+    def resolve_optional_service(self,name,*args,**kwargs):
+        key=name.casefold()
+        module=getattr(self.vm,'_direct_routine_modules',{}).get(key)
+        if self._server_side and module is not None and key in module.server_names:
+            from .python_direct_routines import bind_omissions
+            bound=self.resolve_service(name,*args,**kwargs)
+            if getattr(self.vm,'_direct_routine_modules',{}).get(key) is module:
+                return bind_omissions(bound)
+            return bound
+        return super().resolve_optional_service(name,*args,**kwargs)
+
     def resolve_service(self,name,*args,**kwargs):
         self._check()
         from .python_direct_routines import resolve

@@ -101,10 +101,9 @@ class DirectFileOptionalHolesTests(unittest.TestCase):
         vm = self.vm()
         vm.execute('Function GetBinaryDataFromString(Val X, Val Y=6, Val Z=8) Return Y; EndFunction')
         self.assertEqual(vm.execute('GetBinaryDataFromString("ordinary");'), 6)
-        # Persisted routines do not yet admit positional holes. The existing
-        # error must not become a call to the overshadowed native builtin.
-        with self.assertRaisesRegex(BSLError, 'Пропуск аргументов'):
-            vm.execute('GetBinaryDataFromString("ordinary",,True);')
+        # The persisted BSL routine supplies its own default, not the
+        # positional None used by the overshadowed file builtin.
+        self.assertEqual(vm.execute('GetBinaryDataFromString("ordinary",,True);'), 6)
 
     def test_nonhole_call_keeps_ordinary_resolver(self):
         vm = self.vm()

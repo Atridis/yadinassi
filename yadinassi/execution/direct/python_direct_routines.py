@@ -112,6 +112,17 @@ def validate_calls(vm, calls, seen=None, *, registry=None, layout=None, initiali
                 validate_calls(vm,initializer.initializer_calls,seen,registry=registry,layout=layout,initializers=initializers)
 
 
+def bind_omissions(bound):
+    """Attach the generated BSL routine's positional omission protocol."""
+    from yadinassi.execution.codegen.experimental_naked_collections import _OMITTED_REF
+
+    def omissions(current, positions, count):
+        return current, dict.fromkeys(positions, _OMITTED_REF)
+
+    bound.prepare_omissions=omissions
+    return bound
+
+
 def resolve(context, name, *, require_value=False, allow_references=False, argument_count=None):
     vm=context.vm
     module=getattr(vm,'_direct_routine_modules',{}).get(name)
