@@ -196,7 +196,7 @@ class Compiler:
         for name in self.references(nodes):self.kinds.pop(name,None)
     def collection_kind(self,node):
         if type(node) is bsl.New:
-            return 'map' if node.name.casefold() in ('map','соответствие') else 'other'
+            return 'map' if node.name.casefold() in ('map','соответствие','structure','структура') else 'other'
         if type(node) is bsl.Name:return self.kinds.get(node.name.casefold())
         return None
     def body(self, nodes, depth):
@@ -278,7 +278,7 @@ class Compiler:
                 iterator='dict.items('+collection+')';self.map_entries[key]=None
             elif collection_kind=='other':iterator=collection
             else:
-                lines += [prefix+flag+' = type('+collection+') is _BareMap']
+                lines += [prefix+flag+' = type('+collection+') is _BareMap or type('+collection+') is _BareStructure']
                 iterator='(dict.items('+collection+') if '+flag+' else '+collection+')'
                 self.map_entries[key]=flag
             before=dict(self.kinds)
