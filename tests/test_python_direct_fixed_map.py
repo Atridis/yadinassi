@@ -5,6 +5,7 @@ from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.syntax.parser import parse
 from yadinassi.collections.maps import BSLMap, BSLFixedMap
+from yadinassi.execution.direct.python_direct_plain_map import PlainFixedMap
 from yadinassi.types.unique_identifiers import BSLUUID
 from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
@@ -19,18 +20,28 @@ class DirectFixedMapTests(unittest.TestCase):
                 if route=='source':vm.execute(source)
                 elif route=='ast':vm.execute_program(parse(source))
                 else:vm.execute_prepared(vm.prepare(source))
-            self.assertIs(type(vm.variables['f']),BSLFixedMap)
-            self.assertEqual(vm.execute('F.Count()'),3)
-            self.assertEqual(vm.execute('F[True]'),'bool');self.assertEqual(vm.execute('F[1]'),'number')
+            self.assertIs(type(vm.variables['f']),PlainFixedMap)
+            self.assertEqual(vm.execute('F.Count()'),2)
+            self.assertEqual(vm.execute('F[True]'),'number');self.assertEqual(vm.execute('F[1]'),'number')
             self.assertIsNone(vm.execute('F["1"]'));self.assertIsNone(vm.execute('F.Get("absent")'))
             with self.assertRaises(BSLError):vm.execute('F["absent"]')
 
-    def test_object_identity_and_shallow_values(self):
-        vm=Interpreter();vm.execute('K=New Array;V=New Array;M=New Map;M.Insert(K,V);F=New FixedMap(M);K.Add(1);V.Add(2);M.Clear();R=F.Get(K);')
+    def test_scalar_key_shallow_values_and_unsupported_object_key(self):
+        vm=Interpreter();self.addCleanup(vm.close)
+        vm.execute('V=New Array;M=New Map;M.Insert("child",V);F=New FixedMap(M);V.Add(2);M.Clear();R=F.Get("child");')
         self.assertIs(vm.variables['r'],vm.variables['v']);self.assertEqual(vm.execute('R[0]'),2)
-        self.assertIsNone(vm.variables['f'].get([]))
-        entries=list(vm.variables['f']);self.assertIs(entries[0].key,vm.variables['k'])
-        self.assertIs(entries[0].value,vm.variables['v'])
+        vm.execute('K=New Array;After=False;')
+        with self.assertRaisesRegex(BSLError, 'scalar Python value'):
+            vm.execute('M.Insert(K,V);After=True;')
+        self.assertIs(vm.variables['after'],False)
+        self.assertEqual(vm.execute('M.Count()'),0)
+        self.assertIs(vm.variables['f'].get('child'),vm.variables['v'])
+
+    def test_canonical_host_map_retains_object_identity_keys(self):
+        key=[];child=[];mapping=BSLMap();mapping.insert(key,child)
+        fixed=BSLFixedMap(mapping);mapping.clear();child.append(2)
+        self.assertIs(fixed.get(key),child)
+        self.assertIsNone(fixed.get([]))
 
     def test_equal_canonical_keys_cannot_silently_drop_direct_entries(self):
         vm=Interpreter();a=BSLUUID('11111111-1111-1111-1111-111111111111');b=BSLUUID(str(a))

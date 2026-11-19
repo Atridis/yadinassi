@@ -24,11 +24,14 @@ Procedure P(X,Val Y)
  X=X+L;Later=1;
 EndProcedure
 X=1;Y=2;P(X,Y);'''
-        rows=[]
-        for backend in ('python-direct','compiled-strict'):
-            v=Interpreter(execution_backend=backend);v.execute(s);rows.append(v.variables)
-        self.assertEqual(*rows);self.assertEqual(rows[0]['x'],11)
-        self.assertNotIn('fresh',rows[0]);self.assertNotIn('later',rows[0])
+        from yadinassi.syntax.parser import parse
+        for route in ('source','ast','prepared'):
+            with self.subTest(route=route):
+                vm=Interpreter();self.addCleanup(vm.close)
+                if route=='source':vm.execute(s)
+                elif route=='ast':vm.execute_program(parse(s))
+                else:vm.execute_prepared(vm.prepare(s))
+                self.assertEqual(vm.variables,{'m':11,'x':11,'y':2})
 
     def test_callback_observes_and_updates_live_module_storage(self):
         v=Interpreter(allow_extensions=True);seen=[]

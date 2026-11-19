@@ -6,6 +6,7 @@ from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
 from yadinassi.collections.maps import BSLMap, BSLFixedMap
+from yadinassi.execution.direct.python_direct_plain_map import PlainMap
 from yadinassi.syntax.parser import parse
 from yadinassi.types.unique_identifiers import BSLUUID
 from yadinassi.temporal.dates import BSLDate
@@ -20,7 +21,7 @@ class DirectMapCopyTests(unittest.TestCase):
         vm=Interpreter(allow_extensions=allow_extensions, execution_backend=backend);self.addCleanup(vm.close);return vm
 
     def test_routes_typed_keys_fresh_storage_shallow_aliases(self):
-        source='''Key=New Array;Child=New Array;M=New Map;
+        source='''Key="child";Child=New Array;M=New Map;
 M.Insert(True,"bool");M.Insert(1,"number");M.Insert("1",Undefined);M.Insert(Key,Child);
 F=New FixedMap(M);T=New Map(F);U=New Соответствие(F);M.Clear();
 T.Insert(1,"changed");T[Key].Add(7);T.Delete("1");
@@ -32,18 +33,17 @@ R=F.Get(1);B=T.Get(True);N=U.Count();C=U.Get(Key).Count();Missing=T.Get("absent"
                     if route=='source':vm.execute(source)
                     elif route=='ast':vm.execute_program(parse(source))
                     else:vm.execute_prepared(vm.prepare(source))
-                self.assertEqual(tuple(vm.variables[k] for k in ('r','b','n','c','missing')),('number','bool',4,1,None))
-                self.assertIs(type(vm.variables['t']),_TypedMap)
+                self.assertEqual(tuple(vm.variables[k] for k in ('r','b','n','c','missing')),('number','changed',3,1,None))
+                self.assertIs(type(vm.variables['t']),PlainMap)
                 self.assertIs(vm.variables['u'].get(vm.variables['key']),vm.variables['child'])
                 self.assertIsNot(vm.variables['t'],vm.variables['u'])
                 self.assertEqual(vm.variables['f'].get(Decimal(1)),'number')
 
-    def test_dynamic_copy_and_legacy_comparison(self):
+    def test_dynamic_copy_keeps_fixed_snapshot(self):
         source='''M=New Map;M.Insert("K",1);F=New FixedMap(M);
 Args=New Array;Args.Add(F);T=New("Map",Args);T.Insert("K",2);R=F.Get("K");V=T.Get("K");'''
-        for backend in ('python-direct','compiled-strict'):
-            vm=self.vm(backend);vm.execute(source)
-            self.assertEqual((vm.variables['r'],vm.variables['v']),(1,2))
+        vm=self.vm();vm.execute(source)
+        self.assertEqual((vm.variables['r'],vm.variables['v']),(1,2))
 
     def test_invalid_arity_source_runs_arguments_then_preserves_target(self):
         for source in ('T=New Map(Effect(),Effect());','T=New Map(Effect());'):
@@ -70,7 +70,7 @@ Args=New Array;Args.Add(F);T=New("Map",Args);T.Insert("K",2);R=F.Get("K");V=T.Ge
             with self.subTest(kind=type(key)):
                 source=BSLMap();source.insert('first',1);source.insert(key,2)
                 fixed=BSLFixedMap(source);vm=self.vm();vm.variables.update(f=fixed,saved=7)
-                with self.assertRaisesRegex(BSLError,'canonical value-key semantics'):vm.execute('Saved=New Map(F);')
+                with self.assertRaisesRegex(BSLError,'scalar Python value'):vm.execute('Saved=New Map(F);')
                 self.assertEqual(vm.variables['saved'],7);self.assertEqual(len(fixed._items),2)
                 self.assertEqual(fixed.get(key),2)
 

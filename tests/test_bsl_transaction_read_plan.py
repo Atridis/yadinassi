@@ -2,7 +2,8 @@
 import unittest
 from unittest.mock import patch
 import test_bsl_transactions as fixtures
-from yadinassi import BSLRuntimeError, Interpreter
+from yadinassi import Interpreter
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.db.catalog.catalog_backend import CatalogScanRequest
 from yadinassi.db.document.document_backend import DocumentScanRequest
 from yadinassi.db.database_transactions import execution, begin, commit, rollback
@@ -48,7 +49,14 @@ class TransactionReadPlanTests(unittest.TestCase):
         server=self.vm._new_server_activation()
         for name in ('begintransaction','committransaction','rollbacktransaction'):
             self.assertIs(server.functions[name].function.__self__,server)
-        with self.assertRaises(BSLRuntimeError):server.execute('BeginTransaction();')
+        with self.assertRaisesRegex(ValueError, 'Transactions require synchronous execution'):
+            server.functions['begintransaction'].function()
+        self.assertIsNone(getattr(self.backend,'_bsl_transaction',None))
+
+    def test_public_execute_does_not_enter_internal_server_activation(self):
+        server=self.vm._new_server_activation()
+        with self.assertRaisesRegex(PythonDirectUnsupported, 'server/NoContext'):
+            server.execute('BeginTransaction();')
         self.assertIsNone(getattr(self.backend,'_bsl_transaction',None))
 
     def test_host_override_is_not_rebound_by_name(self):

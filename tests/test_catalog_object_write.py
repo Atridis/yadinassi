@@ -152,7 +152,8 @@ class CatalogObjectWriteTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('Карточка.Ссылка.ПолучитьОбъект().Наименование'), 'Другой')
 
     def test_error_after_buffer_change_rolls_back_transaction_not_candidate(self):
-        source = 'Процедура ПередЗаписью(Отказ) Наименование="Changed"; ЭтотОбъект.Записать(); КонецПроцедуры'
+        source = ('Процедура ПередЗаписью(Отказ) '
+                  'Наименование="Changed"; Ноль=0; Результат=1/Ноль; КонецПроцедуры')
         with patch.object(_View, 'create', side_effect=AssertionError('write')):
             with self.assertRaises(BSLError):
                 self.write(source)

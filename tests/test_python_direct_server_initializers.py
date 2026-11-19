@@ -1,4 +1,5 @@
 from decimal import Decimal
+import json
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -86,16 +87,17 @@ class DirectServerInitializerTests(unittest.TestCase):
         with self.assertRaises(BSLRuntimeError):owner.execute('Read();')
         self.assertEqual(effects,[])
 
-    def test_original_module_context_witness_matches_control(self):
-        text=Path('scripts/native_1c_bootstrap/client_probe.bsl').read_text()
+    def test_original_module_context_witness_matches_native_capture(self):
+        root=Path(__file__).resolve().parents[1]
+        text=(root/'scripts/native_1c_bootstrap/client_probe.bsl').read_text(encoding='utf-8')
         declarations=text.split('// BEGIN bounded module context declarations\n',1)[1].split('// END bounded module context declarations',1)[0]
         body=text.split('// BEGIN bounded module context measurement\n',1)[1].split('// BEGIN bounded no-context witness',1)[0]
         tail=text.split('// Initialization runs in its explicitly compiled side only.',1)[1]
         source=declarations+body+tail[tail.index('#If AtClient'):]
-        rows=[]
-        for backend in ('python-direct','compiled-strict'):
-            owner=Interpreter(compilation_profile='managed-thick-file',execution_backend=backend)
-            owner.execute(source);rows.append(list(owner.execute('RunModuleContextProbe()')))
-        self.assertEqual([len(r) for r in rows],[10,10])
-        self.assertEqual(*rows)
-        self.assertEqual(rows[0][2:6],[Decimal(100),Decimal(111),True,Decimal(100)])
+        capture=json.loads((root/'integrational_tests/directive_probes/module_context_native.json').read_text(encoding='utf-8'))
+        expected=['module.context.v1',*(Decimal(v) if type(v) is int else v for v in capture['values'])]
+        owner=vm();self.addCleanup(owner.close)
+        owner.execute(source)
+        result=list(owner.execute('RunModuleContextProbe()'))
+        self.assertEqual(result,expected)
+        self.assertEqual(list(map(type,result)),list(map(type,expected)))

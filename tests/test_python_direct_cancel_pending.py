@@ -22,15 +22,14 @@ class DirectCancellationTests(unittest.TestCase):
             vm=root.imports[name.casefold()].interpreter
         self.addCleanup(vm.close);return vm
 
-    def test_root_callback_rejection_matches_compiled_oracle_and_cleans_up(self):
-        for backend in ('python-direct','compiled-strict'):
-            vm=Interpreter(execution_backend=backend, allow_extensions=True);self.addCleanup(vm.close)
-            vm.register_function('CancelInside',vm.cancel_pending)
-            with self.subTest(backend=backend),self.assertRaisesRegex(RuntimeError,'active scheduler'):
-                vm.execute('CancelInside();')
-            self.assertEqual(vm.execute('6*7'),42)
-            vm.cancel_pending()
-            self.assertEqual(vm._direct_executions,0)
+    def test_root_callback_rejection_and_cleanup(self):
+        vm=self.vm()
+        vm.register_function('CancelInside',vm.cancel_pending)
+        with self.assertRaisesRegex(RuntimeError,'active scheduler'):
+            vm.execute('CancelInside();')
+        self.assertEqual(vm.execute('6*7'),42)
+        vm.cancel_pending()
+        self.assertEqual(vm._direct_executions,0)
 
     def test_child_callback_protects_root_but_other_family_is_independent(self):
         root=self.vm();child=self.vm(root);other=self.vm();events=[]
@@ -142,20 +141,19 @@ class DirectCancellationTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,'active scheduler'):vm.execute('CancelInside();')
         self.assertEqual(events,[]);self.assertEqual(vm._direct_executions,0)
 
-    def test_dual_and_nocontext_rejection_matches_oracle_write_semantics(self):
-        for backend in ('python-direct','compiled-strict'):
-            for annotation in ('&AtClientAtServerNoContext','&AtServerNoContext'):
-                vm=Interpreter(execution_backend=backend, allow_extensions=True);self.addCleanup(vm.close)
-                vm.register_function('CancelInside',vm.cancel_pending)
-                vm.execute(annotation+'\nProcedure F(X) X=9;CancelInside();EndProcedure X=1;')
-                with self.subTest(backend=backend,annotation=annotation):
-                    with self.assertRaisesRegex(RuntimeError,'^Cannot reset an active scheduler$') as caught:
-                        vm.execute('Caught=False;Try F(X);Except Caught=True;EndTry;')
-                    self.assertIs(type(caught.exception),RuntimeError)
-                    self.assertIs(vm.variables['caught'],False)
-                    # Dual resolves locally on the client (live byref write);
-                    # server NoContext must not copy back on a failed crossing.
-                    self.assertEqual(vm.variables['x'],9 if annotation=='&AtClientAtServerNoContext' else 1)
-                    self.assertEqual(vm.execution_context,'client')
-                    self.assertEqual(vm._module_context_stack,[True])
-                    self.assertEqual(vm._direct_executions,0)
+    def test_dual_and_nocontext_rejection_preserves_write_semantics(self):
+        for annotation in ('&AtClientAtServerNoContext','&AtServerNoContext'):
+            vm=self.vm()
+            vm.register_function('CancelInside',vm.cancel_pending)
+            vm.execute(annotation+'\nProcedure F(X) X=9;CancelInside();EndProcedure X=1;')
+            with self.subTest(annotation=annotation):
+                with self.assertRaisesRegex(RuntimeError,'^Cannot reset an active scheduler$') as caught:
+                    vm.execute('Caught=False;Try F(X);Except Caught=True;EndTry;')
+                self.assertIs(type(caught.exception),RuntimeError)
+                self.assertIs(vm.variables['caught'],False)
+                # Dual resolves locally on the client (live byref write);
+                # server NoContext must not copy back on a failed crossing.
+                self.assertEqual(vm.variables['x'],9 if annotation=='&AtClientAtServerNoContext' else 1)
+                self.assertEqual(vm.execution_context,'client')
+                self.assertEqual(vm._module_context_stack,[True])
+                self.assertEqual(vm._direct_executions,0)

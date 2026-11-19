@@ -30,7 +30,7 @@ class OwnedIRSubprocessTests(unittest.TestCase):
 
     def test_direct_rhs_mutation_keeps_admitted_assignment_target(self):
         self.probe('''
-vm=Interpreter(execution_backend='python-direct');program=parse('target=Mutate();')
+vm=Interpreter(execution_backend='python-direct', allow_extensions=True);program=parse('target=Mutate();')
 calls=[]
 def mutate():
  calls.append('rhs');program[0].target.name='hijacked';return 42
@@ -40,7 +40,7 @@ assert calls==['rhs'] and vm.variables['target']==42 and 'hijacked' not in vm.va
 
     def test_direct_actual_mutation_does_not_redirect_admitted_callee(self):
         self.probe('''
-vm=Interpreter(execution_backend='python-direct')
+vm=Interpreter(execution_backend='python-direct', allow_extensions=True)
 program=parse('Function Original(x) Return 1;EndFunction Function Hijack(x) Return 99;EndFunction r=Original(Mutate());')
 calls=[]
 def mutate():
@@ -51,7 +51,7 @@ assert calls==['actual'] and vm.variables['r']==1
 
     def test_direct_actual_mutation_keeps_parameter_binding_flags_and_default(self):
         self.probe('''
-vm=Interpreter(execution_backend='python-direct')
+vm=Interpreter(execution_backend='python-direct', allow_extensions=True)
 program=parse('Function F(Val x, trigger, Val y=7) x=9;Return y;EndFunction a=1;r=F(a,Mutate());')
 calls=[]
 def mutate():
@@ -66,7 +66,7 @@ assert calls==['actual'] and vm.variables['r']==7 and vm.variables['a']==1
 
     def test_direct_block_append_and_future_literal_do_not_change_snapshot(self):
         self.probe('''
-vm=Interpreter(execution_backend='python-direct');program=parse('Mutate();final=1;')
+vm=Interpreter(execution_backend='python-direct', allow_extensions=True);program=parse('Mutate();final=1;')
 calls=[]
 def mutate():
  calls.append('append');program[-1].value.value=99;program.extend(parse('injected=42;'))
@@ -77,7 +77,7 @@ assert calls==['append'] and vm.variables['final']==1 and 'injected' not in vm.v
     def test_direct_caught_bsl_host_error_uses_admitted_handler(self):
         self.probe('''
 from yadinassi.types.errors import BSLRuntimeError
-vm=Interpreter(execution_backend='python-direct');program=parse('Try Boom();Except caught=1;EndTry;')
+vm=Interpreter(execution_backend='python-direct', allow_extensions=True);program=parse('Try Boom();Except caught=1;EndTry;')
 calls=[]
 def boom():
  calls.append('boom');program[0].handler[0].target.name='hijacked';program[0].handler[0].value.value=99
@@ -113,10 +113,9 @@ for mode in ('equality','decimal','metaclass'):
     def test_direct_routine_selection_reads_frozen_dual_metadata(self):
         self.probe('''
 for initially_dual in (False,True):
- vm=Interpreter(execution_backend='python-direct')
- program=parse('Function F() Return 7;EndFunction Mutate();r=F();')
- program[0].is_dual=initially_dual
- if initially_dual:program[0].module_context=False
+ vm=Interpreter(execution_backend='python-direct', allow_extensions=True)
+ directive='&AtClientAtServerNoContext\\n' if initially_dual else ''
+ program=parse(directive+'Function F() Return 7;EndFunction Mutate();r=F();')
  def mutate():
   program[0].is_dual=not initially_dual
   program[0].execution_context='server'

@@ -32,6 +32,28 @@ class InternalSerializationTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(vm.execute(f'{name}(1000.25)'), '{"N",1000.25}')
 
+    def test_direct_bsl_pair_roundtrip_uses_language_codec(self):
+        # Canonical host pair codecs have separate positive native coverage in
+        # test_serialization_native; direct values use the BSL service adapter.
+        for constructor, setup in (
+                ('New Structure("Key", 7)', ''),
+                ('New Map', 'A.Insert("Key",7);')):
+            for prepared in (False, True):
+                with self.subTest(constructor=constructor, prepared=prepared):
+                    vm=Interpreter();self.addCleanup(vm.close)
+                    source=('A='+constructor+';'+setup+
+                            'For Each P In A Do EndDo;'
+                            'S=ValueToStringInternal(P);Q=ValueFromStringInternal(S);'
+                            'K=Q.Key;V=Q.Value;T=TypeOf(Q);')
+                    if prepared: vm.execute_prepared(vm.prepare(source))
+                    else: vm.execute(source)
+                    self.assertEqual(vm.variables['k'], 'Key')
+                    self.assertEqual(vm.variables['v'], 7)
+                    self.assertIs(vm.variables['t'], BSLType.KEY_AND_VALUE)
+                    from yadinassi.collections.structures import BSLKeyAndValue
+                    self.assertEqual(vm.variables['s'],
+                                     value_to_string_internal(BSLKeyAndValue('Key', Decimal(7))))
+
     def test_serialization_retains_stored_digits_beyond_presentation(self):
         value = Decimal('0.' + '1' * 540)
         self.assertEqual(value_to_string_internal(value), '{"N",0.' + '1' * 540 + '}')

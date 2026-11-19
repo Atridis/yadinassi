@@ -1,4 +1,5 @@
 from decimal import Decimal
+import json
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -100,11 +101,15 @@ A=New Array;A.Add(1);B=New Array;R=F(A,B);A.Add(3);''')
         with self.assertRaises(BoundaryViolation):vm.execute('F(X);')
         self.assertEqual(vm.variables['x'],1)
 
-    def test_original_scalar_witness_matches_control(self):
-        source=Path('scripts/native_1c_bootstrap/client_probe.bsl').read_text().split('// BEGIN bounded scalar copyback measurement\n',1)[1].split('// BEGIN bounded object transfer measurement',1)[0]
-        results=[]
-        for backend in ('python-direct','compiled-strict'):
-            vm=Interpreter(compilation_profile='managed-thick-file',execution_backend=backend)
-            vm.execute(source);results.append(list(vm.execute('RunScalarCopybackProbe()')))
-        self.assertEqual([len(r) for r in results],[35,35])
-        self.assertEqual(*results)
+    def test_original_scalar_witness_matches_native_capture(self):
+        root=Path(__file__).resolve().parents[1]
+        source=(root/'scripts/native_1c_bootstrap/client_probe.bsl').read_text(encoding='utf-8')
+        source=source.split('// BEGIN bounded scalar copyback measurement\n',1)[1].split('// BEGIN bounded object transfer measurement',1)[0]
+        capture=json.loads((root/'integrational_tests/directive_probes/scalar_copyback_core.native.json').read_text(encoding='utf-8'))
+        expected=['copyback.core.v1']
+        for row in capture['observations']:
+            value=row['value']
+            expected.append(f'{{"B",{int(value)}}}' if type(value) is bool else f'{{"N",{value}}}')
+        owner=Interpreter(compilation_profile='managed-thick-file');self.addCleanup(owner.close)
+        owner.execute(source)
+        self.assertEqual(list(owner.execute('RunScalarCopybackProbe()')),expected)
