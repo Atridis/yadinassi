@@ -190,6 +190,9 @@ def summary(report):
              f"Коммит `{report['commit']}`; статусы: {dict(counts)}.",
              'Python = 1×. Короткая серия, общая машина: не гарантия ускорения.', '']
     measured = {(r['case'],r['n'],r['layer']):r for r in report['rows'] if r['status']=='measured'}
+    if any(case == 'method.valuetable.set' for case, _, _ in measured):
+        lines += ['`method.valuetable.set`: Python ищет колонку по имени в словаре схемы на каждой записи. '
+                  '`set_positional` использует готовый индекс. Каждый сценарий делает один проход.', '']
     for n in (512,4096):
         lines += [f'### N={n}', '| Сценарий | Python мс | Классы × | Bare с компиляцией × | Готовый bare × | Python/C готового bare |', '|---|---:|---:|---:|---:|---:|']
         for case in CONTRACTS:

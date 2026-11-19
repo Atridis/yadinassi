@@ -86,6 +86,17 @@ class MoreDriversTests(unittest.TestCase):
         self.assertIn('mutable list cell',CONTRACTS['byref'][3])
 
 class TableListDriversTests(unittest.TestCase):
+    def test_named_and_positional_table_references_are_separate_single_loops(self):
+        import ast
+        for suffix, lookup in (('set', True), ('set_positional', False)):
+            reset, run, validate, source, _ = binding('method.valuetable.'+suffix, 7, 'python')
+            tree = ast.parse(source)
+            self.assertEqual(sum(isinstance(node, ast.For) for node in ast.walk(tree)), 1)
+            self.assertEqual('columns' in {node.id for node in ast.walk(tree)
+                                           if isinstance(node, ast.Name)}, lookup)
+            reset()
+            validate(run())
+
     def test_nested_result_corruption_and_reset(self):
         names=('method.valuetable.create','method.valuetable.delete','method.valuetable.insert',
                'method.valuetable.set','method.valuetable.set_positional','method.valuetable.sort',

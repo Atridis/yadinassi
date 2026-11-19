@@ -87,8 +87,8 @@ case('method.valuetable.insert', 'For I=0 To N-1 Do A.Insert(0); EndDo; R=A;',
      'for i in range(n):\n    a.insert(0,[None])\nr=a', 'for i in range(n):\n    a.insert(0)\nr=a',
      'table_empty', 'table_null', 'N default one-cell row insertions at zero')
 case('method.valuetable.set', 'For I=0 To N-1 Do A.Get(I).N=I; EndDo; R=A;',
-     'for i in range(n):\n    a[i][0]=i\nr=a', 'for i in range(n):\n    a.get(i).set_member("n",i)\nr=a',
-     'table_zero', 'table_ascending', 'N named cell writes in prefilled one-column table')
+     'for i in range(n):\n    a[i][columns["n"]]=i\nr=a', 'for i in range(n):\n    a.get(i).set_member("n",i)\nr=a',
+     'table_zero', 'table_ascending', 'N named cell writes; Python resolves the column via a prebuilt schema dictionary on each write')
 case('method.valuetable.set_positional', 'For I=0 To N-1 Do A.Get(I)[0]=I; EndDo; R=A;',
      'for i in range(n):\n    a[i][0]=i\nr=a', 'for i in range(n):\n    a.get(i).set(0,i)\nr=a',
      'table_zero', 'table_ascending', 'N positional cell writes in prefilled one-column table')
@@ -159,6 +159,8 @@ def bind(name, n, layer):
     if layer in ('python','classes'):
         source = py if layer == 'python' else cls
         namespace = {'BareArray': BareArray, 'BareStructure': BareStructure, 'BareMap':BareMap, 'BareValueList':BareValueList, 'BareTable':BareTable}
+        if layer == 'python' and name == 'method.valuetable.set':
+            namespace['columns'] = {'n': 0}
         exec('def run(n,a):\n'+'\n'.join('    '+line for line in source.splitlines())+'\n    return r', namespace)
         function = namespace['run']
         def reset(): reset_fixture()
