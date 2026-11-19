@@ -9,7 +9,7 @@ from threading import get_ident
 from .experimental_naked_boundaries import BoundaryViolation
 from .experimental_direct_ast import compile_owned
 from .python_direct import REPAIRS, _snapshot, PythonDirectUnsupported
-from .python_direct_configuration import ConfigurationBoundary, _COMMAND_SCOPE, check_owner, parameter_snapshot
+from .python_direct_configuration import ConfigurationBoundary, _COMMAND_SCOPE, check_owner, parameter_snapshot, parameter_entries
 from .native_targets import target_context
 from .runtime import Interpreter, _Module, _DIRECT_CONFIGURATION_MESSAGE_ABI, _DIRECT_EXECUTION_SCOPE_ABI
 from .syntax import ast
@@ -26,7 +26,7 @@ def _deny():
 
 
 def _unsupported():
-    raise PythonDirectUnsupported('direct configuration commands support only noDB client scalar modules with Val parameters and scalar literal defaults')
+    raise PythonDirectUnsupported('direct configuration commands support only client scalar modules with Val parameters and scalar literal defaults')
 
 
 class _Scope:
@@ -45,42 +45,54 @@ class _Scope:
         self.active=False
         self.token=None
         if type(app._modules) is not dict or type(app._definitions) is not dict:_deny()
-        self.modules=tuple(dict.items(app._modules))
-        self.definitions=tuple(dict.items(app._definitions))
-        for key,_ in self.modules:
-            if type(key) is not tuple or len(key)!=2 or any(type(part) is not str for part in key):_deny()
-        for name,definition in self.definitions:
-            if type(name) is not str or not any(definition is entry for entry in app.configuration.common_modules):_deny()
-        if (app.side not in (None,'client') or root.execution_context!='client'
-                or app._session_program or app.configuration.session_parameters
-                or app._server_exchange is not None or app._global_names):_unsupported()
-        for name,definition in self.definitions:
-            if metadata.validate_definition(definition)[0].casefold()!=name:_deny()
-            if (not definition.client or definition.server or definition.server_call
-                    or definition.global_module or definition.return_values_reuse!='DontUse'):_unsupported()
-        owners=[root]
-        for (name,side),module in self.modules:
-            if side!='client':_unsupported()
-            if type(module) is not _Module:_deny()
-            owner=module.interpreter
-            if type(owner) is not Interpreter or owner._self_module is not module:_deny()
-            owners.append(owner)
-        for owner in owners:
-            if owner.database_context is not None:_unsupported()
-            if type(owner.routines) is not dict:_deny()
-            for key,routine in dict.items(owner.routines):
-                if (type(key) is not str or type(routine) is not ast.Routine
-                        or type(routine.parameters) is not list
-                        or any(type(p) is not ast.Parameter or type(p.name) is not str for p in routine.parameters)):_deny()
-                if (routine.is_async or routine.is_dual or
-                        any(type(p.by_value) is not bool or not p.by_value or (p.default is not None and type(p.default) is not ast.Literal) for p in routine.parameters)):_unsupported()
-        self.owners=tuple(owners)
-        self.plans=tuple(owner._direct_configuration_plan for owner in owners)
-        self.functions=tuple(plan.function for plan in self.plans)
-        self.parameters=tuple(parameter_snapshot(plan) for plan in self.plans)
-        self.routines=tuple(tuple(owner.routines.items()) for owner in owners)
+        self.modules=()
+        self.definitions=()
+        self.owners=()
+        self.plans=()
+        self.functions=()
+        self.parameters=()
+        self.owner_records={}
+        self.used_routines={}
+        self._metadata=None
+        self.module_bindings={}
+        self._admit_owner(root)
         self._check_state(app,root)
-        self.metadata=metadata.Readers(self)
+
+    @property
+    def metadata(self):
+        if self._metadata is None:self._metadata=metadata.Readers(self)
+        return self._metadata
+
+    def _admit_owner(self,owner):
+        if any(owner is current for current in self.owners):return
+        if type(owner) is not Interpreter or type(owner.routines) is not dict:_deny()
+        plan=owner._direct_configuration_plan
+        self.owners+=(owner,)
+        self.plans+=(plan,)
+        self.functions+=(plan.function,)
+        self.parameters+=(parameter_snapshot(plan),)
+        self.owner_records[id(owner)]=(owner,plan,plan.function,parameter_snapshot(plan))
+        self.used_routines[id(owner)]={}
+
+    def admit_module(self,name,module):
+        self.check(self.app,self.root)
+        key=name.casefold()
+        definition=self.app._definitions.get(key)
+        prior=self.module_bindings.get(id(module))
+        if definition is None:_deny()
+        if prior is None and not any(definition is entry for entry in self.definition_list):_deny()
+        if prior is not None and (prior[0]!=(key,'client') or prior[1] is not module):_deny()
+        if metadata.validate_definition(definition)[0].casefold()!=key:_deny()
+        if (not definition.client or definition.server or definition.server_call
+                or definition.global_module or definition.return_values_reuse!='DontUse'):_unsupported()
+        if (type(module) is not _Module or self.app._modules.get((key,'client')) is not module
+                or type(module.interpreter) is not Interpreter or module.interpreter._self_module is not module):_deny()
+        if not any(saved is module for _,saved in self.modules):
+            self.modules+=(((key,'client'),module),)
+            self.definitions+=((key,definition),)
+            self._admit_owner(module.interpreter)
+        self.module_bindings[id(module)]=((key,'client'),module)
+        self._check_state(self.app,module.interpreter)
 
     @staticmethod
     def values(values):
@@ -115,10 +127,8 @@ class _Scope:
         if app.configuration is not self.configuration or self.configuration.common_modules is not self.definition_list:_deny()
         if (app.interpreter is not root or app.state!='running' or app.side not in (None,'client')
                 or root.execution_context!='client' or root.locals is not None
-                or app._session_program or app.configuration.session_parameters
-                or app._server_exchange is not None or app._global_names):_deny()
+):_deny()
         if type(app._modules) is not dict or type(app._definitions) is not dict:_deny()
-        if len(app._modules)!=len(self.modules) or len(app._definitions)!=len(self.definitions):_deny()
         for key,module in self.modules:
             if app._modules.get(key) is not module or module.interpreter._self_module is not module:_deny()
         for name,definition in self.definitions:
@@ -126,35 +136,37 @@ class _Scope:
             if (app._definitions.get(name) is not definition or not definition.client
                     or definition.server or definition.server_call or definition.global_module
                     or definition.return_values_reuse!='DontUse'):_deny()
-        for current,plan,code,routines,parameters in zip(self.owners,self.plans,self.functions,self.routines,self.parameters):
-            check_owner(app,current)
-            if (type(current.variables) is not dict or type(current.functions) is not dict
-                    or any(type(key) is not str for key in current.variables)):_deny()
-            self.values(current.variables.values())
-            for key,function in dict.items(current.functions):
-                if (type(key) is not str or type(function) is not HostFunction
-                        or type(function.name) is not str):_deny()
-            if (current.database_context is not None or current.execution_context!='client'
-                    or current._invocation_bindings or current.server_routines
-                    or current._direct_configuration_plan is not plan or plan.function is not code
-                    or type(current.routines) is not dict or len(current.routines)!=len(routines)
-                    or parameter_snapshot(plan) is not parameters):_deny()
-            for key,routine in routines:
-                if (current.routines.get(key) is not routine or type(routine) is not ast.Routine
-                        or routine.is_async or routine.is_dual or routine.execution_context!='client'
-                        or type(routine.parameters) is not list
-                        or any(type(p) is not ast.Parameter or type(p.by_value) is not bool or not p.by_value or type(p.name) is not str for p in routine.parameters)):_deny()
-                self.parameter_values(current,routine)
-        if type(root.variables) is not dict or any(type(key) is not str for key in root.variables):_deny()
-        self.values(root.variables.values())
+        record=self.owner_records.get(id(owner))
+        if record is None or record[0] is not owner:_deny()
+        current,plan,code,parameters=record
+        check_owner(app,current,allow_database=True)
+        if (type(current.variables) is not dict or type(current.functions) is not dict
+                or any(type(key) is not str for key in current.variables)):_deny()
+        # Direct generated variable loads currently bypass a per-name boundary.
+        # Retain scalar admission for this active owner until that compiler
+        # interface can validate only actually read/written values.
+        self.values(current.variables.values())
+        if (current.execution_context!='client'
+                or current._direct_configuration_plan is not plan or plan.function is not code
+                or type(current.routines) is not dict
+                or parameter_snapshot(plan) is not parameters):_deny()
+        for routine in tuple(self.used_routines[id(owner)].values()):
+            self.parameter_values(owner,routine)
 
     def parameter_values(self,owner,routine):
-        index=next((i for i,current in enumerate(self.owners) if current is owner),None)
-        if index is None:_deny()
-        table=self.parameters[index]
-        if type(table) is not tuple:_deny()
-        entries=next((entries for saved,entries in table if saved is routine),None)
-        if entries is None or len(entries)!=len(routine.parameters):_deny()
+        if (type(routine) is not ast.Routine or type(routine.name) is not str
+                or type(routine.parameters) is not list
+                or any(type(p) is not ast.Parameter or type(p.name) is not str or type(p.by_value) is not bool for p in routine.parameters)):_deny()
+        if type(owner._invocation_bindings) is not dict:_deny()
+        if owner._invocation_bindings.get(routine.name.casefold()) is not None:_deny()
+        if (routine.is_async or routine.is_dual or routine.execution_context!='client'
+                or any(not p.by_value for p in routine.parameters)):_unsupported()
+        record=self.owner_records.get(id(owner))
+        if record is None or record[0] is not owner:_deny()
+        if owner.routines.get(routine.name.casefold()) is not routine:_deny()
+        entries=parameter_entries(record[1],routine)
+        if len(entries)!=len(routine.parameters):_deny()
+        self.used_routines[id(owner)][id(routine)]=routine
         for current,(saved,name,by_value,node,value) in zip(routine.parameters,entries):
             if (current is not saved or current.name is not name or current.by_value is not by_value
                     or current.default is not node):_deny()
@@ -194,6 +206,7 @@ class _Scope:
 
 
 def _validate_command(program,app):
+    referenced=set()
     def readonly(token,message='metadata is read-only'):
         raise BSLRuntimeError(message,token.source,token.line,token.column,source_line=token.source_line)
     def reader_kind(node):
@@ -239,6 +252,7 @@ def _validate_command(program,app):
             while type(callee) is ast.Group:callee=callee.expression
             if type(callee) is ast.Attribute and type(callee.object) is ast.Name:
                 if callee.object.name.casefold() not in app._definitions:_unsupported()
+                referenced.add(callee.object.name.casefold())
             elif type(callee) is ast.Name:
                 if callee.name.casefold() not in ('message','сообщить'):_unsupported()
             else:_unsupported()
@@ -272,15 +286,16 @@ def _validate_command(program,app):
                 if node.value is not None:expression(node.value)
             else:_unsupported()
     statements(program)
+    return tuple(referenced)
 
 
 def execute_command(app,text,source):
     if _COMMAND_SCOPE.get() is not None or getattr(app.interpreter,'_direct_active',False):_deny()
     scope=_Scope(app)
     program=parse(text,source,compilation_profile=app.interpreter.compilation_profile)
-    app.check_program(program);_validate_command(program,app)
+    app.check_program(program);referenced=_validate_command(program,app)
     plan=compile_owned(_snapshot(program),source_text=text,source_name=source,
-        external_names=tuple(app._definitions)+metadata.ROOT_NAMES,authority_checks=True,configuration_calls=True)
+        external_names=referenced+metadata.ROOT_NAMES,authority_checks=True,configuration_calls=True)
     owner=app.interpreter
     previous=getattr(owner,"_transaction_activation_allowed",True)
     with _DIRECT_EXECUTION_SCOPE_ABI(owner):

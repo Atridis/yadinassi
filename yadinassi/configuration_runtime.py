@@ -431,15 +431,15 @@ class ConfigurationApplication:
     def check_program(self, program):
         from .owned_syntax import syntax_kind, origin_node
         self.require_open()
-        protected = set(self._definitions) | self._global_names
-        protected.update(routine.name.casefold() for routine in self._events.values())
         for node in program:
             if syntax_kind(node) is ast.Import:
                 raise BSLError('file imports are unavailable in configured modules',
                                node.token.source, node.token.line, node.token.column)
             names = node.names if syntax_kind(node) is ast.Var else (
                 (node.name,) if syntax_kind(node) is ast.Routine else ())
-            if any(name.casefold() in protected for name in names):
+            if any(name.casefold() in self._definitions or name.casefold() in self._global_names
+                   or any(routine.name.casefold()==name.casefold() for routine in self._events.values())
+                   for name in names):
                 original = origin_node(node)
                 if self._declared_routines.get(id(original)) is not original:
                     raise BSLError('declaration conflicts with configuration context',

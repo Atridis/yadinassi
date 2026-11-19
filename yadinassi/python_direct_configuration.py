@@ -19,6 +19,14 @@ def parameter_snapshot(plan):
     return entry[1]
 
 
+def parameter_entries(plan,routine):
+    parameter_snapshot(plan)
+    witness=_PARAMETERS[plan.function][2].get(id(routine))
+    if witness is None or witness[0] is not routine:
+        raise BoundaryViolation('configuration routine is not installed')
+    return witness[1]
+
+
 _COMMAND_SCOPE = ContextVar("direct_configuration_command", default=None)
 from . import safe_mode, source_transactions, database_transactions
 from .experimental_naked_boundaries import BoundaryContext, BoundaryViolation
@@ -52,6 +60,9 @@ class ConfigurationBoundary(BoundaryContext):
         self._services=owner.functions
         self.app,self.owner,self.routine=app,owner,routine
         self._command_scope=_COMMAND_SCOPE.get()
+        if self._command_scope is not None:
+            from .python_direct_configuration_commands import _Scope
+            if type(self._command_scope) is not _Scope:raise BoundaryViolation('invalid command scope')
     def _check(self):
         super()._check()
         scope=self._command_scope
@@ -70,6 +81,7 @@ class ConfigurationBoundary(BoundaryContext):
             if name.casefold() in ROOT_NAMES:return self._command_scope.metadata.root(self)
         result=self.app.resolve_module(name,self.owner)
         if result is None:raise BoundaryViolation('unsupported configuration name: '+name)
+        if self._command_scope is not None:self._command_scope.admit_module(name,result)
         return result
     def get_member(self,value,name):
         if self._command_scope is not None:
@@ -115,16 +127,23 @@ class ConfigurationBoundary(BoundaryContext):
         if self._command_scope is not None:
             from .python_direct_configuration_metadata import is_reader
             if is_reader(value):return self._command_scope.metadata.method(self,value,name)
-        matches=[key for key,module in self.app._modules.items() if module is value]
-        if not matches:raise BoundaryViolation('unsupported configuration member receiver')
-        module_name,side=matches[0]
+        if self._command_scope is not None:
+            binding=self._command_scope.module_bindings.get(id(value))
+            if binding is None or binding[1] is not value:
+                raise BoundaryViolation('unsupported configuration member receiver')
+            module_name,side=binding[0]
+        else:
+            matches=[key for key,module in self.app._modules.items() if module is value]
+            if not matches:raise BoundaryViolation('unsupported configuration member receiver')
+            module_name,side=matches[0]
         if self.app.resolve_module(module_name,self.owner) is not value:
             raise BoundaryViolation('common module side changed')
         routine=value.routine(name);target=value.interpreter
         def admit():
-            self._check();check_owner(self.app,target)
+            self._check();check_owner(self.app,target,allow_database=self._command_scope is not None)
             if self.app.resolve_module(module_name,self.owner) is not value:
                 raise BoundaryViolation('common module binding changed')
+            if self._command_scope is not None:self._command_scope.parameter_values(target,routine)
             self.app.check_call(routine,self.owner)
             if self._command_scope is not None:self._check()
             if any(not p.by_value for p in routine.parameters):
@@ -202,7 +221,8 @@ def install(app,owner,program,source_text=''):
         (parameter,parameter.name,parameter.by_value,parameter.default,
          parameter.default.value if type(parameter.default) is ast.Literal else None)
         for parameter in node.parameters)) for node in program if type(node) is ast.Routine)
-    _PARAMETERS[plan.function]=(ref(plan),plan._configuration_parameters)
+    _PARAMETERS[plan.function]=(ref(plan),plan._configuration_parameters,
+        {id(routine):(routine,entries) for routine,entries in plan._configuration_parameters})
     owner._direct_configuration_plan=plan
     for node in program:
         if type(node) is ast.Routine:
@@ -213,7 +233,7 @@ def install(app,owner,program,source_text=''):
 
 
 def invoke_routine(app,owner,routine,arguments):
-    check_owner(app,owner);app.check_call(routine,owner)
+    check_owner(app,owner,allow_database=_COMMAND_SCOPE.get() is not None);app.check_call(routine,owner)
     plan=getattr(owner,'_direct_configuration_plan',None)
     if plan is None:raise BoundaryViolation('unprepared direct configuration routine')
     registry=owner.server_routines if routine.execution_context=='server' else owner.routines

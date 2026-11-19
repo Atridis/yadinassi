@@ -76,7 +76,7 @@ class ConfigurationDefaultTests(unittest.TestCase):
         for source in ('Function F(X=1) Export Return X;EndFunction',
                        'Function F(Val X=-1) Export Return X;EndFunction'):
             app=self.app(source)
-            with self.assertRaises((PythonDirectUnsupported,BoundaryViolation)):app.execute('Tools.F()')
+            with self.assertRaises((PythonDirectUnsupported,BoundaryViolation,BSLError)):app.execute('Tools.F()')
 
     def test_readers_and_message_do_not_gain_omission_protocol(self):
         app=self.app()

@@ -7,6 +7,7 @@ from yadinassi.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.python_direct_configuration import ConfigurationBoundary
 from yadinassi.runtime import Interpreter
 from yadinassi.python_direct import PythonDirectUnsupported
+from yadinassi.errors import BSLRuntimeError
 from configuration_runtime_fixture import CLIENT, SERVER, module_files
 
 
@@ -33,7 +34,7 @@ class DirectConfigurationCommandTests(unittest.TestCase):
             app.execute('Message(Other.Go(2));Message(Other.Go(3));')
         self.assertEqual(output,['8','12'])
 
-    def test_byref_defaults_global_and_crossing_fail_before_effects(self):
+    def test_byref_defaults_global_and_crossing_fail_at_reached_call(self):
         for source,flags in (
             ('Function F(X) Export Return X;EndFunction',{}),
             ('Function F(Val X=-1) Export Return X;EndFunction',{}),
@@ -41,8 +42,8 @@ class DirectConfigurationCommandTests(unittest.TestCase):
             ('Function F(Val X) Export Return X;EndFunction',SERVER)):
             with self.subTest(source=source,flags=flags):
                 output=[];app=self.app([('Tools',source,flags)],output.append)
-                with self.assertRaises(PythonDirectUnsupported):app.execute('Message("before");Tools.F(1);')
-                self.assertEqual(output,[])
+                with self.assertRaises((BoundaryViolation,BSLRuntimeError)):app.execute('Message("before");Tools.F(1);')
+                self.assertEqual(output,['before'])
 
     def test_scalar_arguments_results_and_command_shapes_fail_closed(self):
         for text in ('X=New Array();','Var X;','Execute "X=1";','Eval("1")','Tools=1;',
@@ -98,7 +99,7 @@ class DirectConfigurationCommandTests(unittest.TestCase):
         from yadinassi import safe_mode
         app=self.app()
         with patch.object(Interpreter,'database_context',property(lambda self:object())):
-            with self.assertRaises(PythonDirectUnsupported):app.execute('Tools.Double(2)')
+            self.assertEqual(app.execute('Tools.Double(2)'),Decimal(4))
         token=safe_mode._CURRENT.set(object())
         try:
             with self.assertRaises(BoundaryViolation):app.execute('Tools.Double(2)')
@@ -132,7 +133,7 @@ class DirectConfigurationCommandTests(unittest.TestCase):
         with self.assertRaises(BoundaryViolation):app.execute('Tools.Double(X);')
         app.interpreter.variables.clear()
         app._modules['tools','client'].interpreter.routines['injected']=Host()
-        with self.assertRaises(BoundaryViolation):app.execute('Tools.Double(1);')
+        self.assertEqual(app.execute('Tools.Double(1)'),Decimal(2))
         self.assertEqual(calls,[])
 
     def test_explicit_transport_is_not_implicitly_admitted_by_commands(self):
@@ -140,7 +141,7 @@ class DirectConfigurationCommandTests(unittest.TestCase):
         app=ConfigurationApplication.from_files(module_files([('Remote','Function F(Val X) Export Return X;EndFunction',SERVER)]),
             side='client',server_exchange=lambda packet:packets.append(packet))
         self.addCleanup(lambda:app.close(force=True));app.start()
-        with self.assertRaises(PythonDirectUnsupported):app.execute('Remote.F(1);')
+        with self.assertRaises(BSLRuntimeError):app.execute('Remote.F(1);')
         self.assertEqual(packets,[])
 
     def test_custom_namespace_mappings_are_rejected_without_hooks(self):
@@ -239,3 +240,32 @@ class DirectConfigurationCommandTests(unittest.TestCase):
             context.checkpoint();self.assertEqual(session._steps,1)
         finally:
             session._busy=False;session._gate.release()
+
+
+class LazyConfigurationCommandTests(unittest.TestCase):
+    app=DirectConfigurationCommandTests.app
+    def test_unused_byref_and_server_modules_do_not_block_scalar(self):
+        app=self.app([('Tools','Function Good(Val X) Export Return X+1;EndFunction Function Unused(X) Export Return X;EndFunction',{}),
+                      ('Remote','Function ServerOnly(Val X) Export Return X;EndFunction',SERVER)])
+        self.assertEqual(app.execute('1+2'),Decimal(3))
+        self.assertEqual(app.execute('Tools.Good(3)'),Decimal(4))
+        app.execute('If False Then Remote.ServerOnly(1);EndIf;')
+        with self.assertRaises((BoundaryViolation,BSLRuntimeError)):app.execute('Tools.Unused(3)')
+
+    def test_unused_database_routine_branch_does_not_run(self):
+        app=self.app([('Tools','Function Database(Val X) Export BeginTransaction();Return X;EndFunction',{})])
+        self.assertEqual(app.execute('1+2'),Decimal(3))
+        app.execute('If False Then Tools.Database(1);EndIf;')
+        with self.assertRaises((BoundaryViolation,BSLRuntimeError)):app.execute('Tools.Database(1)')
+
+    def test_plain_command_does_not_read_module_definitions_or_metadata(self):
+        app=self.app([CLIENT,('Remote','Function F() Export Return 1;EndFunction',SERVER)])
+        from yadinassi import python_direct_configuration_metadata as metadata
+        with patch.object(metadata,'validate_definition',side_effect=AssertionError('unused module inspected')):
+            self.assertEqual(app.execute('1+2'),Decimal(3))
+
+    def test_unsupported_call_denied_before_argument_effect(self):
+        output=[]
+        app=self.app([('Tools','Function Bad(X) Export Return X;EndFunction Function Effect() Export Message("argument");Return 1;EndFunction',{})],output.append)
+        with self.assertRaises((BoundaryViolation,BSLRuntimeError)):app.execute('Tools.Bad(Tools.Effect())')
+        self.assertEqual(output,[])

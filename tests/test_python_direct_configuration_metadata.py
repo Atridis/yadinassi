@@ -9,7 +9,6 @@ from yadinassi.configuration_runtime import ConfigurationApplication
 from yadinassi.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.python_direct import PythonDirectUnsupported
 from yadinassi.python_direct_configuration import ConfigurationBoundary
-from yadinassi.python_direct_configuration_commands import _Scope
 from yadinassi import python_direct_configuration_metadata as readers
 from configuration_runtime_fixture import CLIENT,module_files
 
@@ -21,6 +20,7 @@ class DirectConfigurationMetadataTests(unittest.TestCase):
 
     @contextmanager
     def context(self,app):
+        from yadinassi.python_direct_configuration_commands import _Scope
         scope=_Scope(app);scope.enter()
         try:
             context=ConfigurationBoundary(app,app.interpreter);context.enter()
