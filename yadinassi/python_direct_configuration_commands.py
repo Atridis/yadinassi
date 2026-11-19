@@ -54,6 +54,7 @@ class _Scope:
         self.owner_records={}
         self.used_routines={}
         self._metadata=None
+        self._reuse_request=None
         self.module_bindings={}
         self._admit_owner(root)
         self._check_state(app,root)
@@ -84,7 +85,7 @@ class _Scope:
         if prior is not None and (prior[0]!=(key,'client') or prior[1] is not module):_deny()
         if metadata.validate_definition(definition)[0].casefold()!=key:_deny()
         if (not definition.client or definition.server or definition.server_call
-                or definition.global_module or definition.return_values_reuse!='DontUse'):_unsupported()
+                or definition.global_module or definition.return_values_reuse not in ('DontUse','DuringRequest','DuringSession')):_unsupported()
         if (type(module) is not _Module or self.app._modules.get((key,'client')) is not module
                 or type(module.interpreter) is not Interpreter or module.interpreter._self_module is not module):_deny()
         if not any(saved is module for _,saved in self.modules):
@@ -105,11 +106,22 @@ class _Scope:
         self.token=_COMMAND_SCOPE.set(self)
         self.active=True
 
+    def request_reuse(self):
+        self.check(self.app,self.root)
+        if self._reuse_request is None:
+            from .python_direct_source_requests import request_scope
+            request=request_scope(self.root)
+            request.__enter__()
+            self._reuse_request=request
+
     def leave(self):
         if get_ident()!=self.thread or not self.active:_deny()
         _COMMAND_SCOPE.reset(self.token)
         self.active=False
         self.token=None
+        if self._reuse_request is not None:
+            request=self._reuse_request;self._reuse_request=None
+            request.__exit__(None,None,None)
 
     def check(self,app,owner):
         if get_ident()!=self.thread or not self.active or _COMMAND_SCOPE.get() is not self:_deny()
@@ -135,7 +147,7 @@ class _Scope:
             if metadata.validate_definition(definition)[0].casefold()!=name:_deny()
             if (app._definitions.get(name) is not definition or not definition.client
                     or definition.server or definition.server_call or definition.global_module
-                    or definition.return_values_reuse!='DontUse'):_deny()
+                    or definition.return_values_reuse not in ('DontUse','DuringRequest','DuringSession')):_deny()
         record=self.owner_records.get(id(owner))
         if record is None or record[0] is not owner:_deny()
         current,plan,code,parameters=record

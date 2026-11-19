@@ -151,6 +151,8 @@ class ConfigurationBoundary(BoundaryContext):
             if routine.is_async or routine.is_dual:
                 raise BoundaryViolation('direct common-module async/dual calls are not connected')
         admit()
+        reuse_entry=self.app._reuse_routines.get(id(routine))
+        reusable=(reuse_entry is not None and reuse_entry[0] is routine and routine.is_function)
         def invoke_arguments(args,omitted=()):
             admit()
             scope=self._command_scope
@@ -165,7 +167,10 @@ class ConfigurationBoundary(BoundaryContext):
                 raise BoundaryViolation('direct common-module crossing requires explicit transport')
             scope=self._command_scope
             if scope is not None:scope.values(args)
-            result=invoke_routine(self.app,target,routine,args)
+            if reusable:
+                result=invoke_reusable(self.app,self.owner,target,routine,args)
+                self._check()
+            else:result=invoke_routine(self.app,target,routine,args)
             if scope is not None:scope.values((result,))
             return result
         def invoke(*args):return invoke_arguments(args)
@@ -230,6 +235,44 @@ def install(app,owner,program,source_text=''):
         elif type(node) is ast.Var:
             for name in node.names:owner.variables.setdefault(name.casefold(),None)
     owner._self_module.ready=True
+
+
+def invoke_reusable(app,caller,owner,routine,arguments):
+    """Lazy same-side scalar reuse; no transport or collection admission."""
+    scope=_COMMAND_SCOPE.get()
+    if scope is None:raise BoundaryViolation('reusable command scope is absent')
+    from .python_direct_configuration_commands import _Scope
+    if type(scope) is not _Scope:raise BoundaryViolation('invalid reusable command scope')
+    scope.check(app,owner)
+    scope.values(arguments)
+    from decimal import Decimal
+    if any(type(value) is Decimal and not value.is_finite() for value in arguments):
+        raise TypeError('reusable arguments require finite numbers')
+    entry=app._reuse_routines.get(id(routine))
+    if entry is not None and entry[0] is routine and routine.is_function and entry[2].return_values_reuse=='DuringRequest':
+        scope=_COMMAND_SCOPE.get()
+        if scope is None:raise BoundaryViolation('reusable command scope is absent')
+        scope.request_reuse()
+    reusable=app.reusable_call(caller,owner,routine,True)
+    if reusable is None:return invoke_routine(app,owner,routine,arguments)
+    cache,key=reusable
+    cache._open()
+    wrappers=getattr(cache,'_direct_functions',None)
+    if wrappers is None:wrappers={};cache._direct_functions=wrappers
+    plan=owner._direct_configuration_plan
+    entry=wrappers.get(key)
+    if entry is None or entry[0] is not owner or entry[1] is not routine or entry[2] is not plan.function:
+        from functools import lru_cache
+        @lru_cache(maxsize=256,typed=True)
+        def call(*args):
+            result=invoke_routine(app,owner,routine,args)
+            scope=_COMMAND_SCOPE.get()
+            if scope is None:raise BoundaryViolation('reusable command scope is absent')
+            scope.values((result,))
+            return result
+        entry=(owner,routine,plan.function,call)
+        wrappers[key]=entry
+    return entry[3](*arguments)
 
 
 def invoke_routine(app,owner,routine,arguments):

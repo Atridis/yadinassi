@@ -116,12 +116,11 @@ class DirectConfigurationCommandTests(unittest.TestCase):
         self.assertEqual(events,['4'])
         self.assertEqual(app.execute('Tools.Double(3)'),Decimal(6))
 
-    def test_reuse_and_async_initial_admission_unchanged(self):
-        for source,flags in (
-            ('Function F() Export Return 1;EndFunction',{'ReturnValuesReuse':'DuringSession'}),
-            ('Async Function F() Export Return 1;EndFunction',{})):
-            with self.assertRaises((ValueError,BoundaryViolation)):
-                self.app([('Tools',source,flags)])
+    def test_client_reuse_is_lazy_but_async_admission_unchanged(self):
+        app=self.app([('Tools','Function F() Export Return 1;EndFunction',{'ReturnValuesReuse':'DuringSession'})])
+        self.assertEqual(app.execute('Tools.F()'),Decimal(1))
+        with self.assertRaises((ValueError,BoundaryViolation)):
+            self.app([('Tools','Async Function F() Export Return 1;EndFunction',{})])
 
     def test_foreign_scalar_metaclass_and_routine_do_not_run_hooks(self):
         calls=[]

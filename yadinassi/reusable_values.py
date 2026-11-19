@@ -77,6 +77,10 @@ class ReusableValueCache:
         if entry is not None:self._units-=entry[1]
     def refresh(self):
         self._open();self._epoch+=1;self._entries.clear();self._units=0
+        wrappers=getattr(self,'_direct_functions',None)
+        if wrappers is not None:
+            for entry in wrappers.values():entry[3].cache_clear()
+            wrappers.clear()
     def close(self):
         if not self._closed:self.refresh();self._closed=True
 

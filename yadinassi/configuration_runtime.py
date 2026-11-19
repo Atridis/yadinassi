@@ -297,8 +297,6 @@ class ConfigurationApplication:
                 child._logical_side = 'server'
             if child.execution_backend == 'python-direct':
                 from .python_direct_configuration import install
-                if self._definitions[name].return_values_reuse != 'DontUse':
-                    raise ValueError('direct common-module reuse is not connected')
                 install(self, child, program, sources[self._definitions[name].path].decode('utf-8-sig'))
             else:
                 child.execute_program(program)  # declarations only; validated above
