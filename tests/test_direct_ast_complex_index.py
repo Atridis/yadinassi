@@ -14,7 +14,7 @@ class ComplexIndexTests(unittest.TestCase):
         for byref in (False,True):
             for action in ('normal','native','error','close'):
                 with self.subTest(byref=byref,action=action):
-                    vm=Interpreter();events=[]
+                    vm=Interpreter(allow_extensions=True);events=[]
                     self.addCleanup(vm.close)
                     vm.variables['a']=[None] if action=='native' else BSLArray(Decimal(1))
 
@@ -55,12 +55,12 @@ class ComplexIndexTests(unittest.TestCase):
             def counted(self,node,*args,**kwargs):
                 if type(node) is bsl.Call and type(node.callee) is bsl.Name and node.callee.name=='Index':calls.append(id(node))
                 return original(self,node,*args,**kwargs)
-            vm=Interpreter();vm.register_function('Capture',lambda x:None);vm.register_function('Index',lambda:0);vm.variables['a']=[Decimal(0)]
+            vm=Interpreter(allow_extensions=True);vm.register_function('Capture',lambda x:None);vm.register_function('Index',lambda:0);vm.variables['a']=[Decimal(0)]
             with patch.object(direct.Emitter,'expr',counted):vm.prepare_program(program)
             self.assertEqual(len(calls),1);vm.close()
     def test_complex_operation_error_points_to_index_expression(self):
         for byref in (False,True):
-            vm=Interpreter();vm.variables['a']=[Decimal(1)]
+            vm=Interpreter(allow_extensions=True);vm.variables['a']=[Decimal(1)]
             vm.register_function('Capture',lambda x:None)
             vm.register_function('Bad',lambda:Decimal(99))
             vm.functions['capture'].reference_parameters=frozenset({0}) if byref else frozenset()
@@ -68,7 +68,7 @@ class ComplexIndexTests(unittest.TestCase):
             self.assertIn('index-site.bsl:2:',str(caught.exception));vm.close()
     def test_index_child_error_stays_at_child(self):
         for byref in (False,True):
-            vm=Interpreter();vm.variables['a']=[Decimal(1)];vm.register_function('Capture',lambda x:None)
+            vm=Interpreter(allow_extensions=True);vm.variables['a']=[Decimal(1)];vm.register_function('Capture',lambda x:None)
             vm.functions['capture'].reference_parameters=frozenset({0}) if byref else frozenset()
             with self.assertRaises(Exception) as caught:vm.execute('Capture(A[1/0]);','child.bsl')
             self.assertIn('child.bsl:1:',str(caught.exception));vm.close()

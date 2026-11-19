@@ -33,7 +33,7 @@ class DirectTableReferenceTests(unittest.TestCase):
             self.assertEqual((vm.variables['before'],vm.variables['after']),(6,11))
 
     def test_binding_failure_precedes_later_argument_effects(self):
-        vm=Interpreter();vm.execute(SETUP+'Procedure Change(X,Y) X=2;EndProcedure');seen=[]
+        vm=Interpreter(allow_extensions=True);vm.execute(SETUP+'Procedure Change(X,Y) X=2;EndProcedure');seen=[]
         vm.register_function('Effect',lambda:seen.append('later'))
         for address in ('R.Missing','R[4]','C.NoSuchField','R.cells','C.table'):
             with self.subTest(address=address),self.assertRaises(BSLError):vm.execute('Change('+address+',Effect());')
@@ -43,7 +43,7 @@ class DirectTableReferenceTests(unittest.TestCase):
         self.assertEqual(seen,[])
 
     def test_readonly_reference_is_readable_and_fails_only_when_written(self):
-        vm=Interpreter();vm.execute(SETUP+'Function Read(X) Return X;EndFunction Procedure Write(X,Y) X=Y;EndProcedure')
+        vm=Interpreter(allow_extensions=True);vm.execute(SETUP+'Function Read(X) Return X;EndFunction Procedure Write(X,Y) X=Y;EndProcedure')
         vm.execute('Q=Read(C.ValueType);');self.assertIs(vm.variables['q'],vm.variables['c'].value_type)
         seen=[];vm.register_function('Effect',lambda:seen.append('rhs') or 2)
         with self.assertRaises(BSLError):vm.execute('Write(C.ValueType,Effect());')
@@ -51,7 +51,7 @@ class DirectTableReferenceTests(unittest.TestCase):
 
     def test_owner_replacement_deleted_rows_and_closed_runtime(self):
         for action in ('owner','delete','close'):
-            vm=Interpreter();vm.execute(SETUP+'Procedure Change(X,Y) X=2;EndProcedure');row=vm.variables['r'];old_table=row.table
+            vm=Interpreter(allow_extensions=True);vm.execute(SETUP+'Procedure Change(X,Y) X=2;EndProcedure');row=vm.variables['r'];old_table=row.table
             def effect():
                 if action=='owner':row.table=BSLValueTable()
                 elif action=='delete':old_table.delete(row)
@@ -64,7 +64,7 @@ class DirectTableReferenceTests(unittest.TestCase):
 
     def test_retained_host_references_recheck_owner_and_lifetime(self):
         for address in ('R.A','R[0]','C.Title'):
-            vm=Interpreter();vm.execute(SETUP);refs=[]
+            vm=Interpreter(allow_extensions=True);vm.execute(SETUP);refs=[]
             vm.register_function('Capture',lambda reference:refs.append(reference))
             vm.functions['capture'].reference_parameters=frozenset({0})
             vm.execute('Capture('+address+');');ref=refs[0]
@@ -85,7 +85,7 @@ class DirectTableReferenceTests(unittest.TestCase):
         self.assertEqual(calls,[])
 
     def test_receiver_and_index_evaluated_once_left_to_right(self):
-        vm=Interpreter();vm.execute(SETUP+'Procedure Change(X,Y) X=Y;EndProcedure');seen=[]
+        vm=Interpreter(allow_extensions=True);vm.execute(SETUP+'Procedure Change(X,Y) X=Y;EndProcedure');seen=[]
         vm.register_function('Receiver',lambda:seen.append('receiver') or vm.variables['r'])
         vm.register_function('Index',lambda:seen.append('index') or Decimal(0))
         vm.register_function('Value',lambda:seen.append('value') or 8)
@@ -94,7 +94,7 @@ class DirectTableReferenceTests(unittest.TestCase):
 
     def test_late_receiver_hooks_and_instance_overrides_are_rejected(self):
         for mode in ('class','instance'):
-            vm=Interpreter();vm.execute(SETUP);refs=[];seen=[]
+            vm=Interpreter(allow_extensions=True);vm.execute(SETUP);refs=[];seen=[]
             vm.register_function('Capture',lambda reference:refs.append(reference))
             vm.functions['capture'].reference_parameters=frozenset({0})
             vm.execute('Capture(R.A);');row=vm.variables['r']
@@ -108,7 +108,7 @@ class DirectTableReferenceTests(unittest.TestCase):
             self.assertEqual(seen,[]);self.assertEqual(next(iter(row.cells.values())),1)
 
     def test_hostile_index_does_not_gain_protocol_and_retained_owner_is_fixed(self):
-        vm=Interpreter();vm.execute(SETUP+'Procedure Change(X) X=2;EndProcedure');seen=[]
+        vm=Interpreter(allow_extensions=True);vm.execute(SETUP+'Procedure Change(X) X=2;EndProcedure');seen=[]
         class Hostile:
             def __index__(self):seen.append('index');raise AssertionError
             def __hash__(self):seen.append('hash');raise AssertionError
@@ -124,7 +124,7 @@ class DirectTableReferenceTests(unittest.TestCase):
 
     def test_forged_cell_keys_never_run_hash_or_equality_during_reference(self):
         for stage in ('bind','after_arguments','retained'):
-            vm=Interpreter();vm.execute(SETUP+'Procedure Change(X,Y) X=2;EndProcedure');seen=[]
+            vm=Interpreter(allow_extensions=True);vm.execute(SETUP+'Procedure Change(X,Y) X=2;EndProcedure');seen=[]
             row=vm.variables['r'];column=vm.variables['c']
             class Key:
                 def __hash__(self):return hash(column)
@@ -163,7 +163,7 @@ class DirectTableReferenceTests(unittest.TestCase):
     def test_write_delegate_replacements_reject_without_host_hooks(self):
         for delegate in ('indexes','description'):
             for stage in ('after_arguments','retained'):
-                vm=Interpreter();vm.execute(SETUP+'Procedure Change(X,Y) X=2;EndProcedure');seen=[]
+                vm=Interpreter(allow_extensions=True);vm.execute(SETUP+'Procedure Change(X,Y) X=2;EndProcedure');seen=[]
                 row=vm.variables['r'];table=vm.variables['t'];column=vm.variables['c']
                 class Hostile:
                     def __getattribute__(self,name):seen.append(name);raise AssertionError('hostile delegate')

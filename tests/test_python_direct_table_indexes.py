@@ -35,7 +35,7 @@ class DirectTableIndexTests(unittest.TestCase):
             with self.assertRaises(BoundaryViolation):vm.execute('Bad[0];')
 
     def test_bound_receiver_rechecked_after_arguments(self):
-        vm=Interpreter();vm.execute('T=New ValueTable;T.Columns.Add("Key");I=T.Indexes;')
+        vm=Interpreter(allow_extensions=True);vm.execute('T=New ValueTable;T.Columns.Add("Key");I=T.Indexes;')
         def mutate():vm.variables['i'].table=object();return 'Key'
         vm.register_function('Mutate',mutate)
         with self.assertRaises(BoundaryViolation):vm.execute('I.Add(Mutate());')
@@ -49,16 +49,16 @@ class DirectTableIndexTests(unittest.TestCase):
 
     def test_unconstructible_aliases_and_no_private_access(self):
         for name in ('CollectionIndex','CollectionIndexes','ИндексКоллекции','ИндексыКоллекции'):
-            vm=Interpreter();seen=[];vm.register_function('Effect',lambda:seen.append(1))
+            vm=Interpreter(allow_extensions=True);seen=[];vm.register_function('Effect',lambda:seen.append(1))
             vm.execute('Try New '+name+'(Effect());Except Caught=True;EndTry;')
             self.assertTrue(vm.variables['caught']);self.assertEqual(seen,[])
-        vm=Interpreter();vm.execute('T=New ValueTable;T.Columns.Add("Key");I=T.Indexes.Add("Key");')
+        vm=Interpreter(allow_extensions=True);vm.execute('T=New ValueTable;T.Columns.Add("Key");I=T.Indexes.Add("Key");')
         for text in ('I.table','I._buckets','T.Indexes.items'):
             with self.assertRaises(Exception):vm.execute(text)
 
     def test_bounded_slice_child_cannot_bypass_table_policy(self):
         table=BSLValueTable();table.columns.add('Key');index=table.indexes.add('Key');table._bounded_slice_read=True
-        vm=Interpreter();vm.variables.update(indexes=table.indexes,index=index)
+        vm=Interpreter(allow_extensions=True);vm.variables.update(indexes=table.indexes,index=index)
         for source in ('Indexes.Add("Key")','Indexes[0]','Index[0]','For Each X In Indexes Do EndDo;'):
             with self.assertRaises(BoundaryViolation):vm.execute(source)
         self.assertEqual(len(table.indexes.items),1)

@@ -20,7 +20,7 @@ class DirectImportBoundaryTests(unittest.TestCase):
         self.directory=Path(directory.name)
         self.main=str(self.directory/'Main.bsl')
         self.events=[]
-        self.vm=Interpreter(output=self.events.append)
+        self.vm=Interpreter(output=self.events.append, allow_extensions=True)
         self.addCleanup(self.vm.close)
 
     def module(self, source):
@@ -182,7 +182,7 @@ Procedure Inner() Export Try Raise "inner";Except Captured=ErrorDescription();En
         self.module('Function F() Export Revoke();ChildAfter();Return 42;EndFunction')
         for change in ('imports','configuration'):
             with self.subTest(change=change):
-                events=[];vm=Interpreter();self.addCleanup(vm.close)
+                events=[];vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close)
                 def revoke():
                     events.append('revoke')
                     if change=='imports':vm.imports.clear()

@@ -22,14 +22,14 @@ class CachedSourceRefsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'не определена'):source_reference(state,'x',cached)
 
     def test_source_aliases_and_callback_replacement(self):
-        vm=Interpreter();box=[Decimal(20)]
+        vm=Interpreter(allow_extensions=True);box=[Decimal(20)]
         ref=Reference(lambda:box[0],lambda v:box.__setitem__(0,v))
         vm.register_function('Swap',lambda:vm.variables.__setitem__('x',ref))
         vm.execute('Procedure F(a,b) a=a+1;b=b+2;EndProcedure x=1;F(x,x);first=x;Swap();F(x,x);')
         self.assertEqual(vm.variables['first'],4);self.assertEqual(box[0],23);self.assertIs(vm.variables['x'],ref)
 
     def test_missing_binding_before_callee_effect(self):
-        vm=Interpreter();seen=[]
+        vm=Interpreter(allow_extensions=True);seen=[]
         vm.register_function('Seen',lambda:seen.append(1))
         vm.register_function('Drop',lambda:vm.variables.pop('x'))
         with self.assertRaisesRegex(Exception,'не определена'):

@@ -10,7 +10,7 @@ from yadinassi.application.async_runtime import AwaitRequest
 class NoContextAsyncRuntimeTests(unittest.TestCase):
     def setUp(self):
         self.output=[]
-        self.vm=Interpreter(self.output.append)
+        self.vm=Interpreter(self.output.append, allow_extensions=True)
     def tearDown(self): self.vm.close()
 
     def test_spawn_copies_capability_and_await_restores_task_view(self):

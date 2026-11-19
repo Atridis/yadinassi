@@ -23,25 +23,25 @@ class DirectEvalTests(unittest.TestCase):
 
     def test_complete_parse_and_unknown_constructor_before_effects(self):
         for text in ('Effect();Effect()','Effect() garbage','Effect()+New UnknownConstructor'):
-            vm=Interpreter();effects=[];vm.register_function('Effect',lambda:effects.append(1) or 1)
+            vm=Interpreter(allow_extensions=True);effects=[];vm.register_function('Effect',lambda:effects.append(1) or 1)
             try:vm.execute('Eval("'+text+'");')
             except Exception:pass
             else:self.fail('invalid expression accepted')
             self.assertEqual(effects,[])
 
     def test_custom_override_and_argument_mutation(self):
-        vm=Interpreter();vm.register_function('Eval',lambda text:'custom')
+        vm=Interpreter(allow_extensions=True);vm.register_function('Eval',lambda text:'custom')
         self.assertEqual(vm.execute('Eval("1+2");'),'custom')
-        vm=Interpreter();original=vm.functions['eval'];effects=[]
+        vm=Interpreter(allow_extensions=True);original=vm.functions['eval'];effects=[]
         def mutate():original.function=lambda text:effects.append(text);return '1'
         vm.register_function('Mutate',mutate)
         with self.assertRaises(BoundaryViolation):vm.execute('Eval(Mutate());')
         self.assertEqual(effects,[])
 
     def test_revocation_and_retained_reference(self):
-        vm=Interpreter();vm.register_function('Close',lambda:vm.close() or '1')
+        vm=Interpreter(allow_extensions=True);vm.register_function('Close',lambda:vm.close() or '1')
         with self.assertRaises(BoundaryViolation):vm.execute('Eval(Close());')
-        vm=Interpreter();refs=[]
+        vm=Interpreter(allow_extensions=True);refs=[]
         vm.register_function('Capture',lambda x:refs.append(x) or 1)
         vm.functions['capture'].reference_parameters=frozenset((0,))
         vm.execute('X=2;Eval("Capture(X)");')
@@ -49,14 +49,14 @@ class DirectEvalTests(unittest.TestCase):
 
     def test_arity_omission_and_limits(self):
         for text in ('Eval()','Eval(Effect(),Effect())','Eval(,)'):
-            vm=Interpreter();effects=[];vm.register_function('Effect',lambda:effects.append(1))
+            vm=Interpreter(allow_extensions=True);effects=[];vm.register_function('Effect',lambda:effects.append(1))
             vm.execute('Try '+text+';Except Caught=True;EndTry;')
             self.assertTrue(vm.variables['caught']);self.assertEqual(effects,[])
-        vm=Interpreter();self.assertEqual(vm.execute('Eval(12)'),Decimal(12))
+        vm=Interpreter(allow_extensions=True);self.assertEqual(vm.execute('Eval(12)'),Decimal(12))
         vm.execute('Try Eval(Undefined);Except Caught=True;EndTry;');self.assertTrue(vm.variables['caught'])
-        vm=Interpreter();vm.variables['s']='1'*65537
+        vm=Interpreter(allow_extensions=True);vm.variables['s']='1'*65537
         vm.execute('Try Eval(S);Except Caught=True;EndTry;');self.assertTrue(vm.variables['caught'])
-        vm=Interpreter();vm.execute('S="Eval(S)";Try Eval(S);Except Caught=True;EndTry;R=Eval("1");')
+        vm=Interpreter(allow_extensions=True);vm.execute('S="Eval(S)";Try Eval(S);Except Caught=True;EndTry;R=Eval("1");')
         self.assertTrue(vm.variables['caught']);self.assertEqual(vm.variables['r'],1)
 
     def test_diagnostic_context_preserves_description(self):
@@ -85,7 +85,7 @@ class EvalPreparationReuseTests(unittest.TestCase):
 
     def test_cached_constructor_readmission_before_effects(self):
         from yadinassi import BSLError
-        vm=Interpreter();seen=[];vm.register_function('Effect',lambda x:seen.append(x))
+        vm=Interpreter(allow_extensions=True);seen=[];vm.register_function('Effect',lambda x:seen.append(x))
         vm.register_function('Change',lambda:vm.register_type('Array',lambda:[]))
         with self.assertRaises(BSLError):vm.execute('Eval("Effect(New Array)");Change();Eval("Effect(New Array)");')
         self.assertEqual(len(seen),1)
@@ -101,7 +101,7 @@ class EvalPreparationReuseTests(unittest.TestCase):
 
     def test_limits_are_checked_after_warmup(self):
         from yadinassi import BSLError
-        vm=Interpreter()
+        vm=Interpreter(allow_extensions=True)
         with patch('yadinassi.runtime.EVAL_MAX_SOURCE',65536):
             def shrink():
                 import yadinassi.runtime as runtime
@@ -124,9 +124,9 @@ class EvalPreparationReuseTests(unittest.TestCase):
 
     def test_cached_calls_reject_partial_persistent_replacement(self):
         from yadinassi import BSLError
-        vm=Interpreter();seen=[]
+        vm=Interpreter(allow_extensions=True);seen=[]
         vm.execute('Function F() Return 1;EndFunction Function G() Return F();EndFunction')
-        replacement=Interpreter();replacement.execute('Function F() Return 9;EndFunction')
+        replacement=Interpreter(allow_extensions=True);replacement.execute('Function F() Return 9;EndFunction')
         vm.register_function('Change',lambda:vm._direct_routine_modules.__setitem__('f',replacement._direct_routine_modules['f']))
         vm.register_function('Effect',lambda:seen.append('effect') or 0)
         with self.assertRaisesRegex(BSLError,'partially replaced'):

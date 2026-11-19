@@ -12,7 +12,7 @@ from yadinassi.syntax.parser import parse
 class ClientContextTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(self.output.append)
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
 
     def test_root_unannotated_and_annotated_routines_are_client(self):
         self.vm.register_function('Context', lambda: self.vm.execution_context)

@@ -13,7 +13,7 @@ from configuration_runtime_fixture import CLIENT,module_files
 class DirectCancellationTests(unittest.TestCase):
     def vm(self,root=None):
         if root is None:
-            vm=Interpreter(execution_backend='python-direct')
+            vm=Interpreter(execution_backend='python-direct', allow_extensions=True)
         else:
             directory=TemporaryDirectory();self.addCleanup(directory.cleanup)
             path=Path(directory.name);name='Child'+str(len(root.imports))
@@ -24,7 +24,7 @@ class DirectCancellationTests(unittest.TestCase):
 
     def test_root_callback_rejection_matches_compiled_oracle_and_cleans_up(self):
         for backend in ('python-direct','compiled-strict'):
-            vm=Interpreter(execution_backend=backend);self.addCleanup(vm.close)
+            vm=Interpreter(execution_backend=backend, allow_extensions=True);self.addCleanup(vm.close)
             vm.register_function('CancelInside',vm.cancel_pending)
             with self.subTest(backend=backend),self.assertRaisesRegex(RuntimeError,'active scheduler'):
                 vm.execute('CancelInside();')
@@ -145,7 +145,7 @@ class DirectCancellationTests(unittest.TestCase):
     def test_dual_and_nocontext_rejection_matches_oracle_write_semantics(self):
         for backend in ('python-direct','compiled-strict'):
             for annotation in ('&AtClientAtServerNoContext','&AtServerNoContext'):
-                vm=Interpreter(execution_backend=backend);self.addCleanup(vm.close)
+                vm=Interpreter(execution_backend=backend, allow_extensions=True);self.addCleanup(vm.close)
                 vm.register_function('CancelInside',vm.cancel_pending)
                 vm.execute(annotation+'\nProcedure F(X) X=9;CancelInside();EndProcedure X=1;')
                 with self.subTest(backend=backend,annotation=annotation):

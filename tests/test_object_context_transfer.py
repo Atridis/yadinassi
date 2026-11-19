@@ -7,7 +7,7 @@ from yadinassi.collections.structures import BSLStructure
 
 class ObjectContextTransferTests(unittest.TestCase):
     def setUp(self):
-        self.messages=[]; self.vm=Interpreter(self.messages.append)
+        self.messages=[]; self.vm=Interpreter(self.messages.append, allow_extensions=True)
 
     def test_per_occurrence_copy_and_independent_packet_roots(self):
         child=BSLArray();child.add(Decimal(1));root=BSLStructure('Left,Right',child,child)

@@ -338,7 +338,7 @@ class DateArithmeticTests(unittest.TestCase):
 class DateRuntimeTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(output=self.output.append)
+        self.vm = Interpreter(output=self.output.append, allow_extensions=True)
 
     def test_bilingual_constructor_component_and_type_aliases(self):
         for name in ('Date', 'Дата', 'dAtE', 'дАтА'):
@@ -464,7 +464,7 @@ class DateRuntimeTests(unittest.TestCase):
         self.vm.register_function('Date', lambda *arguments: 'override')
         self.assertEqual(self.vm.execute('Date(2024, 2, 29)'), 'override')
         self.assertEqual(self.vm.execute('Дата(2024, 2, 29)'), date('20240229'))
-        self.assertEqual(Interpreter().execute('Date(2024, 2, 29)'), date('20240229'))
+        self.assertEqual(Interpreter(allow_extensions=True).execute('Date(2024, 2, 29)'), date('20240229'))
 
 
 class DateCollectionAndCodecTests(unittest.TestCase):

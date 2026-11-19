@@ -75,7 +75,7 @@ A=New Structure("Value",1);B=New Structure("Value",1);EqualContents=(A=B);'''
             with self.assertRaises(UnsupportedDateRange):collection_not_equal(left,right)
 
     def test_operand_effect_order_is_unchanged(self):
-        vm=Interpreter();calls=[]
+        vm=Interpreter(allow_extensions=True);calls=[]
         vm.register_function('Left',lambda:calls.append('left') or new_structure())
         vm.register_function('Right',lambda:calls.append('right') or new_structure())
         self.assertIs(vm.execute('(Left()=Right())'),False);self.assertEqual(calls,['left','right'])
@@ -108,7 +108,7 @@ class DirectCollectionStringTests(unittest.TestCase):
         self.assertEqual((vm.variables['r'],vm.variables['q']),('Структура','Соответствие'));self.assertEqual(calls,[])
 
     def test_overrides_and_custom_callable_equality_are_not_rewritten(self):
-        vm=Interpreter();calls=[]
+        vm=Interpreter(allow_extensions=True);calls=[]
         class Custom:
             def __eq__(self,other):calls.append('eq');raise AssertionError
             def __call__(self,value):calls.append('call');return 'custom'
@@ -118,7 +118,7 @@ class DirectCollectionStringTests(unittest.TestCase):
         self.assertEqual(calls,['call'])
 
     def test_captured_canonical_service_matches_named_without_name_rebinding(self):
-        vm=Interpreter();vm.variables['saved']=vm.functions['string']
+        vm=Interpreter(allow_extensions=True);vm.variables['saved']=vm.functions['string']
         vm.execute('A=New Array;Named=String(A);Captured=Saved(A);')
         self.assertEqual((vm.variables['named'],vm.variables['captured']),('Массив','Массив'))
         vm.register_function('String',lambda value:'custom')
@@ -134,7 +134,7 @@ class DirectCollectionStringTests(unittest.TestCase):
 
     def test_canonical_implementation_mutation_and_revocation_stay_fatal(self):
         for action in ('replace','close'):
-            vm=Interpreter();calls=[]
+            vm=Interpreter(allow_extensions=True);calls=[]
             def change():
                 if action=='replace':vm.functions['string'].function=lambda value:calls.append('foreign')
                 else:vm.close()

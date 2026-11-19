@@ -39,7 +39,7 @@ ROUTINES = '''
 class TrailingOmittedArgumentTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(self.output.append)
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
 
     def test_empty_call_and_terminal_holes_have_distinct_ast_positions(self):
         cases = (('P()', ()), ('P(,)', (True, True)),

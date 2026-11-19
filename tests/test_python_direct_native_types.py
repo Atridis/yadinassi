@@ -22,13 +22,13 @@ class DirectNativeTypeTests(unittest.TestCase):
             self.assertTrue(vm.variables['r'])
 
     def test_canonical_alias_and_custom_overrides(self):
-        vm=Interpreter();vm.register_function('Alias',type_of)
+        vm=Interpreter(allow_extensions=True);vm.register_function('Alias',type_of)
         self.assertIs(vm.execute('Alias(New Structure)'),BSLType.STRUCTURE)
         vm.register_function('TypeOf',lambda value:'custom')
         self.assertEqual(vm.execute('TypeOf(New Structure)'),'custom')
         with patch('yadinassi.types.type_values.type_of',lambda value:'patched'):
             from yadinassi.types import type_values
-            other=Interpreter();other.register_function('Alias',type_values.type_of)
+            other=Interpreter(allow_extensions=True);other.register_function('Alias',type_values.type_of)
             self.assertEqual(other.execute('Alias(New Array)'),'patched')
 
     def test_plain_dict_subclasses_and_global_type_api_are_not_admitted(self):
@@ -40,12 +40,12 @@ class DirectNativeTypeTests(unittest.TestCase):
 
     def test_current_service_policy_and_revocation_remain_enforced(self):
         class Context(ServicesBoundary,BoundaryContext):pass
-        vm=Interpreter();calls=[]
+        vm=Interpreter(allow_extensions=True);calls=[]
         context=Context(services=vm.functions,policy=lambda action,name:calls.append((action,name)) or False)
         context.vm=vm;context.enter()
         with self.assertRaises(BoundaryViolation):context.resolve_service('typeof')([])
         self.assertEqual(calls,[('call','typeof')])
-        vm=Interpreter()
+        vm=Interpreter(allow_extensions=True)
         def change():vm.functions['typeof'].function=lambda value:'wrong';return []
         vm.register_function('Change',change)
         with self.assertRaises(BoundaryViolation):vm.execute('R=TypeOf(Change());')
@@ -70,7 +70,7 @@ S=New Structure("X",1);A=New Array;A.Add(2);R=F(S.X,A[0],Change(S,A));''')
         self.assertEqual(vm.variables['r'],12)
 
     def test_named_val_reference_revocation_stops_before_callee(self):
-        vm=Interpreter();events=[]
+        vm=Interpreter(allow_extensions=True);events=[]
         def get():vm.close();return Decimal(1)
         vm.variables['x']=Reference(get,lambda value:events.append('write'))
         vm.register_function('Later',lambda:events.append('later') or Decimal(2))

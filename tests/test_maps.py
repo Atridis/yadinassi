@@ -21,7 +21,7 @@ from yadinassi.types.values import BSLArray
 class MapTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(output=self.output.append)
+        self.vm = Interpreter(output=self.output.append, allow_extensions=True)
 
     def test_empty_constructors_bilingual_and_case_insensitive(self):
         for expression in ['Новый Соответствие', 'New Map',
@@ -659,7 +659,7 @@ def _same_key(left, right):
 
 class MapReferenceModelTests(unittest.TestCase):
     def test_deterministic_randomized_operations_match_reference_model(self):
-        vm = Interpreter(output=lambda text: None)
+        vm = Interpreter(output=lambda text: None, allow_extensions=True)
         vm.execute('m = New Map; another = New Map;')
         first_array, second_array = BSLArray(), BSLArray()
         first_structure, second_structure = BSLStructure(), BSLStructure()

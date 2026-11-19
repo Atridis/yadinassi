@@ -55,7 +55,7 @@ class ArrayPresentationSecurityTests(unittest.TestCase):
         with self.assertRaises(BoundaryViolation):boundary.get_member(value,'items')
 
     def test_operand_order_and_close_are_preserved(self):
-        events=[];output=[];vm=Interpreter(output=output.append);self.addCleanup(vm.close)
+        events=[];output=[];vm=Interpreter(output=output.append, allow_extensions=True);self.addCleanup(vm.close)
         vm.register_function('Left',lambda:events.append('left') or 'type:')
         vm.register_function('Right',lambda:events.append('right') or BSLArray())
         vm.execute('Message(Left()+Right());')

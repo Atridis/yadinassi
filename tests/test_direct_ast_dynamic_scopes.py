@@ -43,13 +43,13 @@ X=1;Y=2;P(X,Y);Execute("");Execute(Undefined);'''
             self.assertEqual(vm.variables['x'],6);self.assertEqual(vm.variables['r'],7)
             self.assertEqual(vm.imports['side'].interpreter.variables['n'],8)
     def test_eval_mutated_after_resolution_is_fatal_not_fallback(self):
-        vm=Interpreter();self.addCleanup(vm.close);original=vm.functions['eval'];effects=[]
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);original=vm.functions['eval'];effects=[]
         def mutate():original.function=lambda text:effects.append(text);return '1'
         vm.register_function('Mutate',mutate)
         with self.no_old(),self.assertRaises(BoundaryViolation):vm.execute('Try Eval(Mutate());Except Caught=True;EndTry;')
         self.assertEqual(effects,[]);self.assertNotIn('caught',vm.variables)
     def test_eval_procedure_rejected_before_arguments_even_cached(self):
-        vm=Interpreter();self.addCleanup(vm.close);effects=[]
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);effects=[]
         vm.register_function('F',lambda x:None,returns_value=False)
         vm.register_function('Effect',lambda:effects.append(1) or 1)
         for _ in range(2):
@@ -57,12 +57,12 @@ X=1;Y=2;P(X,Y);Execute("");Execute(Undefined);'''
             self.assertTrue(vm.variables['caught'])
         self.assertEqual(effects,[])
     def test_fragment_reference_expires_after_return(self):
-        vm=Interpreter();self.addCleanup(vm.close);refs=[]
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);refs=[]
         vm.register_function('Capture',lambda x:refs.append(x));vm.functions['capture'].reference_parameters=frozenset((0,))
         with self.no_old():vm.execute('X=2;Execute("Capture(X)");')
         with self.assertRaises(BoundaryViolation):refs[0].get()
     def test_omitted_service_slots_are_resolved_before_actual_effects(self):
-        vm=Interpreter();self.addCleanup(vm.close);effects=[]
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);effects=[]
         vm.register_function('Effect',lambda:effects.append(1) or 1)
         with self.no_old():vm.execute('Try Eval(,Effect());Except Caught=True;EndTry;R="";Execute("R=StrFindByRegularExpression(""a1b2"",""[0-9]"",,,2).Value;");')
         self.assertEqual(effects,[]);self.assertEqual(vm.variables['r'],'2')

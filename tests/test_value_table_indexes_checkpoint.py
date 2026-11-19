@@ -217,7 +217,7 @@ class IndexProbeTests(unittest.TestCase):
             return original_set(table, name, value)
 
         output = []
-        vm = Interpreter(output=output.append)
+        vm = Interpreter(output=output.append, allow_extensions=True)
         vm.execute(source().split('#Область МассивыИСтруктуры', 1)[0])
         with patch.object(BSLValueTable, 'get_member', get_member), patch.object(BSLValueTable, 'set_member', set_member), patch.object(BSLValueTable, 'get_method', table_method), patch.object(BSLValueTableColumnCollection, 'get_method', columns_method), patch.object(BSLValueTableColumn, 'set_member', column_set), patch.object(BSLValueTableRow, 'set_member', row_set):
             for call in observations():

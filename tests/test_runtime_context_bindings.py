@@ -30,7 +30,8 @@ Return P.Category = Ref;
 
 
 class RuntimeContextBindingTests(unittest.TestCase):
-    setUp = catalog_fixtures.CatalogQueryTests.setUp
+    def setUp(self):
+        catalog_fixtures.CatalogQueryTests.setUp(self, allow_extensions=True)
     tearDown = catalog_fixtures.CatalogQueryTests.tearDown
 
     def load(self, source=BODY):

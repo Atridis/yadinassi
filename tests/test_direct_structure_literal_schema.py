@@ -6,7 +6,7 @@ from yadinassi.execution.codegen.experimental_naked_structure import structure_i
 
 class LiteralStructureSchemaTests(unittest.TestCase):
     def execute(self, source):
-        events=[];vm=Interpreter(execution_backend='python-direct')
+        events=[];vm=Interpreter(execution_backend='python-direct', allow_extensions=True)
         vm.register_function('Observe',lambda value:events.append(value) or value)
         vm.execute(source)
         return events,list(structure_items(vm.variables['s']))
@@ -37,7 +37,7 @@ class LiteralStructureSchemaTests(unittest.TestCase):
             ('s=New Structure("bad name",1/0);',[],'Деление на ноль'),
         ):
             with self.subTest(source=source):
-                events=[];vm=Interpreter(execution_backend='python-direct')
+                events=[];vm=Interpreter(execution_backend='python-direct', allow_extensions=True)
                 vm.register_function('Observe',lambda value:events.append(value) or value)
                 with self.assertRaisesRegex(BSLRuntimeError,message):vm.execute(source)
                 self.assertEqual(events,expected_events)

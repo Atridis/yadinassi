@@ -35,7 +35,7 @@ class RoutineArrayTests(TestCase):
     def test_host_byref_replacement_invalidates_private_array(self):
         code='Function F() a=New Array;Replace(a);a.Add(1);Return 0;EndFunction r=F();'
         seen=[]
-        vm=Interpreter()
+        vm=Interpreter(allow_extensions=True)
         def replace(slot):seen.append(slot.get());slot.set(Decimal(42))
         vm.register_function('Replace',replace)
         vm.functions['replace'].reference_parameters=frozenset({0})
@@ -50,7 +50,7 @@ class RoutineArrayTests(TestCase):
         self.assertIn('id(type(',p.generated_source)
     def test_local_alias_clear_and_error_partial_effects(self):
         code='Function F() a=New Array;a.Add(3);b=a;b.Clear();Observe(a.Count());Return a.Get(0);EndFunction r=F();'
-        events=[];vm=Interpreter();vm.register_function('Observe',events.append)
+        events=[];vm=Interpreter(allow_extensions=True);vm.register_function('Observe',events.append)
         try:
             with self.assertRaises(Exception):vm.execute(code)
             self.assertEqual(events,[Decimal(0)]);self.assertNotIn('r',vm.variables)

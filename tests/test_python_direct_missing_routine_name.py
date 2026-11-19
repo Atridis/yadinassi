@@ -68,7 +68,7 @@ A=ReadValues(3); R=Result(5);
         self.assertEqual(vm.variables['r'], Decimal(12))
 
     def test_host_python_nameerror_is_not_reclassified(self):
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         def fail():
             raise NameError('host implementation bug')
         vm.register_function('HostFail', fail)

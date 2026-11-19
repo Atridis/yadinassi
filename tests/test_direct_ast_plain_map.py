@@ -33,7 +33,7 @@ class PlainMapTests(unittest.TestCase):
     def test_opaque_key_does_not_invoke_hash_or_eq(self):
         from yadinassi.types.values import HostFunction
         for operation in ('M.Insert(K,1);','R=M.Get(K);','R=M[K];','M[K]=1;','M.Delete(K);'):
-            vm=Interpreter();events=[]
+            vm=Interpreter(allow_extensions=True);events=[]
             class Key:
                 def __hash__(self):events.append('hash');vm.close();return 1
                 def __eq__(self,other):events.append('eq');return False
@@ -56,7 +56,7 @@ class PlainMapTests(unittest.TestCase):
 
     def test_map_equality_never_compares_opaque_values_or_foreign_receiver(self):
         from yadinassi.types.values import HostFunction
-        vm=Interpreter();events=[]
+        vm=Interpreter(allow_extensions=True);events=[]
         class Opaque:
             def __eq__(self,other):events.append('eq');vm.close();return False
             def __ne__(self,other):events.append('ne');vm.close();return True

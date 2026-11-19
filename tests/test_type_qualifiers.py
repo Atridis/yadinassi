@@ -305,7 +305,7 @@ class QualifierBoundaryTests(unittest.TestCase):
 
 class QualifierObjectBoundaryTests(unittest.TestCase):
     def setUp(self):
-        self.vm = Interpreter(output=lambda text: None)
+        self.vm = Interpreter(output=lambda text: None, allow_extensions=True)
         for russian, factory, english in (
                 ('КвалификаторыЧисла', BSLNumberQualifiers, 'NumberQualifiers'),
                 ('КвалификаторыСтроки', BSLStringQualifiers, 'StringQualifiers'),

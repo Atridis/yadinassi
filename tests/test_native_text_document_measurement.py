@@ -47,7 +47,7 @@ def quote(s): return '"'+s.replace('"','""')+'"'
 class InstrumentationTests(unittest.TestCase):
     def setUp(self):
         self.out=[]
-        self.vm=Interpreter(self.out.append)
+        self.vm=Interpreter(self.out.append, allow_extensions=True)
         self.helpers = fragments()[0]
         self.vm.execute(self.helpers)
 

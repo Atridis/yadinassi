@@ -12,7 +12,7 @@ from yadinassi.types.values import BSLArray, BSLObject, BSLType
 class TypeValueTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(self.output.append)
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
 
     def evaluate(self, expression):
         # Top-level unparenthesized = is assignment in the existing parser.

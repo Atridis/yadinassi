@@ -38,7 +38,7 @@ class DirectPortableDiagnosticsTests(unittest.TestCase):
 
     def test_host_error_uses_bsl_call_line(self):
         from yadinassi import Interpreter
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
 
         def fail():
             raise ValueError('host failure')
@@ -54,7 +54,7 @@ class DirectPortableDiagnosticsTests(unittest.TestCase):
     def test_try_handles_runtime_error_without_masking_authority(self):
         from yadinassi import Interpreter
         from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         vm.execute('caught=False; Try x=1/0; Except caught=True; EndTry;')
         self.assertTrue(vm.variables['caught'])
 
@@ -69,7 +69,7 @@ class DirectPermissionErrors(unittest.TestCase):
 
     def test_permission_error_is_not_swallowed_by_bsl_try(self):
         from yadinassi import Interpreter
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         self.addCleanup(vm.close)
 
         def denied():

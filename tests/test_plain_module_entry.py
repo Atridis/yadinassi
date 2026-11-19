@@ -59,7 +59,7 @@ class DirectModuleEntryTests(unittest.TestCase):
         self.assertEqual(vm.execute_prepared(prepared),21)
 
     def test_host_observes_committed_prefix_once(self):
-        observed=[];vm=Interpreter();self.addCleanup(vm.close)
+        observed=[];vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close)
         def host():observed.append(vm.variables['x']);return Decimal(2)
         vm.register_function('Host',host);vm.execute('x=1;y=Host();')
         self.assertEqual(observed,[Decimal(1)]);self.assertEqual(vm.variables['y'],2)

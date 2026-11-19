@@ -302,7 +302,7 @@ class Host:
         self.broken_type_codec = False
         self.item_reads_undefined = False
         self.fail_after = None
-        self.vm = Interpreter(output=self.output.append)
+        self.vm = Interpreter(output=self.output.append, allow_extensions=True)
         self.vm.register_type('СписокЗначений', lambda *args: _List(self, *args), 'ValueList')
         self.vm.register_type('ЭлементСпискаЗначений', self.construct_item, 'ValueListItem')
         self.vm.register_function('Тип', self.type_by_name, 'Type')

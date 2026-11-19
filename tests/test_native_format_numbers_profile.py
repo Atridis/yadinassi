@@ -57,7 +57,7 @@ class FormatProfileTests(unittest.TestCase):
         source=(ROOT/spec().source).read_text(encoding='utf-8').encode()
         module=tree.client_module(source,(ROOT/full.CLIENT_SOURCE).read_text(encoding='utf-8').encode(),profile=PROFILE)
         for witness in (None,lambda *args:' \u00a0\U0001f600',lambda *args:'x'*32,lambda *args:42):
-            vm=Interpreter(native_target=LINUX_8_3_27_1508)
+            vm=Interpreter(native_target=LINUX_8_3_27_1508, allow_extensions=True)
             if witness:
                 vm.register_function('Format',witness);vm.register_function('Формат',witness)
             vm.execute(module.decode('utf-8-sig'));vm.execute('Result = ВычислитьПробу();')

@@ -17,12 +17,12 @@ from test_configuration_inventory_enums import source
 ROOT=Path(__file__).resolve().parents[1]
 
 class InventoryEnumQueryTests(unittest.TestCase):
-    def setUp(self):
+    def setUp(self, *, allow_extensions=False):
         temp=tempfile.TemporaryDirectory(dir=ROOT.parent);self.addCleanup(temp.cleanup)
         self.path=Path(temp.name)/'owned.sqlite'
         self.context=SQLiteDBContext.create_inventory_enum(self.path,import_inventory_enum_configuration(source(),inventory_runtime=PROFILE))
         self.addCleanup(self.context.close)
-        self.vm=Interpreter(database_context=self.context);self.addCleanup(self.vm.close)
+        self.vm=Interpreter(database_context=self.context, allow_extensions=allow_extensions);self.addCleanup(self.vm.close)
         self.vm.execute('P=Catalogs.Products.CreateItem();P.Code="P";P.Unit=Enums.Units.Piece;P.Write(); E=Catalogs.Products.CreateItem();E.Code="E";E.Write(); K=Catalogs.Products.CreateItem();K.Code="K";K.Unit=Enums.Units.Pack;K.Write();')
         self.piece=self.vm.execute('Enums.Units.Piece');self.empty=self.vm.execute('Enums.Units.EmptyRef()')
 

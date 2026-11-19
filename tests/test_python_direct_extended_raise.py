@@ -38,7 +38,7 @@ R=E.Code;A=E.AdditionalInformation;S=E.InitialString;'''
         for backend in ('python-direct','compiled-strict'):
             for route in ('ast','prepared') if backend=='python-direct' else ('ast',):
                 with self.subTest(backend=backend,route=route):
-                    vm=Interpreter(execution_backend=backend);effects=[]
+                    vm=Interpreter(execution_backend=backend, allow_extensions=True);effects=[]
                     vm.register_function('Description',lambda:effects.append('description') or 'x')
                     vm.register_function('Optional',lambda:effects.append('optional') or 'x')
                     nodes=parse('Try Raise(Description(),Optional());Except E=ErrorInfo();EndTry;')
@@ -50,7 +50,7 @@ R=E.Code;A=E.AdditionalInformation;S=E.InitialString;'''
                     self.assertIn('не более 5',vm.variables['e'].description)
 
     def test_all_optional_effects_before_validation_and_no_repeat(self):
-        vm=Interpreter();effects=[]
+        vm=Interpreter(allow_extensions=True);effects=[]
         vm.register_function('Part',lambda x:effects.append(x) or x)
         vm.execute('Try Raise(Part("D"),Part(1),Part("C"),Part("A"),Part("bad-cause"));Except E=ErrorInfo();EndTry;')
         self.assertEqual(effects,['D',1,'C','A','bad-cause'])
@@ -58,7 +58,7 @@ R=E.Code;A=E.AdditionalInformation;S=E.InitialString;'''
         self.assertFalse(vm.execute('E.IsErrorOfCategory(ErrorCategory.ExceptionRaisedFromScript)'))
 
     def test_description_conversion_precedes_optional_effects_without_host_str(self):
-        vm=Interpreter();effects=[]
+        vm=Interpreter(allow_extensions=True);effects=[]
         class Hostile:
             def __str__(self):effects.append('str');raise AssertionError
         vm.register_function('Value',lambda:Hostile())
@@ -112,13 +112,13 @@ R=E.Code;A=E.AdditionalInformation;S=E.InitialString;'''
             self.assertNotIn('swallowed',vm.variables)
 
     def test_saved_category_query_validates_current_boundary_and_cause(self):
-        vm=Interpreter();vm.execute('Try Raise("x",ErrorCategory.ConfigurationError);Except E=ErrorInfo();EndTry;Q=E.IsErrorOfCategory;')
+        vm=Interpreter(allow_extensions=True);vm.execute('Try Raise("x",ErrorCategory.ConfigurationError);Except E=ErrorInfo();EndTry;Q=E.IsErrorOfCategory;')
         vm.execute('R=Q(ErrorCategory.ConfigurationError);');self.assertTrue(vm.variables['r'])
         vm.register_function('Close',lambda:vm.close() or BSLErrorCategory.CONFIGURATION_ERROR)
         with self.assertRaises(BoundaryViolation):vm.execute('Q(Close());')
 
     def test_last_argument_revocation_cannot_be_swallowed(self):
-        vm=Interpreter();events=[]
+        vm=Interpreter(allow_extensions=True);events=[]
         vm.register_function('Close',lambda:events.append('close') or vm.close())
         with self.assertRaises(BoundaryViolation):
             vm.execute('Try Raise("x",,"C","A",Close());Except Swallowed=True;EndTry;')

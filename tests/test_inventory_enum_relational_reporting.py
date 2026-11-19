@@ -71,7 +71,7 @@ class EnumRelationalEvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=ROOT.parent) as temp:
             with closing(create_prepared(Path(temp) / 'stock.sqlite',
                     prepare_directory(SOURCE / 'runtime_source', profile=PROFILE))) as context:
-                with closing(Interpreter(database_context=context, output=lambda text: None)) as vm:
+                with closing(Interpreter(database_context=context, output=lambda text: None, allow_extensions=True)) as vm:
                     observed, diagnostics = [], []
                     vm.register_function('ПодробноеПредставлениеОшибки', lambda info: info.get_member('Description'))
                     vm.register_function('AccumulationEmit', lambda n,v: observed.append((int(n),v)), returns_value=False)

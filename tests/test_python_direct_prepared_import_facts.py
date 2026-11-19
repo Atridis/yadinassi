@@ -38,7 +38,7 @@ class PreparedImportFactsTests(unittest.TestCase):
         for mutation in ('collision','loader'):
             with tempfile.TemporaryDirectory() as directory:
                 root=Path(directory);(root/'Side.bsl').write_text('Var N Export;N=3;',encoding='utf-8')
-                vm=Interpreter();effects=[];vm.register_function('Effect',lambda:effects.append(1))
+                vm=Interpreter(allow_extensions=True);effects=[];vm.register_function('Effect',lambda:effects.append(1))
                 plan=vm.prepare_program(parse('// #Import Side.bsl\nEffect();',str(root/'Main.bsl')))
                 if mutation=='collision':vm.variables['side']=1
                 else:vm._check_import_binding=lambda *args:None
@@ -49,7 +49,7 @@ class PreparedImportFactsTests(unittest.TestCase):
     def test_forged_namespace_after_success_is_not_authorized_by_facts(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);(root/'Side.bsl').write_text('Var N Export;N=3;',encoding='utf-8')
-            vm=Interpreter();effects=[];vm.register_function('Effect',lambda:effects.append(1))
+            vm=Interpreter(allow_extensions=True);effects=[];vm.register_function('Effect',lambda:effects.append(1))
             plan=vm.prepare_program(parse('// #Import Side.bsl\nEffect();R=Side.N;',str(root/'Main.bsl')))
             vm.execute_prepared(plan);self.assertEqual(vm.variables['r'],3)
             effects.clear();vm.imports['side']=object()

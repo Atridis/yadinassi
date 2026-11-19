@@ -419,7 +419,7 @@ class PropertyTransferLinuxRowTests(unittest.TestCase):
             self.assertEqual(target.get_member('First'), D(10))
 
     def test_interpreter_linux_target_selects_measured_order_without_new_dispatch(self):
-        vm = Interpreter(native_target=LINUX_8_3_27_1508)
+        vm = Interpreter(native_target=LINUX_8_3_27_1508, allow_extensions=True)
         vm.execute('T=New ValueTable;T.Columns.Add("First");T.Columns.Add("Last");'
                    'R=T.Add();R.First=1;R.Last="old";S=New Structure("First,Last",10,"new");'
                    'Try ЗаполнитьЗначенияСвойств(R,S,"First,Missing,Last");Except Caught=True;EndTry;')
@@ -695,7 +695,7 @@ class PropertyTransferObjectTests(unittest.TestCase):
 
 class PropertyTransferInterpreterTests(unittest.TestCase):
     def test_bilingual_calls_omissions_and_identity_dispatch(self):
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         vm.execute('T=New ValueTable;T.Columns.Add("Text");R=T.Add();S=New Structure("Text","new");'
                    'FillPropertyValues(R,S,,);ЗаполнитьЗначенияСвойств(S,R,Undefined,Undefined);')
         self.assertEqual(vm.variables['r'].get_member('Text'), 'new')

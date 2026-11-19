@@ -97,7 +97,7 @@ class Instrumentation:
         self.fail_after = False
         self.fail_type_codec = False
         self.read_undefined = False
-        self.vm = Interpreter(output=self.outputs.append)
+        self.vm = Interpreter(output=self.outputs.append, allow_extensions=True)
         namespace = _Namespace()
         for name in ('sortdirection', 'направлениесортировки'):
             self.vm.variables[name] = namespace

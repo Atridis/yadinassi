@@ -16,7 +16,7 @@ class DirectPairCodecTests(unittest.TestCase):
         native.NativeEvidenceTests.setUpClass(); evidence=native.NativeEvidenceTests()
         for kind,constructor,key in [('structure','New Structure("Ключ",7)','Ключ'),('map','New Map','ключ')]:
             for route in ('source','ast','prepared','execute','eval','captured'):
-                vm=Interpreter();vm.execute('S='+constructor+';S["'+key+'"]=7;For Each P In S Do EndDo;')
+                vm=Interpreter(allow_extensions=True);vm.execute('S='+constructor+';S["'+key+'"]=7;For Each P In S Do EndDo;')
                 vm.variables['saved']=vm.functions['valuetostringinternal']
                 code='R=ValueToStringInternal(P);'
                 with self.subTest(kind=kind,route=route),patch.object(Interpreter,'block',side_effect=AssertionError('VM')):
@@ -74,7 +74,7 @@ class DirectPairCodecTests(unittest.TestCase):
 
     def test_cycle_through_list_aliases_undefined_and_public_rebinding(self):
         from yadinassi.execution.codegen import experimental_naked_collections as collections
-        vm=Interpreter();items=[];p=Pair('x',items);items.append(p);vm.variables['p']=p
+        vm=Interpreter(allow_extensions=True);items=[];p=Pair('x',items);items.append(p);vm.variables['p']=p
         with self.assertRaisesRegex(BSLError,'циклические'):vm.execute('ValueToStringInternal(P)')
         shared=Pair('nested',None);vm.variables['p']=Pair(shared,shared)
         payload=vm.execute('ValueToStringInternal(P)')
@@ -91,14 +91,14 @@ class DirectPairCodecTests(unittest.TestCase):
         with self.assertRaises(BSLError):vm.execute('Saved(Raw)')
 
     def test_cached_custom_capture_and_argument_lifetime_guards(self):
-        vm=Interpreter();vm.variables.update(p=Pair('x',Decimal(1)),saved=vm.functions['valuetostringinternal'])
+        vm=Interpreter(allow_extensions=True);vm.variables.update(p=Pair('x',Decimal(1)),saved=vm.functions['valuetostringinternal'])
         plan=vm.prepare('R=ValueToStringInternal(P);Q=Saved(P);');vm.execute_prepared(plan)
         payload=vm.variables['r'];self.assertEqual(payload,vm.variables['q'])
         vm.register_function('ValueToStringInternal',lambda value:'custom');vm.execute_prepared(plan)
         self.assertEqual((vm.variables['r'],vm.variables['q']),('custom',payload))
         for mode in ('replace','close'):
             for name in ('ValueToStringInternal','Saved'):
-                vm=Interpreter();vm.variables['saved']=vm.functions['valuetostringinternal'];seen=[]
+                vm=Interpreter(allow_extensions=True);vm.variables['saved']=vm.functions['valuetostringinternal'];seen=[]
                 def effect():
                     seen.append('arg')
                     if mode=='close':vm.close()
@@ -110,7 +110,7 @@ class DirectPairCodecTests(unittest.TestCase):
 
     def test_retained_callable_policy_and_revocation(self):
         from yadinassi.execution.direct.python_direct import make_boundary
-        vm=Interpreter();context=make_boundary(vm);context.start()
+        vm=Interpreter(allow_extensions=True);context=make_boundary(vm);context.start()
         invoke=context.resolve_callable(vm.functions['valuetostringinternal']);p=Pair('x',Decimal(1))
         context.policy=lambda operation,name:operation!='call_value'
         with self.assertRaises(BoundaryViolation):invoke(p)

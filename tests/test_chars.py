@@ -106,12 +106,12 @@ class CharsTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('Символы.ПС'), '\n')
         self.vm.execute('Function Pick(Символы) Return Символы; EndFunction')
         self.assertEqual(self.vm.execute('Pick("parameter")'), 'parameter')
-        other = Interpreter(lambda text: None)
+        other = Interpreter(lambda text: None, allow_extensions=True)
         other.execute('Function Chars() Return "routine"; EndFunction')
         self.assertEqual(other.execute('Chars()'), 'routine')
         with self.assertRaises(BSLRuntimeError):
             other.execute('Chars.LF')
-        host = Interpreter(lambda text: None)
+        host = Interpreter(lambda text: None, allow_extensions=True)
         host.register_function('Chars', lambda: 'host')
         self.assertEqual(host.execute('Chars()'), 'host')
         with self.assertRaises(BSLRuntimeError):

@@ -116,7 +116,7 @@ class NumericAggregateTests(unittest.TestCase):
         path=self.context.path;self.context.close()
         apply(path,prepare(path,maintenance=True),maintenance=True)
         self.context=SQLiteDBContext(path)
-        self.vm=Interpreter(database_context=self.context,output=self.output.append)
+        self.vm=Interpreter(database_context=self.context,output=self.output.append, allow_extensions=True)
         with patch.object(query_pushdown,'try_numeric',return_value=None):expected=self.query()._rows
         seen=[];load=_Plan.load
         def capture(plan,*args):seen.append(1);return load(plan,*args)

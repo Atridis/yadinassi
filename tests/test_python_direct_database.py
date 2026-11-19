@@ -14,7 +14,7 @@ class DirectDatabaseTests(unittest.TestCase):
         folder=tempfile.TemporaryDirectory();self.addCleanup(folder.cleanup)
         self.context=SQLiteDBContext.create_main_demo(Path(folder.name)/'db.sqlite',import_main_demo_configuration(source(),profile=PROFILE))
         self.addCleanup(self.context.close)
-        self.vm=Interpreter(database_context=self.context);self.addCleanup(self.vm.close)
+        self.vm=Interpreter(database_context=self.context, allow_extensions=True);self.addCleanup(self.vm.close)
 
     def test_objects_fields_sections_and_no_argument_add(self):
         with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
@@ -135,7 +135,7 @@ class DirectDatabaseTests(unittest.TestCase):
     def test_bound_selection_rechecks_owner_after_argument_effect(self):
         self.vm.execute('S=Catalogs.Склады.Select();')
         selection=self.vm.variables['s'];original=selection._manager
-        other=Interpreter(database_context=self.context);self.addCleanup(other.close)
+        other=Interpreter(database_context=self.context, allow_extensions=True);self.addCleanup(other.close)
         other.execute('S=Catalogs.Склады.Select();')
         def change():selection._manager=other.variables['s']._manager
         self.vm.register_function('Change',change)
@@ -193,7 +193,7 @@ class DirectDatabaseTests(unittest.TestCase):
             with self.subTest(base=base),self.assertRaises(BoundaryViolation):self.vm.execute('X=foreign.Name;')
 
     def test_bound_metadata_method_rechecks_current_owner(self):
-        other=Interpreter(database_context=self.context);self.addCleanup(other.close)
+        other=Interpreter(database_context=self.context, allow_extensions=True);self.addCleanup(other.close)
         original=self.vm._metadata
         def change():
             self.vm._metadata=other._metadata

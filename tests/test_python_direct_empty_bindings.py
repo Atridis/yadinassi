@@ -31,7 +31,7 @@ class DirectEmptyBindingTests(unittest.TestCase):
     def test_host_boundary_checks_before_and_after_effect_remain(self):
         for persistent in (False,True):
             for change in ('close','restricted'):
-                vm=Interpreter()
+                vm=Interpreter(allow_extensions=True)
                 if persistent:vm.execute('Function F() Return 1;EndFunction')
                 def effect():
                     if change=='close':vm.close()
@@ -41,12 +41,12 @@ class DirectEmptyBindingTests(unittest.TestCase):
                 with self.assertRaises(BoundaryViolation):vm.execute('R=Host();')
                 self.assertNotIn('r',vm.variables)
     def test_overridden_constructor_remains_denied(self):
-        vm=Interpreter();vm.execute('Function F() Return New Array; EndFunction')
+        vm=Interpreter(allow_extensions=True);vm.execute('Function F() Return New Array; EndFunction')
         vm.register_type('Array',lambda:[])
         with self.assertRaises(PythonDirectUnsupported):vm.execute('Effect=1;F();')
         self.assertNotIn('effect',vm.variables)
     def test_host_registry_is_live_between_calls(self):
-        vm=Interpreter();vm.execute('Function F() Return 1;EndFunction')
+        vm=Interpreter(allow_extensions=True);vm.execute('Function F() Return 1;EndFunction')
         vm.register_function('Host',lambda:Decimal(1))
         vm.execute('R=Host();');self.assertEqual(vm.variables['r'],1)
         vm.register_function('Host',lambda:Decimal(2))

@@ -64,13 +64,13 @@ class DirectFixedMapTests(unittest.TestCase):
         self.assertEqual(vm.execute('F["x"]'),1)
 
     def test_constructor_binding_and_policy_are_live(self):
-        vm=Interpreter();factory=vm.types['fixedmap'];seen=[]
+        vm=Interpreter(allow_extensions=True);factory=vm.types['fixedmap'];seen=[]
         def change():factory.function=lambda *a:seen.append(1);return _TypedMap()
         vm.register_function('Change',change)
         with self.assertRaises(BoundaryViolation):vm.execute('New FixedMap(Change())')
         self.assertEqual(seen,[])
         class Boundary(ServicesBoundary,BoundaryContext):pass
-        vm=Interpreter();events=[]
+        vm=Interpreter(allow_extensions=True);events=[]
         context=Boundary(policy=lambda op,name:events.append((op,name)) or False);context.vm=vm;context.start()
         with self.assertRaises(BoundaryViolation):context.resolve_service('new:fixedmap')(_TypedMap())
         self.assertEqual(events,[('call_value',vm.types['fixedmap'].name.casefold())])

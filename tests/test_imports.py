@@ -18,7 +18,7 @@ class ImportTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.directory = Path(self.temporary.name)
         self.output = []
-        self.vm = Interpreter(output=self.output.append)
+        self.vm = Interpreter(output=self.output.append, allow_extensions=True)
         self.main = self.directory / 'Основное.bsl'
 
     def write(self, name, code, encoding='utf-8'):

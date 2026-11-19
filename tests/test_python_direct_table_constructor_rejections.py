@@ -14,7 +14,7 @@ class DirectTableConstructorRejectionsTests(unittest.TestCase):
     def test_catchable_rejection_all_aliases_and_entry_routes_without_vm(self):
         for name in NAMES:
             for route in ('source','ast','prepared','eval','execute'):
-                vm=Interpreter();seen=[];vm.register_function('Effect',lambda:seen.append('arg'))
+                vm=Interpreter(allow_extensions=True);seen=[];vm.register_function('Effect',lambda:seen.append('arg'))
                 source='Before=1;Caught=False;Try New '+name+'(Effect());Except Caught=True;EndTry;After=2;'
                 with self.subTest(name=name,route=route),patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
                     if route=='source':vm.execute(source)
@@ -27,7 +27,7 @@ class DirectTableConstructorRejectionsTests(unittest.TestCase):
 
     def test_dynamic_constructor_keeps_target_and_parameter_effect_order(self):
         for backend in ('python-direct','compiled-strict'):
-            vm=Interpreter(execution_backend=backend);seen=[]
+            vm=Interpreter(execution_backend=backend, allow_extensions=True);seen=[]
             vm.register_function('Target',lambda:seen.append('target') or 'ValueTableRow')
             vm.register_function('Parameters',lambda:seen.append('parameters') or None)
             vm.execute('Try New(Target(),Parameters());Except Caught=True;EndTry;')
@@ -35,12 +35,12 @@ class DirectTableConstructorRejectionsTests(unittest.TestCase):
 
     def test_custom_registration_cannot_grant_denied_constructor_authority(self):
         for name in NAMES:
-            vm=Interpreter();seen=[];vm.register_type(name,lambda *args:seen.append('factory'))
+            vm=Interpreter(allow_extensions=True);seen=[];vm.register_type(name,lambda *args:seen.append('factory'))
             vm.execute('Try New '+name+';Except Caught=True;EndTry;')
             self.assertTrue(vm.variables['caught']);self.assertEqual(seen,[])
 
     def test_unknown_constructor_remains_preflight_unsupported(self):
-        vm=Interpreter();seen=[];vm.register_function('Effect',lambda:seen.append('effect'))
+        vm=Interpreter(allow_extensions=True);seen=[];vm.register_function('Effect',lambda:seen.append('effect'))
         with self.assertRaises(PythonDirectUnsupported):vm.execute('Effect();Try New CompletelyUnknownType;Except EndTry;')
         self.assertEqual(seen,[])
 

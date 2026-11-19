@@ -6,7 +6,7 @@ from yadinassi import Interpreter
 
 class LocalForTests(unittest.TestCase):
     def run_source(self, source, **functions):
-        vm=Interpreter();self.addCleanup(vm.close)
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close)
         for name,function in functions.items():vm.register_function(name,function)
         plan=vm.prepare(source);result=vm.execute_prepared(plan)
         return vm,plan,result
@@ -29,7 +29,7 @@ class LocalForTests(unittest.TestCase):
             self.assertIsInstance(self.loops(plan)[0],ast.For);self.assertEqual(vm.variables,expected)
         vm,plan,_=self.run_source('For i=3 To 1 Do X=7; EndDo; Host();',Host=lambda:None)
         self.assertEqual(vm.variables,{'i':D(3)})
-        vm=Interpreter();self.addCleanup(vm.close);vm.register_function('Host',lambda:None)
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);vm.register_function('Host',lambda:None)
         with self.assertRaises(Exception):vm.execute('S=0; For i=1 To 3 Do S=1/(2-i); EndDo; Host();')
         self.assertEqual(vm.variables,{'s':D(1),'i':D(2)})
 

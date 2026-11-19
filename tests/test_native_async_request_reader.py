@@ -145,7 +145,7 @@ def exercise(raw, launch_path='/tmp/offline/request.json', fault=None, tokens=No
     end = module.index('&НаКлиенте\nПроцедура АсинхЗаписатьВход')
     source = module[start:end]
     reader = ControlledReader(stream_tokens(raw) if tokens is None else tokens, launch_path, fault)
-    vm = Interpreter(lambda _: None, native_target=LINUX_8_3_27_1508)
+    vm = Interpreter(lambda _: None, native_target=LINUX_8_3_27_1508, allow_extensions=True)
     vm.register_type('JSONReader', lambda: reader)
     if fault in ('request_fields', 'request_nonce', 'request_paths'):
         vm.register_type('Structure', lambda: ControlledStructure(fault))

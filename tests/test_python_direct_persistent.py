@@ -37,14 +37,14 @@ class PersistentDirectTests(unittest.TestCase):
         vm.execute('N=20;R=Read();');self.assertEqual(vm.variables['r'],20)
 
     def test_live_host_registry_and_globals_are_rebound(self):
-        vm=Interpreter();vm.register_function('Host',lambda:Decimal(1))
+        vm=Interpreter(allow_extensions=True);vm.register_function('Host',lambda:Decimal(1))
         vm.execute('Var N;N=2;Function Read() Return N+Host();EndFunction')
         vm.execute('R=Read();');self.assertEqual(vm.variables['r'],3)
         vm.register_function('Host',lambda:Decimal(5));vm.variables['n']=Decimal(10)
         vm.execute('R=Read();');self.assertEqual(vm.variables['r'],15)
 
     def test_deleted_global_is_not_reinitialized_by_binding(self):
-        vm=Interpreter();vm.execute('Var N;N=3;Function Read() Return N;EndFunction')
+        vm=Interpreter(allow_extensions=True);vm.execute('Var N;N=3;Function Read() Return N;EndFunction')
         vm.register_function('Drop',lambda:vm.variables.pop('n'))
         with self.assertRaisesRegex(BSLRuntimeError,'не определена'):vm.execute('Drop();R=Read();')
         self.assertNotIn('n',vm.variables);self.assertNotIn('r',vm.variables)
@@ -70,7 +70,7 @@ class PersistentDirectTests(unittest.TestCase):
 
     def test_profile_layout_and_constructor_changes_refuse_before_effects(self):
         for change in ('profile','layout','constructor'):
-            vm=Interpreter();vm.execute('Function F() Return New Array;EndFunction')
+            vm=Interpreter(allow_extensions=True);vm.execute('Function F() Return New Array;EndFunction')
             if change=='profile':vm._compilation_profile='managed-thick-file'
             elif change=='layout':vm.execute('Var Later;')
             else:vm.register_type('Array',lambda:[])
@@ -90,7 +90,7 @@ class PersistentDirectTests(unittest.TestCase):
         self.assertEqual([vm.variables[k] for k in ('a','b','c')],[True]*3)
 
     def test_arity_rejection_precedes_argument_effects(self):
-        vm=Interpreter();effects=[]
+        vm=Interpreter(allow_extensions=True);effects=[]
         vm.register_function('Arg',lambda:effects.append(1) or Decimal(1))
         vm.execute('Function F(Val X) Return X;EndFunction')
         vm.execute('Try F(Arg(),Arg());Except Caught=True;EndTry;')
@@ -98,7 +98,7 @@ class PersistentDirectTests(unittest.TestCase):
 
     def test_indirect_host_function_call_is_unchanged(self):
         from yadinassi.types.values import HostFunction
-        vm=Interpreter();vm.register_function('Get',lambda:HostFunction('F',lambda:Decimal(7)))
+        vm=Interpreter(allow_extensions=True);vm.register_function('Get',lambda:HostFunction('F',lambda:Decimal(7)))
         self.assertEqual(vm.execute('Get()();'),7)
 
     def test_prospective_registry_and_layout_refuse_before_effects(self):

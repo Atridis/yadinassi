@@ -12,11 +12,11 @@ ROOT=Path(__file__).resolve().parents[1]
 SOURCE=(ROOT/'examples/demo/Catalogs/Номенклатура/Ext/ObjectModule.bsl').read_text(encoding='utf-8-sig')
 
 class DirectCatalogPreparationTests(unittest.TestCase):
-    def setUp(self):
+    def setUp(self, *, allow_extensions=False):
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
         files={p.relative_to(ROOT/'examples/demo').as_posix():p.read_bytes() for p in (ROOT/'examples/demo').rglob('*') if p.is_file()}
         self.db=SQLiteDBContext.create_main_demo(Path(temp.name)/'db.sqlite',import_main_demo_configuration(files,profile=PROFILE));self.addCleanup(self.db.close)
-        self.vm=Interpreter(database_context=self.db);self.addCleanup(self.vm.close)
+        self.vm=Interpreter(database_context=self.db, allow_extensions=allow_extensions);self.addCleanup(self.vm.close)
         self.cats=self.vm._catalogs
         self.kind=self.cats.get_member('ВидыНоменклатуры').create_item();self.kind.set_member('Наименование','Товары');self.kind.write()
         self.warehouse=self.cats.get_member('Склады').create_item();self.warehouse.set_member('Наименование','Основной');self.warehouse.write()

@@ -11,7 +11,7 @@ from yadinassi.syntax.parser import parse
 class ExecutionDirectiveTests(unittest.TestCase):
     def setUp(self):
         self.messages = []
-        self.vm = Interpreter(self.messages.append)
+        self.vm = Interpreter(self.messages.append, allow_extensions=True)
         self.vm.register_function('Context', lambda: self.vm.execution_context)
 
     def test_bilingual_server_calls_and_context_restoration(self):

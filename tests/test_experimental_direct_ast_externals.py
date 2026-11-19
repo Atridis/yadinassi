@@ -7,7 +7,7 @@ from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 
 class DirectSourceAssertions:
     def check_source(self, source, *, expected=None, error=None, touches=0, setup=None, kind=BSLRuntimeError):
-        vm=Interpreter()
+        vm=Interpreter(allow_extensions=True)
         calls=[]
         def touch():
             calls.append('touch')

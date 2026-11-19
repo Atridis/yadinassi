@@ -64,7 +64,7 @@ F=New FixedArray(A); B=New Array(F); B[0][0]=9; S.N=2;'''
     def test_omission_does_not_evaluate_arguments(self):
         for call in ('A.Insert(Effect(),)', 'A.Set(,Effect())'):
             for backend in ('python-direct','compiled-strict'):
-                events=[];vm=Interpreter(execution_backend=backend)
+                events=[];vm=Interpreter(execution_backend=backend, allow_extensions=True)
                 vm.register_function('Effect',lambda:events.append('effect') or 0)
                 vm.execute('A=New Array; A.Add(7);')
                 with self.assertRaises(BSLError):vm.execute(call)
@@ -80,7 +80,7 @@ F=New FixedArray(A); B=New Array(F); B[0][0]=9; S.N=2;'''
         with self.assertRaises(BSLError):vm.execute('New Array(F)')
 
     def test_late_owner_revocation_still_prevents_fixed_copy(self):
-        vm=Interpreter();vm.execute('F=New FixedArray(New Array); Saved=7;')
+        vm=Interpreter(allow_extensions=True);vm.execute('F=New FixedArray(New Array); Saved=7;')
         def close():vm.close();return vm.variables['f']
         vm.register_function('CloseOwner',close)
         with self.assertRaises(BoundaryViolation):vm.execute('Saved=New Array(CloseOwner())')

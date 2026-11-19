@@ -15,7 +15,7 @@ from yadinassi import BSLError, Interpreter
 class ScalarContextCopybackTests(unittest.TestCase):
     def setUp(self):
         self.messages = []
-        self.vm = Interpreter(self.messages.append)
+        self.vm = Interpreter(self.messages.append, allow_extensions=True)
         self.vm.register_function('Context', lambda: self.vm.execution_context)
 
     def assert_restored(self):

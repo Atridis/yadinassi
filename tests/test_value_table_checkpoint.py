@@ -85,7 +85,7 @@ class ValueTableCheckpointTests(unittest.TestCase):
         from yadinassi.formats.storage.serialization import value_to_string_internal
         from yadinassi.collections.structures import BSLStructure
         from yadinassi.types.values import BSLArray, NULL
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         vm.execute(parts()[1])
         scalars = [None, NULL, False, Decimal(0), '0', '',
                    'quotes " and delimiters ;[]= with \\n and CR\rLF\nTAB\t Я😀']

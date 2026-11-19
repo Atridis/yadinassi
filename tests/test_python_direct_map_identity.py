@@ -67,7 +67,7 @@ class DirectMapIdentityTests(unittest.TestCase):
         for left,right in ((m,boundary),(boundary,m)):
             with self.assertRaises(UnsupportedDateRange):equal(left,right)
             with self.assertRaises(UnsupportedDateRange):not_equal(left,right)
-        vm=Interpreter();seen=[]
+        vm=Interpreter(allow_extensions=True);seen=[]
         vm.register_function('Left',lambda:seen.append('left') or _TypedMap())
         vm.register_function('Right',lambda:seen.append('right') or _TypedMap())
         self.assertIs(vm.execute('(Left()=Right())'),False);self.assertEqual(seen,['left','right'])

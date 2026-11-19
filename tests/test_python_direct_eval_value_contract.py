@@ -12,7 +12,7 @@ def quoted(text):return '"'+text.replace('"','""')+'"'
 class DirectEvalValueContractTests(unittest.TestCase):
     def test_procedure_rejection_precedes_effects_for_all_outer_routes(self):
         for route in ('source','ast','prepared','execute'):
-            vm=Interpreter();seen=[]
+            vm=Interpreter(allow_extensions=True);seen=[]
             vm.register_function('Effect',lambda:seen.append('arg') or 'argument')
             vm.register_function('Proc',lambda value:seen.append('proc'),returns_value=False)
             text='Eval("Proc(Effect())");'
@@ -34,7 +34,7 @@ class DirectEvalValueContractTests(unittest.TestCase):
                 self.assertEqual(vm.variables['count'],0)
 
     def test_captured_host_procedure_is_not_invoked(self):
-        vm=Interpreter();seen=[]
+        vm=Interpreter(allow_extensions=True);seen=[]
         vm.register_function('Proc',lambda value:seen.append('proc'),returns_value=False)
         vm.register_function('Effect',lambda:seen.append('arg'))
         vm.variables['saved']=vm.functions['proc']
@@ -42,7 +42,7 @@ class DirectEvalValueContractTests(unittest.TestCase):
         self.assertEqual(seen,[])
 
     def test_reused_eval_revalidates_live_procedure_metadata(self):
-        vm=Interpreter();seen=[]
+        vm=Interpreter(allow_extensions=True);seen=[]
         vm.register_function('Call',lambda value:seen.append('call') or value)
         vm.register_function('Effect',lambda:seen.append('arg') or 7)
         vm.register_function('MakeProcedure',lambda:setattr(vm.functions['call'],'returns_value',False))
@@ -51,7 +51,7 @@ class DirectEvalValueContractTests(unittest.TestCase):
         self.assertEqual(seen,['arg','call']);self.assertEqual(vm.variables['first'],7);self.assertNotIn('second',vm.variables)
 
     def test_function_undefined_is_valid_and_custom_eval_is_unchanged(self):
-        vm=Interpreter();seen=[]
+        vm=Interpreter(allow_extensions=True);seen=[]
         vm.register_function('FunctionReturningUndefined',lambda:seen.append('function'))
         self.assertIsNone(vm.execute('Eval("FunctionReturningUndefined()")'))
         vm.register_function('Eval',lambda text:seen.append('custom'))
@@ -59,7 +59,7 @@ class DirectEvalValueContractTests(unittest.TestCase):
         self.assertEqual(seen,['function','custom'])
 
     def test_plain_execute_statement_still_accepts_procedure(self):
-        vm=Interpreter();seen=[]
+        vm=Interpreter(allow_extensions=True);seen=[]
         vm.register_function('Proc',lambda:seen.append('proc'),returns_value=False)
         vm.execute('Proc();Execute("Proc();");')
         self.assertEqual(seen,['proc','proc'])

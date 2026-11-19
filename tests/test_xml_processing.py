@@ -191,7 +191,7 @@ class XMLStringProcessingManagerTests(unittest.TestCase):
             vm.execute(prefix + '("x",)')
 
     def test_receiver_and_arguments_evaluate_once_left_to_right(self):
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         seen = []
         def record(label, value):
             def call():

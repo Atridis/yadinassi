@@ -23,7 +23,7 @@ class DirectHostValuesTests(unittest.TestCase):
     def test_fixed_host_array_reads_and_readonly_write(self):
         source=BSLArray();source.add(Decimal(3));source.add(Decimal(4))
         fixed=BSLFixedArray(source)
-        vm=Interpreter();vm.register_function('Values',lambda:fixed)
+        vm=Interpreter(allow_extensions=True);vm.register_function('Values',lambda:fixed)
         vm.execute('A=Values(); S=0; For Each V In A Do S=S+V; EndDo; R=A[1]; Try A[0]=9; Except Readonly=True; EndTry;')
         self.assertIs(vm.variables['a'],fixed)
         self.assertEqual((vm.variables['s'],vm.variables['r'],vm.variables['readonly']),(7,4,True))
@@ -50,7 +50,7 @@ class DirectHostValuesTests(unittest.TestCase):
                 self.assertTrue(vm.variables['readonly']);self.assertEqual(vm.variables['r'],3)
 
     def test_get_checks_runtime_after_argument_evaluation(self):
-        vm=Interpreter();array=BSLArray();array.add(Decimal(7));vm.variables['a']=array
+        vm=Interpreter(allow_extensions=True);array=BSLArray();array.add(Decimal(7));vm.variables['a']=array
         vm.register_function('Close',lambda:vm.close() or Decimal(0))
         with self.assertRaises(BoundaryViolation):vm.execute('A.Get(Close());')
         self.assertEqual(array.items,[Decimal(7)])

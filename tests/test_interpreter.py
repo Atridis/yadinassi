@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class InterpreterTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(output=self.output.append)
+        self.vm = Interpreter(output=self.output.append, allow_extensions=True)
 
     def run_bsl(self, code):
         self.vm.execute(code, "test.bsl")

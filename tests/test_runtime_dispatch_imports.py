@@ -28,7 +28,7 @@ class DispatchImportTests(unittest.TestCase):
         self.assertEqual(value[-2:],(ValueManagerCall,write_values))
 
     def test_preargument_procedure_refusal_does_not_load(self):
-        vm=Interpreter()
+        vm=Interpreter(allow_extensions=True)
         from yadinassi.types.values import HostFunction
         vm.functions['procedureonly']=HostFunction('ProcedureOnly',lambda value: None,returns_value=False)
         with patch.object(runtime,'_source_call_dispatch_types',side_effect=AssertionError('too early')) as load:

@@ -27,14 +27,14 @@ class DirectUUIDTests(unittest.TestCase):
         self.assertNotIn('a',vm.variables)
 
     def test_overridden_constructor_rejected_before_source_effects(self):
-        vm=Interpreter();effects=[]
+        vm=Interpreter(allow_extensions=True);effects=[]
         vm.types['uuid']=HostFunction('UUID',lambda *args:effects.append('constructor'))
         vm.register_function('Argument',lambda:effects.append('argument'))
         with self.assertRaises(PythonDirectUnsupported):vm.execute('x=1;a=New UUID(Argument());')
         self.assertEqual(effects,[]);self.assertNotIn('x',vm.variables)
 
     def test_live_override_rejected_before_argument(self):
-        vm=Interpreter();effects=[]
+        vm=Interpreter(allow_extensions=True);effects=[]
         def change():vm.types['uuid']=HostFunction('UUID',lambda *args:effects.append('constructor'))
         vm.register_function('Change',change)
         vm.register_function('Argument',lambda:effects.append('argument'))
@@ -42,7 +42,7 @@ class DirectUUIDTests(unittest.TestCase):
         self.assertEqual(effects,[])
 
     def test_constructor_bound_before_argument_registry_change(self):
-        vm=Interpreter();effects=[]
+        vm=Interpreter(allow_extensions=True);effects=[]
         def argument():
             effects.append('argument')
             vm.types['uuid']=HostFunction('UUID',lambda *args:effects.append('replacement'))
@@ -53,7 +53,7 @@ class DirectUUIDTests(unittest.TestCase):
         self.assertEqual(vm.variables['a'],BSLUUID(TEXT))
 
     def test_prepared_module_rechecks_current_constructor(self):
-        vm=Interpreter();prepared=vm.prepare(f'a=New UUID("{TEXT}");')
+        vm=Interpreter(allow_extensions=True);prepared=vm.prepare(f'a=New UUID("{TEXT}");')
         vm.types['uuid']=HostFunction('UUID',lambda *args:None)
         with self.assertRaises(PythonDirectUnsupported):vm.execute_prepared(prepared)
         self.assertNotIn('a',vm.variables)

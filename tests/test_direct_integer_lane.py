@@ -47,7 +47,7 @@ class IntegerLaneTests(unittest.TestCase):
         self.assertEqual(vm.variables,{'s':D(5)})
 
     def test_host_boundary_observes_decimal(self):
-        vm=Interpreter();self.addCleanup(vm.close);seen=[]
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);seen=[]
         vm.register_function('Observe',lambda x:seen.append(type(x)))
         vm.execute('S=0; For i=1 To 10 Do S=S+i; EndDo; Observe(S);')
         self.assertEqual(seen,[D])
@@ -111,7 +111,7 @@ class IntegerLaneTests(unittest.TestCase):
         from yadinassi.collections.plain_table_storage import RowStorage
         source='T=New ValueTable; T.Columns.Add("N"); For i=0 To 3 Do R=T.Add(); R.N=i*2; EndDo; S=0; For i=0 To 3 Do If T[i].N>=0 Then S=S+T[i]["N"]; EndIf; EndDo; S;'
         for mode in ('default','prepared'):
-            vm=Interpreter();self.addCleanup(vm.close)
+            vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close)
             plan=vm.prepare(source)
             self.assertIn('_raw_table_value',plan._plan.generated_source)
             result=vm.execute_prepared(plan) if mode=='prepared' else vm.execute_program(parse(source))

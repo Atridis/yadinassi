@@ -19,7 +19,7 @@ SOURCE = SOURCE_PATH.read_text(encoding='utf-8')
 
 def emit(*, missing=False, source=SOURCE):
     out = []
-    vm = Interpreter(out.append)
+    vm = Interpreter(out.append, allow_extensions=True)
     if missing:
         for name in ('domdocument', 'документdom'):
             vm.types.pop(name, None)
@@ -86,7 +86,7 @@ class DOMFamilyMeasurementTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='dom-unexpected-') as tmp, \
                 mock.patch('tempfile.gettempdir', return_value=tmp):
             output = []
-            vm = Interpreter(output.append)
+            vm = Interpreter(output.append, allow_extensions=True)
             vm.register_function('СоздатьКаталог', create_with_sentinel, 'CreateDirectory', returns_value=False)
             vm.execute(SOURCE)
             roots = list(Path(tmp).iterdir())
@@ -104,7 +104,7 @@ class DOMFamilyMeasurementTests(unittest.TestCase):
             sentinel = root / 'keep.bin'
             sentinel.write_bytes(b'owned-sentinel')
             output = []
-            vm = Interpreter(output.append)
+            vm = Interpreter(output.append, allow_extensions=True)
             vm.register_function('ПолучитьИмяВременногоФайла', lambda *args: str(root), 'GetTempFileName')
             vm.execute(SOURCE)
             self.assertEqual(list(root.iterdir()), [sentinel])

@@ -93,7 +93,7 @@ class NativeNullEvidenceTests(unittest.TestCase):
 
 class NullIntegrationTests(unittest.TestCase):
     def setUp(self):
-        self.vm = Interpreter(lambda message: None)
+        self.vm = Interpreter(lambda message: None, allow_extensions=True)
 
     def test_literal_singleton_and_case_handling(self):
         for spelling in ('Null', 'NULL', 'null', 'nUlL'):

@@ -73,7 +73,7 @@ class CallShapeContracts(unittest.TestCase):
         # This old adapter is not a capability for direct execution. Its own
         # authorization/dispatch hooks must not run, even if they would allow it.
         for denied in (False,True):
-            vm=Interpreter();self.addCleanup(vm.close);events=[]
+            vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);events=[]
             def authorize(caller):
                 events.append('authorize')
                 if denied:raise PermissionError('denied')

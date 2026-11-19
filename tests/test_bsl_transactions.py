@@ -13,7 +13,7 @@ from test_catalog_commit_cleanup_recovery import FaultConnection
 
 
 class BSLTransactionsTests(unittest.TestCase):
-    def setUp(self):
+    def setUp(self, *, allow_extensions=False):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name)/'owned.sqlite'
         context = SQLiteDBContext.create(self.path, configuration(mixed=True)); context.close()
@@ -21,7 +21,8 @@ class BSLTransactionsTests(unittest.TestCase):
         self.context = SQLiteDBContext(self.path); self.addCleanup(self.context.close)
         self.backend = self.context.backend
         self.output = []
-        self.vm = Interpreter(database_context=self.context, output=self.output.append)
+        self.vm = Interpreter(database_context=self.context, output=self.output.append,
+                              allow_extensions=allow_extensions)
 
     def catalog(self):
         return self.vm.execute('C=Catalogs.Products.CreateItem();C.Code="A";C.Description="edited";C')

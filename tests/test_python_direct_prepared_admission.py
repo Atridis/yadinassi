@@ -14,7 +14,7 @@ class PreparedAdmissionTests(unittest.TestCase):
     def test_later_routine_registry_is_used_by_saved_calls(self):
         for call in ('F();','((F))();','If False Then F();EndIf;'):
             with self.subTest(call=call):
-                vm=Interpreter();vm.register_function('F',lambda:1)
+                vm=Interpreter(allow_extensions=True);vm.register_function('F',lambda:1)
                 plan=vm.prepare('x=1;'+call)
                 vm.execute('Function F() Return 2;EndFunction')
                 vm.execute_prepared(plan)
@@ -28,17 +28,17 @@ class PreparedAdmissionTests(unittest.TestCase):
         for source in ('Function F() Return New Array;EndFunction x=1;',
                        'x=1;If False Then a=New Array;EndIf;'):
             with self.subTest(source=source):
-                vm=Interpreter();plan=vm.prepare(source)
+                vm=Interpreter(allow_extensions=True);plan=vm.prepare(source)
                 vm.register_type('Array',lambda:[])
                 with self.assertRaisesRegex(PythonDirectUnsupported,'overridden'):
                     vm.execute_prepared(plan)
                 self.assertNotIn('x',vm.variables)
     def test_unused_constructor_override_does_not_restrict_plan(self):
-        vm=Interpreter();plan=vm.prepare('x=1;')
+        vm=Interpreter(allow_extensions=True);plan=vm.prepare('x=1;')
         vm.register_type('Array',lambda:[])
         vm.execute_prepared(plan);self.assertEqual(vm.variables['x'],1)
     def test_live_registry_validation_before_effects(self):
-        vm=Interpreter();plan=vm.prepare('x=1;')
+        vm=Interpreter(allow_extensions=True);plan=vm.prepare('x=1;')
         vm.functions['bad']=lambda:1
         with self.assertRaisesRegex(PythonDirectUnsupported,'canonical HostFunction'):
             vm.execute_prepared(plan)

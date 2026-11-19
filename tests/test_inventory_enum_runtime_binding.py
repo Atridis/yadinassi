@@ -21,7 +21,7 @@ class InventoryEnumRuntimeBindingTests(unittest.TestCase):
         self.config=import_inventory_enum_configuration(source(),inventory_runtime=PROFILE)
         self.context=SQLiteDBContext.create_inventory_enum(self.path,self.config)
         self.addCleanup(self.context.close)
-        self.vm=Interpreter(database_context=self.context);self.addCleanup(self.vm.close)
+        self.vm=Interpreter(database_context=self.context, allow_extensions=True);self.addCleanup(self.vm.close)
         self.ref=self.vm.execute('Enums.Units.Piece')
         self.units=next(e.identity for e in self.config.enumerations if e.name=='Units')
         from yadinassi.configuration.demos.inventory_enum_runtime import binding
@@ -143,7 +143,7 @@ class InventoryEnumRuntimeBindingTests(unittest.TestCase):
         from yadinassi.types.values import HostFunction
         from yadinassi.configuration.demos.inventory_enum_runtime import binding
         calls=[]
-        with closing(Interpreter(database_context=self.context)) as other:
+        with closing(Interpreter(database_context=self.context, allow_extensions=True)) as other:
             foreign=binding(other._metadata)
             def probe():
                 # A nested synchronous callback intentionally inherits the

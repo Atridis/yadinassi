@@ -531,7 +531,7 @@ class CalendarBoundaryTests(unittest.TestCase):
 
 class CalendarRuntimeTests(unittest.TestCase):
     def setUp(self):
-        self.vm = Interpreter()
+        self.vm = Interpreter(allow_extensions=True)
         self.vm.execute('source = Date(2024, 2, 29, 12, 34, 56) + 0.1234;')
 
     def test_all_18_bilingual_functions_and_case_variants(self):
@@ -573,7 +573,7 @@ class CalendarRuntimeTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('BegOfDay(source)'), 'start override')
         self.assertEqual(self.vm.execute('ДобавитьМесяц(source, 1)'), date('20240329123456'))
         self.assertEqual(self.vm.execute('НачалоДня(source)'), date('20240229000000'))
-        self.assertEqual(Interpreter().execute('AddMonth(Date(2024,2,29),1)'), date('20240329'))
+        self.assertEqual(Interpreter(allow_extensions=True).execute('AddMonth(Date(2024,2,29),1)'), date('20240329'))
 
     def test_arguments_evaluate_once_and_normal_calls_do_not_mutate_source(self):
         self.vm.execute('''

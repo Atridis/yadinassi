@@ -365,7 +365,7 @@ class ClockRuntimeTests(unittest.TestCase):
         self.addCleanup(sample.stop)
         local.start()
         self.addCleanup(local.stop)
-        self.vm = Interpreter()
+        self.vm = Interpreter(allow_extensions=True)
 
     def test_all_bilingual_names_case_variants_and_type_identity(self):
         expected = (date('20240229181956'), date('20240229123456'), Decimal('63844806896123'))
@@ -456,7 +456,7 @@ class ClockRuntimeTests(unittest.TestCase):
             self.vm.register_function(en, lambda: 'override')
             self.assertEqual(self.vm.execute(en + '()'), 'override')
             self.assertNotEqual(self.vm.execute(ru + '()'), 'override')
-            self.assertNotEqual(Interpreter().execute(en + '()'), 'override')
+            self.assertNotEqual(Interpreter(allow_extensions=True).execute(en + '()'), 'override')
 
     def test_bom_imported_routines_have_clock_builtins(self):
         with tempfile.TemporaryDirectory() as directory:

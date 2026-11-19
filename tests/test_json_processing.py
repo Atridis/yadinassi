@@ -21,7 +21,7 @@ from yadinassi.collections.maps import BSLMap, BSLFixedMap
 
 class JSONFamilyTests(unittest.TestCase):
     def setUp(self):
-        self.vm = Interpreter(lambda _: None)
+        self.vm = Interpreter(lambda _: None, allow_extensions=True)
 
     def read(self, text, mapping=False):
         r = BSLJSONReader(); r.set_string(text)

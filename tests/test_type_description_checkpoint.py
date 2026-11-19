@@ -73,7 +73,7 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
         from yadinassi.formats.storage.serialization import value_to_string_internal
         from yadinassi.collections.structures import BSLStructure
         from yadinassi.types.values import BSLArray, NULL
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         vm.execute(helpers())
         scalars = [None, NULL, False, Decimal(0), '0', '',
                    'quotes " and delimiters ;[]= with \\n and CR\rLF\nTAB\t Я😀']
@@ -171,7 +171,7 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
 
     def test_unknown_and_bad_expressions_do_not_abort_next_probe(self):
         output = []
-        vm = Interpreter(output=output.append)
+        vm = Interpreter(output=output.append, allow_extensions=True)
         vm.register_function('UnserializableHost', lambda: object())
         vm.execute(helpers() + '''
 НаблюдатьТипы("missing", "NoSuchFunction()");
@@ -220,7 +220,7 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
         # Synthetic stage failure/change is a formatter observability test,
         # not a claim about a new native TypeDescription conversion.
         _, supplement = split_type_supplement(historical_source())
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         vm.execute(supplement.split(TYPES_SUPPLEMENT_BODY_START, 1)[0])
         ordinary = vm.execute('КвалификаторыОписанияДополнения(New TypeDescription("Number"))')
         self.assertTrue(ordinary.get('ReadWriteEqual'))
@@ -232,7 +232,7 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
         self.assertEqual(changed.get('ReadWrite'), '{"U"}')
 
     def test_snapshot_failed_stages_do_not_prevent_record(self):
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         vm.register_function('UnknownHost', lambda: object())
         vm.execute(helpers())
         result = vm.execute('СнимокТипов(UnknownHost())')

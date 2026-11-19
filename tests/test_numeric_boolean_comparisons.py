@@ -16,7 +16,7 @@ OPERATORS = {'=': operator.eq, '<>': operator.ne, '<': operator.lt,
 class NumericBooleanComparisonTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(self.output.append)
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
 
     def test_all_operators_in_both_orders_exact_numeric_conversion(self):
         for text in ['-9999999999999999999999999999999999999999', '-2', '-0.1',

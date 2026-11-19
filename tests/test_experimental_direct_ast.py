@@ -21,7 +21,7 @@ class DirectASTResearchTests(unittest.TestCase):
         from dataclasses import replace
         nodes=parse('X=1;\nY=1/0;','owned.bsl');ref=weakref.ref(nodes[0])
         with patch.object(python_direct,'_compile',direct.compile_module):
-            vm=Interpreter();plan=vm.prepare_program(nodes)
+            vm=Interpreter(allow_extensions=True);plan=vm.prepare_program(nodes)
         nodes[0].value.value=Decimal(99)
         nodes[0].token=replace(nodes[0].token,source='changed.bsl',line=70)
         nodes.clear();gc.collect();self.assertIsNone(ref())
@@ -29,7 +29,7 @@ class DirectASTResearchTests(unittest.TestCase):
         self.assertEqual(vm.variables['x'],1)
         self.assertEqual((caught.exception.source,caught.exception.line),('owned.bsl',2))
         with patch.object(python_direct,'_compile',direct.compile_module):
-            vm=Interpreter();vm.variables['x']=Decimal(1);vm.register_function('Read',lambda:2)
+            vm=Interpreter(allow_extensions=True);vm.variables['x']=Decimal(1);vm.register_function('Read',lambda:2)
             plan=vm.prepare('X=X+Read();X;')
         self.assertEqual(vm.execute_prepared(plan),3)
         vm.register_function('Read',lambda:3)
@@ -145,13 +145,13 @@ if vm.variables.get('x')!=1:raise AssertionError('expected migration incompatibi
 
     def test_owner_close_before_following_effect(self):
         for compiler in (direct.compile_module,direct.compile_module_whole_source):
-            vm=Interpreter();self.addCleanup(vm.close);vm.register_function('Stop',vm.close)
+            vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);vm.register_function('Stop',vm.close)
             with patch.object(python_direct,'_compile',compiler):
                 with self.assertRaises(BoundaryViolation):vm.execute('X=1;Stop();Y=2;')
             self.assertEqual(vm.variables.get('x'),1);self.assertNotIn('y',vm.variables)
 
     def test_policy_replacement_before_following_effect(self):
-        vm=Interpreter();self.addCleanup(vm.close)
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close)
         vm.register_function('Stop',lambda:setattr(vm,'_configuration_runtime',object()))
         with self.assertRaises(BoundaryViolation):vm.execute('X=1;Stop();Y=2;')
         self.assertEqual(vm.variables.get('x'),1);self.assertNotIn('y',vm.variables)
@@ -167,13 +167,13 @@ if vm.variables.get('x')!=1:raise AssertionError('expected migration incompatibi
 
     def test_procedure_value_and_malformed_loop_controls(self):
         from yadinassi.syntax import ast as bsl
-        vm=Interpreter();self.addCleanup(vm.close);seen=[]
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);seen=[]
         vm.register_function('P',lambda:seen.append('called'),returns_value=False)
         vm.execute('P();');self.assertEqual(seen,['called'])
         with self.assertRaises(BSLError):vm.execute('X=P();')
         self.assertEqual(seen,['called']);self.assertNotIn('x',vm.variables)
         for kind in (bsl.Break,bsl.Continue):
-            nodes=parse('X=1;');nodes.append(kind(nodes[0].token));vm=Interpreter();self.addCleanup(vm.close)
+            nodes=parse('X=1;');nodes.append(kind(nodes[0].token));vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close)
             with self.assertRaisesRegex(PythonDirectUnsupported,'outside a loop'):vm.execute_program(nodes)
             self.assertEqual(vm.variables,{})
 
@@ -207,7 +207,7 @@ if vm.variables.get('x')!=1:raise AssertionError('expected migration incompatibi
         for source in ('X=Make()+1;Y=2;','A=1;X=A+Make();Y=2;'):
             for close in (False,True):
                 with self.subTest(source=source,close=close):
-                    vm=Interpreter();self.addCleanup(vm.close);seen=[]
+                    vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);seen=[]
                     class Value:
                         def __add__(self,other):return 7
                         def __radd__(self,other):return 7
@@ -223,7 +223,7 @@ if vm.variables.get('x')!=1:raise AssertionError('expected migration incompatibi
 
     def test_index_key_finalizer_released_once(self):
         for close in (False,True):
-            vm=Interpreter();self.addCleanup(vm.close);vm.variables['d']={'k':Decimal(9)};seen=[]
+            vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);vm.variables['d']={'k':Decimal(9)};seen=[]
             class Key(str):
                 def __del__(self):
                     seen.append('released')
@@ -238,7 +238,7 @@ if vm.variables.get('x')!=1:raise AssertionError('expected migration incompatibi
     def test_host_reference_getter_errors_and_revocation(self):
         from yadinassi.types.values import HostFunction,Reference
         for mode in ('raise','close','normal'):
-            vm=Interpreter();self.addCleanup(vm.close);events=[]
+            vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);events=[]
             def get():
                 events.append('get')
                 if mode=='raise':raise ValueError('getter failed')

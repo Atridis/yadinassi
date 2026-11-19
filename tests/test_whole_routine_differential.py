@@ -14,7 +14,7 @@ class WholeRoutineBehaviorTests(unittest.TestCase):
         for prepared in (False, True):
             with self.subTest(prepared=prepared):
                 observed=[]
-                vm=Interpreter(output=lambda value:observed.append(('output',str(value))))
+                vm=Interpreter(output=lambda value:observed.append(('output',str(value))), allow_extensions=True)
                 self.addCleanup(vm.close)
                 vm.variables.update(inputs or {})
                 if host:
@@ -120,7 +120,7 @@ class WholeRoutineBehaviorTests(unittest.TestCase):
             with self.subTest(body=body):self.execute('Procedure P(Val x=1) '+body+' EndProcedure P();r=7;',{'r':7})
 
     def test_wrong_arity_before_actual_effects(self):
-        output=[];vm=Interpreter();self.addCleanup(vm.close)
+        output=[];vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close)
         vm.register_function('Tick',lambda:output.append(1))
         with self.assertRaises(BSLError):vm.execute('Function G(Val x) Return x;EndFunction Function F(Val x) Return G(Tick(),Tick());EndFunction r=F(1);')
         self.assertEqual(output,[]);self.assertNotIn('r',vm.variables)

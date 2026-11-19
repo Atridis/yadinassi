@@ -21,7 +21,7 @@ class DirectValueListTests(unittest.TestCase):
                 self.assertEqual(vm.execute('I.Presentation'),'27')
 
     def test_rejection_precedes_all_argument_effects(self):
-        vm=Interpreter();seen=[]
+        vm=Interpreter(allow_extensions=True);seen=[]
         vm.register_function('Effect',lambda:seen.append(1) or Decimal(0))
         vm.execute('L=New ValueList;L.Add(1);')
         for code in ('X=L.Delete(Effect())','X=L.Clear()','L.Insert(,Effect())','L.Get(,Effect())','L.FillChecks(,Effect())'):
@@ -39,7 +39,7 @@ class DirectValueListTests(unittest.TestCase):
         self.assertTrue(vm.variables['caught']);self.assertEqual(vm.execute('L.Count()'),2)
 
     def test_readonly_slot_and_private_or_noncanonical_receivers(self):
-        vm=Interpreter();vm.execute('L=New ValueList;I=L.Add(1);Procedure Change(X,Y) X=2;EndProcedure')
+        vm=Interpreter(allow_extensions=True);vm.execute('L=New ValueList;I=L.Add(1);Procedure Change(X,Y) X=2;EndProcedure')
         seen=[];vm.register_function('Effect',lambda:seen.append(1))
         with self.assertRaises(BoundaryViolation):vm.execute('Change(L.ValueType,Effect());')
         self.assertEqual(seen,[])
@@ -51,7 +51,7 @@ class DirectValueListTests(unittest.TestCase):
         self.assertEqual(seen,[])
 
     def test_mutated_owner_rechecked_after_arguments(self):
-        vm=Interpreter();vm.execute('L=New ValueList;I=L.Add(1);')
+        vm=Interpreter(allow_extensions=True);vm.execute('L=New ValueList;I=L.Add(1);')
         def mutate():
             vm.variables['i']._owner_ref=lambda:object()
             return Decimal(4)
@@ -72,7 +72,7 @@ class DirectValueListTests(unittest.TestCase):
         self.assertEqual(vm.variables['r'],'Header')
 
     def test_retained_field_reference_rejects_closed_runtime(self):
-        vm=Interpreter();captured=[]
+        vm=Interpreter(allow_extensions=True);captured=[]
         vm.register_function('Capture',lambda reference:captured.append(reference))
         vm.functions['capture'].reference_parameters=frozenset({0})
         vm.execute('L=New ValueList;I=L.Add(1);Capture(I.Value);')

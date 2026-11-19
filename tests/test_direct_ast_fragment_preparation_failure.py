@@ -8,7 +8,7 @@ class FragmentPreparationFailureTests(unittest.TestCase):
     def test_execute_and_eval_preparation_failure_never_enters_bsl_handler(self):
         for expression in ('Execute("Effect();New UnsupportedConstructor;")',
                            'Eval("New UnsupportedConstructor(Effect())")'):
-            vm=Interpreter();effects=[]
+            vm=Interpreter(allow_extensions=True);effects=[]
             vm.register_function('Effect',lambda:effects.append(1))
             source='Try '+expression+';Except Caught=True;EndTry;After=True;'
             plan=vm.prepare(source)
@@ -21,6 +21,6 @@ class FragmentPreparationFailureTests(unittest.TestCase):
             vm.close()
 
     def test_known_runtime_constructor_error_remains_catchable(self):
-        vm=Interpreter();effects=[];vm.register_function('Effect',lambda:effects.append(1))
+        vm=Interpreter(allow_extensions=True);effects=[];vm.register_function('Effect',lambda:effects.append(1))
         vm.execute('Try Execute("New SearchDirection(Effect());");Except Caught=True;EndTry;')
         self.assertTrue(vm.variables['caught']);self.assertEqual(effects,[]);vm.close()

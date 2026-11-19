@@ -36,7 +36,7 @@ class DirectServerTests(unittest.TestCase):
                 self.assertEqual(vm.variables['client'],99)
                 self.assertNotIn('counter',vm.variables)
     def test_side_and_restoration(self):
-        vm=Interpreter();vm.register_function('Side',lambda:vm.execution_context)
+        vm=Interpreter(allow_extensions=True);vm.register_function('Side',lambda:vm.execution_context)
         vm.execute('&AtServer\nFunction S() Return Side(); EndFunction R=S();')
         self.assertEqual(vm.variables['r'],'server');self.assertEqual(vm.execution_context,'client')
     def test_collections_are_copied_in_both_directions(self):
@@ -52,7 +52,7 @@ A=New Array; A.Add(1); X=New Structure("A",A); R=S(X); R.A.Add(3);
         with self.assertRaisesRegex(BSLRuntimeError, "не определена"):vm.execute('S();')
         self.assertEqual(vm.variables['secret'],42);self.assertEqual(vm.execution_context,'client')
     def test_client_call_denied_before_argument_effect(self):
-        vm=Interpreter();effects=[];vm.register_function('Effect',lambda:effects.append(1))
+        vm=Interpreter(allow_extensions=True);effects=[];vm.register_function('Effect',lambda:effects.append(1))
         vm.execute('Function C(Val X) Return X; EndFunction\n&AtServer\nFunction S() Return C(Effect()); EndFunction')
         with self.assertRaises(BSLRuntimeError):vm.execute('S();')
         self.assertEqual(effects,[]);self.assertEqual(vm.execution_context,'client')
@@ -61,7 +61,7 @@ A=New Array; A.Add(1); X=New Structure("A",A); R=S(X); R.A.Add(3);
         with self.assertRaises(BSLRuntimeError) as caught:vm.execute('S();',source='caller.bsl')
         self.assertIn('server.bsl:3:',str(caught.exception));self.assertEqual(vm.execution_context,'client')
     def test_revoked_owner_stays_fail_closed(self):
-        vm=Interpreter();vm.register_function('Close',vm.close)
+        vm=Interpreter(allow_extensions=True);vm.register_function('Close',vm.close)
         vm.execute('&AtServer\nProcedure S() Close(); EndProcedure')
         with self.assertRaises(BoundaryViolation):vm.execute('S();')
     def test_unsupported_declarations_and_duplicate_refuse_before_effect(self):

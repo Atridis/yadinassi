@@ -34,7 +34,7 @@ class PythonDirectDefaultTests(unittest.TestCase):
   vm.execute('x=8;r=F();')
   self.assertEqual((vm.variables['x'],vm.variables['r']),(8,1))
  def test_observable_callback_values(self):
-  vm=Interpreter();vm.register_function('Write',lambda:vm.variables.__setitem__('x',Decimal(9)))
+  vm=Interpreter(allow_extensions=True);vm.register_function('Write',lambda:vm.variables.__setitem__('x',Decimal(9)))
   vm.execute('x=1;Write();r=x;');self.assertEqual(vm.variables['r'],9)
  def test_subclass_custom_policy_configuration_rejected_before_effects(self):
   class Restricted(Interpreter):pass
@@ -58,7 +58,7 @@ class PythonDirectDefaultTests(unittest.TestCase):
   with self.assertRaises(PythonDirectUnsupported):vm.execute('x=1;If True Then Goto ~finish;EndIf;~finish:x=2;')
   self.assertEqual(vm.variables,{})
  def test_constructor_override_not_silently_ignored(self):
-  effects=[];vm=Interpreter();vm.register_type('Array',lambda:effects.append(1))
+  effects=[];vm=Interpreter(allow_extensions=True);vm.register_type('Array',lambda:effects.append(1))
   with self.assertRaises(PythonDirectUnsupported):vm.execute('x=1;a=New Array;')
   self.assertEqual(vm.variables,{});self.assertEqual(effects,[])
  def test_cli_default_and_explicit_direct(self):
@@ -67,7 +67,7 @@ class PythonDirectDefaultTests(unittest.TestCase):
    p=subprocess.run([sys.executable,'-m','yadinassi',*args,'-c','Сообщить(2+3);'],capture_output=True,text=True,env=env)
    self.assertEqual(p.returncode,0,p.stderr);self.assertEqual(p.stdout.strip(),'5')
  def test_nested_direct_execution_is_explicitly_rejected(self):
-  vm=Interpreter();vm.register_function('Nested',lambda:vm.execute('nested=1;'))
+  vm=Interpreter(allow_extensions=True);vm.register_function('Nested',lambda:vm.execute('nested=1;'))
   with self.assertRaisesRegex(Exception,'nested or asynchronous'):vm.execute('Nested();')
   self.assertNotIn('nested',vm.variables)
 
@@ -84,7 +84,7 @@ class PythonDirectDefaultTests(unittest.TestCase):
    vm.execute_program([ast.ExpressionStatement(None,ast.Literal(None,Decimal(1)))])
   self.assertEqual(vm.variables,{})
  def test_legacy_generator_entries_reject_before_effects(self):
-  vm=Interpreter();source=parse('x=7;')
+  vm=Interpreter(allow_extensions=True);source=parse('x=7;')
   with self.assertRaises(PythonDirectUnsupported):vm._scheduler.run_inline(vm.block(source))
   call=parse('Host();')[0].expression;events=[];vm.register_function('Host',lambda:events.append(1))
   with self.assertRaises(PythonDirectUnsupported):vm._scheduler.run_inline(vm.call(call,require_value=False))
@@ -93,13 +93,13 @@ class PythonDirectDefaultTests(unittest.TestCase):
   self.assertEqual(vm.variables,{});self.assertEqual(events,[])
  def test_host_context_install_stops_before_following_write(self):
   from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-  vm=Interpreter();vm.register_function('Install',lambda:setattr(vm,'_configuration_runtime',object()))
+  vm=Interpreter(allow_extensions=True);vm.register_function('Install',lambda:setattr(vm,'_configuration_runtime',object()))
   with self.assertRaises(BoundaryViolation):vm.execute('Install();x=7;')
   self.assertNotIn('x',vm.variables)
  def test_host_safe_mode_install_stops_before_following_write(self):
   from yadinassi.execution import safe_mode
   from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-  tokens=[];vm=Interpreter();vm.register_function('Install',lambda:tokens.append(safe_mode._CURRENT.set(object())))
+  tokens=[];vm=Interpreter(allow_extensions=True);vm.register_function('Install',lambda:tokens.append(safe_mode._CURRENT.set(object())))
   try:
    with self.assertRaises(BoundaryViolation):vm.execute('Install();x=7;')
    self.assertNotIn('x',vm.variables)

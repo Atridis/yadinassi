@@ -31,7 +31,7 @@ X=1;Y=2;P(X,Y);'''
         self.assertNotIn('fresh',rows[0]);self.assertNotIn('later',rows[0])
 
     def test_callback_observes_and_updates_live_module_storage(self):
-        v=Interpreter();seen=[]
+        v=Interpreter(allow_extensions=True);seen=[]
         def host():seen.append(v.variables['x']);v.variables['x']=8
         v.register_function('Host',host)
         v.execute('X=1;Execute("X=3;Host();X=X+1;");')
@@ -59,14 +59,14 @@ X=1;Execute("SetX(X);");''');self.assertEqual(v.variables['x'],9)
         self.assertEqual(v.execute('A.X'),1)
 
     def test_current_constructor_and_registry_admission_before_fragment_effects(self):
-        v=Interpreter();plan=v.prepare('Saved=1;Execute("Saved=9;A=New Array;");')
+        v=Interpreter(allow_extensions=True);plan=v.prepare('Saved=1;Execute("Saved=9;A=New Array;");')
         v.register_type('Array',lambda:[])
         with self.assertRaises(BSLError):v.execute_prepared(plan)
         self.assertEqual(v.variables['saved'],1)
 
     def test_owner_and_restricted_context_revocation_are_not_swallowed(self):
         for action in ('close','context'):
-            v=Interpreter()
+            v=Interpreter(allow_extensions=True)
             def change():
                 if action=='close':v.close()
                 else:v._module_context_stack[-1]=False
@@ -122,7 +122,7 @@ X=1;Execute("SetX(X);");''');self.assertEqual(v.variables['x'],9)
 
     def test_host_reference_revocation_stops_before_next_statement(self):
         for mode in ('read','write','forward'):
-            vm=Interpreter()
+            vm=Interpreter(allow_extensions=True)
             def get():
                 if mode!='write':vm.close()
                 return 2
@@ -135,7 +135,7 @@ X=1;Execute("SetX(X);");''');self.assertEqual(v.variables['x'],9)
             self.assertEqual(vm.variables['saved'],1)
 
     def test_retained_fragment_reference_cannot_outlive_boundary(self):
-        vm=Interpreter();refs=[]
+        vm=Interpreter(allow_extensions=True);refs=[]
         vm.functions['keep']=HostFunction('Keep',lambda ref:refs.append(ref),reference_parameters=(0,))
         vm.execute('X=1;Execute("Keep(X);");')
         with self.assertRaises(BoundaryViolation):refs[0].set(9)
@@ -152,7 +152,7 @@ class ExecutePreparationReuseTests(unittest.TestCase):
         self.assertEqual(parse.call_count,1)
 
     def test_cached_constructor_facts_are_admitted_again(self):
-        vm=Interpreter()
+        vm=Interpreter(allow_extensions=True)
         def change():vm.register_type('Array',lambda:[])
         vm.register_function('Change',change)
         with self.assertRaises(BSLError):
@@ -160,7 +160,7 @@ class ExecutePreparationReuseTests(unittest.TestCase):
         self.assertEqual(vm.variables['saved'],1)
 
     def test_private_names_are_fresh_on_cache_hit(self):
-        vm=Interpreter();seen=[];vm.register_function('Seen',seen.append)
+        vm=Interpreter(allow_extensions=True);seen=[];vm.register_function('Seen',seen.append)
         vm.execute('For I=1 To 3 Do Execute("Try Seen(Private);Except Seen(0);EndTry;Private=9;");EndDo;')
         self.assertEqual(seen,[0,0,0])
 
@@ -183,7 +183,7 @@ class ExecutePreparationReuseTests(unittest.TestCase):
         self.assertEqual(parse.call_count,3)
 
     def test_limits_rechecked_after_cache_hit(self):
-        vm=Interpreter()
+        vm=Interpreter(allow_extensions=True)
         with patch('yadinassi.runtime.EXECUTE_MAX_SOURCE',65536):
             def shrink():
                 import yadinassi.runtime as runtime

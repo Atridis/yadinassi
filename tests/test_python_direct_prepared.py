@@ -28,7 +28,7 @@ class PreparedDirectTests(unittest.TestCase):
         with self.assertRaisesRegex(PythonDirectUnsupported,'immutable parser'):Interpreter().prepare_program(nodes)
 
     def test_cross_vm_current_registry(self):
-        a=Interpreter();b=Interpreter();a.register_function('Read',lambda:1);b.register_function('Read',lambda:9)
+        a=Interpreter(allow_extensions=True);b=Interpreter(allow_extensions=True);a.register_function('Read',lambda:1);b.register_function('Read',lambda:9)
         p=a.prepare('x=Read();')
         a.execute_prepared(p);b.execute_prepared(p)
         self.assertEqual(a.variables['x'],1);self.assertEqual(b.variables['x'],9)
@@ -77,7 +77,7 @@ class PreparedDirectTests(unittest.TestCase):
         self.assertIs(vm.variables['b'],previous)
 
     def test_current_constructor_registry(self):
-        vm=Interpreter();p=vm.prepare('x=1;a=New Array;');vm.register_type('Array',lambda:[])
+        vm=Interpreter(allow_extensions=True);p=vm.prepare('x=1;a=New Array;');vm.register_type('Array',lambda:[])
         with self.assertRaisesRegex(PythonDirectUnsupported,'overridden'):vm.execute_prepared(p)
         self.assertEqual(vm.variables,{})
 
@@ -89,7 +89,7 @@ class PreparedDirectTests(unittest.TestCase):
             self.assertEqual(vm.variables,{'x':1})
 
     def test_callback_restriction_not_authorization_cached(self):
-        vm=Interpreter();p=vm.prepare('Install();x=1;');vm.register_function('Install',lambda:setattr(vm,'_configuration_runtime',object()))
+        vm=Interpreter(allow_extensions=True);p=vm.prepare('Install();x=1;');vm.register_function('Install',lambda:setattr(vm,'_configuration_runtime',object()))
         from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         with self.assertRaises(BoundaryViolation):vm.execute_prepared(p)
         self.assertNotIn('x',vm.variables)

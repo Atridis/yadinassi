@@ -9,7 +9,7 @@ class SearchConstructorTests(unittest.TestCase):
     def test_routes_aliases_and_rejection_before_argument_effects(self):
         for name in ('SearchDirection','НаправлениеПоиска'):
             for route in ('source','ast','prepared','execute'):
-                vm=Interpreter();effects=[]
+                vm=Interpreter(allow_extensions=True);effects=[]
                 vm.register_function('Effect',lambda:effects.append(1))
                 text='Try New '+name+'(Effect());Except Caught=True;EndTry;'
                 with patch.object(Interpreter,'block',side_effect=AssertionError('legacy')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy')):
@@ -20,7 +20,7 @@ class SearchConstructorTests(unittest.TestCase):
                 self.assertTrue(vm.variables['caught']);self.assertEqual(effects,[])
 
     def test_unsupported_constructor_still_rejects_whole_fragment(self):
-        vm=Interpreter();effects=[];vm.register_function('Effect',lambda:effects.append(1))
+        vm=Interpreter(allow_extensions=True);effects=[];vm.register_function('Effect',lambda:effects.append(1))
         with self.assertRaises(UnsupportedNakedSyntax):
             vm.execute('Try Execute("Effect();New UnsupportedConstructor;");Except Caught=True;EndTry;')
         self.assertEqual(effects,[]);self.assertNotIn('caught',vm.variables)

@@ -10,7 +10,7 @@ from test_catalog_commit_cleanup_recovery import FaultConnection
 
 class DirectTransactionTests(unittest.TestCase):
     def setUp(self):
-        fixtures.BSLTransactionsTests.setUp(self);self.addCleanup(self.vm.close)
+        fixtures.BSLTransactionsTests.setUp(self, allow_extensions=True);self.addCleanup(self.vm.close)
     def assert_clean(self):
         self.assertIsNone(tx._execution.get());self.assertIsNone(tx._execution_backend.get())
         self.assertIsNone(getattr(self.backend,'_bsl_transaction',None));self.assertIsNone(self.backend._active)
@@ -183,7 +183,7 @@ class DirectTransactionTests(unittest.TestCase):
         self.assert_clean();self.assertNotIn('marker',self.vm.variables)
 
     def test_other_interpreter_same_backend_cannot_commit_owned_transaction(self):
-        other=Interpreter(database_context=self.context);self.addCleanup(other.close)
+        other=Interpreter(database_context=self.context, allow_extensions=True);self.addCleanup(other.close)
         self.vm.register_function('Cross',lambda:other.execute('CommitTransaction();'))
         with self.assertRaises(BoundaryViolation):self.vm.execute('C=Catalogs.Products.CreateItem();C.Code="A";BeginTransaction();C.Write();Cross();')
         self.assert_clean();self.assertTrue(self.vm.variables['c'].is_new())
@@ -191,7 +191,7 @@ class DirectTransactionTests(unittest.TestCase):
     def test_captured_control_keeps_own_owner_and_rejects_foreign_canonical_owner(self):
         self.vm.variables['control']=self.vm.functions['committransaction']
         self.vm.execute('BeginTransaction();control();');self.assert_clean()
-        other=Interpreter(database_context=self.context);self.addCleanup(other.close)
+        other=Interpreter(database_context=self.context, allow_extensions=True);self.addCleanup(other.close)
         self.vm.variables['control']=other.functions['committransaction']
         with self.assertRaises(BoundaryViolation):self.vm.execute('BeginTransaction();control();')
         self.assert_clean()
@@ -200,7 +200,7 @@ class DirectTransactionTests(unittest.TestCase):
         self.assertTrue(self.vm.variables['caught']);self.assertTrue(self.vm.variables['active']);self.assert_clean()
 
     def test_foreign_canonical_begin_service_cannot_acquire_writer(self):
-        other=Interpreter(database_context=self.context);self.addCleanup(other.close)
+        other=Interpreter(database_context=self.context, allow_extensions=True);self.addCleanup(other.close)
         self.vm.functions['foreignbegin']=other.functions['begintransaction']
         with patch.object(self.backend,'begin_unit_of_work',wraps=self.backend.begin_unit_of_work) as begin:
             with self.assertRaises(BoundaryViolation):self.vm.execute('ForeignBegin();')

@@ -47,9 +47,9 @@ class DirectStringJoinTests(unittest.TestCase):
             with self.assertRaises(TypeError):join(value)
 
     def test_custom_override_and_runtime_revocation(self):
-        vm=Interpreter();vm.register_function('StrConcat',lambda *args:'custom')
+        vm=Interpreter(allow_extensions=True);vm.register_function('StrConcat',lambda *args:'custom')
         self.assertEqual(vm.execute('StrConcat(New Array)'),'custom')
-        vm=Interpreter();vm.execute('A=New Array;A.Add("x");')
+        vm=Interpreter(allow_extensions=True);vm.execute('A=New Array;A.Add("x");')
         def close():vm.close();return '|'
         vm.register_function('Close',close)
         with self.assertRaises(BoundaryViolation):vm.execute('R=StrConcat(A,Close());')

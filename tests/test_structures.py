@@ -18,7 +18,7 @@ from yadinassi.types.errors import BSLRuntimeError
 class StructureTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(output=self.output.append)
+        self.vm = Interpreter(output=self.output.append, allow_extensions=True)
 
     def test_empty_constructors_bilingual_and_case_insensitive(self):
         for expression in ['Новый Структура', 'New Structure',

@@ -189,7 +189,7 @@ class FixedOffsetConversionTests(unittest.TestCase):
 
 class FixedOffsetRuntimeTests(unittest.TestCase):
     def setUp(self):
-        self.vm = Interpreter()
+        self.vm = Interpreter(allow_extensions=True)
         self.vm.execute('source = Date(2024,2,29,23,59,59);')
 
     def test_bilingual_aliases_case_variants_and_registration(self):
@@ -202,7 +202,7 @@ class FixedOffsetRuntimeTests(unittest.TestCase):
         self.vm.register_function('ToLocalTime', lambda *args: 'override')
         self.assertEqual(self.vm.execute('ToLocalTime(source,"GMT+1")'), 'override')
         self.assertEqual(self.vm.execute('МестноеВремя(source,"GMT+1")'), date('20240301005959'))
-        self.assertEqual(Interpreter().execute('ToLocalTime(Date(2024,2,29),"GMT+1")'), date('20240229010000'))
+        self.assertEqual(Interpreter(allow_extensions=True).execute('ToLocalTime(Date(2024,2,29),"GMT+1")'), date('20240229010000'))
 
     def test_invalid_types_defaults_and_arities_are_catchable(self):
         suffixes = ('()', '(source)', '(source,Undefined)', '(source,Null)',

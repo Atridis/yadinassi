@@ -39,18 +39,18 @@ class DirectFixedTests(unittest.TestCase):
 
     def test_constructor_identity_checked_before_and_after_arguments(self):
         for name in ('FixedArray','FixedStructure'):
-            vm=Interpreter();seen=[];vm.register_type(name,lambda *args:seen.append('factory'))
+            vm=Interpreter(allow_extensions=True);seen=[];vm.register_type(name,lambda *args:seen.append('factory'))
             vm.register_function('Effect',lambda:seen.append('argument'))
             with self.assertRaises(BoundaryViolation):vm.execute('New '+name+'(Effect());')
             self.assertEqual(seen,[])
-            vm=Interpreter();original=vm.types[name.casefold()]
+            vm=Interpreter(allow_extensions=True);original=vm.types[name.casefold()]
             def mutate():original.function=lambda *args:seen.append('replacement');return []
             vm.register_function('Mutate',mutate)
             with self.assertRaises(BoundaryViolation):vm.execute('New '+name+'(Mutate());')
             self.assertEqual(seen,[])
 
     def test_runtime_close_during_constructor_arguments(self):
-        vm=Interpreter();vm.register_function('Close',lambda:vm.close())
+        vm=Interpreter(allow_extensions=True);vm.register_function('Close',lambda:vm.close())
         with self.assertRaises(BoundaryViolation):vm.execute('F=New FixedStructure("X",Close());')
         self.assertNotIn('f',vm.variables)
 
@@ -76,7 +76,7 @@ class DirectFixedTests(unittest.TestCase):
         from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
         class Boundary(ServicesBoundary,BoundaryContext):pass
         for mode in ('deny','mutate','permission'):
-            vm=Interpreter();events=[];factory=vm.types['fixedarray']
+            vm=Interpreter(allow_extensions=True);events=[];factory=vm.types['fixedarray']
             def policy(operation,name):
                 events.append((operation,name))
                 if mode=='mutate':factory.function=lambda *args:None

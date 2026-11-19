@@ -21,7 +21,7 @@ DUAL = '&AtClientAtServerNoContext\n'
 class DualDirectiveRuntimeTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(self.output.append)
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
 
     def tearDown(self):
         self.vm.close()
@@ -201,7 +201,7 @@ State=40;
     def test_missing_variant_rejected_before_actuals_and_host_fallback(self):
         for side in ('Client', 'Server'):
             with self.subTest(retained=side):
-                vm = Interpreter()
+                vm = Interpreter(allow_extensions=True)
                 calls = []
                 vm.register_function('Only', lambda value: calls.append('host'))
                 vm.register_function('Effect', lambda: calls.append('effect'))

@@ -391,7 +391,7 @@ EndProcedure''')
                 rollback(self.backend)
 
     def test_transaction_status_binding_is_owned_by_inherited_activation(self):
-        with closing(Interpreter(database_context=self.context)) as child:
+        with closing(Interpreter(database_context=self.context, allow_extensions=True)) as child:
             child._inherit_host_bindings(self.vm)
             for name in ('transactionactive', 'транзакцияактивна'):
                 self.assertIs(child.functions[name].function.__self__, child)

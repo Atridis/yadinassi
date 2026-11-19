@@ -18,7 +18,7 @@ SOURCE = SOURCE_PATH.read_text(encoding='utf-8')
 
 def emit(*, missing=False, source=SOURCE):
     out = []
-    vm = Interpreter(out.append)
+    vm = Interpreter(out.append, allow_extensions=True)
     if missing:
         for name in ('прочитатьjson', 'readjson', 'записатьjson', 'writejson'):
             vm.functions.pop(name, None)
@@ -64,7 +64,7 @@ class JSONFamilyMeasurementTests(unittest.TestCase):
         with self.assertRaises(wire.AvailabilityError): wire.require_available(emit(missing=True))
 
     def test_temp_helpers_only_owned_paths_and_cleanup(self):
-        vm = Interpreter(lambda _: None)
+        vm = Interpreter(lambda _: None, allow_extensions=True)
         with tempfile.TemporaryDirectory(prefix='json-unowned-') as tmp:
             outside = Path(tmp) / 'keep'; outside.write_text('keep', encoding='utf-8')
             with replay.temporary_file_helpers(vm) as allocated:

@@ -19,7 +19,7 @@ Function S() X=1;Return F(X);EndFunction
 class DirectDualTests(unittest.TestCase):
     def test_source_ast_prepared_persistent_select_side_without_vm(self):
         for route in ('source','ast','prepared'):
-            vm=Interpreter();vm.register_function('Scope',lambda:vm.execution_context+':'+str(vm._has_module_context))
+            vm=Interpreter(allow_extensions=True);vm.register_function('Scope',lambda:vm.execution_context+':'+str(vm._has_module_context))
             with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
                 if route=='source':vm.execute(DUAL)
                 elif route=='ast':vm.execute_program(parse(DUAL))
@@ -65,7 +65,7 @@ X=1;A=New Array;A.Add(2);Try Change(X,A);Except Caught=True;EndTry;''')
         self.assertEqual(vm.variables['x'],9);self.assertEqual(vm.variables['a'],[7])
 
     def test_no_module_globals_and_no_initializer(self):
-        vm=Interpreter(compilation_profile='managed-thick-file');effects=[];vm.register_function('Tick',lambda:effects.append(1))
+        vm=Interpreter(compilation_profile='managed-thick-file', allow_extensions=True);effects=[];vm.register_function('Tick',lambda:effects.append(1))
         vm.execute('''Var X;X=5;
 &AtServer
 Var Z;
@@ -82,7 +82,7 @@ Z=100;Tick();
 
     def test_contextual_targets_refuse_before_argument_effects(self):
         for target in ('C','S'):
-            vm=Interpreter();effects=[];vm.register_function('Effect',lambda:effects.append(1))
+            vm=Interpreter(allow_extensions=True);effects=[];vm.register_function('Effect',lambda:effects.append(1))
             vm.execute('Function C(Val X) Return X;EndFunction\n&AtServer\nFunction S(Val X) Return X;EndFunction\n&AtClientAtServerNoContext\nFunction F() Return '+target+'(Effect());EndFunction')
             with self.assertRaises(BSLRuntimeError):vm.execute('F();')
             self.assertEqual(effects,[])
@@ -94,7 +94,7 @@ Z=100;Tick();
 
     def test_close_reset_and_context_tampering_restore_root(self):
         for action in ('close','reset','context'):
-            vm=Interpreter()
+            vm=Interpreter(allow_extensions=True)
             def change():
                 if action=='close':vm.close()
                 elif action=='reset':vm.cancel_pending()

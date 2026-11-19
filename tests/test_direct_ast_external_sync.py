@@ -76,7 +76,7 @@ class ExternalSyncTests(unittest.TestCase):
             with self.assertRaises(BoundaryViolation):vm.execute('R=X+1;'+operation+'After=1;')
             self.assertEqual(list(array),[D(3)]);self.assertNotIn('after',vm.variables)
     def test_generated_sync_implementation_is_not_copied_per_expression(self):
-        vm=Interpreter();self.addCleanup(vm.close);vm.register_function('Touch',lambda:D(1))
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);vm.register_function('Touch',lambda:D(1))
         def build(n):
             source=';'.join(f'X{i}={i}' for i in range(n))+';'+''.join('Touch();' for _ in range(n))
             text=vm.prepare(source)._plan.generated_source

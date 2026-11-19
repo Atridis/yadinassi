@@ -20,7 +20,7 @@ SOURCE = SOURCE_PATH.read_text(encoding='utf-8')
 
 def emit(*, missing=False, source=SOURCE):
     out = []
-    vm = Interpreter(out.append)
+    vm = Interpreter(out.append, allow_extensions=True)
     if missing:
         for name in ('binarydatabuffer', 'буфердвоичныхданных'):
             vm.types.pop(name, None)
@@ -85,7 +85,7 @@ class BinaryStreamFamilyMeasurementTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='binary-stream-unexpected-') as tmp, \
                 mock.patch('tempfile.gettempdir', return_value=tmp):
             output = []
-            vm = Interpreter(output.append)
+            vm = Interpreter(output.append, allow_extensions=True)
             vm.register_function('СоздатьКаталог', create_with_sentinel, 'CreateDirectory', returns_value=False)
             vm.execute(SOURCE)
             roots = list(Path(tmp).iterdir())

@@ -12,7 +12,7 @@ from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryVi
 
 class PythonSyncSegmentTests(unittest.TestCase):
     def test_module_segments_publish_and_reacquire_replaced_scope(self):
-        vm = Interpreter(execution_backend='python-direct')
+        vm = Interpreter(execution_backend='python-direct', allow_extensions=True)
         seen = []
         def boundary():
             seen.append(vm.variables['s'])
@@ -23,7 +23,7 @@ class PythonSyncSegmentTests(unittest.TestCase):
         self.assertEqual(vm.variables['result'], 106)
 
     def test_mixed_routine_reacquires_locals_after_opaque_call_without_replay(self):
-        vm = Interpreter(execution_backend='python-direct')
+        vm = Interpreter(execution_backend='python-direct', allow_extensions=True)
         seen = []
         def boundary():
             seen.append(vm.locals['s'])
@@ -54,7 +54,7 @@ class PythonSyncSegmentTests(unittest.TestCase):
         self.assertEqual(outcomes[0][2]['i'], 3)
 
     def test_byref_slot_keeps_copyback_across_services(self):
-        vm = Interpreter(execution_backend='python-direct')
+        vm = Interpreter(execution_backend='python-direct', allow_extensions=True)
         seen = []
         vm.register_function('Boundary', lambda value: seen.append(value))
         vm.execute('''Procedure F(x)
@@ -73,7 +73,7 @@ class PythonSyncSegmentTests(unittest.TestCase):
         self.assertNotIn('reserved',vm.variables)
 
     def test_return_exits_mixed_routine_and_does_not_run_later_service(self):
-        vm = Interpreter(execution_backend='python-direct')
+        vm = Interpreter(execution_backend='python-direct', allow_extensions=True)
         events = []
         vm.register_function('Boundary', lambda: events.append('boundary'))
         vm.execute('''Function F(Val n)
@@ -87,7 +87,7 @@ class PythonSyncSegmentTests(unittest.TestCase):
 
     def test_callback_replaces_scalar_with_reference_next_segment_declines(self):
         from yadinassi.types.values import Reference
-        vm = Interpreter(execution_backend='python-direct')
+        vm = Interpreter(execution_backend='python-direct', allow_extensions=True)
         cell = [Decimal(100)]
         def boundary():
             vm.locals['s'] = Reference(lambda: cell[0], lambda value: cell.__setitem__(0, value))
@@ -102,7 +102,7 @@ class PythonSyncSegmentTests(unittest.TestCase):
         self.assertEqual(vm.variables['result'], 106)
 
     def test_module_context_revocation_is_rechecked_after_service(self):
-        vm=Interpreter(execution_backend='python-direct');calls=[]
+        vm=Interpreter(execution_backend='python-direct', allow_extensions=True);calls=[]
         def boundary():
             calls.append(1)
             vm._module_context_stack[-1]=False

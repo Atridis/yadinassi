@@ -8,7 +8,7 @@ from yadinassi.numeric.bits import bitwise_shift_right
 
 class BitwiseShiftRightTests(unittest.TestCase):
     def setUp(self):
-        self.vm = Interpreter(output=lambda text: None)
+        self.vm = Interpreter(output=lambda text: None, allow_extensions=True)
 
     def test_all_bit_positions_and_offsets_against_division(self):
         # Arithmetic division is an independent oracle, without bit operators.
@@ -94,4 +94,4 @@ class BitwiseShiftRightTests(unittest.TestCase):
         self.vm.register_function('BitwiseShiftRight', lambda value, offset: 'override')
         self.assertEqual(self.vm.execute('BitwiseShiftRight(26, 3)'), 'override')
         self.assertEqual(self.vm.execute('ПобитовыйСдвигВправо(26, 3)'), 3)
-        self.assertEqual(Interpreter().execute('BitwiseShiftRight(26, 3)'), 3)
+        self.assertEqual(Interpreter(allow_extensions=True).execute('BitwiseShiftRight(26, 3)'), 3)

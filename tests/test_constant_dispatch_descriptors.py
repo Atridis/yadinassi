@@ -117,7 +117,7 @@ class ConstantDispatchTests(unittest.TestCase):
             def __call__(self):return 'ordinary'
             def invoke(self,*args):effects.append('bad')
         class Derived(InterpreterCall):pass
-        vm=Interpreter(lambda _:None);self.addCleanup(vm.close)
+        vm=Interpreter(lambda _:None, allow_extensions=True);self.addCleanup(vm.close)
         vm.register_function('Ordinary',Ordinary())
         self.assertEqual(vm.execute('Ordinary()'),'ordinary')
         vm.register_function('Derived',Derived(0,0,lambda caller:effects.append('bad'),lambda caller,args:iter(())))
@@ -128,14 +128,14 @@ class ConstantDispatchTests(unittest.TestCase):
         effects=[]
         descriptor=InterpreterCall(0,0,lambda caller:effects.append('authorize'),lambda caller,args:[])
         with self.assertRaises(AttributeError):descriptor.maximum_arguments=2
-        vm=Interpreter(lambda _:None);self.addCleanup(vm.close);vm.register_function('Bad',descriptor)
+        vm=Interpreter(lambda _:None, allow_extensions=True);self.addCleanup(vm.close);vm.register_function('Bad',descriptor)
         with self.assertRaisesRegex(BSLError,'requires a generator'):vm.execute('Bad()')
         self.assertEqual(effects,['authorize','authorize'])
 
     def test_closed_value_manager_descriptor_rejects_before_arguments(self):
         app,_=self.app();owner=SourceConstants(app)
         descriptor=ValueManagerCall(SourceConstantValueManager(owner,'Text'),'write').descriptor()
-        app.close();vm=Interpreter(lambda _:None);self.addCleanup(vm.close);effects=[]
+        app.close();vm=Interpreter(lambda _:None, allow_extensions=True);self.addCleanup(vm.close);effects=[]
         vm.register_function('Captured',descriptor,returns_value=False)
         vm.register_function('Touch',lambda:effects.append('bad'))
         with self.assertRaises(BSLError):vm.execute('Captured(Touch());')

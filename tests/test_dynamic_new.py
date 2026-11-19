@@ -10,7 +10,7 @@ from yadinassi.types.values import BSLType
 
 class DynamicNewTests(unittest.TestCase):
     def setUp(self):
-        self.vm = Interpreter()
+        self.vm = Interpreter(allow_extensions=True)
 
     def assert_array_representation(self, value):
         self.assertIs(type(value), list)

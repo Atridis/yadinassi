@@ -11,7 +11,7 @@ from yadinassi.types.values import BSLObject
 class RoundModeIterationTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(self.output.append)
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
 
     def test_namespace_iterators_are_independent_and_unique(self):
         first, second = iter(ROUND_MODES), iter(ROUND_MODES)

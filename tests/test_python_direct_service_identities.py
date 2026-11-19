@@ -8,7 +8,7 @@ class ServiceIdentityTests(unittest.TestCase):
             __hash__=None
             def __eq__(self,other):raise AssertionError('equality classification')
             def __call__(self,*args):return 'custom'
-        vm=Interpreter();vm.register_function('StrFindByRegularExpression',Callable())
+        vm=Interpreter(allow_extensions=True);vm.register_function('StrFindByRegularExpression',Callable())
         self.assertEqual(vm.execute('StrFindByRegularExpression("a","a")'),'custom')
         with self.assertRaisesRegex(Exception,'Пропуск аргументов'):
             vm.execute('StrFindByRegularExpression("a","a",,)')

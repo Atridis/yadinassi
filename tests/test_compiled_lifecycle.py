@@ -53,7 +53,7 @@ class CompiledLifecycleTests(unittest.TestCase):
         self.assertEqual(vm.variables['p'].result, Decimal(42))
         self.assertEqual(children[0].execution_backend, 'python-direct')
         # Scheduler scope must not leak into subsequent unrelated embedding.
-        self.assertEqual(Interpreter().execution_backend, entry_backend)
+        self.assertEqual(Interpreter(allow_extensions=True).execution_backend, entry_backend)
 
     def test_execution_error_propagates(self):
         vm = self.vm()

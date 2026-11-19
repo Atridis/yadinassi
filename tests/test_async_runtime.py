@@ -15,7 +15,7 @@ from yadinassi.syntax.parser import parse
 class AsyncRuntimeTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(self.output.append)
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
 
     def run_code(self, code):
         return self.vm.execute(code, 'async-test.bsl')

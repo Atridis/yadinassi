@@ -98,7 +98,7 @@ class DirectArrayLoopBoundaryTests(unittest.TestCase):
         self.assertEqual(list(original), [0])
 
     def test_dynamic_argument_still_cannot_append_after_close(self):
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         array = PlainArray([0])
         vm.variables['a'] = array
         vm.register_function('CloseOwner', lambda: vm.close() or Decimal(9))

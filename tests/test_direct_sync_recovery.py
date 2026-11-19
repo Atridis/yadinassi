@@ -12,9 +12,8 @@ class SyncRecoveryTests(unittest.TestCase):
                   'X=New Array;For I=1 To 5 Do X.Add(I);EndDo;F(X,3);')
         for standalone in (False, True):
             with self.subTest(standalone=standalone):
-                vm = Interpreter()
+                vm = Interpreter(allow_extensions=not standalone)
                 self.addCleanup(vm.close)
-                vm._standalone_script = standalone
                 plan = vm.prepare(source)
                 self.assertEqual('_context._check()' in plan._plan.generated_source, not standalone)
                 self.assertEqual(vm.execute_prepared(plan), Decimal(6))
@@ -22,7 +21,6 @@ class SyncRecoveryTests(unittest.TestCase):
     def test_standalone_still_publishes_live_values_for_eval(self):
         vm = Interpreter()
         self.addCleanup(vm.close)
-        vm._standalone_script = True
         plan = vm.prepare('X=1;Try Eval("X/0");Except X=Eval("X+2");EndTry;X;')
         self.assertIn('_publish_module()', plan._plan.generated_source)
         self.assertNotIn('_context._check()', plan._plan.generated_source)
@@ -38,7 +36,7 @@ class SyncRecoveryTests(unittest.TestCase):
         self.assertEqual(vm.execute_prepared(plan), Decimal(10))
 
     def test_callback_failure_reloads_before_bsl_handler(self):
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         self.addCleanup(vm.close)
         seen = []
 

@@ -66,7 +66,7 @@ class DependencyHandleTests(unittest.TestCase):
         from yadinassi.types.values import HostFunction
         module = dependencies.runtime_module('source_catalog_runtime')
         for backend in ('interpreter', 'compiled-strict'):
-            events = []; vm = Interpreter(execution_backend=backend)
+            events = []; vm = Interpreter(execution_backend=backend, allow_extensions=True)
             def target(label):
                 return lambda caller, receiver, name: HostFunction(name, lambda x: events.append(label) or x)
             def receiver():
@@ -96,7 +96,7 @@ class DependencyHandleTests(unittest.TestCase):
         with self.assertRaises(TypeError): next(translated_access.read_attribute(vm, value, 'Name'))
 
     def test_warm_cache_retains_no_vm_or_call_argument(self):
-        vm = Interpreter(); argument = BSLArray(); seen = []
+        vm = Interpreter(allow_extensions=True); argument = BSLArray(); seen = []
         vm.register_function('Host', lambda value: seen.append(weakref.ref(value)))
         vm.variables['value'] = argument
         vm.execute('Host(value);')
@@ -113,7 +113,7 @@ class DependencyHandleTests(unittest.TestCase):
                     if warm:
                         for name in dependencies._MODULE_NAMES: dependencies.runtime_module(name)
                     active = [True]; events = []
-                    vm = Interpreter(execution_backend=backend)
+                    vm = Interpreter(execution_backend=backend, allow_extensions=True)
                     def authorize(caller):
                         events.append(('authorize', active[0]))
                         if not active[0]: raise PermissionError('revoked')
@@ -135,7 +135,7 @@ class DependencyHandleTests(unittest.TestCase):
         from yadinassi import runtime
         # This contract requires interpreter-aware dispatch; direct intentionally
         # refuses that protocol instead of running its authorization callbacks.
-        vm = Interpreter(execution_backend="compiled-strict"); self.addCleanup(vm.close)
+        vm = Interpreter(execution_backend="compiled-strict", allow_extensions=True); self.addCleanup(vm.close)
         def deny(caller): raise PermissionError('denied')
         def dispatch(caller, values):
             if False: yield
@@ -159,7 +159,7 @@ class DependencyHandleTests(unittest.TestCase):
                 dependencies._load_module.cache_clear()
                 if warm:
                     for name in forbidden:dependencies.runtime_module(name)
-                vm=Interpreter(execution_backend='python-direct');self.addCleanup(vm.close)
+                vm=Interpreter(execution_backend='python-direct', allow_extensions=True);self.addCleanup(vm.close)
                 authorize=Mock(side_effect=AssertionError('authorization must not run'))
                 dispatch=Mock(side_effect=AssertionError('dispatch must not run'))
                 effect=Mock(side_effect=AssertionError('argument must not run'))

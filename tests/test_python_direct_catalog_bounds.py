@@ -15,7 +15,8 @@ import test_catalog_object_preparation as catalog_fixture
 def handler(body):return 'Процедура ПередЗаписью(Отказ) '+body+' КонецПроцедуры'
 
 class DirectCatalogBoundsTests(unittest.TestCase):
-    setUp=catalog_fixture.CatalogObjectPreparationTests.setUp
+    def setUp(self):
+        catalog_fixture.CatalogObjectPreparationTests.setUp(self, allow_extensions=True)
 
     def test_intermediate_expansion_rejects_before_assignment_without_vm(self):
         source=handler('Наименование="changed";x="'+'x'*1024+'";'+'x=x+x;'*8+'Наименование="success";')

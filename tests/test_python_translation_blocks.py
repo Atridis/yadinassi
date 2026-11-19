@@ -20,7 +20,7 @@ class DirectBlocks(unittest.TestCase):
                 self.assertIsNone(vm.locals)
                 self.assertEqual(vm._handled_errors,[])
     def test_call_order_once(self):
-        vm=Interpreter();self.addCleanup(vm.close);seen=[]
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);seen=[]
         vm.register_function('Arg',lambda:seen.append('arg') or Decimal(2))
         vm.register_function('Host',lambda x:seen.append(('host',x)) or x)
         vm.execute('r=Host(Arg());')

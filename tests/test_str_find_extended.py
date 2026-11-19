@@ -145,7 +145,7 @@ class ExtendedStrFindTests(unittest.TestCase):
 
 class ExtendedStrFindRuntimeTests(unittest.TestCase):
     def setUp(self):
-        self.vm = Interpreter()
+        self.vm = Interpreter(allow_extensions=True)
 
     def test_bilingual_aliases_and_optional_holes(self):
         for name in ('СтрНайти', 'StrFind', 'сТрНаЙтИ', 'sTrFiNd'):
@@ -182,11 +182,11 @@ class ExtendedStrFindRuntimeTests(unittest.TestCase):
             self.vm.execute('StrFind("abc", "b", , 1)')
         self.assertEqual(calls, [])
         self.assertEqual(self.vm.execute('СтрНайти("abcabc", "b", , 3)'), 5)
-        fresh = Interpreter()
+        fresh = Interpreter(allow_extensions=True)
         fresh.execute('StrFind = Find;')
         with self.assertRaises(BSLError):
             fresh.execute('StrFind("abc", "b", , 1)')
-        fresh = Interpreter()
+        fresh = Interpreter(allow_extensions=True)
         fresh.execute('Function StrFind(a, b, c = 9, d = 7) Return c + d; EndFunction')
         self.assertEqual(fresh.execute('StrFind("abc", "b", , 1)'), 10)
 

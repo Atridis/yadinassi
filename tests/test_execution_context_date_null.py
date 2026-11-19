@@ -42,7 +42,7 @@ def nested(value, edges):
 class ExecutionContextDateNullTests(unittest.TestCase):
     def setUp(self):
         self.messages = []
-        self.vm = Interpreter(self.messages.append)
+        self.vm = Interpreter(self.messages.append, allow_extensions=True)
 
     def tearDown(self):
         self.vm.close()

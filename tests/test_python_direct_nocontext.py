@@ -13,7 +13,7 @@ class DirectNoContextTests(unittest.TestCase):
 Function F(X,Val N=2) X=X+N;Return Scope();EndFunction
 X=3;R=F(X);'''
         for route in ('source','ast','prepared'):
-            vm=Interpreter();vm.register_function('Scope',lambda:vm.execution_context+':'+str(vm._has_module_context))
+            vm=Interpreter(allow_extensions=True);vm.register_function('Scope',lambda:vm.execution_context+':'+str(vm._has_module_context))
             with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
                 if route=='source':vm.execute(source)
                 elif route=='ast':vm.execute_program(parse(source))
@@ -23,7 +23,7 @@ X=3;R=F(X);'''
             self.assertEqual(vm.execution_context,'client');self.assertTrue(vm._has_module_context)
 
     def test_no_server_or_client_globals_and_no_initialization(self):
-        vm=Interpreter(compilation_profile='managed-thick-file');effects=[];vm.register_function('Tick',lambda:effects.append(1))
+        vm=Interpreter(compilation_profile='managed-thick-file', allow_extensions=True);effects=[];vm.register_function('Tick',lambda:effects.append(1))
         vm.execute('''Var Client;Client=9;
 &AtServer
 Var N;
@@ -57,7 +57,7 @@ R=Caller();''')
 
     def test_contextual_and_client_calls_from_nocontext_refuse_before_args(self):
         for target in ('Contextual','ClientCall'):
-            vm=Interpreter();effects=[];vm.register_function('Effect',lambda:effects.append(1))
+            vm=Interpreter(allow_extensions=True);effects=[];vm.register_function('Effect',lambda:effects.append(1))
             vm.execute('Function ClientCall(Val X) Return X;EndFunction\n&AtServer\nFunction Contextual(Val X) Return X;EndFunction\n&AtServerNoContext\nFunction N() Return '+target+'(Effect());EndFunction')
             with self.assertRaises(BSLRuntimeError):vm.execute('N();')
             self.assertEqual(effects,[]);self.assertTrue(vm._has_module_context)
@@ -88,7 +88,7 @@ R=Read();''')
 
     def test_revocation_and_module_capability_tampering_restore_scopes(self):
         for action in ('close','context','reset'):
-            vm=Interpreter()
+            vm=Interpreter(allow_extensions=True)
             def change():
                 if action=='close':vm.close()
                 elif action=='reset':vm.cancel_pending()

@@ -174,7 +174,7 @@ Message(C.Port); Message(C.IsSecure); Message(Tls.СертификатКлиен
             with self.subTest(code=code), self.assertRaises(BSLError): vm.execute(code)
 
     def test_proxy_procedure_expression_and_required_holes_guard_side_effects(self):
-        vm = Interpreter(lambda _: None); vm.execute('P=New InternetProxy(False);')
+        vm = Interpreter(lambda _: None, allow_extensions=True); vm.execute('P=New InternetProxy(False);')
         calls = []; vm.register_function('Effect', lambda: calls.append(1) or 'http')
         for code in ('x=P.Set(Effect(),"localhost");', 'P.Set(,"localhost");', 'P.Set("http",,80);'):
             with self.subTest(code=code), self.assertRaises(BSLError): vm.execute(code)

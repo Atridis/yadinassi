@@ -26,7 +26,7 @@ UNSUPPORTED_BLOCK = 'Переход внутрь другого блока по�
 class GotoTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(output=self.output.append)
+        self.vm = Interpreter(output=self.output.append, allow_extensions=True)
 
     def test_bilingual_mixed_case_keywords_and_labels(self):
         self.vm.execute('''

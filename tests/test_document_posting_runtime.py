@@ -48,7 +48,7 @@ class PostingRuntimeTests(unittest.TestCase):
         self.addCleanup(self.context.close)
         self.backend = self.context.backend
         self.lines = []
-        self.vm = Interpreter(database_context=self.context,output=self.lines.append)
+        self.vm = Interpreter(database_context=self.context,output=self.lines.append, allow_extensions=True)
         self.addCleanup(self.vm.close)
     def new(self,number=3,mode=None):
         mode = number if mode is None else mode

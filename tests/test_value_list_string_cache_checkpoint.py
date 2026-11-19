@@ -141,7 +141,7 @@ class Instrumentation:
         self.fail, self.text, self.truthy_miss = fail, text, truthy_miss
         self.cache = weakref.WeakKeyDictionary()
         self.events, self.actions, self.outputs = [], [], []
-        self.vm = Interpreter(self.outputs.append)
+        self.vm = Interpreter(self.outputs.append, allow_extensions=True)
         self.vm.register_function('Строка', self.stringify, 'String')
         self.vm.register_function('ЗначениеВСтрокуВнутр', self.write, 'ValueToStringInternal')
         helpers = helper_source()

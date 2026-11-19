@@ -57,7 +57,7 @@ class DirectByrefContracts(unittest.TestCase):
     def test_missing_references_precede_callee_effects(self):
         for setup, target in [('', 'missing'),('a=New Array;', 'a[0]'),('a=New Structure;', 'a.missing'),('a=New Structure;', 'a["missing"]')]:
             with self.subTest(target=target):
-                vm=Interpreter();self.addCleanup(vm.close);events=[]
+                vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);events=[]
                 vm.register_function('Host',lambda:events.append('called'))
                 with self.assertRaises(BSLRuntimeError) as caught:
                     vm.execute('Procedure F(x) Host();x=7;EndProcedure '+setup+'F('+target+');','refs.bsl')
@@ -67,7 +67,7 @@ class DirectByrefContracts(unittest.TestCase):
 
     def test_host_reference_parameters_keep_same_actual_alias(self):
         def host(x,y): x.set(x.get()+1); y.set(y.get()+2)
-        vm=Interpreter();self.addCleanup(vm.close)
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close)
         vm.functions['host']=HostFunction('Host',host,reference_parameters=frozenset({0,1}))
         vm.execute('a=1;Host(a,a);r=a;')
         self.assertEqual(vm.variables['r'],4)

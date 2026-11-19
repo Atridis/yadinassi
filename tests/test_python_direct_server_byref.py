@@ -46,7 +46,7 @@ X=1;R=F(X,Change(X));''')
     def test_property_index_and_forwarded_sinks_reject_without_callee_effects(self):
         for argument in ('A[0]','S.X','1'):
             for forwarded in (False,True):
-                vm=Interpreter();effects=[];vm.register_function('Effect',lambda:effects.append(1))
+                vm=Interpreter(allow_extensions=True);effects=[];vm.register_function('Effect',lambda:effects.append(1))
                 vm.execute('&AtServer\nProcedure F(X) Effect();X=9;EndProcedure\nProcedure P(X) F(X);EndProcedure A=New Array;A.Add(1);S=New Structure("X",1);')
                 # An expression passed to an ordinary local byref parameter becomes
                 # that routine's temporary local cell; it is then a named sink.
@@ -77,7 +77,7 @@ X=1;A=New Array;A.Add(1);Try Fail(X,A);Except Caught=True;EndTry;''')
             self.assertEqual(vm.execution_context,'client')
 
     def test_input_budget_is_shared_across_arguments(self):
-        vm=Interpreter();effects=[];vm.register_function('Effect',lambda:effects.append(1))
+        vm=Interpreter(allow_extensions=True);effects=[];vm.register_function('Effect',lambda:effects.append(1))
         vm.execute('&AtServer\nProcedure F(A,B) Effect();EndProcedure A=New Array;For I=1 To 6000 Do A.Add(0);EndDo;')
         with self.assertRaises(BSLRuntimeError):vm.execute('F(A,A);')
         self.assertEqual(effects,[]);self.assertEqual(len(vm.variables['a']),6000)
@@ -95,7 +95,7 @@ A=New Array;A.Add(1);B=New Array;R=F(A,B);A.Add(3);''')
         self.assertEqual(vm.variables['r'],2)
 
     def test_closed_owner_prevents_copyback(self):
-        vm=Interpreter();vm.register_function('Close',vm.close)
+        vm=Interpreter(allow_extensions=True);vm.register_function('Close',vm.close)
         vm.execute('&AtServer\nProcedure F(X) X=9;Close();EndProcedure X=1;')
         with self.assertRaises(BoundaryViolation):vm.execute('F(X);')
         self.assertEqual(vm.variables['x'],1)

@@ -13,7 +13,7 @@ from yadinassi import Interpreter
 class AsyncModuleRuntimeTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(self.output.append)
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
 
     def tearDown(self):
         self.vm.close()

@@ -15,7 +15,7 @@ class InterpreterDescriptorPreflightTests(unittest.TestCase):
                 effects=[]
                 descriptor=InterpreterCall(0,1,lambda *_:effects.append('authorize'),
                                            lambda *_:effects.append('dispatch'))
-                vm=Interpreter(output=lambda _:None)
+                vm=Interpreter(output=lambda _:None, allow_extensions=True)
                 self.addCleanup(vm.close)
                 vm.register_function('Denied',descriptor)
                 vm.variables['captured']=vm.functions['denied']
@@ -27,7 +27,7 @@ class InterpreterDescriptorPreflightTests(unittest.TestCase):
 
     def test_bsl_can_catch_unsupported_call_without_argument_effects(self):
         output=[]
-        vm=Interpreter(output=output.append);self.addCleanup(vm.close)
+        vm=Interpreter(output=output.append, allow_extensions=True);self.addCleanup(vm.close)
         vm.register_function('Denied',InterpreterCall(0,1,lambda *_:None,lambda *_:None))
         vm.execute('Try Denied(Message("bad")); Except Message("caught"); EndTry;')
         self.assertEqual(output,['caught'])
@@ -49,7 +49,7 @@ class InterpreterDescriptorPreflightTests(unittest.TestCase):
         class Ordinary:
             def __call__(self,value):effects.append(value);return value
             def invoke(self,*args):raise AssertionError('duck dispatch')
-        vm=Interpreter(output=lambda _:None);self.addCleanup(vm.close)
+        vm=Interpreter(output=lambda _:None, allow_extensions=True);self.addCleanup(vm.close)
         vm.register_function('Ordinary',Ordinary())
         self.assertEqual(vm.execute('Ordinary(7)'),7)
         self.assertEqual(effects,[7])
@@ -57,7 +57,7 @@ class InterpreterDescriptorPreflightTests(unittest.TestCase):
     def test_exact_identity_does_not_adopt_public_class_replacements_or_duck_types(self):
         class Custom(InterpreterCall):
             def __call__(self,value):return value
-        vm=Interpreter(output=lambda _:None);self.addCleanup(vm.close)
+        vm=Interpreter(output=lambda _:None, allow_extensions=True);self.addCleanup(vm.close)
         vm.register_function('Custom',Custom(0,1,lambda *_:None,lambda *_:None))
         with patch('yadinassi.types.values.InterpreterCall',Custom):
             self.assertEqual(vm.execute('Custom(8)'),8)
@@ -73,7 +73,7 @@ class InterpreterDescriptorPreflightTests(unittest.TestCase):
 
     def test_late_descriptor_replacement_never_dispatches_callbacks(self):
         effects=[]
-        vm=Interpreter(output=lambda _:None);self.addCleanup(vm.close)
+        vm=Interpreter(output=lambda _:None, allow_extensions=True);self.addCleanup(vm.close)
         vm.register_function('Target',lambda value:effects.append('ordinary'))
         def change():
             effects.append('argument')

@@ -25,7 +25,7 @@ class DirectSpecialCalls(unittest.TestCase):
 
     def test_eval_whole_expression_parsed_before_effect(self):
         for backend in ('python-direct',):
-            vm = Interpreter(execution_backend=backend)
+            vm = Interpreter(execution_backend=backend, allow_extensions=True)
             events = []
             vm.register_function('Tick', lambda: events.append(1))
             with self.assertRaises(BSLError):
@@ -47,7 +47,7 @@ class DirectSpecialCalls(unittest.TestCase):
     def test_callback_invalid_arity_before_argument_effect(self):
         for backend in ('python-direct',):
             events = []
-            vm = Interpreter(execution_backend=backend)
+            vm = Interpreter(execution_backend=backend, allow_extensions=True)
             vm.register_function('Tick', lambda: events.append(1))
             with self.assertRaises(BSLError):
                 vm.execute('RunCallback(Tick(),Tick(),Tick());')

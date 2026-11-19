@@ -54,7 +54,7 @@ class SourceTemplateTests(unittest.TestCase):
         with self.assertRaises(ValueError):owner.get(app.interpreter,'OwnedText')
 
     def test_foreign_call_refused_before_argument_side_effect(self):
-        app=self.app();vm=Interpreter(lambda _:None)
+        app=self.app();vm=Interpreter(lambda _:None, allow_extensions=True)
         vm.register_function('GetCommonTemplate',SourceTemplateCall(app.common_templates))
         vm.execute('Count=0; Function Touch()\nCount=Count+1; Return "OwnedText"; EndFunction')
         with self.assertRaises(BSLError):vm.execute('GetCommonTemplate(Touch())')

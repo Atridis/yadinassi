@@ -5,13 +5,13 @@ from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryVi
 
 class AdmissionTests(unittest.TestCase):
  def test_bad_arity_rejects_before_argument_effects(self):
-  v=Interpreter(execution_backend='python-direct');events=[]
+  v=Interpreter(execution_backend='python-direct', allow_extensions=True);events=[]
   v.register_function('Touch',lambda:events.append(1))
   v.execute('Function F(Val x) Return x; EndFunction')
   with self.assertRaises(Exception):v.execute('r=F(Touch(),Touch());')
   self.assertEqual(events,[]);self.assertIsNone(v.locals)
  def test_live_revocation_not_cached_after_success(self):
-  v=Interpreter(execution_backend='python-direct');events=[]
+  v=Interpreter(execution_backend='python-direct', allow_extensions=True);events=[]
   v.register_function('Touch',lambda:events.append(1))
   v.execute('Function F(Val x) Return x+1; EndFunction r=F(3);')
   self.assertEqual(v.variables['r'],4)

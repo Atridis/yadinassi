@@ -16,12 +16,12 @@ from sqlite_catalog_fixture import configuration_files
 
 
 class CatalogQueryTests(unittest.TestCase):
-    def setUp(self):
+    def setUp(self, *, allow_extensions=False):
         self.temp = tempfile.TemporaryDirectory()
         self.context = SQLiteDBContext.create(Path(self.temp.name)/'owned.sqlite',
                                              import_configuration(configuration_files()))
         self.output = []
-        self.vm = Interpreter(database_context=self.context, output=self.output.append)
+        self.vm = Interpreter(database_context=self.context, output=self.output.append, allow_extensions=allow_extensions)
         self.vm.execute('''C=Catalogs.Categories.CreateItem();C.Code="01";C.Description="target";C.Write();
 For I=1 To 3 Do P=Catalogs.Products.CreateItem();P.Code=String(I);P.Description="item";
 P.Amount=I*10;P.Text="text";P.Active=I<>2;P.Stamp=Date(2024,2,29);P.Category=C.Ref;P.Write();EndDo;''')

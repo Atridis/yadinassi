@@ -10,7 +10,7 @@ from yadinassi.syntax.parser import parse
 class ModuleContextTests(unittest.TestCase):
     def setUp(self):
         self.messages=[]
-        self.vm=Interpreter(self.messages.append)
+        self.vm=Interpreter(self.messages.append, allow_extensions=True)
 
     def test_bilingual_declarations_and_default_client(self):
         self.vm.execute('''&НаКлиенте

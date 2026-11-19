@@ -11,7 +11,7 @@ class DirectLifetimeBehavior(unittest.TestCase):
         refs=[]
         def create():
             value=Resource();refs.append(weakref.ref(value));return value
-        vm=Interpreter();self.addCleanup(vm.close)
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close)
         vm.register_function('Resource',create)
         vm.execute('Resource();')
         gc.collect();self.assertIsNone(refs[0]())
@@ -24,7 +24,7 @@ class DirectLifetimeBehavior(unittest.TestCase):
         self.assertIsNone(vm.locals);self.assertEqual(vm._execute_depth[0],0)
 
     def test_invalid_fragment_has_no_partial_effect(self):
-        vm=Interpreter();self.addCleanup(vm.close);effects=[]
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);effects=[]
         vm.register_function('Tick',lambda:effects.append(1))
         with self.assertRaises(BSLError):vm.execute('Execute "Tick();If";')
         self.assertEqual(effects,[]);self.assertEqual(vm._execute_depth[0],0)

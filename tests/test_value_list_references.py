@@ -460,7 +460,7 @@ class ValueListReferenceBoundaryTests(unittest.TestCase):
         for operation in ('Message(x);', 'x = 99;'):
             with self.subTest(operation=operation):
                 output = []
-                vm = Interpreter(output.append)
+                vm = Interpreter(output.append, allow_extensions=True)
                 vm.execute('owner = New ValueList; item = owner.Add(10);')
                 item = vm.variables['item']
 

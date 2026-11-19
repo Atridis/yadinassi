@@ -19,7 +19,7 @@ class SourceTemporarySecurity(unittest.TestCase):
 
     def test_foreign_standalone_saved_marker_rejected_before_actual(self):
         app=self.app()
-        vm=Interpreter(lambda _:None); self.addCleanup(vm.close)
+        vm=Interpreter(lambda _:None, allow_extensions=True); self.addCleanup(vm.close)
         vm.register_function('Put',temporary.SourceTemporaryCall(app.temporary_storage,temporary.put_marker))
         vm.variables['saved']=vm.functions['put']
         vm.execute('Function Touch() Raise "wrong"; EndFunction')

@@ -279,7 +279,7 @@ git push origin v0.2.0
 from yadinassi import Interpreter
 
 output = []
-vm = Interpreter(output=output.append)
+vm = Interpreter(output=output.append, allow_extensions=True)
 vm.register_function("Удвоить", lambda value: value * 2, "Double")
 vm.execute('Сообщить(Удвоить(21));', source="example.bsl")
 assert output == ["42"]
@@ -291,6 +291,11 @@ BSL методами наследует `BSLObject` и реализует `get_m
 `Decimal`, логические как `bool`, неопределенное значение как `None`.
 Имена функций, типов и переменных нормализуются через `casefold()`; расширение
 нормализует имена своих методов в `get_member` самостоятельно.
+
+Обычный `Interpreter()` исполняет BSL без Python-расширений и не добавляет
+проверки контекста к обычным операциям. Для регистрации функций и типов
+явно передайте `allow_extensions=True`. Подключение БД задаётся отдельно
+через `database_context=`; оно не разрешает регистрировать расширения.
 
 Интерпретатор предназначен для исполнения доверенного кода: лимиты времени
 и памяти не предусмотрены. Встроенные функции расширения исполняются с правами

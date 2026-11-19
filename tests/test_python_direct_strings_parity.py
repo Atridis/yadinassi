@@ -13,23 +13,23 @@ from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryVi
 
 class DirectStringsParityTests(unittest.TestCase):
     def test_search_holes_aliases_and_canonical_host_alias(self):
-        vm=Interpreter();vm.register_function('SearchAlias',strings.str_find)
+        vm=Interpreter(allow_extensions=True);vm.register_function('SearchAlias',strings.str_find)
         for name in ('StrFind','СтрНайти','SearchAlias'):
             self.assertEqual(vm.execute(name+'("abcabc","b",,,2)'),5)
             self.assertEqual(vm.execute(name+'("abcabc","b",SearchDirection.FromEnd,,2)'),2)
 
     def test_required_holes_arity_and_overrides_before_effects(self):
         for source in ('StrFind(,Effect())','StrFind(Effect())','StrFind(Effect(),"b",,,,,)'):
-            vm=Interpreter();seen=[];vm.register_function('Effect',lambda:seen.append(1) or 'abc')
+            vm=Interpreter(allow_extensions=True);seen=[];vm.register_function('Effect',lambda:seen.append(1) or 'abc')
             vm.execute('Try '+source+';Except Caught=True;EndTry;')
             self.assertTrue(vm.variables['caught']);self.assertEqual(seen,[])
-        vm=Interpreter();seen=[];vm.register_function('StrFind',lambda *args:seen.append(args))
+        vm=Interpreter(allow_extensions=True);seen=[];vm.register_function('StrFind',lambda *args:seen.append(args))
         vm.execute('Try StrFind("a","a",,);Except Caught=True;EndTry;')
         self.assertTrue(vm.variables['caught']);self.assertEqual(seen,[])
 
     def test_bound_search_mutation_and_close(self):
         for close in (False,True):
-            vm=Interpreter();seen=[];function=vm.functions['strfind']
+            vm=Interpreter(allow_extensions=True);seen=[];function=vm.functions['strfind']
             def effect():
                 if close:vm.close()
                 else:function.function=lambda *args:seen.append(args)
@@ -87,9 +87,9 @@ class DirectStringsParityTests(unittest.TestCase):
 
     def test_canonical_api_stays_closed_and_service_override(self):
         with self.assertRaises(TypeError):serialization.value_to_string_internal([])
-        vm=Interpreter();vm.register_function('ValueToStringInternal',lambda value:'custom')
+        vm=Interpreter(allow_extensions=True);vm.register_function('ValueToStringInternal',lambda value:'custom')
         self.assertEqual(vm.execute('ValueToStringInternal(New Array)'),'custom')
-        vm=Interpreter();original=vm.functions['valuetostringinternal'];seen=[]
+        vm=Interpreter(allow_extensions=True);original=vm.functions['valuetostringinternal'];seen=[]
         def mutate():original.function=lambda x:seen.append(x);return []
         vm.register_function('Mutate',mutate)
         with self.assertRaises(BoundaryViolation):vm.execute('ValueToStringInternal(Mutate());')
@@ -98,6 +98,6 @@ class DirectStringsParityTests(unittest.TestCase):
     def test_mutated_module_function_does_not_gain_omission_capability(self):
         seen=[]
         with patch.object(strings,'str_find',lambda *args:seen.append(args)):
-            vm=Interpreter();vm.register_function('Alias',strings.str_find)
+            vm=Interpreter(allow_extensions=True);vm.register_function('Alias',strings.str_find)
             vm.execute('Try Alias("a","b",,);Except Caught=True;EndTry;')
             self.assertTrue(vm.variables['caught']);self.assertEqual(seen,[])

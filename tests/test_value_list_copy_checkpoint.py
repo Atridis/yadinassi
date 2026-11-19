@@ -83,7 +83,7 @@ class Instrumentation:
     def __init__(self, policy='fresh'):
         self.policy = policy
         self.copies, self.owners, self.events, self.outputs = [], [], [], []
-        self.vm = Interpreter(output=self.outputs.append)
+        self.vm = Interpreter(output=self.outputs.append, allow_extensions=True)
         self.vm.register_function('ЗначениеВСтрокуВнутр', self.write, 'ValueToStringInternal')
         self.vm.execute(source().split('#Область МассивыИСтруктуры', 1)[0])
 

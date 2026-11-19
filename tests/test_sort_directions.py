@@ -162,7 +162,7 @@ class SortDirectionValueTests(unittest.TestCase):
 class SortDirectionIterationTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(self.output.append)
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
 
     def test_native_order_and_independent_iterators(self):
         first, second = iter(SORT_DIRECTIONS), iter(SORT_DIRECTIONS)

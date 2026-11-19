@@ -224,7 +224,7 @@ class Interpreter:
 class NativeDriverOfflineTests(unittest.TestCase):
     def run_server(self, mode, enabled=True):
         pending, events = [], []
-        interpreter = Interpreter(pending.append)
+        interpreter = Interpreter(pending.append, allow_extensions=True)
         class Public(BSLObject):
             def get_method(self, name):
                 if name != 'ExportProbeAfterCreate':

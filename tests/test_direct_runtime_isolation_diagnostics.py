@@ -13,7 +13,7 @@ class DirectRuntimeIsolationDiagnosticsTests(unittest.TestCase):
             def __call__(self): return self.value
         refs = []
         for expected in (11, 37):
-            vm = Interpreter()
+            vm = Interpreter(allow_extensions=True)
             self.assertEqual(vm.execution_backend, 'python-direct')
             callback = Host(expected)
             refs.extend((weakref.ref(vm), weakref.ref(callback)))

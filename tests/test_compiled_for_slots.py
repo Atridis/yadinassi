@@ -16,7 +16,7 @@ from yadinassi.types.values import Reference
 class CompiledForSlotTests(unittest.TestCase):
     def test_bounds_once_and_live_counter_mutation(self):
         trace = []
-        vm = Interpreter(execution_backend='python-direct')
+        vm = Interpreter(execution_backend='python-direct', allow_extensions=True)
         vm.register_function('StartBound', lambda: trace.append('start') or Decimal(1))
         vm.register_function('EndBound', lambda: trace.append('end') or Decimal(6))
         vm.execute('total=0;For i=StartBound() To EndBound() Do i=i+1;total=total+i;EndDo;')
@@ -39,7 +39,7 @@ class CompiledForSlotTests(unittest.TestCase):
             self.assertEqual(value[0], 4)
 
     def test_host_installed_reference_invalidates_plain_local_slot(self):
-        vm = Interpreter(execution_backend='python-direct')
+        vm = Interpreter(execution_backend='python-direct', allow_extensions=True)
         current = [Decimal(1)]; writes = []
         reference = Reference(lambda: current[0], lambda value: (writes.append(value), current.__setitem__(0, value)))
         vm.locals = {'i': Decimal(0)}
@@ -49,14 +49,14 @@ class CompiledForSlotTests(unittest.TestCase):
         self.assertIs(vm.locals['i'], reference)
 
     def test_host_installed_import_invalidates_counter_write(self):
-        vm = Interpreter(execution_backend='python-direct')
+        vm = Interpreter(execution_backend='python-direct', allow_extensions=True)
         vm.register_function('Install', lambda: vm.imports.__setitem__('i', object()))
         with self.assertRaises(BSLRuntimeError):
             vm.execute('For i=1 To 2 Do Install();EndDo;')
         self.assertEqual(vm.variables['i'], 1)
 
     def test_host_installed_configuration_check_assignment_is_authoritative(self):
-        vm = Interpreter(execution_backend='python-direct')
+        vm = Interpreter(execution_backend='python-direct', allow_extensions=True)
         calls = []
         class Configuration:
             def check_assignment(self, name, owner):
@@ -70,7 +70,7 @@ class CompiledForSlotTests(unittest.TestCase):
         self.assertEqual(vm.variables['i'], 1)
 
     def test_host_removed_readonly_name_does_not_recreate_plain_slot(self):
-        vm = Interpreter(execution_backend='python-direct')
+        vm = Interpreter(execution_backend='python-direct', allow_extensions=True)
         vm.variables['thisobject'] = Decimal(0)
         vm.register_function('Install', lambda: vm.variables.pop('thisobject'))
         with self.assertRaises(BSLRuntimeError):

@@ -197,7 +197,7 @@ class NumericPackageTests(unittest.TestCase):
         self.assertEqual(round_modes.BSLRoundModes.__bases__, (values.BSLObject,))
         self.assertIs(numbers.round_number.__defaults__[1],
                       round_modes.BSLRoundMode.ROUND15_AS20)
-        vm = runtime.Interpreter()
+        vm = runtime.Interpreter(allow_extensions=True)
         for module in (bits, elementary, numbers):
             for name, function, alias in module.BUILTINS:
                 with self.subTest(module=module.__name__, function=function.__name__):

@@ -16,7 +16,7 @@ class MapDateBoundaryTests(unittest.TestCase):
             for ticks in (0,MAX_TICKS):
                 for operation,expected in operations:
                     with self.subTest(backend=backend,ticks=ticks,operation=operation):
-                        effects=[];vm=Interpreter(execution_backend=backend)
+                        effects=[];vm=Interpreter(execution_backend=backend, allow_extensions=True)
                         self.addCleanup(vm.close);vm.variables['u']=BSLDate(ticks,True)
                         vm.register_function('Touch',lambda:effects.append('rhs') or 3)
                         vm.execute('M=New Map;M.Insert("safe",7);')

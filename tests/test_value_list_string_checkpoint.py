@@ -86,7 +86,7 @@ class Instrumentation:
         self.policy, self.fail = policy, fail
         # Identity-only logs must not make weakly owned items artificially live.
         self.events, self.adds, self.loads, self.outputs = [], [], [], []
-        self.vm = Interpreter(self.outputs.append)
+        self.vm = Interpreter(self.outputs.append, allow_extensions=True)
         self.vm.register_function('Строка', self.stringify, 'String')
         self.vm.register_function('ЗначениеВСтрокуВнутр', self.write, 'ValueToStringInternal')
         self.vm.execute(source().split('#Область МассивыИСтруктуры', 1)[0])

@@ -96,7 +96,7 @@ class DirectErrorInfoTests(unittest.TestCase):
         root=Path(__file__).resolve().parents[1]
         prepared=prepare_directory(root/'scripts/inventory_reference_behavior/runtime_source',profile=PROFILE)
         with tempfile.TemporaryDirectory() as temp,closing(create_prepared(Path(temp)/'test.sqlite',prepared)) as context:
-            with closing(Interpreter(database_context=context)) as vm:
+            with closing(Interpreter(database_context=context, allow_extensions=True)) as vm:
                 vm._transaction_activation_allowed=False
                 captured=[];vm.register_function('Capture',lambda info:captured.append(info.get_member('Description')),returns_value=False)
                 vm.execute('Try BeginTransaction();Except E=ErrorInfo();Capture(E);EndTry;')

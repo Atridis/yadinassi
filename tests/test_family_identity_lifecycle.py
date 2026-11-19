@@ -25,7 +25,7 @@ class FamilyIdentityTests(unittest.TestCase):
         self.path = Path(self.temp.name) / 'data.sqlite'
         self.context = SQLiteDBContext.create(self.path, import_configuration(self.files, module_runtime=MODULE_RUNTIME))
         self.addCleanup(self.context.close)
-        self.root = Interpreter(database_context=self.context); self.addCleanup(self.root.close)
+        self.root = Interpreter(database_context=self.context, allow_extensions=True); self.addCleanup(self.root.close)
 
     def test_common_module_assignment_query_and_metadata(self):
         app = ConfigurationApplication.from_files(self.files, database_context=self.context, side='client')
@@ -126,7 +126,7 @@ class FamilyIdentityTests(unittest.TestCase):
 
 class HostFailureLifetimeTests(unittest.TestCase):
     def test_repeated_await_does_not_keep_caller_frames(self):
-        vm=Interpreter(); self.addCleanup(vm.close)
+        vm=Interpreter(allow_extensions=True); self.addCleanup(vm.close)
         def fail(): raise RuntimeError('host fault') from KeyError('cause')
         vm.register_function('HostFail',fail)
         vm.execute('Var p; Async Function F() Await 0; HostFail(); EndFunction '
@@ -230,7 +230,7 @@ class ReplCancellationTests(unittest.TestCase):
     def test_interrupt_keeps_import_and_repeat_import_usable(self):
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'Helper.bsl';path.write_text('Function F() Export Return 42; EndFunction',encoding='utf-8')
-            vm=Interpreter();self.addCleanup(vm.close)
+            vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close)
             vm.execute('// #Import Helper.bsl\n', str(path.parent/'main.bsl'))
             handle=vm.imports['helper']
             def interrupt(): raise KeyboardInterrupt()

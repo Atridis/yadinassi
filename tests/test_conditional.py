@@ -10,7 +10,7 @@ from yadinassi.syntax.parser import parse
 
 class ConditionalTests(unittest.TestCase):
     def setUp(self):
-        self.vm = Interpreter(output=lambda value: None)
+        self.vm = Interpreter(output=lambda value: None, allow_extensions=True)
 
     def test_boolean_selection_and_result_types(self):
         for expression, expected in (

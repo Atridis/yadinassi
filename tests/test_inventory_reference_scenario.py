@@ -86,7 +86,7 @@ class InventoryScenarioTests(unittest.TestCase):
         context,vm,_=self.make(ASSETS/'runtime_source')
         other_path=Path(self.temp.name)/'other.sqlite'
         with closing(create_prepared(other_path,prepare_directory(ASSETS/'runtime_source',profile=PROFILE))) as other:
-            with closing(Interpreter(database_context=other,output=lambda text:None)) as foreign:
+            with closing(Interpreter(database_context=other,output=lambda text:None, allow_extensions=True)) as foreign:
                 foreign.execute('P=Catalogs.Products.CreateItem();P.Code="X";P.Write();')
                 value=foreign.execute('P.Ref')
                 vm.register_function('ForeignRef',lambda:value)
@@ -94,7 +94,7 @@ class InventoryScenarioTests(unittest.TestCase):
     def test_same_database_different_family_is_not_coerced(self):
         context,vm,_=self.make(ASSETS/'runtime_source')
         vm.execute('D=Documents.Receipt.CreateDocument(); L=D.Lines.Add(); R=D.RegisterRecords.Stock.Add();')
-        with closing(Interpreter(database_context=context,output=lambda text:None)) as other:
+        with closing(Interpreter(database_context=context,output=lambda text:None, allow_extensions=True)) as other:
             for expression in ('Catalogs.Products.EmptyRef()','Catalogs.Warehouses.EmptyRef()'):
                 value=other.execute(expression)
                 vm.register_function('ForeignRef',lambda:value)

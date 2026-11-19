@@ -16,7 +16,8 @@ import test_inventory_enum_queries as enum_fixtures
 
 
 class EnumTableTests(unittest.TestCase):
-    setUp = enum_fixtures.InventoryEnumQueryTests.setUp
+    def setUp(self):
+        enum_fixtures.InventoryEnumQueryTests.setUp(self, allow_extensions=True)
 
     def q(self, text, table=None, manager=None, vm=None):
         q = (vm or self.vm).execute('New Query')

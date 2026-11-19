@@ -9,7 +9,8 @@ from yadinassi.db.database_transactions import execution, begin, commit, rollbac
 
 
 class TransactionReadPlanTests(unittest.TestCase):
-    setUp = fixtures.BSLTransactionsTests.setUp
+    def setUp(self):
+        fixtures.BSLTransactionsTests.setUp(self, allow_extensions=True)
     catalog = fixtures.BSLTransactionsTests.catalog
 
     def test_catalog_write_lease_does_not_cache_integrity(self):
@@ -49,5 +50,5 @@ class TransactionReadPlanTests(unittest.TestCase):
     def test_host_override_is_not_rebound_by_name(self):
         def host(): return None
         self.vm.register_function('BeginTransaction',host)
-        child=Interpreter(database_context=self.context);child._inherit_host_bindings(self.vm)
+        child=Interpreter(database_context=self.context, allow_extensions=True);child._inherit_host_bindings(self.vm)
         self.assertIs(child.functions['begintransaction'].function,host)

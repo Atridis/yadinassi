@@ -50,7 +50,7 @@ class QueryTableTests(unittest.TestCase):
         self.assertEqual(table.get(Decimal(0)).get_member('N'),4)
 
     def test_revocation_after_method_binding_before_write(self):
-        vm=Interpreter();table=self.table();vm.variables['t']=table
+        vm=Interpreter(allow_extensions=True);table=self.table();vm.variables['t']=table
         vm.register_function('Close',lambda:vm.close() or Decimal(0))
         with self.assertRaises(BoundaryViolation):vm.execute('T.Delete(Close());')
         self.assertEqual(len(table.rows),1)

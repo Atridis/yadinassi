@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class NumericRadixTests(unittest.TestCase):
     def setUp(self):
-        self.vm = Interpreter(output=lambda text: None)
+        self.vm = Interpreter(output=lambda text: None, allow_extensions=True)
 
     def test_native_checkpoint_numeric_output_exact(self):
         output = []
@@ -161,7 +161,7 @@ class NumericRadixTests(unittest.TestCase):
         self.vm.register_function('NumberFromHexString', lambda value: 'override')
         self.assertEqual(self.vm.execute('NumberFromHexString("0x1A")'), 'override')
         self.assertEqual(self.vm.execute('ЧислоИзШестнадцатеричнойСтроки("0x1A")'), 26)
-        self.assertEqual(Interpreter().execute('NumberFromHexString("0x1A")'), 26)
+        self.assertEqual(Interpreter(allow_extensions=True).execute('NumberFromHexString("0x1A")'), 26)
 
 
 if __name__ == '__main__':

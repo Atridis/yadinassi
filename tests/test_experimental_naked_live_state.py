@@ -10,7 +10,7 @@ from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryCo
 class LiveModuleStateTests(unittest.TestCase):
 
     def run_live(self, source, state=None, services=None, module_names=()):
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         self.addCleanup(vm.close)
         if state is not None:
             vm.variables = state

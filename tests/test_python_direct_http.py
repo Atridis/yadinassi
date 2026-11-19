@@ -27,12 +27,12 @@ class DirectHTTPTests(unittest.TestCase):
 
     def test_required_and_unknown_constructor_holes_refuse_before_effects(self):
         for source in ('C=New HTTPConnection(,Effect());','Q=New HTTPRequest(,Effect());','F=New File(Effect(),);'):
-            vm=Interpreter();events=[];vm.register_function('Effect',lambda:events.append(1))
+            vm=Interpreter(allow_extensions=True);events=[];vm.register_function('Effect',lambda:events.append(1))
             with self.assertRaises(BSLRuntimeError):vm.execute(source)
             self.assertEqual(events,[])
 
     def test_constructor_override_refuses_before_argument_effects(self):
-        vm=Interpreter();events=[];vm.register_type('HTTPConnection',lambda *a:events.append('factory'))
+        vm=Interpreter(allow_extensions=True);events=[];vm.register_type('HTTPConnection',lambda *a:events.append('factory'))
         vm.register_function('Effect',lambda:events.append('arg'))
         with self.assertRaises(BoundaryViolation):vm.execute('C=New HTTPConnection(Effect());')
         self.assertEqual(events,[])
@@ -64,7 +64,7 @@ class DirectHTTPTests(unittest.TestCase):
         self.assertEqual(len(_headers(PlainMap({'X-Large':'x'*70000}))[0][1]),70000)
 
     def test_closed_runtime_and_external_access_guard(self):
-        vm=Interpreter();vm.execute('C=New HTTPConnection("127.0.0.1",8080);Q=New HTTPRequest("/");')
+        vm=Interpreter(allow_extensions=True);vm.execute('C=New HTTPConnection("127.0.0.1",8080);Q=New HTTPRequest("/");')
         with patch('yadinassi.http.http_client.require_external_access',side_effect=PermissionError('denied')):
             with self.assertRaises(PermissionError):vm.execute('C.Get(Q);')
         def close():vm.close();return BSLHTTPRequest('/')
@@ -99,7 +99,7 @@ class DirectHTTPTests(unittest.TestCase):
     def test_constructor_implementation_mutation_cannot_use_bound_capability(self):
         for source in ('C=New HTTPConnection(Effect(),8080,,,,10);',
                        'Q=New HTTPRequest(Effect());', 'F=New File(Effect());'):
-            vm=Interpreter();events=[]
+            vm=Interpreter(allow_extensions=True);events=[]
             key='httpconnection' if source.startswith('C=') else 'httprequest' if source.startswith('Q=') else 'file'
             def effect():
                 vm.types[key].function=lambda *args:events.append(args)

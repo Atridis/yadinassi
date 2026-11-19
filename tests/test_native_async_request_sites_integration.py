@@ -117,7 +117,7 @@ def exercise_site(site_fault, case_id=0, iteration=1, *, outer=False, expose_con
     reader = SiteReader(reader_fixture.stream_tokens(reader_fixture.canonical()),
                         '/tmp/offline/request.json', site_fault, iteration)
     output = []
-    vm = Interpreter(output.append, native_target=LINUX_8_3_27_1508)
+    vm = Interpreter(output.append, native_target=LINUX_8_3_27_1508, allow_extensions=True)
     vm.register_type('JSONReader', lambda: reader)
     vm.register_type('Structure', lambda: SiteStructure(site_fault, iteration))
     vm.execute('Var JSONValueType, ТипЗначенияJSON, LaunchParameter;')

@@ -119,7 +119,7 @@ class DimensionConditionRuntimeTests(unittest.TestCase):
     def make(self,path):
         context=create_prepared(path,prepare_directory(ROOT/'scripts/inventory_reference_behavior/runtime_source',profile=PROFILE))
         self.addCleanup(context.close)
-        vm=Interpreter(database_context=context,output=lambda text:None);self.addCleanup(vm.close)
+        vm=Interpreter(database_context=context,output=lambda text:None, allow_extensions=True);self.addCleanup(vm.close)
         return context,vm
 
     def seed(self):

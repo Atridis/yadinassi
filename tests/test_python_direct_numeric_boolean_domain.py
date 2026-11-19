@@ -43,7 +43,7 @@ class DirectNumericBooleanDomainTests(unittest.TestCase):
             def __eq__(self,other):raise AssertionError('host equality')
             def __lt__(self,other):raise AssertionError('host ordering')
             def __gt__(self,other):raise AssertionError('host ordering')
-        vm=Interpreter();vm.register_function('L',lambda:events.append('left') or HostDecimal(1));vm.register_function('R',lambda:events.append('right') or True)
+        vm=Interpreter(allow_extensions=True);vm.register_function('L',lambda:events.append('left') or HostDecimal(1));vm.register_function('R',lambda:events.append('right') or True)
         for operation in ('=','<>','<','<=','>','>='):
             events.clear()
             if operation in ('=','<>'):self.assertIs(vm.execute('(L()'+operation+'R())'),operation=='<>')
@@ -78,7 +78,7 @@ class DirectNumericBooleanDomainTests(unittest.TestCase):
         class Host(BSLObject):
             def __eq__(self,other):events.append('eq');return True
             def __ne__(self,other):events.append('ne');return False
-        vm=Interpreter();vm.register_function('Factory',Host)
+        vm=Interpreter(allow_extensions=True);vm.register_function('Factory',Host)
         vm.execute('L=Factory();R=Factory();A=(L=R);B=(L<>R);C=(L=True);D=(False<>R);')
         self.assertEqual((vm.variables['a'],vm.variables['b'],vm.variables['c'],vm.variables['d']),(True,False,False,True))
         self.assertEqual(events,['eq','ne'])

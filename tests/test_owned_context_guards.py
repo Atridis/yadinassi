@@ -58,7 +58,7 @@ class OwnedContextGuardTests(unittest.TestCase):
             pass
         program[1].value = Foreign(original.token, original.value)
         effects = []
-        vm = Interpreter(execution_backend='python-direct')
+        vm = Interpreter(execution_backend='python-direct', allow_extensions=True)
         vm.register_function('Touch', lambda: effects.append('called'))
         with self.assertRaises(PythonDirectUnsupported):
             vm.execute_program(program)

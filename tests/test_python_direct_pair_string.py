@@ -36,7 +36,7 @@ class DirectPairStringTests(unittest.TestCase):
         self.assertEqual(seen,[])
 
     def test_named_captured_custom_override_and_cached_plan(self):
-        vm=Interpreter();vm.variables['p']=Pair('x',1);vm.variables['saved']=vm.functions['string']
+        vm=Interpreter(allow_extensions=True);vm.variables['p']=Pair('x',1);vm.variables['saved']=vm.functions['string']
         plan=vm.prepare('R=String(P);Q=Saved(P);')
         vm.execute_prepared(plan);self.assertEqual((vm.variables['r'],vm.variables['q']),('КлючИЗначение','КлючИЗначение'))
         vm.register_function('String',lambda value:'custom')
@@ -44,7 +44,7 @@ class DirectPairStringTests(unittest.TestCase):
 
     def test_argument_effects_replacement_and_lifetime_guards(self):
         for mode in ('named','captured','close'):
-            vm=Interpreter();pair=Pair('x',1);vm.variables['saved']=vm.functions['string'];seen=[]
+            vm=Interpreter(allow_extensions=True);pair=Pair('x',1);vm.variables['saved']=vm.functions['string'];seen=[]
             def effect():
                 seen.append('argument')
                 if mode=='close':vm.close()
@@ -57,7 +57,7 @@ class DirectPairStringTests(unittest.TestCase):
     def test_policy_revocation_and_class_rebinding_do_not_grant_authority(self):
         from yadinassi.execution.direct.python_direct import make_boundary
         from yadinassi.execution.codegen import experimental_naked_collections as collections
-        vm=Interpreter();pair=Pair('x',1);vm.variables['p']=pair
+        vm=Interpreter(allow_extensions=True);pair=Pair('x',1);vm.variables['p']=pair
         context=make_boundary(vm);context.start();invoke=context.resolve_callable(vm.functions['string'])
         context.policy=lambda operation,name:False
         with self.assertRaises(BoundaryViolation):invoke(pair)

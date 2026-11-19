@@ -23,7 +23,7 @@ class TypePresentationTests(unittest.TestCase):
 
     def test_runtime_display_and_operand_order_match_reference(self):
         for backend in ('python-direct','compiled-strict'):
-            output=[];events=[];vm=Interpreter(output=output.append,execution_backend=backend)
+            output=[];events=[];vm=Interpreter(output=output.append,execution_backend=backend, allow_extensions=True)
             self.addCleanup(vm.close)
             vm.register_function('Left',lambda:events.append('left') or 'Тип: ')
             vm.register_function('Right',lambda:events.append('right') or BSLType.MAP)
@@ -67,7 +67,7 @@ class TypePresentationTests(unittest.TestCase):
         with self.assertRaises(BoundaryViolation):boundary.get_member(value,'value')
 
     def test_owner_close_during_operand_prevents_result_publication(self):
-        output=[];vm=Interpreter(output=output.append);self.addCleanup(vm.close)
+        output=[];vm=Interpreter(output=output.append, allow_extensions=True);self.addCleanup(vm.close)
         def close():vm.close();return BSLType.NUMBER
         vm.register_function('CloseOwner',close)
         with self.assertRaises(BoundaryViolation):vm.execute('Message("type:"+CloseOwner());')

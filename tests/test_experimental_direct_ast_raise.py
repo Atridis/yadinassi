@@ -12,7 +12,7 @@ class RaiseTests(DirectSourceAssertions,unittest.TestCase):
             expected={'r':'hello','c':'code','a':'info'})
 
     def test_extended_raise_evaluates_operands_in_order(self):
-        vm=Interpreter();self.addCleanup(vm.close)
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close)
         events=[]
         for name,value in [('Describe','hello'),('Code','code'),('Info','info')]:
             vm.register_function(name,lambda name=name,value=value: events.append(name) or value)

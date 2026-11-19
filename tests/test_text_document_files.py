@@ -20,7 +20,7 @@ class TextDocumentFileTests(unittest.TestCase):
         self.path = self.root / "текст.txt"
         self.doc = BSLTextDocument()
         self.doc.set_text("old\r\nstate")
-        self.vm = Interpreter(lambda _: None)
+        self.vm = Interpreter(lambda _: None, allow_extensions=True)
         self.vm.variables["d"] = self.doc
         self.vm.variables["p"] = str(self.path)
 

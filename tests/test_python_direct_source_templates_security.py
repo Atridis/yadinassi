@@ -50,7 +50,7 @@ class SourceTemplateSecurity(unittest.TestCase):
                 callback.assert_not_called()
 
     def test_standalone_saved_template_marker_is_not_capability(self):
-        app=self.app();vm=Interpreter(lambda _:None);self.addCleanup(vm.close)
+        app=self.app();vm=Interpreter(lambda _:None, allow_extensions=True);self.addCleanup(vm.close)
         vm.register_function('GetCommonTemplate',SourceTemplateCall(app.common_templates))
         vm.variables['saved']=vm.functions['getcommontemplate']
         vm.execute('Function Touch() Raise "wrong"; EndFunction')

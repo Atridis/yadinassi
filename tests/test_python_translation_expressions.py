@@ -30,7 +30,7 @@ class DirectExpressionBehavior(unittest.TestCase):
         self.assertEqual(self.expression('СтрДлина(СокрЛП(" abc "))')[0], 3)
 
     def test_host_order_and_once(self):
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         events = []
         vm.register_function('Tick', lambda x: events.append(x) or x)
         vm.register_function('Pair', lambda a, b: 10 * a + b)
@@ -44,7 +44,7 @@ class DirectExpressionBehavior(unittest.TestCase):
 
     def test_eval_rejects_bad_arity_before_argument_effect(self):
         from yadinassi import BSLError
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         events = []
         vm.register_function('Tick', lambda: events.append(1))
         with self.assertRaises(BSLError):
@@ -53,7 +53,7 @@ class DirectExpressionBehavior(unittest.TestCase):
 
     def test_host_reference_variable_and_index(self):
         from yadinassi.types.values import HostFunction, BSLArray
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         vm.variables['x'] = Decimal(1)
         vm.execute('a=New Array(1);')
 
@@ -68,7 +68,7 @@ class DirectExpressionBehavior(unittest.TestCase):
 
     def test_reference_constructor_effects_once(self):
         from yadinassi.types.values import HostFunction, BSLArray
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         events = []
         array = [None]
         vm.register_function('Receiver', lambda: events.append('receiver') or array)

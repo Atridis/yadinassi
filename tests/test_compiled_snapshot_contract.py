@@ -30,7 +30,7 @@ class SnapshotContractTests(unittest.TestCase):
         self.assertEqual(vm.variables['r'],Decimal(2))
 
     def test_reentrant_readmission_cannot_replace_active_version(self):
-        out=[];vm=Interpreter(execution_backend='python-direct',output=out.append)
+        out=[];vm=Interpreter(execution_backend='python-direct',output=out.append, allow_extensions=True)
         p=parse('Function F() Return 1; EndFunction Procedure A() Host();Message(F()); EndProcedure A();')
         def host():
             p[0].body[0].value.value=Decimal(2)

@@ -104,7 +104,7 @@ class StandaloneImportLinksTests(unittest.TestCase):
                 self.assertEqual(main([*options, str(self.main)]), 0)
                 self.assertEqual(output.getvalue().splitlines(), ['server', 'server'])
 
-    def test_cli_database_and_embedded_database_use_different_generated_checks(self):
+    def test_database_does_not_enable_extension_checks(self):
         from yadinassi.db.database_context import SQLiteDBContext
         from yadinassi.execution.direct import python_direct
 
@@ -121,14 +121,15 @@ class StandaloneImportLinksTests(unittest.TestCase):
         with patch.object(python_direct, '_compile', compile), redirect_stdout(StringIO()):
             self.assertEqual(main(['-c', source]), 0)
             self.assertEqual(main(['--f', str(database), '-c', source]), 0)
-            with SQLiteDBContext(database) as context:
-                vm = Interpreter(database_context=context)
-                try:
-                    vm.execute(source)
-                finally:
-                    vm.close()
-        self.assertEqual(len(generated), 3)
-        self.assertEqual(['_context._check()' in plan for plan in generated], [False, False, True])
+            for allow_extensions in (False, True):
+                with SQLiteDBContext(database) as context:
+                    vm = Interpreter(database_context=context, allow_extensions=allow_extensions)
+                    try:
+                        vm.execute(source)
+                    finally:
+                        vm.close()
+        self.assertEqual(len(generated), 4)
+        self.assertEqual(['_context._check()' in plan for plan in generated], [False, False, False, True])
 
     def test_dead_call_does_not_resolve(self):
         with patch.object(ImportBoundary, 'link_import_call', side_effect=AssertionError('dead call')):

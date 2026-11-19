@@ -46,7 +46,7 @@ class DirectCollationTests(unittest.TestCase):
         with self.assertRaises(TypeError):uca_order('1',Decimal(1),'<')
 
     def test_operand_effects_order_and_registered_kernel_rebinding(self):
-        vm=Interpreter();seen=[]
+        vm=Interpreter(allow_extensions=True);seen=[]
         vm.register_function('Left',lambda:seen.append('left') or 'a')
         vm.register_function('Right',lambda:seen.append('right') or 'A')
         with patch.object(collation,'string_key',side_effect=AssertionError('foreign kernel')):

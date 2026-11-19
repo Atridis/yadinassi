@@ -6,7 +6,7 @@ from yadinassi.types.errors import BSLRuntimeError
 
 class DynamicRefsTests(unittest.TestCase):
     def execute_case(self, source, expected, signature=(0,), reference_flags=None):
-        vm=Interpreter();self.addCleanup(vm.close);events=[]
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);events=[]
         def host(*args):
             events.append(tuple(isinstance(x,Reference) for x in args))
             for i,x in enumerate(args):
@@ -33,7 +33,7 @@ class DynamicRefsTests(unittest.TestCase):
 
     def test_missing_reference_has_no_host_effects(self):
         for source in ('f=Get();f(x);','a=New Array;f=Get();f(a[0]);','x=1;f=Get();f(,Arg(),x);'):
-            vm=Interpreter();self.addCleanup(vm.close);events=[]
+            vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);events=[]
             wrapper=HostFunction('h',lambda *args:events.append('call'),reference_parameters=frozenset({0}))
             vm.register_function('Get',lambda:wrapper);vm.register_function('Arg',lambda:events.append('arg'))
             with self.subTest(source=source):
@@ -41,7 +41,7 @@ class DynamicRefsTests(unittest.TestCase):
                 self.assertEqual(events,[])
 
     def test_escaped_reference_remains_live(self):
-        vm=Interpreter();self.addCleanup(vm.close);kept=[]
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);kept=[]
         wrapper=HostFunction('save',lambda ref:kept.append(ref),reference_parameters=frozenset({0}))
         vm.register_function('Get',lambda:wrapper)
         vm.execute('x=1;f=Get();f(x);')

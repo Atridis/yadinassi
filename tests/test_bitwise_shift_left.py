@@ -8,7 +8,7 @@ from yadinassi.numeric.bits import bitwise_shift_left
 
 class BitwiseShiftLeftTests(unittest.TestCase):
     def setUp(self):
-        self.vm = Interpreter(output=lambda text: None)
+        self.vm = Interpreter(output=lambda text: None, allow_extensions=True)
 
     def test_all_bit_positions_and_offsets_against_modular_multiplication(self):
         # Modular multiplication is an independent oracle, without bit operators.
@@ -94,4 +94,4 @@ class BitwiseShiftLeftTests(unittest.TestCase):
         self.vm.register_function('BitwiseShiftLeft', lambda value, offset: 'override')
         self.assertEqual(self.vm.execute('BitwiseShiftLeft(26, 3)'), 'override')
         self.assertEqual(self.vm.execute('ПобитовыйСдвигВлево(26, 3)'), 208)
-        self.assertEqual(Interpreter().execute('BitwiseShiftLeft(26, 3)'), 208)
+        self.assertEqual(Interpreter(allow_extensions=True).execute('BitwiseShiftLeft(26, 3)'), 208)

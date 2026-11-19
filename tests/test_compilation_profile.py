@@ -346,7 +346,7 @@ MANAGED_VALUES = {
 class ManagedCompilationProfileTests(unittest.TestCase):
     def setUp(self):
         self.messages = []
-        self.vm = Interpreter(self.messages.append, compilation_profile=MANAGED_PROFILE)
+        self.vm = Interpreter(self.messages.append, compilation_profile=MANAGED_PROFILE, allow_extensions=True)
         self.addCleanup(self.vm.close)
 
     def test_exact_public_identifier_and_read_only_properties(self):

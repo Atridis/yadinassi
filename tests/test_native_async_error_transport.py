@@ -106,7 +106,7 @@ def harness(case_id=6, *, previous=False):
     if previous:
         # Negative control only: exact inverse to the reviewed previous template.
         module = without_error_payload_sentinels(module)
-    vm = Interpreter(lambda _: None, native_target=LINUX_8_3_27_1508)
+    vm = Interpreter(lambda _: None, native_target=LINUX_8_3_27_1508, allow_extensions=True)
     writer = ControlledWriter()
     vm.register_type('ЗаписьJSON', lambda: writer)
     vm.register_function('ЗаписатьJSON', lambda actual, value: actual.write(value), returns_value=False)

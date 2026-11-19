@@ -24,7 +24,7 @@ class BoundarySetupTests(unittest.TestCase):
         self.assertFalse(vm._direct_active)
         vm.execute_prepared(plan);self.assertEqual(vm.variables['r'],Decimal(3))
     def test_close_and_registry_replacement_are_live(self):
-        vm=Interpreter();self.addCleanup(vm.close)
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close)
         vm.register_function('F',lambda:Decimal(1));plan=vm.prepare_program(parse('R=F();'))
         vm.execute_prepared(plan);self.assertEqual(vm.variables['r'],Decimal(1))
         vm.register_function('F',lambda:Decimal(2));vm.execute_prepared(plan)

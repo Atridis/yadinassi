@@ -27,7 +27,7 @@ class DirectTableOmissionsTests(unittest.TestCase):
                 self.assertEqual(vm.execute('R.Count()'),1);self.assertEqual(vm.execute('R.Columns.Count()'),1)
 
     def test_required_and_excess_holes_reject_before_argument_effects(self):
-        vm=Interpreter();vm.execute('T=New ValueTable;T.Columns.Add("A");R=T.Add();')
+        vm=Interpreter(allow_extensions=True);vm.execute('T=New ValueTable;T.Columns.Add("A");R=T.Add();')
         seen=[];vm.register_function('Effect',lambda:seen.append('effect') or 0)
         for text in ('T.Columns.Insert(,Effect())','T.FillValues(,Effect())','T.Get(,Effect())',
                      'R.Set(,Effect())','T.Copy(Effect(),,)','T.Columns.Add("B",,Effect(),,)'):
@@ -43,14 +43,14 @@ class DirectTableOmissionsTests(unittest.TestCase):
             with self.assertRaises(BSLError):vm.execute('T.Columns.Add(Undefined);')
 
     def test_valid_effect_order_and_once(self):
-        vm=Interpreter();vm.execute('T=New ValueTable;');seen=[]
+        vm=Interpreter(allow_extensions=True);vm.execute('T=New ValueTable;');seen=[]
         vm.register_function('Arg',lambda tag,value:seen.append(tag) or value)
         vm.execute('C=T.Columns.Insert(Arg("index",0),Arg("name","X"),,Arg("title","H"),Arg("width",4));')
         self.assertEqual(seen,['index','name','title','width']);self.assertEqual(vm.execute('C.Width'),4)
 
     def test_owner_mutation_and_close_rechecked_after_arguments(self):
         for action in ('owner','close'):
-            vm=Interpreter();vm.execute('T=New ValueTable;Cols=T.Columns;');columns=vm.variables['cols']
+            vm=Interpreter(allow_extensions=True);vm.execute('T=New ValueTable;Cols=T.Columns;');columns=vm.variables['cols']
             def effect():
                 if action=='owner':columns.table=object()
                 else:vm.close()
@@ -60,7 +60,7 @@ class DirectTableOmissionsTests(unittest.TestCase):
             self.assertEqual(columns.items,[])
 
     def test_computed_receiver_and_subclass_remain_unadmitted(self):
-        vm=Interpreter();seen=[]
+        vm=Interpreter(allow_extensions=True);seen=[]
         vm.register_function('Receiver',lambda:seen.append('receiver') or BSLValueTable())
         with self.assertRaises(BSLError):vm.execute('Receiver().Copy(,);')
         self.assertEqual(seen,[])
@@ -71,7 +71,7 @@ class DirectTableOmissionsTests(unittest.TestCase):
         self.assertEqual(seen,[])
 
     def test_bounded_slice_write_guard_is_not_relaxed(self):
-        vm=Interpreter();vm.execute('T=New ValueTable;');table=vm.variables['t'];table._bounded_slice_read=True
+        vm=Interpreter(allow_extensions=True);vm.execute('T=New ValueTable;');table=vm.variables['t'];table._bounded_slice_read=True
         seen=[];vm.register_function('Effect',lambda:seen.append('effect') or 'H')
         for code in ('T.Columns.Add(,,Effect());','T.FillValues(Effect(),);','T.Copy(,);'):
             with self.assertRaises(BSLError):vm.execute(code)

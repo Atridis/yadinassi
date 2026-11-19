@@ -98,7 +98,7 @@ class SourceTemporaryTests(unittest.TestCase):
             self.execute(app,'PutToTempStorage(Touch(),New UUID)')
 
     def test_foreign_marker_denied_before_arguments(self):
-        app=self.app();vm=Interpreter(lambda _:None);self.addCleanup(vm.close)
+        app=self.app();vm=Interpreter(lambda _:None, allow_extensions=True);self.addCleanup(vm.close)
         vm.register_function('Put',storage.SourceTemporaryCall(app.temporary_storage,storage.put_marker))
         vm.execute('Function Touch() Raise "wrong-side-effect"; EndFunction')
         with self.assertRaisesRegex(BSLError,'another or closed'):

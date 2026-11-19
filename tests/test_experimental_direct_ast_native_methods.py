@@ -23,7 +23,7 @@ class NativeMethodsTests(DirectSourceAssertions,unittest.TestCase):
 
     def test_invalid_arity_drops_arguments_before_handler(self):
         from yadinassi import Interpreter
-        events=[];vm=Interpreter();self.addCleanup(vm.close)
+        events=[];vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close)
         class Temporary:
             def __del__(self):events.append((vm.variables.get('x'),vm.variables.get('y')))
         vm.register_function('Make',Temporary)

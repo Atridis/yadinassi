@@ -26,7 +26,7 @@ class PlainArrayTests(unittest.TestCase):
         )
         for source in sources:
             with self.subTest(source=source):
-                vm=Interpreter();self.addCleanup(vm.close);seen=[]
+                vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);seen=[]
                 class Index:
                     def __int__(self):seen.append('int');return 0
                     def __index__(self):seen.append('index');return 0

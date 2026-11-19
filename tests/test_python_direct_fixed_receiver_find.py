@@ -53,7 +53,7 @@ class DirectFixedReceiverFindTests(unittest.TestCase):
 
     def test_argument_effect_order_close_revoke_policy_and_tampering(self):
         for mode in ('close','revoke','policy','storage','method'):
-            vm=Interpreter();vm.execute(SETUP);context=make_boundary(vm);context.start()
+            vm=Interpreter(allow_extensions=True);vm.execute(SETUP);context=make_boundary(vm);context.start()
             fixed=vm.variables['f'];saved=fixed.get_method('Find');invoke=captured(context,saved)
             if mode=='close':vm.close()
             elif mode=='revoke':context.revoke()
@@ -61,14 +61,14 @@ class DirectFixedReceiverFindTests(unittest.TestCase):
             elif mode=='storage':fixed.items=[]
             else:saved.function=lambda x:0
             with self.subTest(mode=mode),self.assertRaises(BoundaryViolation):invoke(vm.variables['s'])
-        vm=Interpreter();vm.execute(SETUP);seen=[]
+        vm=Interpreter(allow_extensions=True);vm.execute(SETUP);seen=[]
         vm.register_function('Arg',lambda:seen.append('arg') or vm.variables['s'])
         vm.execute('R=F.Find(Arg());');self.assertEqual(seen,['arg']);self.assertEqual(vm.variables['r'],0)
         vm.register_function('Close',lambda:vm.close() or vm.variables['s'])
         with self.assertRaises(BoundaryViolation):vm.execute('F.Find(Close());')
 
     def test_captured_metadata_mutation_during_argument_is_fatal(self):
-        vm=Interpreter();vm.execute(SETUP);saved=vm.variables['f'].get_method('Find');vm.variables['saved']=saved
+        vm=Interpreter(allow_extensions=True);vm.execute(SETUP);saved=vm.variables['f'].get_method('Find');vm.variables['saved']=saved
         seen=[]
         def mutate():
             saved.function=lambda value:seen.append('replacement')

@@ -4,7 +4,7 @@ from yadinassi.types.errors import BSLRuntimeError
 
 class NamespaceTests(unittest.TestCase):
     def run_case(self, source, expected):
-        vm=Interpreter();self.addCleanup(vm.close);events=[]
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);events=[]
         vm.register_function('Get', lambda: lambda: events.append('unauthorized'))
         vm.execute(source)
         self.assertEqual(vm.variables['r'], expected)
@@ -31,7 +31,7 @@ class NamespaceTests(unittest.TestCase):
     def test_procedure_value_and_invalid_arity_precede_effects(self):
         for source in ('Procedure F(x) EndProcedure r=F(Host());', 'Procedure F() EndProcedure F(Host());', 'Procedure F(x,y) EndProcedure F(Host());'):
             with self.subTest(source=source):
-                vm=Interpreter();self.addCleanup(vm.close);events=[]
+                vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);events=[]
                 vm.register_function('Host', lambda: events.append('arg'))
                 with self.assertRaises(BSLRuntimeError): vm.execute(source)
                 self.assertEqual(events, [])

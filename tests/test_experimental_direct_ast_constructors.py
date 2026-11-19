@@ -7,7 +7,7 @@ from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryVi
 
 class DirectASTCanonicalConstructorTests(unittest.TestCase):
     def vm(self):
-        vm=Interpreter();self.addCleanup(vm.close);self.events=[]
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);self.events=[]
         vm.register_function('Touch',lambda:self.events.append('touch') or Decimal(3))
         return vm
 

@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class ExceptionTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(output=self.output.append)
+        self.vm = Interpreter(output=self.output.append, allow_extensions=True)
 
     def test_russian_english_and_mixed_case_statements(self):
         self.vm.execute('''
@@ -414,7 +414,7 @@ class ExceptionTests(unittest.TestCase):
         self.assertEqual(self.output, ['2', 'Да', 'Да'])
 
     def test_independent_interpreters_do_not_share_handler_state(self):
-        other = Interpreter(output=self.output.append)
+        other = Interpreter(output=self.output.append, allow_extensions=True)
         self.vm.register_function('OtherDescription', lambda: other.execute('ErrorDescription()'))
         self.vm.execute('Try Raise "first"; Except Message(OtherDescription() = ""); EndTry;')
         self.assertEqual(self.output, ['Да'])

@@ -34,7 +34,7 @@ D.AddLine("b"); R=Saved(); N=D.LineCount(); E=New("ТекстовыйДокум�
 
     def test_canonical_host_document_finite_methods_not_arbitrary_protocol(self):
         doc=BSLTextDocument(); doc.set_text('host')
-        vm=Interpreter();vm.register_function('Document',lambda:doc)
+        vm=Interpreter(allow_extensions=True);vm.register_function('Document',lambda:doc)
         vm.execute('D=Document();R=D.GetText();')
         self.assertEqual(vm.variables['r'],'host')
         calls=[]
@@ -51,7 +51,7 @@ D.AddLine("b"); R=Saved(); N=D.LineCount(); E=New("ТекстовыйДокум�
     def test_mutation_during_arguments_checked_before_text_effect(self):
         for tamper in ('instance','state','saved'):
             with self.subTest(tamper=tamper):
-                vm=Interpreter();vm.execute('D=New TextDocument;D.SetText("old");Saved=D.SetText;')
+                vm=Interpreter(allow_extensions=True);vm.execute('D=New TextDocument;D.SetText("old");Saved=D.SetText;')
                 doc=vm.variables['d'];calls=[]
                 def change():
                     if tamper=='instance':doc.set_text=lambda *args:calls.append('hook')
@@ -64,13 +64,13 @@ D.AddLine("b"); R=Saved(); N=D.LineCount(); E=New("ТекстовыйДокум�
 
     def test_closed_owner_during_arguments_cannot_mutate_or_write(self):
         for operation in ('D.SetText(Close())','Saved(Close())'):
-            vm=Interpreter();vm.execute('D=New TextDocument;D.SetText("old");Saved=D.SetText;')
+            vm=Interpreter(allow_extensions=True);vm.execute('D=New TextDocument;D.SetText("old");Saved=D.SetText;')
             doc=vm.variables['d'];vm.register_function('Close',lambda:vm.close() or 'new')
             with self.assertRaises(BoundaryViolation):vm.execute(operation)
             self.assertEqual(doc._text,'old')
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'must-not-write'
-            vm=Interpreter();vm.execute('D=New TextDocument;D.SetText("old");')
+            vm=Interpreter(allow_extensions=True);vm.execute('D=New TextDocument;D.SetText("old");')
             vm.register_function('Close',lambda:vm.close() or str(path))
             with self.assertRaises(BoundaryViolation):vm.execute('D.Write(Close());')
             self.assertFalse(path.exists())
@@ -92,7 +92,7 @@ D.AddLine("b"); R=Saved(); N=D.LineCount(); E=New("ТекстовыйДокум�
                patch.object(BSLTextDocument,'__getattribute__',lambda *a:calls.append('get')),
                changed_base(),
                patch.object(text_documents,'_spans',lambda *a:calls.append('spans'))]
-        vm=Interpreter();prepared=vm.prepare('D=New TextDocument;')
+        vm=Interpreter(allow_extensions=True);prepared=vm.prepare('D=New TextDocument;')
         for change in cases:
             with change, self.assertRaises(BoundaryViolation):vm.execute_prepared(prepared)
         vm.types['текстовыйдокумент']=HostFunction('bad',lambda:calls.append('alias'))
@@ -108,13 +108,13 @@ R=S();''')
         with self.assertRaises(BSLRuntimeError):vm.execute('F();')
 
     def test_property_write_reports_after_rhs_but_never_writes(self):
-        vm=Interpreter();vm.execute('D=New TextDocument;D.SetText("old");')
+        vm=Interpreter(allow_extensions=True);vm.execute('D=New TextDocument;D.SetText("old");')
         calls=[];vm.register_function('Effect',lambda:calls.append('rhs') or 'new')
         with self.assertRaises(BSLRuntimeError):vm.execute('D.Text=Effect();')
         self.assertEqual(calls,['rhs']);self.assertEqual(vm.variables['d'].get_text(),'old')
 
     def test_saved_procedure_rejects_value_use_before_argument_effect(self):
-        vm=Interpreter();vm.execute('D=New TextDocument;Saved=D.SetText;')
+        vm=Interpreter(allow_extensions=True);vm.execute('D=New TextDocument;Saved=D.SetText;')
         calls=[];vm.register_function('Effect',lambda:calls.append('effect') or 'new')
         with self.assertRaises(BSLRuntimeError):vm.execute('R=Saved(Effect());')
         self.assertEqual(calls,[])

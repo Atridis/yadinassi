@@ -22,13 +22,13 @@ class DirectJSONProceduresTests(unittest.TestCase):
     def test_bilingual_procedures_reject_before_argument_effects(self):
         for ctor,method in (('JSONWriter','WriteValue'),('ЗаписьJSON','ЗаписатьЗначение'),
                             ('JSONReader','SetString'),('ЧтениеJSON','УстановитьСтроку')):
-            vm=Interpreter();vm.execute('R=New '+ctor+';');seen=[]
+            vm=Interpreter(allow_extensions=True);vm.execute('R=New '+ctor+';');seen=[]
             vm.register_function('Effect',lambda:seen.append(1) or 'null')
             with self.subTest(method=method),self.assertRaises(BSLError):vm.execute('X=R.'+method+'(Effect());')
             self.assertEqual(seen,[])
 
     def test_cached_plan_live_receiver_and_captured_metadata(self):
-        vm=Interpreter();vm.execute('W=New JSONWriter;W.SetString();');seen=[]
+        vm=Interpreter(allow_extensions=True);vm.execute('W=New JSONWriter;W.SetString();');seen=[]
         vm.register_function('Effect',lambda:seen.append(1) or 1)
         plan=vm.prepare('X=W.WriteValue(Effect());')
         for _ in range(2):
@@ -74,7 +74,7 @@ class DirectJSONProceduresTests(unittest.TestCase):
 
     def test_canonical_control_rejects_procedure_before_effects(self):
         for backend in ('python-direct','compiled-strict'):
-            vm=Interpreter(execution_backend=backend);seen=[]
+            vm=Interpreter(execution_backend=backend, allow_extensions=True);seen=[]
             vm.register_function('Effect',lambda:seen.append(1) or 1)
             vm.execute('W=New JSONWriter;W.SetString();')
             with self.subTest(backend=backend),self.assertRaises(BSLError):vm.execute('X=W.WriteValue(Effect());')

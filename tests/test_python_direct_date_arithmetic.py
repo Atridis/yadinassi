@@ -17,13 +17,13 @@ class DirectDateArithmeticTests(unittest.TestCase):
         source='a=Date(2024,1,1);b=a+0.12345;c=b-0.00005;elapsed=c-a;'
         results=[]
         for backend in ('interpreter','python-direct'):
-            vm=Interpreter(execution_backend=backend)
+            vm=Interpreter(execution_backend=backend, allow_extensions=True)
             try:
                 vm.execute(source)
                 results.append((vm.variables['b'].ticks,vm.variables['c'].ticks,vm.variables['elapsed']))
             finally:vm.close()
         self.assertEqual(*results)
-        vm=Interpreter();seen=[]
+        vm=Interpreter(allow_extensions=True);seen=[]
         vm.register_function('Left',lambda:seen.append('left') or BSLDate(10000))
         vm.register_function('Right',lambda:seen.append('right') or Decimal(1))
         try:

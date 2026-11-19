@@ -17,7 +17,8 @@ def raw_clone(value):
     result=object.__new__(type(value));result.__dict__=dict(vars(value));return result
 
 class DirectTransactionPreparationTests(unittest.TestCase):
-    setUp=fixture.DirectCatalogPreparationTests.setUp
+    def setUp(self):
+        fixture.DirectCatalogPreparationTests.setUp(self, allow_extensions=True)
     def _callTestMethod(self,method):
         # Each host-coordinator probe runs inside a real admitted direct root.
         # Native root ingress/recovery cases explicitly drive their own roots.
@@ -328,7 +329,7 @@ class DirectTransactionPreparationTests(unittest.TestCase):
         self.clean()
     def test_ingress_foreign_catalog_family_same_backend_is_not_authority(self):
         from yadinassi import Interpreter
-        foreign=Interpreter(database_context=self.db);self.addCleanup(foreign.close)
+        foreign=Interpreter(database_context=self.db, allow_extensions=True);self.addCleanup(foreign.close)
         other=foreign._catalogs.get_member('Номенклатура').create_item()
         original_catalogs=self.vm._catalogs
         def probe():

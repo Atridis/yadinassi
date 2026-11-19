@@ -33,7 +33,7 @@ class NativeCollectionCountTests(unittest.TestCase):
         self.assertNotIn('after',vm.variables)
 
     def test_columns_count_and_dynamic_host_stay_decimal(self):
-        vm=Interpreter();self.addCleanup(vm.close)
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close)
         result=vm.execute('T=New ValueTable; T.Columns.Add("N"); C=T.Columns.Count(); C;')
         self.assertEqual(result,D(1));self.assertIs(type(result),D)
         seen=[];vm.register_function('Observe',lambda value:seen.append(type(value)))
