@@ -891,7 +891,9 @@ class Emitter:
                 else:present=self.node(py.Compare,t,left=self.const(slot,t),ops=[py.In()],comparators=[self.call('locals',[],t)])
                 fallback=self.node(py.IfExp,t,test=present,body=value,orelse=self.name('_MISSING',t))
             else:fallback=self.invoke(self.attribute(self.name('_initial',t),'get',t),[self.const(name,t),self.name('_MISSING',t)],t)
-            bound=self.invoke(self.attribute(self.name('_context',t),'resolve_service',t),[self.const(node.callee.name if self.source_scopes else name,t),fallback],node.callee.token,
+            resolver=('resolve_optional_service' if any(type(arg) is bsl.OmittedArgument for arg in node.arguments)
+                      else 'resolve_service')
+            bound=self.invoke(self.attribute(self.name('_context',t),resolver,t),[self.const(node.callee.name if self.source_scopes else name,t),fallback],node.callee.token,
                 [self.node(py.keyword,t,arg='require_value',value=self.const(require_value,t)),self.node(py.keyword,t,arg='allow_references',value=self.const(True,t)),self.node(py.keyword,t,arg='argument_count',value=self.const(len(node.arguments),t))])
             if name in ('eval','вычислить'):
                 bound=self.call('_bind_eval',[bound,*self.fragment_arguments(t)],t)

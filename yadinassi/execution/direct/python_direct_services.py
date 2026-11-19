@@ -4,7 +4,7 @@ from yadinassi.formats.xml.dom_nodes import BSLDOMDocument
 from yadinassi.formats.xml.dom_xpath import BSLDOMNamespaceResolver
 from yadinassi.formats.xml.xml_io import BSLXMLReader, BSLXMLReaderSettings
 from yadinassi.formats.xml.xml_writer import BSLXMLWriter, BSLXMLWriterSettings
-from yadinassi.streams.file_io import BSLFile, BSLBinaryData
+from yadinassi.streams.file_io import BSLFile, BSLBinaryData, binary_from_string, find_files
 from yadinassi.streams.text_documents import BSLTextDocument
 from .source import python_direct_source_resources as text_resources
 from yadinassi.http.http_client import BSLHTTPConnection, BSLHTTPRequest
@@ -237,6 +237,46 @@ class ServicesBoundary:
         if type(value) is HostFunction and type(value.function) is SourceTemplateCall:
             raise ValueError('foreign or inactive source common template owner')
         return super().resolve_callable(value,require_value=require_value,allow_references=allow_references,_extension_value=_extension_value)
+
+    def resolve_optional_service(self,name,*args,**kwargs):
+        bound=super().resolve_optional_service(name,*args,**kwargs)
+        from yadinassi.runtime import Interpreter
+        key=name.casefold()
+        vm=getattr(self,'vm',None)
+        # This adapter is for the ordinary direct registry, not source-owned
+        # services or persisted BSL routines that may shadow its names.
+        if type(vm) is not Interpreter or key in getattr(vm,'_direct_routine_modules',{}):
+            return bound
+        function=self._services.get(key)
+        if type(function) is not HostFunction:return bound
+        implementation=function.function
+        if implementation is not binary_from_string and implementation is not find_files:
+            return bound
+
+        def canonical():
+            return (function.function is implementation and function.returns_value is True
+                    and type(function.reference_parameters) is frozenset and not function.reference_parameters)
+
+        def prepare_omissions(bound,positions,count):
+            from yadinassi.execution.codegen.experimental_naked_collections import _host_omission_error
+            self._check()
+            if not canonical() or not 1<=count<=3 or any(not 1<=index<count for index in positions):
+                _host_omission_error()
+
+            def invoke(*arguments):
+                self._before('call',key)
+                try:
+                    if not canonical():
+                        raise BoundaryViolation('optional file service implementation changed during argument evaluation')
+                    return implementation(*arguments)
+                except PermissionError as error:raise BoundaryViolation(str(error)) from error
+                finally:self._check()
+
+            invoke.requires_reference=lambda index:False
+            return invoke,{index:None for index in positions}
+
+        bound.prepare_omissions=prepare_omissions
+        return bound
 
     def resolve_service(self,name,*args,**kwargs):
         key=name.casefold()

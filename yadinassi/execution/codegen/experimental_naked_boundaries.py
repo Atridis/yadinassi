@@ -78,6 +78,10 @@ class BoundaryContext:
         )
         return capability.value
 
+    def resolve_optional_service(self,name,*args,**kwargs):
+        """Only generated calls with positional holes enter this path."""
+        return self.resolve_service(name,*args,**kwargs)
+
     def resolve_service(self,name,fallback=_MISSING,*,require_value=False,allow_references=False,argument_count=None):
         self._check();key=name.casefold()
         if key not in self._services:
