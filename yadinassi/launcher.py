@@ -6,6 +6,11 @@ from .cli import main as cli_main
 
 def main(argv=None):
     arguments = list(sys.argv[1:] if argv is None else argv)
+    # Reject incompatible modes before importing/initializing any UI entry point.
+    from .cli import _option_arguments
+    if any(option.partition('=')[0] == '--emit-python'
+           for option, _ in _option_arguments(arguments)):
+        return cli_main(arguments)
     # BSL code, filenames and everything after -- never select a UI mode.
     if arguments and arguments[0] == '--ui':
         for stream in (sys.stdout, sys.stderr):

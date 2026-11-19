@@ -135,6 +135,8 @@ def main(argv: list[str] | None = None) -> int:
                                      allow_abbrev=False,
                                      epilog="UI: yadinassi --ui --f SQLITE_FILE [--open-browser]. The database must already grant a supported UI profile.")
     parser.add_argument("file", nargs="?", help="файл BSL для исполнения; '-' — стандартный ввод")
+    parser.add_argument("--emit-python", metavar="DIRECTORY",
+                        help="сохранить Python-код default backend без исполнения BSL; нужен один файл")
     parser.add_argument("-c", "-с", "--command", help="код BSL для исполнения")
     parser.add_argument("--f", metavar="SQLITE_FILE",
                         help="файл SQLite базы yadinassi с конфигурацией и данными")
@@ -188,6 +190,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(arguments)
     from .execution_policy import execution_backend_policy
     with execution_backend_policy(args.execution_backend):
+        if args.emit_python is not None:
+            from .cli_emit_python import run
+            return run(args, parser)
         return _run_selected(args, parser)
 
 

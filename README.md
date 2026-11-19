@@ -41,6 +41,18 @@ yadinassi --f "/path/to/application.sqlite" basic.bsl
 yadinassi --f "/path/to/application.sqlite" -c 'Сообщить(СтрокаСоединенияИнформационнойБазы());'
 ```
 
+### Посмотреть сгенерированный Python без запуска BSL
+
+```console
+python -m yadinassi basic.bsl --emit-python generated
+```
+
+Создаёт `generated/basic.py` из обычного backend `python-direct` и завершает
+работу, не исполняя BSL. Это диагностический код для чтения, не автономный
+Python-скрипт: ему нужны контекст и служебные объекты yadinassi.
+Существующие файлы не перезаписываются.
+[Границы экспорта, имена файлов и примеры](docs/emit-python.md).
+
 ### Локальный редактор справочников (экспериментальный)
 
 ```console
