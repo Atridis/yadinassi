@@ -139,6 +139,49 @@ class DirectFillStructureTests(TestCase):
             vm.execute('FillPropertyValues(R,S,Undefined,"Extra");')
         self.assertEqual(vm.execute('R.First'), 10)
 
+    def test_direct_structure_and_value_table_row_transfer_both_directions(self):
+        vm = self.vm(target=LINUX_8_3_27_1508)
+        self.addCleanup(vm.close)
+        vm.execute('T=New ValueTable; T.Columns.Add("First"); T.Columns.Add("Last");'
+                   'R=T.Add(); R.First=1; R.Last="old";'
+                   'Shared=New Array; S=New Structure("Last,First,Extra",Shared,10,99);'
+                   'Dst=New Structure("First,Last,Keep",0,"",3);')
+        with patch('yadinassi.collections.property_transfer.fill_property_values',
+                   side_effect=AssertionError('canonical fallback')):
+            vm.execute('FillPropertyValues(R,S); FillPropertyValues(Dst,R); Shared.Add(7);')
+        self.assertEqual(vm.execute('R.First'), 10)
+        self.assertEqual(vm.execute('Dst.First'), 10)
+        self.assertEqual(vm.execute('Dst.Keep'), 3)
+        self.assertIs(vm.execute('Dst.Last'), vm.variables['shared'])
+        self.assertEqual(vm.execute('Dst.Last[0]'), 7)
+
+    def test_direct_table_transfer_retains_linux_partial_writes(self):
+        vm = self.vm(target=LINUX_8_3_27_1508)
+        self.addCleanup(vm.close)
+        vm.execute('T=New ValueTable; T.Columns.Add("First"); T.Columns.Add("Last");'
+                   'R=T.Add(); R.First=1; R.Last="old";'
+                   'S=New Structure("First,Last,Extra",10,"new",9);')
+        with self.assertRaisesRegex(BSLRuntimeError, 'включенное свойство отсутствует'):
+            vm.execute('FillPropertyValues(R,S,"First,Extra,Last");')
+        self.assertEqual(vm.execute('R.First'), 1)
+        self.assertEqual(vm.execute('R.Last'), 'new')
+        vm.execute('R.Last="old";')
+        with self.assertRaisesRegex(BSLRuntimeError, 'исключаемое свойство отсутствует'):
+            vm.execute('FillPropertyValues(R,S,Undefined,"Extra");')
+        self.assertEqual(vm.execute('R.First'), 10)
+        self.assertEqual(vm.execute('R.Last'), 'new')
+
+    def test_direct_table_transfer_rejects_deleted_row(self):
+        vm = self.vm()
+        self.addCleanup(vm.close)
+        vm.execute('T=New ValueTable; T.Columns.Add("A"); R=T.Add(); R.A=1;'
+                   'S=New Structure("A",2); T.Delete(0);')
+        for call in ('FillPropertyValues(R,S);', 'FillPropertyValues(S,R);'):
+            with self.subTest(call=call):
+                with self.assertRaisesRegex(BSLRuntimeError, 'отсоединенная строка недоступна'):
+                    vm.execute(call)
+        self.assertEqual(vm.execute('S.A'), 2)
+
     def test_corrupt_storage_fails_before_mutation_without_hooks(self):
         target=new_structure('A',1)
         for corrupt in ({'a':('A',2),'b':['B',3]}, {'a':('Other',2)}, {'a':('A',2,3)}):

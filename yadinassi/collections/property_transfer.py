@@ -373,9 +373,9 @@ def _section_endpoint(row, budget, target):
     return _Endpoint(row, tuple(fields), cls.get_member, cls.set_member)
 
 
-def _endpoint(value, budget, target=False, readable_rows=False, *, direct_tree=False):
+def _endpoint(value, budget, target=False, readable_rows=False, *, direct_rows=False):
     kind = type(value)
-    direct = direct_tree and kind is _DirectStructure
+    direct = direct_rows and kind is _DirectStructure
     if direct or kind is BSLStructure or kind is BSLFixedStructure:
         if direct:
             entries = dict.items(value)
@@ -443,24 +443,29 @@ def fill_property_values(target, source, properties=None, exclude=None):
     Linux ordinary-row INCLUDE checks presence/readonly lazily, right to left.
     Other endpoint/target combinations retain the original preflight policy.
     """
-    return _fill_property_values(target, source, properties, exclude, direct_tree=False)
+    return _fill_property_values(target, source, properties, exclude, direct_rows=False)
 
 
-def fill_structure_tree(target, source, properties, exclude):
+def fill_structure_row(target, source, properties, exclude):
     target_kind, source_kind = type(target), type(source)
-    if not ((target_kind is _DirectStructure and source_kind is BSLValueTreeRow)
-            or (target_kind is BSLValueTreeRow and source_kind is _DirectStructure)):
+    if target_kind is _DirectStructure:
+        row_kind = source_kind
+    elif source_kind is _DirectStructure:
+        row_kind = target_kind
+    else:
+        row_kind = None
+    if row_kind is not BSLValueTableRow and row_kind is not BSLValueTreeRow:
         raise TypeError('ЗаполнитьЗначенияСвойств: неподдерживаемый тип объекта')
-    return _fill_property_values(target, source, properties, exclude, direct_tree=True)
+    return _fill_property_values(target, source, properties, exclude, direct_rows=True)
 
 
-def _fill_property_values(target, source, properties, exclude, *, direct_tree):
-    linux_rows = (current_native_target() == LINUX_8_3_27_1508 if direct_tree
+def _fill_property_values(target, source, properties, exclude, *, direct_rows):
+    linux_rows = (current_native_target() == LINUX_8_3_27_1508 if direct_rows
                   else _ordinary_linux_transfer(target, source))
     budget = _Budget()
     try:
-        destination = _endpoint(target, budget, True, direct_tree=direct_tree)
-        origin = _endpoint(source, budget, readable_rows=linux_rows, direct_tree=direct_tree)
+        destination = _endpoint(target, budget, True, direct_rows=direct_rows)
+        origin = _endpoint(source, budget, readable_rows=linux_rows, direct_rows=direct_rows)
     except (AttributeError, KeyError):
         _invalid('неполное внутреннее состояние объекта')
     if linux_rows:
@@ -505,7 +510,7 @@ def _fill_property_values(target, source, properties, exclude, *, direct_tree):
                     # !todo Measure multiple/mixed missing exclusions and other
                     # source kinds; do not extrapolate the partial-write rule.
                     mutable_source = (type(source) is BSLStructure
-                                      or (direct_tree and type(source) is _DirectStructure))
+                                      or (direct_rows and type(source) is _DirectStructure))
                     if not linux_rows or not mutable_source or deferred is not None:
                         _invalid('исключаемое свойство отсутствует в одном из объектов')
                     deferred = key

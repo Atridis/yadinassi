@@ -1,4 +1,4 @@
-"""Direct FillPropertyValues for structures and mixed detached tree rows."""
+"""Direct FillPropertyValues for structures and mixed detached table/tree rows."""
 from yadinassi.collections.structures import _DIRECT_FILL_STRUCTURE_ABI
 from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure, structure_key
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
@@ -39,10 +39,12 @@ def fill(target,source,properties=None,exclude=None):
     elif target_direct != source_direct:
         other = source if target_direct else target
         if type(other) is not _STRUCTURE and type(other) is not _FIXED:
+            from yadinassi.collections.plain_value_table_runtime import BSLValueTableRow
             from yadinassi.collections.value_trees import BSLValueTreeRow
-            if type(other) is BSLValueTreeRow:
-                from yadinassi.collections.property_transfer import fill_structure_tree
-                return fill_structure_tree(target, source, properties, exclude)
+            other_kind = type(other)
+            if other_kind is BSLValueTableRow or other_kind is BSLValueTreeRow:
+                from yadinassi.collections.property_transfer import fill_structure_row
+                return fill_structure_row(target, source, properties, exclude)
     target_items=_storage(target,'приемник')
     source_items=_storage(source,'источник')
     return _COPY(target_items,source_items,properties,exclude,

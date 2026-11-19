@@ -39,9 +39,16 @@ Live=R.K;'''
         t,r=self.table();t.indexes.add('K');t._search.cache=object()
         fill_property_values(r,BSLStructure('K',D(2)))
         self.assertEqual(r.get_member('K'),D(2))
-    def test_direct_structure_object_endpoint_stays_closed(self):
+    def test_direct_structure_admits_only_exact_table_rows(self):
         from yadinassi.execution.direct.python_direct_fill import fill
         from yadinassi.execution.codegen.experimental_naked_structure import new_structure
         t,r=self.table()
-        with self.assertRaises(TypeError):fill(r,new_structure('K',D(2)))
+        class DerivedRow(type(r)):
+            pass
+        derived=DerivedRow(t,t._storage.schema)
+        structure=new_structure('K',D(2))
+        for unsupported in (t, derived):
+            with self.subTest(kind=type(unsupported).__name__):
+                with self.assertRaises(TypeError):fill(unsupported,structure)
+                with self.assertRaises(TypeError):fill(structure,unsupported)
         self.assertEqual(r.get_member('K'),D(1))
