@@ -48,7 +48,7 @@ class ObjectFormPreflightBrowserContractTests(unittest.TestCase):
     def test_fixture_hash_and_python_syntax(self):
         ast.parse(self.fixture)
         self.assertEqual(hashlib.sha256(self.fixture.encode()).hexdigest(),
-            '1c9b76113c02246d0c8a7221ad243acf17a7017f1adc50ae02587d45d63ee39f')
+            '2e537e6b2d336579e8175e132234974fc429841b98ca9dca5b9ba15bb98aff64')
         self.assertIn("print('{\"error\":\"owned_preflight_fixture_failed\"}',file=sys.stderr)", self.fixture)
 
     def test_seed_is_typed_explicit_and_before_chromium(self):
