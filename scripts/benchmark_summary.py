@@ -47,6 +47,8 @@ def render(report):
         lines += ['`arithmetic.fractional`: в референсе счётчик `int`, множитель `Decimal`; явного преобразования счётчика на каждом витке нет.', '']
     elif 'arithmetic.fractional' in names:
         lines += ['`arithmetic.fractional`: контроль с дробным множителем на `Decimal`.', '']
+    if 'native-int-map-v2' in references:
+        lines += ['`map`: Python и прямой BSL используют целые ключи, значения и сумму. Только итог приводится к `Decimal` для сверки. Столбец классов сохраняет `Decimal` для числовых ключей и операций API `BSLMap`.', '']
     lines += ['| Подготовка / первый вызов | Разбор + подготовка BSL, мс | Первое исполнение BSL, мс |', '|---|---:|---:|']
     for case in report['cases']:
         if 'preparation_seconds' in case:

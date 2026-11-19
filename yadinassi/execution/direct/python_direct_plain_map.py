@@ -5,10 +5,10 @@ iterable expansion. Normal empty construction uses a dict subclass with native k
 """
 from yadinassi.collections.maps import BSLFixedMap
 from decimal import Decimal
+from .python_direct_numbers import public_number
 
 _KEY_TYPES=(Decimal,str,bool,int,float,type(None))
 _KEY_TYPE_IDS=frozenset(id(kind) for kind in _KEY_TYPES)
-
 
 class PlainMap(dict):
     """Native storage, scalar keys; no type-tag tuples or wrapped values."""
@@ -44,7 +44,7 @@ class PlainMap(dict):
 
     def get(self,key,default=None):
         if id(type(key)) not in _KEY_TYPE_IDS:raise TypeError("Map key requires a scalar Python value")
-        return dict.get(self,key,default)
+        return public_number(dict.get(self,key,default))
 
     __getitem__=get
 
@@ -95,15 +95,15 @@ class PlainFixedMap:
 
     def get(self,key):
         if id(type(key)) not in _KEY_TYPE_IDS:raise TypeError('Map key requires a scalar Python value')
-        return self._items.get(key)
+        return public_number(self._items.get(key))
 
     def get_index(self,key):
         if id(type(key)) not in _KEY_TYPE_IDS:raise TypeError('Map key requires a scalar Python value')
-        try:return self._items[key]
+        try:return public_number(self._items[key])
         except KeyError:raise ValueError('Ключ фиксированного соответствия не найден') from None
 
     def __iter__(self):
-        for key,value in self._items.items():yield BSLKeyAndValue(key,value)
+        for key,value in self._items.items():yield BSLKeyAndValue(public_number(key),public_number(value))
 
     def get_member(self,name):raise ValueError('Поле объекта не обнаружено: '+name)
 

@@ -28,6 +28,7 @@ CASES = ('arithmetic', 'arithmetic.int', 'arithmetic.fractional', 'calls', 'byre
 PYTHON_REFERENCES = {
     'arithmetic': 'native-int-arithmetic-v2',
     'arithmetic.fractional': 'int-counter-decimal-factor-v2',
+    'map': 'native-int-map-v2',
 }
 
 
@@ -128,13 +129,15 @@ def workload(name, n):
     else:
         def native():
             m = {}
-            for i in range(n): m[D(i)] = D(i)
-            s = D(0)
-            for i in range(n): s += m.get(D(i))
-            return s
+            for i in range(n): m[i] = i
+            s = 0
+            for i in range(n): s += m.get(i)
+            return D(s)
         def classes():
             m = BSLMap()
-            for i in range(n): m.insert(D(i), D(i))
+            for i in range(n):
+                value = D(i)
+                m.insert(value, value)
             s = D(0)
             for i in range(n): s = binary_values('+', s, m.get(D(i)))
             return s

@@ -633,7 +633,9 @@ class Emitter:
             maps=self.node(py.BoolOp,t,op=py.Or(),values=[exact('_PlainMap'),exact('dict'),exact('_TypedMap'),exact('_NakedMap')])
             host=self.node(py.IfExp,t,test=maps,body=self.call('_native_property_missing',[self.const(node.name,t)],t),orelse=host)
             field={'key':'key','ключ':'key','value':'value','значение':'value'}.get(node.name.casefold())
-            if field is not None:host=self.node(py.IfExp,t,test=exact('_MapEntry'),body=self.attribute(self.name(receiver,t),field,t),orelse=host)
+            if field is not None:
+                item=self.call('_dynamic_public_number',[self.attribute(self.name(receiver,t),field,t)],t)
+                host=self.node(py.IfExp,t,test=exact('_MapEntry'),body=item,orelse=host)
             host=self.node(py.IfExp,t,test=exact('list'),body=self.call('_array_member',[self.name(receiver,t),self.const(node.name,t)],t),orelse=host)
             structure=self.call('_structure_get_known',[self.name(receiver,t),self.const(node.name.casefold(),t),self.const(node.name,t)],t)
             host=self.node(py.IfExp,t,test=exact('_DirectStructure'),body=structure,orelse=host)
@@ -1783,7 +1785,9 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             emitter.local_field_facts,local_scalars=analyze_local(program,opaque_names=opaque,routines=emitter.routines)
             emitter.scalar_kinds.update(local_scalars)
     if static_facts is not None and not emitter.routines and not emitter.module_cells and not emitter.authority and not emitter.catalog_bounds:
-        emitter.integer_lane=bool(static_facts[1]) and all(kind in ('number','bool','string','table','row','columns','column') for kind in static_facts[1].values())
+        emitter.integer_lane=bool(static_facts[1]) and all(
+            kind in ('number','bool','string','table','row','columns','column','map','map_insert')
+            for kind in static_facts[1].values())
         if emitter.integer_lane:emitter.scalar_kinds.update(static_facts[1])
     from yadinassi.execution.direct.python_direct_collection_regions import analyze,admitted,helpers
     region_end=0

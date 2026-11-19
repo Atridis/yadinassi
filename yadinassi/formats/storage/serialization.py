@@ -296,7 +296,8 @@ class _Writer:
                         or any(type(key) is not str for key in state)
                         or set(state) != {'key', 'value'}):
                     raise TypeError("ЗначениеВСтрокуВнутр: недопустимое состояние пары")
-                direct_pair = (state['key'], state['value'])
+                from yadinassi.execution.direct.python_direct_numbers import public_number
+                direct_pair = (public_number(state['key']), public_number(state['value']))
                 kind = BSLType.KEY_AND_VALUE
             elif type(value) is list:
                 kind, direct_items = BSLType.ARRAY, value

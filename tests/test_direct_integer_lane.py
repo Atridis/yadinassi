@@ -130,3 +130,27 @@ class IntegerLaneTests(unittest.TestCase):
         self.assertTrue(all(type(value) is D for value in vm.variables['a']))
         _,plan,_=self.run_source('S=0; For i=1 To 2 Do S=S+i; EndDo; S;')
         self.assertEqual(sum(isinstance(node,ast.For) for node in ast.walk(ast.parse(plan._plan.generated_source))),1)
+
+    def test_numeric_map_keeps_integer_storage_and_public_number_contract(self):
+        vm,plan,result = self.run_source(
+            'M=New Map; For I=0 To 300 Do M.Insert(I,I); EndDo; '
+            'S=0; For I=0 To 300 Do S=S+M.Get(I); EndDo; S;')
+        self.assertEqual(result,D(45150))
+        self.assertIs(type(result),D)
+        self.assertTrue(all(type(key) is int and type(value) is int
+                            for key,value in dict.items(vm.variables['m'])))
+        loops = [node for node in ast.walk(ast.parse(plan._plan.generated_source))
+                 if isinstance(node,ast.For)]
+        self.assertEqual(len(loops),2)
+        self.assertTrue(all('_Decimal' not in ast.unparse(loop) for loop in loops))
+        from yadinassi.types.values import BSLType
+        self.assertIs(vm.execute('TypeOf(M.Get(300))'),BSLType.NUMBER)
+        self.assertIs(type(vm.execute('M[300]')),D)
+        self.assertIs(type(vm.execute('For Each Entry In M Do K=Entry.Key; Break; EndDo; K;')),D)
+
+    def test_numeric_map_fractional_keys_and_values_remain_decimal(self):
+        vm,_,result = self.run_source('M=New Map; M.Insert(1.25,2.50); M.Get(1.25);')
+        key,value = next(iter(dict.items(vm.variables['m'])))
+        self.assertEqual(key.as_tuple(),D('1.25').as_tuple())
+        self.assertEqual(value.as_tuple(),D('2.50').as_tuple())
+        self.assertEqual(result.as_tuple(),D('2.50').as_tuple())
