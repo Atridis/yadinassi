@@ -196,7 +196,7 @@ def summary(report):
             rows = [measured[case,n,layer] for layer in ('python','classes','default','prepared')]
             lines.append(f"| {case} | {rows[0]['wall_seconds']*1000:.4f} | {rows[1]['ratio_to_python']:.2f} | {rows[2]['ratio_to_python']:.2f} | {rows[3]['ratio_to_python']:.2f} | {rows[3]['python_calls']}/{rows[3]['c_calls']} |")
     unbound=sorted({r['case'] for r in report['rows'] if r['status']=='unbound'})
-    lines += ['', 'Не восстановлены: '+', '.join(unbound), '', 'Явный пропуск: method.valuetable.find N4096 во всех слоях.']
+    lines += ['', 'Не восстановлены: '+(', '.join(unbound) if unbound else 'нет'), '', 'Явный пропуск: method.valuetable.find N4096 во всех слоях.']
     for r in report['rows']:
         if r['status']=='error': lines.append(f"ERROR {r['case']} N{r['n']} {r['layer']}: {r['reason']}")
     return '\n'.join(lines)+'\n'
@@ -222,6 +222,7 @@ def main():
             except Exception as exc:
                 for layer in ('python','classes','default','prepared'):
                     index[case,n,layer].update(status='error',reason=f'{type(exc).__name__}: {exc}')
+    report['complete'] = all(r['status'] in ('measured','skipped') for r in report['rows'])
     args.output.parent.mkdir(parents=True,exist_ok=True)
     args.output.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     args.output.with_suffix('.md').write_text(summary(report),encoding='utf-8')

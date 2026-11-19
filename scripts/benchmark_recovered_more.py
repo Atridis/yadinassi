@@ -99,6 +99,28 @@ case('method.valuetable.find', 'R=0; For I=0 To N-1 Do R=R+A.Find(I,"N").N; EndD
      'r=0\nfor i in range(n):\n    r += a.find(i,"N").get_member("n")',
      'table_read', 'sum', 'N successful linear searches and named cell reads; N4096 deliberately skipped')
 
+case('arithmetic', 'R=0; For I=0 To N-1 Do R=R+(I*3+2)-I; EndDo;',
+     'r=0\nfor i in range(n):\n    r=r+(i*3+2)-i', None,
+     'none', 'arithmetic', 'N integer multiply/add/subtract iterations; sum of 2*i+2, no division/Decimal')
+case('string.concat', 'R=""; For I=0 To N-1 Do R=R+"x"; EndDo;',
+     'r=""\nfor i in range(n):\n    r=r+"x"', None,
+     'none', 'concat', 'N repeated immutable string concatenations; final x repeated N times')
+case('array', 'For I=0 To N-1 Do A.Add(I); EndDo; R=0; For Each X In A Do R=R+X; EndDo;',
+     'for i in range(n):\n    a.append(i)\nr=0\nfor x in a:\n    r += x',
+     'for i in range(n):\n    a.add(i)\nr=0\nfor x in a:\n    r += x',
+     'array_empty', 'array_sum', 'Build N integer elements then sum one traversal; empty fixture outside timing; final storage checked')
+case('map', 'For I=0 To N-1 Do A.Insert(I,I); EndDo; R=0; For Each P In A Do R=R+P.Value; EndDo;',
+     'for i in range(n):\n    a[i]=i\nr=0\nfor value in a.values():\n    r += value',
+     'for i in range(n):\n    a.insert(i,i)\nr=0\nfor pair in a:\n    r += pair.get_member("value")',
+     'map_empty', 'map_sum', 'Build N integer entries then sum values; Python values/classes pairs/BSL field projection; empty fixture excluded')
+
+case('string.slice', 'R=""; For I=0 To N-1 Do R=Mid("abcdef",2,3); EndDo;',
+     'r=""\nfor i in range(n):\n    r="abcdef"[1:4]', None,
+     'none', 'slice', 'N slices of fixed ASCII string, 1-based BSL offset2/count3 versus Python[1:4]; last result bcd')
+case('string.replace', 'R=""; For I=0 To N-1 Do R=StrReplace("abcabc","a","xy"); EndDo;',
+     'r=""\nfor i in range(n):\n    r="abcabc".replace("a","xy")', None,
+     'none', 'replace', 'N fixed ASCII replacements a->xy; last result xybcxybc')
+
 
 def bind(name, n, layer):
     bsl, py, cls, fixture_kind, result_kind, note = CASES[name]
@@ -108,8 +130,8 @@ def bind(name, n, layer):
         return list(dict.items(value)) if fixture_kind.startswith(('structure','map')) else [list(row) for row in value] if fixture_kind.startswith(('table','list')) else list(value)
     def reset_fixture():
         if fixture_kind == 'none': value = None
-        elif fixture_kind == 'map_full':
-            data = {i:i for i in range(n)}
+        elif fixture_kind in ('map_full','map_empty'):
+            data = {} if fixture_kind=='map_empty' else {i:i for i in range(n)}
             value = data if layer=='python' else BareMap(data)
         elif fixture_kind.startswith(('table','list')):
             table = fixture_kind.startswith('table')
@@ -155,7 +177,15 @@ def bind(name, n, layer):
         if fixture_kind.startswith('table') and layer != 'python':
             if current[0].schema != {'n':0} or any(row.table is not current[0] for row in current[0]):
                 raise AssertionError('table schema/row ownership changed')
-        if result_kind.startswith(('table_','list_')):
+        if result_kind in ('slice','replace'):
+            expected='bcd' if result_kind=='slice' else 'xybcxybc'
+            if type(value) is not str or value != expected: raise AssertionError((name,value,expected))
+        elif result_kind in ('arithmetic','concat','array_sum','map_sum'):
+            expected = n*(n+1) if result_kind=='arithmetic' else 'x'*n if result_kind=='concat' else n*(n-1)//2
+            if type(value) is not type(expected) or value != expected: raise AssertionError((name,value,expected))
+            if result_kind=='array_sum' and list(current[0]) != list(range(n)): raise AssertionError('array build state')
+            if result_kind=='map_sum' and list(dict.items(current[0])) != [(i,i) for i in range(n)]: raise AssertionError('map build state')
+        elif result_kind.startswith(('table_','list_')):
             if result_kind == 'table_empty': expected=[]
             elif result_kind == 'table_null': expected=[[None] for _ in range(n)]
             elif result_kind == 'table_ascending': expected=[[i] for i in range(n)]

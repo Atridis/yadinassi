@@ -99,3 +99,17 @@ class TableListDriversTests(unittest.TestCase):
             for layer in ('python','classes','default','prepared'):
                 reset,run,validate,_,_=binding(name,11,layer)
                 reset(); result=run(); self.assertEqual(result,55); validate(result)
+
+class FinalCoreDriversTests(unittest.TestCase):
+    def test_all_ids_bound(self):
+        from scripts.benchmark_recovery import load_manifest
+        manifest=load_manifest()
+        self.assertEqual(set(CONTRACTS),set(manifest['core']+manifest['method']))
+    def test_core_expected_outputs_both_routes(self):
+        expectations={'arithmetic':72,'array':28,'map':28,'string.concat':'x'*8,
+                      'string.slice':'bcd','string.replace':'xybcxybc'}
+        for name, expected in expectations.items():
+            for layer in ('python','classes','default','prepared'):
+                reset,run,validate,_,_=binding(name,8,layer)
+                reset(); result=run(); self.assertEqual(result,expected); validate(result)
+                with self.assertRaises(AssertionError): validate(None)

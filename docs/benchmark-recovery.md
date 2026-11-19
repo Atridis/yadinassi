@@ -130,3 +130,22 @@ Nested row/item fields, table schema and row owners are validated after executio
 read-only search fixtures are checked for mutation. No adapters or runtime changes
 are introduced. Six core IDs remain unbound rather than pretending their original
 workload bodies survived: arithmetic, array, map, string.concat/replace/slice.
+
+## Final six core bindings: runtime dependency
+
+The final six are explicitly reconstructed contracts, not historical source
+recovery. Arithmetic uses integer `r+(i*3+2)-i`, without division. Array/Map build N
+entries into empty fixtures then scan once; full final storage and sum are checked.
+Concat grows an immutable string N times. Slice repeats Mid("abcdef",2,3), matching
+Python[1:4]; Replace repeats "abcabc" a→xy. Both retain and check the final string.
+The slice/replace bindings **require the separately reviewed isolated string
+runtime commit 75f4efe or descendant**; the original 3b73 runtime cannot run them.
+This report patch does not enable any public backend or implement runtime helpers.
+Validation of all 52 must therefore use a combined tree containing that dependency;
+a successful run on the older compiler must not be claimed.
+
+The all-52 sample was verified on combined clean `1670c9dc` (runtime `062e627`
+plus report changes), not on the older report-only branch. It produced 412 measured
+rows and four deliberate skips, zero errors/unbound, at both N values. The runner's
+`complete` means this reconstructed matrix was measured, **not** full runtime/1C
+parity or green CI. Its sources still differ from the lost historical workloads.
