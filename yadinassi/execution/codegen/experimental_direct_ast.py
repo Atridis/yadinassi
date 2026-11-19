@@ -193,6 +193,7 @@ class Emitter:
         self.has_goto=False;self.goto_last_expression=None
         self.local_field_facts={};self.integer_lane=False;self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.module_boundaries=0;self.range_indices={}
         self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
+        self.link_imports=False;self.import_links=[]
         self.import_names=frozenset();self.require_last_expression=None;self.region_active=False;self.region_ops={};self.region_states={};self.routines={};self.routine_symbols={};self.module_globals=set();self.scope=None;self.source_refs={};self.loop_increments=[];self.required=set();self.visits=0;self.python_nodes=0
     def node(self,kind,token,**fields):
         if kind is py.FunctionDef and 'type_params' in kind._fields:fields.setdefault('type_params',[])
@@ -304,6 +305,33 @@ class Emitter:
         if root not in self.import_names:return None
         if self.scope is not None and root in self.scope['bindings'] and root not in self.scope['globals']:return None
         return (root,*reversed(parts))
+    def import_call(self,node,path,require_value):
+        t=node.callee.token
+        if any(type(arg) is bsl.OmittedArgument for arg in node.arguments):_reject('omitted imported call argument')
+        kwargs=lambda:[self.node(py.keyword,t,arg='require_value',value=self.const(require_value,t)),
+                       self.node(py.keyword,t,arg='argument_count',value=self.const(len(node.arguments),t))]
+        def resolve(method):
+            return self.invoke(self.attribute(self.name('_context',t),method,t),[self.const(path,t)],t,kwargs())
+        generic=self.dynamic_call(resolve('resolve_import_call'),node)
+        if not self.link_imports:return generic
+        # Linking before argument evaluation must not bypass a boundary used by
+        # an argument itself. Names and literals are the closed call shape.
+        for argument in node.arguments:
+            while type(argument) is bsl.Group:argument=argument.expression
+            if type(argument) not in (bsl.Literal,bsl.Name):return generic
+            if type(argument) is bsl.Name and (self.external_name(argument.name)
+                    or argument.name.casefold() in ('thisobject','этотобъект')
+                    or (self.scope is not None and argument.name.casefold() in self.scope['boxed'])):
+                return generic
+        cache=self.temp();bound=self.temp();self.import_links.append(cache)
+        cached=self.node(py.Compare,t,left=self.name(cache,t),ops=[py.IsNot()],comparators=[self.name('_UNSET',t)])
+        first=self.node(py.NamedExpr,t,target=self.name(cache,t,True),value=resolve('link_import_call'))
+        load=self.node(py.IfExp,t,test=cached,body=self.name(cache,t),orelse=first)
+        bind=self.node(py.NamedExpr,t,target=self.name(bound,t,True),value=load)
+        linked=self.node(py.Compare,t,left=bind,ops=[py.IsNot()],comparators=[self.const(None,t)])
+        return self.node(py.IfExp,t,test=linked,
+            body=self.invoke(self.name(bound,t),[self.expr(arg) for arg in node.arguments],t),orelse=generic)
+
     def fragment_arguments(self,t):
         names=() if self.scope is None else tuple(sorted(self.scope.get('fragment_names',())))
         bindings=self.node(py.Dict,t,keys=[self.const(key,t) for key in names],
@@ -496,12 +524,7 @@ class Emitter:
         if path is not None:
             return self.invoke(self.attribute(self.name('_context',t),'import_get',t),[self.const(path,t)],t)
         if k is bsl.Call and self.import_path(node.callee) is not None:
-            path=self.import_path(node.callee)
-            if any(type(arg) is bsl.OmittedArgument for arg in node.arguments):_reject('omitted imported call argument')
-            bound=self.invoke(self.attribute(self.name('_context',t),'resolve_import_call',t),[self.const(path,t)],t,
-                [self.node(py.keyword,t,arg='require_value',value=self.const(require_value,t)),
-                 self.node(py.keyword,t,arg='argument_count',value=self.const(len(node.arguments),t))])
-            return self.dynamic_call(bound,node)
+            return self.import_call(node,self.import_path(node.callee),require_value)
         if k is bsl.Literal:return self.literal(node.value,t)
         if k is bsl.Name:
             if node.name.casefold() in self.routines:
@@ -1549,6 +1572,8 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     emitter.owned_constructors=_profile is not None;emitter.configuration_calls=_configuration_calls;emitter.host_bindings=_host_bindings;emitter.catalog_bounds=_catalog_bounds;emitter.source_scopes=_source_scopes;emitter.authority=_authority;emitter.scalar_routines=_scalar_routines
     emitter.callable_externals=frozenset(_callable_externals);emitter.shadowable=frozenset(_shadowable)
     emitter.import_names=frozenset(imported);t=program[0].token
+    emitter.link_imports=bool(imported) and _profile is None and vm.database_context is None and (
+        vm._family_owner.__dict__.get('_standalone_import_links') is True)
     if _require_last_expression:emitter.require_last_expression=program[-1]
     from yadinassi.execution.direct.python_direct_services import CONSTRUCTORS
     from yadinassi.execution.direct.python_direct_value_tree import CONSTRUCTOR_NAMES as TREE_NAMES
@@ -1573,6 +1598,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     definitions=[];any_region=False
     from yadinassi.execution.direct.python_direct_collection_regions import analyze,admitted,helpers
     for key,routine in emitter.routines.items():
+        link_start=len(emitter.import_links)
         if routine.is_async:
             _reject('asynchronous routine requires a scheduler-aware compiler')
         declarations=set();assigned=set();pending=[(stmt,False) for stmt in routine.body]
@@ -1710,6 +1736,8 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         args.defaults=[emitter.name('_OMITTED_REF',routine.token) for _ in routine.parameters[first_optional:]]
         if emitter.native_cells:
             args.kwonlyargs=[emitter.node(py.arg,routine.token,arg='_native_cells',annotation=None)];args.kw_defaults=[emitter.const(False,routine.token)]
+        if len(emitter.import_links)>link_start:
+            routine_body.insert(0,emitter.node(py.Nonlocal,routine.token,names=emitter.import_links[link_start:]))
         definitions.append(emitter.node(py.FunctionDef,routine.token,name=emitter.routine_symbols[key],args=args,body=routine_body,decorator_list=[],returns=None,type_comment=None))
     # Module locals are the register file; dynamic edges explicitly synchronize.
     from yadinassi.execution.direct.python_direct_static_module import analyze as analyze_static
@@ -1793,7 +1821,9 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             declarations.append(emitter.node(py.Expr,t,value=initialize))
         initialize=emitter.node(py.If,t,test=emitter.const(True,t) if _exports else emitter.node(py.UnaryOp,t,op=py.Not(),operand=emitter.name('_bind_only',t)),body=declarations or [emitter.node(py.Pass,t)],orelse=[])
         body=[initialize,*definitions,bind_return,*body]
-    body=initializers+body
+    initialize_links=[emitter.node(py.Assign,t,targets=[emitter.name(slot,t,True)],value=emitter.name('_UNSET',t))
+                      for slot in emitter.import_links]
+    body=initialize_links+initializers+body
     arguments=py.arguments(posonlyargs=[],args=[emitter.node(py.arg,t,arg=name,annotation=None) for name in ('_initial','_constants','_outputs','_context')],vararg=None,kwonlyargs=[],kw_defaults=[],kwarg=None,defaults=[])
     if emitter.routines:
         arguments.args.append(emitter.node(py.arg,t,arg='_bind_only',annotation=None));arguments.defaults.append(emitter.const(_exports,t))

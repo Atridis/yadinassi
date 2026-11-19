@@ -296,6 +296,46 @@ class ImportBoundary:
         self.import_get(path)
         return Reference(lambda:self.import_get(path),self.resolve_import_write(path))
 
+    def link_import_call(self,path,*,require_value,argument_count):
+        """Bind a context-free export for this generated standalone activation."""
+        vm=self.vm
+        if (vm._family_owner.__dict__.get('_standalone_import_links') is not True
+                or vm.database_context is not None or getattr(self,'_server_side',False)
+                or getattr(self,'module_context',True) is False):
+            return None
+        if len(path)<2:return None
+        owner=self._import_target(path[:-1])
+        if type(owner) is not _Module:return None
+        child=owner.interpreter;name=path[-1]
+        public=_PUBLIC[child][0].get(name)
+        if public is None:return None
+        module=child._direct_routine_modules[name]
+        returns_value,_,maximum,references=public[1]
+        if (references or argument_count!=maximum or not returns_value
+                or name in module.server_names or name in module.dual_names):
+            return None
+        from .python_direct import _admit_vm
+        from .python_direct_routines import validate_calls
+        _admit_vm(child,_transaction_owner=self._direct_transaction_owner)
+        validate_calls(child,(name,))
+        # Constructing exports in bind-only mode does not execute module source.
+        # An export closing over state, a context, or other routines still needs
+        # the complete import protocol. Constants alone are parser-owned values.
+        exports=self._routine_exports.get((child,id(module)))
+        if exports is None:
+            exports=module.plan.function(child.variables,module.plan.constants,[],None,True)
+            self._routine_exports[child,id(module)]=exports
+        function=exports[name]
+        if set(function.__code__.co_freevars)-{'_constants'}:return None
+        from yadinassi.execution.codegen.experimental_naked_errors import convert_error
+        def linked(*args):
+            try:return function(*args)
+            except Exception as error:
+                converted=convert_error(error,module.plan.source_name,module.plan.source_text)
+                if converted is error:raise
+                raise converted from None
+        return linked
+
     def resolve_import_call(self,path,*,require_value,argument_count):
         if len(path)<2:raise ValueError('Пространство импорта не является функцией')
         owner=self._import_target(path[:-1])
