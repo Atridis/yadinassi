@@ -17,7 +17,7 @@ from scripts import benchmark_extended_layers as extended
 from scripts import performance_summary_labels as labels
 
 CASES = ('core.map', 'core.byref', 'structure.fields', 'valuetable.build_scan',
-         'json.roundtrip', 'xml.scalar_codec', 'db.count', 'db.update',
+         'json.roundtrip', 'json.streaming_roundtrip', 'xml.scalar_codec', 'db.count', 'db.update',
          'form.event', 'form.open')
 COUNT_SIZES = (32, 128, 512)
 # Keys specify exact source file AND function name, not similarly named functions

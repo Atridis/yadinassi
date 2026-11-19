@@ -7,6 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import hashlib
 import json
+from io import StringIO
 import math
 import os
 import stat
@@ -28,7 +29,7 @@ from yadinassi.collections.structures import BSLStructure
 from yadinassi.types.values import BSLArray
 from yadinassi.collections.value_tables import BSLValueTable
 from yadinassi.collections.value_lists import BSLValueList
-from yadinassi.formats.json.json_processing import BSLJSONWriter, BSLJSONReader, read_json
+from yadinassi.formats.json.json_processing import BSLJSONWriter, BSLJSONReader, BSLJSONWriterSettings, BSLJSONLineBreak, read_json, write_json
 from yadinassi.streams.file_io import BSLFile, BSLBinaryData
 from yadinassi.formats.xml.xml_io import BSLXMLReader, BSLXMLNodeType
 from yadinassi.formats.xml.xml_writer import BSLXMLWriter
@@ -38,7 +39,7 @@ from scripts import performance_summary_labels as labels
 
 LAYERS = ('python', 'python_classes', 'bsl')
 CASES = ('structure.fields', 'valuetable.build_scan', 'valuelist.build_scan',
-         'types.adjust_value', 'json.roundtrip', 'xml.scalar_codec', 'file.stat', 'file.binary_roundtrip', 'xml.roundtrip',
+         'types.adjust_value', 'json.roundtrip', 'json.streaming_roundtrip', 'xml.scalar_codec', 'file.stat', 'file.binary_roundtrip', 'xml.roundtrip',
          'db.count', 'db.update', 'form.event', 'form.open')
 PREPARED_CASES = tuple(name for name in CASES if not name.startswith('form.'))
 
@@ -186,27 +187,58 @@ def make_case(name, n, route, stack, *, catalog_rows=32):
         def classes():
             return sum((xml_value(BSLType.NUMBER,xml_string(D(i))) for i in range(n)),D(0))
         source=f'K=Type("Number");R=0;For I=0 To {n-1} Do R=R+XMLValue(K,XMLString(I));EndDo;'
-    elif name == 'json.roundtrip':
+    elif name in ('json.roundtrip', 'json.streaming_roundtrip'):
         token = 'ёж<&"\\token'; observed = {}
         case.expected = D(n)
+        streaming = name == 'json.streaming_roundtrip'
+        if not streaming:
+            native_data = [token for _ in range(n)]
+            class_data = BSLArray(); bsl_data = BSLArray()
+            for _ in range(n):
+                class_data.add(token); bsl_data.add(token)
         def native():
-            data = [token for _ in range(n)]
-            encoded = json.dumps(data, ensure_ascii=False, separators=(',', ':'))
+            if streaming:
+                encoder = json.JSONEncoder(ensure_ascii=False, separators=(',', ':'))
+                with StringIO() as output:
+                    output.write('[')
+                    for i in range(n):
+                        if i: output.write(',')
+                        output.write(encoder.encode(token))
+                    output.write(']')
+                    encoded = output.getvalue()
+            else:
+                encoded = json.dumps(native_data, ensure_ascii=False, separators=(',', ':'))
             decoded = json.loads(encoded); observed['python'] = encoded; observed['native_decoded'] = decoded
             return D(len(decoded))
         def classes():
-            writer = BSLJSONWriter(); writer.set_string(); writer.write_start_array()
-            for _ in range(n): writer.write_value(token)
-            writer.write_end_array(); encoded = writer.close(); observed['python_classes'] = encoded
+            writer = BSLJSONWriter(); writer.set_string(BSLJSONWriterSettings(BSLJSONLineBreak.NONE))
+            if streaming:
+                writer.write_start_array()
+                for _ in range(n): writer.write_value(token)
+                writer.write_end_array()
+            else:
+                write_json(writer, class_data)
+            encoded = writer.close(); observed['python_classes'] = encoded
             reader = BSLJSONReader(); reader.set_string(encoded)
             try:
                 decoded=read_json(reader);observed['classes_decoded']=decoded
                 return D(len(decoded.items))
             finally: reader.close()
-        source = f'W=New JSONWriter;W.SetString();W.WriteStartArray();For I=1 To {n} Do W.WriteValue({q(token)});EndDo;W.WriteEndArray();Encoded=W.Close();Reader=New JSONReader;Reader.SetString(Encoded);Decoded=ReadJSON(Reader);R=Decoded.Count();Reader.Close();'
+        if streaming:
+            source = f'W=New JSONWriter;W.SetString(New JSONWriterSettings(JSONLineBreak.None));W.WriteStartArray();For I=1 To {n} Do W.WriteValue({q(token)});EndDo;W.WriteEndArray();'
+            case.notes = 'Streaming JSON: one encoder/writer per sample, per-item writes, then bulk read; all lifecycle work is timed. New Python streaming baseline; historical json.roundtrip ratios are not comparable.'
+        else:
+            source = 'W=New JSONWriter;W.SetString(New JSONWriterSettings(JSONLineBreak.None));WriteJSON(W,Data);'
+            case.notes = 'Bulk JSON: ready arrays are prepared outside timing; one bulk write/read and writer/reader lifecycle are timed. BSL uses a canonical array fixture because New Array currently creates a PlainArray unsupported by WriteJSON. Changed workload; historical json.roundtrip ratios are not comparable.'
+        source += 'Encoded=W.Close();Reader=New JSONReader;Reader.SetString(Encoded);Decoded=ReadJSON(Reader);R=Decoded.Count();Reader.Close();'
+        canonical = json.dumps([token]*n, ensure_ascii=False, separators=(',', ':'))
+        def check_encoded(encoded):
+            exact(encoded, canonical)
+            exact(json.loads(encoded), [token]*n)
         for layer in ('python', 'python_classes'):
-            case.checks[layer] = lambda layer=layer: exact(json.loads(observed[layer]), [token]*n)
+            case.checks[layer] = lambda layer=layer: check_encoded(observed[layer])
         vm = attach_bsl(case, source, route, stack)
+        if not streaming: vm.variables['data'] = bsl_data
         previous_native_check=case.checks['python']
         def check_native():
             previous_native_check();exact(observed['native_decoded'],[token]*n)
@@ -216,7 +248,7 @@ def make_case(name, n, route, stack, *, catalog_rows=32):
             previous_class_check();exact(list(observed['classes_decoded'].items),[token]*n)
         case.checks['python_classes']=check_classes
         def check_bsl():
-            exact(json.loads(vm.variables['encoded']),[token]*n)
+            check_encoded(vm.variables['encoded'])
             decoded=vm.variables['decoded']
             if type(decoded) is BSLArray: actual=decoded.items
             elif type(decoded) is list: actual=decoded

@@ -168,7 +168,8 @@ The bounded reference uses 64 operations and five rounds, not the core table's
 | `valuetable.build_scan` | Build one column, populate and read numeric rows; Python list of dicts is a bounded reference, not a full ValueTable implementation. |
 | `valuelist.build_scan` | Construct and traverse indexed value items; complete resulting sequence checked outside timing. |
 | `types.adjust_value` | Bounded two-decimal half-up rounding vs NumberQualifiers/TypeDescription; no claim of general type adjustment equivalence. |
-| `json.roundtrip` | Writer/reader construction and string-array roundtrip, Unicode/escaping and actual decoded contents checked. |
+| `json.roundtrip` | Whole string array: `json.dumps` vs one `WriteJSON` call, then full decode. |
+| `json.streaming_roundtrip` | Element-wise write: one Python `JSONEncoder` and a `StringIO` buffer vs `WriteValue` per element, then full decode. |
 | `xml.scalar_codec` | Supported numeric XMLString/XMLValue roundtrip. |
 | `file.stat` | Open/fstat/close a regular 4096-byte temporary file; BSL additionally enforces its access envelope. |
 | `file.binary_roundtrip` | Read and overwrite identical bytes to a different temporary output per layer; remove output before each sample, verify all bytes afterwards. |
@@ -177,6 +178,11 @@ The bounded reference uses 64 operations and five rounds, not the core table's
 | `db.update` | Canonical read/modify/write existing catalog item; reset before each sample and canonical persisted-value readback after it. No native Python ratio: raw UPDATE omits writer semantics. Not a crash-durability test. |
 | `form.event` | Real FormSession command dispatch and snapshot; open/setup outside timer, counter reset inside handler. BSL-only, no invented Python/classes equivalent. |
 | `form.open` | Actual FormSession construction, direct open, managed close dispatch and interpreter teardown. BSL-only lifecycle, not a prepared-module measurement. |
+
+The JSON workloads use the same Unicode and escaping fixture and verify the
+complete encoded and decoded content. The bulk case starts from an already
+populated array in every layer. Older `json.roundtrip` reports mixed bulk Python
+with per-item BSL writing; their ratios are not comparable to either current row.
 
 Forms appear only in the default extended table. An explicitly requested prepared
 form case is rejected: FormSession is not `execute_prepared`. For other cases,

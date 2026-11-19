@@ -5,6 +5,11 @@ ROUTES = {'default': 'обычный API', 'prepared': 'подготовленн
 LAYERS = {'python': 'Python', 'python_classes': 'Классы yadinassi', 'bsl': 'BSL'}
 STATUSES = {'unsupported': 'не поддерживается', 'not_comparable': 'несопоставимо'}
 NOTES = {
+    'Streaming JSON: one encoder/writer per sample, per-item writes, then bulk read; all lifecycle work is timed. New Python streaming baseline; historical json.roundtrip ratios are not comparable.':
+        'Потоковый JSON: один кодировщик/писатель на замер, поэлементная запись и затем чтение целиком; создание и закрытие включены. Новый потоковый эталон Python; коэффициенты прежнего json.roundtrip несопоставимы.',
+    'Bulk JSON: ready arrays are prepared outside timing; one bulk write/read and writer/reader lifecycle are timed. BSL uses a canonical array fixture because New Array currently creates a PlainArray unsupported by WriteJSON. Changed workload; historical json.roundtrip ratios are not comparable.':
+        'JSON целиком: готовые массивы создаются вне замера; запись/чтение и создание/закрытие писателя и читателя включены. В BSL используется подготовленный канонический массив: New Array сейчас создаёт PlainArray, который WriteJSON не поддерживает. Сценарий изменён; коэффициенты прежнего json.roundtrip несопоставимы.',
+
     'Warm filesystem/page cache; no fsync/durability claim; identical 4096-byte payload. Size baseline opens/fstats/closes a regular file; BSL adds its access validation.':
         'Прогретый файловый кеш ОС; без гарантий fsync и сохранности при сбое. Одинаковые 4096 байт. Базовый замер размера открывает обычный файл, вызывает fstat и закрывает его; BSL дополнительно проверяет доступ.',
     'Host XML classes supported; all paths retain consumed numeric attributes for ordered validation. Current direct constructor may be unsupported. No legacy fallback.':

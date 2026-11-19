@@ -19,7 +19,7 @@ class ExtendedReferenceTests(unittest.TestCase):
     def test_actual_workloads_repeat_on_both_routes(self):
         expected={
             'structure.fields':'3','valuetable.build_scan':'3','valuelist.build_scan':'3',
-            'types.adjust_value':'3.39','json.roundtrip':'3','xml.scalar_codec':'3',
+            'types.adjust_value':'3.39','json.roundtrip':'3','json.streaming_roundtrip':'3','xml.scalar_codec':'3',
             'file.stat':'12288','file.binary_roundtrip':'12288','xml.roundtrip':'3',
             'db.count':'96','db.update':'3','form.event':'6','form.open':'1',
         }
@@ -99,13 +99,42 @@ class ExtendedReferenceTests(unittest.TestCase):
                 self.assertTrue(all(not path.exists() for path in directories))
 
     def test_json_checks_actual_decoded_payload(self):
-        with ExitStack() as stack:
-            case = bench.make_case('json.roundtrip', 3, 'default', stack)
-            class FakeArray:
-                items = ['wrong'] * 3
-            with patch.object(bench, 'read_json', return_value=FakeArray()):
-                result = case.runs['python_classes']()
-            with self.assertRaises(AssertionError): bench.validate(case, 'python_classes', result)
+        for name in ('json.roundtrip','json.streaming_roundtrip'):
+            for route in ('default','prepared'):
+                with self.subTest(name=name,route=route), ExitStack() as stack:
+                    case = bench.make_case(name, 3, route, stack)
+                    class FakeArray:
+                        items = ['wrong'] * 3
+                    with patch.object(bench, 'read_json', return_value=FakeArray()):
+                        result = case.runs['python_classes']()
+                    with self.assertRaises(AssertionError): bench.validate(case, 'python_classes', result)
+
+    def test_json_bulk_and_streaming_are_distinct_and_symmetric(self):
+        for route in ('default','prepared'):
+            for name in ('json.roundtrip','json.streaming_roundtrip'):
+                with self.subTest(name=name,route=route), ExitStack() as stack:
+                    case=bench.make_case(name,3,route,stack)
+                    self.assertIn('historical json.roundtrip ratios are not comparable',case.notes)
+                    self.assertIn('несопоставимы',bench.labels.note(case.notes))
+                    if name=='json.roundtrip':
+                        self.assertIn('WriteJSON(W,Data)',case.source)
+                        self.assertNotIn('Data=New',case.source)
+                        self.assertNotIn('Data.Add',case.source)
+                        self.assertNotIn('For ',case.source)
+                        self.assertIn('ready arrays are prepared outside timing',case.notes)
+                        self.assertNotIn('W.WriteValue',case.source)
+                        with patch.object(bench,'write_json',wraps=bench.write_json) as bulk:
+                            result=case.runs['python_classes']()
+                        self.assertEqual(bulk.call_count,1)
+                        self.assertIs(type(bulk.call_args.args[1]),bench.BSLArray)
+                        self.assertEqual(len(bulk.call_args.args[1].items),3)
+                    else:
+                        self.assertIn('W.WriteValue',case.source)
+                        self.assertNotIn('WriteJSON(W,Data)',case.source)
+                        with patch.object(bench.json,'JSONEncoder',wraps=bench.json.JSONEncoder) as encoders:
+                            result=case.runs['python']()
+                        self.assertEqual(encoders.call_count,1)
+                    for layer,run in case.runs.items():bench.validate(case,layer,run())
 
     def test_renderer_rejects_invalid_or_unexplained_results(self):
         case = bench.measure('structure.fields', 3, 3, 'default')
