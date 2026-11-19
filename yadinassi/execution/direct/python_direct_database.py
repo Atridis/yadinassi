@@ -184,6 +184,21 @@ class CatalogBoundary:
         if table_refs.indexed(value):return table_refs.bind(self,value,index,index=True)
         return super().reference_index(value,index)
 
+    def resolve_optional_open_file(self,value,name,*,require_value=False,omitted=(),argument_count=None):
+        kind=type(value)
+        if kind is not BSLJSONReader and kind is not BSLJSONWriter:
+            return super().resolve_optional_open_file(value,name,require_value=require_value,
+                                                     omitted=omitted,argument_count=argument_count)
+        self._catalog_owner(value)
+        if require_value:
+            raise TypeError('Процедура не возвращает значение: '+name)
+        limit=2 if kind is BSLJSONReader else 4
+        if not 1<=argument_count<=limit or any(not 1<=i<argument_count for i in omitted):
+            raise TypeError('Пропуск обязательного аргумента или неверное количество аргументов JSON OpenFile')
+        # Normal JSON OpenFile already handles None for optional arguments, and
+        # uses the same regular-file and ownership checks as no-hole calls.
+        return self.resolve_member(value,name)
+
     def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
         if type(value) is BSLXMLReader or type(value) is BSLXMLWriter:
             self._catalog_owner(value)

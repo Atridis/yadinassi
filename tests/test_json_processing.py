@@ -171,6 +171,38 @@ class JSONFamilyTests(unittest.TestCase):
             self.assertEqual(self.vm.execute('x.name'), 'Привет')
             self.assertTrue(Path(tmp, 'данные.json').read_bytes().startswith(b'\xef\xbb\xbf'))
 
+    def test_callback_free_file_omissions_use_canonical_json_defaults(self):
+        for writer, reader, settings, open_file, write, read, close in (
+            ('JSONWriter','JSONReader','JSONWriterSettings','OpenFile','WriteJSON','ReadJSON','Close'),
+            ('ЗаписьJSON','ЧтениеJSON','ПараметрыЗаписиJSON','ОткрытьФайл','ЗаписатьJSON','ПрочитатьJSON','Закрыть'),
+        ):
+            with self.subTest(writer=writer), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'test.json'
+                name = str(path).replace('"','""')
+                self.vm.execute(
+                    f's=New {settings}(, "  "); w=New {writer}; w.{open_file}("{name}",,True,s);'
+                    f'{write}(w,"Привет"); w.{close}();'
+                    f'r=New {reader}; r.{open_file}("{name}",); result={read}(r); r.{close}();'
+                )
+                self.assertEqual(path.read_bytes(), b'\xef\xbb\xbf' + '"Привет"'.encode())
+                self.assertEqual(self.vm.variables['result'], 'Привет')
+                opts = self.vm.variables['s']
+                self.assertIs(opts.new_lines, BSLJSONLineBreak.AUTO)
+                self.assertEqual(opts.padding_symbols, '  ')
+
+    def test_json_file_omission_rejects_missing_path_and_arity_before_actual_effects(self):
+        self.vm.execute('Function Tick() Raise "unexpected argument effect"; Return "utf-8"; EndFunction')
+        self.vm.execute('r=New JSONReader; w=New JSONWriter;')
+        for source, regex in (
+            ('r.OpenFile(,Tick());','обязательного аргумента'),
+            ('w.OpenFile(,Tick());','обязательного аргумента'),
+            ('r.OpenFile(Tick(),,);','количество аргументов'),
+            ('w.OpenFile(Tick(),,,,);','количество аргументов'),
+            ('s=New JSONWriterSettings(Tick(),,);','от 0 до 2 аргументов'),
+        ):
+            with self.subTest(source=source), self.assertRaisesRegex(BSLError,regex):
+                self.vm.execute(source)
+
     def test_explicit_internal_codec_refusal(self):
         for expression in ('New JSONReader', 'New JSONWriter', 'New JSONWriterSettings',
                            'JSONValueType.Number', 'JSONLineBreak.Auto', 'Type("JSONReader")'):

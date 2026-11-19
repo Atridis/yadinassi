@@ -247,6 +247,25 @@ class ServicesBoundary:
         # services or persisted BSL routines that may shadow its names.
         if type(vm) is not Interpreter or key in getattr(vm,'_direct_routine_modules',{}):
             return bound
+        if key in ('new:jsonwritersettings','new:параметрызаписиjson'):
+            factory=vm.types.get(key[4:])
+            if type(factory) is HostFunction and factory.function is BSLJSONWriterSettings:
+                def prepare_omissions(bound,positions,count):
+                    self._check()
+                    if not 1<=count<=2 or any(not 0<=i<count for i in positions):
+                        raise TypeError('ПараметрыЗаписиJSON ожидает от 0 до 2 аргументов')
+                    def invoke(*values):
+                        self._before('call_value',factory.name.casefold())
+                        try:
+                            if (vm.types.get(key[4:]) is not factory
+                                    or factory.function is not BSLJSONWriterSettings):
+                                raise BoundaryViolation('canonical JSON constructor changed at call boundary')
+                            return BSLJSONWriterSettings(*values)
+                        except PermissionError as error:raise BoundaryViolation(str(error)) from error
+                        finally:self._check()
+                    return invoke,dict.fromkeys(positions,None)
+                bound.prepare_omissions=prepare_omissions
+            return bound
         function=self._services.get(key)
         if type(function) is not HostFunction:return bound
         implementation=function.function

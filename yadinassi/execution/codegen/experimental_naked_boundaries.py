@@ -168,6 +168,9 @@ class BoundaryContext:
             finally:self._check()
         return write
 
+    def resolve_optional_open_file(self,value,name,*,require_value=False,omitted=(),argument_count=None):
+        return self.resolve_member_call(value,name,require_value=require_value,omitted=omitted)
+
     def resolve_member_call(self, value, name, *, require_value=False, omitted=()):
         """Call-site facts for receivers with a stricter public call protocol."""
         return self.resolve_member(value, name)

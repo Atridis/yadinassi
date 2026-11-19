@@ -476,7 +476,10 @@ class Emitter:
     def member_call(self,receiver,name,require_value,omitted,count,t):
         method='resolve_configuration_member_call' if self.configuration_calls else 'resolve_member_call'
         keywords=[self.node(py.keyword,t,arg='require_value',value=self.const(require_value,t)),self.node(py.keyword,t,arg='omitted',value=self.const(omitted,t))]
-        if self.configuration_calls:keywords.append(self.node(py.keyword,t,arg='argument_count',value=self.const(count,t)))
+        if not self.configuration_calls and omitted and name.casefold() in ('openfile','открытьфайл'):
+            method='resolve_optional_open_file'
+        if self.configuration_calls or method=='resolve_optional_open_file':
+            keywords.append(self.node(py.keyword,t,arg='argument_count',value=self.const(count,t)))
         return self.invoke(self.attribute(self.name('_context',t),method,t),[self.name(receiver,t),self.const(name,t)],t,keywords)
     def _expr(self,node,require_value=True):
         self.visits+=1;t=node.token;k=type(node)
@@ -603,7 +606,8 @@ class Emitter:
             if any(type(arg) is bsl.OmittedArgument for arg in node.arguments):
                 if native:return self.call('_host_omission_error',[],t)
                 key='new:'+kindname;self.required.add(key)
-                bound=self.invoke(self.attribute(self.name('_context',t),'resolve_service',t),[self.const(key,t)],t,
+                resolver='resolve_optional_service' if kindname in ('jsonwritersettings','параметрызаписиjson') else 'resolve_service'
+                bound=self.invoke(self.attribute(self.name('_context',t),resolver,t),[self.const(key,t)],t,
                     [self.node(py.keyword,t,arg='argument_count',value=self.const(len(node.arguments),t))] if self.source_scopes else [])
                 return self.dynamic_call(bound,node,references=False)
             args=[self.expr(arg) for arg in node.arguments]
