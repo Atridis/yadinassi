@@ -1457,6 +1457,11 @@ class Emitter:
             result.append(self.node(py.While,t,test=condition,body=body,orelse=[]));return self.plain_array_loop(node,result)
         if k is bsl.ForEach:
             self.check_name(node.name)
+            if self.scope is None and self.static_module_kinds.get(id(node.collection))=='array':
+                slot=self.static_module_names[node.name.casefold()]
+                body=self.loop_body(node.body,None)
+                return [self.node(py.For,t,target=self.name(slot,t,True),iter=self.expr(node.collection),
+                                  body=body or [self.node(py.Pass,t)],orelse=[],type_comment=None)]
             receiver=self.temp();bound=self.temp();iterator=self.temp();key=self.temp();value=self.temp()
             def assign(name,value):return self.node(py.Assign,t,targets=[self.name(name,t,True)],value=value)
             def exact(kind):return self.exact_native(kind,self.name(receiver,t),t)
@@ -1829,6 +1834,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             static_facts=analyze_static(program,opaque_names=emitter.external_names|emitter.module_globals,
                builtin_results=builtin_results,builtin_external_names=builtin_external_names,numeric_routines=numeric_routines)
             emitter.static_module_kinds={} if static_facts is None else static_facts[1]
+            if static_facts is not None:names.update(static_facts[0])
             emitter.static_module_names={key:emitter.temp() for key in sorted(names)}
         if (not has_goto and static_facts is None and not emitter.authority and not emitter.source_scopes
                 and not emitter.catalog_bounds and (not emitter.routines or emitter.native_cells)):
