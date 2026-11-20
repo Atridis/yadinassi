@@ -51,6 +51,12 @@ class BSLDate:
             raise TypeError("Арифметика даты: ожидается число секунд")
         return shift_date(self, other)
 
+    def __radd__(self, other):
+        # Number + Date remains invalid; ordinary numeric addition pays nothing.
+        if type(other) is Decimal or type(other) is int:
+            raise TypeError("Ожидается число")
+        return NotImplemented
+
     def __sub__(self, other):
         if type(other) is BSLDate:
             return date_difference(self, other)
