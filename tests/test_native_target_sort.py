@@ -306,8 +306,10 @@ class NativeTargetSortTests(unittest.TestCase):
             for order, error in (('', ValueError), ('Key,Missing', ValueError),
                                  ('Key Asc extra', ValueError),
                                  (None, TypeError))
-        ] + [('Key', comparator, NotImplementedError)
-             for comparator in (D(1), NULL, False, BSLStructure())]
+        ] + [('Key', comparator, TypeError) for comparator in (1, D(1))] + [
+            ('Key', comparator, NotImplementedError)
+            for comparator in (NULL, False, BSLStructure())
+        ]
         with target_context(LINUX_8_3_27_1508):
             for value, error in bad_keys:
                 with self.subTest(value=repr(value)):

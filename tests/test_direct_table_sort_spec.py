@@ -42,3 +42,9 @@ class DirectTableSortSpecTests(unittest.TestCase):
         vm=self.table();vm.variables['t']._bounded_slice_read=True
         with self.assertRaises(BSLError):vm.execute('T.Sort("Key,,");')
         self.assertEqual([tuple(row) for row in vm.variables['t'].rows],[(2,1),(1,2),(1,1)])
+
+    def test_numeric_comparator_is_catchable_without_reordering(self):
+        vm=self.table()
+        vm.execute('Caught=False;Try T.Sort("Key",1); Except Caught=True; EndTry;')
+        self.assertIs(vm.variables['caught'],True)
+        self.assertEqual([tuple(row) for row in vm.variables['t'].rows],[(2,1),(1,2),(1,1)])

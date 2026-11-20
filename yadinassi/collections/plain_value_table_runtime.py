@@ -299,7 +299,11 @@ class BSLValueTable(BSLObject):
         return public_cell(result)
     def sort(self,order,comparator=None):
         _writable(self)
-        if comparator is not None:raise NotImplementedError('custom comparator is parked')
+        if comparator is not None:
+            kind = type(comparator)
+            if kind is int or kind is Decimal:
+                raise TypeError('numeric sort comparator is invalid')
+            raise NotImplementedError('custom comparator is parked')
         if type(order) is not str:raise TypeError('sort order must be str')
         terms=[]
         for part in order.split(','):
