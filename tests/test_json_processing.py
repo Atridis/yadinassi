@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
+from yadinassi.execution.codegen.experimental_naked_structure import new_structure
 from yadinassi.formats.json.json_processing import (
     BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings, BSLJSONLineBreak,
     BSLJSONValueType as T, read_json, write_json,
@@ -169,7 +170,20 @@ class JSONFamilyTests(unittest.TestCase):
                             'r=New JSONReader;r.OpenFile("' + path + '",);x=ReadJSON(r);r.Close();')
             self.assertEqual(self.vm.execute('s'), '')
             self.assertEqual(self.vm.execute('x.name'), 'Привет')
-            self.assertTrue(Path(tmp, 'данные.json').read_bytes().startswith(b'\xef\xbb\xbf'))
+            self.assertEqual(Path(tmp, 'данные.json').read_bytes(),
+                             b'\xef\xbb\xbf' + '{"name":"Привет"}'.encode())
+
+    def test_direct_structure_write_keeps_original_names_and_order(self):
+        inner = new_structure('MixedCase', 'Привет')
+        inner['MIXEDCASE'] = 'Новое'
+        structure = new_structure('Nested,Second', inner, 'text')
+        self.assertEqual(self.write(structure), '{"Nested":{"MixedCase":"Новое"},"Second":"text"}')
+
+    def test_direct_structure_write_rejects_cycles(self):
+        structure = new_structure('Self')
+        structure['self'] = structure
+        with self.assertRaisesRegex(ValueError, 'циклическая коллекция'):
+            self.write(structure)
 
     def test_callback_free_file_omissions_use_canonical_json_defaults(self):
         for writer, reader, settings, open_file, write, read, close in (

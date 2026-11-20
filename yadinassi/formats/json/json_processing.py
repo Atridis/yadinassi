@@ -6,6 +6,7 @@ import json
 import os
 import stat
 
+from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
 from yadinassi.execution.safe_mode import require_external_access
 from yadinassi.types.values import BSLObject, HostFunction, BSLArray, BSLFixedArray
 from yadinassi.collections.structures import BSLStructure, BSLFixedStructure
@@ -342,7 +343,7 @@ def _quote(value):
 
 
 _SKIP_JSON_PROPERTY = object()
-_JSON_COLLECTIONS = (BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure, BSLMap, BSLFixedMap)
+_JSON_COLLECTIONS = (BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure, BSLMap, BSLFixedMap, _DirectStructure)
 _JSON_SCALARS = (type(None), bool, str, Decimal, BSLDate)
 
 
@@ -403,12 +404,19 @@ def encode_json_events(value, settings=None, *, has_converter=False):
             entries = []
             # Snapshot this container, not the graph: callbacks cannot invalidate
             # a live Python iterator or make it grow indefinitely.
-            if len(item.items if array else item._items) > remaining:
+            direct_structure = kind is _DirectStructure
+            storage = item if direct_structure else (item.items if array else item._items)
+            if len(storage) > remaining:
                 raise ValueError("JSON: превышен предел числа значений Yadinassi")
-            children = list(item)
+            children = list(dict.values(item)) if direct_structure else list(item)
             for child in children:
-                key = None if array else _text(child.key)
-                source = child if array else child.value
+                if array:
+                    key, source = None, child
+                elif direct_structure:
+                    key, source = child
+                    key = _text(key)
+                else:
+                    key, source = _text(child.key), child.value
                 encoded = yield from encode(source, depth + 1, key, can_cancel=not array)
                 if encoded is _SKIP_JSON_PROPERTY:
                     continue
