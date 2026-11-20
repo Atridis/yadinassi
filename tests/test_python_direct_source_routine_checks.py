@@ -99,3 +99,24 @@ class SourceRoutineChecks(unittest.TestCase):
         app.files[path] = app.files[path].replace(b'<Properties>',b'<Properties><Privileged>true</Privileged>')
         app.interpreter.execute('Try Message(Helpers.Increment(7)); Except Message("denied"); EndTry;')
         self.assertEqual(out,['8','8','denied'])
+
+    def test_same_side_target_removed_by_plain_output_during_arguments(self):
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+
+        config = source(
+            b'Function Touch() Message("arg"); Return 7; EndFunction',
+            common_module(b'Function Call(Val X) Export Message("callee"); Return X; EndFunction'),
+        )
+        out = []
+
+        def output(value):
+            out.append(value)
+            if value == 'arg':
+                app._instances.clear()
+
+        app = SourceApplication(config, output=output)
+        self.addCleanup(app.close)
+        self.assertTrue(app.start())
+        with self.assertRaises(BoundaryViolation):
+            app.interpreter.execute('R=Helpers.Call(Touch()); Message("later");')
+        self.assertEqual(out, ['arg'])

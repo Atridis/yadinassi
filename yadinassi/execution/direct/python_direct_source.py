@@ -462,7 +462,10 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
                     from yadinassi.execution.invocation import _encode_scalar
                     for value in values:_encode_scalar(value)
                 if reuse is None:
-                    result=_invoke_plan(owner,routine,values,plan)
+                    result=_invoke_plan(owner,routine,values,plan,
+                        same_side_admitted=(direct and owner is not self.vm and self._local_scalars()
+                                            and not owner.allow_extensions
+                                            and not getattr(owner,'_direct_source_server_activation',False)))
                 else:
                     # Reuse can perform work before a cache miss invokes the
                     # target. Readmit at that point, not just before lookup.
@@ -491,11 +494,15 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             return current,{i:_OMITTED_REF for i in positions}
         bound.prepare_omissions=omissions
         return bound
-    def _module(self,value):
+    def _module(self,value,*,_caller_checked=False):
         from yadinassi.runtime import _Module
         if type(value) is not _Module:return None
-        self._check()
+        if not _caller_checked:
+            self._check()
         owner=value.interpreter
+        if (_caller_checked and (not self._local_scalars()
+                or type(owner) is not type(self.vm) or owner._logical_side!=self.side)):
+            self._check()
         keys=[key for key,child in self.app._instances.items() if child is owner]
         if not keys or any(type(key) is not tuple or len(key)!=3 or (not _manager_key(key) and key[2]) for key in keys):
             raise BoundaryViolation('foreign or non-qualified source module')
@@ -549,6 +556,15 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         raise ValueError('direct source receiver is not integrated')
     def resolve_source_member(self,value,name,*,require_value=False,argument_count=None,allow_references=False):
         self._check()
+        owner=self._module(value,_caller_checked=True)
+        if owner is not None:
+            routine=value.routine(name)
+            if self.side=='client' and routine.execution_context=='server':
+                from .source.python_direct_source_server import resolve
+                return resolve(self,owner,routine,require_value=require_value,
+                    argument_count=argument_count,allow_references=allow_references)
+            return self._routine(owner,routine,qualified=True,require_value=require_value,
+                argument_count=argument_count,allow_references=allow_references)
         if xdto_json.owns(value):return xdto_json.resolve(self,value,name,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
         if xdto_xml.owns(value):return xdto_xml.resolve(self,value,name,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
         if xdto.owns(value):return xdto.resolve(self,value,name,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
@@ -571,15 +587,6 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
                 argument_count=argument_count,allow_references=allow_references)
         if storage.owns(value):return storage.resolve(self,value,name,require_value=require_value,
             argument_count=argument_count,allow_references=allow_references)
-        owner=self._module(value)
-        if owner is not None:
-            routine=value.routine(name)
-            if self.side=='client' and routine.execution_context=='server':
-                from .source.python_direct_source_server import resolve
-                return resolve(self,owner,routine,require_value=require_value,
-                    argument_count=argument_count,allow_references=allow_references)
-            return self._routine(owner,routine,qualified=True,require_value=require_value,
-                argument_count=argument_count,allow_references=allow_references)
         function=self.resolve_member(value,name)
         return self.resolve_callable(HostFunction(name,function),require_value=require_value,
                                      allow_references=allow_references)
@@ -666,7 +673,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         self._check()
 
 
-def _run(owner,plan,callback=None):
+def _run(owner,plan,callback=None,*,same_side_admitted=False):
     from yadinassi.execution.codegen.native_targets import target_context
     from yadinassi.execution.execution_policy import execution_backend_policy
     check_owner(owner)
@@ -677,7 +684,13 @@ def _run(owner,plan,callback=None):
         from .source.python_direct_source_requests import request_scope
         with request_scope(owner),target_context(owner.native_target),execution_backend_policy('python-direct'),localcontext() as decimal:
             decimal.prec=38
-            context.enter()
+            if same_side_admitted and context._local_scalars():
+                # Target owner, module binding, and plan were checked after
+                # the actual arguments, before this synchronous activation.
+                context._start_lease()
+                context._check_local_lifetime()
+            else:
+                context.enter()
             try:
                 try:
                     result=plan.function(owner.variables,plan.constants,[],context)
@@ -737,8 +750,9 @@ def _preflight(owner,routine):
     return plan
 
 
-def _invoke_plan(owner,routine,values,plan):
-    return _run(owner,plan,lambda exports:exports[routine.name.casefold()](*values))
+def _invoke_plan(owner,routine,values,plan,*,same_side_admitted=False):
+    return _run(owner,plan,lambda exports:exports[routine.name.casefold()](*values),
+                same_side_admitted=same_side_admitted)
 
 
 def invoke(owner,routine,values):

@@ -220,11 +220,14 @@ class BoundaryContext:
         pass
 
     def start(self):
+        self._start_lease()
+        if self._verify_context:self._check()
+
+    def _start_lease(self):
         if self._revoked:
             raise BoundaryViolation('execution authority revoked')
         self._admitted_epoch = self._epoch
         self.loop_backedges = 0
-        if self._verify_context:self._check()
 
     def _check_effect(self):
         self._check()
