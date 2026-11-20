@@ -1310,7 +1310,9 @@ class Emitter:
                 if self.static_module_kinds[id(target.object)]=='map':
                     write=self.call('_native_dict_setitem',[self.name(receiver,t),self.name(index,t),self.name(stored,t)],t)
                     body.append(self.node(py.Expr,t,value=write));return body
-                slot=self.node(py.Subscript,t,value=self.name(receiver,t),slice=self.call('int',[self.name(index,t)],t),ctx=py.Store())
+                position=(self.call('_checked_array_index',[self.name(receiver,t),self.name(index,t)],t)
+                          if self.address_routine_symbols else self.call('int',[self.name(index,t)],t))
+                slot=self.node(py.Subscript,t,value=self.name(receiver,t),slice=position,ctx=py.Store())
                 body.append(self.node(py.Assign,t,targets=[slot],value=self.name(stored,t)));return body
             target=node.target;receiver=self.temp();writer=self.temp();index=self.temp();stored=self.temp()
             def assign(name,value):return self.node(py.Assign,t,targets=[self.name(name,t,True)],value=value)

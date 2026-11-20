@@ -30,6 +30,33 @@ class DirectArrayElementAddressTests(unittest.TestCase):
         vm.execute('X=2; Y=3; Rewrite(X, 5, Y);')
         self.assertEqual((vm.variables['x'],vm.variables['y']),(D(10),D(4)))
 
+    def test_ordinary_indexed_assignment_keeps_direct_address_calls(self):
+        vm=self.vm()
+        source=('Procedure SetOrAdd(A, Val K) A=A+K; EndProcedure '
+                'T=New Array; T.Add(5); IX=0; T[IX]=2; '
+                'For I=1 To 3 Do SetOrAdd(T[0],2); EndDo;')
+        plan=vm.prepare(source)
+        tree=ast.parse(plan._plan.generated_source)
+        loop=next(node for node in ast.walk(tree) if type(node) is ast.For)
+        hot=ast.unparse(loop)
+        self.assertIn('_checked_literal_array_index',hot)
+        self.assertNotIn('_adapt_native_cell',hot)
+        self.assertNotIn('_context._check()',hot)
+        vm.execute_prepared(plan)
+        self.assertEqual(vm.variables['t'],[D(8)])
+
+    def test_indexed_assignment_validates_after_rhs_and_never_truncates(self):
+        for index,rhs,expected in (('-1','1/0','Деление на ноль'),
+                                   ('-1','2','Индекс массива вне границ'),
+                                   ('0.5','2','Ожидается целое число')):
+            with self.subTest(index=index,rhs=rhs):
+                vm=self.vm()
+                source=('Procedure Update(X) X=X+1; EndProcedure '
+                        f'T=New Array; T.Add(5); T[{index}]={rhs}; Update(T[0]);')
+                with self.assertRaisesRegex(BSLRuntimeError,expected):
+                    vm.execute_prepared(vm.prepare(source))
+                self.assertEqual(vm.variables['t'],[D(5)])
+
     def test_bad_address_precedes_later_actual_and_write_survives_error(self):
         for prepare in (False,True):
             vm=self.vm()

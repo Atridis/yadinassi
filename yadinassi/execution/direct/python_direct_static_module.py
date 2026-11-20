@@ -13,7 +13,7 @@ class _Decline(Exception):pass
 def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=None, builtin_external_names=(), numeric_routines=None, address_routines=None):
     builtin_results = builtin_results or {}
     kinds={};names=set();opaque=set(opaque_names)|{'thisobject','этотобъект'}
-    checked=set();active=set();indexed_write=False
+    checked=set();active=set()
     numeric_routines={} if numeric_routines is None else numeric_routines
     address_routines={} if address_routines is None else address_routines
     def require(condition):
@@ -110,7 +110,6 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
         if key in env:require(env[key]==kind)
         env[key]=kind;names.add(key)
     def sequence(nodes,env):
-        nonlocal indexed_write
         for node in nodes:
             k=type(node)
             if k is bsl.Routine and (numeric_routines or address_routines):continue
@@ -119,7 +118,6 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
                 kind=expression(node.value,env)
                 if type(node.target) is bsl.Name:assign(node.target.name,kind,env)
                 elif type(node.target) is bsl.Index:
-                    indexed_write=True
                     require(expression(node.target.object,env) in ('array','map'))
                     require(expression(node.target.index,env)=='number' and kind=='number')
                     kinds[id(node.target)]='number'
@@ -191,6 +189,6 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
     try:sequence(program,{})
     except _Decline:return None
     if 'address_call' in kinds.values():
-        if indexed_write or any(kind not in ('number','bool','string','array','append','address_call')
+        if any(kind not in ('number','bool','string','array','append','address_call')
                                 for kind in kinds.values()):return None
     return tuple(sorted(names)),kinds
