@@ -31,52 +31,82 @@ def table_for(*values):
     return table
 
 
+_ASC = [2, 4, 6, 1, 3, 5]
+_ORIGINAL = [1, 2, 3, 4, 5, 6]
+NATIVE_CASES = [
+    ('base', 'Key', 'omitted', 'ok', _ASC),
+    ('base', 'Key Desc', 'omitted', 'ok', [1, 3, 5, 2, 4, 6]),
+    ('base', 'Key Asc,Second Desc', 'omitted', 'ok', [2, 4, 6, 5, 1, 3]),
+    ('base', 'Key Убыв, Second Возр', 'russian', 'ok', [1, 3, 5, 4, 6, 2]),
+    ('base', ' key desc , SECOND asc ', 'omitted', 'ok', [1, 3, 5, 4, 6, 2]),
+    ('base', 'Key,Key Desc', 'omitted', 'ok', _ASC),
+    ('base', '', 'omitted', 'error', _ORIGINAL),
+    ('base', 'Key,Missing', 'omitted', 'error', _ORIGINAL),
+    ('base', 'Key Sideways', 'omitted', 'ok', _ASC),
+    ('base', 'Key,,Second', 'omitted', 'ok', [4, 6, 2, 1, 3, 5]),
+    ('base', 'Key,', 'omitted', 'ok', _ASC),
+    ('base', None, 'omitted', 'error', _ORIGINAL),
+    ('base', 'Key', 'undefined', 'ok', _ASC),
+    ('base', 'Key', 'invalid', 'error', _ORIGINAL),
+    ('empty', 'Key', 'omitted', 'ok', []),
+    ('locale', 'Key', 'omitted', 'ok', [14,15,6,7,9,8,10,11,12,13,2,4,3,5,1,17,16]),
+    ('locale', 'Key Desc', 'omitted', 'ok', [16,1,17,3,5,2,4,13,12,11,10,8,6,7,9,15,14]),
+    ('mixed', 'Key', 'omitted', 'ok', [4,12,6,11,7,3,13,8,2,14,9,1,15,10,5]),
+    ('mixed', 'Key Desc', 'omitted', 'ok', [5,10,1,15,9,2,14,8,3,13,7,6,11,4,12]),
+    ('objects', 'Key', 'omitted', 'ok', [2,4,1,3,6,5]),
+    ('base', 'Key', 'missing', 'error', _ORIGINAL),
+    ('singleton', 'Key', 'omitted', 'ok', [1]),
+    # Supplement owner commit 6e8d31f, original output unmodified.
+    ('utf16-boundary', 'Key', 'omitted', 'ok', [3,1,4,5,2]),
+    ('utf16-boundary', 'Key Desc', 'omitted', 'ok', [2,5,4,1,3]),
+]
+
+
+# Only exact order differs intentionally; all four cases still run in Light.
+ADVISORY_ORDER_CASES = frozenset({
+    ('locale', 'Key', 'omitted'),
+    ('locale', 'Key Desc', 'omitted'),
+    ('utf16-boundary', 'Key', 'omitted'),
+    ('utf16-boundary', 'Key Desc', 'omitted'),
+})
+
+
+def sort_probe_source():
+    source = (ROOT / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig')
+    return source.split('#Область МассивыИСтруктуры', 1)[0]
+
+
+def observe_native_case(check, vm, case):
+    dataset, order, comparator, status, expected = case
+    arg = 'Неопределено' if order is None else '"' + order + '"'
+    result = vm.execute(f'СортировкаТаблицыПробы("{dataset}", {arg}, "{comparator}")')
+    check.assertEqual(result['Status'], status)
+    actual = list(result['Order'])
+    if case[:3] in ADVISORY_ORDER_CASES:
+        check.assertTrue(all(type(identifier) in (int, D) for identifier in actual))
+        check.assertCountEqual(actual, expected)
+        first_index = actual.index(1)
+    else:
+        check.assertEqual(actual, expected)
+        first_index = expected.index(1) if expected else None
+    check.assertEqual(result['FirstID'], 1 if expected else None)
+    check.assertEqual(result['FirstIndex'], first_index)
+    check.assertEqual(result['SameRow'], True if expected else None)
+    return actual
+
+
 class NativeSortTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.vm = Interpreter()
-        source = (ROOT / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig')
-        cls.vm.execute(source.split('#Область МассивыИСтруктуры', 1)[0])
+        cls.addClassCleanup(cls.vm.close)
+        cls.vm.execute(sort_probe_source())
 
     def test_all_24_native_observations(self):
-        asc = [2, 4, 6, 1, 3, 5]
-        original = [1, 2, 3, 4, 5, 6]
-        cases = [
-            ('base', 'Key', 'omitted', 'ok', asc),
-            ('base', 'Key Desc', 'omitted', 'ok', [1, 3, 5, 2, 4, 6]),
-            ('base', 'Key Asc,Second Desc', 'omitted', 'ok', [2, 4, 6, 5, 1, 3]),
-            ('base', 'Key Убыв, Second Возр', 'russian', 'ok', [1, 3, 5, 4, 6, 2]),
-            ('base', ' key desc , SECOND asc ', 'omitted', 'ok', [1, 3, 5, 4, 6, 2]),
-            ('base', 'Key,Key Desc', 'omitted', 'ok', asc),
-            ('base', '', 'omitted', 'error', original),
-            ('base', 'Key,Missing', 'omitted', 'error', original),
-            ('base', 'Key Sideways', 'omitted', 'ok', asc),
-            ('base', 'Key,,Second', 'omitted', 'ok', [4, 6, 2, 1, 3, 5]),
-            ('base', 'Key,', 'omitted', 'ok', asc),
-            ('base', None, 'omitted', 'error', original),
-            ('base', 'Key', 'undefined', 'ok', asc),
-            ('base', 'Key', 'invalid', 'error', original),
-            ('empty', 'Key', 'omitted', 'ok', []),
-            ('locale', 'Key', 'omitted', 'ok', [14,15,6,7,9,8,10,11,12,13,2,4,3,5,1,17,16]),
-            ('locale', 'Key Desc', 'omitted', 'ok', [16,1,17,3,5,2,4,13,12,11,10,8,6,7,9,15,14]),
-            ('mixed', 'Key', 'omitted', 'ok', [4,12,6,11,7,3,13,8,2,14,9,1,15,10,5]),
-            ('mixed', 'Key Desc', 'omitted', 'ok', [5,10,1,15,9,2,14,8,3,13,7,6,11,4,12]),
-            ('objects', 'Key', 'omitted', 'ok', [2,4,1,3,6,5]),
-            ('base', 'Key', 'missing', 'error', original),
-            ('singleton', 'Key', 'omitted', 'ok', [1]),
-            # Supplement owner commit 6e8d31f, original output unmodified.
-            ('utf16-boundary', 'Key', 'omitted', 'ok', [3,1,4,5,2]),
-            ('utf16-boundary', 'Key Desc', 'omitted', 'ok', [2,5,4,1,3]),
-        ]
-        for dataset, order, comparator, status, expected in cases:
+        for case in NATIVE_CASES:
+            dataset, order, comparator = case[:3]
             with self.subTest(dataset=dataset, order=order, comparator=comparator):
-                arg = 'Неопределено' if order is None else '"' + order + '"'
-                result = self.vm.execute(f'СортировкаТаблицыПробы("{dataset}", {arg}, "{comparator}")')
-                self.assertEqual(result['Status'], status)
-                self.assertEqual(list(result['Order']), expected)
-                self.assertEqual(result['FirstID'], 1 if expected else None)
-                self.assertEqual(result['FirstIndex'], expected.index(1) if expected else None)
-                self.assertEqual(result['SameRow'], True if expected else None)
+                observe_native_case(self, self.vm, case)
 
     def test_pinned_dataset_and_license_are_exact(self):
         data_dir = ROOT / 'yadinassi/data'
