@@ -141,9 +141,9 @@ class AccumulationMovementPort:
         self._reference_layout = (_storage().load_layout(connection, reference_catalogs)
                                   if reference_profile else None)
 
-    def _require(self, register_id, recorder):
-        if not self.connection.in_transaction:
-            raise BackendError('closed')
+    def _require(self, register_id, recorder, *, _query_view=None):
+        from .sqlite_transactions import _require_movement_scan
+        _require_movement_scan(self.connection, _query_view)
         if type(register_id) is not UUID or not register_id.int:
             raise BackendError('invalid_input')
         schema = self.schemas.get(register_id)
@@ -284,8 +284,8 @@ class AccumulationMovementPort:
         return AccumulationPartition(schema.identity, recorder, revision, rows,
                                      self._snapshot(schema, recorder, revision, encoded))
 
-    def scan(self, register_id):
-        """Bounded raw occurrences from two streams on the borrowed snapshot."""
+    def scan(self, register_id, *, _query_view=None):
+        """Bounded raw occurrences from two streams on the borrowed connection."""
         from contextlib import closing
         from .sqlite_partition_scan import ordered_partitions, recorder_key
         if type(register_id) is not UUID or not register_id.int:
@@ -293,7 +293,7 @@ class AccumulationMovementPort:
         schema = self.schemas.get(register_id)
         if schema is None:
             raise BackendError('unsupported')
-        self._require(register_id, DocumentKey(self.database_id, schema.recorder_documents[0], UUID(int=1)))
+        self._require(register_id, DocumentKey(self.database_id, schema.recorder_documents[0], UUID(int=1)), _query_view=_query_view)
         validate_database_budget(self.connection)
         args = (str(register_id),)
         # Aggregate limits before fetching any payload, preserving the point

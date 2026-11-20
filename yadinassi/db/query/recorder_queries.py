@@ -62,7 +62,7 @@ def load(manager,columns,view,budget):
         raise BackendError('schema_changed')
     port=_recorder_port(owner)
     rows=[]
-    for key,partition in port.scan(manager.recorder_schema.identity):
+    for key,partition in port.scan(manager.recorder_schema.identity, _query_view=owner):
         for row in partition.rows:
             values={f.identity:_section_value(manager,f,v)
                 for f,v in zip(manager._schema.fields,row.values)}

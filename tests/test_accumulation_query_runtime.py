@@ -56,6 +56,36 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
         vm.execute('O.Write(DocumentWriteMode.Posting);')
         return vm.execute('O')
 
+    def test_register_query_uses_live_read_lease_without_begin(self):
+        from yadinassi.db.catalog.catalog_backend import BackendError
+        from yadinassi.db.sqlite.sqlite_transactions import _accumulation_port
+
+        vm, context = self.make()
+        self.seed(vm, [('A', 1, 5, 2, False, 0)])
+        source = 'Q=New Query("SELECT Amount FROM ' + REG + '");Result=Q.Execute();'
+        vm.execute(source)
+        connection = context.backend._read_handle.connection
+        statements = []
+        connection.set_trace_callback(statements.append)
+        try:
+            vm.execute(source)
+            self.assertEqual(vm.variables['result']._rows, ((Decimal(5),),))
+            self.assertIs(context.backend._read_handle.connection, connection)
+            self.assertIsNone(context.backend._active)
+            self.assertTrue(any('FROM accumulation_movement' in sql for sql in statements))
+            self.assertFalse(any(sql.startswith(('BEGIN', 'ROLLBACK')) for sql in statements))
+        finally:
+            connection.set_trace_callback(None)
+        with closing(context.backend.begin_query_read(query_language=True)) as view:
+            owner = view._view
+            port = _accumulation_port(owner)
+            register = next(iter(port.schemas))
+            with self.assertRaisesRegex(BackendError, 'closed'):
+                port.scan(register)
+            self.assertEqual(len(port.scan(register, _query_view=owner)), 1)
+        with self.assertRaisesRegex(BackendError, 'closed'):
+            port.scan(register, _query_view=owner)
+
     def test_unchanged_native16_observer_and_handler_replay(self):
         vm, _ = self.make(module=None)
         observed, diagnostics = [], []

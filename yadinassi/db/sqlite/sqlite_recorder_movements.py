@@ -88,8 +88,9 @@ class RecorderMovementPort:
         if len({s.identity for s in schemas})!=len(schemas):raise BackendError('invalid_input')
         self.schemas={s.identity:s for s in schemas};self.definitions={s.identity:_json(d) for s,d in zip(schemas,data)}
 
-    def _require(self,register_id,recorder):
-        if not self.connection.in_transaction:raise BackendError('closed')
+    def _require(self,register_id,recorder,*,_query_view=None):
+        from .sqlite_transactions import _require_movement_scan
+        _require_movement_scan(self.connection, _query_view)
         schema=self.schemas.get(register_id)
         if schema is None:raise BackendError('unsupported')
         validate_replacement(schema,RecorderReplacement(register_id,recorder,(),'0'*64),self.database_id)
@@ -144,13 +145,13 @@ class RecorderMovementPort:
         encoded=self._encoded(schema,rows)
         return RecorderPartition(schema.identity,recorder,revision,rows,self._snapshot(schema,recorder,revision,encoded))
 
-    def scan(self, register_id):
+    def scan(self, register_id, *, _query_view=None):
         """One declaration check and two bounded streams, never partition N+1."""
         from contextlib import closing
         from .sqlite_partition_scan import ordered_partitions, recorder_key
         schema = self.schemas.get(register_id)
         if schema is None: raise BackendError('unsupported')
-        self._require(register_id,DocumentKey(self.database_id,schema.recorder_documents[0],UUID(int=1)))
+        self._require(register_id,DocumentKey(self.database_id,schema.recorder_documents[0],UUID(int=1)), _query_view=_query_view)
         args = (str(register_id),)
         count = self.connection.execute('SELECT COUNT(*) FROM recorder_partition WHERE register_id=?',args).fetchone()[0]
         if count > MAX_DATABASE_PARTITIONS: raise BackendError('unsupported')

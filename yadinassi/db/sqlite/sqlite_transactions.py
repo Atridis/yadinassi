@@ -25,6 +25,20 @@ def _hash(value): return hashlib.sha256(_json(value).encode('utf-8')).hexdigest(
 def _child(operation, index): return uuid5(operation, 'unit-of-work-v1:%d' % index)
 
 
+def _require_movement_scan(connection, query_view):
+    if query_view is not None and type(query_view) is _storage()._View:
+        query_view._require()
+        if (query_view._query_language and query_view._operation_id is None
+                and query_view._backend._active is query_view
+                and query_view._connection is connection
+                and query_view._read_handle is query_view._backend._read_handle
+                and query_view._read_handle is not None
+                and query_view._read_handle.connection is connection):
+            return
+    if not connection.in_transaction:
+        raise BackendError('closed')
+
+
 def _recorder_port(view):
     # Absent until a future explicit canonical profile admits recorder schemas.
     # No table discovery or implicit activation on legacy v11/v12 databases.

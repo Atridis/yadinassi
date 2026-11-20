@@ -190,7 +190,7 @@ def load(manager, columns, view, budget, source, parameters):
                                 enum_domain=owner._backend._enum_domain)
                if source.section == 'balance_and_turnovers' or periodicity else None)
     count = 0
-    for key, partition in _accumulation_port(owner).scan(schema.identity):
+    for key, partition in _accumulation_port(owner).scan(schema.identity, _query_view=owner):
         for row in partition.rows:
             count += 1
             if count > syntax.MAX_ROWS:
