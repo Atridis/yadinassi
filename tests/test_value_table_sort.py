@@ -72,11 +72,11 @@ class NativeSortTests(unittest.TestCase):
             with self.subTest(dataset=dataset, order=order, comparator=comparator):
                 arg = 'Неопределено' if order is None else '"' + order + '"'
                 result = self.vm.execute(f'СортировкаТаблицыПробы("{dataset}", {arg}, "{comparator}")')
-                self.assertEqual(result.get_member('Status'), status)
-                self.assertEqual(result.get_member('Order').items, expected)
-                self.assertEqual(result.get_member('FirstID'), 1 if expected else None)
-                self.assertEqual(result.get_member('FirstIndex'), expected.index(1) if expected else None)
-                self.assertEqual(result.get_member('SameRow'), True if expected else None)
+                self.assertEqual(result['Status'], status)
+                self.assertEqual(list(result['Order']), expected)
+                self.assertEqual(result['FirstID'], 1 if expected else None)
+                self.assertEqual(result['FirstIndex'], expected.index(1) if expected else None)
+                self.assertEqual(result['SameRow'], True if expected else None)
 
     def test_pinned_dataset_and_license_are_exact(self):
         data_dir = ROOT / 'yadinassi/data'
