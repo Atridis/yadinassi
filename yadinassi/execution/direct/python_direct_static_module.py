@@ -10,11 +10,12 @@ from yadinassi.syntax import ast as bsl
 class _Decline(Exception):pass
 
 
-def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=None, builtin_external_names=(), numeric_routines=None):
+def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=None, builtin_external_names=(), numeric_routines=None, address_routines=None):
     builtin_results = builtin_results or {}
     kinds={};names=set();opaque=set(opaque_names)|{'thisobject','этотобъект'}
-    checked=set();active=set()
+    checked=set();active=set();indexed_write=False
     numeric_routines={} if numeric_routines is None else numeric_routines
+    address_routines={} if address_routines is None else address_routines
     def require(condition):
         if not condition:raise _Decline
     def expression(node,env):
@@ -109,14 +110,16 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
         if key in env:require(env[key]==kind)
         env[key]=kind;names.add(key)
     def sequence(nodes,env):
+        nonlocal indexed_write
         for node in nodes:
             k=type(node)
-            if k is bsl.Routine and numeric_routines:continue
+            if k is bsl.Routine and (numeric_routines or address_routines):continue
             if k is bsl.Assign:
                 if scalar_prefix:require(type(node.target) is bsl.Name)
                 kind=expression(node.value,env)
                 if type(node.target) is bsl.Name:assign(node.target.name,kind,env)
                 elif type(node.target) is bsl.Index:
+                    indexed_write=True
                     require(expression(node.target.object,env) in ('array','map'))
                     require(expression(node.target.index,env)=='number' and kind=='number')
                     kinds[id(node.target)]='number'
@@ -128,6 +131,22 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
             elif k is bsl.ExpressionStatement:
                 call=node.expression
                 if scalar_prefix:expression(call,env)
+                elif type(call) is bsl.Call and type(call.callee) is bsl.Name and call.callee.name.casefold() in address_routines:
+                    name=call.callee.name.casefold();routine=address_routines[name]
+                    require(len(call.arguments)==len(routine.parameters))
+                    for parameter,arg in zip(routine.parameters,call.arguments):
+                        while type(arg) is bsl.Group:arg=arg.expression
+                        if not parameter.by_value:
+                            require(type(arg) is bsl.Index and expression(arg.object,env)=='array')
+                        require(expression(arg,env)=='number')
+                    if name not in checked:
+                        active.add(name)
+                        try:
+                            local={p.name.casefold():'number' for p in routine.parameters}
+                            for statement in routine.body:require(expression(statement.value,local)=='number')
+                        finally:active.remove(name)
+                        checked.add(name)
+                    kinds[id(call)]='address_call'
                 elif type(call) is bsl.Call and type(call.callee) is bsl.Attribute and call.callee.name.casefold() in ('add','добавить') and expression(call.callee.object,env)=='array':
                     require(expression(call.callee.object,env)=='array' and len(call.arguments)==1)
                     require(expression(call.arguments[0],env)=='number');kinds[id(call)]='append'
@@ -171,4 +190,7 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
         return kinds
     try:sequence(program,{})
     except _Decline:return None
+    if 'address_call' in kinds.values():
+        if indexed_write or any(kind not in ('number','bool','string','array','append','address_call')
+                                for kind in kinds.values()):return None
     return tuple(sorted(names)),kinds
