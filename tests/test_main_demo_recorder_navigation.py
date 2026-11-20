@@ -19,6 +19,11 @@ from yadinassi.ui.report_protocol import validate_projection
 REPORT = {'report':'StockMovements','at':None,'start':None,'end':None}
 
 
+class RecorderHandlerTests(unittest.TestCase):
+    def test_handler_explicitly_admits_new_recorder_method(self):
+        self.assertIn('application.openRecorder', ConfigurationHandler.methods)
+
+
 class RecorderNavigationTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
@@ -58,9 +63,6 @@ L=D.Lines.Add();L.Product=Карточка.Ссылка;L.Quantity=1;L.Amount=2;
         with SQLiteDBContext(self.path) as context:
             result = InventoryReports(context,self.configuration).read('StockMovements')
             return result.rows
-
-    def test_handler_explicitly_admits_new_recorder_method(self):
-        self.assertIn('application.openRecorder',ConfigurationHandler.methods)
 
     def test_both_recorders_open_separate_existing_document_forms_without_writes(self):
         before = self.saved(); names = set()

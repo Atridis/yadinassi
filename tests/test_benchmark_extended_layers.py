@@ -245,21 +245,28 @@ class ExtendedReferenceTests(unittest.TestCase):
 
 
 class BenchmarkDecimalIsolationTests(unittest.TestCase):
-    def test_actual_reference_workloads_restore_callers_decimal_context(self):
-        with localcontext() as caller:
-            caller.prec = 28
-            caller.traps[Inexact] = caller.traps[Rounded] = False
-            caller.clear_flags()
-            saved = caller.copy()
-            result = unittest.TestResult()
-            ExtendedReferenceTests('test_actual_workloads_repeat_on_both_routes').run(result)
-            self.assertEqual(result.testsRun, 1)
-            self.assertTrue(result.wasSuccessful(), result.errors + result.failures)
-            self.assertIs(getcontext(), caller)
-            self.assertEqual(caller.prec, saved.prec)
-            self.assertEqual(caller.rounding, saved.rounding)
-            self.assertEqual(caller.traps, saved.traps)
-            self.assertEqual(caller.flags, saved.flags)
+    def test_bsl_adjust_value_preserves_callers_decimal_context(self):
+        # The raw Python reference intentionally sets Inexact/Rounded. Check
+        # the real BSL route directly, before any context or fixture cleanup
+        # can hide changes to the active caller context.
+        for route in ('default', 'prepared'):
+            with self.subTest(route=route), localcontext() as caller, ExitStack() as stack:
+                caller.prec = 28
+                caller.traps[Inexact] = caller.traps[Rounded] = False
+                caller.clear_flags()
+                saved = caller.copy()
+                case = bench.make_case('types.adjust_value', 3, route, stack)
+                result = case.runs['bsl']()
+                self.assertIs(getcontext(), caller)
+                self.assertEqual(caller.prec, saved.prec)
+                self.assertEqual(caller.rounding, saved.rounding)
+                self.assertEqual((caller.Emin, caller.Emax, caller.clamp, caller.capitals),
+                                 (saved.Emin, saved.Emax, saved.clamp, saved.capitals))
+                self.assertEqual(caller.traps, saved.traps)
+                self.assertEqual(caller.flags, saved.flags)
+                self.assertIs(type(result), Decimal)
+                self.assertEqual(result, Decimal('3.39'))
+
 
 class TwoLayerReportTests(unittest.TestCase):
     def test_class_workload_is_never_run_even_for_sql_diagnostics(self):
