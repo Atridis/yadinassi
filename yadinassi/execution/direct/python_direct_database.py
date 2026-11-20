@@ -4,6 +4,7 @@ No arbitrary getattr, no backend access and no replacement for writer validation
 """
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from . import python_direct_movements as movements
+from yadinassi.db.registers.accumulation_posting_values import BSLAccumulationRow
 from yadinassi.db.catalog.catalogs import BSLCatalogs, BSLCatalogManager, BSLCatalogObject, BSLCatalogSelection
 from yadinassi.db.catalog.catalog_types import BSLCatalogReference
 from yadinassi.db.catalog.catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
@@ -164,7 +165,13 @@ class CatalogBoundary:
     def reference_member(self,value,name):
         from . import python_direct_table_references as table_refs
         if table_refs.member(value):return table_refs.bind(self,value,name)
-        if type(value) is not BSLValueListItem:return super().reference_member(value,name)
+        kind=type(value)
+        if (kind is BSLQueryResultSelection
+                or kind is BSLNumberQualifiers and name.casefold() in
+                    ('digits','разрядность','fractiondigits','разрядностьдробнойчасти')
+                or kind is BSLAccumulationRow and name.casefold() in ('linenumber','номерстроки')):
+            return self._readonly_property_reference(value,name)
+        if kind is not BSLValueListItem:return super().reference_member(value,name)
         self._catalog_owner(value)
         value.reference_get_member(name)
         def read():
@@ -175,6 +182,22 @@ class CatalogBoundary:
             self._catalog_owner(value)
             try:value.reference_set_member(name,new_value)
             finally:self._check()
+        from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
+        from yadinassi.types.values import Reference
+        return _ForwardReference(Reference(read,write))
+
+    def _readonly_property_reference(self,value,name):
+        # Keep the current property live across forwarding. Methods are not
+        # readable output slots, including QuerySelection.Next without a column.
+        def read():
+            result=self.get_member(value,name)
+            if type(result) is HostFunction:
+                raise BoundaryViolation('method is not a host reference: '+name)
+            return result
+        def write(new_value):
+            self._check()
+            raise ValueError('Свойство недоступно для записи: '+name)
+        read()
         from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
         from yadinassi.types.values import Reference
         return _ForwardReference(Reference(read,write))

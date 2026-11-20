@@ -11,6 +11,7 @@ from test_native_async_fixture import historical_source_bytes
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLRuntimeError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.db.query import query_parser as syntax
 from yadinassi.configuration.configuration_accumulation import import_accumulation_configuration, PROFILE
 from yadinassi.db.database_context import SQLiteDBContext
@@ -104,7 +105,7 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
                    'Function ReadActual(Value) Return Value;EndFunction '
                    'Procedure AssignActual(Value) Value=99;EndProcedure')
         self.assertEqual(vm.execute('ReadActual(S.Amount)'), Decimal(5))
-        with self.assertRaisesRegex(BSLRuntimeError, 'read-only property'):
+        with self.assertRaisesRegex(BSLRuntimeError, 'Свойство недоступно для записи'):
             vm.execute('AssignActual(S.Amount);')
         self.assertEqual(vm.execute('S.Amount'), Decimal(5))
 
@@ -115,7 +116,8 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
                    'Procedure AssignActual(Value) Value=1;EndProcedure')
         self.assertEqual(vm.execute('ReadActual(N.Digits)'), Decimal(38))
         self.assertEqual(vm.execute('ReadActual(N.FractionDigits)'), Decimal(3))
-        with self.assertRaisesRegex(BSLRuntimeError, 'read-only property'):
+        self.assertEqual(vm.execute('ReadActual(N.РазрядностьДробнойЧасти)'), Decimal(3))
+        with self.assertRaisesRegex(BSLRuntimeError, 'Свойство недоступно для записи'):
             vm.execute('AssignActual(N.Digits);')
         self.assertEqual(vm.execute('N.Digits'), Decimal(38))
 
@@ -125,22 +127,26 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
                    'Function ReadActual(Value) Return Value;EndFunction '
                    'Procedure AssignActual(Value) Value=1;EndProcedure')
         self.assertEqual(vm.execute('ReadActual(R.LineNumber)'), Decimal(0))
-        with self.assertRaisesRegex(BSLRuntimeError, 'read-only property'):
+        self.assertEqual(vm.execute('ReadActual(R.НомерСтроки)'), Decimal(0))
+        with self.assertRaisesRegex(BSLRuntimeError, 'Свойство недоступно для записи'):
             vm.execute('AssignActual(R.LineNumber);')
         self.assertEqual(vm.execute('R.LineNumber'), Decimal(0))
 
     def test_readonly_actual_receiver_is_evaluated_once(self):
         vm, _ = self.make()
         self.seed(vm, [('A', 1, 5, 2, False, 0)])
+        calls = []
+        vm.output = calls.append
         vm.execute('Q=New Query("SELECT Amount FROM ' + REG + '");S=Q.Execute().Select();S.Next();'
-                   'Function ReadActual(Value) Return Value;EndFunction')
-        selection, calls = vm.execute('S'), []
-        def cursor_once():
-            calls.append(True)
-            return selection
-        vm.register_function('CursorOnce', cursor_once)
-        self.assertEqual(vm.execute('ReadActual(CursorOnce().Amount)'), Decimal(5))
-        self.assertEqual(calls, [True])
+                   'Function CursorOnce(Val Cursor) Message("read once");Return Cursor;EndFunction '
+                   'Function ReadActual(Value) Return Value;EndFunction '
+                   'Function ForwardActual(Value) Return ReadActual(Value);EndFunction')
+        actual = 'ForwardActual(CursorOnce(S).Amount)'
+        self.assertEqual(vm.execute(actual), Decimal(5))
+        self.assertEqual(calls, ['read once'])
+        calls.clear()
+        self.assertEqual(vm.execute_prepared(vm.prepare(actual)), Decimal(5))
+        self.assertEqual(calls, ['read once'])
 
     def test_readonly_actual_does_not_grant_generic_object_or_method_reference(self):
         vm, _ = self.make()
@@ -148,7 +154,7 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
         vm.execute('Q=New Query("SELECT Amount FROM ' + REG + '");S=Q.Execute().Select();S.Next();'
                    'Function ReadActual(Value) Return Value;EndFunction')
         for expression in ('ReadActual(S.Next)', 'ReadActual(R.Amount)', 'ReadActual(O.Number)'):
-            with self.subTest(expression=expression), self.assertRaises(BSLRuntimeError):
+            with self.subTest(expression=expression), self.assertRaises(BoundaryViolation):
                 vm.execute(expression)
 
     def test_raw_scalars_and_recorder_reference_types(self):
