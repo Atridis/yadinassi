@@ -186,14 +186,6 @@ class NativeSortTests(unittest.TestCase):
                         if a == b:
                             self.assertEqual(a < c, b < c)
                             self.assertEqual(c < a, c < b)
-            for indices in (list(range(len(values))), list(reversed(range(len(values)))),
-                            list(range(0, len(values), 2)) + list(range(1, len(values), 2))):
-                for descending in (False, True):
-                    table = table_for(*(values[i] for i in indices))
-                    rows = list(table.rows)
-                    expected = sorted(range(len(rows)), key=lambda i: keys[indices[i]], reverse=descending)
-                    table.sort('Key Desc' if descending else 'Key')
-                    self.assertEqual(table.rows, [rows[i] for i in expected])
 
     def test_mixed_families_and_invalid_comparator_reject_atomically(self):
         for values in ((D(2), D(1), BSLArray()), (BSLArray(), D(1)),
@@ -322,6 +314,40 @@ class NativeSortTests(unittest.TestCase):
         table.rows[0].set_member('Other', BSLMap())
         table.sort('Key')
         self.assertEqual([row.get_member('Key') for row in table.rows], [D(1), D(2)])
+
+
+class DirectScalarSortTests(unittest.TestCase):
+    def test_python_string_type_order_and_stable_ties(self):
+        # An independent BSL fixture: explicit expected original row IDs,
+        # not keys computed by either implementation's comparator.
+        values = ('"a"', '1', 'Null', 'Date(2024,1,1)', 'Undefined',
+                  'True', '"A"', '-1', '1.0', 'False', 'Date(2023,1,1)',
+                  '"a"', '"á"')
+        for direction, expected in (
+                ('Asc', [4, 2, 9, 5, 7, 1, 8, 6, 0, 11, 12, 10, 3]),
+                ('Desc', [3, 10, 12, 0, 11, 6, 1, 8, 7, 5, 9, 2, 4])):
+            with self.subTest(direction=direction):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                source = 'T=New ValueTable; T.Columns.Add("Key");'
+                vm.execute(source + ''.join(f'R=T.Add(); R.Key={value};' for value in values))
+                table = vm.variables['t']
+                rows = list(table.rows)
+                vm.execute(f'T.Sort("Key {direction}");')
+                self.assertEqual(list(map(id, table.rows)), [id(rows[i]) for i in expected])
+
+
+    def test_opaque_keys_are_unsupported_without_reordering_rows(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('T=New ValueTable; T.Columns.Add("Key");'
+                   'R=T.Add(); R.Key=2; R=T.Add(); R.Key=1;'
+                   'R=T.Add(); R.Key=New Structure;')
+        table = vm.variables['t']
+        before = list(map(id, table.rows))
+        with self.assertRaisesRegex(NotImplementedError, 'sorting opaque values is not supported'):
+            vm.execute('T.Sort("Key Asc");')
+        self.assertEqual(list(map(id, table.rows)), before)
 
 
 if __name__ == '__main__':
