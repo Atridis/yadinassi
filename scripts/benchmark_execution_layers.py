@@ -20,12 +20,18 @@ from yadinassi.syntax.parser import parse
 
 D = Decimal
 LAYERS = ('python', 'bsl')
-CASES = ('arithmetic', 'arithmetic.int', 'arithmetic.fractional', 'calls', 'byref', 'array', 'map')
+HOST_CASES = ('arithmetic.host_control', 'arithmetic.host_after_loop')
+CASES = ('arithmetic', 'arithmetic.int', 'arithmetic.fractional', 'branching', *HOST_CASES,
+         'calls', 'byref', 'byref.array_element', 'string.length', 'array', 'array.foreach', 'map')
 # Record denominator changes explicitly even when the BSL source is unchanged.
 PYTHON_REFERENCES = {
     'arithmetic': 'native-int-arithmetic-v2',
     'arithmetic.fractional': 'int-counter-decimal-factor-v2',
     'map': 'native-int-map-v2',
+    'byref': 'native-int-byref-v2',
+    'byref.array_element': 'native-int-byref-element-v1',
+    'array': 'native-int-array-v2',
+    'array.foreach': 'native-int-array-foreach-v1',
 }
 
 
@@ -35,6 +41,11 @@ class Workload:
     source: str
     expected: Decimal
     native: object
+    inputs: tuple = ()
+
+
+def observe(value):
+    return value
 
 
 def workload(name, n):
@@ -43,13 +54,18 @@ def workload(name, n):
     if name not in CASES:
         raise ValueError('unknown workload')
     one, three = D(1), D(3)
-    if name == 'arithmetic':
+    inputs = ()
+    if name in ('arithmetic', *HOST_CASES):
+        host_call = name == 'arithmetic.host_after_loop'
         def native():
             s = 0
             for i in range(1, n + 1):
                 s = s + i * 3 - 7
-            return D(s)
+            result = D(s)
+            return observe(result) if host_call else result
         body = f'r=0;For i=1 To {n} Do r=r+i*3-7;EndDo;'
+        if host_call:
+            body += 'r=Observe(r);'
         expected = D(3*n*(n+1)//2 - 7*n)
     elif name in ('arithmetic.int', 'arithmetic.fractional'):
         factor = three if name == 'arithmetic.int' else D('3.25')
@@ -68,6 +84,27 @@ def workload(name, n):
                 return s
             expected = D(325 * (n * (n + 1) // 2)).scaleb(-2)
         body = f'r=0;For i=1 To {n} Do r=r+i*{factor};EndDo;'
+    elif name == 'branching':
+        def native():
+            s = 0
+            for i in range(1, n + 1):
+                if i > 1 and (i % 2 == 0 or i == n):
+                    s += i
+            return D(s)
+        body = (f'r=0;For i=1 To {n} Do '
+                f'If i>1 And (i%2=0 Or i={n}) Then r=r+i;EndIf;EndDo;')
+        half = n // 2
+        expected = D(half * (half + 1) + (n if n > 1 and n % 2 else 0))
+    elif name == 'string.length':
+        sample = 'abcdefgh'
+        inputs = (('s', sample),)
+        def native():
+            r = 0
+            for _ in range(n):
+                r += len(sample)
+            return D(r)
+        body = f'r=0;For i=1 To {n} Do r=r+StrLen(s);EndDo;'
+        expected = D(8*n)
     elif name == 'calls':
         def native():
             def inc(x): return x + one
@@ -76,22 +113,36 @@ def workload(name, n):
             return s
         body = f'Function Inc(Val x) Return x+1;EndFunction r=0;For i=1 To {n} Do r=r+Inc(i);EndDo;'
         expected = D(n*(n+1)//2+n)
-    elif name == 'byref':
+    elif name in ('byref', 'byref.array_element'):
         def native():
-            cell = [D(0)]
-            def inc(x): x[0] += one
+            cell = [0]
+            def inc(x): x[0] += 1
             for _ in range(n): inc(cell)
-            return cell[0]
-        body = f'Procedure Inc(x) x=x+1;EndProcedure r=0;For i=1 To {n} Do Inc(r);EndDo;'
+            return D(cell[0])
+        proc = 'Procedure Inc(x) x=x+1;EndProcedure '
+        if name == 'byref':
+            body = proc + f'r=0;For i=1 To {n} Do Inc(r);EndDo;'
+        else:
+            body = proc + f'a=New Array;a.Add(0);For i=1 To {n} Do Inc(a[0]);EndDo;r=a[0];'
         expected = D(n)
-    elif name == 'array':
-        def native():
-            a = []
-            for i in range(n): a.append(D(i))
-            s = D(0)
-            for i in range(n): s += a[i]
-            return s
-        body = f'a=New Array;For i=0 To {n-1} Do a.Add(i);EndDo;r=0;For i=0 To {n-1} Do r=r+a[i];EndDo;'
+    elif name in ('array', 'array.foreach'):
+        if name == 'array':
+            def native():
+                a = []
+                for i in range(n): a.append(i)
+                s = 0
+                for i in range(n): s += a[i]
+                return D(s)
+            scan = f'For i=0 To {n-1} Do r=r+a[i];EndDo;'
+        else:
+            def native():
+                a = []
+                for i in range(n): a.append(i)
+                s = 0
+                for value in a: s += value
+                return D(s)
+            scan = 'For Each value In a Do r=r+value;EndDo;'
+        body = f'a=New Array;For i=0 To {n-1} Do a.Add(i);EndDo;r=0;' + scan
         expected = D(n*(n-1)//2)
     else:
         def native():
@@ -102,27 +153,30 @@ def workload(name, n):
             return D(s)
         body = f'm=New Map;For i=0 To {n-1} Do m.Insert(i,i);EndDo;r=0;For i=0 To {n-1} Do r=r+m.Get(i);EndDo;'
         expected = D(n*(n-1)//2)
-    return Workload(name, body, expected, native)
+    return Workload(name, body, expected, native, inputs)
 
 
-def prepare_bsl(source, route):
+def prepare_bsl(source, route, *, inputs=(), host=False):
+    if route not in ('default', 'prepared'):
+        raise ValueError('unknown BSL route')
+    program = parse(source, '<execution-layer-benchmark>')
+    vm = Interpreter(allow_extensions=True) if host else Interpreter()
+    if host:
+        vm.register_function('Observe', observe)
+    vm.variables.update(inputs)
+    info = {'backend': vm.execution_backend, 'requested_route': route,
+            'allow_extensions': host}
     if route == 'default':
-        program = parse(source, '<execution-layer-benchmark>')
-        vm = Interpreter()
         def run():
             vm.execute_program(program)
             return vm.variables['r']
-        return run, {'backend': vm.execution_backend, 'requested_route': route, 'api': 'execute_program(preparsed_ast)'}
-    if route == 'prepared':
-        program = parse(source, '<execution-layer-benchmark>')
-        vm = Interpreter()
-        plan = vm.prepare_program(program)
-        def run():
-            vm.execute_prepared(plan)
-            return vm.variables['r']
-        return run, {'backend': vm.execution_backend, 'requested_route': route,
-                     'api': 'execute_prepared(plan)', 'preparation_api': 'prepare_program(preparsed_ast)'}
-    raise ValueError('unknown BSL route')
+        return run, dict(info, api='execute_program(preparsed_ast)')
+    plan = vm.prepare_program(program)
+    def run():
+        vm.execute_prepared(plan)
+        return vm.variables['r']
+    return run, dict(info, api='execute_prepared(plan)',
+                     preparation_api='prepare_program(preparsed_ast)')
 
 
 def validate(result, expected):
@@ -138,7 +192,7 @@ def measure(case, n, rounds=9, route='default'):
     job = workload(case, n)
     python_setup = (time.perf_counter_ns()-t)/1e9
     t = time.perf_counter_ns()
-    bsl, route_info = prepare_bsl(job.source, route)
+    bsl, route_info = prepare_bsl(job.source, route, inputs=job.inputs, host=case in HOST_CASES)
     bsl_setup = (time.perf_counter_ns()-t)/1e9
     functions = dict(zip(LAYERS, (job.native, bsl)))
     first = {}

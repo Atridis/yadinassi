@@ -9,7 +9,9 @@ from scripts import benchmark_execution_layers as bench
 
 class ExecutionLayerBenchmarkTests(unittest.TestCase):
     def test_python_arithmetic_references_do_not_convert_each_counter(self):
-        for case, casts in (('arithmetic', [182]), ('arithmetic.fractional', []), ('map', [78])):
+        for case, casts in (('arithmetic', [182]), ('arithmetic.fractional', []), ('map', [78]),
+                            ('array', [78]), ('array.foreach', [78]),
+                            ('byref', [13]), ('byref.array_element', [13])):
             with self.subTest(case=case):
                 job = bench.workload(case, 13)
                 converted = []
@@ -24,17 +26,48 @@ class ExecutionLayerBenchmarkTests(unittest.TestCase):
     def test_pairs_match_independent_expected_values(self):
         expected = {'arithmetic': Decimal(182), 'arithmetic.int': Decimal(273),
                     'arithmetic.fractional': Decimal('295.75'), 'calls': Decimal(104),
-                    'byref': Decimal(13), 'array': Decimal(78), 'map': Decimal(78)}
+                    'byref': Decimal(13), 'array': Decimal(78), 'map': Decimal(78),
+                    'branching': Decimal(55), 'arithmetic.host_control': Decimal(182),
+                    'arithmetic.host_after_loop': Decimal(182), 'byref.array_element': Decimal(13),
+                    'string.length': Decimal(104), 'array.foreach': Decimal(78)}
+        self.assertEqual(set(expected), set(bench.CASES))
         for name, result in expected.items():
             with self.subTest(case=name):
                 job = bench.workload(name, 13)
                 self.assertEqual(job.expected, result)
                 for route in ('default', 'prepared'):
                     with patch.dict(os.environ, {'YADINASSI_UNSAFE_COLLECTION_ABLATION': '1'}):
-                        bsl, _ = bench.prepare_bsl(job.source, route)
+                        bsl, _ = bench.prepare_bsl(job.source, route, inputs=job.inputs, host=name in bench.HOST_CASES)
                         for run in (job.native, bsl):
                             # Reusing prepared callable must not accumulate state.
                             for _ in range(2): bench.validate(run(), result)
+
+    def test_host_pair_only_differs_by_one_callback_after_the_loop(self):
+        control, after = (bench.workload(case, 13) for case in bench.HOST_CASES)
+        self.assertEqual(after.source, control.source + 'r=Observe(r);')
+        for route in ('default', 'prepared'):
+            with patch.object(bench, 'observe', side_effect=lambda value: value) as observe:
+                for job in (control, after):
+                    run, info = bench.prepare_bsl(job.source, route, host=True)
+                    self.assertIs(info['allow_extensions'], True)
+                    calls = 0 if job is control else 1
+                    for target in (job.native, run):
+                        observe.reset_mock()
+                        bench.validate(target(), job.expected)
+                        self.assertEqual(observe.call_count, calls)
+                        if calls:
+                            self.assertIs(type(observe.call_args.args[0]), Decimal)
+                            self.assertEqual(observe.call_args.args[0], job.expected)
+
+    def test_string_reference_uses_runtime_input_and_public_api_counts_utf16(self):
+        job = bench.workload('string.length', 3)
+        self.assertEqual(job.inputs, (('s', 'abcdefgh'),))
+        for route in ('default', 'prepared'):
+            run, info = bench.prepare_bsl(job.source, route, inputs=(('s', 'A'),))
+            self.assertIs(info['allow_extensions'], False)
+            bench.validate(run(), Decimal(3))
+            run, _ = bench.prepare_bsl('r=StrLen(s);', route, inputs=(('s', '😀'),))
+            bench.validate(run(), Decimal(2))
 
     def test_ci_integer_workload_emits_a_native_loop_and_fractional_control_does_not(self):
         vm = bench.Interpreter()

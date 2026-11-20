@@ -49,6 +49,21 @@ def render(report):
         lines += ['`arithmetic.fractional`: контроль с дробным множителем на `Decimal`.', '']
     if 'native-int-map-v2' in references:
         lines += ['`map`: Python и прямой BSL используют целые ключи, значения и сумму. Только итог приводится к `Decimal` для сверки.', '']
+    if {'arithmetic.host_control', 'arithmetic.host_after_loop'} <= names:
+        host_times = {case['case']: case['summary']['bsl']['median_seconds']
+                      for case in report['cases'] if case['case'].startswith('arithmetic.host_')}
+        delta = ratio_cell(host_times['arithmetic.host_after_loop'] / host_times['arithmetic.host_control'])
+        lines += [f'Один вызов `Observe` после цикла / тот же BSL без вызова: {delta}. '
+                  'В обоих сценариях `allow_extensions=True` и зарегистрирован один и тот же callback; '
+                  'это не сравнение с выключенным флагом.', '']
+    if 'native-int-array-v2' in references:
+        lines += ['`array` / `array.foreach`: Python теперь строит массив из `int` вместо `Decimal`; '
+                  'между сценариями меняется только способ обхода.', '']
+    if 'native-int-byref-v2' in references:
+        lines += ['`byref` / `byref.array_element`: один Python-референс с изменяемым целочисленным слотом; '
+                  'BSL передаёт по ссылке переменную или элемент массива.', '']
+    if 'string.length' in names:
+        lines += ['`string.length`: `StrLen(s)` против `len(s)` на ASCII, строка передаётся до замера.', '']
     lines += ['| Подготовка / первый вызов | Разбор + подготовка BSL, мс | Первое исполнение BSL, мс |', '|---|---:|---:|']
     for case in report['cases']:
         if 'preparation_seconds' in case:
@@ -60,11 +75,13 @@ def render(report):
         # round counts or similarly named APIs. Preserve first-occurrence order.
         key = (case['iterations'], len(case['samples']), len(case['summary']),
                case['route'].get('api', 'unknown'),
-               case['route'].get('requested_route', 'default'), case['route']['backend'])
+               case['route'].get('requested_route', 'default'), case['route']['backend'],
+               case['route'].get('allow_extensions', False))
         conditions.setdefault(key, []).append(case['case'])
-    for (iterations, sample_count, layer_count, api, _, _backend), names in conditions.items():
+    for (iterations, sample_count, layer_count, api, _, _backend, host), names in conditions.items():
         label = 'Все сценарии' if len(conditions) == 1 and len(names) > 1 else ', '.join(names)
-        lines.append(f"- {label}: {iterations} итераций, {sample_count//layer_count} измеренных повторов; `{api}`.")
+        extension_note = ', `allow_extensions=True`' if host else ''
+        lines.append(f"- {label}: {iterations} итераций, {sample_count//layer_count} измеренных повторов; `{api}`{extension_note}.")
     lines += ['', f"Python: `{environment['python'].splitlines()[0]}`", f"Процессор: `{environment['processor']}`", '',
               'Артефакт содержит все замеры полного и процессорного времени, хеши исходников, окружение, время подготовки и первого вызова.', '']
     return '\n'.join(lines)
