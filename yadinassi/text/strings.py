@@ -64,7 +64,14 @@ def _index(value: object, minimum: int, maximum: int) -> int:
 
 
 def string_length(value: object) -> Decimal:
-    return Decimal(len(to_string(value).encode("utf-16-le", errors="surrogatepass")) // 2)
+    if type(value) is str:
+        # CPython stores both this flag and the code-point count on the string.
+        if value.isascii():
+            return Decimal(len(value))
+        text = value
+    else:
+        text = to_string(value)
+    return Decimal(len(text.encode("utf-16-le", errors="surrogatepass")) // 2)
 
 
 # Unlike Python splitlines(), 1C's observed separators are CRLF, CR and LF.
