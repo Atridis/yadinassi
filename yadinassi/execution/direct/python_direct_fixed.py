@@ -59,7 +59,10 @@ def resolve(boundary,value,name,*,require_value=False,allow_references=False):
     if name=='__getitem__':
         function=value.get if type(value) in (BSLFixedStructure,BSLFixedArray) else value.get_index
     elif name=='__setitem__':
-        def function(*args):raise ValueError('Фиксированная коллекция недоступна для записи')
+        def function(*args):
+            if type(value) is PlainFixedMap:
+                raise ValueError('Элементы фиксированного соответствия недоступны для записи')
+            raise ValueError('Фиксированная коллекция недоступна для записи')
     elif name=='__iter__':
         if type(value) not in (BSLFixedArray,BSLFixedStructure,BSLFixedMap,PlainFixedMap):raise BoundaryViolation('fixed entry is not iterable')
         function=lambda:iter(value)

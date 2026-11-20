@@ -851,6 +851,23 @@ class FixedCollectionTests(unittest.TestCase):
         ''')
         self.assertEqual(self.output, ['Да', 'Да', 'Да', '7', '7', '7'])
 
+    def test_direct_fixed_map_assignment_reports_readonly_after_rhs(self):
+        self.vm.execute("""
+            Function RHS()
+                Message("evaluated");
+                Return 8;
+            EndFunction
+            m = New Map; m[1] = 7;
+            fm = New FixedMap(m);
+        """)
+        with self.assertRaisesRegex(BSLRuntimeError,
+                                    'Элементы фиксированного соответствия недоступны для записи') as caught:
+            self.vm.execute('\nfm[1] = RHS();', 'fixed-map.bsl')
+        self.assertEqual((caught.exception.source, caught.exception.line,
+                          caught.exception.column), ('fixed-map.bsl', 2, 1))
+        self.assertEqual(self.output, ['evaluated'])
+        self.assertEqual(self.vm.execute('fm[1]'), 7)
+
     def test_fixed_errors_report_source_location_and_restore_routine_scope(self):
         self.make_collections()
         self.vm.execute('''
