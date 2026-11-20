@@ -2,6 +2,8 @@
 from pathlib import Path
 import unittest
 
+from tests.test_build_workflow_policy import assert_error_bypass_contract
+
 ROOT=Path(__file__).resolve().parents[1]
 
 
@@ -35,7 +37,7 @@ class TieredWorkflowTests(unittest.TestCase):
         self.assertNotIn('pull_request_target',self.source)
         self.assertNotIn('workflow_run:',self.source)
         self.assertNotIn('secrets.',self.source)
-        self.assertNotIn('continue-on-error',self.source)
+        assert_error_bypass_contract(self, self.source)
         self.assertNotIn('contents: write',self.source.split('\n  release:\n')[0])
         self.assertIn('branches: [main]',self.source)
         self.assertIn("tags: ['**']",self.source)
