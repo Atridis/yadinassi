@@ -22,6 +22,32 @@ class WholeSourceResearchTests(unittest.TestCase):
                 self.assertLessEqual(counts[shape,32],2*counts[shape,16]+2)
                 self.assertEqual(counts[shape,32]-counts[shape,16],2*(counts[shape,16]-counts[shape,8]))
 
+    def test_handlers_use_one_module_source_for_diagnostics(self):
+        source=(
+            '// source-only marker\n'
+            'Try\n'
+            '    R=1/0;\n'
+            'Except\n'
+            '    First=ErrorDescription();\n'
+            'EndTry;\n'
+            'Try\n'
+            '    R=2/0;\n'
+            'Except\n'
+            '    Second=ErrorDescription();\n'
+            'EndTry;'
+        )
+        vm=Interpreter()
+        self.addCleanup(vm.close)
+        plan=vm.prepare(source,'handlers.bsl')
+        generated=plan._plan.generated_source
+        self.assertNotIn('source-only marker',generated)
+        self.assertEqual(generated.count('_diagnostic_source'),2)
+        vm.execute(source,'handlers.bsl')
+        for name,line in (('first',3),('second',8)):
+            description=vm.variables[name]
+            self.assertTrue(description.startswith(f'handlers.bsl:{line}:8: '), description)
+            self.assertIn('Деление на ноль', description)
+
     def test_changed_roundtrip_rejected_before_execution(self):
         real=ast.unparse
         def change(tree):return real(tree).replace("'x'","'z'")
