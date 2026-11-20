@@ -99,7 +99,8 @@ def prepare(server, nodes):
 class NoContextBoundary(ServicesBoundary,BoundaryContext):
     def __init__(self,server):
         self.server=server; self.vm=server.prototype;self.app=server.application
-        super().__init__(services=self.vm.functions)
+        # _check seals the source-owned registry before this activation runs.
+        super().__init__()
         self._services=self.vm.functions
         self._active=True;self._seal=server._direct_nocontext
         self._budget=self.vm._source_call_budget

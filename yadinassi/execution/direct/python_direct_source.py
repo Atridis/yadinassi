@@ -173,7 +173,14 @@ def _compile(owner,program,*,exports=False,layout=(),_extra_externals=(),_callab
 
 class SourceBoundary(ServicesBoundary,BoundaryContext):
     def __init__(self,owner,plan):
-        super().__init__(services=owner.functions)
+        # The boundary dispatches through the existing live registry. Do not
+        # copy and normalize it just to discard that copy on the next line.
+        if owner.allow_extensions:
+            super().__init__(services=owner.functions)
+        else:
+            if any(type(name) is not str for name in owner.functions):
+                raise BoundaryViolation('source service names must be strings')
+            super().__init__()
         self.vm=owner;self.app=owner.application;self._services=owner.functions
         self.plan=plan
         self.side=owner.execution_context;self.generation=owner._family_generation
