@@ -7,6 +7,7 @@ scoped to the synchronous call, never an entry in the application registry.
 """
 from contextvars import ContextVar
 from decimal import Decimal
+from yadinassi.configuration.source_instances import instance_keys
 from yadinassi.syntax import ast
 from yadinassi.execution.codegen.experimental_naked_collections import _OMITTED_REF, _Cell
 from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
@@ -60,7 +61,7 @@ def _resolve(parent, owner, routine, *, session,require_value=False,
         source=app.files.get(source_path)
         if type(source) is not bytes:raise BoundaryViolation('source session module is unavailable')
     else:
-        keys = tuple(key for key, child in app._instances.items() if child is owner)
+        keys = instance_keys(app,owner)
         if (len(keys) != 1 or type(keys[0]) is not tuple or len(keys[0]) != 3
                 or type(keys[0][0]) is not str or keys[0][1] != 'server'
                 or keys[0][2] is not False):

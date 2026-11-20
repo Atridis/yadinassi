@@ -13,6 +13,7 @@ from .python_direct import REPAIRS, _snapshot, _nodes
 from .python_direct_services import ServicesBoundary, CONSTRUCTORS
 from . import python_direct_fixed as fixed
 from yadinassi.syntax import ast
+from yadinassi.configuration.source_instances import instance_keys
 from yadinassi.types.values import HostFunction, Reference
 from yadinassi.execution import safe_mode
 from yadinassi.db import source_transactions, database_transactions
@@ -179,7 +180,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         self.logical_side=owner._logical_side;self.layout=frozenset(owner.module_names)
         self.storage=owner.variables;self.types=owner.types
         self._active=True
-        self._instance_keys=tuple(k for k,v in self.app._instances.items() if v is owner)
+        self._instance_keys=instance_keys(self.app,owner)
         self._local_activation = None
         if self.side == self.logical_side == 'server':
             from .source.python_direct_source_server import _ACTIVE
@@ -281,8 +282,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         release(self)
     @contextmanager
     def routine_scope(self):
-        check = (self._check_loop if type(self) is SourceBoundary and self.side == 'server'
-                 else self._check)
+        check = self._check_loop if type(self) is SourceBoundary else self._check
         check()
         with self.app.safe_mode.routine(self.vm,self.vm):
             try:yield
@@ -426,7 +426,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
                 or entry is not None and (type(entry) is not tuple or len(entry)!=5 or entry[0] is not routine)):
             raise BoundaryViolation('source reusable entry changed')
         scalar_reuse=entry is not None and entry[4] is True
-        keys=tuple(k for k,v in self.app._instances.items() if v is owner)
+        keys=instance_keys(self.app,owner)
         def provenance():
             from .source.python_direct_source_server import check_activation
             if owner is self.vm and check_activation(owner):return
@@ -503,7 +503,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         if (_caller_checked and (not self._local_scalars()
                 or type(owner) is not type(self.vm) or owner._logical_side!=self.side)):
             self._check()
-        keys=[key for key,child in self.app._instances.items() if child is owner]
+        keys=instance_keys(self.app,owner)
         if not keys or any(type(key) is not tuple or len(key)!=3 or (not _manager_key(key) and key[2]) for key in keys):
             raise BoundaryViolation('foreign or non-qualified source module')
         for key in keys:

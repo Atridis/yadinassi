@@ -120,3 +120,20 @@ class SourceRoutineChecks(unittest.TestCase):
         with self.assertRaises(BoundaryViolation):
             app.interpreter.execute('R=Helpers.Call(Touch()); Message("later");')
         self.assertEqual(out, ['arg'])
+
+    def test_qualified_call_sees_new_invalid_alias_and_can_recover(self):
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+
+        out = []
+        config = source(b'', common_module(b'Function Identity(Val X) Export Return X; EndFunction'))
+        app = SourceApplication(config, output=out.append)
+        self.addCleanup(app.close)
+        self.assertTrue(app.start())
+        vm = app.interpreter
+        vm.execute('Message(Helpers.Identity(7));')
+        app._instances['invalid-alias'] = app._instances[('helpers','client',False)]
+        with self.assertRaises(BoundaryViolation):
+            vm.execute('Message(Helpers.Identity(8));')
+        app._instances.pop('invalid-alias')
+        vm.execute('Message(Helpers.Identity(9));')
+        self.assertEqual(out,['7','9'])

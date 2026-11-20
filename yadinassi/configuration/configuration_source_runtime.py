@@ -11,6 +11,7 @@ import xml.etree.ElementTree as ET
 
 from .configuration_source import ConfigurationSource
 from .configuration_xml import MD
+from .source_instances import SourceInstances
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.runtime import Interpreter
 from yadinassi.collections.structures import BSLStructure
@@ -306,7 +307,7 @@ class SourceApplication:
         self.xdto = SourceXDTOPackages(self)
         from .common_templates import SourceCommonTemplates
         self.common_templates = SourceCommonTemplates(self)
-        self._instances = {}
+        self._instances = SourceInstances()
         self._reuse_routines = {}
         self._direct_source_reuse_entries = {}
         self._global_exports = {}
