@@ -175,7 +175,7 @@ def _graph(root):
 
 
 def _check(boundary,value):
-    boundary._check()
+    if getattr(boundary,'_verify_context',True) is not False:boundary._check()
     if not getattr(boundary,'_detached_metadata_active',False):raise BoundaryViolation('detached metadata boundary expired')
     _hooks()
     root=value if type(value) is _ROOT else (_ROOTS.get(value)() if value in _ROOTS else None)
@@ -218,7 +218,7 @@ def _lookup(boundary,value,operation):
         if seal is None or root._direct_detached_seal is not seal:raise BoundaryViolation('detached metadata seal changed')
         seal.fingerprint=fingerprint;seal.keepalive=keepalive
         for item in receivers:_ROOTS[item]=ref(root)
-        boundary._check()
+        if getattr(boundary,'_verify_context',True) is not False:boundary._check()
     if _owns(result) and not any(result is item for item in receivers):raise BoundaryViolation('detached metadata lookup escaped its root')
     return result
 

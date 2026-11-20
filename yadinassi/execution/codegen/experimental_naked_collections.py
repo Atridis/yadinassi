@@ -298,7 +298,8 @@ class Program:
                 return self.function(state,self.constants,self.output)
             finally:
                 if bounded:
-                    try:context._check()
+                    try:
+                        if getattr(context,'_verify_context',True):context._check()
                     finally:context.leave()
         except Exception as error:
             if 'error_boundaries' not in self.repairs:raise

@@ -20,7 +20,8 @@ def eval_capability(context,function,key):
             except PermissionError as error:raise BoundaryViolation(str(error)) from error
             # The one exit check for this call belongs here, including when
             # argument validation or the fragment raises.
-            finally:context._check()
+            finally:
+                if context._verify_context:context._check()
         invoke.requires_reference=lambda index:False
         return invoke
     return bind
@@ -35,7 +36,7 @@ def evaluate(value,context,parent,bindings,visible):
 
 
 def _evaluate(value,context,parent,bindings,visible,profile):
-    context._check()
+    if context._verify_context:context._check()
     from yadinassi.runtime import EVAL_MAX_SOURCE,EVAL_MAX_DEPTH
     from yadinassi.types.values import to_string
     from yadinassi.types.errors import BSLError,BSLRuntimeError

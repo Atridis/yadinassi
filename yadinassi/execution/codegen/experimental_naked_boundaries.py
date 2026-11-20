@@ -6,8 +6,11 @@ Registered services are trusted Python capabilities, not a Python sandbox.
 Post-call invalidation does not undo a service's already completed side effects.
 """
 from dataclasses import dataclass
+from decimal import Decimal
 from yadinassi.types.values import HostFunction, _DIRECT_INTERPRETER_CALL_TYPE
+from yadinassi.temporal.dates import BSLDate
 _MISSING=object()
+_SCALAR_TYPE_IDS = frozenset(map(id, (str, int, bool, Decimal, BSLDate, type(None))))
 
 
 class BoundaryViolation(BaseException):
@@ -26,6 +29,8 @@ class HostMembers:
 
 
 class BoundaryContext:
+    _verify_context = True
+
     def __init__(self, *, services=None, members=(), loop_budget=None, policy=None):
         if loop_budget is not None and (type(loop_budget) is not int or loop_budget < 0):
             raise ValueError('loop_budget must be a nonnegative integer or None')
@@ -83,7 +88,8 @@ class BoundaryContext:
         return self.resolve_service(name,*args,**kwargs)
 
     def resolve_service(self,name,fallback=_MISSING,*,require_value=False,allow_references=False,argument_count=None):
-        self._check();key=name.casefold()
+        if self._verify_context:self._check()
+        key=name.casefold()
         if key not in self._services:
             if fallback is not _MISSING:
                 return self.resolve_extension_value(fallback,require_value=require_value,allow_references=allow_references)
@@ -101,9 +107,17 @@ class BoundaryContext:
                 raise ValueError('interpreter-aware call requires an explicit interpreter dispatch')
         def invoke(*args):
             self._before('call',key)
+            # Standalone BSL scalars do not execute Python hooks. An embedding
+            # can still pass opaque values or install an output callback; these
+            # are actual host boundaries, not ordinary runtime probes.
+            guarded = self._verify_context or (
+                key in ('message','сообщить')
+                or any(id(type(arg)) not in _SCALAR_TYPE_IDS for arg in args))
+            if guarded and not self._verify_context:self._check()
             try:return function(*args)
             except PermissionError as error:raise BoundaryViolation(str(error)) from error
-            finally:self._check()
+            finally:
+                if guarded:self._check()
         if allow_references:invoke.requires_reference=lambda index: type(function) is HostFunction and index in function.reference_parameters
         return invoke
 
@@ -131,7 +145,7 @@ class BoundaryContext:
         return self.resolve_callable(value,require_value=require_value,allow_references=allow_references)
 
     def resolve_callable(self,value,*,require_value=False,allow_references=False,_extension_value=False):
-        self._check()
+        if self._verify_context or _extension_value:self._check()
         if _extension_value and type(value) is HostFunction:
             from yadinassi.execution.direct.python_direct_captured_values import resolve
             bound=resolve(self,value,require_value=require_value,allow_references=allow_references)
@@ -149,7 +163,8 @@ class BoundaryContext:
             self._before('call_value',name)
             try:return value(*args)
             except PermissionError as error:raise BoundaryViolation(str(error)) from error
-            finally:self._check()
+            finally:
+                if self._verify_context or _extension_value:self._check()
         # Canonical HostFunction metadata is supplied by the trusted embedding.
         # Read it per argument, as callbacks can change it during evaluation.
         if allow_references:invoke.requires_reference=lambda index: index in value.reference_parameters
@@ -209,7 +224,7 @@ class BoundaryContext:
             raise BoundaryViolation('execution authority revoked')
         self._admitted_epoch = self._epoch
         self.loop_backedges = 0
-        self._check()
+        if self._verify_context:self._check()
 
     def _check(self):
         if self._admitted_epoch is None:
@@ -224,8 +239,8 @@ class BoundaryContext:
         self.loop_backedges += 1
 
     def _before(self, operation, name):
-        self._check()
         policy=self.policy
+        if self._verify_context or policy is not None:self._check()
         if policy is not None:
             try:permitted=policy(operation,name)
             except PermissionError as error:raise BoundaryViolation(str(error)) from error

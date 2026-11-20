@@ -47,10 +47,20 @@ NAMES=('metadata','метаданные','catalogs','справочники','do
 _DOM_LISTS=(BSLDOMNodeList,BSLDOMElementList,BSLDOMAttributeMap)
 _DETACHED_TYPES=(*_NODE_CLASSES,*_DOM_LISTS,BSLDOMBuilder,BSLDOMWriter,BSLDOMNamespaceResolver,BSLDOMXPathResult,BSLXMLReader, BSLXMLReaderSettings, BSLXMLNamespaceContext, BSLXMLWriter, BSLXMLWriterSettings, BSLValueList, BSLValueTable, BSLTypeDescription, BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers, BSLQueryResult, BSLQueryResultSelection, BSLStructure, BSLFixedStructure, BSLKeyAndValue, BSLArray, BSLFixedArray, BSLFixedMap, BSLRegexResult, BSLRegexGroup, BSLFile, BSLBinaryData, BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BSLBinaryDataBuffer, BSLMemoryStream, BSLStream, BSLMap, BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings)
 _DETACHED_TYPE_IDS=frozenset(map(id,_DETACHED_TYPES))
+_PURE_COLLECTION_TYPE_IDS=frozenset(map(id,(
+    BSLValueTable, BSLValueTableRow, BSLValueTableColumn, BSLValueTableColumnCollection,
+    BSLCollectionIndex, BSLCollectionIndexes, BSLFixedArray, BSLFixedStructure, BSLFixedMap,
+    BSLTypeDescription, BSLNumberQualifiers, BSLStringQualifiers,
+    BSLDateQualifiers, BSLBinaryDataQualifiers,
+)))
+
+
+def _verify_collection(boundary,value):
+    return id(type(value)) not in _PURE_COLLECTION_TYPE_IDS or getattr(boundary,'_verify_context',True) is not False
 
 class CatalogBoundary:
-    def _catalog_owner(self, value):
-        self._check()
+    def _catalog_owner(self, value, *, verify=True):
+        if verify:self._check()
         if movements.owns(value):
             movements.check(self,value);return
         if value is movements.NAMESPACE:
@@ -150,16 +160,20 @@ class CatalogBoundary:
         raise ValueError('catalog namespace is read-only')
 
     def get_member(self,value,name):
-        self._catalog_owner(value)
+        verify=_verify_collection(self,value)
+        self._catalog_owner(value,verify=verify)
         try:return value.get_member(name)
-        finally:self._check()
+        finally:
+            if verify:self._check()
 
     def resolve_set_member(self,value,name):
-        self._catalog_owner(value)
+        verify=_verify_collection(self,value)
+        self._catalog_owner(value,verify=verify)
         def write(new_value):
-            self._catalog_owner(value)
+            self._catalog_owner(value,verify=verify)
             try:value.set_member(name,new_value)
-            finally:self._check()
+            finally:
+                if verify:self._check()
         return write
 
     def reference_member(self,value,name):
@@ -195,7 +209,7 @@ class CatalogBoundary:
                 raise BoundaryViolation('method is not a host reference: '+name)
             return result
         def write(new_value):
-            self._check()
+            if _verify_collection(self,value):self._check()
             raise ValueError('Свойство недоступно для записи: '+name)
         read()
         from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
@@ -273,7 +287,8 @@ class CatalogBoundary:
         table_holes=bool(omitted) and any(type(value) is cls for cls in (_CALL_TABLE,_CALL_COLUMNS,_CALL_ROW))
         if not table_holes and not any(type(value) is cls for cls in (BSLValueList,BSLValueListItem)):
             return super().resolve_member_call(value,name,require_value=require_value,omitted=omitted)
-        self._catalog_owner(value)
+        verify=_verify_collection(self,value)
+        self._catalog_owner(value,verify=verify)
         function=value.get_method(name)
         if type(function) is not HostFunction:
             raise BoundaryViolation('table/list method requires canonical HostFunction')
@@ -295,11 +310,12 @@ class CatalogBoundary:
         if any(index not in optional for index in omitted):
             raise TypeError('Пропуск обязательного аргумента метода таблицы или списка значений')
         def invoke(*arguments):
-            self._catalog_owner(value)
+            self._catalog_owner(value,verify=verify)
             values=list(arguments) if omitted else arguments
             for index in omitted:values[index]=defaults[index]
             try:return function(*values)
-            finally:self._check()
+            finally:
+                if verify:self._check()
         return invoke
 
     def resolve_member(self,value,name):
@@ -308,7 +324,8 @@ class CatalogBoundary:
         if name=='__iter__':
             from . import python_direct_table_iteration as tables
             if tables.owns(value):return tables.resolve(self,value)
-        self._catalog_owner(value)
+        verify=_verify_collection(self,value)
+        self._catalog_owner(value,verify=verify)
         if type(value) in (BSLArray, BSLFixedArray) and name.casefold() in ('get','получить'):
             function=value.get
         elif name=='__getitem__' and any(type(value) is kind for kind in _DOM_LISTS):
@@ -325,12 +342,13 @@ class CatalogBoundary:
             function=value.get_method(name)
             if type(function) is not HostFunction:
                 raise BoundaryViolation('database method requires canonical HostFunction')
-        self._check()
+        if verify:self._check()
         def invoke(*args):
-            self._catalog_owner(value)
+            self._catalog_owner(value,verify=verify)
             if type(value) is BSLDOMBuilder or type(value) is BSLDOMWriter:
                 for argument in args:
                     if type(argument) is BSLXMLReader or type(argument) is BSLXMLWriter:_reject_source_xml(argument)
             try:return function(*args)
-            finally:self._check()
+            finally:
+                if verify:self._check()
         return invoke

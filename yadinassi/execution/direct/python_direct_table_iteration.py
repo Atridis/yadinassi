@@ -29,9 +29,11 @@ def owner(value):
 
 
 def resolve(boundary,value):
-    boundary._check();root=owner(value)
+    verify=getattr(boundary,'_verify_context',True) is not False
+    if verify:boundary._check()
+    root=owner(value)
     def check():
-        boundary._check()
+        if verify:boundary._check()
         if owner(value) is not root:invalid()
     def invoke():
         from .python_direct_plain_tables import validate

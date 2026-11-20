@@ -41,7 +41,8 @@ def method_owner(context,value,method):
 
 
 def constructor(context,name,**kwargs):
-    context._check();key=name.casefold().split(':',1)[1]
+    if context._verify_context:context._check()
+    key=name.casefold().split(':',1)[1]
     factory=context.vm.types.get(key)
     def valid():
         if vars(_runtime).get("BSLUserMessage") is not BSLUserMessage or vars(BSLUserMessage).get("__init__") is not _INIT:
@@ -59,7 +60,8 @@ def constructor(context,name,**kwargs):
         if args:raise TypeError('UserMessage constructor requires no arguments')
         try:
             result=_FACTORY(context.vm);owner(context,result);return result
-        finally:context._check()
+        finally:
+            if context._verify_context:context._check()
     return invoke
 
 
@@ -69,11 +71,13 @@ def get(context,value,name):
     if key in _METHODS:return HostFunction(name,_METHODS[key].__get__(value,BSLUserMessage),returns_value=False)
     if key not in _PROPERTIES:raise ValueError('Свойство не найдено: '+name)
     try:return _GET(value,name)
-    finally:context._check()
+    finally:
+        if context._verify_context:context._check()
 
 
 def setter(context,value,name):
-    context._check();owner(context,value);key=name.casefold()
+    if context._verify_context:context._check()
+    owner(context,value);key=name.casefold()
     if key not in _PROPERTIES:raise ValueError('Свойство не найдено: '+name)
     def write(new):
         context._before('set_member',key);owner(context,value)
@@ -82,29 +86,35 @@ def setter(context,value,name):
             if not hasattr(context,'_catalog_owner'):raise BoundaryViolation('UserMessage catalog binding is not connected in this scope')
             context._catalog_owner(new)
         try:_SET(value,name,new)
-        finally:context._check()
+        finally:
+            if context._verify_context:context._check()
     return write
 
 
 def resolve(context,value,name,*,require_value=False,omitted=(),operation='call_member',wrapper=None):
-    context._check();owner(context,value);key=name.casefold();method=_METHODS.get(key)
+    if context._verify_context:context._check()
+    owner(context,value);key=name.casefold();method=_METHODS.get(key)
     if method is None:raise ValueError('Метод не найден: '+name)
     if require_value:raise TypeError('Процедура не возвращает значение: '+name)
     if omitted:raise TypeError('UserMessage method argument omission is unsupported')
+    delivers=method is _METHODS['message']
     def invoke(*args):
         context._before(operation,key);method_owner(context,value,method)
         if wrapper is not None and (type(wrapper.function) is not MethodType or wrapper.function.__self__ is not value
                 or wrapper.function.__func__ is not method or wrapper.returns_value is not False
                 or type(wrapper.reference_parameters) is not frozenset or wrapper.reference_parameters):
             raise BoundaryViolation('UserMessage captured method changed')
-        count=0 if method is _METHODS['message'] else 1
+        count=0 if delivers else 1
         if len(args)!=count:raise TypeError('UserMessage method argument count')
         if count and type(args[0]) is BSLCatalogObject:
             if context.vm.database_context is None:raise BoundaryViolation('UserMessage data requires owned database')
             if not hasattr(context,'_catalog_owner'):raise BoundaryViolation('UserMessage catalog binding is not connected in this scope')
             context._catalog_owner(args[0])
+        # Delivery calls an embedding-supplied sink/output even in plain mode.
+        if delivers and not context._verify_context:context._check()
         try:return method(value,*args)
-        finally:context._check()
+        finally:
+            if delivers or context._verify_context:context._check()
     return invoke
 
 

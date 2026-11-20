@@ -50,8 +50,9 @@ def check_factories():
         raise BoundaryViolation('source text helpers changed')
 
 
-def check(boundary,value):
-    boundary._check();check_factories()
+def check(boundary,value,*,external=False):
+    if external or getattr(boundary,'_verify_context',True):boundary._check()
+    check_factories()
     if type(value) is BSLTextDocument:
         if any(name in vars(value) for name,_ in _DIRECT_TEXT_DOCUMENT_ABI):
             raise BoundaryViolation('source text instance hooks changed')
@@ -86,7 +87,7 @@ def _bound(boundary,value,spec,*,require_value=False,argument_count=None,allow_r
     method,minimum,maximum,returns=spec
     implementation=(_TEXT_IMPL if type(value) is BSLTextDocument else _BINARY_IMPL)[method]
     def admit(count=None):
-        check(boundary,value)
+        check(boundary,value,external=method in ('read','write'))
         if validate is not None:validate()
         if require_value and not returns:raise TypeError('Процедура не возвращает значение: '+method)
         if count is not None and not minimum<=count<=maximum:raise TypeError('resource method argument count')
@@ -132,7 +133,8 @@ def resolve_constructor(boundary,name,*,require_value=False,argument_count=None,
     if key not in CONSTRUCTOR_NAMES:raise ValueError('source resource constructor unavailable')
     factory=boundary.vm.types.get(key)
     def validate():
-        boundary._check();check_factories()
+        if getattr(boundary,'_verify_context',True):boundary._check()
+        check_factories()
         if (type(factory) is not HostFunction or factory.function is not BSLTextDocument
                 or any(boundary.vm.types.get(alias) is not factory for alias in CONSTRUCTOR_NAMES)):
             raise BoundaryViolation('source text constructor binding changed')

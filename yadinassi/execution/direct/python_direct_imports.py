@@ -255,7 +255,7 @@ class ImportBoundary:
     def resolve_service(self,name,*args,**kwargs):
         if (self.vm.imports and ':' not in name and name.casefold() not in self.vm.functions
                 and name.casefold() not in getattr(self.vm,'_direct_routine_modules',{})):
-            self._check()
+            if self._verify_context:self._check()
             raise ValueError('Переменная или функция не определена: '+name)
         return super().resolve_service(name,*args,**kwargs)
 
@@ -263,9 +263,16 @@ class ImportBoundary:
         if name in self.vm.imports:raise ValueError('Нельзя присвоить значение имени импорта: '+name)
         return super().external_set(name,value)
 
+    def _check_import_activation(self):
+        # Namespace access carries an import lease even in the light mode.
+        if self._verify_context:self._check()
+        if (not getattr(self,'_imports_active',False) or self._revoked
+                or self._epoch != self._admitted_epoch or self.vm._family_closed):
+            raise BoundaryViolation('import activation expired')
+        check_live(self.vm)
+
     def _import_target(self,path):
-        self._check();check_live(self.vm)
-        if not getattr(self,'_imports_active',False):raise BoundaryViolation('import activation expired')
+        self._check_import_activation()
         if type(path) is not tuple or not path or any(type(k) is not str for k in path):
             raise BoundaryViolation('invalid import path')
         value=self.vm.imports.get(path[0])
@@ -354,7 +361,8 @@ class ImportBoundary:
         epoch=self._imports_epoch
         used=False
         def validate():
-            self._check();check_live(self.vm);check_live(child)
+            if self._verify_context:self._check()
+            check_live(child)
             if (self._imports_epoch is not epoch or self._import_target(path[:-1]) is not owner
                     or _PUBLIC[child][0].get(name)!=public):
                 raise BoundaryViolation('imported routine binding changed')

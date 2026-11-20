@@ -359,19 +359,27 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None):
         def resolve_service(self,name,*args,**kwargs):
             modules=getattr(vm,'_direct_routine_modules',None)
             if modules is not None and name.casefold() in modules:
-                self._check()
+                if self._verify_context:self._check()
                 routine=resolve_routine(self,name.casefold(),require_value=kwargs.get('require_value',False),
                                         allow_references=kwargs.get('allow_references',False),
                                         argument_count=kwargs.get('argument_count'))
                 if routine is not None:return routine
             if name.casefold() in ('new:uuid','new:уникальныйидентификатор'):
                 from yadinassi.types.unique_identifiers import BSLUUID
-                self._check()
+                if self._verify_context:self._check()
                 factory=vm.types.get(name.split(':',1)[1].casefold())
                 if type(factory) is not HostFunction or factory.function is not BSLUUID:
                     raise BoundaryViolation('UUID constructor requires canonical registration')
                 return super().resolve_callable(factory)
             return super().resolve_service(name,*args,**kwargs)
+
+        def leave(self):
+            super().leave()
+            # Do not audit a normal light exit. A Python object supplied by
+            # an embedding can still run code and close the interpreter.
+            if not self._verify_context and vm._family_closed:
+                raise BoundaryViolation('python-direct interpreter was closed during execution')
+
         def _check(self):
             super()._check()
             if _parent_check is not None:_parent_check()
@@ -393,6 +401,8 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None):
     # nothing and must not be rebuilt on every invocation.
     context=DirectBoundary()
     context.vm=vm
+    context._verify_context=(vm.allow_extensions or database is not None
+                             or _parent_check is not None)
     context._restrict_python_extensions=not vm.allow_extensions
     context._direct_transaction_owner=_transaction_owner
     context._import_check_required=bool(vm.imports)

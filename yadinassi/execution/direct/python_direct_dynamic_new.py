@@ -19,7 +19,7 @@ _NATIVE={'array':BSLArray,'массив':BSLArray,
 
 def construct(context,target,parameters=None):
     # The compiler evaluates target and parameters left-to-right before entry.
-    context._check()
+    if context._verify_context:context._check()
     from yadinassi.runtime import Interpreter
     vm=context.vm
     if type(vm) is not Interpreter or vm._configuration_runtime is not None:
@@ -66,8 +66,10 @@ def construct(context,target,parameters=None):
             from .python_direct_plain_map import plain_map
             # The exact FixedMap copy path never expands arbitrary iterables.
             return plain_map(*arguments)
-        finally:context._check()
+        finally:
+            if context._verify_context:context._check()
     # Preserve finite canonical factories and their current boundary/resource checks.
     bound=context.resolve_service('new:'+key)
     try:return bound(*arguments)
-    finally:context._check()
+    finally:
+        if context._verify_context:context._check()

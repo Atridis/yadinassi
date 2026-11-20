@@ -111,7 +111,8 @@ def local(value):
 
 
 def check(boundary,value,*,graph=False):
-    boundary._check();hooks()
+    if getattr(boundary,'_verify_context',True) is not False:boundary._check()
+    hooks()
     if not getattr(boundary,'_value_tree_active',False):raise BoundaryViolation('ValueTree activation expired')
     root=local(value);local(root)
     if not model._registry_owned(root._all_rows,root) or type(root.columns) is not _COLUMNS or type(root.rows) is not _ROWS:
@@ -199,26 +200,30 @@ class ValueTreeBoundary:
     def resolve_service(self,name,*args,**kwargs):
         if not name.casefold().startswith('new:') or name[4:].casefold() not in CONSTRUCTOR_NAMES:
             return super().resolve_service(name,*args,**kwargs)
-        self._check();hooks();key=name.split(':',1)[1].casefold()
+        if getattr(self,'_verify_context',True) is not False:self._check()
+        hooks();key=name.split(':',1)[1].casefold()
         if key not in ('valuetree','деревозначений'):raise ValueError('Тип дерева не имеет конструктора: '+key)
         factory=self.vm.types.get(key)
         if type(factory) is not HostFunction or factory.function is not _TREE:
             raise BoundaryViolation('ValueTree constructor requires canonical registration')
         epoch=self._value_tree_epoch
         def construct(*values):
-            self._check();hooks()
+            if getattr(self,'_verify_context',True) is not False:self._check()
+            hooks()
             if not self._value_tree_active or self._value_tree_epoch is not epoch:raise BoundaryViolation('ValueTree constructor activation expired')
             if self.vm.types.get(key) is not factory or factory.function is not _TREE:
                 raise BoundaryViolation('ValueTree constructor changed during arguments')
             try:return _TREE(*values)
-            finally:self._check()
+            finally:
+                if getattr(self,'_verify_context',True) is not False:self._check()
         return construct
 
     def get_member(self,value,name):
         if not owns(value):return super().get_member(value,name)
         root=check(self,value);columns(root)
         try:return value.get_member(name)
-        finally:self._check()
+        finally:
+            if getattr(self,'_verify_context',True) is not False:self._check()
 
     def resolve_set_member(self,value,name):
         if not owns(value):return super().resolve_set_member(value,name)
@@ -228,7 +233,8 @@ class ValueTreeBoundary:
             if self._value_tree_epoch is not epoch:raise BoundaryViolation('ValueTree reference activation expired')
             root=check(self,value);columns(root)
             try:value.set_member(name,new_value)
-            finally:self._check()
+            finally:
+                if getattr(self,'_verify_context',True) is not False:self._check()
         return write
 
     def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
@@ -305,7 +311,7 @@ class ValueTreeBoundary:
                             if expected is not None and type(item) is not expected:raise BoundaryViolation('foreign ValueTree iteration item')
                             if owns(item) and check(self,item) is not root:raise BoundaryViolation('foreign ValueTree iteration item')
                             yield item
-                        self._check()
+                        if getattr(self,'_verify_context',True) is not False:self._check()
                     return iterator()
                 if key in ('get','получить','__getitem__') and type(value) in (_ROWS,_COLUMNS):
                     expected=_ROW if type(value) is _ROWS else _COLUMN
@@ -313,7 +319,8 @@ class ValueTreeBoundary:
                 if owns(result) and key not in ('copy','скопировать') and check(self,result) is not root:
                     raise BoundaryViolation('foreign ValueTree result')
                 return result
-            finally:self._check()
+            finally:
+                if getattr(self,'_verify_context',True) is not False:self._check()
         return invoke
 
     def _tree_arguments(self,key,arguments):

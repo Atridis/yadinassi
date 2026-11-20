@@ -14,7 +14,7 @@ def owns(value,name):
 
 
 def _check(boundary,value):
-    boundary._check()
+    if boundary._verify_context:boundary._check()
     for cls,mro,entries in _ABI:
         actual=cls.__mro__;current=vars(cls)
         if (len(actual)!=len(mro) or any(a is not b for a,b in zip(actual,mro))

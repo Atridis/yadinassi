@@ -27,9 +27,11 @@ def write_authority(value):
 
 
 def bind(context,value,key,*,index=False):
-    context._check();hooks(value);root=owner(value)
+    verify=getattr(context,'_verify_context',True) is not False
+    if verify:context._check()
+    hooks(value);root=owner(value)
     def check():
-        context._check();hooks(value)
+        if verify:context._check();hooks(value)
         if owner(value) is not root:raise BoundaryViolation('table reference owner changed')
     def read():
         check()

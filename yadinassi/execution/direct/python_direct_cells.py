@@ -1,5 +1,6 @@
 """Exact one-element lists internally; reference adapters only at boundaries."""
 from yadinassi.execution.codegen.experimental_naked_collections import _Reference,_UNSET_REF
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
 def NativeCell(value=_UNSET_REF):return [value]
@@ -16,6 +17,28 @@ class ReferenceCell:
         try:self.reference.set(value)
         finally:self.context._check()
 
+class PlainReferenceCell(ReferenceCell):
+    __slots__=()
+
+    def __getitem__(self,index):
+        if self.context.vm._family_closed:
+            raise BoundaryViolation('python-direct interpreter was closed during execution')
+        try:return self.reference.get()
+        finally:
+            if self.context.vm._family_closed:
+                raise BoundaryViolation('python-direct interpreter was closed during execution')
+
+    def __setitem__(self,index,value):
+        # The RHS or the replaced value's finalizer can close an embedding.
+        # Check that one lifetime condition, not the full context on every access.
+        if self.context.vm._family_closed:
+            raise BoundaryViolation('python-direct interpreter was closed during execution')
+        try:self.reference.set(value)
+        finally:
+            if self.context.vm._family_closed:
+                raise BoundaryViolation('python-direct interpreter was closed during execution')
+
+
 class CellReference(_Reference):
     __slots__=('cell',)
     def __init__(self,cell):self.cell=cell
@@ -26,15 +49,17 @@ class CellReference(_Reference):
 
 
 def reference(cell):
-    if type(cell) is ReferenceCell:return CellReference(cell)
+    if type(cell) in (ReferenceCell,PlainReferenceCell):return CellReference(cell)
     if type(cell) is not list or len(cell)!=1:raise TypeError('invalid internal cell')
     if cell[0] is _UNSET_REF:raise NameError('Uninitialized reference')
     return CellReference(cell)
 
 
 def adapt(value,context):
-    if type(value) is ReferenceCell:return ReferenceCell(value.reference,context)
-    if isinstance(value,_Reference):return ReferenceCell(value,context)
+    if type(value) in (ReferenceCell,PlainReferenceCell):value=value.reference
+    if isinstance(value,_Reference):
+        if not context._verify_context:return PlainReferenceCell(value,context)
+        return ReferenceCell(value,context)
     # A public array value is not confused with our private address ABI.
     return NativeCell(value)
 

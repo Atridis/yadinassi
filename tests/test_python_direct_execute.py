@@ -210,3 +210,26 @@ class ExecutePreparationReuseTests(unittest.TestCase):
         vm.close();del vm;gc.collect()
         self.assertTrue(units)
         self.assertIsNone(vmref());self.assertTrue(all(ref() is None for ref in refs+contexts))
+
+    def test_light_fragment_reference_still_expires_without_context_check(self):
+        from yadinassi.execution.direct.python_direct_execute import FragmentScope
+        from yadinassi.types.values import Reference
+
+        class LightContext:
+            _verify_context = False
+
+            def _check(self):
+                raise AssertionError('full context check in light fragment')
+
+        parent = {'x': 1}
+        link = Reference(lambda: parent['x'], lambda value: parent.update(x=value))
+        scope = FragmentScope(parent, {'x': link}, None, LightContext())
+        reference = scope.reference('x')
+        self.assertEqual(reference.get(), 1)
+        reference.set(2)
+        scope.active = False
+        with self.assertRaisesRegex(BoundaryViolation, 'scope has ended'):
+            reference.get()
+        with self.assertRaisesRegex(BoundaryViolation, 'scope has ended'):
+            reference.set(3)
+        self.assertEqual(parent['x'], 2)

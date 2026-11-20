@@ -53,22 +53,23 @@ def fill(target,source,properties=None,exclude=None):
 
 def resolve_fill(context,function,*,name=None,require_value=False,allow_references=False,argument_count=None):
     if type(function) is not HostFunction or function.function is not _FILL:return None
-    context._check()
+    if context._verify_context:context._check()
     if argument_count is not None and not 2<=argument_count<=4:
         raise TypeError('ЗаполнитьЗначенияСвойств ожидает от 2 до 4 аргументов')
     context._validate_host_function(function,require_value,allow_references)
     def invoke(*args):
-        context._check()
+        if context._verify_context:context._check()
         if function.function is not _FILL:raise BoundaryViolation('fill implementation changed during argument evaluation')
         context._before('call' if name is not None else 'call_value',name or function.name.casefold())
         try:
             if function.function is not _FILL:raise BoundaryViolation('fill implementation changed at policy boundary')
             return fill(*args)
         except PermissionError as error:raise BoundaryViolation(str(error)) from error
-        finally:context._check()
+        finally:
+            if context._verify_context:context._check()
     if allow_references:invoke.requires_reference=lambda index:index in function.reference_parameters
     def prepare_omissions(bound,positions,count):
-        context._check()
+        if context._verify_context:context._check()
         if not 2<=count<=4:raise TypeError('ЗаполнитьЗначенияСвойств ожидает от 2 до 4 аргументов')
         if any(index<2 for index in positions):
             from yadinassi.execution.codegen.experimental_naked_collections import _host_omission_error

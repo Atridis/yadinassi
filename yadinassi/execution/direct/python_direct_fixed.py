@@ -50,12 +50,13 @@ def _freeze(source,active):
 def owns(value):return type(value) in (BSLFixedArray,BSLFixedStructure,BSLFixedMap,BSLKeyAndValue,PlainFixedMap)
 
 def get(boundary,value,name):
-    boundary._check()
+    if boundary._verify_context:boundary._check()
     try:return value.get_member(name)
-    finally:boundary._check()
+    finally:
+        if boundary._verify_context:boundary._check()
 
 def resolve(boundary,value,name,*,require_value=False,allow_references=False):
-    boundary._check()
+    if boundary._verify_context:boundary._check()
     if name=='__getitem__':
         function=value.get if type(value) in (BSLFixedStructure,BSLFixedArray) else value.get_index
     elif name=='__setitem__':

@@ -23,7 +23,7 @@ _FIELDS={alias:field for field,aliases in (
 def owns(value):return type(value) is BSLErrorInfo
 
 def read(context,value,name):
-    context._check()
+    if context._verify_context:context._check()
     if name.casefold() in _QUERY_NAMES:
         from .python_direct_captured_values import register
         return register(_HostFunction(name,_CategoryQuery(value)))
@@ -94,7 +94,7 @@ class _CategoryQuery:
 
 
 def resolve_query(context,value,name,*,require_value=False,omitted=()):
-    context._check()
+    if context._verify_context:context._check()
     if name.casefold() not in _QUERY_NAMES:raise ValueError('Метод не найден: '+name)
     if omitted:raise TypeError('Ожидается значение КатегорияОшибки')
     return context.resolve_callable(_HostFunction(name,_CategoryQuery(value)),require_value=require_value)
@@ -106,7 +106,7 @@ def raise_arity_error(description):
 
 def raise_error(context,description,arguments,source,line,column,source_line):
     """Called after ordered source evaluations; constructs no interpreter frame."""
-    context._check()
+    if context._verify_context:context._check()
     if len(arguments)>4:raise TypeError('ВызватьИсключение ожидает не более 5 аргументов')
     category,code,additional,cause=arguments+(None,)*(4-len(arguments))
     from yadinassi.types.errors import BSLRuntimeError
