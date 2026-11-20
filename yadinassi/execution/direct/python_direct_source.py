@@ -31,6 +31,7 @@ from .source import python_direct_source_xdto_objects as xdto_objects
 from .source import python_direct_source_xdto_xml as xdto_xml
 from .source import python_direct_source_xdto_json as xdto_json
 from .source import python_direct_source_xdto_local as local_xdto
+from .source.python_direct_source_scalar_services import resolve as resolve_scalar
 
 
 def check_owner(owner):
@@ -179,8 +180,15 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         self.storage=owner.variables;self.types=owner.types
         self._active=True
         self._instance_keys=tuple(k for k,v in self.app._instances.items() if v is owner)
+        self._local_activation = None
+        if self.side == self.logical_side == 'server':
+            from .source.python_direct_source_server import _ACTIVE
+            active = _ACTIVE.get()
+            if active and type(active[-1][0]) is type(owner) and active[-1][0].application is self.app:
+                self._local_activation = (_ACTIVE, active)
         self._loop_root = (self.app.interpreter if type(self) is SourceBoundary
-                           and self.side == self.logical_side == 'client'
+                           and (self.side == self.logical_side == 'client'
+                                or self._local_activation is not None)
                            and not owner.allow_extensions else None)
     def _check(self):
         super()._check();check_owner(self.vm);_check_plan(self.vm,self.plan)
@@ -195,19 +203,28 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             raise BoundaryViolation('direct source activation changed or ended')
         if any(self.app._instances.get(k) is not self.vm for k in self._instance_keys):
             raise BoundaryViolation('direct source module instance changed')
+    def _local_scalars(self):
+        return (type(self) is SourceBoundary and self._loop_root is not None
+                and not self.vm.allow_extensions
+                and self.loop_budget is None and self.policy is None
+                and not hasattr(self, '_execute_depth') and not hasattr(self, '_eval_depth'))
+
     def _check_loop(self):
+        if not self._local_scalars():return self._check()
+        self._check_local_lifetime()
+
+    def _check_local_lifetime(self):
+        # Entry/exit, true crossings, and external effects still validate the
+        # full source plan and server activation. Pure local work needs only
+        # this particular live lease and the original contextual activation.
         root = self._loop_root
-        # Full authority is checked at entry, exit and effect boundaries.
-        # Plain same-side client loops retain only a scoped lifetime check;
-        # extension, server, metered and dynamic contexts keep the full check.
-        if (root is None or self.loop_budget is not None or self.policy is not None
-                or hasattr(self, '_execute_depth') or hasattr(self, '_eval_depth')):
-            return self._check()
         BoundaryContext._check_lease(self)
         vm = self.vm
+        activation = self._local_activation
         if (not self._active or vm._family_owner is not root or root._family_closed
                 or vm._family_released or vm._family_generation != self.generation
-                or vm.execution_context != self.side
+                or vm.execution_context != self.side or vm._logical_side != self.logical_side
+                or (activation is not None and activation[0].get() is not activation[1])
                 or source_transactions._current.get() is not self.app
                 or safe_mode._CURRENT.get() is not self.app.safe_mode):
             raise BoundaryViolation('direct source loop authority changed or ended')
@@ -264,10 +281,12 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         release(self)
     @contextmanager
     def routine_scope(self):
-        self._check()
+        check = (self._check_loop if type(self) is SourceBoundary and self.side == 'server'
+                 else self._check)
+        check()
         with self.app.safe_mode.routine(self.vm,self.vm):
             try:yield
-            finally:self._check()
+            finally:check()
     def scalar_values(self,values):
         self._check()
         from yadinassi.execution.invocation import _encode_scalar
@@ -318,7 +337,10 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         canonical=Reference(get,put);canonical._direct_name_sink=True
         return _ForwardReference(canonical)
     def resolve_service(self,name,*args,**kwargs):
-        self._check();key=name.casefold()
+        key=name.casefold()
+        bound=resolve_scalar(self,key,**kwargs)
+        if bound is not None:return bound
+        self._check()
         if key in ('new:xmlreadersettings','new:параметрычтенияxml',
                 'new:xmlwritersettings','new:параметрызаписиxml','new:dombuilder',
                 'new:построительdom','new:domwriter','new:записьdom','new:domdocument',
@@ -425,7 +447,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             raise TypeError('Неверное количество аргументов: '+routine.name)
         refs=frozenset(i for i,p in enumerate(routine.parameters) if not p.by_value)
         def call(*values):
-            self._check();check_owner(owner);provenance();_preflight(owner,routine)
+            self._check();check_owner(owner);provenance();plan=_preflight(owner,routine)
             if (owner.server_routines if self.side=='server' else owner.routines).get(routine.name.casefold()) is not routine:
                 raise BoundaryViolation('source routine binding changed')
             values=tuple(_ForwardReference(v) if i in refs and type(v) is Reference else v for i,v in enumerate(values))
@@ -433,7 +455,12 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
                 if scalar_reuse:
                     from yadinassi.execution.invocation import _encode_scalar
                     for value in values:_encode_scalar(value)
-                result=reuse(values,lambda:invoke(owner,routine,values)) if reuse is not None else invoke(owner,routine,values)
+                if reuse is None:
+                    result=_invoke_plan(owner,routine,values,plan)
+                else:
+                    # Reuse can perform work before a cache miss invokes the
+                    # target. Readmit at that point, not just before lookup.
+                    result=reuse(values,lambda:invoke(owner,routine,values))
                 if scalar_reuse:_encode_scalar(result)
                 return result
             finally:self._check()
@@ -693,10 +720,13 @@ def _preflight(owner,routine):
     return plan
 
 
+def _invoke_plan(owner,routine,values,plan):
+    return _run(owner,plan,lambda exports:exports[routine.name.casefold()](*values))
+
+
 def invoke(owner,routine,values):
     check_owner(owner)
-    plan=_preflight(owner,routine)
-    return _run(owner,plan,lambda exports:exports[routine.name.casefold()](*values))
+    return _invoke_plan(owner,routine,values,_preflight(owner,routine))
 
 
 def event(owner,routine,arguments):

@@ -103,8 +103,11 @@ class NoContextBoundary(ServicesBoundary,BoundaryContext):
         self._services=self.vm.functions
         self._active=True;self._seal=server._direct_nocontext
         self._budget=self.vm._source_call_budget
+        self._root=self.app.interpreter
     def _check(self):
         BoundaryContext._check(self);_check(self.server)
+        self._check_scope()
+    def _check_scope(self):
         if (not self._active or self.server.prototype is not self.vm
                 or self.server.application is not self.app or self.vm.application is not self.app
                 or self._services is not self.vm.functions
@@ -119,13 +122,27 @@ class NoContextBoundary(ServicesBoundary,BoundaryContext):
                 or type(budget[0]) is not int or budget[0]<0):
             raise BoundaryViolation('source NoContext budget changed')
     def checkpoint(self):
-        self._check();self.vm._source_call_budget[0]+=1
-        if self.vm._source_call_budget[0]>100000:
+        # Loop probes meter the same live invocation, but never re-audit the
+        # transport or registries. Those remain checked at real boundaries.
+        BoundaryContext._check_lease(self)
+        root = self._root
+        if (self.app.interpreter is not root or self.app.state != 'running'
+                or self.vm._family_owner is not root or self.vm._scheduler is not root._scheduler
+                or root._family_closed or self.vm._family_released
+                or self.vm._family_generation != root._family_generation
+                or self.vm.database_context is not None or self.vm._configuration_runtime is not None
+                or self.vm.execution_backend != 'python-direct' or self.app.constant_store is not None):
+            raise BoundaryViolation('source NoContext owner is inactive')
+        self._check_scope()
+        self._charge_step()
+    def _charge_step(self):
+        self._budget[0]+=1
+        if self._budget[0]>100000:
             from yadinassi.forms.form_runtime import FormLimitError
             raise FormLimitError('Source NoContext execution limit')
     @contextmanager
     def routine_scope(self):
-        self.checkpoint()
+        self._check();self._charge_step()
         with self.app.safe_mode.routine(self.vm,self.vm):
             try:yield
             finally:self._check()
