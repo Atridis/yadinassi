@@ -28,6 +28,7 @@ PYTHON_REFERENCES = {
     'arithmetic': 'native-int-arithmetic-v2',
     'arithmetic.fractional': 'int-counter-decimal-factor-v2',
     'map': 'native-int-map-v2',
+    'calls': 'native-int-calls-v2',
     'byref': 'native-int-byref-v2',
     'byref.array_element': 'native-int-byref-element-v1',
     'array': 'native-int-array-v2',
@@ -53,7 +54,7 @@ def workload(name, n):
         raise ValueError('iterations must be an integer in 1..100000')
     if name not in CASES:
         raise ValueError('unknown workload')
-    one, three = D(1), D(3)
+    three = D(3)
     inputs = ()
     if name in ('arithmetic', *HOST_CASES):
         host_call = name == 'arithmetic.host_after_loop'
@@ -107,10 +108,10 @@ def workload(name, n):
         expected = D(8*n)
     elif name == 'calls':
         def native():
-            def inc(x): return x + one
-            s = D(0)
-            for i in range(1, n + 1): s += inc(D(i))
-            return s
+            def inc(x): return x + 1
+            s = 0
+            for i in range(1, n + 1): s += inc(i)
+            return D(s)
         body = f'Function Inc(Val x) Return x+1;EndFunction r=0;For i=1 To {n} Do r=r+Inc(i);EndDo;'
         expected = D(n*(n+1)//2+n)
     elif name in ('byref', 'byref.array_element'):

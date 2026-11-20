@@ -10,7 +10,7 @@ from scripts import benchmark_execution_layers as bench
 class ExecutionLayerBenchmarkTests(unittest.TestCase):
     def test_python_arithmetic_references_do_not_convert_each_counter(self):
         for case, casts in (('arithmetic', [182]), ('arithmetic.fractional', []), ('map', [78]),
-                            ('array', [78]), ('array.foreach', [78]),
+                            ('array', [78]), ('array.foreach', [78]), ('calls', [104]),
                             ('byref', [13]), ('byref.array_element', [13])):
             with self.subTest(case=case):
                 job = bench.workload(case, 13)

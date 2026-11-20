@@ -56,6 +56,9 @@ def render(report):
         lines += [f'Один вызов `Observe` после цикла / тот же BSL без вызова: {delta}. '
                   'В обоих сценариях `allow_extensions=True` и зарегистрирован один и тот же callback; '
                   'это не сравнение с выключенным флагом.', '']
+    if 'native-int-calls-v2' in references:
+        lines += ['`calls`: Python передаёт целые числа в функцию и преобразует только итог в `Decimal`; '
+                  'BSL-исходник не менялся.', '']
     if 'native-int-array-v2' in references:
         lines += ['`array` / `array.foreach`: Python теперь строит массив из `int` вместо `Decimal`; '
                   'между сценариями меняется только способ обхода.', '']
