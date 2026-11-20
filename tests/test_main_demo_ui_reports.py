@@ -11,12 +11,15 @@ from yadinassi.configuration.demos.inventory_application_reports import Inventor
 from yadinassi.configuration.demos.inventory_host_operations import _source_configuration
 from yadinassi.db.catalog.catalog_backend import BackendError
 from yadinassi.runtime import Interpreter
+from sqlite_test_templates import copy_main_demo
 
 class MainDemoUIReportsTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
         self.config = import_main_demo_configuration(source(), profile=PROFILE)
-        self.context = SQLiteDBContext.create_main_demo(Path(temporary.name)/'demo.sqlite', self.config)
+        path = Path(temporary.name)/'demo.sqlite'
+        copy_main_demo(path)
+        self.context = SQLiteDBContext(path)
         self.addCleanup(self.context.close)
         self.vm = Interpreter(database_context=self.context)
         self.addCleanup(self.vm.close)

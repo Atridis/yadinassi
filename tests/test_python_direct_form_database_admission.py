@@ -5,8 +5,6 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import test_python_direct_bound_forms as fixtures
-from test_main_demo_configuration import source
-from yadinassi.configuration.configuration_main_demo import import_main_demo_configuration, PROFILE
 from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.forms.form_runtime import FormSession
 from yadinassi.execution.direct.python_direct_forms import FormBoundary, check_form_owner
@@ -14,6 +12,7 @@ from yadinassi.execution.direct.python_direct_configuration import check_owner
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.execution import safe_mode
 from yadinassi.db import source_transactions, database_transactions
+from sqlite_test_templates import copy_main_demo
 
 class DatabaseFormAdmissionTests(unittest.TestCase):
     def setUp(self):
@@ -21,8 +20,9 @@ class DatabaseFormAdmissionTests(unittest.TestCase):
         self.addCleanup(fixture.doCleanups)
         _,self.app=fixture.setup_apps()
         folder=tempfile.TemporaryDirectory();self.addCleanup(folder.cleanup)
-        config=import_main_demo_configuration(source(),profile=PROFILE)
-        self.db=SQLiteDBContext.create_main_demo(Path(folder.name)/'db.sqlite',config)
+        path=Path(folder.name)/'db.sqlite'
+        copy_main_demo(path)
+        self.db=SQLiteDBContext(path)
         self.addCleanup(self.db.close)
         self.output=[]
         self.session=FormSession('Procedure Event() Message("effect"); EndProcedure',

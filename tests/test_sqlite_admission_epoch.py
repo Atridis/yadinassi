@@ -8,10 +8,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
+from sqlite_test_templates import copy_main_demo
 
 from test_main_demo_configuration import source
-from yadinassi.configuration.configuration_main_demo import import_main_demo_configuration, PROFILE
-from yadinassi.db.sqlite.sqlite_inventory_enum_profile import create_main_demo
 from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from yadinassi.db.sqlite.sqlite_read_handles import ReadHandle
 from yadinassi.db.catalog.catalog_backend import BackendError
@@ -20,8 +19,7 @@ class AdmissionEpochTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
         self.path = Path(tmp.name)/'main.sqlite'
-        config = import_main_demo_configuration(source(), profile=PROFILE)
-        create_main_demo(str, self.path, config)
+        copy_main_demo(self.path)
         self.backend = SQLiteCatalogBackend(self.path); self.addCleanup(self.backend.close)
 
     def read(self):

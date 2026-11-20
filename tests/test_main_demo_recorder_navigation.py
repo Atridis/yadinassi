@@ -1,13 +1,14 @@
 """Recorder navigation consumes server-owned capabilities, never display labels."""
+from contextlib import closing
 from copy import deepcopy
 from pathlib import Path
-from shutil import copyfile
 from types import SimpleNamespace
 import tempfile
 import unittest
 
 from test_main_demo_configuration import source, ROOT
 from test_main_demo_runtime import SEED
+from sqlite_test_templates import copy_main_demo
 from yadinassi.configuration.configuration_main_demo import PROFILE, import_main_demo_configuration
 from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.configuration.demos.inventory_application_reports import InventoryReports
@@ -20,37 +21,26 @@ from yadinassi.ui.report_protocol import validate_projection
 REPORT = {'report':'StockMovements','at':None,'start':None,'end':None}
 
 
+def _seed_recorder(context):
+    with closing(Interpreter(database_context=context)) as vm:
+        vm.execute(SEED + '''
+D=Documents.Receipt.CreateDocument();D.Number="r1";D.Date=Date(2024,1,1);D.Warehouse=Склад.Ссылка;
+L=D.Lines.Add();L.Product=Карточка.Ссылка;L.Quantity=5;L.Amount=10;L.Unit=Enums.Units.Piece;D.Write(DocumentWriteMode.Posting);
+D=Documents.Issue.CreateDocument();D.Number="i1";D.Date=Date(2024,1,2);D.Warehouse=Склад.Ссылка;
+L=D.Lines.Add();L.Product=Карточка.Ссылка;L.Quantity=1;L.Amount=2;L.Unit=Enums.Units.Piece;D.Write(DocumentWriteMode.Posting);
+''')
+
+
 class RecorderHandlerTests(unittest.TestCase):
     def test_handler_explicitly_admits_new_recorder_method(self):
         self.assertIn('application.openRecorder', ConfigurationHandler.methods)
 
 
 class RecorderNavigationTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        temp = tempfile.TemporaryDirectory()
-        cls.addClassCleanup(temp.cleanup)
-        cls.seeded_db = Path(temp.name) / 'seed.sqlite'
-        configuration = import_main_demo_configuration(source(), profile=PROFILE)
-        with SQLiteDBContext.create_main_demo(cls.seeded_db, configuration) as context:
-            vm = Interpreter(database_context=context)
-            try:
-                vm.execute(SEED + '''
-D=Documents.Receipt.CreateDocument();D.Number="r1";D.Date=Date(2024,1,1);D.Warehouse=Склад.Ссылка;
-L=D.Lines.Add();L.Product=Карточка.Ссылка;L.Quantity=5;L.Amount=10;L.Unit=Enums.Units.Piece;D.Write(DocumentWriteMode.Posting);
-D=Documents.Issue.CreateDocument();D.Number="i1";D.Date=Date(2024,1,2);D.Warehouse=Склад.Ссылка;
-L=D.Lines.Add();L.Product=Карточка.Ссылка;L.Quantity=1;L.Amount=2;L.Unit=Enums.Units.Piece;D.Write(DocumentWriteMode.Posting);
-''')
-            finally: vm.close()
-        # Copy only a closed, self-contained database; every test gets its own writes.
-        if any(cls.seeded_db.with_name(cls.seeded_db.name + suffix).exists()
-               for suffix in ('-journal', '-wal', '-shm')):
-            raise RuntimeError('Recorder test seed still has SQLite sidecars')
-
     def setUp(self):
         temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
         self.path = Path(temp.name)/'demo.sqlite'
-        copyfile(self.seeded_db, self.path)
+        copy_main_demo(self.path, seed=_seed_recorder)
         self.configuration = import_main_demo_configuration(source(), profile=PROFILE)
         self.forms = load_application(ROOT/'examples/demo', main_demo_application=True)
         self.broker = ConfigurationBroker(self.forms, self.path, main_demo_application=True)

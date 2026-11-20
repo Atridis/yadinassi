@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from uuid import UUID, uuid4
+from sqlite_test_templates import copy_inventory
 
 from yadinassi.db.registers.accumulation_movements import AccumulationDirection
 from yadinassi.db.catalog.catalog_backend import BackendError, CatalogDraft, CatalogKey, TabularRow, TabularSectionRows
@@ -36,7 +37,8 @@ class InventoryReportTests(unittest.TestCase):
         self.files = source()
         self.config = import_inventory_application(self.files, inventory_runtime=PROFILE)
         self.path = Path(self.temp.name) / 'reports.sqlite'
-        self.context = SQLiteDBContext.create_inventory_application(self.path, self.config)
+        copy_inventory(self.path)
+        self.context = SQLiteDBContext(self.path)
         self.addCleanup(self.context.close)
         self.backend = self.context.backend
         self.service = InventoryReports(self.context, self.config)

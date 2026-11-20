@@ -8,8 +8,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
+from sqlite_test_templates import copy_inventory
 
-from yadinassi import Interpreter
 from yadinassi.db.catalog.catalog_backend import BackendError, CatalogKey, TabularSectionRows, TabularRow
 from yadinassi.configuration.configuration_inventory_application import import_inventory_application, PROFILE, validated_core
 from yadinassi.db.database_context import SQLiteDBContext
@@ -28,14 +28,11 @@ class InventoryHostTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory(dir=ROOT.parent);self.addCleanup(self.temp.cleanup)
         self.files=source();self.config=import_inventory_application(self.files,inventory_runtime=PROFILE)
         self.path=Path(self.temp.name)/'inventory.sqlite'
-        self.context=SQLiteDBContext.create_inventory_application(self.path,self.config)
+        p,w=copy_inventory(self.path,products=True)
+        self.context=SQLiteDBContext(self.path)
         self.addCleanup(self.context.close);self.backend=self.context.backend
-        with closing(Interpreter(database_context=self.context,output=lambda value:None)) as vm:
-            vm.execute('P=Catalogs.Products.CreateItem();P.Code="P1";P.Description="Product";P.Write();'
-                'W=Catalogs.Warehouses.CreateItem();W.Code="W1";W.Description="Warehouse";W.Write();')
-            p=vm.execute('P.Ref');w=vm.execute('W.Ref')
-            self.product=CatalogKey(self.backend.database_id,p.value_type.metadata_uuid,p.reference_uuid)
-            self.warehouse=CatalogKey(self.backend.database_id,w.value_type.metadata_uuid,w.reference_uuid)
+        self.product=CatalogKey(self.backend.database_id,*p)
+        self.warehouse=CatalogKey(self.backend.database_id,*w)
         self.host=InventoryRootOperations(self.context,self.config);self.addCleanup(self.cleanup_host)
         self.schema=next(s for s in self.config.documents if s.name=='Receipt')
         self.key=DocumentKey(self.backend.database_id,self.schema.identity,uuid4())

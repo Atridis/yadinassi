@@ -5,6 +5,7 @@ from decimal import Decimal
 import tempfile
 import unittest
 from unittest.mock import patch
+from sqlite_test_templates import copy_inventory
 
 from yadinassi import Interpreter
 from yadinassi.configuration.configuration_inventory_application import import_inventory_application, PROFILE, validated_core
@@ -23,10 +24,7 @@ class InventoryApplicationTests(unittest.TestCase):
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
         self.path=Path(temp.name)/'stock.sqlite'
         self.config=import_inventory_application(source(),inventory_runtime=PROFILE)
-        with closing(SQLiteDBContext.create_inventory_application(self.path,self.config)) as context:
-            with closing(Interpreter(database_context=context,output=lambda value:None)) as vm:
-                vm.execute('P=Catalogs.Products.CreateItem();P.Code="P1";P.Description="Product";P.Write();'
-                    'W=Catalogs.Warehouses.CreateItem();W.Code="W1";W.Description="Warehouse";W.Write();')
+        copy_inventory(self.path,products=True)
         forms=load_application(EXAMPLE,inventory_application=True)
         self.broker=ConfigurationBroker(forms,self.path,inventory_application=True)
         self.addCleanup(self.broker.close)

@@ -7,10 +7,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
+from sqlite_test_templates import copy_main_demo
 
 from test_main_demo_configuration import source
 from yadinassi.db.catalog.catalog_backend import BackendError
-from yadinassi.configuration.configuration_main_demo import PROFILE, import_main_demo_configuration
 from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from yadinassi.db.sqlite import sqlite_inventory_enum_profile as profile
 
@@ -19,9 +19,7 @@ class TransactionSourceTests(unittest.TestCase):
     def setUp(self):
         folder = tempfile.TemporaryDirectory(); self.addCleanup(folder.cleanup)
         self.path = Path(folder.name)/'demo.sqlite'
-        config = import_main_demo_configuration(source(), profile=PROFILE)
-        backend = SQLiteCatalogBackend.create_main_demo(self.path, config)
-        backend.close()
+        copy_main_demo(self.path)
         self.backend = SQLiteCatalogBackend(self.path); self.addCleanup(self.backend.close)
 
     def mutate(self, sql, args=()):

@@ -8,13 +8,15 @@ from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.ui.database_launch import binding
 from yadinassi.ui.main_demo_host import MainDemoHost, PROTOCOL
 from yadinassi.ui.configuration_app import PROTOCOL as APP_PROTOCOL
+from sqlite_test_templates import copy_main_demo
 
 class MainDemoHostTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
         self.path = Path(tmp.name)/'demo.sqlite'
         self.config = import_main_demo_configuration(source(), profile=PROFILE)
-        with SQLiteDBContext.create_main_demo(self.path, self.config) as context:
+        copy_main_demo(self.path)
+        with SQLiteDBContext(self.path) as context:
             self.expected = binding(context.backend.launch_snapshot())
         self.host = MainDemoHost(self.path, self.expected);self.addCleanup(self.host.close)
 

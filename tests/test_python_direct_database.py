@@ -4,15 +4,16 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.configuration.configuration_main_demo import PROFILE,import_main_demo_configuration
 from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from test_main_demo_configuration import source
+from sqlite_test_templates import copy_main_demo
 
 class DirectDatabaseTests(unittest.TestCase):
     def setUp(self):
         folder=tempfile.TemporaryDirectory();self.addCleanup(folder.cleanup)
-        self.context=SQLiteDBContext.create_main_demo(Path(folder.name)/'db.sqlite',import_main_demo_configuration(source(),profile=PROFILE))
+        path=Path(folder.name)/'db.sqlite'
+        copy_main_demo(path)
+        self.context=SQLiteDBContext(path)
         self.addCleanup(self.context.close)
         self.vm=Interpreter(database_context=self.context, allow_extensions=True);self.addCleanup(self.vm.close)
 
