@@ -5,6 +5,8 @@ Only reached modules are compiled. Unsupported platform services fail normally;
 source admission and the existing database/profile path remain independent.
 """
 from dataclasses import fields, is_dataclass
+from types import MappingProxyType
+from weakref import WeakKeyDictionary
 import xml.etree.ElementTree as ET
 
 from .configuration_source import ConfigurationSource
@@ -14,6 +16,31 @@ from yadinassi.runtime import Interpreter
 from yadinassi.collections.structures import BSLStructure
 from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse
+
+
+def _decoded_common_module_properties(xml):
+    # Cache decoding only, by immutable input. Every lookup still validates
+    # current caller, current definition and all grants against current bytes.
+    root = ET.fromstring(xml)
+    node = root[0].find('{' + MD + '}Properties')
+    return MappingProxyType({element.tag.rsplit('}', 1)[-1]: element.text
+                             for element in node})
+
+
+_COMMON_MODULE_PROPERTIES = WeakKeyDictionary()
+
+
+def _common_module_properties(app, key, path):
+    xml = app.files[path]
+    if type(xml) is not bytes:
+        return _decoded_common_module_properties(xml)
+    latest = _COMMON_MODULE_PROPERTIES.setdefault(app, {})
+    entry = latest.get(key)
+    if entry is not None and entry[0] == xml:
+        return entry[1]
+    properties = _decoded_common_module_properties(xml)
+    latest[key] = xml, properties
+    return properties
 
 
 class _SourceInterpreter(Interpreter):
@@ -346,10 +373,7 @@ class SourceApplication:
             raise ValueError('foreign source common-module caller')
         caller_side = caller.execution_context
         definition = self.modules[key]
-        root = ET.fromstring(self.files[definition.path])
-        properties_node = root[0].find('{' + MD + '}Properties')
-        properties = {element.tag.rsplit('}', 1)[-1]: element.text
-                      for element in properties_node}
+        properties = _common_module_properties(self, key, definition.path)
         path = 'CommonModules/' + definition.name + '/Ext/Module.bsl'
         client = properties.get('ClientManagedApplication') == 'true'
         server = properties.get('Server') == 'true'
@@ -417,9 +441,7 @@ class SourceApplication:
             from .source_global_declarations import exported_names
             exports = {}
             for key, definition in self.modules.items():
-                root = ET.fromstring(self.files[definition.path])
-                properties = {element.tag.rsplit('}', 1)[-1]: element.text
-                              for element in root[0].find('{' + MD + '}Properties')}
+                properties = _common_module_properties(self, key, definition.path)
                 if (properties.get('Global') != 'true'
                         or properties.get('ClientManagedApplication' if side == 'client' else 'Server') != 'true'):
                     continue
@@ -610,6 +632,7 @@ class SourceApplication:
                                                self._session_owner, require_value=False)
 
     def close(self):
+        _COMMON_MODULE_PROPERTIES.pop(self, None)
         try:
             if self.constant_store is not None:
                 self.constant_store.close()

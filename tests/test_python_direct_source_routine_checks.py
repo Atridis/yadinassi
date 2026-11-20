@@ -2,6 +2,8 @@
 import unittest
 from unittest.mock import patch
 
+from yadinassi.configuration.configuration_source import import_source
+
 from test_python_direct_source import common_module
 from test_configuration_source_runtime import source
 import test_source_server_call as server_fixtures
@@ -43,3 +45,57 @@ class SourceRoutineChecks(unittest.TestCase):
             server_call=False,
         )
         self.assertEqual(self.run_counted(config), 2)
+
+
+    def test_three_server_modules_keep_live_aliases_and_client_boundary(self):
+        config = server_fixtures.configuration(
+            'Message(ServerAPI.Answer()); Try Middle.Change(0,0); Except Message("denied"); EndTry;',
+            'Function Answer() Export X=7; Middle.Change(X,X); Return X; EndFunction',
+        )
+        fixtures = server_fixtures.SourceServerCallTests()
+        config = fixtures.with_extra(config,'Middle',
+            'Procedure Change(X,Y) Export Last.Change(X,Y); EndProcedure',server_call=False)
+        files = {item.path:item.content for item in config.files}
+        extra = server_fixtures.module('Last',
+            'Procedure Change(X,Y) Export X=X+1; Y=Y+2; EndProcedure',server_call=False)
+        extra['CommonModules/Last.xml'] = extra['CommonModules/Last.xml'].replace(
+            b'<CommonModule>',b'<CommonModule uuid="00000000-0000-0000-0000-000000000004">')
+        files.update(extra)
+        out = []
+        app = SourceApplication(import_source(files),output=out.append)
+        self.addCleanup(app.close)
+        self.assertTrue(app.start())
+        self.assertEqual(out,['10','denied'])
+
+    def test_by_value_host_reference_still_expires(self):
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.types.values import Reference
+
+        config = source(b'', common_module(b'Function Identity(Val X) Export Return X; EndFunction'))
+        app = SourceApplication(config)
+        self.addCleanup(app.close)
+        self.assertTrue(app.start())
+        vm = app.interpreter
+        original = Reference(lambda:7, lambda _:None)
+        vm.variables['x'] = original
+        returned = vm.execute('Helpers.Identity(X);')
+        self.assertIsNot(returned, original)
+        with self.assertRaises(BoundaryViolation):
+            returned.get()
+
+    def test_decoding_cache_never_reuses_module_permission(self):
+        config = source(b'', common_module(b'Function Increment(Val X) Export Return X+1; EndFunction'))
+        out = []
+        app = SourceApplication(config,output=out.append)
+        self.addCleanup(app.close)
+        self.assertTrue(app.start())
+        from yadinassi.configuration import configuration_source_runtime as runtime
+        with patch.object(runtime, '_decoded_common_module_properties',
+                          wraps=runtime._decoded_common_module_properties) as decoder:
+            app.interpreter.execute('Message(Helpers.Increment(7)); Message(Helpers.Increment(7));')
+        self.assertEqual(out,['8','8'])
+        self.assertEqual(decoder.call_count,1)
+        path = 'CommonModules/Helpers.xml'
+        app.files[path] = app.files[path].replace(b'<Properties>',b'<Properties><Privileged>true</Privileged>')
+        app.interpreter.execute('Try Message(Helpers.Increment(7)); Except Message("denied"); EndTry;')
+        self.assertEqual(out,['8','8','denied'])

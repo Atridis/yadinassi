@@ -446,7 +446,13 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         if argument_count is not None and not minimum<=argument_count<=len(routine.parameters):
             raise TypeError('Неверное количество аргументов: '+routine.name)
         refs=frozenset(i for i,p in enumerate(routine.parameters) if not p.by_value)
+        direct = self._local_scalars() and not owner.allow_extensions and entry is None
+        bound_name = routine.name.casefold()
         def call(*values):
+            # Argument evaluation may install a policy or leave this scope.
+            # This is an owned BSL call, never a host extension invocation.
+            if direct and self.policy is not None:
+                self._before('call_value', bound_name)
             self._check();check_owner(owner);provenance();plan=_preflight(owner,routine)
             if (owner.server_routines if self.side=='server' else owner.routines).get(routine.name.casefold()) is not routine:
                 raise BoundaryViolation('source routine binding changed')
@@ -464,8 +470,19 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
                 if scalar_reuse:_encode_scalar(result)
                 return result
             finally:self._check()
-        bound=self.resolve_callable(HostFunction(routine.name,call,returns_value=routine.is_function,reference_parameters=refs),
-                                    require_value=require_value,allow_references=allow_references)
+        if direct:
+            if refs and not allow_references:
+                from yadinassi.execution.codegen.experimental_naked_boundaries import UnsupportedHostSignature
+                raise UnsupportedHostSignature('dynamic HostFunction reference parameters require explicit argument lowering')
+            if require_value and not routine.is_function:
+                raise TypeError('Процедура не возвращает значение: '+routine.name)
+            bound=call
+            if allow_references:
+                bound.requires_reference=refs.__contains__
+                bound=self._guard_references(bound)
+        else:
+            bound=self.resolve_callable(HostFunction(routine.name,call,returns_value=routine.is_function,reference_parameters=refs),
+                                        require_value=require_value,allow_references=allow_references)
         def omissions(current,positions,count):
             self._check();provenance()
             if count>len(routine.parameters) or any(i>=len(routine.parameters) or routine.parameters[i].default is None for i in positions):
