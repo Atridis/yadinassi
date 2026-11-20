@@ -86,7 +86,7 @@ def plain_map(*arguments):
 
 from types import MappingProxyType
 from yadinassi.collections.structures import BSLKeyAndValue
-from yadinassi.types.values import HostFunction
+from yadinassi.types.values import BSLFixedArray, HostFunction
 
 class PlainFixedMap:
     """Read-only shallow snapshot with the source's native Python key semantics."""
@@ -104,7 +104,12 @@ class PlainFixedMap:
         return public_number(self._items.get(key))
 
     def get_index(self,key):
-        if id(type(key)) not in _KEY_TYPE_IDS:_reject_key(key)
+        if id(type(key)) not in _KEY_TYPE_IDS:
+            # A fixed array cannot be present in scalar-key storage. Report
+            # the miss without attempting to hash or compare the array.
+            if type(key) is BSLFixedArray:
+                raise ValueError('Ключ фиксированного соответствия не найден')
+            _reject_key(key)
         try:return public_number(self._items[key])
         except KeyError:raise ValueError('Ключ фиксированного соответствия не найден') from None
 

@@ -851,6 +851,23 @@ class FixedCollectionTests(unittest.TestCase):
         ''')
         self.assertEqual(self.output, ['Да', 'Да', 'Да', '7', '7', '7'])
 
+    def test_direct_fixed_map_index_distinguishes_missing_and_undefined(self):
+        self.vm.execute("""
+            m = New Map; m.Insert("present", Undefined);
+            fm = New FixedMap(m);
+            a = New FixedArray(New Array);
+        """)
+        self.assertIsNone(self.vm.execute('fm["present"]'))
+        self.assertIsNone(self.vm.execute('fm.Get("absent")'))
+        for expression in ('fm["absent"]', 'fm[a]'):
+            with self.subTest(expression=expression), self.assertRaisesRegex(
+                    BSLRuntimeError, 'Ключ фиксированного соответствия не найден'):
+                self.vm.execute(expression)
+        with self.assertRaisesRegex(BSLRuntimeError, 'requires a scalar Python value'):
+            self.vm.execute('fm.Get(a)')
+        with self.assertRaisesRegex(BSLRuntimeError, 'requires a scalar Python value'):
+            self.vm.execute('m.Insert(a, 7);')
+
     def test_direct_fixed_map_assignment_reports_readonly_after_rhs(self):
         self.vm.execute("""
             Function RHS()
