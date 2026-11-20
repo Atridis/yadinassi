@@ -134,7 +134,7 @@ def prepared_posting(runtime,document,parent):
     program=runtime._programs[identity]
     names=_POSTING_NAMES|{field.name.casefold() for field in schema.fields}|{section.name.casefold() for section in schema.tabular_sections}
     with target_context(parent.native_target):
-        plan=compile_owned(program,source_text='',source_name='<document-posting>',
+        plan=compile_owned(program,retain_generated=False,source_text='',source_name='<document-posting>',
                      external_names=tuple(names),constructors=_POSTING_CONSTRUCTORS,
                      exports=True,authority_checks=True,host_bindings=True,callable_externals=_POSTING_CALLABLE_FIELDS)
     result=PreparedPosting(key,plan,MappingProxyType({routine.name.casefold():tuple(p.by_value for p in routine.parameters) for routine in program}))

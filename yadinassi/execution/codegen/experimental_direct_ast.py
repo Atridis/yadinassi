@@ -1,13 +1,8 @@
-"""Direct BSL-to-Python AST compiler under default-path replacement.
+"""Compile BSL directly to a compiler-owned Python AST.
 
-The default whole-source lane parses generated source, verifies its structure,
-transplants BSL positions, and compiles that actual tree. It does not fall back
-or replay through the former text emitter. The pure AST lane remains a test
-comparison. Legacy interpreter execution is separate and unchanged.
-
-Auxiliary-fragment audit events from the former compiler are intentionally not
-reproduced; real generated-source and executable-AST audit gates run before
-source effects. Replacement parity is still being established by the full suite.
+Default execution compiles that AST before source effects. Explicit source
+audit compares a genuine unparse/parse roundtrip with the emitted tree.
+Neither lane falls back to another compiler, or retries a failed compile.
 """
 import ast as py
 from copy import deepcopy
@@ -1580,8 +1575,8 @@ def _routine_region(routine, scope):
     return end,operations,states
 
 
-def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_whole_source=False,_require_last_expression=False,_profile=None,_source_scopes=False,_authority=False,_scalar_routines=False,_callable_externals=(),_shadowable=(),_configuration_calls=False,_host_bindings=False,_catalog_bounds=False,_lean_configuration=False):
-    """Lower a module; the whole-source wrapper is the default compile entry."""
+def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_whole_source=False,_require_last_expression=False,_profile=None,_source_scopes=False,_authority=False,_scalar_routines=False,_callable_externals=(),_shadowable=(),_configuration_calls=False,_host_bindings=False,_catalog_bounds=False,_lean_configuration=False,_retain_generated=True):
+    """Lower a module, optionally auditing the generated Python source."""
     if not _native_partial_binding(partial):_reject('noncanonical partial binding is outside research contract')
     if not _native_operator_binding(_NATIVE_ADD,'add') or not _native_operator_binding(_NATIVE_GETITEM,'getitem'):
         _reject('noncanonical operator binding is outside research contract')
@@ -1884,10 +1879,19 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     # Every route genuinely compiles executable code before source effects.
     # Whole-source research additionally parses the actual source, not a fake
     # notification or an ignored authorization probe.
-    generated='<direct AST research: no generated text>';roundtrip_visits=0
+    generated=None;roundtrip_visits=0
     if _whole_source:tree,generated,roundtrip_visits=_source_roundtrip(tree,filename)
-    code=compile(tree,filename,'exec');exec(code,namespace)
-    result=Program(generated,tuple(emitter.constants),namespace['naked_module'],{},frozenset(REPAIRS),source_name=filename,source_text=source_text,required_services=tuple(sorted(emitter.required)),trusted_entry=True)
+    try:code=compile(tree,filename,'exec')
+    except (SyntaxError,ValueError,TypeError,RecursionError,SystemError) as error:
+        # Diagnostic only: never use a reparsed tree to retry failed compilation.
+        if not _whole_source:
+            try:_source_roundtrip(tree,filename)
+            except Exception as diagnostic:
+                note=getattr(error,'add_note',None)
+                if note is not None:note('Generated Python roundtrip: '+str(diagnostic))
+        raise
+    exec(code,namespace)
+    result=Program(generated,tuple(emitter.constants),namespace['naked_module'],{},frozenset(REPAIRS),source_name=filename,source_text=source_text,required_services=tuple(sorted(emitter.required)),trusted_entry=True,_generated_tree=tree if _retain_generated and generated is None else None)
     if emitter.authority:result.repairs=result.repairs|{'authority_checkpoints'}
     result._source_implicit_shadows=frozenset(emitter.implicit_shadows)
     result._research_lowering_counts=(count,emitter.visits,emitter.python_nodes)
@@ -1896,7 +1900,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
 
 
 def compile_module_whole_source(vm,program,nodes,source_text,source_name,*,_exports=False,_require_last_expression=False):
-    """Default source-plus-AST compile entry; never replay through another compiler."""
+    """Explicit source-plus-AST audit; never replay through another compiler."""
     return compile_module(vm,program,nodes,source_text,source_name,
                           _exports=_exports,_whole_source=True,_require_last_expression=_require_last_expression)
 
@@ -1905,14 +1909,14 @@ def compile_owned(program, *, source_text, source_name, module_names=(),
                   external_names=(), constructors=(), exports=False, source_scopes=False,
                   authority_checks=False, scalar_routines=False, callable_externals=(),
                   shadowable_externals=(), require_last_expression=False, configuration_calls=False, host_bindings=False, catalog_bounds=False,
-                  lean_configuration=False):
+                  lean_configuration=False, retain_generated=True):
     """Compile an already-authorized side's declarations to Python definitions.
 
     Namespace inputs describe names, not a runtime grant. The owning invocation
     still supplies its checked context and state. No interpreter or old emitter
     is called, and no foreign side is inferred from ambient VM state.
     """
-    for flag in (exports,source_scopes,authority_checks,scalar_routines,require_last_expression,configuration_calls,host_bindings,catalog_bounds,lean_configuration):
+    for flag in (exports,source_scopes,authority_checks,scalar_routines,require_last_expression,configuration_calls,host_bindings,catalog_bounds,lean_configuration,retain_generated):
         if type(flag) is not bool:raise TypeError('owned compile flags require Boolean')
     for names in (module_names,external_names,constructors,callable_externals,shadowable_externals):
         if type(names) is not tuple or any(type(name) is not str for name in names):
@@ -1936,12 +1940,12 @@ def compile_owned(program, *, source_text, source_name, module_names=(),
                 elif type(value) in (list,tuple):pending.extend(value)
     try:
         return compile_module(None,program,tuple(nodes),source_text,source_name,
-            _exports=exports,_whole_source=True,_require_last_expression=require_last_expression,
+            _exports=exports,_require_last_expression=require_last_expression,
             _profile=(tuple(module_names),tuple(external_names),tuple(constructors)),
             _source_scopes=source_scopes,_authority=authority_checks,
             _scalar_routines=scalar_routines,_callable_externals=callable_externals,
             _shadowable=shadowable_externals,_configuration_calls=configuration_calls,_host_bindings=host_bindings,_catalog_bounds=catalog_bounds,
-            _lean_configuration=lean_configuration)
+            _lean_configuration=lean_configuration,_retain_generated=retain_generated)
     except PythonDirectUnsupported as error:
         if not source_scopes:raise
         from .experimental_naked_collections import UnsupportedNakedSyntax

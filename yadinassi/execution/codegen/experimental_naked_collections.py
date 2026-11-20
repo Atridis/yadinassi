@@ -4,7 +4,7 @@ No compiler entry point lives here. The historical text generator is isolated
 in the test-only differential oracle; production compilation uses direct AST.
 """
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from .experimental_naked_boundaries import _HostMemberReference, _HostIndexReference, _MISSING, BoundaryViolation
 
@@ -259,7 +259,7 @@ def _property_output(receiver,key,output):
 
 @dataclass
 class Program:
-    generated_source: str
+    _generated_source: str | None
     constants: tuple
     function: object
     symbols: dict
@@ -270,6 +270,16 @@ class Program:
     source_text: str=""
     required_services: tuple=()
     trusted_entry: bool=False
+    _generated_tree: object=field(default=None, repr=False, compare=False)
+
+    @property
+    def generated_source(self):
+        tree = self._generated_tree
+        if tree is not None:
+            import ast
+            self._generated_source = ast.unparse(tree)
+            self._generated_tree = None
+        return '<generated source not retained>' if self._generated_source is None else self._generated_source
 
     def run(self,initial=None,*,context=None):
         if not self.trusted_entry:_enabled()

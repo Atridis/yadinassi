@@ -24,6 +24,8 @@ class PreparedFormEventsTests(TestCase):
         f=scalarfixture.VerifiedFormDraftSessionTests();f.setUp();self.addCleanup(f.doCleanups)
         first=f.make();first.change_description(' First ',revision=0)
         plan=f.backend._direct_event_plan
+        self.assertIsNone(plan.plan._generated_tree)
+        self.assertIsNone(plan.plan._generated_source)
         second=f.make()
         with patch.object(direct,'compile_owned',side_effect=AssertionError('recompile')):
             second.change_description(' Second ',revision=0)

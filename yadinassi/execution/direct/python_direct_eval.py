@@ -55,7 +55,7 @@ def _evaluate(value,context,parent,bindings,visible,profile):
         from yadinassi.syntax.parser import parse_expression
         from yadinassi.syntax.ast import ExpressionStatement
         from .python_direct import _source_facts,_admit_bindings,_contract,REPAIRS
-        from yadinassi.execution.codegen.experimental_direct_ast import compile_module_whole_source, compile_owned
+        from yadinassi.execution.codegen.experimental_direct_ast import compile_module, compile_owned
         from .python_direct_services import CONSTRUCTORS
         from .python_direct_names import NAMES
         from .python_direct_database import NAMES as DB_NAMES
@@ -89,11 +89,12 @@ def _evaluate(value,context,parent,bindings,visible,profile):
             from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
             try:
                 if profile is not None:
-                    plan=compile_owned(program,source_text=text,source_name='<Вычислить>',
+                    plan=compile_owned(program,retain_generated=False,source_text=text,source_name='<Вычислить>',
                         external_names=external_names,constructors=constructor_names,
                         source_scopes=True,authority_checks=True,require_last_expression=True)
                 else:
-                    plan=compile_module_whole_source(vm,program,tuple(_nodes(program)),text,'<Вычислить>',_require_last_expression=True)
+                    from .python_direct import _extension_source_audit
+                    plan=compile_module(vm,program,tuple(_nodes(program)),text,'<Вычислить>',_require_last_expression=True, _whole_source=_extension_source_audit(vm), _retain_generated=False)
             except PythonDirectUnsupported as error:
                 raise UnsupportedNakedSyntax(str(error)) from None
             # Retain compilation only, never AST, mutable Program, bindings or authority.

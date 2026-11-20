@@ -119,7 +119,7 @@ def _event_plan(vm,program,source,product,owner):
                 receiver=node.callee.object
                 node.callee=ast.Name(node.callee.token,'_direct_check_object' if node.callee.name.casefold()=='проверитьданные' else '_direct_prepare_object')
                 node.arguments=[receiver,*node.arguments]
-    plan=compile_owned(owned,source_text=source,source_name=owned[0].token.source if owned else '<form-event>',
+    plan=compile_owned(owned,retain_generated=False,source_text=source,source_name=owned[0].token.source if owned else '<form-event>',
                  constructors=tuple(vm.types),module_names=tuple(vm.variables),exports=True)
     if cache_owner is not None:setattr(cache_owner,slot,PreparedEvent(key,plan))
     return plan

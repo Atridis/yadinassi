@@ -20,6 +20,11 @@ production isolation tests still reject imports of test code or the old emitter.
 
 The execution-layer benchmark rejects `--bsl-route experimental`, even if the
 old experiment environment variable is set. Use the public default/prepared
-routes. Whole generated-source and AST compilation audit events occur genuinely
-before effects. This does not restore historical per-fragment byte-event traces
-or claim that those traces are identical to the retired text compiler.
+routes. Default bare execution compiles the generated Python AST directly.
+A Python audit hook on compilation still sees and may reject that executable AST.
+A hook that watches generated source bytes by filename no longer receives a
+generated-source event on this path; the runtime does not synthesize one.
+Explicit whole-source audit and public Python interpreters configured with
+`allow_extensions=True` still perform the genuine source parse and
+structure/location audit for top-level source and ordinary Execute/Eval.
+`--emit-python` renders generated source on request without running it.

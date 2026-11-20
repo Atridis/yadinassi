@@ -145,7 +145,7 @@ def _compile(owner,program,*,exports=False,layout=(),_extra_externals=(),_callab
     from yadinassi.configuration.source_manager_modules import MANAGER_NAMES
     shadowable=tuple(sorted((set(MANAGER_NAMES)|set(local_xdto.CONSTRUCTOR_NAMES))-set(owner.application.interpreter.exported_variables))) if type(owner) is _SourceInterpreter else ()
     from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
-    plan=compile_owned(_snapshot(program),source_text=_source_text(program),
+    plan=compile_owned(_snapshot(program),retain_generated=False,source_text=_source_text(program),
         source_name=program[0].token.source if program else '<source>',
         module_names=tuple(layout),external_names=tuple(dict.fromkeys((*_external_names(owner,names|set(layout)),*_extra_externals))),
         constructors=(local_xdto.CONSTRUCTOR_NAMES+xdto_xml.CONSTRUCTOR_NAMES+xdto_json.CONSTRUCTOR_NAMES if type(owner) is _SourceInterpreter else ())+tuple(CONSTRUCTORS)+query.CONSTRUCTOR_NAMES+host_info.CONSTRUCTORS+resources.CONSTRUCTOR_NAMES+stored_values.CONSTRUCTOR_NAMES+('uuid','уникальныйидентификатор'),

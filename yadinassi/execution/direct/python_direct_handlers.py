@@ -99,7 +99,7 @@ def prepare_handlers(program,*,source_text,source_name='<direct-form>',module_na
     for side in ('client','server'):
         if not any(key[0]==side for key in descriptors):continue
         selected=[node for node in owned if node.execution_context==side]
-        plans[side]=compile_owned(selected,source_text=source_text,source_name=source_name,
+        plans[side]=compile_owned(selected,retain_generated=False,source_text=source_text,source_name=source_name,
             module_names=module_names,external_names=external_names,constructors=constructors,
             exports=True,source_scopes=_source_routine_scopes,
             authority_checks='authority_checkpoints' in repairs)

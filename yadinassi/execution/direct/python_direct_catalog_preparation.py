@@ -214,7 +214,7 @@ def prepared_validator(manager,source,*,prepared=None):
     program=_admit_catalog_object_source(source,manager._schema)
     names=_ALIASES|{field.name.casefold() for field in manager._schema.fields}|{section.name.casefold() for section in manager._schema.tabular_sections}
     if names & (_SELF|{'отказ'}):raise ValueError('catalog preparation: reserved object member')
-    plan=compile_owned(program,source_text=source,source_name='<catalog-preparation>',
+    plan=compile_owned(program,retain_generated=False,source_text=source,source_name='<catalog-preparation>',
                  constructors=_VALIDATOR_CONSTRUCTORS,external_names=tuple(names|_SELF),
                  exports=True,authority_checks=True,catalog_bounds=True)
     result=PreparedCatalogValidator(key,tuple(program),plan)

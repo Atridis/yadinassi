@@ -174,8 +174,14 @@ def _contract(vm):
 
 def _compile(vm,program,nodes,source_text,source_name,*,_exports=False):
     # One compiler path. Unsupported forms fail; there is no text/legacy retry.
-    from yadinassi.execution.codegen.experimental_direct_ast import compile_module_whole_source
-    return compile_module_whole_source(vm,program,nodes,source_text,source_name,_exports=_exports)
+    from yadinassi.execution.codegen.experimental_direct_ast import compile_module
+    return compile_module(vm,program,nodes,source_text,source_name,_exports=_exports,
+                          _whole_source=_extension_source_audit(vm))
+
+
+def _extension_source_audit(vm):
+    from yadinassi.runtime import Interpreter
+    return type(vm) is Interpreter and vm.allow_extensions
 
 
 def _snapshot(value):
@@ -260,9 +266,10 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
     from yadinassi.execution.codegen.native_targets import target_context
     from yadinassi.execution.execution_policy import execution_backend_policy
     plan=_compile(vm,program,nodes,source_text,source_name) if _prepared is None else copy(_prepared._plan)
+    if _prepared is None:plan._generated_tree=None
     from .python_direct_routines import prepare as prepare_routines, resolve as resolve_routine
     exports=(_prepared._exports if _prepared is not None else
-             prepare_routines(vm,program,plan) if routines or any(type(n) is ast.ServerInitializer for n in program) else None)
+             prepare_routines(vm,program,plan,retain_generated=False) if routines or any(type(n) is ast.ServerInitializer for n in program) else None)
     from .python_direct_routines import validate_calls
     prospective=dict(getattr(vm,'_direct_routine_modules',{}))
     if exports is not None:prospective.update({name:exports for name in exports.signatures})

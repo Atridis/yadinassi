@@ -69,24 +69,33 @@ except RuntimeError as error:
 else:raise AssertionError('compiler policy bypassed')
 ''')
 
-    def test_filename_only_audit_policy_is_an_explicit_migration_blocker(self):
-        # Pure AST alone lacks the filename gate retained by the default source lane.
+    def test_default_ast_and_extension_filename_audit(self):
         self.child(r"""
+import ast
 import sys
 from yadinassi import Interpreter
-from yadinassi.execution.direct import python_direct
-from yadinassi.execution.codegen.experimental_direct_ast import compile_module
-vm=Interpreter();vm.execute('X=1;','warm.bsl');vm.variables.clear()
-def deny_filename(event,args):
-    if event=='compile' and args[1]=='blocked.bsl':raise RuntimeError('filename denied')
-sys.addaudithook(deny_filename)
-try:vm.execute('X=1;','blocked.bsl')
-except RuntimeError:
-    if vm.variables:raise AssertionError('baseline effects before denial')
-else:raise AssertionError('baseline filename gate absent')
-python_direct._compile=compile_module
-vm.execute('X=1;','blocked.bsl')
-if vm.variables.get('x')!=1:raise AssertionError('expected migration incompatibility not demonstrated')
+direct=Interpreter()
+external=Interpreter(allow_extensions=True)
+for vm in (direct,external):
+    vm.execute('X=1;','warm.bsl');vm.variables.clear()
+deny_ast=False
+def deny(event,args):
+    if event!='compile':return
+    if args[1]=='blocked.bsl':raise RuntimeError('filename denied')
+    if deny_ast and isinstance(args[0],ast.Module):raise RuntimeError('AST denied')
+sys.addaudithook(deny)
+try:external.execute('X=1;','blocked.bsl')
+except RuntimeError as error:
+    if str(error)!='filename denied' or external.variables:raise AssertionError('bad filename denial')
+else:raise AssertionError('explicit extension filename gate absent')
+direct.execute('X=1;','blocked.bsl')
+if direct.variables.get('x')!=1:raise AssertionError('bare compile unnecessarily emits source')
+direct.variables.clear()
+deny_ast=True
+try:direct.execute('X=1;','direct.bsl')
+except RuntimeError as error:
+    if str(error)!='AST denied' or direct.variables:raise AssertionError('bad AST denial')
+else:raise AssertionError('bare AST gate absent')
 """)
 
     def test_lowering_counts_linear_for_wide_and_nested_inputs(self):

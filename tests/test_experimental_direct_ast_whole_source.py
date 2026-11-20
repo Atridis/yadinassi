@@ -131,3 +131,41 @@ with patch.object(python_direct,'_compile',direct.compile_module_whole_source):
 '''
             with self.subTest(policy=policy):
                 subprocess.run([sys.executable,*(['-'+'O'*sys.flags.optimize] if sys.flags.optimize else []),'-c',script,policy],check=True)
+
+class DefaultDirectCompileTests(unittest.TestCase):
+    def setUp(self):
+        self.vm=Interpreter()
+        self.addCleanup(self.vm.close)
+
+    def test_prepare_execute_eval_and_runtime_error_do_not_roundtrip(self):
+        with patch.object(ast,'unparse',side_effect=AssertionError('no automatic unparse')):
+            plan=self.vm.prepare('R=1;')
+            self.assertEqual(plan._plan._research_roundtrip_visits,0)
+            self.vm.execute_prepared(plan)
+            self.vm.execute('Execute("R=R+1;"); R=Eval("R+2");')
+            self.assertEqual(self.vm.variables['r'],4)
+            with self.assertRaisesRegex(Exception,'failed.bsl:2:4'):
+                self.vm.execute('R=3;\nR=1/0;','failed.bsl')
+        self.assertIn('naked_module',plan._plan.generated_source)
+        with patch.object(ast,'unparse',side_effect=AssertionError('cached')):
+            self.assertIn('naked_module',plan._plan.generated_source)
+
+    def test_compiler_failure_diagnoses_once_without_replay(self):
+        source='R=1;'
+        error=TypeError('synthetic invalid generated AST')
+        with patch.object(direct,'compile',create=True,side_effect=error) as compile_tree, \
+             patch.object(direct,'_source_roundtrip',wraps=direct._source_roundtrip) as audit:
+            with self.assertRaises(TypeError) as observed:
+                self.vm.execute(source)
+        self.assertIs(observed.exception,error)
+        compile_tree.assert_called_once()
+        audit.assert_called_once()
+        self.assertEqual(self.vm.variables,{})
+
+    def test_opted_in_public_python_extensions_keep_source_audit(self):
+        vm=Interpreter(allow_extensions=True)
+        self.addCleanup(vm.close)
+        with patch.object(direct,'_source_roundtrip',wraps=direct._source_roundtrip) as audit:
+            vm.execute('R=1; Execute("R=R+1;"); R=Eval("R+2");')
+        self.assertEqual(vm.variables['r'],4)
+        self.assertEqual(audit.call_count,3)

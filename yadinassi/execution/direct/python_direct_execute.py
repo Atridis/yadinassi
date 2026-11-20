@@ -98,7 +98,7 @@ def _execute_fragment(text,context,parent,bindings,visible,profile):
         from yadinassi.syntax.parser import parse_fragment
         from yadinassi.types.errors import BSLError, BSLRuntimeError
         from .python_direct import _source_facts,_admit_bindings,_contract,REPAIRS
-        from yadinassi.execution.codegen.experimental_direct_ast import compile_module_whole_source, compile_owned
+        from yadinassi.execution.codegen.experimental_direct_ast import compile_module, compile_owned
         from .python_direct_services import CONSTRUCTORS
         from .python_direct_names import NAMES
         from .python_direct_database import NAMES as DB_NAMES
@@ -130,11 +130,12 @@ def _execute_fragment(text,context,parent,bindings,visible,profile):
             from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
             try:
                 if profile is not None:
-                    plan=compile_owned(program,source_text=text,source_name='<Выполнить>',
+                    plan=compile_owned(program,retain_generated=False,source_text=text,source_name='<Выполнить>',
                         external_names=external_names,constructors=constructor_names,
                         source_scopes=True,authority_checks=True,require_last_expression=False)
                 else:
-                    plan=compile_module_whole_source(vm,program,tuple(_nodes(program)),text,'<Выполнить>')
+                    from .python_direct import _extension_source_audit
+                    plan=compile_module(vm,program,tuple(_nodes(program)),text,'<Выполнить>', _whole_source=_extension_source_audit(vm), _retain_generated=False)
             except PythonDirectUnsupported as error:
                 raise UnsupportedNakedSyntax(str(error)) from None
             # No AST, mutable Program, caller scope, references or authorization is retained.

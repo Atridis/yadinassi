@@ -316,7 +316,7 @@ def _execute_program(app,program,text,source,*,starting=False):
     if _COMMAND_SCOPE.get() is not None or getattr(app.interpreter,'_direct_active',False):_deny()
     scope=_Scope(app,starting=starting)
     app.check_program(program);referenced=_validate_command(program,app)
-    plan=compile_owned(_snapshot(program),source_text=text,source_name=source,
+    plan=compile_owned(_snapshot(program),retain_generated=False,source_text=text,source_name=source,
         external_names=referenced+metadata.ROOT_NAMES,authority_checks=True,configuration_calls=True,
         lean_configuration=app._cli_database is not None)
     owner=app.interpreter

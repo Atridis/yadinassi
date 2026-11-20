@@ -250,7 +250,7 @@ def install(app,owner,program,source_text=''):
     if any(type(n) is ast.Routine and (n.is_async or n.is_dual) for n in program):
         raise BoundaryViolation('direct configured async/dual routines are not connected')
     owned=_snapshot(program)
-    plan=compile_owned(owned,source_text=source_text,source_name=program[0].token.source if program else '<configuration>',
+    plan=compile_owned(owned,retain_generated=False,source_text=source_text,source_name=program[0].token.source if program else '<configuration>',
         external_names=tuple(app._definitions),constructors=('uuid','уникальныйидентификатор'),
         exports=True,authority_checks=True,configuration_calls=True,
         lean_configuration=app._cli_database is not None)
