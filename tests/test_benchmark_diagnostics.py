@@ -75,17 +75,49 @@ class BenchmarkDiagnosticTests(unittest.TestCase):
         self.assertIsNone(sys.getprofile())
 
     def test_count_cardinality_matrix_same_queries_no_fixture_instrumentation(self):
+        original_connect, original_capture = sqlite3.connect, bench.capture
+        captures = []
+        active = None
+
+        def record(statement):
+            if active is not None:
+                active.append(statement)
+
+        def connect(*args, **kwargs):
+            connection = original_connect(*args, **kwargs)
+            connection.set_trace_callback(record)
+            return connection
+
+        def capture(run):
+            nonlocal active
+            active = []
+            captures.append(active)
+            try:
+                return original_capture(run)
+            finally:
+                active = None
+
         for size in (1, 4):
-            case = bench.diagnose('db.count', 2, 'prepared', catalog_rows=size)
-            self.assertEqual(case['expected'], str(2 * size))
-            self.assertEqual(case['catalog_rows'], size)
-            self.assertEqual(case['layers']['python']['counters']['sqlite_execute'], 2)
-            # diagnose captures only after two successful unprofiled warmups.
-            # Warm readonly admission reuses this connection's pinned epoch.
-            self.assertEqual(set(case['layers']), {'python', 'bsl'})
-            counts = case['layers']['bsl']['counters']
-            self.assertEqual(counts['configuration_read_source'], 0)
-            self.assertEqual(counts['sqlite_catalog_begin'], 2)
+            with self.subTest(size=size):
+                captures.clear()
+                with patch.object(sqlite3, 'connect', connect), patch.object(bench, 'capture', capture):
+                    case = bench.diagnose('db.count', 2, 'prepared', catalog_rows=size)
+                self.assertEqual(case['expected'], str(2 * size))
+                self.assertEqual(case['catalog_rows'], size)
+                self.assertEqual(set(case['layers']), {'python', 'bsl'})
+                python = case['layers']['python']['counters']
+                bsl = case['layers']['bsl']['counters']
+                self.assertEqual(python['sqlite_execute'], 2)
+                self.assertEqual(python['sqlite_query_language_begin'], 0)
+                self.assertEqual(bsl['configuration_read_source'], 0)
+                self.assertEqual(bsl['sqlite_catalog_begin'], 0)
+                self.assertEqual(bsl['sqlite_query_language_begin'], 2)
+                self.assertEqual(bsl['sqlite_execute'], 2)
+                # No fixture, warm-up, reset or readback is in either capture.
+                self.assertEqual([len(statements) for statements in captures], [2, 2])
+                for statements in captures:
+                    for statement in statements:
+                        self.assertTrue(statement.startswith('SELECT COUNT(*) FROM '), statement)
 
     def test_source_counter_observes_cold_warm_and_changed_epoch(self):
         # Set up outside capture, as the production diagnostic does. Explicitly
@@ -145,12 +177,14 @@ class BenchmarkDiagnosticTests(unittest.TestCase):
         self.assertIn('Диагностика вызовов без замера времени', text)
         self.assertIn('API SQLite execute', text)
         self.assertIn('Прямой AST compile_module', text)
+        self.assertIn('Объектный _begin | Порт Query', text)
         table = [line for line in text.splitlines() if line.startswith('|')]
         self.assertGreaterEqual(len(table), 3)
-        self.assertEqual({len(line.split('|')) - 2 for line in table}, {12})
+        self.assertEqual({len(line.split('|')) - 2 for line in table}, {14})
         self.assertIn('SourceMap.compile', text)
         old_report = deepcopy(report)
         del old_report['cases'][0]['layers']['bsl']['counters']['direct_ast_compile']
+        del old_report['cases'][0]['layers']['bsl']['counters']['sqlite_query_language_begin']
         old_report['cases'][0]['layers']['python_classes'] = case['layers']['python']
         old_text = bench.render(old_report)
         self.assertIn('—', old_text)

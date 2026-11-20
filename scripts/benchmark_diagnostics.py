@@ -28,6 +28,7 @@ WATCHED = {
     'source_map_compile': ('execution/codegen/experimental_naked_errors.py', 'compile'),
     'prepared_ast_snapshot': ('execution/direct/python_direct.py', '_snapshot'),
     'sqlite_catalog_begin': ('db/sqlite/sqlite_catalog.py', '_begin'),
+    'sqlite_query_language_begin': ('db/sqlite/sqlite_catalog.py', '_begin_query_language_read'),
     'configuration_read_source': ('db/sqlite/sqlite_inventory_enum_profile.py', 'read_source'),
     'configuration_validate_ddl': ('db/sqlite/sqlite_main_demo_profile.py', 'validate_main_demo_ddl'),
     'configuration_validate_canonical': ('configuration/configuration_main_demo.py', 'validate_canonical'),
@@ -123,16 +124,16 @@ def render(report):
     if report['schema'] != 'execution-call-diagnostics-v1' or not report['cases']:
         raise ValueError('invalid diagnostic report')
     columns = ('python_calls', 'builtin_compile', 'direct_ast_compile', 'source_map_compile', 'sqlite_execute',
+               'sqlite_catalog_begin', 'sqlite_query_language_begin',
                'configuration_read_source', 'configuration_validate_ddl',
                'configuration_validate_canonical', 'direct_boundary_check', 'catalog_owner_check')
     lines = ['## Диагностика вызовов без замера времени (отдельный процесс)', '',
              'Коммит: `' + report['environment']['git_head'] + '`', '',
              'Один вызов со счётчиками для каждого слоя после двух проверенных прогревочных вызовов без профилирования. '
              'Подготовка, сброс состояния и проверка результата исключены. Это числа вызовов, не время. '
-             'Нулевой read_source при прогретом readonly COUNT допустим: полный допуск уже выполнен до профилирования; '
-             'счётчик не измеряет число проверок полномочий или холодных допусков. '
+             'Входы в объектный _begin и порт Query показаны отдельно. Нулевой read_source не означает отсутствие всех проверок полномочий. '
              'В подписи указаны итерации и операции за один запуск; жизненный цикл формы считается одной операцией.', '',
-             '| Сценарий / режим / объём | Слой | Вызовы Python | Встроенный compile | Прямой AST compile_module | SourceMap.compile | API SQLite execute | read_source | Проверки DDL | Проверки конфигурации | Прямой _check | Проверки владельца |',
+             '| Сценарий / режим / объём | Слой | Вызовы Python | Встроенный compile | Прямой AST compile_module | SourceMap.compile | API SQLite execute | Объектный _begin | Порт Query | read_source | Проверки DDL | Проверки конфигурации | Прямой _check | Проверки владельца |',
              '|---|---|' + '---:|' * len(columns)]
     for case in report['cases']:
         for layer in REPORT_LAYERS:
@@ -144,7 +145,7 @@ def render(report):
             label = (case['case'] + ' / ' + labels.ROUTES.get(case['requested_route'],case['requested_route'])
                      + ' / итераций=' + str(case['iterations']) + ' / операций=' + str(case['operations_per_capture']))
             if case['catalog_rows'] is not None: label += ' / строк=' + str(case['catalog_rows'])
-            lines.append('| ' + label + ' | ' + labels.LAYERS.get(layer,layer) + ' | ' + ' | '.join('—' if key == 'direct_ast_compile' and key not in data['counters'] else str(data['counters'][key]) for key in columns) + ' |')
+            lines.append('| ' + label + ' | ' + labels.LAYERS.get(layer,layer) + ' | ' + ' | '.join('—' if key in ('direct_ast_compile', 'sqlite_query_language_begin') and key not in data['counters'] else str(data['counters'][key]) for key in columns) + ' |')
     lines += ['', 'Порогов скорости нет; коэффициенты времени и цветовые категории к счётчикам не применяются. '
               'Счётчики SQLite отражают вызовы API Connection/Cursor, а не SQL-операторы, инструкции виртуальной машины, строки или триггеры. '
               'Встроенный compile включает разбор в AST; compile_module считает входы в текущий прямой AST-компилятор. SourceMap.compile относится к прежнему генератору и штатно равен нулю на новом пути. Эти счётчики не складываются. Тире означает отсутствие счётчика в старом JSON, а не ноль. '
