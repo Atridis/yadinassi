@@ -14,6 +14,9 @@ from yadinassi.types.values import HostFunction, BSLFixedArray, _DIRECT_TO_STRIN
 from yadinassi.collections.structures import BSLFixedStructure
 from yadinassi.collections.maps import BSLFixedMap
 from . import python_direct_fixed as fixed
+from .python_direct_plain_array import PlainArray
+from .python_direct_plain_map import PlainMap
+from yadinassi.collections.plain_value_list import PlainValueList, PlainValueListItem
 from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.collections.value_tables import BSLValueTable
 from yadinassi.collections.value_lists import BSLValueList
@@ -388,7 +391,10 @@ class ServicesBoundary:
                 from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
                 from yadinassi.types.values import BSLType
                 kind=type(value)
-                if kind is list:return BSLType.ARRAY
+                if kind is list or kind is PlainArray:return BSLType.ARRAY
+                if kind is PlainMap:return BSLType.MAP
+                if kind is PlainValueList:return BSLType.VALUE_LIST
+                if kind is PlainValueListItem:return BSLType.VALUE_LIST_ITEM
                 if kind is fixed.PlainFixedMap:return BSLType.FIXED_MAP
                 if kind is _CallbackDescription:return BSLType.CALLBACK_DESCRIPTION
                 if kind is _DirectStructure:return BSLType.STRUCTURE

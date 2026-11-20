@@ -46,6 +46,19 @@ class DynamicNewTests(unittest.TestCase):
                 with self.assertRaises(BSLError):
                     self.vm.execute('New(kind)')
 
+    def test_type_of_direct_collection_representations(self):
+        for expression, expected in (
+                ('New Array', BSLType.ARRAY),
+                ('New Map', BSLType.MAP),
+                ('New ValueList', BSLType.VALUE_LIST),
+                ('ListValue.Add(1)', BSLType.VALUE_LIST_ITEM)):
+            for allow_extensions in (False, True):
+                with self.subTest(expression=expression, allow_extensions=allow_extensions):
+                    vm = Interpreter(allow_extensions=allow_extensions)
+                    self.addCleanup(vm.close)
+                    vm.execute('ListValue = New ValueList;')
+                    self.assertEqual(vm.execute(f'TypeOf({expression})'), expected)
+
     def test_constructor_parameter_array_and_multidimensional_shape(self):
         self.vm.execute('args = New Array; args.Add(2); args.Add(3); x = New(Type("Array"), args); '
                         'x[0][1] = "Я😀";')
