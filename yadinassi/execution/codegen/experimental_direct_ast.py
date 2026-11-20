@@ -194,7 +194,7 @@ class Emitter:
         self.local_field_facts={};self.integer_lane=False;self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.module_boundaries=0;self.range_indices={}
         self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
         self.standalone_script=False;self.link_imports=False;self.import_links=[]
-        self.import_names=frozenset();self.require_last_expression=None;self.region_active=False;self.region_ops={};self.region_states={};self.routines={};self.routine_symbols={};self.module_globals=set();self.scope=None;self.source_refs={};self.loop_increments=[];self.required=set();self.pure_builtins={};self.visits=0;self.python_nodes=0
+        self.import_names=frozenset();self.require_last_expression=None;self.region_active=False;self.region_ops={};self.region_states={};self.routines={};self.routine_symbols={};self.numeric_routine_symbols={};self.module_globals=set();self.scope=None;self.source_refs={};self.loop_increments=[];self.required=set();self.pure_builtins={};self.visits=0;self.python_nodes=0
     def node(self,kind,token,**fields):
         if kind is py.FunctionDef and 'type_params' in kind._fields:fields.setdefault('type_params',[])
         result=kind(**fields);self.python_nodes+=1
@@ -852,6 +852,9 @@ class Emitter:
             required=max((index+1 for index,parameter in enumerate(routine.parameters) if parameter.default is None),default=0)
             if not required<=len(node.arguments)<=len(routine.parameters):
                 return self.call('_argument_count_error',[self.const(routine.name,node.callee.token),self.const(len(routine.parameters),node.callee.token),self.const(len(node.arguments),node.callee.token)],node.callee.token)
+            numeric=self.numeric_routine_symbols.get(routine.name.casefold())
+            if numeric is not None and id(node) in self.scalar_kinds:
+                return self.call(numeric,[self.expr(arg) for arg in node.arguments],node.callee.token)
             arguments=[]
             for parameter,arg in zip(routine.parameters,node.arguments):
                 if type(arg) is bsl.OmittedArgument:arguments.append(self.name('_OMITTED_REF',arg.token))
@@ -1794,6 +1797,11 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     if pure_bindings is not None:
         from yadinassi.execution.direct.python_direct_pure_builtins import result_kinds
         builtin_results=result_kinds(pure_bindings.services)
+    numeric_routines={}
+    if _profile is None and not imported and not vm.allow_extensions and not _authority and not _source_scopes:
+        numeric_routines={name:routine for name,routine in emitter.routines.items()
+            if routine.is_function and all(p.by_value and p.default is None for p in routine.parameters)
+            and len(routine.body)==1 and type(routine.body[0]) is bsl.Return and routine.body[0].value is not None}
     if _profile is None and not imported and not _exports and not _require_last_expression and vm.database_context is None:
         names=set();pending=list(program)
         while pending:
@@ -1817,9 +1825,9 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             opaque=emitter.external_names|emitter.module_globals|emitter.module_cells
             emitter.scalar_kinds=analyze_static(program,opaque_names=opaque,scalar_prefix=True,
                builtin_results=builtin_results,builtin_external_names=builtin_external_names)
-        if names or builtin_results:
+        if names or builtin_results or numeric_routines:
             static_facts=analyze_static(program,opaque_names=emitter.external_names|emitter.module_globals,
-               builtin_results=builtin_results,builtin_external_names=builtin_external_names)
+               builtin_results=builtin_results,builtin_external_names=builtin_external_names,numeric_routines=numeric_routines)
             emitter.static_module_kinds={} if static_facts is None else static_facts[1]
             emitter.static_module_names={key:emitter.temp() for key in sorted(names)}
         if (not has_goto and static_facts is None and not emitter.authority and not emitter.source_scopes
@@ -1827,11 +1835,29 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             from yadinassi.execution.direct.python_direct_local_facts import analyze as analyze_local
             emitter.local_field_facts,local_scalars=analyze_local(program,opaque_names=opaque,routines=emitter.routines)
             emitter.scalar_kinds.update(local_scalars)
-    if static_facts is not None and not emitter.routines and not emitter.module_cells and not emitter.authority and not emitter.catalog_bounds:
+    if static_facts is not None and not emitter.module_cells and not emitter.authority and not emitter.catalog_bounds:
         emitter.integer_lane=bool(static_facts[1]) and all(
             kind in ('number','bool','string','table','row','columns','column','map','map_insert')
             for kind in static_facts[1].values())
-        if emitter.integer_lane:emitter.scalar_kinds.update(static_facts[1])
+        if emitter.integer_lane:
+            emitter.scalar_kinds.update(static_facts[1])
+            proven={name:routine for name,routine in numeric_routines.items()
+                    if id(routine.body[0].value) in static_facts[1]}
+            emitter.numeric_routine_symbols={name:emitter.temp() for name in proven}
+            # Only closed numeric calls use these definitions. The existing
+            # generic definitions still own every persisted/exported signature.
+            for name,routine in proven.items():
+                keys={p.name.casefold():emitter.temp() for p in routine.parameters}
+                emitter.scope={'slots':keys,'bindings':set(keys),'globals':set(),'externals':set(),
+                               'boxed':set(),'local_declarations':set(keys),'initialized':set(keys)}
+                token=routine.token
+                arguments=py.arguments(posonlyargs=[],args=[emitter.node(py.arg,p.token,arg=keys[p.name.casefold()],annotation=None)
+                                       for p in routine.parameters],vararg=None,kwonlyargs=[],kw_defaults=[],kwarg=None,defaults=[])
+                value=emitter.expr(routine.body[0].value)
+                body=[emitter.node(py.Return,routine.body[0].token,value=value)]
+                definitions.append(emitter.node(py.FunctionDef,token,name=emitter.numeric_routine_symbols[name],
+                                               args=arguments,body=body,decorator_list=[],returns=None,type_comment=None))
+            emitter.scope=None
     from yadinassi.execution.direct.python_direct_collection_regions import analyze,admitted,helpers
     region_end=0
     if not has_goto and not emitter.static_module_names and not emitter.routines and not emitter.authority and not emitter.source_scopes:

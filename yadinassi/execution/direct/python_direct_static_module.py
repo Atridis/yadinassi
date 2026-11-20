@@ -10,15 +10,18 @@ from yadinassi.syntax import ast as bsl
 class _Decline(Exception):pass
 
 
-def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=None, builtin_external_names=()):
+def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=None, builtin_external_names=(), numeric_routines=None):
     builtin_results = builtin_results or {}
     kinds={};names=set();opaque=set(opaque_names)|{'thisobject','этотобъект'}
+    checked=set();active=set()
+    numeric_routines={} if numeric_routines is None else numeric_routines
     def require(condition):
         if not condition:raise _Decline
     def expression(node,env):
         k=type(node)
-        if scalar_prefix:
-            require(k in (bsl.Group,bsl.Literal,bsl.Name,bsl.Binary,bsl.Unary,bsl.Conditional,bsl.Call))
+        if scalar_prefix or active:
+            require(k in (bsl.Group,bsl.Literal,bsl.Name,bsl.Binary,bsl.Unary,bsl.Conditional)
+                    or (k is bsl.Call and type(node.callee) is bsl.Name))
         if k is bsl.Group:kind=expression(node.expression,env)
         elif k is bsl.Literal:
             require(type(node.value) in (Decimal,bool,str));kind='number' if type(node.value) is Decimal else 'bool' if type(node.value) is bool else 'string'
@@ -57,16 +60,30 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
             require(expression(node.condition,env) in ('number','bool'))
             kind=expression(node.when_true,env);require(kind==expression(node.when_false,env))
         elif k is bsl.Call and type(node.callee) is bsl.Name:
-            kind=builtin_results.get(node.callee.name.casefold());require(kind is not None)
-            for arg in node.arguments:
-                plain=arg
-                while type(plain) is bsl.Group:plain=plain.expression
-                # In a closed, guarded builtin unit the result does not depend
-                # on scalar argument type; external direct reads stay untouched.
-                if (type(plain) is bsl.Name and plain.name.casefold() not in env
-                        and plain.name.casefold() in builtin_external_names):
-                    continue
-                expression(arg,env)
+            name=node.callee.name.casefold()
+            if name in numeric_routines:
+                name=node.callee.name.casefold();routine=numeric_routines.get(name)
+                require(routine is not None and name not in active and len(node.arguments)==len(routine.parameters))
+                require(all(expression(arg,env)=='number' for arg in node.arguments))
+                if name not in checked:
+                    active.add(name)
+                    try:
+                        result=expression(routine.body[0].value,{p.name.casefold():'number' for p in routine.parameters})
+                        require(result=='number')
+                    finally:active.remove(name)
+                    checked.add(name)
+                kind='number'
+            else:
+                kind=builtin_results.get(node.callee.name.casefold());require(kind is not None)
+                for arg in node.arguments:
+                    plain=arg
+                    while type(plain) is bsl.Group:plain=plain.expression
+                    # In a closed, guarded builtin unit the result does not depend
+                    # on scalar argument type; external direct reads stay untouched.
+                    if (type(plain) is bsl.Name and plain.name.casefold() not in env
+                            and plain.name.casefold() in builtin_external_names):
+                        continue
+                    expression(arg,env)
         elif k is bsl.Call and type(node.callee) is bsl.Attribute and not scalar_prefix:
             receiver_kind=expression(node.callee.object,env);require(receiver_kind in ('array','map','table','valuelist','columns','row'))
             method=node.callee.name.casefold()
@@ -94,6 +111,7 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
     def sequence(nodes,env):
         for node in nodes:
             k=type(node)
+            if k is bsl.Routine and numeric_routines:continue
             if k is bsl.Assign:
                 if scalar_prefix:require(type(node.target) is bsl.Name)
                 kind=expression(node.value,env)
