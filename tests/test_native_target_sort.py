@@ -297,7 +297,7 @@ class NativeTargetSortTests(unittest.TestCase):
         bad_keys = (
             (D('NaN'), ValueError), (D('Infinity'), ValueError),
             (BSLDate(0, True), NotImplementedError), (BSLMap(), NotImplementedError),
-            (BSLArray(), NotImplementedError), (NULL, NotImplementedError),
+            (BSLArray(), NotImplementedError),
             (BSLStructure(), NotImplementedError), (object(), NotImplementedError),
         )
         # The native ValueTable observation accepts 'Key Sideways' as ascending.
