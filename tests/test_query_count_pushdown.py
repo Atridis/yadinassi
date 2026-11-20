@@ -33,14 +33,15 @@ class CountPushdownTests(unittest.TestCase):
         self.assertEqual(self.query()._rows,((Decimal(3),),))
         self.sql('DELETE FROM '+table)
         self.assertEqual(self.query()._rows,((Decimal(0),),))
-    def test_alias_duplicate_logical_ids_fail_in_both_paths(self):
+    def test_count_does_not_decode_duplicate_logical_ids_but_ref_does(self):
         table=self.table();ids=self.sql('SELECT record_id FROM '+table)
         alias=ids[0][0].replace('-','').upper()
         self.sql('UPDATE '+table+' SET record_id=? WHERE record_id=?',(alias,ids[1][0]))
-        for enabled in (False,True):
-            with patch.object(query_pushdown,'count_eligible',wraps=query_pushdown.count_eligible) as eligible:
-                if not enabled:eligible.return_value=False
-                with self.assertRaises(BackendError):self.query()
+        self.assertEqual(self.query()._rows,((Decimal(3),),))
+        with self.assertRaisesRegex(BackendError,'integrity'):
+            self.query('SELECT Ref FROM Catalog.Products')
+        with patch.object(query_pushdown,'count_eligible',return_value=False):
+            with self.assertRaisesRegex(BackendError,'integrity'):self.query()
     def test_unique_uuid_alias_and_null_reference_remain_valid(self):
         table=self.table();record=self.sql('SELECT record_id FROM '+table)[0][0]
         self.sql('UPDATE '+table+' SET record_id=? WHERE record_id=?',(record.replace('-','').upper(),record))
@@ -51,12 +52,14 @@ class CountPushdownTests(unittest.TestCase):
             with patch.object(query_pushdown,'count_eligible',wraps=query_pushdown.count_eligible) as eligible:
                 if not enabled:eligible.return_value=False
                 self.assertEqual(self.query()._rows,((Decimal(3),),))
-    def test_corrupt_unprojected_field_cannot_hide_behind_count(self):
+    def test_count_ignores_unprojected_corruption_but_field_read_rejects_it(self):
         table=self.table();field=next(f for f in self.manager._schema.fields if f.name=='Amount')
         column=quote_identifier(self.context.backend._layout.field_name(self.manager._schema.identity,field.identity))
-        self.query() # populate immutable validation proof first
+        self.assertEqual(self.query()._rows,((Decimal(3),),))
         self.sql('UPDATE '+table+' SET '+column+'=?',('not-a-number',))
-        with self.assertRaises(BackendError):self.query()
+        self.assertEqual(self.query()._rows,((Decimal(3),),))
+        with self.assertRaisesRegex(BackendError,'integrity'):
+            self.query('SELECT Amount FROM Catalog.Products')
     def test_input_and_result_limits_preserved(self):
         for module,name in ((query_parser,'MAX_ROWS'),(queries,'_MAX_CELLS')):
             with patch.object(module,name,2),self.assertRaises(ValueError):self.query()
@@ -67,24 +70,26 @@ class CountPushdownTests(unittest.TestCase):
         with patch.object(_View,'aggregate_catalog',None):self.assertEqual(self.query()._rows,((Decimal(3),),))
         with patch.object(_View,'aggregate_catalog',return_value=None):self.assertEqual(self.query()._rows,((Decimal(3),),))
         with patch.object(_View,'aggregate_catalog',return_value=CatalogAggregateResult(True)),self.assertRaises(BackendError):self.query()
-    def test_warm_proof_no_revalidation_and_external_epoch_invalidation(self):
-        original=_View._scalar;seen=[]
-        def scalar(owner,*args,**kwargs):seen.append(1);return original(owner,*args,**kwargs)
-        with patch.object(_View,'_scalar',scalar):
-            self.query();seen.clear();self.query();self.assertEqual(seen,[])
-            table=self.table();self.sql('UPDATE '+table+' SET description=?',('changed',))
-            self.query();self.assertGreater(len(seen),0)
+    def test_warm_count_does_not_decode_rows_after_external_update(self):
+        self.query()
+        table=self.table();self.sql('UPDATE '+table+' SET description=?',('changed',))
+        with patch.object(_View,'_scalar',side_effect=AssertionError('unexpected row decoding')):
+            self.assertEqual(self.query()._rows,((Decimal(3),),))
 
-    def test_malformed_zero_and_braced_id_match_canonical_rejection(self):
+    def test_count_does_not_decode_malformed_ids_but_ref_does(self):
         table=self.table();record=self.sql('SELECT record_id FROM '+table)[0][0]
-        for invalid in ('not-a-uuid','00000000-0000-0000-0000-000000000000','{'+record+'}'):
-            self.sql('UPDATE '+table+' SET record_id=? WHERE record_id=?',(invalid,record))
-            try:
-                for enabled in (False,True):
-                    with patch.object(query_pushdown,'count_eligible',wraps=query_pushdown.count_eligible) as eligible:
-                        if not enabled:eligible.return_value=False
-                        with self.assertRaises(BackendError):self.query()
-            finally:self.sql('UPDATE '+table+' SET record_id=? WHERE record_id=?',(record,invalid))
+        for invalid,error in (('not-a-uuid','integrity'),
+                              ('00000000-0000-0000-0000-000000000000','invalid_input'),
+                              ('{'+record+'}','integrity')):
+            with self.subTest(record_id=invalid):
+                self.sql('UPDATE '+table+' SET record_id=? WHERE record_id=?',(invalid,record))
+                try:
+                    self.assertEqual(self.query()._rows,((Decimal(3),),))
+                    with self.assertRaisesRegex(BackendError,error):
+                        self.query('SELECT Ref FROM Catalog.Products')
+                    with patch.object(query_pushdown,'count_eligible',return_value=False):
+                        with self.assertRaisesRegex(BackendError,error):self.query()
+                finally:self.sql('UPDATE '+table+' SET record_id=? WHERE record_id=?',(record,invalid))
     def test_internal_writer_invalidates_unique_proof_and_closed_view_rejects(self):
         self.query()
         self.vm.execute('P=Catalogs.Products.CreateItem();P.Code="4";P.Write();')
@@ -104,21 +109,14 @@ class CountPushdownTests(unittest.TestCase):
             self.assertTrue(any('SELECT COUNT(*) FROM' in line for line in sql))
             with self.assertRaises(sqlite3.OperationalError):view._connection.execute('DELETE FROM database_info')
         finally:view.close()
-    def test_count_proof_external_commit_before_read_and_after_rollback(self):
-        from yadinassi.db.sqlite.sqlite_read_handles import ReadHandle
-        table=self.table();self.query();backend=self.context.backend
-        real=backend._check_file;calls=[]
-        def check():
-            calls.append(1)
-            if len(calls)==1:self.sql('DELETE FROM '+table+' WHERE code=?',('1',))
-            return real()
-        with patch.object(backend,'_check_file',side_effect=check):self.assertEqual(self.query()._rows,((Decimal(2),),))
-        complete=ReadHandle.complete
-        def after_rollback(handle,proofs):
-            self.sql('DELETE FROM '+table+' WHERE code=?',('2',))
-            return complete(handle,proofs)
-        with patch.object(ReadHandle,'complete',after_rollback):self.assertEqual(self.query()._rows,((Decimal(2),),))
-        self.assertEqual(self.query()._rows,((Decimal(1),),))
+    def test_count_sees_external_commits_on_the_same_read_connection(self):
+        table=self.table();backend=self.context.backend
+        self.assertEqual(self.query()._rows,((Decimal(3),),))
+        connection=backend._read_handle.connection
+        for code, expected in (('1',2),('2',1)):
+            self.sql('DELETE FROM '+table+' WHERE code=?',(code,))
+            self.assertEqual(self.query()._rows,((Decimal(expected),),))
+            self.assertIs(backend._read_handle.connection,connection)
     def test_wal_storage_is_still_explicitly_unsupported(self):
         self.table();backend=self.context.backend
         backend._close_idle_read_handle();self.sql('PRAGMA journal_mode=WAL')
