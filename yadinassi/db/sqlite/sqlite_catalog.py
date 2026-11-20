@@ -174,7 +174,7 @@ def _boundary(function):
         try:
             result = function(*args, **kwargs)
             owner = _read_owner(args[0]) if args else None
-            if owner is not None and not owner._closed:
+            if owner is not None and not owner._closed and not getattr(owner, '_query_language', False):
                 owner._backend._check_file()
             return result
         except BaseException as error:
@@ -1475,10 +1475,42 @@ class SQLiteCatalogBackend:
         return resolve(self, operation_id, requests)
 
     @_boundary
-    def begin_query_read(self):
-        # Catalog-first packages must pin the same transaction later used by
-        # their document/register sources. Older layouts expose empty sets.
-        return self._document_view(None)
+    def begin_query_read(self, *, query_language=False):
+        if not query_language:
+            return self._document_view(None)
+        from yadinassi.db.database_transactions import current
+        if current(self) is not None:
+            return self._document_view(None)
+        view = self._begin_query_language_read()
+        try:
+            return DocumentView(view)
+        except BaseException:
+            view.close()
+            raise
+
+    @lifecycle
+    def _begin_query_language_read(self):
+        """Borrow a readonly connection without object admission or a new transaction."""
+        if self.storage_version == 5 or not self.activated: raise BackendError('unsupported')
+        pending = _PendingConnection(self)
+        reserve_owner(self, pending)
+        try:
+            self._check_file()
+            handle = self._read_handle
+            if handle is None:
+                connection = self._connect(_owner=pending, _read_handle=True)
+                handle = ReadHandle(connection)
+                pending._read_handle = self._read_handle = handle
+            else:
+                connection = handle.connection
+                if connection.in_transaction: raise BackendError('busy')
+            view = _View(self, connection, None, query_language=True)
+            view._read_handle = handle
+            self._active = view
+            return view
+        except BaseException:
+            pending.close()
+            raise
 
     @_boundary
     def begin_document_read(self):
@@ -1911,8 +1943,9 @@ class SQLiteCatalogBackend:
 
 
 class _View:
-    def __init__(self, backend, connection, operation_id):
+    def __init__(self, backend, connection, operation_id, *, query_language=False):
         self._backend, self._connection, self._operation_id = backend, connection, operation_id
+        self._query_language = query_language
         self._closed = False; self._poisoned = False; self._changes = []; self._intents = []
         self._scan_cursor = None
         self._validated_sources = {}
@@ -1922,6 +1955,10 @@ class _View:
         self._outcomes = []
         self._section_write_bytes = 0
         self._section_write_rows = 0
+        if query_language:
+            self.database_id = backend.database_id
+            self.configuration_generation = backend.configuration_generation
+            return
         row = connection.execute('SELECT database_uuid,generation FROM database_info WHERE singleton=1').fetchone()
         self.database_id, self.configuration_generation = UUID(row[0]), row[1]
         if operation_id is not None and backend.format_version in (11, 12, 13, 14, 15, 16) and connection.execute('SELECT 1 FROM unit_of_work_receipt WHERE operation_id=?',(str(operation_id),)).fetchone(): raise BackendError('conflict')
@@ -1940,6 +1977,8 @@ class _View:
     @_boundary
     def catalogs(self):
         self._require()
+        if self._query_language:
+            return self._backend._schemas
         rows = self._connection.execute('SELECT definition FROM catalog_schema ORDER BY name,identity').fetchall()
         if len(rows) > 512: raise BackendError('integrity')
         schemas = tuple(_schema(row[0], allow_numbering=self._backend.storage_version in (4, 6, 7, 8, 9, 10), allow_hierarchy=self._backend.storage_version == 10, enum_domain=self._backend._enum_domain) for row in rows)
@@ -2007,6 +2046,11 @@ class _View:
     @_boundary
     def catalog_schema(self, catalog_id):
         self._require(); _uuid(catalog_id)
+        if self._query_language:
+            for schema in self._backend._schemas:
+                if schema.identity == catalog_id:
+                    return schema
+            raise BackendError('not_found')
         handle = getattr(self, '_read_handle', None)
         if (self._operation_id is None and handle is not None
                 and handle.connection is self._connection
@@ -2404,7 +2448,7 @@ class _View:
             expressions.append(('SUM' if operation=='sum' else 'AVG')+'(CAST('+column+' AS REAL))')
         # Reuse complete scalar admission and normalized UUID uniqueness proof.
         # A cache is only valid on this exact readonly pinned view/epoch.
-        proof=self.aggregate_catalog(catalog_id,CatalogAggregateRequest())
+        proof=self.aggregate_catalog(catalog_id,CatalogAggregateRequest(), _validate=True)
         if proof is None:return None
         table,_,where,args=self._source(schema)
         clause = '' if where == '1' and not args else ' WHERE ' + where
@@ -2414,7 +2458,7 @@ class _View:
         return CatalogNumericAggregateResult(proof.count,row[1:])
 
     @_boundary
-    def aggregate_catalog(self, catalog_id, request):
+    def aggregate_catalog(self, catalog_id, request, *, _validate=False):
         """SQL COUNT with complete-source admission and distinct logical IDs.
 
         The extra proof is snapshot/connection-local, never a metadata receipt.
@@ -2430,8 +2474,12 @@ class _View:
         if (self._operation_id is not None or not self._cache_validation_allowed()
                 or self._backend.storage_version < 2 or schema.hierarchy != 'none'):
             return None
-        self._validate_scan_scalars(catalog_id, schema)
         table, _, where, args = self._source(schema)
+        if self._query_language and not _validate:
+            clause = '' if where == '1' and not args else ' WHERE ' + where
+            row = self._connection.execute('SELECT COUNT(*) FROM '+table+clause,args).fetchone()
+            return CatalogAggregateResult(row[0])
+        self._validate_scan_scalars(catalog_id, schema)
         # An unconditional WHERE disables SQLite's dedicated Count opcode.
         # Keep actual source predicates (notably the shared-table v1 filter).
         clause = '' if where == '1' and not args else ' WHERE ' + where
@@ -2983,6 +3031,21 @@ class _View:
     @lifecycle
     def close(self):
         handle = self._read_handle
+        if (self._query_language and not self._closed and not self._poisoned
+                and handle is not None and self._connection is handle.connection
+                and not self._connection.in_transaction):
+            try:
+                _close_document_scan(self)
+                self._scan_cursor = None
+                self._backend._check_file()
+                self._validated_sources.clear()
+                self._closed = True
+                self._connection = self._read_handle = None
+                self._backend._active = None
+            except BaseException:
+                _close_owned_connection(self)
+                raise
+            return
         if (self._closed or handle is None or self._poisoned
                 or self._connection is not handle.connection):
             _close_owned_connection(self)

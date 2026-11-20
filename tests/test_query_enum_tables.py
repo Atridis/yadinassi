@@ -115,7 +115,7 @@ class EnumTableTests(unittest.TestCase):
                 patch.object(backend, 'begin_read', wraps=backend.begin_read) as base_read:
             r = self.q('SELECT Ref AS Item,Unit FROM Catalog.Products', vm=other).execute().unload()
         self.assertEqual(query_view.call_count, 1)
-        self.assertEqual(base_read.call_count, 1)
+        self.assertEqual(base_read.call_count, 0)
         self.assertEqual(len(r.rows), 3)
 
     def test_external_and_persistent_reads_share_one_view(self):
@@ -124,7 +124,7 @@ class EnumTableTests(unittest.TestCase):
                 patch.object(backend, 'begin_read', wraps=backend.begin_read) as base_read:
             self.q('SELECT T.Unit FROM &Input AS T JOIN Catalog.Products AS P ON T.Item=P.Ref', t).execute()
         self.assertEqual(query_view.call_count, 1)
-        self.assertEqual(base_read.call_count, 1)
+        self.assertEqual(base_read.call_count, 0)
 
     def test_failed_package_rolls_back_destroy(self):
         m = BSLTempTablesManager()
@@ -180,8 +180,8 @@ class EnumTableTests(unittest.TestCase):
 
     def test_document_wrapper_identity_must_match_underlying_view(self):
         original = self.context.backend.begin_query_read
-        def opened():
-            view = original(); view.configuration_generation += 1; return view
+        def opened(**kwargs):
+            view = original(**kwargs); view.configuration_generation += 1; return view
         with patch.object(self.context.backend, 'begin_query_read', opened):
             with self.assertRaises(BackendError): self.q('SELECT Unit FROM Catalog.Products').execute()
 

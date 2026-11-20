@@ -144,13 +144,13 @@ class EnumNumericAggregateTests(unittest.TestCase):
     def test_format16_real_enum_numeric_query_no_load_cold_and_warm(self):
         with patch.object(_Plan,'load',side_effect=AssertionError('materialization')):
             for _ in range(2):self.assertEqual(self.query()._rows,((Decimal('12.50'),Decimal('12.5'),Decimal(1)),))
-        self.assertTrue(any(k[0]=='catalog-count-unique-v1' for k in self.context.backend._read_handle.proofs))
+        self.assertFalse(any(k[0]=='catalog-count-unique-v1' for k in self.context.backend._read_handle.proofs))
     def test_post_provider_enum_generation_and_mapping_revocation(self):
         original=_View.aggregate_catalog;scope=self.vm._metadata._enum_storage_scope
         for mapping in (False,True):
             old=scope.generation;managers=scope.namespace._managers;key=next(iter(managers));manager=managers[key]
-            def revoke(view,*args):
-                result=original(view,*args)
+            def revoke(view,*args,**kwargs):
+                result=original(view,*args,**kwargs)
                 if isinstance(args[1],CatalogNumericAggregateRequest):
                     if mapping:managers.pop(key)
                     else:scope.generation=-1

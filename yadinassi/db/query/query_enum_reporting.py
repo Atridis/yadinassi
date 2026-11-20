@@ -5,6 +5,7 @@ Only the exact inventory-enum namespace can issue descriptors; derived/UNION
 columns must retain the very descriptor issued for this execution, not rebuild
 one from UUIDs or arbitrary custom field metadata.
 """
+from yadinassi.db.database_transactions import open_query_read as _open_query_read
 from dataclasses import dataclass
 from types import MethodType
 from uuid import UUID
@@ -149,7 +150,7 @@ class _EnumReportScope:
         view = None
         try:
             self.require_current()
-            view = self.catalogs._context.backend.begin_query_read()
+            view = _open_query_read(self.catalogs._context.backend)
             with read_snapshot(self.catalogs._metadata._root, view):
                 # Covers zero rows and scalar-only projections after binding.
                 self.require_current()

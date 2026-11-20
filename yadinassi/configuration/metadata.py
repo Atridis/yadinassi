@@ -275,23 +275,35 @@ class BSLCatalogMetadataCollection(MetadataObjectCollection):
         self._items = None
         self._order_known = False
 
-    def _snapshot(self):
+    def _snapshot(self, *, query_language=False):
         if self._items is None:
             if self._context is None: require_database_context()
-            if self._root is not None and self._family != 'Catalog': self._root._catalogs._snapshot()
-            reader = self._reader
-            if self._family != 'Catalog' and type(self._context) is SQLiteDBContext:
-                capabilities = self._context.backend.capabilities()
-                supported = (capabilities.document_read if self._family == 'Document'
-                             else capabilities.register_read)
-                # Older catalog-only layouts can reflect an empty family;
-                # active families keep their established metadata read port.
-                if not supported:
-                    reader = 'begin_query_read'
-            view = getattr(self._context.backend, reader)()
+            if self._root is not None and self._family != 'Catalog':
+                self._root._catalogs._snapshot(query_language=query_language)
+            view = None
             try:
-                entries = getattr(view,self._entries)()
-                database, generation = view.database_id, view.configuration_generation
+                from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+                if query_language and type(self._context) is SQLiteDBContext:
+                    backend = self._context.backend
+                else:
+                    backend = None
+                if type(backend) is SQLiteCatalogBackend:
+                    if backend._closed: raise BackendError('closed')
+                    entries = {'Catalog': backend._schemas, 'Document': backend._document_schemas,
+                               'InformationRegister': backend._register_schemas}[self._family]
+                    database, generation = backend.database_id, backend.configuration_generation
+                else:
+                    reader = self._reader
+                    if self._family != 'Catalog' and type(self._context) is SQLiteDBContext:
+                        capabilities = self._context.backend.capabilities()
+                        supported = (capabilities.document_read if self._family == 'Document'
+                                     else capabilities.register_read)
+                        # Older catalog-only layouts reflect an empty family.
+                        if not supported:
+                            reader = 'begin_query_read'
+                    view = getattr(self._context.backend, reader)()
+                    entries = getattr(view,self._entries)()
+                    database, generation = view.database_id, view.configuration_generation
                 items = {}
                 for entry in entries:
                     key = entry.name.casefold()
@@ -301,7 +313,8 @@ class BSLCatalogMetadataCollection(MetadataObjectCollection):
                     items[key] = item
                 if self._root is not None:
                     self._root._accept_snapshot(database,generation)
-            finally: view.close()
+            finally:
+                if view is not None: view.close()
             self._database_id,self._generation = database,generation
             self._items = items
             if self in _LIVE_METADATA_ORIGINS:

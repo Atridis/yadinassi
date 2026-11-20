@@ -332,11 +332,21 @@ def require_registered_query_lease(backend, lease):
     return lease
 
 
+def open_query_read(backend):
+    """Open the query-language port without widening custom backend protocols."""
+    from .sqlite.sqlite_catalog import SQLiteCatalogBackend
+    if type(backend) is SQLiteCatalogBackend:
+        return backend.begin_query_read(query_language=True)
+    return backend.begin_query_read()
+
+
 def query_view(manager):
-    """Query-only borrowed port; detached object reads remain fail-closed."""
-    if current(manager._backend) is None:
+    """Query-only borrowed port; detached object reads use their own checks."""
+    backend = manager._backend
+    from .sqlite.sqlite_catalog import SQLiteCatalogBackend
+    if type(backend) is not SQLiteCatalogBackend and current(backend) is None:
         return manager._view()
-    view = manager._backend.begin_query_read()
+    view = open_query_read(backend)
     try:
         if hasattr(manager, '_check_view'):
             manager._check_view(view)

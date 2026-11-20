@@ -123,7 +123,8 @@ class DocumentView:
     def aggregate_catalog(self, identity, request):
         # Forward the closed catalog capability through the same owned snapshot
         # already used by enum/report packages; acquire no new connection.
-        return self._view.aggregate_catalog(identity, request)
+        aggregate = self._view.aggregate_catalog
+        return None if aggregate is None else aggregate(identity, request)
     def scan_catalog_section(self, identity, section_id, request):
         return self._view.scan_catalog_section(identity, section_id, request)
     def _register_reader(self):

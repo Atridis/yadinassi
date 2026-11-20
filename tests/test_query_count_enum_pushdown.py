@@ -1,4 +1,4 @@
-"""Real MainDemo BSL COUNT keeps enum owner/source witness and data proofs."""
+"""Real MainDemo BSL COUNT borrows read-only SQL without object admission."""
 from contextlib import closing
 from decimal import Decimal
 from hashlib import sha256
@@ -29,17 +29,56 @@ class EnumCountPushdownTests(unittest.TestCase):
             batch=BSLQuery(self.vm._catalogs,'SELECT COUNT(*) AS N FROM Catalog.Номенклатура;SELECT COUNT(*) AS N FROM Catalog.Номенклатура')
             self.assertEqual([r._rows for r in batch.execute_batch().items],[((Decimal(1),),)]*2)
         self.assertEqual(self.output,['1'])
-        self.assertTrue(any(k[0]=='catalog-count-unique-v1' for k in self.backend._read_handle.proofs))
-    def test_unprojected_reference_corruption_invalidates_warm_count(self):
+    def test_one_statement_without_storage_or_source_preflight(self):
+        self.query().execute()
+        statements=[]
+        connection=self.backend._read_handle.connection
+        connection.set_trace_callback(statements.append)
+        try:
+            self.assertEqual(self.query().execute()._rows,((Decimal(1),),))
+        finally:
+            connection.set_trace_callback(None)
+        self.assertEqual(statements,['SELECT COUNT(*) FROM '+self.table])
+    def test_catalog_document_and_package_skip_object_admission(self):
+        from yadinassi.db.query.query_packages import BSLTempTablesManager
+        cases = (
+            ('SELECT Description AS N FROM Catalog.Номенклатура', (('Кабель',),)),
+            ('SELECT Number AS N FROM Document.Receipt', ()),
+            ('SELECT Description AS N INTO Items FROM Catalog.Номенклатура; SELECT N FROM Items',
+             (('Кабель',),)),
+        )
+        self.query().execute()
+        connection=self.backend._read_handle.connection
+        for source, expected in cases:
+            query=BSLQuery(self.vm._catalogs,source,self.vm._documents)
+            if ';' in source:
+                query.set_member('TempTablesManager', BSLTempTablesManager())
+            statements=[]
+            with self.subTest(source=source):
+                connection.set_trace_callback(statements.append)
+                try:
+                    self.assertEqual(query.execute()._rows,expected)
+                finally:
+                    connection.set_trace_callback(None)
+                self.assertTrue(statements)
+                forbidden=('BEGIN','ROLLBACK','PRAGMA','DATABASE_INFO','SQLITE_SCHEMA','CONFIGURATION_FILE')
+                self.assertTrue(all(not any(word in stmt.upper() for word in forbidden)
+                                    for stmt in statements),statements)
+
+    def test_count_does_not_scan_unprojected_reference(self):
         self.query().execute()
         column=quote_identifier(self.backend._layout.field_name(self.schema.identity,self.schema.fields[0].identity))
         self.mutate('UPDATE '+self.table+' SET '+column+'=?',('not-a-uuid',))
-        with self.assertRaises(BackendError):self.query().execute()
-    def test_rehashed_source_is_not_new_authority(self):
+        self.assertEqual(self.query().execute()._rows,((Decimal(1),),))
+        field=self.schema.fields[0].name
+        with self.assertRaises(BackendError):
+            BSLQuery(self.vm._catalogs,f'SELECT {field} FROM Catalog.Номенклатура').execute()
+    def test_rehashed_source_is_never_loaded_by_query(self):
         self.query().execute()
         with closing(sqlite3.connect(self.path)) as c:raw=c.execute("SELECT content FROM configuration_file WHERE path='Configuration.xml'").fetchone()[0]+b'\n'
         self.mutate("UPDATE configuration_file SET content=?,sha256=? WHERE path='Configuration.xml'",(raw,sha256(raw).hexdigest()))
-        with self.assertRaises(BackendError):self.query().execute()
+        self.assertEqual(self.query().execute()._rows,((Decimal(1),),))
+        with self.assertRaises(BackendError):self.backend.begin_read()
     def test_enum_owner_revocation_and_mapping_changes_reject_before_provider(self):
         self.query().execute();scope=self.vm._metadata._enum_storage_scope
         with patch.object(_View,'aggregate_catalog',side_effect=AssertionError('must reject first')):
@@ -65,24 +104,34 @@ class EnumCountPushdownTests(unittest.TestCase):
         with patch.object(_Plan,'load',observe):
             self.vm.execute('BeginTransaction();Q=New Query("SELECT COUNT(*) AS N FROM Catalog.Номенклатура");S=Q.Execute().Select();S.Next();Message(S.N);RollbackTransaction();')
         self.assertEqual(seen,[1]);self.assertEqual(self.output,['2'])
-    def test_same_owned_readonly_snapshot_and_post_provider_revocation(self):
+    def test_readonly_query_without_transaction_and_post_provider_revocation(self):
         from yadinassi.configuration.demos.inventory_enum_runtime import _POINT_READ
         original=_View.aggregate_catalog;observed=[]
-        def provider(view,*args):
+        def provider(view,*args,**kwargs):
             witness=_POINT_READ.get();self.assertIsNotNone(witness)
             self.assertIs(witness[1],view);self.assertIs(self.backend._active,view)
-            self.assertTrue(view._connection.in_transaction)
+            self.assertFalse(view._connection.in_transaction)
             self.assertEqual(view._connection.execute('PRAGMA query_only').fetchone(),(1,))
-            observed.append(view);return original(view,*args)
+            observed.append(view);return original(view,*args,**kwargs)
         with patch.object(_View,'aggregate_catalog',provider):self.query().execute()
         self.assertEqual(len(observed),1)
         scope=self.vm._metadata._enum_storage_scope;generation=scope.generation
-        def revoke(view,*args):
-            result=original(view,*args);scope.generation=-1;return result
+        def revoke(view,*args,**kwargs):
+            result=original(view,*args,**kwargs);scope.generation=-1;return result
         try:
             with patch.object(_View,'aggregate_catalog',revoke),self.assertRaises(BackendError):self.query().execute()
         finally:scope.generation=generation
         self.assertIsNone(self.backend._active)
+    def test_query_uses_existing_writer_and_rollback_discards_the_row(self):
+        q=BSLQuery(self.vm._catalogs,'SELECT COUNT(*) AS N FROM Catalog.Склады')
+        original=q.execute()._rows
+        self.vm.execute('''BeginTransaction();
+C=Catalogs.Склады.CreateItem();C.Description="Тест";C.Write();
+Q=New Query("SELECT COUNT(*) AS N FROM Catalog.Склады");S=Q.Execute().Select();S.Next();
+Message(S.N);RollbackTransaction();''')
+        self.assertEqual(self.output,[str(original[0][0]+1)])
+        self.assertEqual(q.execute()._rows,original)
+
     def test_missing_physical_capability_is_explicit_relational_residual(self):
         from yadinassi.db.sqlite.sqlite_documents import DocumentView
         load=_Plan.load;seen=[]
@@ -95,7 +144,7 @@ class EnumFieldCountTests(unittest.TestCase):
     def setUp(self):
         from test_inventory_enum_relational_reporting import EnumRelationalGuardTests
         EnumRelationalGuardTests.setUp(self)
-    def test_unused_enum_field_corruption_is_not_hidden(self):
+    def test_count_does_not_read_unused_enum_field(self):
         query=lambda:BSLQuery(self.vm._catalogs,'SELECT COUNT(*) AS N FROM Catalog.Products').execute()
         with patch.object(_Plan,'load',side_effect=AssertionError('materialization')):
             self.assertEqual(query()._rows,((Decimal(3),),))
@@ -105,4 +154,6 @@ class EnumFieldCountTests(unittest.TestCase):
         column=quote_identifier(backend._layout.field_name(schema.identity,field.identity))
         with closing(sqlite3.connect(self.context.path)) as c,c:
             c.execute('UPDATE '+table+' SET '+column+'=?',('ffffffff-ffff-ffff-ffff-ffffffffffff',))
-        with self.assertRaises(BackendError):query()
+        self.assertEqual(query()._rows,((Decimal(3),),))
+        with self.assertRaises(BackendError):
+            BSLQuery(self.vm._catalogs,f'SELECT {field.name} FROM Catalog.Products').execute()

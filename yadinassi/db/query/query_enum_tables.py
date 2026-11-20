@@ -1,4 +1,5 @@
 """Durable enum report domains, never Execute-local descriptors or read leases."""
+from yadinassi.db.database_transactions import open_query_read as _open_query_read
 from dataclasses import dataclass, replace
 from uuid import UUID
 
@@ -118,7 +119,7 @@ def execute_report(statements, catalogs, parameters, manager, documents, informa
     if owner is None:
         raise BackendError('unsupported')
     parameters = _preflight_parameters(owner, catalogs, parameters)
-    view, scope = owner.backend.begin_query_read(), None
+    view, scope = _open_query_read(owner.backend), None
     try:
         with read_snapshot(owner.metadata, view):
             _prepare_enum_query_metadata(owner.metadata, view)

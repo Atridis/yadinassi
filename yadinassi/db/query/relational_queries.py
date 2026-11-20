@@ -6,7 +6,7 @@ Input/intermediate bounds fail explicitly, never return partial aggregate totals
 String equality/order uses the existing casefold_v1 host policy, not regional 1C
 collation. Decimal aggregation uses an owned context, not the caller's context.
 """
-from yadinassi.db.database_transactions import query_view as _transaction_query_view
+from yadinassi.db.database_transactions import open_query_read as _open_query_read, query_view as _transaction_query_view
 
 from dataclasses import dataclass, replace
 from decimal import Context, Decimal, InvalidOperation, ROUND_HALF_EVEN
@@ -178,6 +178,7 @@ class _Plan:
                 continue
             if source.family == 'document':
                 if documents is None: raise ValueError('Document query sources require document context')
+                documents._metadata._snapshot(query_language=True)
                 manager = documents.get_index(source.catalog)
             elif source.family == 'accumulation_register':
                 from .accumulation_queries import manager as accumulation_manager
@@ -189,8 +190,10 @@ class _Plan:
                 if manager is None:
                     if information_registers is None:
                         raise ValueError('Information-register query sources require register context')
+                    information_registers._metadata._snapshot(query_language=True)
                     manager = information_registers.get_index(source.catalog)
             else:
+                catalogs._metadata._snapshot(query_language=True)
                 manager = catalogs.get_index(source.catalog)
             self.managers.append(manager)
             section = None
@@ -959,7 +962,7 @@ class _Plan:
             manager = next((m for m in self.all_managers if m is not None), None)
             if manager is not None:
                 if any(arm.family in ('document', 'information_register', 'accumulation_register') or any(j.source.family in ('document', 'information_register', 'accumulation_register') for j in arm.joins) for arm in syntax.selects((self.query,))):
-                    view = self.catalogs._context.backend.begin_query_read()
+                    view = _open_query_read(self.catalogs._context.backend)
                 else:
                     view = _transaction_query_view(manager)
                 owner = True

@@ -1,10 +1,10 @@
 """Atomic, bounded in-memory temporary tables for logical query packages.
 
 These are explicit host semantics, not native temporary-table storage or measured
-native statement-result parity. Persistent database access is read-only through
-one CatalogReadView per package. No table rows escape as mutable buffers.
+native statement-result parity. A package borrows one read-only connection,
+or the existing transaction when present. No table rows escape as mutable buffers.
 """
-from yadinassi.db.database_transactions import query_view as _transaction_query_view
+from yadinassi.db.database_transactions import open_query_read as _open_query_read, query_view as _transaction_query_view
 
 from dataclasses import dataclass
 from decimal import Decimal
@@ -102,13 +102,12 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
         registers_needed = needs_registers(statements)
         accumulation_needed = needs_accumulation(statements)
         composite = documents_needed or registers_needed or accumulation_needed
-        # Metadata initialization opens its own view. Finish it before the
-        # single package transaction, including catalog-first packages. Do not
-        # require document metadata for a register-only database.
+        # Prime required metadata from the open SQLite backend, not another
+        # read transaction. Other backend protocols retain their own readers.
         if documents_needed or accumulation_needed:
             if documents is None:
                 raise ValueError('Document query sources require document context')
-            documents._metadata._snapshot()
+            documents._metadata._snapshot(query_language=True)
         if registers_needed:
             from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
             from yadinassi.configuration.configuration_posting import PostingConfiguration
@@ -116,12 +115,12 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
             backend = context.backend if context is not None else None
             posting = backend.posting_configuration if type(backend) is SQLiteCatalogBackend else None
             if type(posting) is PostingConfiguration:
-                documents._metadata._snapshot()
+                documents._metadata._snapshot(query_language=True)
             else:
                 if information_registers is None:
                     raise ValueError('Information-register query sources require register context')
-                information_registers._metadata._snapshot()
-        if composite: catalogs._metadata._snapshot()
+                information_registers._metadata._snapshot(query_language=True)
+        if composite: catalogs._metadata._snapshot(query_language=True)
         if manager._closed:
             raise ValueError('Temporary table manager is closed')
         source_owner = getattr(manager, '_source_owner', None)
@@ -155,7 +154,7 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
         elif bindings:
             composite = composite or any(b.kind == 'document_ref' for b in bindings)
             if view is None:
-                view = (catalogs._context.backend.begin_query_read() if composite
+                view = (_open_query_read(catalogs._context.backend) if composite
                         else _transaction_query_view(bindings[0].issuer))
             validate_view(bindings, view)
         result = BSLArray()
@@ -178,7 +177,7 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
                 if _source_scope is not None and source_manager is not None:
                     raise ValueError('Source package cannot acquire legacy manager view')
                 if view is None and source_manager is not None:
-                    view = (catalogs._context.backend.begin_query_read() if composite else _transaction_query_view(source_manager))
+                    view = (_open_query_read(catalogs._context.backend) if composite else _transaction_query_view(source_manager))
                 output = plan.execute(view=view, budget=budget)
                 if statement.into is not None:
                     tables[statement.into.casefold()] = _Table(output._columns, output._rows)
