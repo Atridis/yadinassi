@@ -7,12 +7,17 @@ from yadinassi.syntax import ast
 from yadinassi.text import strings
 from yadinassi.types.values import HostFunction, NULL, _DIRECT_COLLECTION_CLASS_ABI
 
-_SELECTED = (strings.string_length, strings.upper, strings.lower,
+_SELECTED = (strings.string_length, strings.line_count, strings.upper, strings.lower,
              strings.trim_left, strings.trim_right, strings.trim_all,
              strings.is_blank, strings.starts_with, strings.ends_with, strings.left, strings.right)
 _TWO_ARGS = (strings.starts_with, strings.ends_with, strings.left, strings.right)
+# Numeric-producing builtins can attach their native implementation here.
+_NATIVE_RESULTS = {strings.string_length: ('number', strings._string_length_units),
+                   strings.line_count: ('number', strings._line_count_units)}
+_BOOLEAN_RESULTS = (strings.is_blank, strings.starts_with, strings.ends_with)
 _ABI = MappingProxyType({
-    name.casefold(): (function, 2 if function in _TWO_ARGS else 1)
+    name.casefold(): (function, 2 if function in _TWO_ARGS else 1,
+                      *_NATIVE_RESULTS.get(function, ('bool' if function in _BOOLEAN_RESULTS else 'string', function)))
     for primary, function, english in strings.BUILTINS if function in _SELECTED
     for name in (primary, english)
 })
@@ -67,5 +72,9 @@ def analyze(nodes):
     return PureBindings(frozenset(names),frozenset(services)) if services else None
 
 
-def resolve(name):
-    return _ABI[name][0]
+def result_kinds(names):
+    return {name: _ABI[name][2] for name in names}
+
+
+def resolve(name, *, native_numbers=False):
+    return _ABI[name][3 if native_numbers else 0]

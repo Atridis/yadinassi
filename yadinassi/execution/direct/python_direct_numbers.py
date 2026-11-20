@@ -21,8 +21,20 @@ def sign(value,operator):
 def public_number(value):
     return Decimal(value) if type(value) is int else value
 
+_NEGATIVE_ZERO = Decimal('-0')
+_REMAINDER_CONTEXT_BOUND = 10**38
+
+
 def remainder(left,right):
     # Decimal remainder follows the dividend sign, unlike Python integer %.
+    # Keep Decimal's precision error for large quotients and its zero-divisor
+    # errors; neither condition belongs to the ordinary integer loop.
+    if (type(left) is int and type(right) is int and right
+            and -_REMAINDER_CONTEXT_BOUND < left < _REMAINDER_CONTEXT_BOUND):
+        if left >= 0:
+            return left % abs(right)
+        magnitude = -left % abs(right)
+        return -magnitude if magnitude else _NEGATIVE_ZERO
     if type(left) is int:left=Decimal(left)
     if type(right) is int:right=Decimal(right)
     return left % right

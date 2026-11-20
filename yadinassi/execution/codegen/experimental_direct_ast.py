@@ -880,7 +880,15 @@ class Emitter:
         if k is bsl.Call and type(node.callee) is bsl.Name:
             name=node.callee.name.casefold();self.check_name(name);self.required.add(name)
             if name in self.pure_builtins:
-                return self.call(self.pure_builtins[name],[self.expr(arg) for arg in node.arguments],node.callee.token)
+                args=[]
+                for arg in node.arguments:
+                    value=self.expr(arg)
+                    if self.integer_lane and self.scalar_kinds.get(id(arg))=='number':
+                        # Builtins still see BSL numeric presentation, even if a
+                        # caller's intermediate is carried as a Python int.
+                        value=self.call('_dynamic_public_number',[value],arg.token)
+                    args.append(value)
+                return self.call(self.pure_builtins[name],args,node.callee.token)
             external_call=self.external_name(name) and name in self.callable_externals
             if self.external_name(name) and not external_call:_reject('external namespace names are not callable: '+node.callee.name)
             if external_call:fallback=self.name('_MISSING',t)
@@ -1782,6 +1790,10 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     # Module locals are the register file; dynamic edges explicitly synchronize.
     from yadinassi.execution.direct.python_direct_static_module import analyze as analyze_static
     static_facts=None
+    builtin_results=None
+    if pure_bindings is not None:
+        from yadinassi.execution.direct.python_direct_pure_builtins import result_kinds
+        builtin_results=result_kinds(pure_bindings.services)
     if _profile is None and not imported and not _exports and not _require_last_expression and vm.database_context is None:
         names=set();pending=list(program)
         while pending:
@@ -1800,11 +1812,14 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             elif type(value) in (list,tuple):pending.extend(value)
         names-=emitter.external_names|emitter.module_globals|{'thisobject','этотобъект'}
         emitter.module_cells.intersection_update(names)
+        builtin_external_names=() if pure_bindings is None else pure_bindings.names-names
         if not has_goto:
             opaque=emitter.external_names|emitter.module_globals|emitter.module_cells
-            emitter.scalar_kinds=analyze_static(program,opaque_names=opaque,scalar_prefix=True)
-        if names:
-            static_facts=analyze_static(program,opaque_names=emitter.external_names|emitter.module_globals)
+            emitter.scalar_kinds=analyze_static(program,opaque_names=opaque,scalar_prefix=True,
+               builtin_results=builtin_results,builtin_external_names=builtin_external_names)
+        if names or builtin_results:
+            static_facts=analyze_static(program,opaque_names=emitter.external_names|emitter.module_globals,
+               builtin_results=builtin_results,builtin_external_names=builtin_external_names)
             emitter.static_module_kinds={} if static_facts is None else static_facts[1]
             emitter.static_module_names={key:emitter.temp() for key in sorted(names)}
         if (not has_goto and static_facts is None and not emitter.authority and not emitter.source_scopes
@@ -1886,7 +1901,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     namespace['_diagnostic_source'] = source_text
     if pure_bindings is not None:
         from yadinassi.execution.direct.python_direct_pure_builtins import resolve
-        namespace.update({symbol:resolve(name) for name,symbol in emitter.pure_builtins.items()})
+        namespace.update({symbol:resolve(name,native_numbers=emitter.integer_lane) for name,symbol in emitter.pure_builtins.items()})
     if region_end or any_region:namespace.update(_collection_admitted=admitted,_collection_helpers=helpers(),_routine_region_state_safe=_routine_region_state_safe)
     # Every route genuinely compiles executable code before source effects.
     # Whole-source research additionally parses the actual source, not a fake

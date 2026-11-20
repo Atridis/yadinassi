@@ -96,6 +96,48 @@ class IntegerLaneTests(unittest.TestCase):
         with self.assertRaises(Exception):vm.execute('S=3; X=5%0; After=1;')
         self.assertEqual(vm.variables,{'s':D(3)})
 
+    def test_native_builtin_result_feeds_integer_loop_and_preserves_public_type(self):
+        vm=Interpreter();self.addCleanup(vm.close)
+        vm.variables['s']='Я😀'
+        plan=vm.prepare('R=0; For I=1 To 20 Do R=R+StrLen(S); EndDo; R;')
+        self.assertEqual(vm.execute_prepared(plan),D(60))
+        self.assertIs(type(vm.variables['r']),D)
+        self.assertEqual(plan._plan.constants,())
+        loop=next(node for node in ast.walk(ast.parse(plan._plan.generated_source)) if isinstance(node,ast.For))
+        self.assertIn('_pure_strlen',ast.unparse(loop))
+        self.assertNotIn('_Decimal',ast.unparse(loop))
+
+    def test_builtin_numeric_text_input_preserves_bsl_formatting(self):
+        for source, expected in (
+            ('R=StrLen(1234); R;', D(5)),
+            ('If True Then S=1234; EndIf; R=StrLen(S); R;', D(5)),
+            ('R=Upper(1234); R;', '1\u00a0234'),
+            ('StrLen("😀")%2;', D(0)),
+            ('R=10+СтрЧислоСтрок("abc")+StrLineCount(""); R;', D(12)),
+        ):
+            with self.subTest(source=source):
+                _,_,result=self.run_source(source)
+                self.assertEqual(result,expected)
+                self.assertIs(type(result),type(expected))
+        # An int supplied by Python is not an integer-lane intermediate.
+        vm=Interpreter();self.addCleanup(vm.close);vm.variables['x']=1234
+        self.assertEqual(vm.execute('R=StrLen(X); R;'),D(4))
+
+    def test_native_remainder_keeps_fractional_operands_and_large_quotient_error(self):
+        from decimal import InvalidOperation
+        from yadinassi.execution.direct.python_direct_numbers import remainder
+        self.assertIs(type(remainder(7,2)),int)
+        self.assertEqual(remainder(7,-2),1)
+        self.assertEqual(remainder(-7,2),-1)
+        self.assertEqual(remainder(-6,-2).as_tuple(),D('-0').as_tuple())
+        self.assertEqual(remainder(D('7.5'),2),D('1.5'))
+        with localcontext() as context:
+            context.prec=38
+            with self.assertRaises(InvalidOperation):
+                remainder(10**39,1)
+            with self.assertRaises(InvalidOperation):
+                remainder(5,0)
+
     def test_boolean_and_fractional_counter(self):
         _,_,result=self.run_source('S=True; S;')
         self.assertIs(result,True)

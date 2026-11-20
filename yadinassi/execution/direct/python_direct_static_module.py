@@ -10,14 +10,15 @@ from yadinassi.syntax import ast as bsl
 class _Decline(Exception):pass
 
 
-def analyze(program, opaque_names=(), *, scalar_prefix=False):
+def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=None, builtin_external_names=()):
+    builtin_results = builtin_results or {}
     kinds={};names=set();opaque=set(opaque_names)|{'thisobject','этотобъект'}
     def require(condition):
         if not condition:raise _Decline
     def expression(node,env):
         k=type(node)
         if scalar_prefix:
-            require(k in (bsl.Group,bsl.Literal,bsl.Name,bsl.Binary,bsl.Unary,bsl.Conditional))
+            require(k in (bsl.Group,bsl.Literal,bsl.Name,bsl.Binary,bsl.Unary,bsl.Conditional,bsl.Call))
         if k is bsl.Group:kind=expression(node.expression,env)
         elif k is bsl.Literal:
             require(type(node.value) in (Decimal,bool,str));kind='number' if type(node.value) is Decimal else 'bool' if type(node.value) is bool else 'string'
@@ -55,7 +56,18 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False):
         elif k is bsl.Conditional:
             require(expression(node.condition,env) in ('number','bool'))
             kind=expression(node.when_true,env);require(kind==expression(node.when_false,env))
-        elif k is bsl.Call and type(node.callee) is bsl.Attribute:
+        elif k is bsl.Call and type(node.callee) is bsl.Name:
+            kind=builtin_results.get(node.callee.name.casefold());require(kind is not None)
+            for arg in node.arguments:
+                plain=arg
+                while type(plain) is bsl.Group:plain=plain.expression
+                # In a closed, guarded builtin unit the result does not depend
+                # on scalar argument type; external direct reads stay untouched.
+                if (type(plain) is bsl.Name and plain.name.casefold() not in env
+                        and plain.name.casefold() in builtin_external_names):
+                    continue
+                expression(arg,env)
+        elif k is bsl.Call and type(node.callee) is bsl.Attribute and not scalar_prefix:
             receiver_kind=expression(node.callee.object,env);require(receiver_kind in ('array','map','table','valuelist','columns','row'))
             method=node.callee.name.casefold()
             if method in ('get','получить'):

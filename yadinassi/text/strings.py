@@ -63,25 +63,33 @@ def _index(value: object, minimum: int, maximum: int) -> int:
     return int(value)
 
 
-def string_length(value: object) -> Decimal:
+def _string_length_units(value: object) -> int:
     if type(value) is str:
         # CPython stores both this flag and the code-point count on the string.
         if value.isascii():
-            return Decimal(len(value))
+            return len(value)
         text = value
     else:
         text = to_string(value)
-    return Decimal(len(text.encode("utf-16-le", errors="surrogatepass")) // 2)
+    return len(text.encode("utf-16-le", errors="surrogatepass")) // 2
+
+
+def string_length(value: object) -> Decimal:
+    return Decimal(_string_length_units(value))
 
 
 # Unlike Python splitlines(), 1C's observed separators are CRLF, CR and LF.
 _LINE_BREAK = re.compile(r"\r\n|\r|\n")
 
 
-def line_count(value: object) -> Decimal:
+def _line_count_units(value: object) -> int:
     text = to_string(value)
     count = sum(1 for _ in _LINE_BREAK.finditer(text))
-    return Decimal(count if text.endswith(("\r", "\n")) else count + 1)
+    return count if text.endswith(("\r", "\n")) else count + 1
+
+
+def line_count(value: object) -> Decimal:
+    return Decimal(_line_count_units(value))
 
 
 def get_line(value: object, position: object) -> str:
