@@ -16,7 +16,7 @@ OPERATORS = {'=': operator.eq, '<>': operator.ne, '<': operator.lt,
 class NumericBooleanComparisonTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(self.output.append, allow_extensions=True)
+        self.vm = Interpreter(self.output.append)
 
     def test_all_operators_in_both_orders_exact_numeric_conversion(self):
         for text in ['-9999999999999999999999999999999999999999', '-2', '-0.1',
@@ -57,6 +57,8 @@ class NumericBooleanComparisonTests(unittest.TestCase):
                                        'Нет', 'Да', 'Да', '{"B",1}', '{"N",1}'])
 
     def test_operands_evaluate_once_in_order_and_errors_recover(self):
+        self.vm.close()
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
         calls = []
         def left():
             calls.append('left')
@@ -89,6 +91,8 @@ class NumericBooleanComparisonTests(unittest.TestCase):
                             self.vm.execute(f'({left} {symbol} {right})')
 
     def test_host_int_float_and_decimal_subclasses_do_not_gain_conversion(self):
+        self.vm.close()
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
         class HostDecimal(Decimal):
             pass
         class HostObject(BSLObject):

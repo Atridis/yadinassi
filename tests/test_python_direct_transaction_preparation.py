@@ -329,7 +329,7 @@ class DirectTransactionPreparationTests(unittest.TestCase):
         self.clean()
     def test_ingress_foreign_catalog_family_same_backend_is_not_authority(self):
         from yadinassi import Interpreter
-        foreign=Interpreter(database_context=self.db, allow_extensions=True);self.addCleanup(foreign.close)
+        foreign=Interpreter(database_context=self.db);self.addCleanup(foreign.close)
         other=foreign._catalogs.get_member('Номенклатура').create_item()
         original_catalogs=self.vm._catalogs
         def probe():

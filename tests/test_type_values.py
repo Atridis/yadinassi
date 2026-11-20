@@ -12,7 +12,8 @@ from yadinassi.types.values import BSLArray, BSLObject, BSLType
 class TypeValueTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(self.output.append, allow_extensions=True)
+        self.vm = Interpreter(self.output.append)
+        self.addCleanup(self.vm.close)
 
     def evaluate(self, expression):
         # Top-level unparenthesized = is assignment in the existing parser.
@@ -236,18 +237,24 @@ class TypeValueTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('Type("Number")'), other.execute('TypeOf(42)'))
 
     def test_host_extensions_remain_constructible_but_are_not_reflected(self):
+        vm = Interpreter(self.output.append, allow_extensions=True)
+        self.addCleanup(vm.close)
+
         class Extension(BSLObject):
             pass
 
-        self.vm.register_type('Extension', Extension)
-        self.vm.execute('item = New Extension;')
-        self.assertIsInstance(self.vm.variables['item'], Extension)
+        vm.register_type('Extension', Extension)
+        vm.execute('item = New Extension;')
+        self.assertIsInstance(vm.variables['item'], Extension)
         for expression in ['TypeOf(item)', 'Type("Extension")', 'TypeOf(Message)']:
             with self.subTest(expression=expression), self.assertRaisesRegex(
                     BSLRuntimeError, 'не поддерживается'):
-                self.vm.execute(expression)
+                vm.execute(expression)
 
     def test_host_subclasses_and_metaclass_hooks_are_not_called(self):
+        vm = Interpreter(self.output.append, allow_extensions=True)
+        self.addCleanup(vm.close)
+
         class HostileMeta(type):
             def __eq__(self, other):
                 raise AssertionError('metaclass equality must not run')
@@ -266,12 +273,12 @@ class TypeValueTests(unittest.TestCase):
 
         for value in [1, 1.5, object(), Hostile(), ArraySubclass(), StringSubclass('Number')]:
             with self.subTest(kind=type(value).__name__):
-                self.vm.variables['host'] = value
+                vm.variables['host'] = value
                 with self.assertRaisesRegex(BSLRuntimeError, 'не поддерживается'):
-                    self.vm.execute('TypeOf(host)')
-        self.vm.variables['host'] = StringSubclass('Number')
+                    vm.execute('TypeOf(host)')
+        vm.variables['host'] = StringSubclass('Number')
         with self.assertRaisesRegex(BSLRuntimeError, 'должно быть строкой'):
-            self.vm.execute('Type(host)')
+            vm.execute('Type(host)')
 
 
 if __name__ == '__main__':

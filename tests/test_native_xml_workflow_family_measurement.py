@@ -17,7 +17,7 @@ SOURCE = SOURCE_PATH.read_text(encoding='utf-8')
 
 def emit(*, missing=False, source=SOURCE):
     out = []
-    vm = Interpreter(out.append, allow_extensions=True)
+    vm = Interpreter(out.append)
     if missing:
         for name in ('xmlreader', 'чтениеxml'):
             vm.types.pop(name, None)

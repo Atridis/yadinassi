@@ -18,7 +18,7 @@ from yadinassi.types.errors import BSLRuntimeError
 class StructureTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(output=self.output.append, allow_extensions=True)
+        self.vm = Interpreter(output=self.output.append)
 
     def test_empty_constructors_bilingual_and_case_insensitive(self):
         for expression in ['Новый Структура', 'New Structure',
@@ -533,6 +533,8 @@ class StructureTests(unittest.TestCase):
         self.assertEqual(self.output, ['2'])
 
     def test_ordinary_host_functions_receive_values_not_reference_wrappers(self):
+        self.vm.close()
+        self.vm = Interpreter(output=self.output.append, allow_extensions=True)
         received = []
         self.vm.register_function('Observe', lambda *values: received.append(values))
         self.vm.execute('''

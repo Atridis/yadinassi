@@ -187,7 +187,7 @@ class SearchDirectionValueTests(unittest.TestCase):
 class SearchDirectionIterationTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(self.output.append, allow_extensions=True)
+        self.vm = Interpreter(self.output.append)
 
     def test_native_order_and_independent_iterators(self):
         first, second = iter(SEARCH_DIRECTIONS), iter(SEARCH_DIRECTIONS)
@@ -198,6 +198,8 @@ class SearchDirectionIterationTests(unittest.TestCase):
         self.assertEqual(list(SEARCH_DIRECTIONS), [BEGIN, END])
 
     def test_global_aliases_and_loop_expression_evaluated_once(self):
+        self.vm.close()
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
         calls = []
 
         def directions():
@@ -244,6 +246,8 @@ class SearchDirectionIterationTests(unittest.TestCase):
         self.assertEqual(self.output, ['С начала', 'С конца'])
 
     def test_host_iterables_subclasses_and_individual_values_remain_rejected(self):
+        self.vm.close()
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
         class HostIterable(BSLObject):
             def __iter__(self):
                 raise AssertionError('Host iterable must not run')

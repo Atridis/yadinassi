@@ -52,11 +52,11 @@ class DirectEvalTests(unittest.TestCase):
             vm=Interpreter(allow_extensions=True);effects=[];vm.register_function('Effect',lambda:effects.append(1))
             vm.execute('Try '+text+';Except Caught=True;EndTry;')
             self.assertTrue(vm.variables['caught']);self.assertEqual(effects,[])
-        vm=Interpreter(allow_extensions=True);self.assertEqual(vm.execute('Eval(12)'),Decimal(12))
+        vm=Interpreter();self.assertEqual(vm.execute('Eval(12)'),Decimal(12))
         vm.execute('Try Eval(Undefined);Except Caught=True;EndTry;');self.assertTrue(vm.variables['caught'])
-        vm=Interpreter(allow_extensions=True);vm.variables['s']='1'*65537
+        vm=Interpreter();vm.variables['s']='1'*65537
         vm.execute('Try Eval(S);Except Caught=True;EndTry;');self.assertTrue(vm.variables['caught'])
-        vm=Interpreter(allow_extensions=True);vm.execute('S="Eval(S)";Try Eval(S);Except Caught=True;EndTry;R=Eval("1");')
+        vm=Interpreter();vm.execute('S="Eval(S)";Try Eval(S);Except Caught=True;EndTry;R=Eval("1");')
         self.assertTrue(vm.variables['caught']);self.assertEqual(vm.variables['r'],1)
 
     def test_diagnostic_context_preserves_description(self):
@@ -126,7 +126,7 @@ class EvalPreparationReuseTests(unittest.TestCase):
         from yadinassi import BSLError
         vm=Interpreter(allow_extensions=True);seen=[]
         vm.execute('Function F() Return 1;EndFunction Function G() Return F();EndFunction')
-        replacement=Interpreter(allow_extensions=True);replacement.execute('Function F() Return 9;EndFunction')
+        replacement=Interpreter();replacement.execute('Function F() Return 9;EndFunction')
         vm.register_function('Change',lambda:vm._direct_routine_modules.__setitem__('f',replacement._direct_routine_modules['f']))
         vm.register_function('Effect',lambda:seen.append('effect') or 0)
         with self.assertRaisesRegex(BSLError,'partially replaced'):

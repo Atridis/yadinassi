@@ -11,7 +11,7 @@ from yadinassi.types.values import BSLObject
 class RoundModeIterationTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(self.output.append, allow_extensions=True)
+        self.vm = Interpreter(self.output.append)
 
     def test_namespace_iterators_are_independent_and_unique(self):
         first, second = iter(ROUND_MODES), iter(ROUND_MODES)
@@ -22,6 +22,8 @@ class RoundModeIterationTests(unittest.TestCase):
         self.assertEqual(len(list(ROUND_MODES)), 2)
 
     def test_bilingual_names_alias_and_expression_evaluated_once(self):
+        self.vm.close()
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
         calls = []
         def modes():
             calls.append(True)
@@ -120,6 +122,8 @@ class RoundModeIterationTests(unittest.TestCase):
         self.assertEqual(set(ROUND_MODES), set(BSLRoundMode))
 
     def test_closed_runtime_boundary_rejects_host_iterables_and_individual_modes(self):
+        self.vm.close()
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
         class HostIterable(BSLObject):
             def __iter__(self):
                 raise AssertionError('Host iterator must not be invoked')

@@ -162,7 +162,7 @@ class SortDirectionValueTests(unittest.TestCase):
 class SortDirectionIterationTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(self.output.append, allow_extensions=True)
+        self.vm = Interpreter(self.output.append)
 
     def test_native_order_and_independent_iterators(self):
         first, second = iter(SORT_DIRECTIONS), iter(SORT_DIRECTIONS)
@@ -173,6 +173,8 @@ class SortDirectionIterationTests(unittest.TestCase):
         self.assertEqual(list(SORT_DIRECTIONS), [ASC, DESC])
 
     def test_aliases_and_loop_expression_evaluated_once(self):
+        self.vm.close()
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
         calls = []
 
         def directions():
@@ -214,6 +216,8 @@ class SortDirectionIterationTests(unittest.TestCase):
         self.assertEqual(self.output[-2:], ['По возрастанию', 'По убыванию'])
 
     def test_host_subclasses_and_hostile_metaclasses_are_not_iterated(self):
+        self.vm.close()
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
         calls = []
 
         class HostNamespace(BSLSortDirections):

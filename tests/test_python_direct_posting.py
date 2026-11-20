@@ -110,7 +110,7 @@ class DirectPostingTests(unittest.TestCase):
         f=PostingRuntimeTests();f.setUp();self.addCleanup(f.doCleanups)
         f.make('Procedure Posting(Cancel,Mode) Message("target"); EndProcedure')
         f.vm.close();seen=[]
-        vm=Interpreter(database_context=f.context,native_target=LINUX_8_3_27_1508,output=lambda text:seen.append(current_native_target()), allow_extensions=True)
+        vm=Interpreter(database_context=f.context,native_target=LINUX_8_3_27_1508,output=lambda text:seen.append(current_native_target()))
         self.addCleanup(vm.close)
         d=vm._documents.get_member('OwnedPostingDoc').create_document()
         d.set_member('Number','3');d.set_member('Date',vm.functions['date'](Decimal(2024),Decimal(1),Decimal(1)))

@@ -55,7 +55,7 @@ Try Raise "caller";Except A=C();B=D();C=S();E=ErrorDescription();EndTry;'''
     def test_custom_builtin_and_bad_arity_are_preserved(self):
         vm=Interpreter(allow_extensions=True);vm.register_function('ErrorDescription',lambda:'custom')
         vm.execute('Try Raise "real";Except D=ErrorDescription();EndTry;');self.assertEqual(vm.variables['d'],'custom')
-        with self.assertRaises(BSLRuntimeError):Interpreter(allow_extensions=True).execute('ErrorDescription(1);')
+        with self.assertRaises(BSLRuntimeError):Interpreter().execute('ErrorDescription(1);')
 
     def test_failed_handler_and_early_return_do_not_leak(self):
         vm=Interpreter();vm.execute('Function F() Try Raise "old";Except Return ErrorDescription();EndTry;EndFunction R=F();D=ErrorDescription();')
