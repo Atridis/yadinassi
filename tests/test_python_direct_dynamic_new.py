@@ -87,12 +87,14 @@ class DirectDynamicNewTests(unittest.TestCase):
         self.assertEqual(vm.execute('F[0]'),7);self.assertEqual(vm.execute('B[0]'),9)
         self.assertIs(type(vm.variables['b']),list)
 
-    def test_plain_value_list_type_reporting_is_explicitly_unsupported(self):
-        vm=self.vm();vm.execute('L=New("ValueList");')
-        with self.assertRaisesRegex(BSLError,'пока не поддерживается'):
-            vm.execute('Reported=TypeOf(L);After=True;')
-        self.assertNotIn('reported',vm.variables)
-        self.assertNotIn('after',vm.variables)
+    def test_plain_value_list_reports_canonical_type(self):
+        for prepared in (False,True):
+            vm=self.vm()
+            code='L=New("ValueList"); Reported=TypeOf(L); After=True;'
+            if prepared:vm.execute_prepared(vm.prepare(code))
+            else:vm.execute(code)
+            self.assertIs(vm.variables['reported'],BSLType.VALUE_LIST)
+            self.assertIs(vm.variables['after'],True)
 
     def test_unknown_registered_factories_and_replacements_are_not_grants(self):
         vm=self.vm(allow_extensions=True);effects=[]
