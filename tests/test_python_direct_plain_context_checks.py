@@ -6,13 +6,14 @@ from unittest.mock import patch
 
 from yadinassi import Interpreter
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.direct.python_direct import make_boundary
 
 
 def checks(profile):
     return sum(entry.callcount for entry in profile.getstats()
                if not isinstance(entry.code, str)
                and entry.code.co_name == '_check'
-               and entry.code.co_filename.endswith('/python_direct.py'))
+               and entry.code.co_filename == make_boundary.__code__.co_filename)
 
 
 class PlainContextChecksTests(unittest.TestCase):
