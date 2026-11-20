@@ -300,10 +300,11 @@ class NativeTargetSortTests(unittest.TestCase):
             (BSLArray(), NotImplementedError), (NULL, NotImplementedError),
             (BSLStructure(), NotImplementedError), (object(), NotImplementedError),
         )
+        # The native ValueTable observation accepts 'Key Sideways' as ascending.
         operations = [
             (order, None, error)
             for order, error in (('', ValueError), ('Key,Missing', ValueError),
-                                 ('Key Asc extra', ValueError), ('Key Sideways', ValueError),
+                                 ('Key Asc extra', ValueError),
                                  (None, TypeError))
         ] + [('Key', comparator, NotImplementedError)
              for comparator in (D(1), NULL, False, BSLStructure())]

@@ -304,10 +304,11 @@ class BSLValueTable(BSLObject):
         terms=[]
         for part in order.split(','):
             tokens=part.strip().split()
-            if not 1<=len(tokens)<=2:raise ValueError('invalid sort order')
+            if not tokens:continue
+            if len(tokens)>2:raise ValueError('invalid sort order')
             direction=tokens[1].casefold() if len(tokens)==2 else 'asc'
-            if direction not in ('asc','desc','возр','убыв'):raise ValueError('invalid sort direction')
             terms.append((tokens[0],direction in ('desc','убыв')))
+        if not terms:raise ValueError('invalid sort order')
         self._storage.sort(terms)
     def copy_columns(self,columns=None):
         result=BSLValueTable()
