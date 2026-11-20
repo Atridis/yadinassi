@@ -194,7 +194,7 @@ class Emitter:
         self.local_field_facts={};self.integer_lane=False;self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.module_boundaries=0;self.range_indices={}
         self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
         self.standalone_script=False;self.link_imports=False;self.import_links=[]
-        self.import_names=frozenset();self.require_last_expression=None;self.region_active=False;self.region_ops={};self.region_states={};self.routines={};self.routine_symbols={};self.module_globals=set();self.scope=None;self.source_refs={};self.loop_increments=[];self.required=set();self.visits=0;self.python_nodes=0
+        self.import_names=frozenset();self.require_last_expression=None;self.region_active=False;self.region_ops={};self.region_states={};self.routines={};self.routine_symbols={};self.module_globals=set();self.scope=None;self.source_refs={};self.loop_increments=[];self.required=set();self.pure_builtins={};self.visits=0;self.python_nodes=0
     def node(self,kind,token,**fields):
         if kind is py.FunctionDef and 'type_params' in kind._fields:fields.setdefault('type_params',[])
         result=kind(**fields);self.python_nodes+=1
@@ -461,7 +461,7 @@ class Emitter:
         if self.static_module_names and not self.static_module_kinds:
             callee=node.callee if type(node) is bsl.Call else None
             while type(callee) is bsl.Group:callee=callee.expression
-            internal=type(callee) is bsl.Name and callee.name.casefold() in self.routines
+            internal=type(callee) is bsl.Name and (callee.name.casefold() in self.routines or callee.name.casefold() in self.pure_builtins)
             external=(type(node) is bsl.Call and type(callee) is not bsl.Attribute and not internal) or type(node) is bsl.DynamicNew
             external=external or (type(node) is bsl.New and node.name.casefold() not in ('array','массив','map','соответствие','structure','структура'))
             if external:value=self.module_boundary(value,node.token)
@@ -879,6 +879,8 @@ class Emitter:
             return self.invoke(function,arguments,node.callee.token,keywords)
         if k is bsl.Call and type(node.callee) is bsl.Name:
             name=node.callee.name.casefold();self.check_name(name);self.required.add(name)
+            if name in self.pure_builtins:
+                return self.call(self.pure_builtins[name],[self.expr(arg) for arg in node.arguments],node.callee.token)
             external_call=self.external_name(name) and name in self.callable_externals
             if self.external_name(name) and not external_call:_reject('external namespace names are not callable: '+node.callee.name)
             if external_call:fallback=self.name('_MISSING',t)
@@ -1575,7 +1577,7 @@ def _routine_region(routine, scope):
     return end,operations,states
 
 
-def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_whole_source=False,_require_last_expression=False,_profile=None,_source_scopes=False,_authority=False,_scalar_routines=False,_callable_externals=(),_shadowable=(),_configuration_calls=False,_host_bindings=False,_catalog_bounds=False,_lean_configuration=False,_retain_generated=True):
+def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_whole_source=False,_require_last_expression=False,_profile=None,_source_scopes=False,_authority=False,_scalar_routines=False,_callable_externals=(),_shadowable=(),_configuration_calls=False,_host_bindings=False,_catalog_bounds=False,_lean_configuration=False,_retain_generated=True,_allow_pure_builtins=False):
     """Lower a module, optionally auditing the generated Python source."""
     if not _native_partial_binding(partial):_reject('noncanonical partial binding is outside research contract')
     if not _native_operator_binding(_NATIVE_ADD,'add') or not _native_operator_binding(_NATIVE_GETITEM,'getitem'):
@@ -1597,6 +1599,13 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         lines={node.token.line:node.token.source_line for node in nodes}
         source_text='\n'.join(lines.get(line,'') for line in range(1,max(lines,default=0)+1))
     emitter=Emitter(filename)
+    pure_bindings=None
+    if _allow_pure_builtins and _profile is None and not _whole_source and not vm.allow_extensions and not imported:
+        from yadinassi.execution.direct.python_direct_pure_builtins import analyze
+        candidate=analyze(nodes)
+        if candidate is not None and candidate.active(vm):
+            pure_bindings=candidate
+            emitter.pure_builtins={name:'_pure_'+name for name in candidate.services}
     emitter.has_goto=has_goto
     emitter.owned_constructors=_profile is not None;emitter.configuration_calls=_configuration_calls;emitter.host_bindings=_host_bindings;emitter.catalog_bounds=_catalog_bounds;emitter.source_scopes=_source_scopes;emitter.authority=_authority;emitter.scalar_routines=_scalar_routines
     emitter.callable_externals=frozenset(_callable_externals);emitter.shadowable=frozenset(_shadowable)
@@ -1875,6 +1884,9 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     namespace['_nonconstructible_date'] = _nonconstructible_date
     # Exception handlers share the module source instead of emitting one literal each.
     namespace['_diagnostic_source'] = source_text
+    if pure_bindings is not None:
+        from yadinassi.execution.direct.python_direct_pure_builtins import resolve
+        namespace.update({symbol:resolve(name) for name,symbol in emitter.pure_builtins.items()})
     if region_end or any_region:namespace.update(_collection_admitted=admitted,_collection_helpers=helpers(),_routine_region_state_safe=_routine_region_state_safe)
     # Every route genuinely compiles executable code before source effects.
     # Whole-source research additionally parses the actual source, not a fake
@@ -1896,6 +1908,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     result._source_implicit_shadows=frozenset(emitter.implicit_shadows)
     result._research_lowering_counts=(count,emitter.visits,emitter.python_nodes)
     result._research_roundtrip_visits=roundtrip_visits
+    result._pure_bindings=pure_bindings
     return result
 
 

@@ -176,7 +176,7 @@ def _compile(vm,program,nodes,source_text,source_name,*,_exports=False):
     # One compiler path. Unsupported forms fail; there is no text/legacy retry.
     from yadinassi.execution.codegen.experimental_direct_ast import compile_module
     return compile_module(vm,program,nodes,source_text,source_name,_exports=_exports,
-                          _whole_source=_extension_source_audit(vm))
+                          _whole_source=_extension_source_audit(vm),_allow_pure_builtins=True)
 
 
 def _extension_source_audit(vm):
@@ -214,6 +214,10 @@ def prepare_module(vm,program,*,source_text=None,source_name=None):
     owned=_snapshot(program)
     nodes,routines,constructors,calls=_source_facts(owned)
     plan=_compile(vm,owned,nodes,source_text,source_name)
+    if getattr(plan,'_pure_bindings',None) is not None:
+        from yadinassi.execution.codegen.experimental_direct_ast import compile_module
+        plan._generic_pure_plan=compile_module(vm,owned,nodes,plan.source_text,plan.source_name,
+                                               _retain_generated=False)
     declared=frozenset(name.casefold() for node in owned if type(node) is ast.Var and node.execution_context=='client' for name in node.names)
     from .python_direct_routines import prepare as prepare_routines
     exports=prepare_routines(vm,owned,plan) if routines or any(type(n) is ast.ServerInitializer for n in owned) else None
@@ -303,6 +307,15 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
                 from .python_direct_transactions import execution as transaction_execution
                 with transaction_execution(vm) as owner:
                     context=make_boundary(vm,_transaction_owner=owner)
+                    pure=getattr(plan,'_pure_bindings',None)
+                    if pure is not None and not pure.active(vm,context):
+                        # Select generic lowering before execution, never retry failed code.
+                        if _prepared is not None:
+                            plan=copy(plan._generic_pure_plan)
+                        else:
+                            from yadinassi.execution.codegen.experimental_direct_ast import compile_module
+                            plan=compile_module(vm,program,nodes,plan.source_text,plan.source_name,
+                                                _retain_generated=False)
                     result=plan.run(vm.variables,context=context)
             vm._self_module.ready=True
             vm._hybrid_stats['python_direct_modules']=vm._hybrid_stats.get('python_direct_modules',0)+1
