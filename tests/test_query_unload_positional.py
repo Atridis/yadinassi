@@ -61,3 +61,23 @@ class QueryUnloadPositionalTests(unittest.TestCase):
             with self.assertRaises(ValueError):duplicate.unload()
             invalid=BSLQueryResult((replace(column,name=None),),result._rows)
             with self.assertRaises(TypeError):invalid.unload()
+
+    def test_nullable_materialization_does_not_request_default(self):
+        from yadinassi.types.type_descriptions import BSLTypeDescription
+        from yadinassi.collections.plain_value_table_runtime import BSLValueTable
+        result=BSLQuery(self.vm._catalogs,'SELECT CASE WHEN Amount<0 THEN Amount ELSE NULL END AS Missing FROM Catalog.Products').execute()
+        with patch.object(BSLTypeDescription, 'adjust_value', side_effect=AssertionError('materialized values need no coercion')):
+            table=result.unload()
+        self.assertIs(table.rows[0].get_member('Missing'), NULL)
+        description=table.columns.items[0].value_type
+        self.assertIsNotNone(description._query_scalar)
+        # Public default/coercion support is not widened by detached capture.
+        with self.assertRaises(ValueError): description.adjust_value()
+        with self.assertRaises(ValueError): BSLValueTable().columns.add('N', description)
+
+    def test_materializer_rejects_noncanonical_description(self):
+        from yadinassi.db.query.query_table_materialization import materialize
+        result=BSLQuery(self.vm._catalogs,'SELECT Amount AS N FROM Catalog.Products').execute()
+        with patch.object(BSLValueTableRow,'__init__',side_effect=AssertionError('no rows before metadata')):
+            with self.assertRaisesRegex(TypeError,'Invalid query column metadata'):
+                materialize(result._columns,(object(),),result._rows)
