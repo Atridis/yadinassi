@@ -59,6 +59,10 @@ class ServerBoundary(ServicesBoundary,CatalogBoundary,BoundaryContext):
         self.side=side
         super().__init__()
         self.vm=parent.vm;self._services=self.vm.functions
+        # The actual crossing is checked by resolve_server. The generated
+        # body inherits its caller's mode, not a per-expression crossing.
+        self._verify_context=parent._verify_context
+        self._verify_dynamic_context=True
         self._restrict_python_extensions=not self.vm.allow_extensions
         self._execute_depth=getattr(parent,"_execute_depth",None)
         self._eval_depth=getattr(parent,"_eval_depth",None)
@@ -66,18 +70,35 @@ class ServerBoundary(ServicesBoundary,CatalogBoundary,BoundaryContext):
         self.database=self.vm.database_context
         self._routine_exports={};self.state={}
         self.module_context=module_context
-    def _check(self):
-        super()._check()
-        from yadinassi.execution import safe_mode
-        from yadinassi.db import source_transactions, database_transactions
+    def _check_role(self):
         vm=self.vm
         if (vm._family_closed or vm.database_context is not self.database
                 or vm._configuration_runtime is not None or vm.locals is not None
-                or vm._has_module_context!=self.module_context or vm.execution_context!=self.side
-                or safe_mode._CURRENT.get() is not None
-                or source_transactions._current.get() is not None
+                or vm._has_module_context!=self.module_context or vm.execution_context!=self.side):
+            raise BoundaryViolation('direct server context changed at a host boundary')
+    def _check_restrictions(self):
+        from yadinassi.execution import safe_mode
+        from yadinassi.db import source_transactions, database_transactions
+        if (safe_mode._CURRENT.get() is not None or source_transactions._current.get() is not None
                 or database_transactions._execution.get() is not None):
             raise BoundaryViolation('direct server context changed at a host boundary')
+    def _check_effect(self):
+        if self._verify_context:
+            self._check()
+            return
+        self._check_lease()
+        self._check_role()
+        self._check_restrictions()
+    def checkpoint(self):
+        if self._verify_context:return super().checkpoint()
+        self._check_lease()
+        if self.loop_budget is not None and self.loop_backedges>=self.loop_budget:
+            raise BoundaryViolation('generated loop backedge budget exhausted')
+        self.loop_backedges+=1
+    def _check(self):
+        super()._check()
+        self._check_role()
+        self._check_restrictions()
     def resolve_optional_service(self,name,*args,**kwargs):
         key=name.casefold()
         module=getattr(self.vm,'_direct_routine_modules',{}).get(key)
@@ -90,7 +111,7 @@ class ServerBoundary(ServicesBoundary,CatalogBoundary,BoundaryContext):
         return super().resolve_optional_service(name,*args,**kwargs)
 
     def resolve_service(self,name,*args,**kwargs):
-        self._check()
+        if self._verify_context:self._check()
         from .python_direct_routines import resolve
         routine=resolve(self,name.casefold(),require_value=kwargs.get('require_value',False),
             allow_references=kwargs.get('allow_references',False),argument_count=kwargs.get('argument_count'))
@@ -132,18 +153,20 @@ def resolve_server(parent,module,name,*,require_value,allow_references,allow_omi
             if parent.module_context==module_context:return execute(parent,bound)
             # Contextual server -> NoContext is a same-side call: references stay
             # live, but globals and initializer capabilities do not follow it.
+            parent._check_effect()
             context=ServerBoundary(parent,module_context=False)
             module_stack=vm._module_context_stack
             module_stack.append(False)
             try:
                 context.enter()
                 try:
+                    if not context._verify_context:context._check_role()
                     try:return execute(context,bound)
-                    finally:context._check()
+                    finally:context._check_effect()
                 finally:context.leave()
             finally:
                 module_stack.pop()
-                parent._check()
+                parent._check_effect()
         parent._check()
         outputs=[]
         for i,value in enumerate(arguments):
@@ -172,6 +195,7 @@ def resolve_server(parent,module,name,*,require_value,allow_references,allow_omi
         try:
             context.enter()
             try:
+                if not context._verify_context:context._check()
                 try:
                     for initializer in (getattr(vm,'_direct_server_initializers',()) if module_context else ()):
                         for key in initializer.server_layout:context.state.setdefault(key,None)
@@ -217,13 +241,14 @@ def resolve_dual_client(parent,module,name,*,require_value,allow_references):
     vm=parent.vm
     references=module.signatures[name][3]
     def invoke(*arguments):
-        parent._check()
+        parent._check_effect()
         context=ServerBoundary(parent,module_context=False,side='client')
         stack=vm._module_context_stack
         stack.append(False)
         try:
             context.enter()
             try:
+                if not context._verify_context:context._check_role()
                 exports=module.dual_plan.function({},module.dual_plan.constants,[],context)
                 bound=tuple(_ForwardReference(value) if i in references and type(value) is Reference else value
                             for i,value in enumerate(arguments))
@@ -234,10 +259,10 @@ def resolve_dual_client(parent,module,name,*,require_value,allow_references):
                         converted=convert_error(error,module.dual_plan.source_name,module.dual_plan.source_text)
                         if converted is error:raise
                         raise converted from None
-                finally:context._check()
+                finally:context._check_effect()
             finally:context.leave()
         finally:
             stack.pop()
-            parent._check()
+            parent._check_effect()
     function=HostFunction(name,invoke,reference_parameters=references,returns_value=module.signatures[name][0])
     return parent.resolve_callable(function,require_value=require_value,allow_references=allow_references)

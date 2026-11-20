@@ -349,7 +349,7 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None):
             key=name.casefold()
             module=getattr(vm,'_direct_routine_modules',{}).get(key)
             if module is not None and key in module.server_names:
-                self._check()
+                if self._verify_context or key not in module.dual_names:self._check()
                 if getattr(vm,'_direct_routine_modules',{}).get(key) is module:
                     return resolve_routine(self,key,require_value=kwargs.get('require_value',False),
                                            allow_references=kwargs.get('allow_references',False),
@@ -366,7 +366,7 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None):
             key=name.casefold()
             module=None if modules is None else modules.get(key)
             if module is not None:
-                if self._verify_context or key in module.server_names or key in module.dual_names:self._check()
+                if self._verify_context or (key in module.server_names and key not in module.dual_names):self._check()
                 routine=resolve_routine(self,key,require_value=kwargs.get('require_value',False),
                                         allow_references=kwargs.get('allow_references',False),
                                         argument_count=kwargs.get('argument_count'))
