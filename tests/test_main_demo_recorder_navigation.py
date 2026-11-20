@@ -1,6 +1,7 @@
 """Recorder navigation consumes server-owned capabilities, never display labels."""
 from copy import deepcopy
 from pathlib import Path
+from shutil import copyfile
 from types import SimpleNamespace
 import tempfile
 import unittest
@@ -25,11 +26,13 @@ class RecorderHandlerTests(unittest.TestCase):
 
 
 class RecorderNavigationTests(unittest.TestCase):
-    def setUp(self):
-        temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
-        self.path = Path(temp.name)/'demo.sqlite'
-        self.configuration = import_main_demo_configuration(source(), profile=PROFILE)
-        with SQLiteDBContext.create_main_demo(self.path, self.configuration) as context:
+    @classmethod
+    def setUpClass(cls):
+        temp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(temp.cleanup)
+        cls.seeded_db = Path(temp.name) / 'seed.sqlite'
+        configuration = import_main_demo_configuration(source(), profile=PROFILE)
+        with SQLiteDBContext.create_main_demo(cls.seeded_db, configuration) as context:
             vm = Interpreter(database_context=context)
             try:
                 vm.execute(SEED + '''
@@ -39,6 +42,16 @@ D=Documents.Issue.CreateDocument();D.Number="i1";D.Date=Date(2024,1,2);D.Warehou
 L=D.Lines.Add();L.Product=Карточка.Ссылка;L.Quantity=1;L.Amount=2;L.Unit=Enums.Units.Piece;D.Write(DocumentWriteMode.Posting);
 ''')
             finally: vm.close()
+        # Copy only a closed, self-contained database; every test gets its own writes.
+        if any(cls.seeded_db.with_name(cls.seeded_db.name + suffix).exists()
+               for suffix in ('-journal', '-wal', '-shm')):
+            raise RuntimeError('Recorder test seed still has SQLite sidecars')
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
+        self.path = Path(temp.name)/'demo.sqlite'
+        copyfile(self.seeded_db, self.path)
+        self.configuration = import_main_demo_configuration(source(), profile=PROFILE)
         self.forms = load_application(ROOT/'examples/demo', main_demo_application=True)
         self.broker = ConfigurationBroker(self.forms, self.path, main_demo_application=True)
         self.addCleanup(self.broker.close)
