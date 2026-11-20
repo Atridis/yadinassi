@@ -9,6 +9,7 @@ from sqlite_test_templates import copy_main_demo
 from yadinassi import Interpreter
 from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.execution.direct.python_direct import make_boundary
+from yadinassi.execution.direct.python_direct_server import ServerBoundary
 
 
 def audit_calls(vm, source):
@@ -52,6 +53,24 @@ class SQLiteContextModeTests(unittest.TestCase):
         vm.execute('&AtServer\nFunction Inc(Val X) Return X+1; EndFunction')
         self.assertGreater(audit_calls(vm, 'R=Inc(3);'), 0)
         self.assertEqual(vm.variables['r'], 4)
+
+    def test_sqlite_server_handoff_does_not_audit_pure_iterations(self):
+        vm = self.make()
+        vm.execute('&AtServer\nFunction Measure(Val Iterations) '
+                   'For I=1 To Iterations Do Length=StrLen("abc"); EndDo; '
+                   'Return Length; EndFunction')
+        files = (make_boundary.__code__.co_filename, ServerBoundary._check.__code__.co_filename)
+        counts = []
+        for iterations in (1, 128):
+            plan = vm.prepare(f'R=Measure({iterations});')
+            profile = Profile()
+            profile.runcall(vm.execute_prepared, plan)
+            stats = Stats(profile).stats
+            counts.append(tuple(sum(data[0] for (path, _, name), data in stats.items()
+                                    if path == file and name == '_check') for file in files))
+            self.assertEqual(vm.variables['r'], 3)
+        self.assertTrue(all(count > 0 for count in counts[0]), counts)
+        self.assertEqual(counts[0], counts[1])
 
     def test_database_dynamic_fragments_preserve_full_audit(self):
         vm = self.make()
