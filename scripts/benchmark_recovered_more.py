@@ -6,10 +6,13 @@ from yadinassi.execution.codegen.native_bare_collections import BareArray, BareS
 from yadinassi.execution.codegen.native_bare_table import BareTable
 
 class ReferenceRow(list):
-    """Minimal named-write reference; no epochs, indexes or ownership protocol."""
+    """Minimal named-cell reference; no epochs, indexes or ownership protocol."""
     def __init__(self, schema, value):
         super().__init__([value])
         self.schema = schema
+
+    def get_member(self, name):
+        return self[self.schema[name]]
 
     def set_member(self, name, value):
         self[self.schema[name]] = value

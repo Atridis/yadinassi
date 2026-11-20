@@ -22,7 +22,7 @@ CONTRACTS = {
     'method.map.iterate': ('R=0; For Each P In A Do R=R+P.Key+P.Value; EndDo;', 'r = 0\nfor k, v in a.items():\n    r += k + v', 'map_iterate', 'One prefilled Map items traversal, both key/value projections; no pair materialization'),
     'method.valuetable.get': ('R=0; For I=0 To N-1 Do R=R+A.Get(I).N; EndDo;', 'r = 0\nfor i in range(n):\n    r += a[i][0]', 'table_read', 'N row lookups and named field reads (Python positional one-column baseline)'),
     'method.valuetable.get_positional': ('R=0; For I=0 To N-1 Do R=R+A.Get(I)[0]; EndDo;', 'r = 0\nfor i in range(n):\n    r += a[i][0]', 'table_pos', 'N row lookups and positional cell reads'),
-    'method.valuetable.iterate': ('R=0; For Each Row In A Do R=R+Row.N; EndDo;', 'r = 0\nfor row in a:\n    r += row[0]', 'table_iterate', 'One traversal, named field read per row (Python positional baseline)'),
+    'method.valuetable.iterate': ('R=0; For Each Row In A Do R=R+Row.N; EndDo;', "r = 0\nfor row in a:\n    r += row.get_member('n')", 'table_iterate', 'One traversal, named field read per row in both paths (Python minimal class)'),
     'method.valuelist.get': ('R=0; For I=0 To N-1 Do R=R+A.Get(I).Value; EndDo;', 'r = 0\nfor i in range(n):\n    r += a[i][0]', 'list_read', 'N item lookups and Value field reads'),
     'method.valuelist.iterate': ('R=0; For Each Item In A Do R=R+Item.Value; EndDo;', 'r = 0\nfor item in a:\n    r += item[0]', 'list_iterate', 'One traversal, Value field read per item'),
 
@@ -39,7 +39,7 @@ CONTRACTS = {
 }
 
 
-from scripts.benchmark_recovered_more import CASES as MORE_CASES, bind as bind_more
+from scripts.benchmark_recovered_more import CASES as MORE_CASES, ReferenceRow, ReferenceTable, bind as bind_more
 CONTRACTS.update({name: (entry[0],entry[1],entry[4],entry[5]) for name,entry in MORE_CASES.items()})
 
 def binding(case, n, layer):
@@ -54,7 +54,6 @@ def binding(case, n, layer):
     if kind == 'map_iterate': classes = python.replace('a.items()', 'dict.items(a)')
     if kind == 'table_read': classes = python.replace('a[i][0]', "a.get(i).get_member('n')")
     if kind == 'table_pos': classes = python.replace('a[i][0]', 'a.get(i).get(0)')
-    if kind == 'table_iterate': classes = python.replace('row[0]', "row.get_member('n')")
     if kind == 'list_read': classes = python.replace('a[i][0]', "a.get(i).get_member('value')")
     if kind == 'list_iterate': classes = python.replace('item[0]', "item.get_member('value')")
     if kind == 'array_read': classes = python.replace('a[i]', 'a.get(i)')
@@ -69,7 +68,13 @@ def binding(case, n, layer):
             return data if layer == 'python' else BareMap(data)
         if kind in ('table_read', 'table_pos', 'table_iterate', 'list_read', 'list_iterate'):
             table_kind = kind.startswith('table')
-            if layer == 'python': return [[i] if table_kind else [i, '', False, None] for i in range(n)]
+            if layer == 'python':
+                if kind == 'table_iterate':
+                    table = ReferenceTable()
+                    table.add_column('N')
+                    table.rows = [ReferenceRow(table.schema, i) for i in range(n)]
+                    return table
+                return [[i] if table_kind else [i, '', False, None] for i in range(n)]
             value = BareTable() if table_kind else BareValueList()
             if table_kind: value.add_column('N')
             for i in range(n):
@@ -121,6 +126,10 @@ def binding(case, n, layer):
     def validate(value):
         if readonly:
             if snapshot(fixture_ref[0]) != original[0]: raise AssertionError('read workload mutated full state')
+            if kind == 'table_iterate' and layer == 'python':
+                table = fixture_ref[0]
+                if table.schema != {'n': 0} or any(row.schema is not table.schema for row in table.rows):
+                    raise AssertionError('read workload changed shared schema')
             if kind.startswith('table') and layer != 'python':
                 table = fixture_ref[0]
                 if table.schema != {'n': 0} or any(row.table is not table for row in table.rows):
@@ -190,6 +199,10 @@ def summary(report):
              f"Коммит `{report['commit']}`; статусы: {dict(counts)}.",
              'Python = 1×. Короткая серия, общая машина: не гарантия ускорения.', '']
     measured = {(r['case'],r['n'],r['layer']):r for r in report['rows'] if r['status']=='measured'}
+    if any(case == 'method.valuetable.iterate' for case, _, _ in measured):
+        lines += ['Эталон Python для iterate: минимальная Table со списком строк и общей схемой; '
+                  'один проход и чтение по имени через row.get_member("n") в обеих версиях. '
+                  'Подготовка таблицы вне замера.', '']
     if any(case in ('method.valuetable.set', 'method.valuetable.set_positional') for case, _, _ in measured):
         lines += ['Эталон Python для set/set_positional: минимальная Table с общим словарём схемы и списком строк; '
                   'Table.get возвращает rows[index], Row(list).set_member пишет self[self.schema[name]]. '

@@ -97,6 +97,32 @@ class MoreDriversTests(unittest.TestCase):
         self.assertIn('mutable list cell',CONTRACTS['byref'][3])
 
 class TableListDriversTests(unittest.TestCase):
+    def test_iterate_reference_reads_each_row_by_name(self):
+        from unittest.mock import patch
+        from scripts.benchmark_recovered_more import ReferenceRow, ReferenceTable
+
+        reset, run, validate, source, _ = binding('method.valuetable.iterate', 7, 'python')
+        self.assertIn("row.get_member('n')", source)
+        reads = []
+        original = ReferenceRow.get_member
+
+        def get_member(row, name):
+            reads.append((row.schema, name, row[0]))
+            return original(row, name)
+
+        with patch.object(ReferenceRow, 'get_member', get_member):
+            reset()
+            self.assertEqual(reads, [])
+            with patch.object(ReferenceTable, '__iter__', autospec=True,
+                              side_effect=ReferenceTable.__iter__) as iterate:
+                result = run()
+                iterate.assert_called_once()
+                table = iterate.call_args.args[0]
+            self.assertEqual(result, 21)
+            self.assertEqual(reads, [(table.schema, 'n', i) for i in range(7)])
+            self.assertTrue(all(schema is table.schema for schema, _, _ in reads))
+            validate(result)
+
     def test_named_and_positional_table_references_are_separate_single_loops(self):
         import ast
         for suffix, lookup in (('set', True), ('set_positional', False)):
