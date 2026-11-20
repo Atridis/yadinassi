@@ -20,10 +20,10 @@ class SourceFragmentsSecurity(unittest.TestCase):
             guard=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
             guard.start();self.addCleanup(guard.stop)
 
-    def app(self,code='',helper=None):
+    def app(self,code='',helper=None, *, allow_extensions=False):
         output=[]
         package=source(code.encode()) if helper is None else configuration(code,helper)
-        app=SourceApplication(package,output=output.append)
+        app=SourceApplication(package,output=output.append, allow_extensions=allow_extensions)
         self.addCleanup(app.close)
         return app,output
 
@@ -46,7 +46,7 @@ Procedure WriteShared() Export Execute("Shared=9;");EndProcedure''')
             self.assertEqual(app.interpreter.execute('Eval("3");'),Decimal(3))
 
     def test_warm_constructor_binding_rechecked(self):
-        app,_=self.app();app.start();vm=app.interpreter;effects=[]
+        app,_=self.app(allow_extensions=True);app.start();vm=app.interpreter;effects=[]
         def replace():vm.types['array']=HostFunction('Array',lambda:effects.append('factory'))
         vm.register_function('Replace',replace)
         with self.assertRaises((Exception,BoundaryViolation)):
@@ -54,7 +54,7 @@ Procedure WriteShared() Export Execute("Shared=9;");EndProcedure''')
         self.assertEqual(effects,[])
 
     def test_qualified_procedure_value_rejected_before_arguments(self):
-        app,_=self.app('', 'Procedure P(Val X) Export EndProcedure');app.start()
+        app,_=self.app('', 'Procedure P(Val X) Export EndProcedure', allow_extensions=True);app.start()
         effects=[];app.interpreter.register_function('Touch',lambda:effects.append('arg') or Decimal(1))
         with self.assertRaises((Exception,BoundaryViolation)):
             app.interpreter.execute('Eval("Helpers.P(Touch())");')
@@ -78,7 +78,7 @@ Procedure WriteShared() Export Execute("Shared=9;");EndProcedure''')
                 with execution(context,kind,{}, {},None):self.fail('subclass admitted')
 
     def test_depth_tamper_rejected_before_arithmetic_callback(self):
-        app,_=self.app();app.start();effects=[]
+        app,_=self.app(allow_extensions=True);app.start();effects=[]
         class Counter:
             def __sub__(self,other):effects.append('subtract');return 0
         def mutate():_ACTIVE.get()[-1][1][0]=Counter()
@@ -91,7 +91,7 @@ Procedure WriteShared() Export Execute("Shared=9;");EndProcedure''')
     def test_injected_cache_refused_without_callbacks_and_released(self):
         from yadinassi.execution.direct.source.python_direct_source_fragments import _UNITS
         for kind,expression in (('execute','Execute("X=1;");'),('eval','Eval("1");')):
-            app,_=self.app();app.start();effects=[];owners=[]
+            app,_=self.app(allow_extensions=True);app.start();effects=[];owners=[]
             class Cache(dict):
                 def get(self,*args):effects.append('get');return None
                 def __iter__(self):effects.append('iter');return iter(())
@@ -107,7 +107,7 @@ Procedure WriteShared() Export Execute("Shared=9;");EndProcedure''')
 
     def test_unsupported_fragment_is_fatal_and_depth_recovers(self):
         from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
-        app,_=self.app();app.start();vm=app.interpreter;effects=[]
+        app,_=self.app(allow_extensions=True);app.start();vm=app.interpreter;effects=[]
         vm.register_function('Effect',lambda:effects.append(1))
         for expression in ('Execute("Effect();New UnsupportedConstructor;")',
                            'Eval("New UnsupportedConstructor(Effect())")'):
@@ -119,7 +119,7 @@ Procedure WriteShared() Export Execute("Shared=9;");EndProcedure''')
         self.assertEqual(vm.execute('Eval("2+3");'),5)
 
     def test_loop_authority_is_checked_after_callback_before_next_effect(self):
-        app,_=self.app();app.start();effects=[];vm=app.interpreter
+        app,_=self.app(allow_extensions=True);app.start();effects=[];vm=app.interpreter
         def close():
             effects.append('close');app.close()
         vm.register_function('CloseOwner',close)

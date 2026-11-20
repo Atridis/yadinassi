@@ -21,14 +21,14 @@ from yadinassi.types.values import Reference
 
 class ListInterpreter(_ObjectInterpreter):
     def __init__(self, receiver, sink, view, manager, message, object_source):
-        super().__init__(receiver, sink, view, allow_extensions=True)
+        super().__init__(receiver, sink, view)
         self._list_manager = manager
         self._list_sink = sink
         self._list_view = view
         self._list_object_source = object_source
-        self.register_function('Тип', manager._catalogs.type_by_name)
-        self.register_function('ТипЗнч', type_of)
-        self.register_function('Сообщить', message, returns_value=False)
+        self._register_platform_function('Тип', manager._catalogs.type_by_name)
+        self._register_platform_function('ТипЗнч', type_of)
+        self._register_platform_function('Сообщить', message, returns_value=False)
 
     def _object_name(self, name):
         return False

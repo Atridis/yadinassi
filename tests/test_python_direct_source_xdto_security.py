@@ -14,8 +14,8 @@ class SourceScalarXDTOSecurity(unittest.TestCase):
     setUp=basic.SourceScalarXDTOTests.setUp
     app=basic.SourceScalarXDTOTests.app
 
-    def prepared(self):
-        app=self.app();app.interpreter.execute('T=XDTOFactory.Type("urn:owned:records","Code");V=XDTOFactory.Create(T,"ok");')
+    def prepared(self, *, allow_extensions=False):
+        app=self.app(allow_extensions=allow_extensions);app.interpreter.execute('T=XDTOFactory.Type("urn:owned:records","Code");V=XDTOFactory.Create(T,"ok");')
         return app
 
     def test_registry_root_replacement_denied(self):
@@ -65,7 +65,7 @@ class SourceScalarXDTOSecurity(unittest.TestCase):
         self.assertEqual(effects,[])
 
     def test_argument_time_mutation_and_foreign_type_denied(self):
-        app=self.prepared();factory=app.xdto.factory
+        app=self.prepared(allow_extensions=True);factory=app.xdto.factory
         def mutate():factory._types=dict(factory._types);return 'late'
         app.interpreter.register_function('Touch',mutate)
         with self.assertRaises(basic.DENIED):app.interpreter.execute('XDTOFactory.Create(T,Touch());')

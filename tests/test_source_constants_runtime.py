@@ -68,8 +68,8 @@ class SourceConstantsRuntimeTests(unittest.TestCase):
         from yadinassi.db.metadata.source_constants_runtime import SourceConstants
         with tempfile.TemporaryDirectory() as directory:
             app = SourceApplication(package('Constants.Flag.Set(False);'),
-                                    scratch_database=Path(directory)/'scratch.sqlite')
-            other = SourceApplication(package(''))
+                                    scratch_database=Path(directory)/'scratch.sqlite', allow_extensions=True)
+            other = SourceApplication(package(''), allow_extensions=True)
             try:
                 app.start(); other.start()
                 app._session_owner._context_stack.append('server')

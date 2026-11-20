@@ -20,9 +20,9 @@ def common_module(code,*,global_module=False):
 
 
 class DirectSourceTests(unittest.TestCase):
-    def app(self,code=b'',extra=None):
+    def app(self,code=b'',extra=None, *, allow_extensions=False):
         output=[]
-        app=SourceApplication(source(code,extra),output=output.append)
+        app=SourceApplication(source(code,extra),output=output.append, allow_extensions=allow_extensions)
         self.addCleanup(app.close)
         return app,output
 
@@ -62,7 +62,7 @@ Procedure OnStart() Outer();Message(SafeMode());EndProcedure''')
         self.assertEqual(out,['\u0414\u0430','\u041d\u0435\u0442'])
 
     def test_host_close_cannot_be_caught_and_prevents_later_effects(self):
-        app,out=self.app(b'Procedure OnStart() Try Close();Except Message("caught");EndTry;Message("later");EndProcedure')
+        app,out=self.app(b'Procedure OnStart() Try Close();Except Message("caught");EndTry;Message("later");EndProcedure', allow_extensions=True)
         app.interpreter.register_function('Close',app.close)
         with self.no_vm(),self.assertRaises(BoundaryViolation):app.start()
         self.assertEqual(out,[]);self.assertEqual(app.state,'failed')
@@ -76,7 +76,7 @@ Procedure OnStart() Outer();Message(SafeMode());EndProcedure''')
         self.assertNotIn('saved',vm.variables)
 
     def test_replaced_native_constructor_refused_before_effects(self):
-        app,_=self.app();app.start();vm=app.interpreter
+        app,_=self.app(allow_extensions=True);app.start();vm=app.interpreter
         vm.register_type('Array',lambda:[])
         with self.assertRaises((ValueError,BoundaryViolation)):
             vm.execute('Saved=1;A=New Array;')
@@ -84,7 +84,7 @@ Procedure OnStart() Outer();Message(SafeMode());EndProcedure''')
 
     def test_bound_common_module_revalidated_after_argument_effect(self):
         app,out=self.app(b'Procedure OnStart() Message(Helpers.Answer(Touch()));EndProcedure',
-            common_module(b'Function Answer(Val X) Export Return X; EndFunction'))
+            common_module(b'Function Answer(Val X) Export Return X; EndFunction'), allow_extensions=True)
         def touch():
             app._instances.clear()
             return 7
@@ -94,7 +94,7 @@ Procedure OnStart() Outer();Message(SafeMode());EndProcedure''')
 
     def test_retained_host_reference_cannot_read_or_write_after_activation(self):
         from yadinassi.types.values import HostFunction
-        app,_=self.app();app.start();vm=app.interpreter;retained=[]
+        app,_=self.app(allow_extensions=True);app.start();vm=app.interpreter;retained=[]
         vm.functions['keep']=HostFunction('Keep',lambda ref:retained.append(ref),reference_parameters=(0,))
         vm.execute('X=1;Keep(X);')
         self.assertEqual(len(retained),1)
@@ -105,7 +105,7 @@ Procedure OnStart() Outer();Message(SafeMode());EndProcedure''')
         self.assertEqual(vm.variables['x'],1)
 
     def test_host_execute_reentry_is_rejected_before_inner_or_later_effects(self):
-        app,_=self.app();app.start();vm=app.interpreter
+        app,_=self.app(allow_extensions=True);app.start();vm=app.interpreter
         vm.register_function('Reenter',lambda:vm.execute('Injected=1;'))
         with self.assertRaises(BoundaryViolation):
             vm.execute('Saved=1;Try Reenter();Except Caught=True;EndTry;Saved=9;')
@@ -113,7 +113,7 @@ Procedure OnStart() Outer();Message(SafeMode());EndProcedure''')
         self.assertNotIn('injected',vm.variables);self.assertNotIn('caught',vm.variables)
 
     def test_template_arity_and_foreign_owner_rejected_before_arguments(self):
-        app,_=self.app();app.start();other,_=self.app();other.start()
+        app,_=self.app(allow_extensions=True);app.start();other,_=self.app();other.start()
         vm=app.interpreter;effects=[]
         vm.register_function('Effect',lambda:effects.append('effect') or 'name')
         with self.assertRaises(Exception):vm.execute('GetCommonTemplate(Effect(),Effect());')
@@ -123,7 +123,7 @@ Procedure OnStart() Outer();Message(SafeMode());EndProcedure''')
         self.assertEqual(effects,[])
 
     def test_prepared_signature_change_rejected_before_arguments(self):
-        app,out=self.app();app.start();vm=app.interpreter;effects=[]
+        app,out=self.app(allow_extensions=True);app.start();vm=app.interpreter;effects=[]
         vm.execute('Procedure P(Val X) Message("callee");EndProcedure')
         vm.routines['p'].parameters[0].by_value=False
         vm.register_function('Effect',lambda:effects.append('effect') or 1)
@@ -131,7 +131,7 @@ Procedure OnStart() Outer();Message(SafeMode());EndProcedure''')
         self.assertEqual(effects,[]);self.assertEqual(out,[])
 
     def test_prepared_constructor_change_rejected_before_arguments(self):
-        app,out=self.app();app.start();vm=app.interpreter;effects=[]
+        app,out=self.app(allow_extensions=True);app.start();vm=app.interpreter;effects=[]
         vm.execute('Procedure P(Val X) A=New Array;Message("callee");EndProcedure')
         vm.register_type('Array',lambda:[])
         vm.register_function('Effect',lambda:effects.append('effect') or 1)
@@ -139,7 +139,7 @@ Procedure OnStart() Outer();Message(SafeMode());EndProcedure''')
         self.assertEqual(effects,[]);self.assertEqual(out,[])
 
     def test_prepared_signature_revalidated_after_arguments(self):
-        app,out=self.app();app.start();vm=app.interpreter;effects=[]
+        app,out=self.app(allow_extensions=True);app.start();vm=app.interpreter;effects=[]
         vm.execute('Procedure P(Val X) Message("callee");EndProcedure')
         def change():
             effects.append('change');vm.routines['p'].parameters[0].by_value=False
@@ -153,7 +153,7 @@ Procedure OnStart() Outer();Message(SafeMode());EndProcedure''')
                 (b'Procedure Put(Val X) Export Message("callee");EndProcedure','A=Helpers.Put(Effect());'),
                 (b'Function Put(Val X) Export Return X;EndFunction','Helpers.Put(Effect(),Effect());')):
             with self.subTest(call=call):
-                app,out=self.app(extra=common_module(declaration));app.start();effects=[]
+                app,out=self.app(extra=common_module(declaration), allow_extensions=True);app.start();effects=[]
                 app.interpreter.register_function('Effect',lambda:effects.append('effect') or 1)
                 with self.assertRaises(Exception):app.interpreter.execute(call)
                 self.assertEqual(effects,[]);self.assertEqual(out,[])

@@ -47,7 +47,7 @@ class SourceCopybackTests(unittest.TestCase):
 
     def test_expression_rejected_before_any_argument_effects(self):
         app,_=self.run_app(existing.configuration('',
-            'Procedure Change(Val A,X) Export EndProcedure'))
+            'Procedure Change(Val A,X) Export EndProcedure'), allow_extensions=True)
         effects=[];app.interpreter.register_function('Touch',lambda:effects.append('arg') or Decimal(1))
         with self.assertRaises((BSLError,BoundaryViolation,ValueError,TypeError)):
             app.interpreter.execute('ServerAPI.Change(Touch(),Touch());')
@@ -56,7 +56,7 @@ class SourceCopybackTests(unittest.TestCase):
     def test_byref_default_and_reuse_rejected_before_effects(self):
         for body,flags in (('Procedure Change(X=1) Export EndProcedure',{}),
                            ('Function Change(X) Export Return X;EndFunction',{'reuse':'DuringSession'})):
-            app,_=self.run_app(existing.configuration('',body,**flags));effects=[]
+            app,_=self.run_app(existing.configuration('',body,**flags), allow_extensions=True);effects=[]
             app.interpreter.register_function('Touch',lambda:effects.append('arg') or Decimal(1))
             with self.assertRaises((BSLError,BoundaryViolation,ValueError,TypeError)):
                 app.interpreter.execute('ServerAPI.Change(Touch());')
@@ -64,7 +64,7 @@ class SourceCopybackTests(unittest.TestCase):
 
     def test_transaction_guard_precedes_argument_effects(self):
         from yadinassi.db import database_transactions
-        app,_=self.run_app(existing.configuration('', 'Procedure Change(X,Val Y) Export X=9;EndProcedure'))
+        app,_=self.run_app(existing.configuration('', 'Procedure Change(X,Val Y) Export X=9;EndProcedure'), allow_extensions=True)
         effects=[];app.interpreter.register_function('Touch',lambda:effects.append('arg') or Decimal(1))
         with patch.object(database_transactions,'forbid_transfer',side_effect=ValueError('transaction crossing denied')):
             with self.assertRaises((BSLError,BoundaryViolation,ValueError,TypeError)):app.interpreter.execute('X=1;ServerAPI.Change(X,Touch());')

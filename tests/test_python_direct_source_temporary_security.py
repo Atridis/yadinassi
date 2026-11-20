@@ -27,7 +27,7 @@ class SourceTemporarySecurity(unittest.TestCase):
             vm.execute('Saved(Touch(),New UUID)')
 
     def test_foreign_source_marker_rejected_before_actual(self):
-        first,other=self.app(),self.app()
+        first,other=self.app(allow_extensions=True),self.app()
         first.interpreter.register_function('Put',temporary.SourceTemporaryCall(other.temporary_storage,temporary.put_marker))
         first.interpreter.execute('Function Touch() Raise "wrong"; EndFunction')
         with self.assertRaises(BoundaryViolation):

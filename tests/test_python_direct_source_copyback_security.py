@@ -16,8 +16,8 @@ class SourceCopybackSecurity(unittest.TestCase):
         for name in ('_execute_program','call_routine','_planned_routine_block'):
             guard=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
             guard.start();self.addCleanup(guard.stop)
-    def app(self,body,output=lambda _:None):
-        app=SourceApplication(existing.configuration('',body),output=output)
+    def app(self,body,output=lambda _:None, *, allow_extensions=False):
+        app=SourceApplication(existing.configuration('',body),output=output, allow_extensions=allow_extensions)
         self.addCleanup(app.close);app.start();return app
 
     def test_origin_revocation_or_close_withholds_copyout(self):
@@ -46,14 +46,14 @@ class SourceCopybackSecurity(unittest.TestCase):
     def test_member_and_index_denied_before_earlier_effects(self):
         for argument in ('S.X','A[0]'):
             with self.subTest(argument=argument):
-                app=self.app('Procedure Change(Val First,Second) Export EndProcedure');effects=[]
+                app=self.app('Procedure Change(Val First,Second) Export EndProcedure', allow_extensions=True);effects=[]
                 app.interpreter.register_function('Touch',lambda:effects.append('arg') or Decimal(1))
                 with self.assertRaises(DENIED):
                     app.interpreter.execute('S=New Structure("X",1);A=New Array;A.Add(1);ServerAPI.Change(Touch(),'+argument+');')
                 self.assertEqual(effects,[])
 
     def test_fragment_copyback_and_early_shape_denial(self):
-        app=self.app('Function Change(X,Val Y) Export X=X+1;Return X;EndFunction')
+        app=self.app('Function Change(X,Val Y) Export X=X+1;Return X;EndFunction', allow_extensions=True)
         vm=app.interpreter
         vm.execute('X=1;Execute("ServerAPI.Change(X,0);");Y=Eval("ServerAPI.Change(X,0)");')
         self.assertEqual((vm.variables['x'],vm.variables['y']),(Decimal(3),Decimal(3)))

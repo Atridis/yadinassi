@@ -104,7 +104,7 @@ class _SourceFormInterpreter(_SourceInterpreter, _FormInterpreter):
         self._application_exports_enabled = True
         self._source_navigation = navigation
         if navigation is not None:
-            self.register_function('OpenForm', self._open_source_form, 'ОткрытьФорму', returns_value=False)
+            self._register_platform_function('OpenForm', self._open_source_form, 'ОткрытьФорму', returns_value=False)
 
     def _invocation_argument(self, node, *, _evaluation=None):
         # Only sealed Val InvocationPort calls use this hook. Source form scalar
@@ -163,7 +163,7 @@ _DIRECT_SOURCE_NOCONTEXT_ABI=tuple(
         (_SourceNoContextInterpreter,('__init__','__new__','compiled_before','_visit','_activation_interpreter','_inherit_host_bindings','register_function','register_type','_bind_schema_scope')),
         (_SourceNoContextServer,('__init__','_message','_scope','_invoke','exchange')),
         (_SourceInterpreter,('__init__','__new__','register_function','register_type','_bind_schema_scope')),
-        (Interpreter,('__init__','register_function','register_type','_bind_schema_scope')),
+        (Interpreter,('__init__','register_function','register_type','_register_platform_function','_register_platform_type','_bind_schema_scope')),
     ) for name in names)
 
 

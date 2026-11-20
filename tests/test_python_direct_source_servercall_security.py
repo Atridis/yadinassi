@@ -15,8 +15,8 @@ class SourceServerCallSecurity(unittest.TestCase):
             poison.start()
             self.addCleanup(poison.stop)
 
-    def app(self, body, output):
-        app = SourceApplication(configuration('', body), output=output)
+    def app(self, body, output, *, allow_extensions=False):
+        app = SourceApplication(configuration('', body), output=output, allow_extensions=allow_extensions)
         self.addCleanup(app.close)
         app.start()
         return app
@@ -80,7 +80,7 @@ class SourceServerCallSecurity(unittest.TestCase):
         for operation in ('wrapper', 'callback', 'extra'):
             with self.subTest(operation=operation):
                 output = []
-                app = self.app('Function Run(Val X) Export Return X; EndFunction', output.append)
+                app = self.app('Function Run(Val X) Export Return X; EndFunction', output.append, allow_extensions=True)
                 app.interpreter.execute('Function Touch() Message("wrong"); Return 1; EndFunction')
                 owner = app.module('serverapi', app.interpreter).interpreter
                 if operation == 'wrapper':
@@ -144,7 +144,9 @@ class SourceServerCallSecurity(unittest.TestCase):
         callback.assert_not_called()
 
     def test_base_factory_hooks_rejected_before_callback(self):
-        for name in ('__init__', 'register_function', 'register_type', '_bind_schema_scope'):
+        for name in ('__init__', 'register_function', 'register_type', '_bind_schema_scope',
+                     '_register_platform_function', '_register_platform_type',
+                     '_register_function', '_register_type', '_record_platform_binding'):
             with self.subTest(name=name):
                 app = self.app('Function Run() Export Return 1; EndFunction', lambda _: None)
                 app.module('serverapi', app.interpreter)

@@ -6,7 +6,7 @@ from yadinassi.forms.form_dialogs import QuestionDialogMode,DialogReturnCode
 
 class DirectDialogNameTests(unittest.TestCase):
     def run_source(self,body):
-        session=FormSession('Procedure Event() '+body+' EndProcedure');seen=[]
+        session=FormSession('Procedure Event() '+body+' EndProcedure',allow_extensions=True);seen=[]
         session.interpreter.register_function('Capture',lambda *args:seen.append(args))
         session.open();session._begin(session.revision)
         try:session._invoke('Event','client',[])

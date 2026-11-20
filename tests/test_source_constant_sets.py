@@ -18,11 +18,11 @@ class SourceConstantSetTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.path = Path(directory.name) / 'scratch.sqlite'
 
-    def app(self, body, extra=None, simple=False):
+    def app(self, body, extra=None, simple=False, *, allow_extensions=False):
         source = package(body) if simple else configuration({
             'Ext/SessionModule.bsl': ('Procedure SessionParametersSetting(Names) ' + body + ' EndProcedure').encode(),
             **(extra or {})})
-        app = SourceApplication(source, scratch_database=self.path)
+        app = SourceApplication(source, scratch_database=self.path, allow_extensions=allow_extensions)
         self.addCleanup(app.close)
         return app
 
@@ -103,7 +103,7 @@ class SourceConstantSetTests(unittest.TestCase):
                 finally: app.close()
 
     def test_closed_and_client_captured_set_methods_denied(self):
-        app = self.app(''); app.start()
+        app = self.app('', allow_extensions=True); app.start()
         receiver = SourceConstantSet(SourceConstants(app), ('Flag',))
         marker = ConstantSetCall(receiver, 'read')
         app.interpreter.register_function('CapturedRead', marker.descriptor(), returns_value=False)

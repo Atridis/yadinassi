@@ -441,3 +441,41 @@ class ModuleOnlyConfigurationTests(unittest.TestCase):
             path = Path(temp)/'db.sqlite'
             with self.assertRaises(BackendError): SQLiteDBContext.create(path, config)
             self.assertFalse(path.exists())
+
+
+class ConfigurationExtensionPolicyTests(unittest.TestCase):
+    def make(self, **kwargs):
+        app = ConfigurationApplication.from_files(module_files([CLIENT]), **kwargs)
+        self.addCleanup(lambda: app.close(force=True))
+        return app
+
+    def test_default_is_closed_and_family_inherits(self):
+        app = self.make()
+        app.start()
+        self.assertFalse(app.interpreter.allow_extensions)
+        self.assertFalse(app._modules['tools', 'client'].interpreter.allow_extensions)
+        with self.assertRaisesRegex(ValueError, 'allow_extensions=True'):
+            app.interpreter.register_function('Embed', lambda: 42)
+
+    def test_embedding_must_explicitly_opt_in(self):
+        app = self.make(allow_extensions=True)
+        app.start()
+        app.interpreter.register_function('Embed', lambda: 42)
+        self.assertTrue(app.interpreter.allow_extensions)
+        self.assertTrue(app._modules['tools', 'client'].interpreter.allow_extensions)
+        self.assertEqual(app.interpreter.functions['embed'](), 42)
+        with self.assertRaisesRegex(TypeError, 'allow_extensions must be bool'):
+            self.make(allow_extensions=1)
+
+    def test_named_host_services_are_narrow_not_general_extensions(self):
+        from yadinassi.types.values import HostFunction
+        service = HostFunction('Embed', lambda: 42)
+        app = self.make(host_services={'Embed': service})
+        app.start()
+        owner = app.interpreter_factory(lambda value: None)
+        self.addCleanup(owner.close)
+        self.assertIs(app.interpreter.functions['embed'], service)
+        self.assertIs(owner.functions['embed'], service)
+        self.assertFalse(owner.allow_extensions)
+        with self.assertRaisesRegex(ValueError, 'allow_extensions=True'):
+            owner.register_function('Other', lambda: 42)

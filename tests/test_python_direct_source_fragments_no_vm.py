@@ -24,8 +24,8 @@ class SourceFragmentsNoVM(unittest.TestCase):
             for name in names:
                 with self.subTest(name=name):getattr(original,name)()
 
-    def app(self):
-        app=SourceApplication(source(b''),output=lambda _:None)
+    def app(self, *, allow_extensions=False):
+        app=SourceApplication(source(b''),output=lambda _:None, allow_extensions=allow_extensions)
         self.addCleanup(app.close);app.start();return app
 
     def test_source_constructors_and_nested_private_names(self):
@@ -42,7 +42,7 @@ class SourceFragmentsNoVM(unittest.TestCase):
         self.assertEqual(vm.variables['a'],3)
 
     def test_declarations_and_imports_rejected_before_effects(self):
-        vm=self.app().interpreter;effects=[]
+        vm=self.app(allow_extensions=True).interpreter;effects=[]
         vm.register_function('Effect',lambda:effects.append(1))
         for fragment in ('Effect(); Var X;','Effect(); Procedure P() EndProcedure','Effect(); Import "x";'):
             with self.subTest(fragment=fragment),self.assertRaises(Exception):

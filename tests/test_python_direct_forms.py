@@ -57,11 +57,11 @@ class DirectFormTests(unittest.TestCase):
         self.assertFalse(session._busy)
 
 class DirectDeclarationTests(unittest.TestCase):
-    def session(self,body,side='Server'):
+    def session(self,body,side='Server',*,allow_extensions=False):
         from yadinassi.forms.form_runtime import FormSession
         event='OnCreateAtServer' if side=='Server' else 'OnOpen'
         parameters='Cancel, StandardProcessing' if side=='Server' else 'Cancel'
-        session=FormSession(f'&At{side}\nProcedure Event({parameters}) {body} EndProcedure',bindings={event:'Event'})
+        session=FormSession(f'&At{side}\nProcedure Event({parameters}) {body} EndProcedure',bindings={event:'Event'},allow_extensions=allow_extensions)
         self.addCleanup(session.interpreter.close)
         return session
 
@@ -81,7 +81,7 @@ class DirectDeclarationTests(unittest.TestCase):
         from yadinassi.types.values import HostFunction
         from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         for constructor in ('TypeDescription','ОписаниеТипов','FormAttribute','РеквизитФормы'):
-            session=self.session(f'A=New {constructor}(Argument());');effects=[]
+            session=self.session(f'A=New {constructor}(Argument());',allow_extensions=True);effects=[]
             session.interpreter.types[constructor.casefold()]=HostFunction(constructor,lambda *args:effects.append('factory'))
             session.interpreter.register_function('Argument',lambda:effects.append('argument'))
             with self.subTest(constructor=constructor),self.assertRaises(BoundaryViolation):session.open()
@@ -114,7 +114,7 @@ class DirectDeclarationTests(unittest.TestCase):
 
     def test_foreign_self_form_receiver_denied(self):
         from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-        other=self.session('');session=self.session('X=Foreign(); X.Title="bad";')
+        other=self.session('');session=self.session('X=Foreign(); X.Title="bad";',allow_extensions=True)
         session.interpreter.register_function('Foreign',lambda:other.form)
         with self.assertRaises(BoundaryViolation):session.open()
         self.assertEqual(other.form.title,'')
@@ -142,7 +142,7 @@ class DirectDeclarationTests(unittest.TestCase):
     def test_live_constructor_replacement_denied_before_argument(self):
         from yadinassi.types.values import HostFunction
         from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-        session=self.session('Change(); A=New TypeDescription(Argument());');effects=[]
+        session=self.session('Change(); A=New TypeDescription(Argument());',allow_extensions=True);effects=[]
         def change():session.interpreter.types['typedescription']=HostFunction('TypeDescription',lambda *args:effects.append('factory'))
         session.interpreter.register_function('Change',change)
         session.interpreter.register_function('Argument',lambda:effects.append('argument'))

@@ -631,6 +631,27 @@ class Interpreter:
         for alias in (name, *aliases):
             self.types[alias.casefold()] = wrapper
 
+    def _register_platform_function(self, name, function, *aliases, returns_value=True):
+        """Install an application-owned service without enabling Python extensions."""
+        Interpreter._register_function(self, name, function, *aliases, returns_value=returns_value)
+        if not self.allow_extensions:
+            self._record_platform_binding(self.functions, self._builtin_functions, name, aliases)
+
+    def _register_platform_type(self, name, factory, *aliases):
+        """Install an application-owned factory without enabling Python extensions."""
+        Interpreter._register_type(self, name, factory, *aliases)
+        if not self.allow_extensions:
+            self._record_platform_binding(self.types, self._builtin_types, name, aliases)
+
+    @staticmethod
+    def _record_platform_binding(registry, snapshot, name, aliases):
+        # Never resnapshot the whole registry: unrelated host mutations do not
+        # become canonical as a side effect of installing one platform binding.
+        wrapper = registry[name.casefold()]
+        binding = (wrapper, wrapper.function, wrapper.name, wrapper.reference_parameters, wrapper.returns_value)
+        for alias in (name, *aliases):
+            snapshot[alias.casefold()] = binding
+
     def _new_type_description(self, *values):
         # Resolve only one application-owned enum type name. Mixed/reference
         # unions and all qualifiers still pass through the descriptor's closed

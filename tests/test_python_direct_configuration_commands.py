@@ -12,8 +12,9 @@ from configuration_runtime_fixture import CLIENT, SERVER, module_files
 
 
 class DirectConfigurationCommandTests(unittest.TestCase):
-    def app(self,modules=(CLIENT,),output=None):
-        app=ConfigurationApplication.from_files(module_files(modules),output=output or (lambda x:None))
+    def app(self,modules=(CLIENT,),output=None,*,allow_extensions=False):
+        app=ConfigurationApplication.from_files(module_files(modules),output=output or (lambda x:None),
+                                                allow_extensions=allow_extensions)
         self.addCleanup(lambda:app.close(force=True));app.start();return app
 
     def test_named_export_private_helper_casefold_and_persistent_scalar_state(self):
@@ -61,12 +62,12 @@ class DirectConfigurationCommandTests(unittest.TestCase):
 
     def test_transitive_service_gate_denies_custom_host_and_eval(self):
         for call in ('Eval("1")','Custom()'):
-            app=self.app([('Tools',f'Function F() Export Return {call};EndFunction',{})])
+            app=self.app([('Tools',f'Function F() Export Return {call};EndFunction',{})],allow_extensions=True)
             effects=[];owner=app._modules['tools','client'].interpreter
             owner.register_function('Custom',lambda:effects.append(1))
             with self.assertRaises(BoundaryViolation):app.execute('Tools.F();')
             self.assertEqual(effects,[])
-        app=self.app();effects=[]
+        app=self.app(allow_extensions=True);effects=[]
         app.interpreter.register_function('Message',lambda x:effects.append(x))
         with self.assertRaises(BoundaryViolation):app.execute('Message(1);')
         self.assertEqual(effects,[])

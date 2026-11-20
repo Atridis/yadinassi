@@ -49,6 +49,30 @@ def make(source=SOURCE):
         bindings={'OnCreateAtServer':'Create','OnOpen':'Open','BeforeClose':'Before','OnClose':'Closed'})
 
 
+class FormExtensionRegistrationTests(unittest.TestCase):
+    def test_platform_bindings_do_not_enable_python_extensions(self):
+        from yadinassi.forms.form_runtime import FormServerBinding
+        session=FormSession('',server_bindings=(FormServerBinding('Read',lambda _:1),))
+        vm=session.interpreter
+        self.addCleanup(vm.close)
+        self.assertFalse(vm.allow_extensions)
+        self.assertIn('formattribute',vm.types)
+        self.assertIn('changeattributes',vm.functions)
+        self.assertIn('read',vm.functions)
+        with self.assertRaisesRegex(ValueError,'allow_extensions'):
+            vm.register_function('PythonHook',lambda:None)
+
+    def test_explicit_opt_in_is_preserved_by_form_activation(self):
+        session=FormSession('',allow_extensions=True)
+        vm=session.interpreter
+        self.addCleanup(vm.close)
+        child=vm._activation_interpreter()
+        self.addCleanup(child.close)
+        self.assertTrue(child.allow_extensions)
+        child.register_function('PythonHook',lambda:None)
+        self.assertIn('pythonhook',child.functions)
+
+
 class FormRuntimeTests(unittest.TestCase):
     def test_card_complete_workflow(self):
         session=make(); first=session.open()

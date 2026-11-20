@@ -10,10 +10,10 @@ from yadinassi.runtime import Interpreter
 from yadinassi.configuration.common_templates import SourceTemplateCall
 
 class SourceTemplateTests(unittest.TestCase):
-    def app(self, changes=None):
+    def app(self, changes=None, *, allow_extensions=False):
         content=files("Procedure OnStart()\nEndProcedure")
         if changes: changes(content)
-        app=SourceApplication(import_source(content),output=lambda _:None)
+        app=SourceApplication(import_source(content),output=lambda _:None, allow_extensions=allow_extensions)
         self.addCleanup(app.close);app.start();return app
 
     def test_native_resource_observations(self):

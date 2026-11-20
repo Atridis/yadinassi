@@ -18,11 +18,11 @@ class SourceReuseTests(unittest.TestCase):
         for name in ('_execute_program','call_routine','_planned_routine_block'):
             stack.enter_context(patch.object(Interpreter,name,side_effect=AssertionError('VM forbidden')))
 
-    def app(self,body='Message(Helpers.Value());',function='Function Value() Export Return 42; EndFunction',mode='DuringSession'):
+    def app(self,body='Message(Helpers.Value());',function='Function Value() Export Return 42; EndFunction',mode='DuringSession', *, allow_extensions=False):
         config=session_tests.SourceSessionTests().cached_source(mode,body)
         files={f.path:f.content for f in config.files}
         files['CommonModules/Helpers/Ext/Module.bsl']=function.encode()
-        out=[];app=SourceApplication(source(extra=files),output=out.append)
+        out=[];app=SourceApplication(source(extra=files),output=out.append, allow_extensions=allow_extensions)
         self.addCleanup(app.close);app.start();return app,out
 
     def execute(self,app,text):
@@ -59,7 +59,7 @@ class SourceReuseTests(unittest.TestCase):
     def test_warm_hit_revalidates_entry_and_hooks_before_arguments(self):
         for mutation in ('entry','entry_hook','cache','owner','policy'):
             with self.subTest(mutation=mutation):
-                app,out=self.app('Message(Helpers.Value(1));', 'Function Value(Val X) Export Return X;EndFunction')
+                app,out=self.app('Message(Helpers.Value(1));', 'Function Value(Val X) Export Return X;EndFunction', allow_extensions=True)
                 effects=[];app._session_owner.register_function('Touch',lambda:effects.append(1) or 1)
                 if mutation=='entry':app._reuse_routines.clear()
                 elif mutation=='entry_hook':
@@ -73,7 +73,7 @@ class SourceReuseTests(unittest.TestCase):
                 self.assertEqual(effects,[])
 
     def test_argument_effect_cannot_retarget_cache(self):
-        app,out=self.app('Message(Helpers.Value(1));','Function Value(Val X) Export Return X;EndFunction')
+        app,out=self.app('Message(Helpers.Value(1));','Function Value(Val X) Export Return X;EndFunction', allow_extensions=True)
         from yadinassi.application.reusable_values import ReusableValueCache
         app._session_owner.register_function('Swap',lambda:setattr(app.reusable_values,'_session',ReusableValueCache()) or 1)
         with self.assertRaises(BoundaryViolation):self.execute(app,'Helpers.Value(Swap());')
@@ -91,7 +91,7 @@ class SourceReuseTests(unittest.TestCase):
 
     def test_defaults_and_byref_rejected_before_effects(self):
         for signature in ('Val X=1','X'):
-            app,out=self.app(' ',f'Function Value({signature}) Export Return X;EndFunction')
+            app,out=self.app(' ',f'Function Value({signature}) Export Return X;EndFunction', allow_extensions=True)
             effects=[];app._session_owner.register_function('Touch',lambda:effects.append(1) or 1)
             with self.assertRaises(BoundaryViolation):self.execute(app,'Helpers.Value(Touch());')
             self.assertEqual(effects,[])

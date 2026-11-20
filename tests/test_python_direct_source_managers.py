@@ -16,8 +16,8 @@ class DirectSourceManagers(unittest.TestCase):
         with patch.object(Interpreter,'_execute_program',side_effect=AssertionError('legacy program')), \
              patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):yield
 
-    def app(self,config):
-        output=[];app=SourceApplication(config,output=output.append)
+    def app(self,config, *, allow_extensions=False):
+        output=[];app=SourceApplication(config,output=output.append, allow_extensions=allow_extensions)
         self.addCleanup(app.close);return app,output
 
     def test_common_module_named_manager_is_not_a_metadata_manager_key(self):
@@ -87,7 +87,7 @@ class DirectSourceManagers(unittest.TestCase):
 
     def test_wrong_arity_and_procedure_as_value_before_argument_effect(self):
         for statement in ('Catalogs.Items.Answer(ArgumentEffect());', 'X=Catalogs.Items.Action(ArgumentEffect());'):
-            app,out=self.app(configuration('',body='Function Answer() Export Return 1; EndFunction Procedure Action(X) Export EndProcedure'))
+            app,out=self.app(configuration('',body='Function Answer() Export Return 1; EndFunction Procedure Action(X) Export EndProcedure'), allow_extensions=True)
             with self.no_vm():app.start()
             effects=[];owner=app._session_owner
             owner._context_stack.append('server');self.addCleanup(owner._context_stack.pop)

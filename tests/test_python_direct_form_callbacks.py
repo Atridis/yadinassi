@@ -10,8 +10,8 @@ Procedure Make() Capture(New CallbackDescription("Done",ThisObject));EndProcedur
 Procedure Done(Result,Additional) Export Observed=Result;EndProcedure
 '''
 class DirectCallbackTests(unittest.TestCase):
-    def make(self,source=SOURCE):
-        session=FormSession(source);session._owned_form_enrollment=object();session.open();return session
+    def make(self,source=SOURCE,*,allow_extensions=True):
+        session=FormSession(source,allow_extensions=allow_extensions);session._owned_form_enrollment=object();session.open();return session
     def capture(self,session):
         descriptions=[];session.interpreter.register_function('Capture',descriptions.append)
         session._begin(session.revision)
@@ -37,7 +37,7 @@ class DirectCallbackTests(unittest.TestCase):
         with self.assertRaises(ValueError):session.dispatch_completion(callback,1,revision=session.revision)
         self.assertIsNone(session.interpreter.variables['observed'])
     def test_constructor_requires_owned_self_form(self):
-        session=FormSession(SOURCE);session.open()
+        session=FormSession(SOURCE,allow_extensions=True);session.open()
         with self.assertRaises(BoundaryViolation):self.capture(session)
     def test_completion_failure_cleans_event(self):
         session=self.make(SOURCE.replace('Observed=Result','Observed=Result;x=1/0'));callback=self.capture(session)
@@ -47,7 +47,7 @@ class DirectCallbackTests(unittest.TestCase):
     def test_validated_schema_names_refresh_without_body_or_value_recompile(self):
         from yadinassi.forms.form_model import BSLFormAttribute
         from yadinassi.types.type_descriptions import BSLTypeDescription
-        session=FormSession('Procedure Event() Capture(Field);EndProcedure')
+        session=FormSession('Procedure Event() Capture(Field);EndProcedure',allow_extensions=True)
         values=[];session.interpreter.register_function('Capture',values.append)
         # Mirrors the already-validated replica schema installation, not source.
         session.form._attributes['field']=BSLFormAttribute('Field',BSLTypeDescription('String'))
@@ -64,7 +64,7 @@ class DirectCallbackTests(unittest.TestCase):
         finally:session._busy=False;session._gate.release()
         self.assertEqual(values,['first','second'])
     def test_close_only_uses_existing_owned_command_admission(self):
-        session=self.make('Procedure CloseIt() ThisObject.Close("result");EndProcedure')
+        session=self.make('Procedure CloseIt() ThisObject.Close("result");EndProcedure',allow_extensions=False)
         results=[];session._owned_close=results.append
         session._begin(session.revision)
         try:session._invoke('CloseIt','client',[])

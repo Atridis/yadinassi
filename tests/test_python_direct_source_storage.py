@@ -13,11 +13,11 @@ from yadinassi.types.errors import BSLError
 
 
 class DirectSourceStorageTests(unittest.TestCase):
-    def app(self,source,*,catalog=False):
+    def app(self,source,*,catalog=False, allow_extensions=False):
         tmp=TemporaryDirectory();self.addCleanup(tmp.cleanup)
         output=[]
         app=SourceApplication(source,scratch_database=Path(tmp.name)/'db.sqlite',
-            source_catalog_records=catalog,output=output.append)
+            source_catalog_records=catalog,output=output.append, allow_extensions=allow_extensions)
         self.addCleanup(app.close)
         return app,output
 
@@ -52,13 +52,13 @@ class DirectSourceStorageTests(unittest.TestCase):
         self.assertEqual(out,['Нет']);self.assertFalse(app.constant_store.transaction_active)
 
     def test_procedure_as_value_rejected_before_argument_effect(self):
-        app,out=self.app(constants('X=Constants.Flag.Set(SideEffect());'))
+        app,out=self.app(constants('X=Constants.Flag.Set(SideEffect());'), allow_extensions=True)
         app.interpreter.register_function('SideEffect',lambda:out.append('effect'))
         with self.no_vm(),self.assertRaisesRegex(BSLError,'Процедура'):app.start()
         self.assertEqual(out,[])
 
     def test_wrong_arity_rejected_before_argument_effect(self):
-        app,out=self.app(constants('Constants.Flag.Get(SideEffect());'))
+        app,out=self.app(constants('Constants.Flag.Get(SideEffect());'), allow_extensions=True)
         app.interpreter.register_function('SideEffect',lambda:out.append('effect'))
         with self.no_vm(),self.assertRaisesRegex(BSLError,'argument count'):app.start()
         self.assertEqual(out,[])
@@ -70,7 +70,7 @@ class DirectSourceStorageTests(unittest.TestCase):
         files['Ext/SessionModule.bsl']+=b' Function ChangeMode() SetSafeMode(True); Return True; EndFunction'
         # Mode set in a child routine intentionally does not leak to the caller.
         # Change it using a registered host callback on the actual session owner.
-        app,out=self.app(import_source(files));app.start()
+        app,out=self.app(import_source(files), allow_extensions=True);app.start()
         owner=app._session_owner;owner._context_stack.append('server')
         self.addCleanup(owner._context_stack.pop)
         def change():

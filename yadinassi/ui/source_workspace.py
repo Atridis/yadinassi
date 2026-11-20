@@ -70,7 +70,7 @@ class SourceWorkspace:
                 raise ValueError('source startup form capacity exhausted')
             from .configuration_app import _parameters
             pending.append((name, _parameters(parameters)))
-        application.interpreter.register_function('OpenForm', open_form, 'ОткрытьФорму', returns_value=False)
+        application.interpreter._register_platform_function('OpenForm', open_form, 'ОткрытьФорму', returns_value=False)
         try:
             if not application.start():
                 return None

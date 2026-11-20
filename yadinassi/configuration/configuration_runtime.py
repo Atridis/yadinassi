@@ -35,19 +35,24 @@ class ConfigurationApplication:
 
     Construction validates the whole configuration and compiles modules without
     executing application code. start() runs it once. Each application has an
-    independent scheduler, module receivers and application state.
+    independent scheduler, module receivers and application state. Named host
+    services do not grant general Python extension registration; an embedding
+    must opt into that separately with ``allow_extensions=True``.
     """
     def __init__(self, configuration, *, output=print, database_context=None,
                  native_target='windows-8.3.27.2342', side=None, host_services=None,
-                 server_exchange=None, value_selection_service=None, _cli_database=None):
+                 server_exchange=None, value_selection_service=None, allow_extensions=False,
+                 _cli_database=None):
         from yadinassi.runtime import Interpreter
         if type(configuration) is not ConfigurationImport or configuration.module_runtime != MODULE_RUNTIME:
             raise TypeError('an explicitly compiled configuration is required')
+        if type(allow_extensions) is not bool:
+            raise TypeError('allow_extensions must be bool')
         if _cli_database is not None:
             from yadinassi.db.database_context import SQLiteDBContext
             if (_cli_database is not _CLI_DATABASE or type(database_context) is not SQLiteDBContext
                     or side is not None or host_services is not None or server_exchange is not None
-                    or value_selection_service is not None or output is not print):
+                    or value_selection_service is not None or allow_extensions or output is not print):
                 raise ValueError('invalid managed CLI database activation')
         if side not in (None, 'client', 'server'):
             raise ValueError('invalid application process side')
@@ -118,7 +123,7 @@ class ConfigurationApplication:
                               if _cli_database is _CLI_DATABASE else None)
         self.interpreter = Interpreter(self._message, native_target=native_target,
                                        database_context=database_context,
-                                       allow_extensions=self._cli_database is None)
+                                       allow_extensions=allow_extensions)
         from yadinassi.formats.xml.xdto_packages import load_packages
         self._xdto_factory = load_packages(self.interpreter._xdto_factory, configuration.xdto_packages)
         if side == 'server':
@@ -309,6 +314,7 @@ class ConfigurationApplication:
             child._diagnostic_owner = root._diagnostic_owner
             child.user_messages = root.user_messages
             child._inherit_host_bindings(root)
+            child.functions.update(self._host_services)
             child._handled_errors = root._handled_errors
             child._error_info_boundaries = root._error_info_boundaries
             child._execute_depth = root._execute_depth
@@ -339,6 +345,7 @@ class ConfigurationApplication:
             child._diagnostic_owner=root._diagnostic_owner
             child.user_messages=root.user_messages
             child._inherit_host_bindings(root)
+            child.functions.update(self._host_services)
             child._handled_errors=root._handled_errors
             child._error_info_boundaries=root._error_info_boundaries
             child._execute_depth=root._execute_depth

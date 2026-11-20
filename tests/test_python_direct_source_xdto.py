@@ -16,9 +16,9 @@ class SourceScalarXDTOTests(unittest.TestCase):
     def setUp(self):
         for name in ('_execute_program','call_routine','_planned_routine_block'):
             p=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name));p.start();self.addCleanup(p.stop)
-    def app(self,mapping=None):
+    def app(self,mapping=None, *, allow_extensions=False):
         mapping=existing.SourceXDTOTests().mapping() if mapping is None else mapping
-        app=SourceApplication(source(b'',mapping),output=lambda _:None);self.addCleanup(app.close);app.start();return app
+        app=SourceApplication(source(b'',mapping),output=lambda _:None, allow_extensions=allow_extensions);self.addCleanup(app.close);app.start();return app
     def test_original_scalar_source_cases(self):
         original=existing.SourceXDTOTests();self.addCleanup(original.doCleanups)
         original.test_source_module_global_and_local_shadow()
@@ -65,6 +65,6 @@ class SourceScalarXDTOTests(unittest.TestCase):
         app=self.app();app.xdto.factory.type('urn:owned:records','Code')
         with self.assertRaises(DENIED):app.interpreter.execute('XDTOFactory.Type("x","y");')
     def test_arity_before_effects(self):
-        app=self.app();effects=[];app.interpreter.register_function('Touch',lambda:effects.append('arg') or '')
+        app=self.app(allow_extensions=True);effects=[];app.interpreter.register_function('Touch',lambda:effects.append('arg') or '')
         with self.assertRaises(DENIED):app.interpreter.execute('XDTOFactory.Type(Touch());')
         self.assertEqual(effects,[])

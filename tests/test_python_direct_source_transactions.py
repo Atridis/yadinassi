@@ -23,6 +23,7 @@ class DirectSourceTransactionTests(unittest.TestCase):
         self.vm.execute('BeginTransaction();A.Description="discard";A.Write();RollbackTransaction();R=A.Ref.GetObject().Description;')
         self.assertEqual(self.vm.variables['r'],'after');self.clean()
     def test_source_is_checked_on_same_connection_without_new_reader(self):
+        self.vm=fixture.DirectDatabaseTests.interpreter(self, allow_extensions=True)
         backend=self.context.backend;read=backend._main_demo_source_snapshot;seen=[]
         def check(connection):
             owner=tx.current(backend);self.assertIs(connection,owner.unit._view._connection)
@@ -36,6 +37,7 @@ class DirectSourceTransactionTests(unittest.TestCase):
             self.vm.execute('A=Catalogs.Склады.CreateItem();A.Description="same";BeginTransaction();Check();A.Write();CommitTransaction();')
         self.assertEqual(len(seen),1);self.clean()
     def test_corrupt_source_or_schema_never_means_absent_handler(self):
+        self.vm=fixture.DirectDatabaseTests.interpreter(self, allow_extensions=True)
         backend=self.context.backend
         for sql in ("UPDATE configuration_file SET content=x'00' WHERE path LIKE '%ObjectModule.bsl'",'UPDATE database_info SET generation=generation+1', 'DROP TABLE configuration_file'):
             def corrupt():tx.current(backend).unit._view._connection.execute(sql)
@@ -78,6 +80,7 @@ class DirectSourceTransactionTests(unittest.TestCase):
                 self.vm.execute('A=Catalogs.Склады.CreateItem();BeginTransaction();A.Write();CommitTransaction();')
         self.clean();self.assertEqual(self.count(),0)
     def test_uncertain_commit_keeps_existing_recovery_without_rechecking_source(self):
+        self.vm=fixture.DirectDatabaseTests.interpreter(self, allow_extensions=True)
         backend=self.context.backend
         for fault in ('before','after'):
             calls=[];read=backend._main_demo_source_snapshot

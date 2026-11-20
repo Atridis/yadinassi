@@ -23,8 +23,8 @@ class SourceStorageValuesNoVM(existing.SourceStorageValueTests):
 
 class DirectSourceValueStorage(unittest.TestCase):
     def setUp(self):poison(self)
-    def app(self):
-        app=SourceApplication(source(b''),output=lambda _:None)
+    def app(self, *, allow_extensions=False):
+        app=SourceApplication(source(b''),output=lambda _:None, allow_extensions=allow_extensions)
         self.addCleanup(app.close);app.start();return app
 
     def test_typed_session_snapshot_isolation(self):
@@ -45,7 +45,7 @@ class DirectSourceValueStorage(unittest.TestCase):
         self.assertEqual(storage.get().get_member('Items').items,[1])
 
     def test_cycles_and_unknown_objects_do_not_publish(self):
-        vm=self.app().interpreter
+        vm=self.app(allow_extensions=True).interpreter
         with self.assertRaises(Exception):vm.execute('A=New Array;A.Add(A);S=New ValueStorage(A);')
         self.assertNotIn('s',vm.variables)
         vm.register_function('Unknown',lambda:object())
@@ -53,7 +53,7 @@ class DirectSourceValueStorage(unittest.TestCase):
         self.assertNotIn('s',vm.variables)
 
     def test_arity_denied_before_argument_effect(self):
-        vm=self.app().interpreter;effects=[]
+        vm=self.app(allow_extensions=True).interpreter;effects=[]
         vm.register_function('Touch',lambda:effects.append(1) or 1)
         with self.assertRaises(Exception):vm.execute('S=New ValueStorage(Touch(),Touch());')
         self.assertEqual(effects,[])

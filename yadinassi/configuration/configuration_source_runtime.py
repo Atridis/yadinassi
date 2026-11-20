@@ -21,42 +21,41 @@ class _SourceInterpreter(Interpreter):
         selected = kwargs.setdefault('compilation_profile', application.compilation_profile)
         if selected != application.compilation_profile:
             raise ValueError('source interpreter compilation profile mismatch')
-        kwargs.setdefault('allow_extensions', True)
         super().__init__(*args, output=kwargs.pop('output', application.output), **kwargs)
         self.application = application
         from .common_templates import SourceTemplateCall
-        self.register_function("GetCommonTemplate", SourceTemplateCall(application.common_templates), "ПолучитьОбщийМакет")
+        self._register_platform_function("GetCommonTemplate", SourceTemplateCall(application.common_templates), "ПолучитьОбщийМакет")
         from yadinassi.application import temporary_storage as temporary
         for operation, english, russian in (
                 (temporary.put_marker, 'PutToTempStorage', 'ПоместитьВоВременноеХранилище'),
                 (temporary.get_marker, 'GetFromTempStorage', 'ПолучитьИзВременногоХранилища'),
                 (temporary.delete_marker, 'DeleteFromTempStorage', 'УдалитьИзВременногоХранилища'),
                 (temporary.recognize_marker, 'IsTempStorageURL', 'ЭтоАдресВременногоХранилища')):
-            self.register_function(english, temporary.SourceTemporaryCall(application.temporary_storage, operation),
+            self._register_platform_function(english, temporary.SourceTemporaryCall(application.temporary_storage, operation),
                                    russian, returns_value=operation is not temporary.delete_marker)
         self._metadata._enumerations = application.enumerations
         self._source_reusable_runtime = application
         from yadinassi.application.source_system_info import SourceSystemInfoFactory
-        self.register_type('SystemInfo', SourceSystemInfoFactory(application), 'СистемнаяИнформация')
+        self._register_platform_type('SystemInfo', SourceSystemInfoFactory(application), 'СистемнаяИнформация')
         from yadinassi.application.source_host_session import SourceSessionCall
-        self.register_function('GetCurrentInfoBaseSession', SourceSessionCall(application.host_session, True),
+        self._register_platform_function('GetCurrentInfoBaseSession', SourceSessionCall(application.host_session, True),
                                'ПолучитьТекущийСеансИнформационнойБазы')
-        self.register_function('InfoBaseConnectionString', SourceSessionCall(application.host_session, 'connection'),
+        self._register_platform_function('InfoBaseConnectionString', SourceSessionCall(application.host_session, 'connection'),
                                'СтрокаСоединенияИнформационнойБазы')
-        self.register_function('CurrentRunMode', application.current_run_mode)
-        self.register_function('ТекущийРежимЗапуска', application.current_run_mode)
-        self.register_function('RefreshReusableValues', lambda: application.reusable_values.refresh(self))
-        self.register_function('ОбновитьПовторноИспользуемыеЗначения', lambda: application.reusable_values.refresh(self))
-        self.register_function('SetSafeMode', lambda enabled: application.safe_mode.set(enabled),
+        self._register_platform_function('CurrentRunMode', application.current_run_mode)
+        self._register_platform_function('ТекущийРежимЗапуска', application.current_run_mode)
+        self._register_platform_function('RefreshReusableValues', lambda: application.reusable_values.refresh(self))
+        self._register_platform_function('ОбновитьПовторноИспользуемыеЗначения', lambda: application.reusable_values.refresh(self))
+        self._register_platform_function('SetSafeMode', lambda enabled: application.safe_mode.set(enabled),
                                'УстановитьБезопасныйРежим', returns_value=False)
-        self.register_function('SafeMode', lambda: application.safe_mode.get(), 'БезопасныйРежим')
+        self._register_platform_function('SafeMode', lambda: application.safe_mode.get(), 'БезопасныйРежим')
         from yadinassi.db.source_transactions import SourceTransactionCall
         for operation, english, russian in (
                 ('begin', 'BeginTransaction', 'НачатьТранзакцию'),
                 ('commit', 'CommitTransaction', 'ЗафиксироватьТранзакцию'),
                 ('rollback', 'RollbackTransaction', 'ОтменитьТранзакцию'),
                 ('active', 'TransactionActive', 'ТранзакцияАктивна')):
-            self.register_function(english, SourceTransactionCall(application, operation),
+            self._register_platform_function(english, SourceTransactionCall(application, operation),
                                    russian, returns_value=operation == 'active')
         self._direct_source_host_bindings = tuple(
             (registry, tuple((name, wrapper, wrapper.function, wrapper.name, wrapper.reference_parameters, wrapper.returns_value)
@@ -231,7 +230,9 @@ _DIRECT_SOURCE_ABI = tuple((name, getattr(_SourceInterpreter, name)) for name in
 
 
 _DIRECT_SOURCE_FACTORY_ABI = tuple((name, getattr(Interpreter, name)) for name in (
-    '__init__', 'register_function', 'register_type', '_bind_schema_scope'))
+    '__init__', 'register_function', 'register_type',
+    '_register_platform_function', '_register_platform_type',
+    '_register_function', '_register_type', '_record_platform_binding', '_bind_schema_scope'))
 
 def _walk(value):
     if isinstance(value, ast.Node):
@@ -247,7 +248,7 @@ def _walk(value):
 class SourceApplication:
     """One explicit source-only startup attempt; no implicit database or UI."""
 
-    def __init__(self, source, *, output=print, compilation_profile='standalone', scratch_database=None, existing_scratch_database=None, compatibility_target=None, source_catalog_records=False, source_document_records=False, source_document_sections=False):
+    def __init__(self, source, *, output=print, compilation_profile='standalone', scratch_database=None, existing_scratch_database=None, compatibility_target=None, source_catalog_records=False, source_document_records=False, source_document_sections=False, allow_extensions=False):
         if type(source) is not ConfigurationSource:
             raise TypeError('admitted ConfigurationSource required')
         from yadinassi.syntax.preprocessor import validate_compilation_profile
@@ -284,7 +285,8 @@ class SourceApplication:
         self._global_exports = {}
         self.side = None
         self.state = 'prepared'
-        self.interpreter = _SourceInterpreter(self, compilation_profile=compilation_profile)
+        self.interpreter = _SourceInterpreter(self, compilation_profile=compilation_profile,
+                                              allow_extensions=allow_extensions)
         from .configuration_source_session import source_session_definitions
         from yadinassi.application.session_parameters import BSLSessionParameters
         definitions, unsupported = source_session_definitions(source)

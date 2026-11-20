@@ -16,7 +16,7 @@ class SourceTemplateSecurity(unittest.TestCase):
             poison.start();self.addCleanup(poison.stop)
 
     def test_foreign_source_marker_before_argument(self):
-        app,other=self.app(),self.app()
+        app,other=self.app(allow_extensions=True),self.app()
         app.interpreter.register_function('Read',SourceTemplateCall(other.common_templates))
         app.interpreter.execute('Function Touch() Raise "wrong"; EndFunction')
         with self.assertRaises(BoundaryViolation):

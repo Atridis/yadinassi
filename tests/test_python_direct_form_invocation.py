@@ -76,7 +76,7 @@ class StandaloneServerCallTests(TestCase):
 
     def test_function_and_procedure_use_direct_server_side(self):
         from yadinassi import Interpreter
-        session=self.session(server='&AtServer\nProcedure Set() Side(); ThisObject.Title="server"; EndProcedure\n&AtServer\nFunction Read() Side(); Return ThisObject.Title; EndFunction');sides=[]
+        session=self.session(server='&AtServer\nProcedure Set() Side(); ThisObject.Title="server"; EndProcedure\n&AtServer\nFunction Read() Side(); Return ThisObject.Title; EndFunction',allow_extensions=True);sides=[]
         session.interpreter.register_function('Side',lambda:sides.append(session.interpreter.execution_context))
         with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
             session.open()

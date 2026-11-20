@@ -33,6 +33,20 @@ class PythonDirectDefaultTests(unittest.TestCase):
   vm=Interpreter();vm.execute('Function F() Return 1;EndFunction')
   vm.execute('x=8;r=F();')
   self.assertEqual((vm.variables['x'],vm.variables['r']),(8,1))
+ def test_platform_binding_is_canonical_without_enabling_extensions(self):
+  from yadinassi.types.values import HostFunction
+  from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+  vm=Interpreter();self.addCleanup(vm.close)
+  with self.assertRaisesRegex(ValueError,'allow_extensions=True'):
+   vm.register_function('Custom',lambda:1)
+  vm.functions['unrelated']=HostFunction('Unrelated',lambda:1)
+  vm._register_platform_function('Platform',lambda:Decimal(42),'Служебная')
+  vm._register_platform_type('PlatformType',lambda:None,'СлужебныйТип')
+  vm.execute('R=Platform()+Служебная();')
+  self.assertEqual(vm.variables['r'],84)
+  self.assertFalse(vm.allow_extensions)
+  self.assertIs(vm._builtin_types['служебныйтип'][0],vm.types['platformtype'])
+  with self.assertRaises(BoundaryViolation):vm.execute('Unrelated();')
  def test_observable_callback_values(self):
   vm=Interpreter(allow_extensions=True);vm.register_function('Write',lambda:vm.variables.__setitem__('x',Decimal(9)))
   vm.execute('x=1;Write();r=x;');self.assertEqual(vm.variables['r'],9)

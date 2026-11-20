@@ -12,7 +12,7 @@ from yadinassi.runtime import Interpreter, _Return
 from yadinassi.syntax import ast
 from yadinassi.execution.owned_syntax import syntax_kind
 from yadinassi.syntax.parser import parse
-from yadinassi.types.values import Reference, HostFunction
+from yadinassi.types.values import Reference
 from yadinassi.execution.codegen.native_targets import target_context
 from .form_model import (BSLClientApplicationForm, BSLFormAttribute, BSLFormField,
                          BSLFormButton, BSLFormTable, BSLFormGroup, BSLFormCommand, FORM_FIELD_VIEWS,
@@ -87,14 +87,13 @@ class _FormInterpreter(Interpreter):
 
     def __init__(self, session, *args, **kwargs):
         self._form_session = session
-        kwargs.setdefault('allow_extensions', True)
         super().__init__(*args, **kwargs)
-        self.register_type('РеквизитФормы', self._make_attribute, 'FormAttribute')
+        self._register_platform_type('РеквизитФормы', self._make_attribute, 'FormAttribute')
         form = session.form
         for alias, method in [('ИзменитьРеквизиты','change_attributes'),('ChangeAttributes','change_attributes'),
                               ('ПолучитьРеквизиты','get_attributes'),('GetAttributes','get_attributes'),
                               ('УстановитьДействие','set_action'),('SetAction','set_action')]:
-            self.functions[alias.casefold()] = HostFunction(alias, getattr(form,method), returns_value=method=='get_attributes')
+            self._register_platform_function(alias, getattr(form,method), returns_value=method=='get_attributes')
 
     def _make_attribute(self, *args):
         self._form_session.form._check(True)
@@ -105,7 +104,8 @@ class _FormInterpreter(Interpreter):
     def _activation_interpreter(self):
         child = _FormInterpreter(self._form_session, self.output, encoding=self.encoding,
                                 native_target=self.native_target, database_context=self.database_context,
-                                compilation_profile=self.compilation_profile, family_owner=self._family_owner)
+                                compilation_profile=self.compilation_profile, family_owner=self._family_owner,
+                                allow_extensions=self.allow_extensions)
         enroll = getattr(self._form_session, '_reference_enroll_activation', None)
         if enroll is not None:
             enroll(child)
@@ -240,7 +240,9 @@ class FormSession:
     Exceptions retain completed BSL mutations and increment revision: clients
     must resynchronize, never assume a transaction rollback.
     """
-    def __init__(self, source, *, attributes=(), tables=(), initial_values=None, bindings=None, output=None, database_context=None, application_actions=(), server_bindings=(), parameters=None, interpreter_factory=None, reference_scope=None):
+    def __init__(self, source, *, attributes=(), tables=(), initial_values=None, bindings=None, output=None, database_context=None, application_actions=(), server_bindings=(), parameters=None, interpreter_factory=None, reference_scope=None, allow_extensions=False):
+        if type(allow_extensions) is not bool:
+            raise TypeError('allow_extensions requires a Boolean')
         if type(attributes) not in (tuple,list) or len(attributes)>MAX_ATTRIBUTES:
             raise ValueError('Форма: слишком много реквизитов')
         if type(tables) is not tuple or len(tables) > MAX_TABLES or any(type(t) is not FormTableSchema for t in tables):
@@ -289,6 +291,8 @@ class FormSession:
         from .form_program import FormSideProgram
         profile_options = ({'compilation_profile': source.compilation_profile}
                            if type(source) is FormSideProgram and source.compilation_profile != 'standalone' else {})
+        if allow_extensions:
+            profile_options['allow_extensions'] = True
         self.interpreter = factory(self, self._record_message, database_context=database_context, **profile_options)
         if not isinstance(self.interpreter, _FormInterpreter) or self.interpreter._form_session is not self:
             raise TypeError("form interpreter factory returned an invalid interpreter")
@@ -315,7 +319,7 @@ class FormSession:
                     self.form._check(True)
                     return scalar(owned.callback(self))
                 return invoke
-            self.interpreter.functions[key] = HostFunction(binding.name, make_callback(binding))
+            self.interpreter._register_platform_function(binding.name, make_callback(binding))
         self._busy = True
         try:
             self._direct_handlers = None

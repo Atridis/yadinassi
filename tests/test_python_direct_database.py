@@ -15,7 +15,12 @@ class DirectDatabaseTests(unittest.TestCase):
         copy_main_demo(path)
         self.context=SQLiteDBContext(path)
         self.addCleanup(self.context.close)
-        self.vm=Interpreter(database_context=self.context, allow_extensions=True);self.addCleanup(self.vm.close)
+        self.vm=DirectDatabaseTests.interpreter(self)
+
+    def interpreter(self, **options):
+        vm=Interpreter(database_context=self.context, **options)
+        self.addCleanup(vm.close)
+        return vm
 
     def test_objects_fields_sections_and_no_argument_add(self):
         with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
@@ -134,6 +139,7 @@ class DirectDatabaseTests(unittest.TestCase):
         with self.assertRaises(BoundaryViolation):self.vm.execute('S.Next();')
 
     def test_bound_selection_rechecks_owner_after_argument_effect(self):
+        self.vm=self.interpreter(allow_extensions=True)
         self.vm.execute('S=Catalogs.Склады.Select();')
         selection=self.vm.variables['s'];original=selection._manager
         other=Interpreter(database_context=self.context);self.addCleanup(other.close)
@@ -147,6 +153,7 @@ class DirectDatabaseTests(unittest.TestCase):
         finally:selection._manager=original
 
     def test_selection_rejects_closed_family_at_service_boundary(self):
+        self.vm=self.interpreter(allow_extensions=True)
         self.vm.execute('S=Catalogs.Склады.Select();')
         selection=self.vm.variables['s']
         self.vm.register_function('CloseOwner',self.vm.close)
@@ -194,6 +201,7 @@ class DirectDatabaseTests(unittest.TestCase):
             with self.subTest(base=base),self.assertRaises(BoundaryViolation):self.vm.execute('X=foreign.Name;')
 
     def test_bound_metadata_method_rechecks_current_owner(self):
+        self.vm=self.interpreter(allow_extensions=True)
         other=Interpreter(database_context=self.context);self.addCleanup(other.close)
         original=self.vm._metadata
         def change():
@@ -216,6 +224,7 @@ class DirectDatabaseTests(unittest.TestCase):
         with self.assertRaisesRegex(Exception,'contract changed'):plain.execute_prepared(plan)
 
     def test_metadata_context_change_denied_before_lookup(self):
+        self.vm=self.interpreter(allow_extensions=True)
         original=self.vm._metadata;context=self.vm._database_context
         def change():
             self.vm._database_context=None

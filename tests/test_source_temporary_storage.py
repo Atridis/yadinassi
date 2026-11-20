@@ -16,8 +16,8 @@ Procedure Delete(Val Address) Export DeleteFromTempStorage(Address); EndProcedur
 Function Recognize(Val Address) Export Return IsTempStorageURL(Address); EndFunction'''
 
 class SourceTemporaryTests(unittest.TestCase):
-    def app(self, body=BODY, startup=''):
-        app=SourceApplication(configuration(startup,body),output=lambda _:None)
+    def app(self, body=BODY, startup='', *, allow_extensions=False):
+        app=SourceApplication(configuration(startup,body),output=lambda _:None, allow_extensions=allow_extensions)
         self.addCleanup(app.close)
         app.start()
         return app

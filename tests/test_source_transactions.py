@@ -22,8 +22,8 @@ class SourceTransactionTests(unittest.TestCase):
         self.addCleanup(store.close)
         return store
 
-    def app(self, body):
-        app = SourceApplication(package(body), scratch_database=self.path)
+    def app(self, body, *, allow_extensions=False):
+        app = SourceApplication(package(body), scratch_database=self.path, allow_extensions=allow_extensions)
         self.addCleanup(app.close)
         return app
 
@@ -102,7 +102,7 @@ class SourceTransactionTests(unittest.TestCase):
 
     def test_foreign_and_client_captured_call_denied(self):
         from yadinassi.db.source_transactions import SourceTransactionCall
-        app = self.app(''); app.start()
+        app = self.app('', allow_extensions=True); app.start()
         app.interpreter.register_function('Captured', SourceTransactionCall(app, 'begin'), returns_value=False)
         with self.assertRaisesRegex(BSLError, 'owning synchronous server'): app.interpreter.execute('Captured();')
 

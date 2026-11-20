@@ -15,9 +15,9 @@ class SourceServerReuseSecurity(unittest.TestCase):
             poison=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
             poison.start();self.addCleanup(poison.stop)
 
-    def app(self,body='Function Run(Val X) Export Message("body"); Return X; EndFunction'):
+    def app(self,body='Function Run(Val X) Export Message("body"); Return X; EndFunction', *, allow_extensions=False):
         output=[]
-        app=SourceApplication(configuration('',body,reuse='DuringSession'),output=output.append)
+        app=SourceApplication(configuration('',body,reuse='DuringSession'),output=output.append, allow_extensions=allow_extensions)
         self.addCleanup(app.close);app.start();return app,output
 
     def test_warm_cache_replacements_rejected_before_arguments(self):
@@ -36,7 +36,7 @@ class SourceServerReuseSecurity(unittest.TestCase):
                 self.assertEqual(output,[])
 
     def test_argument_enables_safe_mode_before_warm_lookup(self):
-        app,output=self.app()
+        app,output=self.app(allow_extensions=True)
         app.interpreter.execute('ServerAPI.Run("warm");');output.clear()
         def enable():
             output.append('arg');app.safe_mode.set(True);return 'warm'

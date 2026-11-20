@@ -66,10 +66,11 @@ class IndependentFactsTests(unittest.TestCase):
         f=dbfixture.DirectDatabaseTests();f.setUp();self.addCleanup(f.doCleanups)
         f.vm.execute('Before=Catalogs;'+KERNEL+'Q=New Query("SELECT COUNT(*) AS N FROM Catalog.Склады");S1=Q.Execute().Select();S1.Next();Rows=S1.N;')
         self.assertEqual(f.vm.variables['s'],4950);self.assertEqual(f.vm.variables['rows'],0)
-        def reset():f.vm.variables.pop('x',None)
-        f.vm.register_function('Reset',reset)
-        with self.assertRaisesRegex(Exception,'не определена'):f.vm.execute('x=1;Reset();y=x;')
-        self.assertNotIn('y',f.vm.variables)
+        extension_vm=f.interpreter(allow_extensions=True)
+        def reset():extension_vm.variables.pop('x',None)
+        extension_vm.register_function('Reset',reset)
+        with self.assertRaisesRegex(Exception,'не определена'):extension_vm.execute('x=1;Reset();y=x;')
+        self.assertNotIn('y',extension_vm.variables)
 
     def test_impure_get_argument_cannot_infer_old_scalar_contents(self):
         state={};calls=[]
