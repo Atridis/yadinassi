@@ -2,6 +2,7 @@
 from decimal import Decimal
 import unittest
 from unittest.mock import patch
+from yadinassi import BSLRuntimeError
 
 import test_catalog_queries as fixtures
 from yadinassi.db.query.queries import BSLQuery
@@ -74,6 +75,44 @@ class QueryUnloadPositionalTests(unittest.TestCase):
         # Public default/coercion support is not widened by detached capture.
         with self.assertRaises(ValueError): description.adjust_value()
         with self.assertRaises(ValueError): BSLValueTable().columns.add('N', description)
+
+    def test_direct_blank_rows_remain_closed_until_query_columns_are_removed(self):
+        self.vm.execute('Q=New Query("SELECT Amount AS N,Amount AS M FROM Catalog.Products");'
+                        'T=Q.Execute().Unload();T.Columns.Add("Local",New TypeDescription("Number"));')
+        table=self.vm.variables['t']
+        def denied():
+            original=tuple(table.rows);epoch=table._storage.epoch
+            for call in ('T.Add()', 'T.Insert(0)'):
+                with self.subTest(call=call), self.assertRaisesRegex(BSLRuntimeError,'default row values'):
+                    self.vm.execute(call+';')
+            self.assertEqual(tuple(table.rows),original)
+            self.assertEqual(table._storage.epoch,epoch)
+        denied()
+        self.vm.execute('T.Columns.Delete("N");')
+        denied()
+        self.vm.execute('T.Columns.Delete("M");R=T.Insert(0);')
+        self.assertEqual(self.vm.variables['r'].get_member('Local'),Decimal(0))
+
+    def test_copy_stays_closed_for_query_schema_but_ordinary_projection_is_detached(self):
+        self.vm.execute('Q=New Query("SELECT Amount AS N FROM Catalog.Products");T=Q.Execute().Unload();')
+        table=self.vm.variables['t']
+        for copy in (table.copy,table.copy_columns):
+            with self.assertRaisesRegex(ValueError,'Null для колонки запроса'):copy()
+        table.columns.add('Local')
+        table.rows[0].set_member('Local','first')
+        copied=table.copy(columns='Local')
+        self.assertEqual(copied.rows[0].get_member('Local'),'first')
+        self.assertIsNone(copied.add().get_member('Local'))
+        self.assertIsNot(copied.rows[0],table.rows[0])
+
+    def test_ordinary_materialized_columns_have_their_regular_defaults(self):
+        from yadinassi.db.query.query_table_materialization import materialize
+        from yadinassi.types.type_descriptions import BSLTypeDescription
+        result=BSLQuery(self.vm._catalogs,'SELECT Amount AS N,Amount AS U,Amount AS V FROM Catalog.Products').execute()
+        descriptions=(BSLTypeDescription('Number'),BSLTypeDescription('Number,String'),BSLTypeDescription())
+        table=materialize(result._columns,descriptions,result._rows)
+        self.assertEqual(tuple(table.add()),(Decimal(0),None,None))
+        self.assertEqual(tuple(table.insert(0)),(Decimal(0),None,None))
 
     def test_materializer_rejects_noncanonical_description(self):
         from yadinassi.db.query.query_table_materialization import materialize

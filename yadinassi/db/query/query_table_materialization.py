@@ -8,8 +8,8 @@ def materialize(columns, descriptions, rows):
         raise TypeError('Invalid query result shape')
     table = BSLValueTable()
     for column, description in zip(columns, descriptions):
-        # Query descriptors carry source-owned nullable/reference metadata.
-        # Rows already contain materialized values; no default is requested.
+        # Actual query descriptors are nullable or source-owned reference
+        # metadata. Copy the supplied cells below without asking for a default.
         if type(column.name) is not str or type(description) is not BSLTypeDescription:
             raise TypeError("Invalid query column metadata")
         table.columns._append_materialized(BSLValueTableColumn(table, column.name, description))

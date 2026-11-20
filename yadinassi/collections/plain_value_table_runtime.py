@@ -26,6 +26,10 @@ def _writable(table):
     if table._bounded_slice_read:raise ValueError('bounded table slice is readonly')
 
 
+def _query_column(description):
+    return description._query_scalar is not None or description._query_reference is not None
+
+
 def _array(values):
     result=BSLArray();result.items=list(values);return result
 
@@ -72,7 +76,7 @@ class BSLValueTableColumn(BSLObject):
 
 
 class BSLValueTableColumnCollection(BSLObject):
-    def __init__(self,table):self.table=table;self._items=[]
+    def __init__(self,table):self.table=table;self._items=[];self._query_columns=0
     @property
     def items(self):return tuple(self._items)
     def __iter__(self):return iter(self._items)
@@ -88,7 +92,16 @@ class BSLValueTableColumnCollection(BSLObject):
         return column
     def _append_materialized(self,column):
         if type(column) is not BSLValueTableColumn or column.table is not self.table:raise ValueError('foreign column')
-        self.table._storage.add_column(column.name,column,None);self._items.append(column)
+        description=column.value_type
+        query_column=_query_column(description)
+        default = None if query_column or not description.types else _default(description)
+        self.table._storage.add_column(column.name,column,default);self._items.append(column)
+        self._query_columns += query_column
+    def _restore_materialized_type(self,column,description):
+        # The validated snapshot already supplied every cell; a query descriptor
+        # still does not supply defaults for a future blank row.
+        column.value_type=description
+        self._query_columns += _query_column(description)
     def find(self,name):
         if type(name) is not str:raise TypeError('column name must be str')
         offsets=self.table._storage.schema._offsets
@@ -122,6 +135,7 @@ class BSLValueTableColumnCollection(BSLObject):
         self.table._search.declarations=set(indexes.items)
         self.table._search.cache.clear()
         self._items.remove(column);column._deleted=True
+        self._query_columns -= _query_column(column.value_type)
     def clear(self):
         for column in tuple(self._items):self.delete(column)
         self.table.clear()
@@ -219,9 +233,13 @@ class BSLValueTable(BSLObject):
         self._bounded_slice_read=False;self._storage=TableStorage(self,BSLValueTableRow)
         self.rows=self._storage.rows;self.columns=BSLValueTableColumnCollection(self);self.indexes=BSLCollectionIndexes(self)
     def add(self):
-        _writable(self);return self._storage.add()
+        _writable(self)
+        if self.columns._query_columns:raise ValueError('default row values for query columns are not supported')
+        return self._storage.add()
     def insert(self,index):
-        _writable(self);return self._storage.insert(_index(index,len(self.rows),True))
+        _writable(self)
+        if self.columns._query_columns:raise ValueError('default row values for query columns are not supported')
+        return self._storage.insert(_index(index,len(self.rows),True))
     def get(self,index):return self.rows[_index(index,len(self.rows))]
     get_index=get
     def set_index(self,*args):raise ValueError('rows cannot be replaced')

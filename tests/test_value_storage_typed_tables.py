@@ -433,6 +433,21 @@ class NullableQuerySnapshotTests(unittest.TestCase):
             table.rows[0].set(D(1), D('9.25'))
             self.assertEqual(table.rows[0].get(D(1)), D('9.25'))
 
+    def test_restored_query_insert_is_closed_until_schema_is_replaced(self):
+        source = query_table()
+        restored = storage.BSLValueStorage(source).get()
+        for table in (source, restored):
+            before = rows(table)
+            with self.assertRaisesRegex(ValueError, 'default row values'):
+                table.insert(D(0))
+            self.assertEqual(rows(table), before)
+            table.columns.clear()
+            table.columns.add('Count', BSLTypeDescription('Number'))
+            table.columns.add('Variant', BSLTypeDescription('Number,String'))
+            table.columns.add('Any')
+            self.assertEqual(tuple(table.insert(D(0))), (D(0), None, None))
+            self.assertEqual(tuple(table.add()), (D(0), None, None))
+
     def test_nullable_null_indexes_rebuild_and_each_get_is_independent(self):
         source = query_table(); source.indexes.add('Amount,Label')
         saved = storage.BSLValueStorage(source)

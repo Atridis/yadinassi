@@ -91,7 +91,9 @@ def validate(value,pure=False):
     if any(type(schema._offsets[k]) is not int or schema._offsets[k]!=i for i,k in enumerate(keys)):fail()
     cols=raw(columns);ix=raw(indexes)
     if any(type(k) is not str for k in cols) or any(type(k) is not str for k in ix):fail()
-    if set(cols)!={'table','_items'} or cols['table'] is not table or type(cols['_items']) is not list:fail()
+    if set(cols)!={'table','_items','_query_columns'} or cols['table'] is not table or type(cols['_items']) is not list:fail()
+    if type(cols['_query_columns']) is not int or not 0<=cols['_query_columns']<=len(keys):fail()
+    if pure and cols['_query_columns']:return False
     if set(ix)!={'table','items'} or ix['table'] is not table or type(ix['items']) is not list:fail()
     if any(type(sig) is not tuple or any(type(i) is not int or i<0 for i in sig) for sig in ix['items']):fail()
     if set(ix['items'])!=cache.declarations:fail()

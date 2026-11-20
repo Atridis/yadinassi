@@ -430,14 +430,15 @@ def restore_table(node, *, decode, charge_text, reserve):
     for name, _, title, width in schema:
         table.columns.add(name, None, title, Decimal(width))
     for cells in rows:
-        row = table.add()
+        # Build validated snapshot rows before installing their descriptors.
+        row = table._storage.add()
         for position, (cell, column) in enumerate(zip(cells, schema)):
             value = decode(cell)
             if not _cell_matches(column[1], value):
                 raise TableSnapshotError('cell does not match scalar schema')
             row.set(Decimal(position), value)
     for column, (_, description, _, _) in zip(table.columns.items, schema):
-        column.value_type = description
+        table.columns._restore_materialized_type(column, description)
     try:
         for definition in definitions:
             table.indexes.add(','.join(schema[position][0] for position in definition))
