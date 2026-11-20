@@ -179,6 +179,9 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         self.storage=owner.variables;self.types=owner.types
         self._active=True
         self._instance_keys=tuple(k for k,v in self.app._instances.items() if v is owner)
+        self._loop_root = (self.app.interpreter if type(self) is SourceBoundary
+                           and self.side == self.logical_side == 'client'
+                           and not owner.allow_extensions else None)
     def _check(self):
         super()._check();check_owner(self.vm);_check_plan(self.vm,self.plan)
         from .source.python_direct_source_server import check_activation
@@ -192,6 +195,23 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             raise BoundaryViolation('direct source activation changed or ended')
         if any(self.app._instances.get(k) is not self.vm for k in self._instance_keys):
             raise BoundaryViolation('direct source module instance changed')
+    def _check_loop(self):
+        root = self._loop_root
+        # Full authority is checked at entry, exit and effect boundaries.
+        # Plain same-side client loops retain only a scoped lifetime check;
+        # extension, server, metered and dynamic contexts keep the full check.
+        if (root is None or self.loop_budget is not None or self.policy is not None
+                or hasattr(self, '_execute_depth') or hasattr(self, '_eval_depth')):
+            return self._check()
+        BoundaryContext._check_lease(self)
+        vm = self.vm
+        if (not self._active or vm._family_owner is not root or root._family_closed
+                or vm._family_released or vm._family_generation != self.generation
+                or vm.execution_context != self.side
+                or source_transactions._current.get() is not self.app
+                or safe_mode._CURRENT.get() is not self.app.safe_mode):
+            raise BoundaryViolation('direct source loop authority changed or ended')
+
     def _guard_references(self,bound):
         def invoke(*values):
             guarded=[]

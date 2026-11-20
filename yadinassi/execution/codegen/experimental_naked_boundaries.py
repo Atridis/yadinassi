@@ -238,8 +238,11 @@ class BoundaryContext:
         if self._revoked or self._epoch != self._admitted_epoch:
             raise BoundaryViolation('execution authority revoked')
 
-    def checkpoint(self):
+    def _check_loop(self):
         self._check()
+
+    def checkpoint(self):
+        self._check_loop()
         if self.loop_budget is not None and self.loop_backedges >= self.loop_budget:
             raise BoundaryViolation('generated loop backedge budget exhausted')
         self.loop_backedges += 1
