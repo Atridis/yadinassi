@@ -374,6 +374,14 @@ class ImportBoundary:
             from .python_direct import make_boundary
             from .python_direct_routines import resolve
             context=make_boundary(child,_parent_check=validate,_transaction_owner=getattr(self,'_direct_transaction_owner',None))
+            if (not self._verify_context and not child.allow_extensions
+                    and self.policy is None and child.database_context is None
+                    and child._family_owner is self.vm._family_owner
+                    and name not in module.server_names):
+                # Entry/exit below pin this import's parent lease; effectful
+                # operations still revalidate it through _check_effect.
+                context._verify_context=False
+                context._verify_dynamic_context=False
             context._handled_errors=self._handled_errors
             for attribute in ('_execute_depth','_eval_depth'):
                 shared=getattr(self,attribute,None)

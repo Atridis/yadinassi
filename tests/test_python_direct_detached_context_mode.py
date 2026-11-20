@@ -87,6 +87,6 @@ class DetachedContextModeTests(unittest.TestCase):
 
     def test_database_receivers_do_not_use_relaxed_collection_authority(self):
         boundary = self.boundary(False)
-        with patch.object(boundary, '_check', side_effect=BoundaryViolation('DB audit')):
+        with patch.object(boundary, '_check_effect', side_effect=BoundaryViolation('DB audit')):
             with self.assertRaisesRegex(BoundaryViolation, 'DB audit'):
                 boundary.get_member(boundary.vm._catalogs, 'Products')

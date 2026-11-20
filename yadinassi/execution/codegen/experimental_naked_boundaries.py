@@ -113,11 +113,11 @@ class BoundaryContext:
             guarded = self._verify_context or (
                 key in ('message','сообщить')
                 or any(id(type(arg)) not in _SCALAR_TYPE_IDS for arg in args))
-            if guarded and not self._verify_context:self._check()
+            if guarded and not self._verify_context:self._check_effect()
             try:return function(*args)
             except PermissionError as error:raise BoundaryViolation(str(error)) from error
             finally:
-                if guarded:self._check()
+                if guarded:self._check_effect()
         if allow_references:invoke.requires_reference=lambda index: type(function) is HostFunction and index in function.reference_parameters
         return invoke
 
@@ -226,7 +226,13 @@ class BoundaryContext:
         self.loop_backedges = 0
         if self._verify_context:self._check()
 
+    def _check_effect(self):
+        self._check()
+
     def _check(self):
+        self._check_lease()
+
+    def _check_lease(self):
         if self._admitted_epoch is None:
             raise BoundaryViolation('execution boundary not started')
         if self._revoked or self._epoch != self._admitted_epoch:

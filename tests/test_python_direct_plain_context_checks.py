@@ -34,6 +34,8 @@ class PlainContextChecksTests(unittest.TestCase):
             ('A=New Array; A.Add(1); P=New FixedArray(A); R=P.Find(1);', Decimal(0)),
             ('A=New NumberQualifiers(4,2); R=A.Digits;', Decimal(4)),
             ('A=New TextDocument; A.SetText("x"); R=A.GetText();', 'x'),
+            ('J=New JSONWriter; J.SetString(); WriteJSON(J,7); R=J.Close();', '7'),
+            ('J=New JSONReader; J.SetString("7"); R=ReadJSON(J); J.Close();', Decimal(7)),
             ('Procedure Inc(X) X=X+1; EndProcedure '
              'A=New Array; A.Add(0); A[0]=4; Inc(A[0]); R=A[0];', Decimal(5)),
             ('Procedure Inc(X) X=X+1; EndProcedure '

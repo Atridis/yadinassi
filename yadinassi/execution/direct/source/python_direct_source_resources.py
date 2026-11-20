@@ -51,7 +51,8 @@ def check_factories():
 
 
 def check(boundary,value,*,external=False):
-    if external or getattr(boundary,'_verify_context',True):boundary._check()
+    if getattr(boundary,'_verify_context',True):boundary._check()
+    elif external:boundary._check_effect()
     check_factories()
     if type(value) is BSLTextDocument:
         if any(name in vars(value) for name,_ in _DIRECT_TEXT_DOCUMENT_ABI):
@@ -87,7 +88,7 @@ def _bound(boundary,value,spec,*,require_value=False,argument_count=None,allow_r
     method,minimum,maximum,returns=spec
     implementation=(_TEXT_IMPL if type(value) is BSLTextDocument else _BINARY_IMPL)[method]
     def admit(count=None):
-        check(boundary,value,external=method in ('read','write'))
+        check(boundary,value,external=validate is not None or method in ('read','write'))
         if validate is not None:validate()
         if require_value and not returns:raise TypeError('Процедура не возвращает значение: '+method)
         if count is not None and not minimum<=count<=maximum:raise TypeError('resource method argument count')

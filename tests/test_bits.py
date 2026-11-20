@@ -12,7 +12,7 @@ from yadinassi.numeric import bits
 
 class BitOperationTests(unittest.TestCase):
     def setUp(self):
-        self.vm = Interpreter(output=lambda text: None, allow_extensions=True)
+        self.vm = Interpreter(output=lambda text: None)
 
     def test_bilingual_case_insensitive_names(self):
         arguments = ('10, 12', '10, 12', '10, 12', '0', '10, 12',
@@ -137,7 +137,9 @@ class BitOperationTests(unittest.TestCase):
         self.assertEqual(self.vm.variables['recovered'], 3)
 
     def test_independent_registration_and_host_override(self):
-        self.vm.register_function('BitwiseNot', lambda value: 'override')
-        self.assertEqual(self.vm.execute('BitwiseNot(0)'), 'override')
-        self.assertEqual(self.vm.execute('ПобитовоеНе(0)'), 4294967295)
-        self.assertEqual(Interpreter(allow_extensions=True).execute('BitwiseNot(0)'), 4294967295)
+        extended = Interpreter(allow_extensions=True)
+        self.addCleanup(extended.close)
+        extended.register_function('BitwiseNot', lambda value: 'override')
+        self.assertEqual(extended.execute('BitwiseNot(0)'), 'override')
+        self.assertEqual(extended.execute('ПобитовоеНе(0)'), 4294967295)
+        self.assertEqual(self.vm.execute('BitwiseNot(0)'), 4294967295)

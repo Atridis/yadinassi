@@ -108,11 +108,11 @@ def _string_callable(context,function,*,name=None,require_value=False,allow_refe
             # Preserve the existing canonical service for all other values.
             # Non-scalar presentation may invoke an embedding value's __str__.
             foreign_presentation=id(kind) not in _SCALAR_TYPE_IDS
-            if foreign_presentation and not context._verify_context:context._check()
+            if foreign_presentation and not context._verify_context:context._check_effect()
             return _DIRECT_TO_STRING_ABI(value)
         except PermissionError as error:raise BoundaryViolation(str(error)) from error
         finally:
-            if foreign_presentation or context._verify_context:context._check()
+            if foreign_presentation or context._verify_context:context._check_effect()
     if allow_references:stringify.requires_reference=lambda index:index in function.reference_parameters
     return stringify
 
@@ -309,11 +309,11 @@ class ServicesBoundary:
                     if not canonical():
                         raise BoundaryViolation('optional file service implementation changed during argument evaluation')
                     # FindFiles still crosses a filesystem boundary with omitted arguments.
-                    if external and not self._verify_context:self._check()
+                    if external and not self._verify_context:self._check_effect()
                     return implementation(*arguments)
                 except PermissionError as error:raise BoundaryViolation(str(error)) from error
                 finally:
-                    if external or self._verify_context:self._check()
+                    if external or self._verify_context:self._check_effect()
 
             invoke.requires_reference=lambda index:False
             return invoke,{index:None for index in positions}
@@ -356,12 +356,12 @@ class ServicesBoundary:
                 original=bound
                 def guarded(*values):
                     external = expected is BSLBinaryData and not self._verify_context
-                    if self._verify_context or external:self._check()
+                    if self._verify_context or external:self._check_effect()
                     if factory.function is not expected:
                         raise BoundaryViolation('canonical constructor changed during argument evaluation')
                     try:return original(*values)
                     finally:
-                        if external:self._check()
+                        if external:self._check_effect()
                 bound=guarded
             if expected in fixed.FACTORIES:
                 factory_name=factory.name.casefold()
@@ -442,11 +442,11 @@ class ServicesBoundary:
             operation=function.function
             original=super().resolve_service(name,*args,**kwargs)
             def file_effect(*values):
-                self._check()
+                self._check_effect()
                 if function.function is not operation:
                     raise BoundaryViolation('file service changed during argument evaluation')
                 try:return original(*values)
-                finally:self._check()
+                finally:self._check_effect()
             if kwargs.get('allow_references',False):
                 file_effect.requires_reference=original.requires_reference
             return file_effect

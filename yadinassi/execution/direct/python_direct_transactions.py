@@ -138,6 +138,11 @@ def service(context,function):
         raise BoundaryViolation('foreign canonical transaction service')
     if type(owner) is not _Owner:return function
     def invoke(*args):
+        if not getattr(context,'_verify_context',True):context._check_effect()
+        try:return transaction(*args)
+        finally:
+            if not getattr(context,'_verify_context',True):context._check_effect()
+    def transaction(*args):
         if function.function is not method:
             raise BoundaryViolation('transaction service changed during binding')
         if args:raise TypeError('Операция транзакции не принимает аргументов')

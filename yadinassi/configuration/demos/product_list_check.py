@@ -21,7 +21,7 @@ from yadinassi.types.values import Reference
 
 class ListInterpreter(_ObjectInterpreter):
     def __init__(self, receiver, sink, view, manager, message, object_source):
-        super().__init__(receiver, sink, view)
+        super().__init__(receiver, sink, view, allow_extensions=True)
         self._list_manager = manager
         self._list_sink = sink
         self._list_view = view

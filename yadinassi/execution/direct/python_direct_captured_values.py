@@ -46,7 +46,7 @@ def resolve(context,value,*,require_value=False,allow_references=False):
     if callback is None:raise BoundaryViolation('captured runtime method expired')
     implementation=implementation_ref() if abi is not None else implementation_ref
     def validate():
-        context._check()
+        context._check_effect()
         if (value.function is not callback or value.name is not name
                 or value.reference_parameters is not references or value.returns_value is not returns
                 or _implementation(callback) is not implementation):
@@ -61,6 +61,6 @@ def resolve(context,value,*,require_value=False,allow_references=False):
     def invoke(*args):
         validate();context._before('call_value',name.casefold());validate()
         try:return callback(*args)
-        finally:context._check()
+        finally:context._check_effect()
     if allow_references:invoke.requires_reference=lambda index:index in references
     return invoke

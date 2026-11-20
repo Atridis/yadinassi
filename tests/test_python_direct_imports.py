@@ -1,5 +1,6 @@
 """Direct imports preserve namespace authority and activation lifetimes."""
 from contextlib import ExitStack
+from cProfile import Profile
 from pathlib import Path
 import tempfile
 import sys
@@ -54,6 +55,33 @@ class DirectImportBoundaryTests(unittest.TestCase):
                     elif route=='ast':vm.execute_program(parse(source,self.main))
                     else:vm.execute(source,self.main)
                 self.assertEqual(vm.variables['r'],42);self.assertEqual(events,['init'])
+
+    def test_plain_import_uses_scoped_parent_lease_instead_of_full_audit(self):
+        self.module('Function F(Val X) Export Return X+StrLen("a");EndFunction')
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('// #Import Side.bsl\n', self.main)
+        profile = Profile()
+        profile.runcall(vm.execute_prepared, vm.prepare('R=Side.F(41);', self.main))
+        self.assertEqual(vm.variables['r'], 42)
+        self.assertFalse(any(not isinstance(entry.code, str)
+                             and entry.code.co_name == '_check'
+                             and entry.code.co_filename == make_boundary.__code__.co_filename
+                             for entry in profile.getstats()))
+
+    def test_plain_import_rechecks_parent_after_external_effect(self):
+        self.module('Function F() Export Message("close");Message("after");Return 42;EndFunction')
+        events = []
+        def output(value):
+            events.append(value)
+            vm.close()
+        vm = Interpreter(output=output)
+        self.addCleanup(vm.close)
+        vm.execute('// #Import Side.bsl\n', self.main)
+        with self.assertRaises(BoundaryViolation):
+            vm.execute('R=Side.F();', self.main)
+        self.assertEqual(events, ['close'])
+        self.assertNotIn('r', vm.variables)
 
     def test_cache_namespace_and_family_rebindings_precede_arguments(self):
         child=self.load();self.vm.register_function('Argument',lambda:self.events.append('argument') or 1)

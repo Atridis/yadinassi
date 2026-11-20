@@ -332,6 +332,11 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None):
     from .python_direct_live_metadata import LiveMetadataBoundary
     from .python_direct_detached_metadata import DetachedMetadataBoundary
     database = vm.database_context
+    sqlite_attached=False
+    if database is not None:
+        from yadinassi.db.database_context import SQLiteDBContext
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+        sqlite_attached=type(database) is SQLiteDBContext and type(database.backend) is SQLiteCatalogBackend
     from .python_direct_services import ServicesBoundary
     from .python_direct_value_tree import ValueTreeBoundary
     from .python_direct_imports import ImportBoundary,check_live
@@ -358,13 +363,15 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None):
 
         def resolve_service(self,name,*args,**kwargs):
             modules=getattr(vm,'_direct_routine_modules',None)
-            if modules is not None and name.casefold() in modules:
-                if self._verify_context:self._check()
-                routine=resolve_routine(self,name.casefold(),require_value=kwargs.get('require_value',False),
+            key=name.casefold()
+            module=None if modules is None else modules.get(key)
+            if module is not None:
+                if self._verify_context or key in module.server_names or key in module.dual_names:self._check()
+                routine=resolve_routine(self,key,require_value=kwargs.get('require_value',False),
                                         allow_references=kwargs.get('allow_references',False),
                                         argument_count=kwargs.get('argument_count'))
                 if routine is not None:return routine
-            if name.casefold() in ('new:uuid','new:уникальныйидентификатор'):
+            if key in ('new:uuid','new:уникальныйидентификатор'):
                 from yadinassi.types.unique_identifiers import BSLUUID
                 if self._verify_context:self._check()
                 factory=vm.types.get(name.split(':',1)[1].casefold())
@@ -379,6 +386,23 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None):
             # an embedding can still run code and close the interpreter.
             if not self._verify_context and vm._family_closed:
                 raise BoundaryViolation('python-direct interpreter was closed during execution')
+
+        def _check_effect(self):
+            if self._verify_context:
+                self._check()
+                return
+            # Only the external effect's owning activation must still be live.
+            # Its resource/receiver authorization is checked by the operation.
+            self._check_lease()
+            if _parent_check is not None:_parent_check()
+            if vm._family_closed:
+                raise BoundaryViolation('python-direct interpreter was closed during execution')
+            if (vm.database_context is not database or vm._configuration_runtime is not None
+                    or vm.execution_context!='client'):
+                raise BoundaryViolation('python-direct owner context changed during external operation')
+            if database is not None:
+                from .python_direct_transactions import check as check_transaction
+                check_transaction(_transaction_owner,database)
 
         def _check(self):
             super()._check()
@@ -401,8 +425,12 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None):
     # nothing and must not be rebuilt on every invocation.
     context=DirectBoundary()
     context.vm=vm
-    context._verify_context=(vm.allow_extensions or database is not None
-                             or _parent_check is not None)
+    context._verify_context=(vm.allow_extensions or _parent_check is not None
+                             or (database is not None and not sqlite_attached))
+    # Attaching an ordinary SQLite database is not a host crossing. Runtime
+    # SQL and transaction operations keep their own checks; dynamic code is
+    # deliberately stricter whenever a database is attached.
+    context._verify_dynamic_context=context._verify_context or database is not None
     context._restrict_python_extensions=not vm.allow_extensions
     context._direct_transaction_owner=_transaction_owner
     context._import_check_required=bool(vm.imports)

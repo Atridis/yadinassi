@@ -282,6 +282,7 @@ def helpers():
         return value.items[position]
     def boundary(function):
         def invoke(context,*arguments):
+            if not getattr(context,'_verify_context',True):return function(*arguments)
             context._check()
             try:return function(*arguments)
             finally:context._check()

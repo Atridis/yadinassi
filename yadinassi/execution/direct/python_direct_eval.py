@@ -21,7 +21,7 @@ def eval_capability(context,function,key):
             # The one exit check for this call belongs here, including when
             # argument validation or the fragment raises.
             finally:
-                if context._verify_context:context._check()
+                if getattr(context,'_verify_dynamic_context',context._verify_context):context._check()
         invoke.requires_reference=lambda index:False
         return invoke
     return bind
@@ -36,7 +36,7 @@ def evaluate(value,context,parent,bindings,visible):
 
 
 def _evaluate(value,context,parent,bindings,visible,profile):
-    if context._verify_context:context._check()
+    if getattr(context,'_verify_dynamic_context',context._verify_context):context._check()
     from yadinassi.runtime import EVAL_MAX_SOURCE,EVAL_MAX_DEPTH
     from yadinassi.types.values import to_string
     from yadinassi.types.errors import BSLError,BSLRuntimeError

@@ -36,10 +36,10 @@ class CatalogWriteRefused(ValueError):
 
 
 class _ObjectInterpreter(Interpreter):
-    def __init__(self, receiver, sink, write_view=None):
+    def __init__(self, receiver, sink, write_view=None, *, allow_extensions=False):
         def no_output(value):
             raise ValueError('catalog preparation: plain output forbidden')
-        super().__init__(output=no_output, user_message_sink=sink, allow_extensions=True)
+        super().__init__(output=no_output, user_message_sink=sink, allow_extensions=allow_extensions)
         self.receiver_object = receiver
         self.write_view = write_view
         schema = receiver._manager._schema

@@ -27,7 +27,7 @@ class FragmentScope:
     def _check(self):
         from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         if not self.active:raise BoundaryViolation('direct Execute scope has ended')
-        if self.context._verify_context:self.context._check()
+        if getattr(self.context,'_verify_dynamic_context',self.context._verify_context):self.context._check()
     def _get(self,ref):
         self._check()
         try:return ref.get()
@@ -80,7 +80,7 @@ def execute_fragment(text,context,parent,bindings,visible):
 
 
 def _execute_fragment(text,context,parent,bindings,visible,profile):
-    if context._verify_context:context._check()
+    if getattr(context,'_verify_dynamic_context',context._verify_context):context._check()
     from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
     vm=getattr(context,'vm',None)
     if vm is None:raise BoundaryViolation('direct Execute requires an interpreter-owned boundary')
@@ -162,4 +162,4 @@ def _execute_fragment(text,context,parent,bindings,visible,profile):
                      or depth[0]!=level+1 or getattr(context,'_execute_depth',None) is not depth)
             if type(depth) is list:list.__setitem__(depth,slice(None),[level])
             if changed:raise BoundaryViolation('source fragment depth changed during execution')
-        if context._verify_context:context._check()
+        if getattr(context,'_verify_dynamic_context',context._verify_context):context._check()

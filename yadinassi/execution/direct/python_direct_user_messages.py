@@ -111,10 +111,10 @@ def resolve(context,value,name,*,require_value=False,omitted=(),operation='call_
             if not hasattr(context,'_catalog_owner'):raise BoundaryViolation('UserMessage catalog binding is not connected in this scope')
             context._catalog_owner(args[0])
         # Delivery calls an embedding-supplied sink/output even in plain mode.
-        if delivers and not context._verify_context:context._check()
+        if delivers and not context._verify_context:context._check_effect()
         try:return method(value,*args)
         finally:
-            if delivers or context._verify_context:context._check()
+            if delivers or context._verify_context:context._check_effect()
     return invoke
 
 

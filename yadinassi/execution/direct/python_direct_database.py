@@ -60,7 +60,9 @@ def _verify_collection(boundary,value):
 
 class CatalogBoundary:
     def _catalog_owner(self, value, *, verify=True):
-        if verify:self._check()
+        if verify:
+            if getattr(self,'_verify_context',True):self._check()
+            else:self._check_effect()
         if movements.owns(value):
             movements.check(self,value);return
         if value is movements.NAMESPACE:
@@ -133,7 +135,7 @@ class CatalogBoundary:
 
     def resolve_service(self,name,*args,**kwargs):
         if name.casefold() in ('new:query','new:запрос'):
-            self._check()
+            self._check_effect()
             function=self.vm.types.get(name.split(':',1)[1].casefold())
             if type(function) is not HostFunction:
                 raise BoundaryViolation('query constructor requires canonical registration')
@@ -141,7 +143,7 @@ class CatalogBoundary:
         return super().resolve_service(name,*args,**kwargs)
 
     def external_get(self,name):
-        self._check()
+        self._check_effect()
         if name in SYSTEM_NAMES:return SYSTEM_NAMES[name]
         if name in ('metadata','метаданные'):return self.vm._metadata
         if name in ('catalogs','справочники'):return self.vm._catalogs
@@ -156,7 +158,7 @@ class CatalogBoundary:
         return super().external_get(name)
 
     def external_set(self,name,value):
-        self._check()
+        self._check_effect()
         raise ValueError('catalog namespace is read-only')
 
     def get_member(self,value,name):
@@ -164,7 +166,7 @@ class CatalogBoundary:
         self._catalog_owner(value,verify=verify)
         try:return value.get_member(name)
         finally:
-            if verify:self._check()
+            if verify:self._check_effect()
 
     def resolve_set_member(self,value,name):
         verify=_verify_collection(self,value)
@@ -173,7 +175,7 @@ class CatalogBoundary:
             self._catalog_owner(value,verify=verify)
             try:value.set_member(name,new_value)
             finally:
-                if verify:self._check()
+                if verify:self._check_effect()
         return write
 
     def reference_member(self,value,name):
@@ -191,11 +193,11 @@ class CatalogBoundary:
         def read():
             self._catalog_owner(value)
             try:return value.reference_get_member(name)
-            finally:self._check()
+            finally:self._check_effect()
         def write(new_value):
             self._catalog_owner(value)
             try:value.reference_set_member(name,new_value)
-            finally:self._check()
+            finally:self._check_effect()
         from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
         from yadinassi.types.values import Reference
         return _ForwardReference(Reference(read,write))
@@ -209,7 +211,7 @@ class CatalogBoundary:
                 raise BoundaryViolation('method is not a host reference: '+name)
             return result
         def write(new_value):
-            if _verify_collection(self,value):self._check()
+            if _verify_collection(self,value):self._check_effect()
             raise ValueError('Свойство недоступно для записи: '+name)
         read()
         from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
@@ -257,7 +259,7 @@ class CatalogBoundary:
                 for argument in values:
                     if type(argument) is BSLXMLReader or type(argument) is BSLXMLWriter:_reject_source_xml(argument)
                 try:return function(*values)
-                finally:self._check()
+                finally:self._check_effect()
             return invoke
         # Preserve the public JSON function/procedure contract before argument
         # evaluation. This is only a restriction on an already admitted surface.
@@ -315,7 +317,7 @@ class CatalogBoundary:
             for index in omitted:values[index]=defaults[index]
             try:return function(*values)
             finally:
-                if verify:self._check()
+                if verify:self._check_effect()
         return invoke
 
     def resolve_member(self,value,name):
@@ -342,7 +344,7 @@ class CatalogBoundary:
             function=value.get_method(name)
             if type(function) is not HostFunction:
                 raise BoundaryViolation('database method requires canonical HostFunction')
-        if verify:self._check()
+        if verify:self._check_effect()
         def invoke(*args):
             self._catalog_owner(value,verify=verify)
             if type(value) is BSLDOMBuilder or type(value) is BSLDOMWriter:
@@ -350,5 +352,5 @@ class CatalogBoundary:
                     if type(argument) is BSLXMLReader or type(argument) is BSLXMLWriter:_reject_source_xml(argument)
             try:return function(*args)
             finally:
-                if verify:self._check()
+                if verify:self._check_effect()
         return invoke
