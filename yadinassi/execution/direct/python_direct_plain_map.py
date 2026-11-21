@@ -6,6 +6,8 @@ iterable expansion. Normal empty construction uses a dict subclass with native k
 from yadinassi.collections.maps import BSLFixedMap
 from yadinassi.collections.search_directions import BSLSearchDirection
 from yadinassi.numeric.round_modes import BSLRoundMode
+from yadinassi.temporal.dates import BSLDate, MAX_TICKS, _DIRECT_EQUALITY_DATE_STATE
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.types.values import BSLNull, BSLType
 from yadinassi.execution.codegen.experimental_naked_collections import _reject_opaque_date_key
 from decimal import Decimal
@@ -14,9 +16,29 @@ from .python_direct_numbers import public_number
 _KEY_TYPES=(Decimal,str,bool,int,float,type(None),BSLSearchDirection,BSLRoundMode,BSLNull,BSLType)
 _KEY_TYPE_IDS=frozenset(id(kind) for kind in _KEY_TYPES)
 
-def _reject_key(key):
-    # Only on the non-scalar path. Known dates remain unsupported here.
-    _reject_opaque_date_key(key)
+_DATE_TICKS = vars(BSLDate)['ticks']
+_DATE_BOUNDARY = _DIRECT_EQUALITY_DATE_STATE[1]
+_DATE_HASH, _DATE_EQ, _DATE_KNOWN = BSLDate.__hash__, BSLDate.__eq__, BSLDate.require_known
+
+
+def _admit_extended_key(key):
+    # Ordinary native keys do not take this path. Only known dates can be
+    # hashed by ticks; detect even malformed host state before dict hashing.
+    if type(key) is BSLDate:
+        _reject_opaque_date_key(key)
+        attributes = vars(BSLDate)
+        if (attributes.get('__hash__') is not _DATE_HASH or attributes.get('__eq__') is not _DATE_EQ
+                or attributes.get('require_known') is not _DATE_KNOWN
+                or BSLDate.__getattribute__ is not object.__getattribute__
+                or attributes.get('ticks') is not _DATE_TICKS or attributes.get('boundary') is not _DATE_BOUNDARY):
+            raise BoundaryViolation('date key hooks changed')
+        try:
+            ticks = _DATE_TICKS.__get__(key, BSLDate)
+        except AttributeError:
+            raise BoundaryViolation('invalid exact date key state') from None
+        if type(ticks) is not int or not 0 <= ticks <= MAX_TICKS:
+            raise BoundaryViolation('invalid exact date key state')
+        return
     raise TypeError("Map key requires a scalar Python value")
 
 class PlainMap(dict):
@@ -37,7 +59,7 @@ class PlainMap(dict):
         for key,value in keywords.items():self[key]=value
 
     def setdefault(self,key,default=None):
-        if id(type(key)) not in _KEY_TYPE_IDS:_reject_key(key)
+        if id(type(key)) not in _KEY_TYPE_IDS:_admit_extended_key(key)
         return dict.setdefault(self,key,default)
 
     def __ior__(self,other):
@@ -48,21 +70,21 @@ class PlainMap(dict):
     def __ne__(self,other):return self is not other
 
     def __setitem__(self,key,value):
-        if id(type(key)) not in _KEY_TYPE_IDS:_reject_key(key)
+        if id(type(key)) not in _KEY_TYPE_IDS:_admit_extended_key(key)
         dict.__setitem__(self,key,value)
 
     def get(self,key,default=None):
-        if id(type(key)) not in _KEY_TYPE_IDS:_reject_key(key)
+        if id(type(key)) not in _KEY_TYPE_IDS:_admit_extended_key(key)
         return public_number(dict.get(self,key,default))
 
     __getitem__=get
 
     def __delitem__(self,key):
-        if id(type(key)) not in _KEY_TYPE_IDS:_reject_key(key)
+        if id(type(key)) not in _KEY_TYPE_IDS:_admit_extended_key(key)
         dict.pop(self,key,None)
 
     def __contains__(self,key):
-        if id(type(key)) not in _KEY_TYPE_IDS:_reject_key(key)
+        if id(type(key)) not in _KEY_TYPE_IDS:_admit_extended_key(key)
         return dict.__contains__(self,key)
 
 
@@ -107,7 +129,7 @@ class PlainFixedMap:
         self._snapshot=snapshot
 
     def get(self,key):
-        if id(type(key)) not in _KEY_TYPE_IDS:_reject_key(key)
+        if id(type(key)) not in _KEY_TYPE_IDS:_admit_extended_key(key)
         return public_number(self._items.get(key))
 
     def get_index(self,key):
@@ -116,7 +138,7 @@ class PlainFixedMap:
             # the miss without attempting to hash or compare the array.
             if type(key) is BSLFixedArray:
                 raise ValueError('Ключ фиксированного соответствия не найден')
-            _reject_key(key)
+            _admit_extended_key(key)
         try:return public_number(self._items[key])
         except KeyError:raise ValueError('Ключ фиксированного соответствия не найден') from None
 

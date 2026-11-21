@@ -8,7 +8,7 @@ New runtime types must be added explicitly to the codec policy and its completen
 from dataclasses import dataclass
 
 from yadinassi.types.unique_identifiers import BSLUUID, canonical_codec_uuid
-from yadinassi.temporal.dates import codec_text, read_codec
+from yadinassi.temporal.dates import BSLDate, codec_text, read_codec
 from decimal import Decimal
 import re
 
@@ -250,7 +250,7 @@ def _pattern_entry(kind: BSLType, value: BSLTypeDescription) -> str:
     return entry + '}'
 
 
-_NATIVE_MAP_SERIALIZABLE_KEYS = (type(None), bool, str, int, Decimal, BSLNull, BSLType)
+_NATIVE_MAP_SERIALIZABLE_KEYS = (type(None), bool, str, int, Decimal, BSLNull, BSLType, BSLDate)
 
 
 def _native_map_entries(value):

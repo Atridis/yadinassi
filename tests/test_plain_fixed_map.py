@@ -1,10 +1,12 @@
 import unittest
+from unittest.mock import patch
 from decimal import Decimal as D
 from types import MappingProxyType
 from yadinassi import Interpreter, BSLError
 from yadinassi.execution.direct.python_direct_plain_map import PlainMap,PlainFixedMap,plain_map
 from yadinassi.execution.direct.python_direct_fixed import construct
 from yadinassi.collections.maps import BSLMap,BSLFixedMap
+from yadinassi.temporal.dates import BSLDate, UnsupportedDateRange
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class PlainFixedMapTests(unittest.TestCase):
@@ -51,6 +53,61 @@ S=String(F);T=TypeOf(F);I=0;For Each Pair In F Do I=I+1;EndDo;'''
                     for key, expected in (('Null', 'null'), ('Undefined', 'undefined'),
                                           ('Type("Null")', 'type'), ('"Null"', 'string')):
                         self.assertEqual(vm.execute(f'{name}[{key}]'), expected)
+
+    def test_known_date_keys_match_ticks_and_preserve_native_wire(self):
+        code = """
+            A=Date(2024,2,29); B=Date(2024,2,29);
+            M=New Map; M.Insert(A,"first"); M.Insert(B,"second"); M.Insert(0,"number");
+            F=New FixedMap(M); M.Insert(B,"changed");
+            R=ValueFromStringInternal(ValueToStringInternal(M));
+        """
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                if prepared:
+                    vm.execute_prepared(vm.prepare(code))
+                else:
+                    vm.execute(code)
+                self.assertEqual(vm.execute('M.Count()'), 2)
+                self.assertEqual(vm.execute('F[Date(2024,2,29)]'), 'second')
+                self.assertEqual(vm.execute('R[Date(2024,2,29)]'), 'changed')
+                self.assertEqual(vm.execute('R[0]'), 'number')
+                vm.execute('M.Delete(Date(2024,2,29));')
+                self.assertIsNone(vm.execute('M.Get(A)'))
+
+    def test_opaque_or_forged_date_key_is_refused_before_hash(self):
+        class HostTicks:
+            def __hash__(self):
+                raise AssertionError('unexpected custom hash')
+
+        class HostDate(BSLDate):
+            __hash__ = HostTicks.__hash__
+
+        forged = object.__new__(BSLDate)
+        object.__setattr__(forged, 'ticks', HostTicks())
+        object.__setattr__(forged, 'boundary', False)
+        canonical = BSLDate(0)
+        mapping = PlainMap()
+        fixed = PlainFixedMap(mapping)
+        for operation in (mapping.get, mapping.__setitem__, mapping.__delitem__,
+                          mapping.setdefault, mapping.__contains__, fixed.get, fixed.get_index):
+            with self.subTest(operation=operation.__name__):
+                if operation == mapping.__setitem__:
+                    def call(key):
+                        return operation(key, None)
+                else:
+                    call = operation
+                with self.assertRaises(UnsupportedDateRange):
+                    call(BSLDate(0, True))
+                with self.assertRaisesRegex(BoundaryViolation, 'invalid exact date key state'):
+                    call(forged)
+                with self.assertRaises(TypeError):
+                    call(HostDate(0))
+                with patch.object(BSLDate, '__hash__', side_effect=AssertionError('hash hook')):
+                    with self.assertRaisesRegex(BoundaryViolation, 'date key hooks changed'):
+                        call(canonical)
+        self.assertEqual(len(mapping), 0)
 
     def test_legacy_typed_key_contract_unchanged(self):
         source=BSLMap();source.insert(True,'bool');source.insert(D(1),'number')
