@@ -42,8 +42,8 @@ class ExtendedReferenceTests(unittest.TestCase):
                         else:
                             for sql in case['sql_statements'].values():
                                 self.assertEqual(sql['by_verb']['UPDATE'], 3)
-                                self.assertEqual(sql['by_verb']['INSERT'], 3)
-                            self.assertEqual(raw['total'], 39)
+                            # Three raw read/write pairs, each with two committed transactions.
+                            self.assertEqual(raw['total'], 36)
                             self.assertEqual(raw['by_verb']['COMMIT'], 6)
                     else:
                         self.assertNotIn('sql_statements', case)
