@@ -1,4 +1,5 @@
 import unittest
+from types import CodeType
 from decimal import Decimal as D
 from yadinassi import Interpreter
 from yadinassi.types.errors import BSLRuntimeError
@@ -21,7 +22,6 @@ class StaticModuleTests(unittest.TestCase):
 
     def test_errors_preserve_reached_state(self):
         cases=(
-            ('A=New Array;A.Add(4);R=7;R=A[99];After=1;', 'index out of range', {'a':[D(4)],'r':D(7)}),
             ('R=1;For I=0 To 3 Do R=10/(2-I);EndDo;After=1;', 'Деление на ноль', {'i':D(2),'r':D(10)}),
         )
         for source,message,expected in cases:
@@ -31,6 +31,31 @@ class StaticModuleTests(unittest.TestCase):
                 state={name:list(value) if isinstance(value,list) else value
                        for name,value in vm.variables.items()}
                 self.assertEqual(state,expected)
+
+    def test_array_bounds_error_preserves_site_and_reached_state(self):
+        source = 'A=New Array;A.Add(4);R=7;\nR=A[99];\nAfter=1;'
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                with self.assertRaises(BSLRuntimeError) as raised:
+                    if prepared:
+                        vm.execute_prepared(vm.prepare(source, 'bounds.bsl'))
+                    else:
+                        vm.execute(source, 'bounds.bsl')
+                error = raised.exception
+                self.assertIsInstance(error.__context__, IndexError)
+                self.assertEqual((error.source, error.line, error.source_line),
+                                 ('bounds.bsl', 2, 'R=A[99];'))
+                self.assertEqual(error.column, 4 if hasattr(CodeType, 'co_positions') else 1)
+                self.assertEqual(set(vm.variables), {'a', 'r'})
+                array = vm.variables['a']
+                self.assertEqual((list(array), vm.variables['r']), ([D(4)], D(7)))
+                vm.execute('Caught=False;Try R=A[99];Except Caught=True;EndTry;After=A[0];')
+                self.assertIs(vm.variables['a'], array)
+                self.assertEqual(list(array), [D(4)])
+                self.assertEqual((vm.variables['r'], vm.variables['after']), (D(7), D(4)))
+                self.assertIs(vm.variables['caught'], True)
 
     def test_zero_iterations_and_conditional_binding(self):
         vm,plan=self.prepare('R=1;For I=3 To 1 Do Hidden=9;EndDo;If R=1 Then X=2;Else X=3;EndIf;R=R+X;')

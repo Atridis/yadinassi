@@ -230,10 +230,15 @@ jobs:
       - name: Compare historical ValueTable ordering with 1C
         id: table_order
         run: python -m tests.compatibility_native_table_sort --summary-output native-table-order-summary.md > native-table-order.md
+      - name: Compare Array bounds error wording with the documented 1C phrase
+        if: ${{ !cancelled() }}
+        id: error_wording
+        run: python -m tests.compatibility_error_wording > error-wording.md
       - name: Publish known compatibility differences
         if: ${{ !cancelled() }}
         env:
           TABLE_ORDER_OUTCOME: ${{ steps.table_order.outcome }}
+          ERROR_WORDING_OUTCOME: ${{ steps.error_wording.outcome }}
         run: |
           {
             echo '## Известные расхождения с 1С'
@@ -241,6 +246,7 @@ jobs:
             echo '| Область | Проверка | Приоритет |'
             echo '|---|---|---|'
             echo '| ТаблицаЗначений | Точный порядок строк после сортировки | Низкий |'
+            echo '| Массив | Формулировка ошибки при чтении за границей | Низкий |'
             echo
             echo 'Диагностика не блокирует CI. Обычные тесты данных остаются обязательными.'
             echo
@@ -249,12 +255,20 @@ jobs:
             else
               echo '**Сравнение не завершилось.** См. ошибку или пропущенный шаг в логе; число расхождений неизвестно.'
             fi
+            echo
+            if [ "$ERROR_WORDING_OUTCOME" = success ]; then
+              cat error-wording.md
+            else
+              echo '**Формулировка ошибок не проверена.** См. лог диагностического шага.'
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
-        if: ${{ !cancelled() && steps.table_order.outcome == 'success' }}
+        if: ${{ !cancelled() && (steps.table_order.outcome == 'success' || steps.error_wording.outcome == 'success') }}
         with:
           name: compatibility-differences-${{ github.run_id }}-${{ github.run_attempt }}
-          path: native-table-order.md
+          path: |
+            native-table-order.md
+            error-wording.md
           if-no-files-found: error
           retention-days: 30
 

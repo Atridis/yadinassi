@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -364,6 +365,33 @@ class CLITests(unittest.TestCase):
                     self.assertIn(location, result.stderr)
                     self.assertIn('предел роста массива Yadinassi', result.stderr)
                     self.assertNotIn('Traceback', result.stderr)
+
+    def array_bounds_diagnostics(self):
+        code = 'A=New Array;A.Add(4);R=7;\nR=A[99];\nAfter=1;\n'
+        column = 4 if hasattr((lambda: None).__code__, 'co_positions') else 1
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary).resolve() / 'bounds.bsl'
+            path.write_text(code, encoding='utf-8')
+            cases = (
+                ('команда', ('-c', code), None, '<команда>', 2, ''),
+                ('файл', (str(path),), None, str(path), 2, ''),
+                ('stdin', ('-',), code, '<stdin>', 2, ''),
+                ('консоль', (), code + 'After\nR\nA[0]\n/exit\n', '<консоль>', 1, '1\n7\n4\n'),
+            )
+            for mode, args, stdin, source, line, stdout in cases:
+                result = self.run_cli(*args, stdin=stdin, cwd=temporary)
+                self.assertEqual((result.returncode, result.stdout), (1, stdout), mode)
+                self.assertNotIn('Traceback', result.stderr, mode)
+                match = re.fullmatch(re.escape(f'{source}:{line}:{column}: ') + r'([^\r\n]+)\n',
+                                     result.stderr)
+                self.assertIsNotNone(match, (mode, result.stderr))
+                wording = match.group(1)
+                self.assertRegex(wording.casefold(), r'index.*(?:range|bound)|индекс.*границ')
+                yield mode, wording
+
+    def test_array_bounds_diagnostics_and_console_recovery(self):
+        self.assertEqual([mode for mode, _ in self.array_bounds_diagnostics()],
+                         ['команда', 'файл', 'stdin', 'консоль'])
 
     def test_array_defaults_all_cli_inputs(self):
         from scripts.smoke_test import ARRAY_DEFAULT_PROGRAM, ARRAY_DEFAULT_OUTPUT
