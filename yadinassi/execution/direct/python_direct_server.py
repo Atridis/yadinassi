@@ -4,6 +4,7 @@ Module-context and NoContext calls support Val and named-variable copyback.
 Dual declarations select a side-local NoContext plan.
 """
 from decimal import Decimal
+from types import MethodType
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
 from .python_direct_database import CatalogBoundary
 from .python_direct_services import ServicesBoundary
@@ -115,13 +116,52 @@ class ServerBoundary(ServicesBoundary,CatalogBoundary,BoundaryContext):
             return bound
         return super().resolve_optional_service(name,*args,**kwargs)
 
+    def _resolve_query(self,key):
+        from yadinassi.db.catalog.catalogs import BSLCatalogs
+        from yadinassi.db.database_context import SQLiteDBContext, require_database_context
+        from yadinassi.runtime import _DIRECT_QUERY_FACTORY_ABI
+        self._check_effect()
+        vm=self.vm
+        database=self.database
+        if type(database) is not SQLiteDBContext:require_database_context()
+        backend=database.backend
+        catalogs=vm._catalogs
+        factory=vm.types.get(key) if type(vm.types) is dict else None
+        if type(factory) is not HostFunction or type(factory.name) is not str:
+            raise BoundaryViolation('server query constructor requires canonical registration')
+        method=factory.function
+        if (type(method) is not MethodType or method.__func__ is not _DIRECT_QUERY_FACTORY_ABI
+                or method.__self__ is not vm):
+            raise BoundaryViolation('server query constructor requires its owning interpreter')
+
+        def validate():
+            if (type(vm.types) is not dict or vm.types.get(key) is not factory
+                    or factory.function is not method or factory.returns_value is not True
+                    or type(factory.reference_parameters) is not frozenset or factory.reference_parameters
+                    or database.backend is not backend or backend._closed is not False
+                    or vm._catalogs is not catalogs or type(catalogs) is not BSLCatalogs
+                    or catalogs._context is not database or catalogs._metadata is not vm._metadata._catalogs):
+                raise BoundaryViolation('server query constructor owner or binding changed')
+
+        validate()
+        name=factory.name.casefold()
+        def construct(*args):
+            self._before('call_value',name)
+            self._check_effect()
+            validate()
+            return method(*args)
+        return construct
+
     def resolve_service(self,name,*args,**kwargs):
+        key=name.casefold()
+        if key in ('new:query','new:запрос'):
+            return self._resolve_query(key[4:])
         if self._verify_context:self._check()
         ports=getattr(self.vm,'_direct_invocation_ports',None)
-        if ports is not None and name.casefold() in ports:
+        if ports is not None and key in ports:
             raise ValueError('Удалённый вызов доступен только из логического клиента')
         from .python_direct_routines import resolve
-        routine=resolve(self,name.casefold(),require_value=kwargs.get('require_value',False),
+        routine=resolve(self,key,require_value=kwargs.get('require_value',False),
             allow_references=kwargs.get('allow_references',False),argument_count=kwargs.get('argument_count'))
         if routine is not None:return routine
         return super().resolve_service(name,*args,**kwargs)

@@ -54,27 +54,36 @@ def prepare(vm, program, plan, *, retain_generated=True):
         from .python_direct import REPAIRS
         from .python_direct_services import CONSTRUCTORS
         from .python_direct_names import NAMES
+        from yadinassi.db.database_context import SQLiteDBContext
+        external_names=tuple(NAMES)
+        base_constructors=tuple(CONSTRUCTORS)+('uuid','уникальныйидентификатор')
+        # Recognize Query even without a database; its factory checks at use.
+        constructor_names=base_constructors+('query','запрос')
+        if type(vm.database_context) is SQLiteDBContext:
+            # The existing owned catalog namespace supplies query parameters;
+            # no other database/server services are added to this profile.
+            external_names+=('catalogs','справочники')
     if server_names-nocontext_names:
         server_plan=compile_server(server,source_text=plan.source_text,source_name=plan.source_name,
-            module_names=tuple(server_layout),external_names=tuple(NAMES),constructors=tuple(CONSTRUCTORS)+('uuid','уникальныйидентификатор'),
+            module_names=tuple(server_layout),external_names=external_names,constructors=constructor_names,
             exports=True,retain_generated=retain_generated,current_module=True)
     nocontext_plan=None
     if nocontext:
         nocontext_plan=compile_server(nocontext,source_text=plan.source_text,source_name=plan.source_name,
-            external_names=tuple(NAMES),constructors=tuple(CONSTRUCTORS)+('uuid','уникальныйидентификатор'),
+            external_names=external_names,constructors=constructor_names,
             exports=True,retain_generated=retain_generated)
     dual=[node for node in declarations if type(node) is ast.Routine and node.is_dual and node.execution_context=='client']
     dual_names=frozenset(node.name.casefold() for node in dual)
     dual_plan=None
     if dual:
         dual_plan=compile_server(dual,source_text=plan.source_text,source_name=plan.source_name,
-            external_names=tuple(NAMES),constructors=tuple(CONSTRUCTORS)+('uuid','уникальныйидентификатор'),
+            external_names=external_names,constructors=constructor_names,
             exports=True,retain_generated=retain_generated)
     initializer_plan=None;initializer_constructors=initializer_calls=frozenset()
     if initializer_body:
         _,_,initializer_constructors,initializer_calls=_source_facts(initializer_body)
         initializer_plan=compile_server(initializer_body,retain_generated=retain_generated,source_text=plan.source_text,source_name=plan.source_name,
-            module_names=tuple(server_layout),external_names=tuple(NAMES),constructors=tuple(CONSTRUCTORS)+('uuid','уникальныйидентификатор'),current_module=True)
+            module_names=tuple(server_layout),external_names=tuple(NAMES),constructors=base_constructors,current_module=True)
     return RoutineModule(exports,signatures,_contract(vm),frozenset(vm.module_names)|declared,
                          constructors,calls-names,server_plan,server_names,server_layout,
                          initializer_plan,initializer_constructors,initializer_calls,nocontext_plan,nocontext_names,dual_plan,dual_names)
