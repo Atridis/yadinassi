@@ -424,11 +424,68 @@ def without_main_demo_assets_provenance(source):
     return source
 
 
+def without_direct_host_source_history(source):
+    """Recover historical host source without executing it or rewriting evidence."""
+    pins = (
+        # 6caddbc: move the host-side Python import.
+        '137af08338356de33b6ed461b4e4f1ca5987ab59a949807348ed4fbe5e5f2bc7',
+        # aedb649: retire the legacy backend in the live host.
+        'd7f132f7e7f9f20bf36a2d984246ffea0018e96ee27f44768efd3ac0b9f2d053',
+        '77555ab592977002bcbb33e3dd1a5fbf9f1d9c0ccca0e4002734d944bc689fd1',
+    )
+    digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest not in pins[:2]:
+        return source  # Historical layers still enforce their own exact pins.
+    path = REPOSITORY / 'tests/native_direct_host_source_inverse.json'
+    contracts = json.loads(path.read_text(encoding='utf-8'))
+    if len(contracts) != 2:
+        raise AssertionError('direct host inverse layer count')
+    for index in range(pins.index(digest), 2):
+        contract = contracts[index]
+        if (contract['candidate_sha256'], contract['base_sha256']) != pins[index:index + 2]:
+            raise AssertionError('direct host inverse identity')
+        for edit in reversed(contract['edits']):
+            if not edit['new'] or source.count(edit['new']) != 1:
+                raise AssertionError('direct host inverse unique hunk')
+            source = source.replace(edit['new'], edit['old'], 1)
+        if hashlib.sha256(source.encode('utf-8')).hexdigest() != pins[index + 1]:
+            raise AssertionError('direct host inverse inner identity')
+    return source
+
+
+def without_direct_smoke_source_history(source):
+    """Undo aedb649 only for exact, test-only historical smoke source."""
+    candidate = '4a2dff6d75068f304f3357656bda7bba557bd6f871d415a5f936b20abc365119'
+    base = '85f14c2dc966d698f720de74e925a8b7e113f8cee2a9b326e668a5b0f6e30924'
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != candidate:
+        return source  # Historical layers still enforce their own exact pins.
+    edits = (
+        ('execution_backend: str = "python-direct") -> dict[str, object]:\n'
+         "    if execution_backend != 'python-direct':",
+         'execution_backend: str = "interpreter") -> dict[str, object]:\n'
+         "    if execution_backend not in ('interpreter', 'compiled-strict') or "
+         "(execution_backend != 'interpreter' and (not full_suite or preprocessor_measurement)):"),
+        ("choices=('python-direct',), default='python-direct')",
+         "choices=('interpreter', 'compiled-strict'), default='interpreter')"),
+    )
+    for new, old in edits:
+        if source.count(new) != 1:
+            raise AssertionError('direct smoke inverse unique hunk')
+        source = source.replace(new, old, 1)
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != base:
+        raise AssertionError('direct smoke inverse inner identity')
+    return source
+
+
 def without_associative_order_harness(source, path='scripts/native_1c_full_host.py'):
     """Exact test-only source inverse; never normalize native output bytes."""
     pins = {'scripts/native_1c_full_host.py': ('d40289525ee7128f8416f4b61e8626ae635b85a905462d6f0b2920e1c0dd67a5', '77555ab592977002bcbb33e3dd1a5fbf9f1d9c0ccca0e4002734d944bc689fd1'), 'scripts/native_1c_smoke.py': ('5a13a74bc901192c0fa503171cacb4573797ab2fd8e3b75b471e0fd8ba3db5eb', '85f14c2dc966d698f720de74e925a8b7e113f8cee2a9b326e668a5b0f6e30924')}
     if path not in pins:
         return source
+    if path == 'scripts/native_1c_full_host.py':
+        source = without_direct_host_source_history(source)
+    elif path == 'scripts/native_1c_smoke.py':
+        source = without_direct_smoke_source_history(source)
     base, candidate = pins[path]
     if hashlib.sha256(source.encode('utf-8')).hexdigest() != candidate:
         return source  # Historical layers still enforce their exact source pins.
@@ -1432,6 +1489,19 @@ def without_dual_measurement(source, *, host=False):
 
 
 class AsyncFixtureSourcesTest(unittest.TestCase):
+    def test_direct_smoke_inverse_checks_exact_identity(self):
+        path = 'scripts/native_1c_smoke.py'
+        source = (REPOSITORY / path).read_text(encoding='utf-8')
+        restored = without_direct_smoke_source_history(source)
+        self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),
+                         '85f14c2dc966d698f720de74e925a8b7e113f8cee2a9b326e668a5b0f6e30924')
+        self.assertEqual(without_direct_smoke_source_history(restored), restored)
+        expected = 'd41b75e56bbc66b26c7103116302007b8df3a5318995934aacd13fd9c55b3d1d'
+        self.assertEqual(hashlib.sha256(historical_source_bytes(path, source.encode(), expected))
+                         .hexdigest(), expected)
+        with self.assertRaisesRegex(AssertionError, 'compiled harness source outer identity'):
+            historical_source_bytes(path, (source + '# drift\n').encode(), expected)
+
     def test_exclude_inverse_restores_exact_immutable_main_and_rejects_drift(self):
         # Independent immutable main 1378109 whole-source pins, not current pins.
         for path, host, expected in (

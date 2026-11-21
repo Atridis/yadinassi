@@ -62,7 +62,7 @@ class DirectManagedProfileTests(unittest.TestCase):
 
     def test_original_dates_and_numbers_complete_under_managed_profile(self):
         for name,count in (('dates',185),('numbers',421)):
-            source=(ROOT/'integrational_tests/tests'/f'{name}.bsl').read_text()
+            source=(ROOT/'integrational_tests/tests'/f'{name}.bsl').read_text(encoding='utf-8')
             captures=[]
             for profile in ('standalone',PROFILE):
                 output=[];vm=Interpreter(output.append,compilation_profile=profile);vm.execute(source)
@@ -76,7 +76,7 @@ class DirectManagedProfileTests(unittest.TestCase):
 
     def test_exact_whole_client_witness_loads_client_initializer(self):
         vm=Interpreter(compilation_profile=PROFILE)
-        vm.execute((ROOT/'scripts/native_1c_bootstrap/client_probe.bsl').read_text())
+        vm.execute((ROOT/'scripts/native_1c_bootstrap/client_probe.bsl').read_text(encoding='utf-8'))
         self.assertIn('вычислитьпробу',vm._direct_routine_modules)
         self.assertEqual(vm.variables,{'contextclientcounter':10})
 

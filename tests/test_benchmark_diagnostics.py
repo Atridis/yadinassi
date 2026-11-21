@@ -197,6 +197,6 @@ class BenchmarkDiagnosticTests(unittest.TestCase):
 
     def test_timing_runners_do_not_import_or_enable_diagnostics(self):
         for name in ('benchmark_execution_layers.py', 'benchmark_extended_layers.py'):
-            text = (bench.ROOT / 'scripts' / name).read_text()
+            text = (bench.ROOT / 'scripts' / name).read_text(encoding='utf-8')
             self.assertNotIn('benchmark_diagnostics', text)
             self.assertNotIn('setprofile', text)

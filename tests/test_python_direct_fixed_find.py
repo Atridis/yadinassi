@@ -17,7 +17,7 @@ class DirectFixedFindTests(unittest.TestCase):
         vm=Interpreter();self.addCleanup(vm.close);return vm
 
     def test_source_ast_prepared_match_recorded_native_find_labels(self):
-        native=(Path(__file__).resolve().parents[1]/'integrational_tests/fill_exclude_native/collections.out').read_text()
+        native=(Path(__file__).resolve().parents[1]/'integrational_tests/fill_exclude_native/collections.out').read_text(encoding='utf-8')
         expected={line.split(': ',1)[0]:line.split(': ',1)[1] for line in native.splitlines() if '.find-' in line}
         for kind,source in (('array','New FixedArray(New Array)'),('structure','New FixedStructure("X",1)'),('map','New FixedMap(New Map)')):
             for route in ('source','ast','prepared'):

@@ -142,7 +142,37 @@ class BSLValueTableColumnCollection(BSLObject):
     def count(self):return Decimal(len(self._items))
     def _index_of(self,column):return next((i for i,c in enumerate(self._items) if c is column),-1)
     def index_of(self,column):return Decimal(self._index_of(column))
-    def insert(self,*args):raise NotImplementedError('column insertion is parked')
+    def insert(self,index,name='',value_type=None,title='',width=Decimal(0)):
+        _writable(self.table)
+        if type(index) is int:n=index
+        elif type(index) is Decimal and index.is_finite():n=index.to_integral_value(rounding=ROUND_DOWN)
+        else:raise TypeError('table index must be a finite number')
+        size=len(self._items)
+        # The native collections fixture observes both negative and past-end
+        # insertion as append. In that case retain the ordinary append path.
+        if not 0<=n<size:return self.add(name,value_type,title,width)
+        position=int(n)
+        if type(name) is not str or type(title) is not str:raise TypeError('column text must be str')
+        if value_type is None:value_type=BSLTypeDescription()
+        if type(value_type) is not BSLTypeDescription:raise TypeError('exact TypeDescription required')
+        if type(width) is not Decimal or not width.is_finite():raise TypeError('width must be finite')
+        column=BSLValueTableColumn(self.table,name,value_type,title,width)
+        default=_default(value_type) if value_type.types else None
+        indexes=self.table.indexes
+        if type(indexes) is not BSLCollectionIndexes or indexes.table is not self.table or type(indexes.items) is not list:
+            raise ValueError('noncanonical index declarations')
+        shifted=[]
+        for signature in indexes.items:
+            if type(signature) is not tuple or any(type(i) is not int or not 0<=i<size for i in signature):
+                raise ValueError('noncanonical index declaration')
+            shifted.append(tuple(i+(i>=position) for i in signature))
+        declarations=set(shifted)
+        self.table._storage.insert_column(position,name,column,default)
+        self._items.insert(position,column)
+        indexes.items[:]=shifted
+        self.table._search.declarations=declarations
+        self.table._search.cache.clear()
+        return column
     def move(self,*args):raise NotImplementedError('column reordering is parked')
     def get_member(self,name):return self.get_index(name)
     def set_index(self,*args):raise ValueError('columns cannot be replaced')

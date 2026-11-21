@@ -1,15 +1,17 @@
 # Lightweight working ValueTable (integration candidate)
 
 This is the actual exported `BSLValueTable` constructor, not a research selector.
-Rows are dicts keyed by normalized column names; one schema owns ordered names,
-lookup offsets, metadata, and default cells. There is no second mutable cell map.
+Rows are positional lists; one schema owns ordered names, lookup offsets,
+metadata and default cells. There is no second mutable cell map.
 
 ## Deliberate differences
 
 * Cells default to Undefined. TypeDescription is metadata, not coercion.
 * Python scalar ordering replaces 1C-specific ordering. Custom comparators are
   unsupported; sorting rejects opaque objects instead of invoking their hooks.
-* Indexes, GroupBy, column insertion/reordering are explicitly unsupported.
+* Search indexes are declared explicitly and built lazily. Inserting a column
+  shifts positional index declarations and invalidates cached positions.
+  Column reordering remains unsupported.
 * `columns.items` is a readonly tuple; `row.cells` is a readonly inspection
   snapshot. Python callers must use the mutation methods or explicit cold
   materialization setter. Raw mutation compatibility is not promised.

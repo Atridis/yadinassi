@@ -22,8 +22,9 @@ from yadinassi.types.type_qualifiers import (
     BSLAllowedLength, BSLAllowedSign, BSLDateFractions, BSLDateQualifiers,
     BSLNumberQualifiers, BSLStringQualifiers,
 )
-from yadinassi.collections.value_tables import (BSLValueTable, BSLValueTableColumn,
-                           BSLCollectionIndexes, BSLCollectionIndex)
+from yadinassi.collections.plain_table_storage import Schema, TableStorage, validate_row
+from yadinassi.collections.value_tables import (BSLValueTable, BSLValueTableRow, BSLValueTableColumn,
+                           BSLValueTableColumnCollection, BSLCollectionIndexes, BSLCollectionIndex)
 from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
 from yadinassi.types.type_values import type_of
 from yadinassi.db.catalog.catalog_types import BSLCatalogReference, BSLCatalogType
@@ -450,18 +451,35 @@ class _Writer:
         self.emit(',\n' + _LIST_PICTURE + ',' + str(identifier) + ',0,""}')
 
     def table(self, table, depth):
-        if table._bounded_slice_read:
+        if table._bounded_slice_read is not False:
             raise ValueError('native slice column codec profile is not admitted')
         # Canonical snapshot layout established by table.codec.empty/table.
         # The owner's table.indexes.codec.table adds ordered index definitions.
         # Historic column/row IDs and undocumented flags are not synthesized.
-        columns, rows = table.columns.items, table.rows
+        collection, storage, rows = table.columns, table._storage, table.rows
+        if (type(collection) is not BSLValueTableColumnCollection or collection.table is not table
+                or type(collection._items) is not list or type(storage) is not TableStorage
+                or storage.owner is not table or storage.row_factory is not BSLValueTableRow
+                or type(rows) is not list or storage.rows is not rows or type(storage.schema) is not Schema):
+            raise ValueError('ЗначениеВСтрокуВнутр: недопустимое состояние таблицы')
+        columns, schema = collection._items, storage.schema
         nc, nr = len(columns), len(rows)
         self.nodes += nc + nr
         if self.nodes > _MAX_NODES or nc * nr > _MAX_NODES:
             raise _resource("ЗначениеВСтрокуВнутр")
+        names, keys, metadata = schema._names, schema._keys, schema._metadata
+        if (type(names) is not list or type(keys) is not list or type(metadata) is not list
+                or not len(names) == len(keys) == len(metadata) == nc):
+            raise ValueError('ЗначениеВСтрокуВнутр: недопустимая схема таблицы')
         self.emit('{9,\n{' + str(nc))
         for index, column in enumerate(columns):
+            name = names[index]
+            if (type(column) is not BSLValueTableColumn or column.table is not table
+                    or column._deleted is not False or metadata[index] is not column
+                    or type(name) is not str or type(column.name) is not str or name != column.name
+                    or type(keys[index]) is not str or keys[index] != name.casefold()
+                    or type(column.title) is not str):
+                raise ValueError('ЗначениеВСтрокуВнутр: недопустимая колонка таблицы')
             description = column.value_type
             if type(description) is not BSLTypeDescription:
                 raise TypeError("ЗначениеВСтрокуВнутр: ожидается ОписаниеТипов колонки")
@@ -485,10 +503,16 @@ class _Writer:
             self.emit(',' + str(index) + ',' + str(index))
         self.emit(',\n{1,' + str(nr))
         for index, row in enumerate(rows):
+            validate_row(row, schema, table, row_type=BSLValueTableRow)
+            if row.table is not table:
+                raise ValueError('ЗначениеВСтрокуВнутр: посторонняя строка таблицы')
             self.emit(',\n{2,' + str(index) + ',' + str(nc))
-            for column in columns:
+            for column, cell in zip(columns, list.__iter__(row)):
                 self.emit(',\n')
-                cell = row.cells[column]
+                if type(cell) is int:
+                    if cell.bit_length() > 4 * _MAX_NUMBER_DIGITS:
+                        raise _resource("ЗначениеВСтрокуВнутр")
+                    cell = Decimal(cell)
                 if not _table_cell_matches(column.value_type, cell):
                     raise ValueError("ЗначениеВСтрокуВнутр: значение ячейки не соответствует типу колонки")
                 self.value(cell, depth + 1)
@@ -507,6 +531,9 @@ class _Writer:
         self.nodes += count
         if self.nodes > _MAX_NODES:
             raise _resource("ЗначениеВСтрокуВнутр")
+        if not count:
+            self.emit('{0,0}')
+            return
         positions = {id(column): position for position, column in enumerate(table.columns.items)}
         self.emit('{0,' + str(count))
         for index in collection.items:
@@ -803,13 +830,15 @@ class _Reader:
                 self.fail()
             if column.name != entry[1] or column.title != entry[3] or column.width != width:
                 self.fail()
+        columns = result.columns.items
         for index, entry in enumerate(rows[2:]):
             if (type(entry) is not list or len(entry) != nc + 4
                     or entry[:3] != [_Atom('2'), _Atom(str(index)), _Atom(str(nc))]
                     or entry[-1] != _Atom('0')):
                 self.fail()
             row = result.add()
-            for column, cell in zip(result.columns.items, entry[3:-1]):
+            for position, column in enumerate(columns):
+                cell = entry[position + 3]
                 value = self.value(cell, depth + 1)
                 try:
                     matches = _table_cell_matches(column.value_type, value)
@@ -817,7 +846,9 @@ class _Reader:
                     self.fail()
                 if not matches:
                     self.fail()
-                row.cells[column] = value
+                # A fresh row is not yet exposed; validated snapshots must not
+                # pass through assignment coercion a second time.
+                list.__setitem__(row, position, value)
         self.table_indexes(result, body[3])
         return result
 

@@ -142,7 +142,7 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
             from .query_enum_tables import prepare_tables
             external = prepare_tables(external, _enum_scope)
             tables = prepare_tables(tables, _enum_scope)
-        from .query_reference_tables import input_bindings, validate_view
+        from .query_reference_tables import _Binding, input_bindings, validate_view
         bindings = input_bindings((*external.values(), *tables.values()), catalogs, documents)
         from .source_query_references import SourceBinding
         if _source_scope is None and any(type(binding) is SourceBinding for binding in bindings):
@@ -154,8 +154,15 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
         elif bindings:
             composite = composite or any(b.kind == 'document_ref' for b in bindings)
             if view is None:
-                view = (_open_query_read(catalogs._context.backend) if composite
-                        else _transaction_query_view(bindings[0].issuer))
+                from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+                backend = catalogs._context.backend if composite else bindings[0].issuer._backend
+                if type(backend) is SQLiteCatalogBackend and any(type(binding) is _Binding for binding in bindings):
+                    # Typed reports retain a database generation; validate the live
+                    # generation once on the package view, including empty reports.
+                    view = backend.begin_query_read()
+                else:
+                    view = (_open_query_read(backend) if composite
+                            else _transaction_query_view(bindings[0].issuer))
             validate_view(bindings, view)
         result = BSLArray()
         budget = [0, 0, 0, 0] if _enum_scope is not None else [0, 0]

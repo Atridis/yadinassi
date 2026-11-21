@@ -277,6 +277,24 @@ class TableStorage:
         schema.version += 1
         return position
 
+    def insert_column(self, position, name, metadata=None, default=None):
+        if type(position) is not int:
+            raise TypeError('storage index must be exact int')
+        self.validate()
+        schema = self.schema
+        if not 0 <= position <= len(schema._names):
+            raise IndexError('column index out of range')
+        if key(name) in schema._offsets:
+            raise StorageError('duplicate column: ' + name)
+        names, descriptors, defaults = schema._names[:], schema._metadata[:], schema._defaults[:]
+        names.insert(position, name)
+        descriptors.insert(position, metadata)
+        defaults.insert(position, default)
+        self.epoch += 1
+        schema._publish(names, descriptors, defaults)
+        for row in self.rows:
+            list.insert(row, position, default)
+
     def rename_column(self, old_name, new_name):
         schema = self.schema
         old = schema.resolve(old_name)

@@ -36,6 +36,26 @@ BeginTransaction();D.Write();Q=New Query("SELECT Number FROM Document.Orders");
 T=Q.Execute().Unload();Message(T.Count());CommitTransaction();''')
         self.assertEqual(self.output,['1'])
 
+    def test_typed_report_joins_staged_rows_and_releases_borrowed_lease(self):
+        from yadinassi.db.query.queries import BSLQuery
+        item = self.catalog()
+        item.write()
+        catalogs = self.vm._catalogs
+        report = BSLQuery(catalogs, 'SELECT Ref AS Item FROM Catalog.Products').execute().unload()
+        query = BSLQuery(catalogs, 'SELECT P.Description FROM &Input AS T '
+                         'JOIN Catalog.Products AS P ON T.Item=P.Ref')
+        query.set_parameter('Input', report)
+        with execution(self.backend):
+            begin(self.backend)
+            transaction = current(self.backend)
+            item.set_member('Description', 'staged')
+            item.write()
+            self.assertEqual(query.execute()._rows, (('staged',),))
+            self.assertIs(current(self.backend), transaction)
+            self.assertEqual(transaction.leases, 0)
+            rollback(self.backend)
+        self.assertEqual(query.execute()._rows, (('edited',),))
+
     def test_register_query_sees_staged_row(self):
         self.vm.execute('''R=InformationRegisters.Prices.CreateRecordManager();R.Period=Date(2026,1,1);R.Item="A";R.Price=2;
 BeginTransaction();R.Write();Q=New Query("SELECT Price FROM InformationRegister.Prices");

@@ -116,7 +116,7 @@ class PersistentDirectTests(unittest.TestCase):
 
     def test_actual_unchanged_regex_helpers_persist_after_initial_replay(self):
         output=[];vm=Interpreter(output.append,compilation_profile='managed-thick-file')
-        vm.execute(Path('integrational_tests/measurements/regex_family.bsl').read_text())
+        vm.execute(Path('integrational_tests/measurements/regex_family.bsl').read_text(encoding='utf-8'))
         original=output.copy();self.assertEqual(len(original),42)
         vm.execute('RFObserve(7);RFObserve(22);')
         self.assertEqual(output[-2:],[original[8],original[23]])

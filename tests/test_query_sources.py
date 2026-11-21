@@ -316,16 +316,39 @@ Message(A[2].IsEmpty());M.Close();''')
             def __str__(self): raise AssertionError('must not stringify')
         for value in (None, NULL, True, '1', [], Hostile(), Decimal('NaN'), Decimal('1.001'), Decimal('1e1000')):
             source = table([('Keep',string()),('N',number())], [('safe',Decimal(1))])
-            source.rows[0].cells[source.columns.items[1]] = value
+            list.__setitem__(source.rows[0], 1, value)
             with self.subTest(kind=type(value).__name__), self.assertRaises((ValueError, TypeError)):
                 self.rows('SELECT TOP 1 Keep FROM &T WHERE Keep="absent"', [('T',source)])
+
+    def test_external_native_integer_is_numeric_not_boolean(self):
+        source = table([('N', number())], [(Decimal(1),)])
+        list.__setitem__(source.rows[0], 0, 2)
+        result = self.rows('SELECT N FROM &T', [('T', source)])
+        self.assertEqual(result, ((Decimal(2),),))
+        self.assertIs(type(result[0][0]), Decimal)
+        for unsupported in (True, 10**1000):
+            list.__setitem__(source.rows[0], 0, unsupported)
+            with self.assertRaises((TypeError, ValueError)):
+                self.rows('SELECT N FROM &T', [('T', source)])
+
+    def test_external_positional_integrity(self):
+        for mutate in (
+            lambda t: setattr(t, 'rows', list(t.rows)),
+            lambda t: t._storage.schema._metadata.__setitem__(0, None),
+            lambda t: setattr(t.rows[0], 'table', None),
+            lambda t: list.pop(t.rows[0]),
+        ):
+            source = table([('N', number())], [(Decimal(1),)])
+            mutate(source)
+            with self.assertRaises((TypeError, ValueError)):
+                self.rows('SELECT N FROM &T', [('T', source)])
 
     def test_external_checks_utf16_fixed_and_date_fraction_limits(self):
         cases = [(string(1), '😀'), (string(4,True),'x'), (string(4),'\ud800'),
                  (BSLTypeDescription('Date',None,None,BSLDateQualifiers(BSLDateFractions.DATE)), BSLDate(1))]
         for description, value in cases:
             source = table([('V',description)])
-            row = source.add(); row.cells[source.columns.items[0]] = value
+            row = source.add(); list.__setitem__(row, 0, value)
             with self.subTest(kind=type(value).__name__), self.assertRaises(ValueError):
                 self.rows('SELECT V FROM &T', [('T',source)])
 

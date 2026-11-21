@@ -121,7 +121,7 @@ if current!=seen:raise AssertionError('default audit stream differs from unmarke
         self.assertEqual(len(_StructureIndex().nodes),0)
     def test_exact_bytecode_and_location_tables_on_real_modules(self):
         root=Path(__file__).resolve().parents[1]
-        sources=[(root/path).read_text() for path in (
+        sources=[(root/path).read_text(encoding='utf-8') for path in (
             'integrational_tests/measurements/regex_family.bsl',
             'integrational_tests/tests/numbers.bsl','integrational_tests/tests/dates.bsl')]
         sources += ['Function F(Val X)\nTry Return X/0; Except Return 2;EndTry;EndFunction\nR=F(1);',

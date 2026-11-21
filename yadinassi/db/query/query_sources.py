@@ -13,6 +13,7 @@ from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.types.type_qualifiers import BSLAllowedLength, BSLAllowedSign, BSLDateFractions
 from yadinassi.collections.value_tables import (BSLValueTable, BSLValueTableColumn,
                            BSLValueTableColumnCollection, BSLValueTableRow)
+from yadinassi.collections.plain_table_storage import Schema, TableStorage, validate_row
 from yadinassi.types.values import BSLType, NULL
 
 
@@ -73,6 +74,11 @@ def _external_value(value, column, nullable):
         return value
     if column.reference_binding is not None:
         return column.reference_binding.value(value)
+    if column.kind == 'number' and type(value) is int:
+        # Direct numeric lowering can retain exact integral cells internally.
+        if value.bit_length() > 127:
+            raise ValueError('Query Number is outside output qualifiers')
+        value = Decimal(value)
     expected = {'string': str, 'number': Decimal, 'datetime': BSLDate, 'boolean': bool}[column.kind]
     if type(value) is not expected:
         raise TypeError('External query cell requires exact declared scalar type')
@@ -101,16 +107,30 @@ def _snapshot(value, budget, catalogs=None, documents=None):
         raise TypeError('External query source requires ValueTable')
     if value._bounded_slice_read:
         raise ValueError('Restricted slice tables are not external query sources')
-    if (type(value.rows) is not list or type(value.columns) is not BSLValueTableColumnCollection
-            or value.columns.table is not value or type(value.columns.items) is not list):
+    storage, columns_view = value._storage, value.columns
+    if (type(storage) is not TableStorage or storage.owner is not value
+            or storage.row_factory is not BSLValueTableRow or type(storage.rows) is not list
+            or value.rows is not storage.rows or type(storage.schema) is not Schema
+            or type(columns_view) is not BSLValueTableColumnCollection
+            or columns_view.table is not value or type(columns_view._items) is not list):
         raise TypeError('Malformed external query table')
-    if not 1 <= len(value.columns.items) <= 128 or len(value.rows) > syntax.MAX_ROWS:
+    original, schema = columns_view._items, storage.schema
+    if not 1 <= len(original) <= 128 or len(storage.rows) > syntax.MAX_ROWS:
         raise ValueError('External query source size limit exceeded')
-    budget[0] += len(value.columns.items) * len(value.rows)
+    if (type(schema._names) is not list or type(schema._keys) is not list
+            or type(schema._metadata) is not list or type(schema._defaults) is not list
+            or type(schema._offsets) is not dict
+            or not len(original) == len(schema._names) == len(schema._keys)
+            == len(schema._metadata) == len(schema._defaults) == len(schema._offsets)):
+        raise TypeError('Malformed external query table schema')
+    schema.validate()
+    budget[0] += len(original) * len(storage.rows)
     if budget[0] > _MAX_CELLS: raise ValueError('External query source cell limit exceeded')
-    original, columns, nullables, names = tuple(value.columns.items), [], [], set()
-    for column in original:
-        if (type(column) is not BSLValueTableColumn or column.table is not value or column._deleted
+    columns, nullables, names = [], [], set()
+    for offset, column in enumerate(original):
+        if (type(column) is not BSLValueTableColumn or column.table is not value
+                or column._deleted is not False or schema._metadata[offset] is not column
+                or type(column.name) is not str or column.name != schema._names[offset]
                 or not syntax.identifier(column.name)):
             raise ValueError('Invalid external query column')
         key = column.name.casefold()
@@ -122,15 +142,13 @@ def _snapshot(value, budget, catalogs=None, documents=None):
         columns.append(output_column)
         nullables.append(any(t is BSLType.NULL for t in column.value_type.types))
     rows = []
-    for row in value.rows:
-        if (type(row) is not BSLValueTableRow or row.table is not value or row._deleted
-                or type(row.cells) is not dict or len(row.cells) != len(original)
-                or any(type(key) is not BSLValueTableColumn for key in row.cells)):
+    for row in storage.rows:
+        validate_row(row, schema, value, row_type=BSLValueTableRow)
+        if row.table is not value:
             raise TypeError('Malformed external query row')
         values = []
-        for source, column, nullable in zip(original, columns, nullables):
-            if source not in row.cells: raise ValueError('Missing external query cell')
-            cell = _external_value(row.cells[source], column, nullable)
+        for raw, column, nullable in zip(list.__iter__(row), columns, nullables):
+            cell = _external_value(raw, column, nullable)
             budget[1] += len(cell) if type(cell) is str else 0
             if budget[1] > _MAX_RESULT_TEXT: raise ValueError('External query source text limit exceeded')
             values.append(cell)

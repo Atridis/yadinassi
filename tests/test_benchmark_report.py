@@ -91,9 +91,9 @@ class PairedReportTests(unittest.TestCase):
             with redirect_stdout(stdout):
                 code=paired.main(['--directory',str(root),'--output',str(output)])
             self.assertEqual(code,1)
-            self.assertEqual(output.read_text(),stdout.getvalue())
-            self.assertIn('| core-default |',output.read_text())
-            self.assertIn('Неполный отчёт',output.read_text())
+            self.assertEqual(output.read_text(encoding='utf-8'),stdout.getvalue())
+            self.assertIn('| core-default |',output.read_text(encoding='utf-8'))
+            self.assertIn('Неполный отчёт',output.read_text(encoding='utf-8'))
 
     def test_malformed_nested_route_still_preserves_other_results(self):
         data=reports();data['execution-layers-prepared.json']['cases'][0]['route']=None

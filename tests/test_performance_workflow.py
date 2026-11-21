@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class PerformanceWorkflowTests(unittest.TestCase):
     def setUp(self):
-        self.build = (ROOT / '.github/workflows/build.yml').read_text()
+        self.build = (ROOT / '.github/workflows/build.yml').read_text(encoding='utf-8')
         from_performance = self.build.split('  performance:\n', 1)[1]
         self.job = re.split(r'(?m)^  [a-zA-Z0-9_-]+:\s*$', from_performance, maxsplit=1)[0]
 
@@ -21,7 +21,7 @@ class PerformanceWorkflowTests(unittest.TestCase):
     def test_single_workflow_owns_timing_commands(self):
         self.assertFalse((ROOT / '.github/workflows/performance.yml').exists())
         owners = [p.name for p in (ROOT / '.github/workflows').glob('*.yml')
-                  if 'scripts/benchmark_execution_layers.py' in p.read_text()]
+                  if 'scripts/benchmark_execution_layers.py' in p.read_text(encoding='utf-8')]
         self.assertEqual(owners, ['build.yml'])
         self.assertIn("ref: ${{ github.event.pull_request.head.sha || github.sha }}", self.job)
 

@@ -116,16 +116,31 @@ class AssociativeHostTests(unittest.TestCase):
 
 class AssociativeHistoricalSourceTests(unittest.TestCase):
     def test_exact_inverse_preserves_old_pins_and_unknown_bytes(self):
-        from test_native_async_fixture import without_associative_order_harness
+        from test_native_async_fixture import (
+            without_associative_order_harness,
+            without_direct_host_source_history,
+            without_direct_smoke_source_history,
+        )
         root = Path(__file__).resolve().parents[1]
-        contracts = json.loads((root / 'tests/native_associative_source_inverse.json').read_text())
-        for path, contract in contracts.items():
-            source = (root / path).read_text()
-            self.assertEqual(hashlib.sha256(source.encode()).hexdigest(), contract['candidate_sha256'])
-            restored = without_associative_order_harness(source, path)
-            self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(), contract['base_sha256'])
-            self.assertEqual(without_associative_order_harness(restored, path), restored)
-            self.assertEqual(without_associative_order_harness(source + '# unknown', path), source + '# unknown')
+        contracts = json.loads((root / 'tests/native_associative_source_inverse.json').read_text(encoding='utf-8'))
+        historical = {
+            'scripts/native_1c_full_host.py': without_direct_host_source_history,
+            'scripts/native_1c_smoke.py': without_direct_smoke_source_history,
+        }
+        self.assertEqual(set(contracts), set(historical))
+        for path, recover_candidate in historical.items():
+            with self.subTest(path=path):
+                contract = contracts[path]
+                current = (root / path).read_text(encoding='utf-8')
+                candidate = recover_candidate(current)
+                self.assertEqual(hashlib.sha256(candidate.encode('utf-8')).hexdigest(), contract['candidate_sha256'])
+                restored = without_associative_order_harness(candidate, path)
+                self.assertEqual(hashlib.sha256(restored.encode('utf-8')).hexdigest(), contract['base_sha256'])
+                self.assertEqual(without_associative_order_harness(current, path), restored)
+                self.assertEqual(without_associative_order_harness(restored, path), restored)
+                for source in (current, candidate):
+                    drift = source + '# unknown'
+                    self.assertEqual(without_associative_order_harness(drift, path), drift)
 
 
 class ActualComparatorContractTests(unittest.TestCase):

@@ -100,7 +100,7 @@ X=1;Execute("SetX(X);");''');self.assertEqual(v.variables['x'],9)
         with self.assertRaises(BoundaryViolation):v.execute('Execute("__import__(""os"");");')
 
     def test_native_original_source_can_be_prepared(self):
-        s=Path('scripts/native_1c_bootstrap/client_probe.bsl').read_text()
+        s=Path('scripts/native_1c_bootstrap/client_probe.bsl').read_text(encoding='utf-8')
         v=Interpreter(compilation_profile='managed-thick-file');v.execute(s)
         self.assertTrue(v._direct_routine_modules)
 

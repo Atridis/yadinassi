@@ -107,7 +107,7 @@ R=Read();''')
             self.assertEqual(vm.execution_context,'client')
 
     def test_original_nocontext_witness_matches_control(self):
-        text=Path('scripts/native_1c_bootstrap/client_probe.bsl').read_text()
+        text=Path('scripts/native_1c_bootstrap/client_probe.bsl').read_text(encoding='utf-8')
         source=text.split('// BEGIN bounded no-context witness\n',1)[1].split('// BEGIN bounded dual witness',1)[0]
         rows=[]
         for backend in ('python-direct','compiled-strict'):

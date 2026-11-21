@@ -16,10 +16,28 @@ class SQLiteHostInverseTests(unittest.TestCase):
         restored = history.without_sqlite_host_context(source)
         self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(), contract['base_sha256'])
         self.assertEqual(history.without_sqlite_host_context(restored), restored)
+        sqlite_candidate = history.without_catalog_assets_provenance(source)
+        self.assertEqual(hashlib.sha256(sqlite_candidate.encode()).hexdigest(),
+                         contract['candidate_sha256'])
         for edit in contract['edits']:
-            self.assertEqual(source.count(edit['new']), 1)
+            self.assertEqual(sqlite_candidate.count(edit['new']), 1)
         self.assertEqual(history.without_collections_measurement_budget(source),
                          history.without_collections_measurement_budget(restored))
+
+    def test_direct_host_inverse_is_pinned_and_cannot_hide_drift(self):
+        source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        restored = history.without_direct_host_source_history(source)
+        self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),
+                         '77555ab592977002bcbb33e3dd1a5fbf9f1d9c0ccca0e4002734d944bc689fd1')
+        self.assertEqual(history.without_direct_host_source_history(restored), restored)
+        with self.assertRaisesRegex(AssertionError, 'outer source identity'):
+            history.without_repository_inventory_budget(source + '# drift\n')
+        contracts = json.loads((ROOT / 'tests/native_direct_host_source_inverse.json')
+                               .read_text(encoding='utf-8'))
+        contracts[1]['edits'][0]['old'] += '# altered\n'
+        with mock.patch.object(history.json, 'loads', return_value=contracts):
+            with self.assertRaisesRegex(AssertionError, 'direct host inverse inner identity'):
+                history.without_direct_host_source_history(source)
 
     def test_unknown_changes_or_weakened_contract_are_rejected(self):
         source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')

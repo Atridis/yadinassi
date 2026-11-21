@@ -29,7 +29,7 @@ class DirectDualTests(unittest.TestCase):
             self.assertEqual(vm._module_context_stack,[True])
 
     def test_original_positive_operation_preserves_side_masks_aliases(self):
-        source=Path('scripts/native_1c_bootstrap/client_probe.bsl').read_text().split('// BEGIN bounded dual witness\n',1)[1].split('// BEGIN bounded Date Null measurement',1)[0]
+        source=Path('scripts/native_1c_bootstrap/client_probe.bsl').read_text(encoding='utf-8').split('// BEGIN bounded dual witness\n',1)[1].split('// BEGIN bounded Date Null measurement',1)[0]
         outputs=[]
         for backend in ('python-direct','compiled-strict'):
             vm=Interpreter(compilation_profile='managed-thick-file',execution_backend=backend)
@@ -126,7 +126,7 @@ Z=100;Tick();
             self.assertEqual(vm.variables,{})
 
     def test_original_dual_witness_matches_control(self):
-        source=Path('scripts/native_1c_bootstrap/client_probe.bsl').read_text().split('// BEGIN bounded dual witness\n',1)[1].split('// BEGIN bounded Date Null measurement',1)[0]
+        source=Path('scripts/native_1c_bootstrap/client_probe.bsl').read_text(encoding='utf-8').split('// BEGIN bounded dual witness\n',1)[1].split('// BEGIN bounded Date Null measurement',1)[0]
         rows=[]
         for backend in ('python-direct','compiled-strict'):
             vm=Interpreter(compilation_profile='managed-thick-file',execution_backend=backend)
