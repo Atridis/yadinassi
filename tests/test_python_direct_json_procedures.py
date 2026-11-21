@@ -149,6 +149,53 @@ class DirectJSONProceduresTests(unittest.TestCase):
         with self.assertRaises(BoundaryViolation):vm.execute('X=R.Read(Arg());')
         self.assertEqual((seen,reader._position),(['arg'],-1))
 
+    def test_memory_json_and_linebreak_namespace_do_not_consult_catalog(self):
+        from yadinassi.execution.direct.python_direct_database import CatalogBoundary
+        from yadinassi.formats.json.json_processing import JSON_LINE_BREAKS
+
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        source = ('W=New JSONWriter; W.SetString(New JSONWriterSettings(JSONLineBreak.None)); '
+                  'W.WriteStartArray(); W.WriteValue(1); W.WriteValue("ёж"); W.WriteEndArray(); '
+                  'Encoded=W.Close(); R=New JSONReader; R.SetString(Encoded); '
+                  'Start=R.Read(); Ok=R.Read(); V=R.CurrentValue; R.Close();')
+        owner = CatalogBoundary._catalog_owner
+
+        def deny_json(context, value, **kwargs):
+            if type(value) is BSLJSONReader or type(value) is BSLJSONWriter or value is JSON_LINE_BREAKS:
+                self.fail('ordinary JSON should not enter catalog ownership')
+            return owner(context,value,**kwargs)
+
+        plan = vm.prepare(source)
+        with patch.object(CatalogBoundary, '_catalog_owner', deny_json):
+            vm.execute(source)
+            vm.execute_prepared(plan)
+        self.assertEqual(vm.variables['encoded'], '[1,"ёж"]')
+        self.assertIs(vm.variables['ok'], True)
+        self.assertEqual(vm.variables['v'], 1)
+
+    def test_writer_attached_during_argument_evaluation_uses_resource_path(self):
+        from yadinassi.execution.direct.python_direct_database import CatalogBoundary
+
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('Var W,S; W=New JSONWriter; W.SetString(); S=New MemoryStream; '
+                   'Function Attach() W.OpenStream(S); Return Undefined; EndFunction')
+        writer = vm.variables['w']
+        owner = CatalogBoundary._catalog_owner
+        attached = []
+
+        def observe(context,value,**kwargs):
+            if value is writer and value._file is not None:
+                attached.append(True)
+            return owner(context,value,**kwargs)
+
+        with patch.object(CatalogBoundary, '_catalog_owner', observe):
+            vm.execute('W.SetString(Attach()); W.WriteValue(3); Result=W.Close();')
+        self.assertTrue(attached)
+        self.assertIsNone(writer._file)
+        self.assertEqual(vm.variables['result'], '3')
+
     def test_read_keeps_the_open_file_snapshot(self):
         with TemporaryDirectory() as folder:
             path=Path(folder)/'source.json';path.write_text('1',encoding='utf-8')

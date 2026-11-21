@@ -19,7 +19,8 @@ from yadinassi.streams.binary_streams import BSLBinaryDataBuffer, BSLMemoryStrea
 from yadinassi.streams.data_io import BSLDataReader, BSLDataWriter
 from yadinassi.streams.data_hashing import BSLDataHashing
 from yadinassi.formats.json.json_dates import BSLJSONSerializerSettings
-from yadinassi.formats.json.json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings, read_json, write_json
+from yadinassi.formats.json.json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings, read_json, write_json, JSON_LINE_BREAKS
+from . import python_direct_json_memory as json_memory
 from yadinassi.types.values import HostFunction, BSLFixedArray, _DIRECT_TO_STRING_ABI
 from yadinassi.db.query.query_packages import BSLTempTablesManager, TEMP_TABLE_MANAGER_NAMES
 from yadinassi.collections.structures import BSLFixedStructure
@@ -189,6 +190,9 @@ class ServicesBoundary:
         return super()._before(operation,name)
 
     def get_member(self,value,name):
+        if (value is JSON_LINE_BREAKS or type(value) is BSLJSONReader) and json_memory.active(self):
+            found,result=json_memory.get(self,value,name)
+            if found:return result
         if type(value) is user_messages.BSLUserMessage:return user_messages.get(self,value,name)
         if type(value) is fixed.PlainFixedMap:return fixed.get(self,value,name)
         if type(value) is _CallbackDescription:
@@ -203,6 +207,9 @@ class ServicesBoundary:
         return super().get_member(value,name)
 
     def resolve_member(self,value,name):
+        if type(value) is BSLJSONReader or type(value) is BSLJSONWriter:
+            bound=json_memory.resolve(self,value,name)
+            if bound is not None:return bound
         if type(value) is user_messages.BSLUserMessage:return user_messages.resolve(self,value,name)
         if type(value) is fixed.PlainFixedMap:return fixed.resolve(self,value,name)
         if value is None:
@@ -213,7 +220,14 @@ class ServicesBoundary:
         if type(value) is BSLTextDocument:return text_resources.resolve(self,value,name)
         return super().resolve_member(value,name)
 
+    def resolve_json_resource(self,value,name,require_value,call_syntax):
+        if call_syntax:return super().resolve_member_call(value,name,require_value=require_value)
+        return super().resolve_member(value,name)
+
     def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
+        if type(value) is BSLJSONReader or type(value) is BSLJSONWriter:
+            bound=json_memory.resolve(self,value,name,require_value=require_value,omitted=omitted,call_syntax=True)
+            if bound is not None:return bound
         if omitted and type(value) is PlainValueList:
             from .python_direct_import_collections import bind_optional_list
             if not self._verify_context:return bind_optional_list(value,name.casefold(),omitted)
