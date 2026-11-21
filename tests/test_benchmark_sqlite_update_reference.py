@@ -21,6 +21,7 @@ class SQLiteUpdateReferenceTests(unittest.TestCase):
             table = connection.execute('SELECT physical_name FROM catalog_storage_map WHERE catalog_id=?', (str(catalog_id),)).fetchone()[0]
             rid = connection.execute('SELECT record_id FROM "' + table.replace('"', '""') + '"').fetchone()[0]
         self.run = make_update_reference(self.path, catalog_id, rid, 3)
+        self.stack.callback(self.run.close)
 
     def test_real_fixture_and_canonical_readback(self):
         before = self.run.read_record()
@@ -32,6 +33,21 @@ class SQLiteUpdateReferenceTests(unittest.TestCase):
         self.assertEqual(after.revision, before.revision + 3)
         with closing(sqlite3.connect(self.path)) as connection:
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name='commit_receipt'").fetchone()[0], 0)
+
+    def test_warmed_trace_is_one_read_and_one_committed_update_per_iteration(self):
+        statements = []
+        self.run._reader.set_trace_callback(statements.append)
+        self.run._writer.set_trace_callback(statements.append)
+        try:
+            self.assertEqual(self.run(), Decimal(3))
+        finally:
+            self.run._reader.set_trace_callback(None)
+            self.run._writer.set_trace_callback(None)
+        verbs = [sql.split()[0] for sql in statements]
+        self.assertEqual(verbs, ['SELECT', 'UPDATE'] * 3)
+        self.assertFalse(self.run._reader.in_transaction)
+        self.assertFalse(self.run._writer.in_transaction)
+        self.run.verify()
 
     def test_stale_revision_does_not_write(self):
         record = self.run.read_record()
@@ -60,6 +76,7 @@ class SQLiteUpdateReferenceTests(unittest.TestCase):
             self.run.update_record(before, 'x' * 101)
         self.assertEqual(self.run.read_record(), before)
         zero = make_update_reference(self.path, self.run.catalog_id, self.run.record_id, 0)
+        self.stack.callback(zero.close)
         self.assertEqual(zero(), Decimal(0))
         zero.verify()
         self.assertEqual(zero.read_record(), before)

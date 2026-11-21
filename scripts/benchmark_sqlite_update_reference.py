@@ -4,7 +4,8 @@ This is a read/modify/write reference, not a catalog backend. It assumes the
 admitted fixture has no custom fields, sections, hierarchy or write hooks.
 Schema/source admission is deliberately not reproduced. Each iteration reads
 a detached scalar record, then commits an optimistic update without a receipt.
-No batching or durability shortcut is used. Setup and verify() are untimed.
+Each UPDATE commits on its own in SQLite autocommit mode. Connection setup
+and verify() are untimed.
 """
 from contextlib import closing
 from dataclasses import dataclass
@@ -35,16 +36,21 @@ class SQLiteUpdateReference:
         self.catalog_id = str(UUID(str(catalog_id)))
         self.record_id = str(UUID(str(rid)))
         self.n = n
-        with closing(self._connect(True)) as connection:
-            if connection.execute('PRAGMA journal_mode').fetchone() != ('delete',):
+        self._reader = self._connect(True)
+        try:
+            self._writer = self._connect()
+            if self._reader.execute('PRAGMA journal_mode').fetchone() != ('delete',):
                 raise ValueError('reference requires DELETE journal mode')
-            row = connection.execute(
+            row = self._reader.execute(
                 'SELECT physical_name FROM catalog_storage_map WHERE catalog_id=?',
                 (self.catalog_id,)).fetchone()
             if row is None or type(row[0]) is not str:
                 raise ValueError('catalog mapping missing')
             self.table = '"' + row[0].replace('"', '""') + '"'
-        self.read_record()  # Setup verifies that the requested record exists.
+            self.read_record()  # Setup verifies that the requested record exists.
+        except BaseException:
+            self.close()
+            raise
         self._first = None
 
     def _connect(self, readonly=False):
@@ -60,13 +66,18 @@ class SQLiteUpdateReference:
             raise
         return connection
 
+    def close(self):
+        try:
+            if hasattr(self, '_writer'):
+                self._writer.close()
+        finally:
+            self._reader.close()
+
     def read_record(self):
-        with closing(self._connect(True)) as connection:
-            connection.execute('BEGIN')
-            row = connection.execute(
+        with closing(self._reader.execute(
                 f'SELECT record_id,revision,code,description,deletion_mark FROM {self.table} '
-                'WHERE record_id=?', (self.record_id,)).fetchone()
-            connection.commit()
+                'WHERE record_id=?', (self.record_id,))) as cursor:
+            row = cursor.fetchone()
         if row is None:
             raise ValueError('record missing')
         return Record(*row)
@@ -76,20 +87,13 @@ class SQLiteUpdateReference:
             raise ValueError('fixture Description must be a string of at most 100 characters')
         if record.record_id != self.record_id:
             raise ValueError('wrong record')
-        with closing(self._connect()) as connection:
-            try:
-                connection.execute('BEGIN IMMEDIATE')
-                changed = connection.execute(
-                    f'UPDATE {self.table} SET revision=revision+1,code=?,description=?,deletion_mark=? '
-                    'WHERE record_id=? AND revision=?',
-                    (record.code, description, record.deletion_mark,
-                     self.record_id, record.revision)).rowcount
-                if changed != 1:
-                    raise StaleRevisionError('stale revision')
-                connection.commit()
-            except BaseException:
-                connection.rollback()
-                raise
+        with closing(self._writer.execute(
+                f'UPDATE {self.table} SET revision=revision+1,code=?,description=?,deletion_mark=? '
+                'WHERE record_id=? AND revision=?',
+                (record.code, description, record.deletion_mark,
+                 self.record_id, record.revision))) as cursor:
+            if cursor.rowcount != 1:
+                raise StaleRevisionError('stale revision')
 
     def __call__(self):
         self._first = None

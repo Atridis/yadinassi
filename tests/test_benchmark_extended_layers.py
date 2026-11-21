@@ -42,9 +42,7 @@ class ExtendedReferenceTests(unittest.TestCase):
                         else:
                             for sql in case['sql_statements'].values():
                                 self.assertEqual(sql['by_verb']['UPDATE'], 3)
-                            # Three raw read/write pairs, each with two committed transactions.
-                            self.assertEqual(raw['total'], 36)
-                            self.assertEqual(raw['by_verb']['COMMIT'], 6)
+                            self.assertEqual(raw, {'total': 6, 'by_verb': {'SELECT': 3, 'UPDATE': 3}})
                     else:
                         self.assertNotIn('sql_statements', case)
                     if name.startswith('form.'):

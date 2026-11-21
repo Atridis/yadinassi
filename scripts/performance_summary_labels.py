@@ -5,11 +5,11 @@ ROUTES = {'default': 'обычный API', 'prepared': 'подготовленн
 LAYERS = {'python': 'Python', 'python_classes': 'Классы yadinassi', 'bsl': 'BSL'}
 STATUSES = {'unsupported': 'не поддерживается', 'not_comparable': 'несопоставимо'}
 SQLITE_UPDATE_NOTE = ('Read/modify/write one existing catalog item; SQLite reference keeps revision conflict detection '
-                      'and atomic receipt, but excludes repeated configuration and schema admission.')
+                      'and commits each update in SQLite autocommit; connection setup and persisted-result checks are untimed.')
 NOTES = {
     SQLITE_UPDATE_NOTE:
-        'Чтение, изменение и запись одного элемента. Эталон sqlite3 сохраняет проверку ревизии и атомарную квитанцию, '
-        'но не повторяет проверки конфигурации и схемы. Записанное значение проверяется вне замера.',
+        'Чтение, изменение и запись одного элемента. Эталон sqlite3 проверяет ревизию в UPDATE; SQLite фиксирует '
+        'каждую запись отдельно. Настройка соединений и проверка результата вынесены за пределы замера.',
     'Streaming JSON: one encoder/writer per sample, per-item writes, then bulk read; all lifecycle work is timed. New Python streaming baseline; historical json.roundtrip ratios are not comparable.':
         'Потоковый JSON: один кодировщик/писатель на замер, поэлементная запись и затем чтение целиком; создание и закрытие включены. Новый потоковый эталон Python; коэффициенты прежнего json.roundtrip несопоставимы.',
     'Bulk JSON: ready arrays are prepared outside timing; one bulk write/read and writer/reader lifecycle are timed. BSL uses a canonical array fixture because New Array currently creates a PlainArray unsupported by WriteJSON. Changed workload; historical json.roundtrip ratios are not comparable.':

@@ -392,6 +392,7 @@ def make_case(name, n, route, stack, *, catalog_rows=32):
             source = f'R=0;For I=1 To {n} Do A=Ref.GetObject();A.Description=String(I);A.Write();R=R+1;EndDo;'
             from scripts.benchmark_sqlite_update_reference import make_update_reference
             native = make_update_reference(path, str(manager._schema.identity), str(ref.reference_uuid), n)
+            stack.callback(native.close)
             def verify(): exact(ref.get_object(ref).get_member('Description'), str(n))
             def verify_native():
                 native.verify()
