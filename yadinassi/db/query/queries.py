@@ -423,6 +423,11 @@ class BSLQueryResult(BSLObject):
         return materialize(self._columns, descriptions, self._rows)
 
 
+# Definition-time target for a posting boundary's detached-table publication.
+_DIRECT_QUERY_RESULT_UNLOAD = BSLQueryResult.unload
+_DIRECT_QUERY_RESULT_UNLOAD_CODE = _DIRECT_QUERY_RESULT_UNLOAD.__code__
+
+
 class BSLQueryResultSelection(BSLObject):
     def __init__(self, result):
         self._result = result

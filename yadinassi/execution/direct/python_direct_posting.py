@@ -4,6 +4,7 @@ This adapter grants only public members of the current document's buffers and
 its query results. It does not own transactions or run Interpreter dispatch.
 """
 from decimal import localcontext
+from types import MethodType, MappingProxyType
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
 from yadinassi.execution.codegen.experimental_naked_collections import _Cell
 from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
@@ -13,10 +14,13 @@ from .python_direct import REPAIRS
 from yadinassi.execution.codegen.native_targets import target_context
 from yadinassi.types.values import Reference, HostFunction
 from yadinassi.collections.structures import BSLStructure
+from yadinassi.collections.value_tables import (BSLValueTable, BSLValueTableRow,
+    BSLValueTableColumn, BSLValueTableColumnCollection)
 from yadinassi.db.document.document_lines import BSLDocumentLines, BSLDocumentLine
 from yadinassi.db.document.document_posting_values import BSLRecorderCollection, BSLRecorderSet, BSLRecorderRow, DOCUMENT_WRITE_MODES
 from yadinassi.db.registers.accumulation_posting_values import BSLAccumulationCollection, BSLAccumulationSet, BSLAccumulationRow, ACCUMULATION_RECORD_TYPES
-from yadinassi.db.query.queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
+from yadinassi.db.query.queries import (BSLQuery, BSLQueryResult, BSLQueryResultSelection,
+    _DIRECT_QUERY_RESULT_UNLOAD, _DIRECT_QUERY_RESULT_UNLOAD_CODE)
 from yadinassi.db.query.query_packages import BSLTempTablesManager, TEMP_TABLE_MANAGER_NAMES
 
 SELF=('thisobject','этотобъект')
@@ -25,6 +29,8 @@ SYSTEM={'accumulationrecordtype':ACCUMULATION_RECORD_TYPES,'виддвижени
 OWNED=(BSLDocumentLines,BSLDocumentLine,BSLRecorderCollection,BSLRecorderSet,BSLRecorderRow,
        BSLAccumulationCollection,BSLAccumulationSet,BSLAccumulationRow,BSLStructure,
        BSLQuery,BSLQueryResult,BSLQueryResultSelection,BSLTempTablesManager)
+_OWNED_IDS=frozenset(map(id,OWNED))
+_TABLE_CHILD_IDS=frozenset(map(id,(BSLValueTableRow,BSLValueTableColumnCollection,BSLValueTableColumn)))
 
 class PostingBoundary(BoundaryContext):
     def __init__(self,vm):
@@ -51,9 +57,15 @@ class PostingBoundary(BoundaryContext):
         self.vm._steps=steps+1
         if self.vm._steps>limit:
             raise posting.PostingLimitError('document handler execution budget')
-    def _adopt(self,value):
-        if id(type(value)) in tuple(map(id,OWNED)):
+    def _adopt(self,value,receiver=None):
+        kind=id(type(value))
+        if kind in _OWNED_IDS:
             self._owned[id(value)]=value
+        elif kind in _TABLE_CHILD_IDS:
+            parent=receiver.table if type(receiver) is BSLValueTableColumnCollection else receiver
+            if (type(parent) is BSLValueTable and value.table is parent
+                    and self._owned.get(id(parent)) is parent):
+                self._owned[id(value)]=value
         return value
     def _receiver(self,value):
         self._check()
@@ -79,7 +91,7 @@ class PostingBoundary(BoundaryContext):
         self._receiver(value)
         result=value.get_member(name)
         if type(result) is HostFunction:raise BoundaryViolation('captured posting methods are unsupported')
-        return self._adopt(result)
+        return self._adopt(result,value)
     def resolve_set_member(self,value,name):
         self._receiver(value)
         def write(new):
@@ -99,15 +111,30 @@ class PostingBoundary(BoundaryContext):
         if value is self.document:raise BoundaryViolation('recursive document methods are unsupported')
         method=value.get_method(name)
         bound=self.resolve_callable(method,allow_references=True)
+        if (type(value) is BSLQueryResult and type(method) is HostFunction
+                and type(method.function) is MethodType and method.function.__self__ is value
+                and method.function.__func__ is _DIRECT_QUERY_RESULT_UNLOAD):
+            original=method.function
+            def unload(*args):
+                self._receiver(value)
+                canonical=(not args and method.function is original
+                           and _DIRECT_QUERY_RESULT_UNLOAD.__code__ is _DIRECT_QUERY_RESULT_UNLOAD_CODE)
+                result=bound(*args)
+                if canonical and type(result) is BSLValueTable:
+                    # Publish the detached output, not arbitrary exact tables
+                    # passed in through other values or host extensions.
+                    self._owned[id(result)]=result
+                return result
+            unload.requires_reference=bound.requires_reference
+            return unload
         def invoke(*args):
             self._receiver(value)
-            return self._adopt(bound(*args))
+            return self._adopt(bound(*args),value)
         invoke.requires_reference=bound.requires_reference
         return invoke
 
 
 from dataclasses import dataclass
-from types import MappingProxyType
 
 _POSTING_CONSTRUCTORS=('query','запрос',*TEMP_TABLE_MANAGER_NAMES)
 # Core child bindings, never the parent's mutable custom registrations.

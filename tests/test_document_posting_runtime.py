@@ -197,6 +197,35 @@ EndProcedure''')
         self.new(3);self.post()
         self.assertEqual(self.vm.execution_context,'client')
 
+    def test_handler_reads_unloaded_rows_and_columns_through_public_members(self):
+        self.make('''Procedure Posting(Cancel,Mode)
+Q=New Query("SELECT Number FROM Document.OwnedPostingDoc");
+T=Q.Execute().Выгрузить();
+If T.Количество() <> 1 Then Raise "table count"; EndIf;
+If T.Columns.Get(0).Name <> "Number" Then Raise "column"; EndIf;
+Row=T.Get(0);
+If Row.Number <> "3" Then Raise "stored number"; EndIf;
+Row.Number="local";
+AdditionalProperties.Insert("Trace", T.Get(0).Number);
+EndProcedure''')
+        obj=self.new(3)
+        self.post()
+        self.assertEqual(self.trace(obj), 'local')
+        self.assertEqual(self.sql('SELECT number FROM document_record'), [('3',)])
+
+    def test_handler_does_not_adopt_foreign_table_from_document_property(self):
+        from yadinassi.collections.value_tables import BSLValueTable
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        self.make('''Procedure Posting(Cancel,Mode)
+T=AdditionalProperties.ForeignTable;
+T.Count();
+EndProcedure''')
+        obj=self.new(3)
+        obj.get_member('AdditionalProperties').insert('ForeignTable', BSLValueTable())
+        with self.assertRaisesRegex(BoundaryViolation,'unbound posting receiver'):
+            self.post()
+        self.assertEqual(self.sql('SELECT count(*) FROM document_record'),[(0,)])
+
     def test_nested_document_write_is_not_an_authority_grant(self):
         self.make('Procedure Posting(Cancel,Mode) D=Documents.OwnedPostingDoc.CreateDocument();D.Number="nested";D.Write(); EndProcedure')
         self.new(3)
