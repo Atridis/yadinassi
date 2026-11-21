@@ -4,7 +4,8 @@ from yadinassi.formats.xml.dom_nodes import DOM_NODE_TYPES
 from yadinassi.formats.xml.xml_io import XML_NODE_TYPES, XML_SPACES, XML_VALIDATION_TYPES
 
 from yadinassi.http.http_client import BYTE_ORDER_MARK_USE
-from yadinassi.streams.binary_streams import POSITIONS_IN_STREAM
+from yadinassi.streams.binary_streams import POSITIONS_IN_STREAM, BYTE_ORDERS, FILE_OPEN_MODES, FILE_ACCESSES
+from yadinassi.streams.file_io import TEXT_ENCODINGS
 from yadinassi.text.chars import CHARS
 from yadinassi.collections.search_directions import SEARCH_DIRECTIONS
 from yadinassi.collections.sort_directions import SORT_DIRECTIONS
@@ -23,6 +24,10 @@ NAMES = MappingProxyType({
         (("chars", "символы"), CHARS),
         (("byteordermarkuse", "использованиеbyteordermark"), BYTE_ORDER_MARK_USE),
         (("positioninstream", "позициявпотоке"), POSITIONS_IN_STREAM),
+        (("textencoding", "кодировкатекста"), TEXT_ENCODINGS),
+        (("byteorder", "порядокбайтов"), BYTE_ORDERS),
+        (("fileopenmode", "режимоткрытияфайла"), FILE_OPEN_MODES),
+        (("fileaccess", "доступкфайлу"), FILE_ACCESSES),
         (("searchdirection", "направлениепоиска"), SEARCH_DIRECTIONS),
         (("sortdirection", "направлениесортировки"), SORT_DIRECTIONS),
         (("roundmode", "режимокругления"), ROUND_MODES),

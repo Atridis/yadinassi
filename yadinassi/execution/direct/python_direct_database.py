@@ -30,9 +30,10 @@ from yadinassi.formats.xml.dom_xpath import BSLDOMNamespaceResolver, BSLDOMXPath
 from yadinassi.formats.xml.xml_io import BSLXMLReader, BSLXMLReaderSettings, BSLXMLNamespaceContext
 from yadinassi.formats.xml.xml_writer import BSLXMLWriter, BSLXMLWriterSettings
 from yadinassi.formats.regex.regex_functions import BSLRegexResult, BSLRegexGroup
-from yadinassi.streams.file_io import BSLFile, BSLBinaryData
+from yadinassi.streams.file_io import BSLFile, BSLBinaryData, BSLTextReader, BSLTextWriter
 from yadinassi.http.http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse
-from yadinassi.streams.binary_streams import BSLBinaryDataBuffer, BSLMemoryStream, BSLStream
+from yadinassi.streams.binary_streams import BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream, BSLStream
+from yadinassi.streams.data_io import BSLDataReader, BSLDataWriter, BSLReadDataResult
 from yadinassi.collections.maps import BSLMap, BSLFixedMap
 from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
 from yadinassi.formats.json.json_processing import (BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings,
@@ -54,7 +55,7 @@ NAMES=('metadata','метаданные','catalogs','справочники','do
 # Canonical detached receivers only; child rows/items and database owners still
 # traverse live ownership validation. Public protocols retain resource guards.
 _DOM_LISTS=(BSLDOMNodeList,BSLDOMElementList,BSLDOMAttributeMap)
-_DETACHED_TYPES=(*_NODE_CLASSES,*_DOM_LISTS,BSLDOMBuilder,BSLDOMWriter,BSLDOMNamespaceResolver,BSLDOMXPathResult,BSLXMLReader, BSLXMLReaderSettings, BSLXMLNamespaceContext, BSLXMLWriter, BSLXMLWriterSettings, BSLValueList, BSLValueTable, BSLTypeDescription, BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers, BSLQueryResult, BSLQueryResultSelection, BSLStructure, BSLFixedStructure, BSLKeyAndValue, BSLArray, BSLFixedArray, BSLFixedMap, BSLRegexResult, BSLRegexGroup, BSLFile, BSLBinaryData, BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BSLBinaryDataBuffer, BSLMemoryStream, BSLStream, BSLMap, BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings)
+_DETACHED_TYPES=(*_NODE_CLASSES,*_DOM_LISTS,BSLDOMBuilder,BSLDOMWriter,BSLDOMNamespaceResolver,BSLDOMXPathResult,BSLXMLReader, BSLXMLReaderSettings, BSLXMLNamespaceContext, BSLXMLWriter, BSLXMLWriterSettings, BSLValueList, BSLValueTable, BSLTypeDescription, BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers, BSLQueryResult, BSLQueryResultSelection, BSLStructure, BSLFixedStructure, BSLKeyAndValue, BSLArray, BSLFixedArray, BSLFixedMap, BSLRegexResult, BSLRegexGroup, BSLFile, BSLBinaryData, BSLTextReader, BSLTextWriter, BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream, BSLStream, BSLDataReader, BSLDataWriter, BSLReadDataResult, BSLMap, BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings)
 _DETACHED_TYPE_IDS=frozenset(map(id,_DETACHED_TYPES))
 _PURE_COLLECTION_TYPE_IDS=frozenset(map(id,(
     BSLValueTable, BSLValueTableRow, BSLValueTableColumn, BSLValueTableColumnCollection,
@@ -358,6 +359,17 @@ class CatalogBoundary:
         return self.resolve_member(value,name)
 
     def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
+        if omitted and type(value) in (BSLTextReader,BSLTextWriter,BSLDataWriter):
+            key=name.casefold()
+            accepted=()
+            if type(value) in (BSLTextReader,BSLTextWriter) and key in ('open','открыть'):
+                accepted=(1,2,3,4)
+            elif type(value) is BSLDataWriter and key in ('writeline','записатьстроку'):
+                accepted=(1,2)
+            if any(index not in accepted for index in omitted):
+                raise TypeError('Пропущен обязательный аргумент метода чтения или записи')
+            # Generated actuals already contain positional None placeholders.
+            return self.resolve_member(value,name)
         if type(value) is BSLXMLReader or type(value) is BSLXMLWriter:
             self._catalog_owner(value)
             function=value.get_method(name)

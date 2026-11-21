@@ -658,7 +658,9 @@ class Emitter:
             if any(type(arg) is bsl.OmittedArgument for arg in node.arguments):
                 if native:return self.call('_host_omission_error',[],t)
                 key='new:'+kindname;self.required.add(key)
-                resolver='resolve_optional_service' if kindname in ('jsonwritersettings','параметрызаписиjson') else 'resolve_service'
+                from yadinassi.execution.direct.python_direct_services import OPTIONAL_STREAM_CONSTRUCTORS
+                resolver=('resolve_optional_service' if kindname in OPTIONAL_STREAM_CONSTRUCTORS
+                          or kindname in ('jsonwritersettings','параметрызаписиjson') else 'resolve_service')
                 bound=self.invoke(self.attribute(self.name('_context',t),resolver,t),[self.const(key,t)],t,
                     [self.node(py.keyword,t,arg='argument_count',value=self.const(len(node.arguments),t))] if self.source_scopes else [])
                 return self.dynamic_call(bound,node,references=False)

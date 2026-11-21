@@ -5,7 +5,7 @@ from yadinassi.formats.xml.dom_xpath import BSLDOMNamespaceResolver
 from yadinassi.formats.xml.xml_io import BSLXMLReader, BSLXMLReaderSettings
 from yadinassi.formats.xml.xml_writer import BSLXMLWriter, BSLXMLWriterSettings
 from yadinassi.streams.file_io import (
-    BSLFile, BSLBinaryData, binary_from_string, find_files, temp_file_name,
+    BSLFile, BSLBinaryData, BSLTextReader, BSLTextWriter, binary_from_string, find_files, temp_file_name,
     create_directory, copy_file, move_file, delete_files,
 )
 from yadinassi.streams.text_documents import BSLTextDocument
@@ -13,7 +13,8 @@ from .source import python_direct_source_resources as text_resources
 from yadinassi.formats.storage.value_storage import BSLValueStorage
 from yadinassi.streams.data_compression import BSLDeflation
 from yadinassi.http.http_client import BSLHTTPConnection, BSLHTTPRequest
-from yadinassi.streams.binary_streams import BSLBinaryDataBuffer
+from yadinassi.streams.binary_streams import BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream
+from yadinassi.streams.data_io import BSLDataReader, BSLDataWriter
 from yadinassi.formats.json.json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings, read_json, write_json
 from yadinassi.types.values import HostFunction, BSLFixedArray, _DIRECT_TO_STRING_ABI
 from yadinassi.db.query.query_packages import BSLTempTablesManager, TEMP_TABLE_MANAGER_NAMES
@@ -43,6 +44,15 @@ from yadinassi.application.direct_callbacks import CallbackDescription as _Callb
 _FILE_EFFECTS = frozenset(map(id, (
     find_files, temp_file_name, create_directory, copy_file, move_file, delete_files,
 )))
+
+_FILE_CONSTRUCTORS = (BSLBinaryData, BSLFileStream)
+_FILE_OR_BORROWED_STREAM_CONSTRUCTORS = (BSLTextReader, BSLTextWriter, BSLDataReader, BSLDataWriter)
+_STREAM_CONSTRUCTORS = (*_FILE_CONSTRUCTORS, *_FILE_OR_BORROWED_STREAM_CONSTRUCTORS, BSLMemoryStream)
+_STREAM_CONSTRUCTOR_COUNTS = {
+    BSLTextReader: (0,5), BSLTextWriter: (0,5), BSLMemoryStream: (0,1),
+    BSLFileStream: (2,4), BSLDataReader: (1,5), BSLDataWriter: (1,7),
+}
+
 
 _REGEX_IMPLEMENTATIONS=tuple(regex_functions.FUNCTIONS)
 _REGEX_IDENTITIES=frozenset(map(id,_REGEX_IMPLEMENTATIONS))
@@ -92,12 +102,22 @@ CONSTRUCTORS = {
 }
 
 # Source/NoContext/Forms consume CONSTRUCTORS plus their own declarations.
-# They do not inherit the optional compression or unrestricted Get contract.
+# They do not inherit ordinary stream, compression or unrestricted Get contracts.
 ORDINARY_CONSTRUCTORS = {
     **CONSTRUCTORS,
+    'textreader': BSLTextReader, 'чтениетекста': BSLTextReader,
+    'textwriter': BSLTextWriter, 'записьтекста': BSLTextWriter,
+    'memorystream': BSLMemoryStream, 'потоквпамяти': BSLMemoryStream,
+    'filestream': BSLFileStream, 'файловыйпоток': BSLFileStream,
+    'datareader': BSLDataReader, 'чтениеданных': BSLDataReader,
+    'datawriter': BSLDataWriter, 'записьданных': BSLDataWriter,
+    'readdataresult': None, 'результатчтенияданных': None,
     'valuestorage': BSLValueStorage, 'хранилищезначения': BSLValueStorage,
     'deflation': BSLDeflation, 'сжатиеданных': BSLDeflation,
 }
+OPTIONAL_STREAM_CONSTRUCTORS = frozenset(
+    name for name,value in ORDINARY_CONSTRUCTORS.items() if value in _STREAM_CONSTRUCTOR_COUNTS)
+
 
 def _string_callable(context,function,*,name=None,require_value=False,allow_references=False,**unused):
     if type(function) is not HostFunction or function.function is not _DIRECT_TO_STRING_ABI:return None
@@ -282,6 +302,15 @@ class ServicesBoundary:
         # services or persisted BSL routines that may shadow its names.
         if type(vm) is not Interpreter or key in getattr(vm,'_direct_routine_modules',{}):
             return bound
+        if key.startswith('new:') and key[4:] in OPTIONAL_STREAM_CONSTRUCTORS:
+            required,maximum=_STREAM_CONSTRUCTOR_COUNTS[ORDINARY_CONSTRUCTORS[key[4:]]]
+            def prepare_omissions(bound,positions,count):
+                if not required<=count<=maximum or any(not required<=index<count for index in positions):
+                    from yadinassi.execution.codegen.experimental_naked_collections import _host_omission_error
+                    _host_omission_error()
+                return bound,dict.fromkeys(positions,None)
+            bound.prepare_omissions=prepare_omissions
+            return bound
         if key in ('new:jsonwritersettings','new:параметрызаписиjson'):
             factory=vm.types.get(key[4:])
             if type(factory) is HostFunction and factory.function is BSLJSONWriterSettings:
@@ -398,10 +427,12 @@ class ServicesBoundary:
                 from .python_direct_value_storage import constructor
                 return constructor(self,key[4:],factory,**kwargs)
             bound=super().resolve_callable(factory)
-            if expected in (BSLDOMBuilder,BSLDOMWriter,BSLDOMDocument,BSLDOMNamespaceResolver,BSLXMLReader,BSLXMLWriter,BSLXMLReaderSettings,BSLXMLWriterSettings,BSLHTTPConnection,BSLHTTPRequest,BSLFile,BSLBinaryData,BSLBinaryDataBuffer,BSLValueList,BSLValueTable,BSLTypeDescription,BSLNumberQualifiers,BSLStringQualifiers,BSLDateQualifiers,BSLBinaryDataQualifiers):
+            if expected in (BSLDOMBuilder,BSLDOMWriter,BSLDOMDocument,BSLDOMNamespaceResolver,BSLXMLReader,BSLXMLWriter,BSLXMLReaderSettings,BSLXMLWriterSettings,BSLHTTPConnection,BSLHTTPRequest,BSLFile,BSLBinaryDataBuffer,*_STREAM_CONSTRUCTORS,BSLValueList,BSLValueTable,BSLTypeDescription,BSLNumberQualifiers,BSLStringQualifiers,BSLDateQualifiers,BSLBinaryDataQualifiers):
                 original=bound
                 def guarded(*values):
-                    external = expected is BSLBinaryData and not self._verify_context
+                    external = (not self._verify_context and (expected in _FILE_CONSTRUCTORS
+                                or (expected in _FILE_OR_BORROWED_STREAM_CONSTRUCTORS
+                                    and values and values[0] is not None)))
                     if self._verify_context or external:self._check_effect()
                     if factory.function is not expected:
                         raise BoundaryViolation('canonical constructor changed during argument evaluation')
