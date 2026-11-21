@@ -1,5 +1,6 @@
 """Conservative receiver facts plus one admission at a real origin boundary."""
 from dataclasses import dataclass
+from decimal import Decimal
 from yadinassi.syntax import ast
 from weakref import ref
 
@@ -14,33 +15,57 @@ class Entry:
     effect: str
 
 
-def analyze(program, *, database):
+class _OpaqueLocal(Exception):
+    pass
+
+
+def analyze(program, *, database, local_slots=None):
+    lexical=local_slots is not None
     entries = _TABLE_ENTRIES + (_QUERY_ENTRIES if database else ())
     methods = {(item.kind, name): item for item in entries for name in item.aliases}
     calls, origins = {}, set()
+    constructed=executed=False
 
     def expression(node, facts):
+        nonlocal constructed,executed
         kind = type(node)
         if kind is ast.Group:return expression(node.expression,facts)
-        if kind is ast.Name:return facts.get(node.name.casefold()), False
-        if kind is ast.Literal:return None, False
+        if kind is ast.Name:
+            fact=facts.get(node.name.casefold())
+            if lexical and fact is None:raise _OpaqueLocal
+            return fact, lexical
+        if kind is ast.Literal:
+            if not lexical:return None,False
+            if (type(node.value) is str or type(node.value) is Decimal or type(node.value) is bool
+                    or type(node.value) is int or node.value is None):
+                return 'scalar',True
+            raise _OpaqueLocal
         if kind is ast.New:
+            if lexical:
+                if constructed or any(expression(arg,facts)[0]!='scalar' for arg in node.arguments):
+                    raise _OpaqueLocal
+                constructed=True
             facts.clear()
             name=node.name.casefold()
             if database and name in ('query','запрос'):return 'query', False
             if not node.arguments and name in ('valuetable','таблицазначений'):
                 origins.add(id(node))
                 return 'table', True
+            if lexical:raise _OpaqueLocal
             return None, False
         if kind is ast.Call and type(node.callee) is ast.Attribute and not node.arguments:
             receiver, fresh = expression(node.callee.object,facts)
             entry = methods.get((receiver,node.callee.name.casefold()))
             if entry is not None:
+                if lexical and entry.effect=='database':
+                    if executed:raise _OpaqueLocal
+                    executed=True
                 calls[id(node)] = entry,fresh
                 if entry.effect=='database':facts.clear()
-                return entry.result,fresh or entry.effect=='database'
+                return entry.result or ('scalar' if lexical else None),fresh or entry.effect=='database'
         # Opaque calls, dynamic expressions, and unmodeled state effects
         # cannot propagate a capability, even when they happen to return it.
+        if lexical:raise _OpaqueLocal
         facts.clear()
         return None, False
 
@@ -64,7 +89,29 @@ def analyze(program, *, database):
                 statements(node.otherwise,{})
                 facts.clear()
             else:facts.clear()
-    statements(program,{})
+    if lexical:
+        # Only an uninterrupted prefix of unboxed routine-local storage is
+        # eligible. It contains no previous opaque value whose release could
+        # invoke Python, and no alias can escape to a mutable host slot.
+        facts={}
+        try:
+            for node in program:
+                kind=type(node)
+                if kind is ast.Assign and type(node.target) is ast.Name and node.target.name.casefold() in local_slots:
+                    facts[node.target.name.casefold()]=expression(node.value,facts)[0]
+                elif kind is ast.ExpressionStatement:
+                    expression(node.expression,facts)
+                elif kind is ast.Var and all(name.casefold() in local_slots for name in node.names):
+                    for name in node.names:facts.setdefault(name.casefold(),'scalar')
+                elif kind is ast.Return:
+                    if node.value is not None:expression(node.value,facts)
+                    break
+                else:
+                    break
+        except _OpaqueLocal:
+            pass
+    else:
+        statements(program,{})
     return calls,origins
 
 
@@ -86,6 +133,16 @@ def _rows(result):
     return rows is tuple or rows is list
 
 
+def generic_call(context,value,spelling,require_value):
+    # A retained or re-entrant generic call can invoke arbitrary Python.
+    # Regardless of what it returns, it cannot arm the enclosing origin.
+    try:
+        return context.resolve_member_call(value,spelling,require_value=require_value)()
+    finally:
+        context._known_methods_live=0
+        context._known_method_origin=None
+
+
 def execute(context,value,spelling,require_value):
     # A generic Execute never certifies the next detached operation.
     context._known_methods_live=0
@@ -93,7 +150,7 @@ def execute(context,value,spelling,require_value):
     if (not context._known_method_db or type(value) is not BSLQuery or context.policy is not None
             or not _plain_abi(BSLQuery,_QUERY_EXECUTE_METHODS)
             or 'execute' in vars(value) or 'get_method' in vars(value)):
-        return context.resolve_member_call(value,spelling,require_value=require_value)()
+        return generic_call(context,value,spelling,require_value)
     context._check_effect()
     if value._catalogs is not context.vm._catalogs:
         from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation

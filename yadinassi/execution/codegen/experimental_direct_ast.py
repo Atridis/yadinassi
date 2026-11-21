@@ -563,6 +563,20 @@ class Emitter:
         if self.configuration_calls or method=='resolve_optional_open_file':
             keywords.append(self.node(py.keyword,t,arg='argument_count',value=self.const(count,t)))
         return self.invoke(self.attribute(self.name('_context',t),method,t),[self.name(receiver,t),self.const(name,t)],t,keywords)
+
+    def known_method_phase(self,t):
+        if self.scope is not None and 'known_phase' in self.scope:
+            return self.name(self.scope['known_phase'],t)
+        return self.attribute(self.name('_context',t),'_known_methods_live',t)
+
+    def known_method_origin(self,value,t):
+        if self.scope is None or 'known_phase' not in self.scope:return value
+        # A generic fallback or caller callback must never arm this routine's
+        # candidate. Capture the one selected origin before later local uses.
+        phase=self.node(py.NamedExpr,t,target=self.name(self.scope['known_phase'],t,True),
+            value=self.attribute(self.name('_context',t),'_known_methods_live',t))
+        parts=self.node(py.Tuple,t,elts=[value,phase],ctx=py.Load())
+        return self.node(py.Subscript,t,value=parts,slice=self.const(0,t),ctx=py.Load())
     def _expr(self,node,require_value=True):
         self.visits+=1;t=node.token;k=type(node)
         if self.static_module_kinds:
@@ -734,6 +748,7 @@ class Emitter:
             value=self.invoke(bound,args,t)
             if id(node) in self.known_origins:
                 value=self.call('_known_construct_table',[self.name('_context',t),value],t)
+                value=self.known_method_origin(value,t)
             return value
         if k is bsl.Attribute:
             if self.local_field_facts.get(id(node))=='structure':
@@ -870,13 +885,15 @@ class Emitter:
                 call=self.call('_known_query_execute',[self.name('_context',t),self.name(receiver,t),self.const(callee.name,t),
                     self.const(require_value,t)],t)
                 call=self.receiver_boundary(call,receiver,t)
+                call=self.known_method_origin(call,t)
             else:
-                fallback=self.invoke(self.member_call(receiver,callee.name,require_value,(),0,t),[],t)
+                fallback=self.call('_known_generic_call',[self.name('_context',t),self.name(receiver,t),
+                    self.const(callee.name,t),self.const(require_value,t)],t)
                 direct=self.invoke(self.attribute(self.name(receiver,t),entry.method,t),[],t)
                 if fresh:
                     fallback=self.receiver_boundary(fallback,receiver,t)
                     phase=1 if entry.kind.startswith('query-') else 2
-                    live=self.node(py.Compare,t,left=self.attribute(self.name('_context',t),'_known_methods_live',t),
+                    live=self.node(py.Compare,t,left=self.known_method_phase(t),
                         ops=[py.Eq()],comparators=[self.const(phase,t)])
                 else:
                     live=self.call('_known_detached_after_publication',[self.name('_context',t),
@@ -1900,13 +1917,14 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     emitter.external_names=set(NAMES)
     if _profile is None and vm.database_context is not None:
         emitter.external_names.update(DATABASE_NAMES);emitter.constructor_names|={'query','запрос'}
-    if (_profile is None and emitter.standalone_script and not has_goto
+    known_methods=(_profile is None and emitter.standalone_script and not has_goto
             and any(type(node) is bsl.New and node.name.casefold() in
-                    ('query','запрос','valuetable','таблицазначений') for node in nodes)):
-        from yadinassi.execution.direct.python_direct_known_methods import analyze
-        emitter.known_calls,emitter.known_origins=analyze(
+                    ('query','запрос','valuetable','таблицазначений') for node in nodes))
+    if known_methods:
+        from yadinassi.execution.direct.python_direct_known_methods import analyze as analyze_known
+        emitter.known_calls,emitter.known_origins=analyze_known(
             program,database=vm.database_context is not None)
-        if not emitter.known_calls:emitter.known_origins=()
+        if not emitter.known_calls:emitter.known_origins=set()
     if _profile is not None:
         module_names,external_names,constructors=_profile
         emitter.external_names={name.casefold() for name in external_names}
@@ -2045,6 +2063,13 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             args=py.arguments(posonlyargs=[],args=[emitter.node(py.arg,token,arg='_new',annotation=None)],vararg=None,kwonlyargs=[],kw_defaults=[],kwarg=None,defaults=[])
             prologue.append(emitter.node(py.FunctionDef,token,name=setter,args=args,body=body,decorator_list=[],returns=None,type_comment=None))
         if shadows and has_fragments:_reject('source implicit namespace shadow with Execute/Eval is not integrated')
+        if known_methods and not imported and not has_fragments and routine.execution_context=='client' and not routine.is_dual:
+            local_slots=(assigned|declarations)-parameters-globals_-emitter.scope['externals']-emitter.scope['boxed']-lexical
+            calls,origins=analyze_known(routine.body,database=vm.database_context is not None,local_slots=local_slots)
+            if calls:
+                emitter.scope['known_phase']=emitter.temp()
+                emitter.known_calls.update(calls)
+                emitter.known_origins.update(origins)
         routine_end,emitter.region_ops,emitter.region_states=(0,{}, {}) if has_goto or emitter.authority or emitter.source_scopes else _routine_region(routine,emitter.scope)
         emitter.region_active=bool(routine_end)
         region_body=emitter.sequence(routine.body[:routine_end])
@@ -2241,9 +2266,10 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     from yadinassi.collections.plain_table_storage import RowStorage
     namespace=dict(_raw_table_value=RowStorage.get_value,_raw_table_positional=_vt.BSLValueTableRow._positional_value,_dynamic_remainder=remainder,_dynamic_divide=divide,_dynamic_sign=sign,_dynamic_public_number=public_number,_plain_array_loop=_plain_array_loop,_plain_append_receiver=_plain_append_receiver,_list_append=list.append,_native_host_reference=_native_host_reference,_native_cell_reference=_native_cell_reference,_native_fragment_binding=_native_fragment_binding,_NativeCell=_NativeCell,_PublishedModuleCell=_PublishedModuleCell,_adapt_native_cell=_adapt_native_cell,_PrivateTable=_vt.BSLValueTable,_PrivateValueList=PlainValueList,_PlainValueList=PlainValueList,_PlainValueListItem=PlainValueListItem,_module_primitive_type_ids=frozenset(id(kind) for kind in (list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure)),_module_data_types=data_types,_module_data_type_ids=frozenset(id(kind) for kind in data_types),_native_dict_get=dict.get,_native_dict_setitem=dict.__setitem__,_PlainArray=_PlainArray,_Decimal=Decimal,_PlainMap=PlainMap,_plain_map=plain_map,_execute_fragment=execute_fragment,_fragment_binding=_fragment_binding,_bind_eval=bind_eval,_raise_arity_error=raise_arity_error,_host_omission_error=_host_omission_error,_host_omission_values=_host_omission_values,_dynamic_construct=dynamic_construct,_invalid_native_arity=_invalid_native_arity,_typed_find=scalar.typed_find,_list_delete=_list_delete,_native_ubound=_native_ubound,_readonly=readonly,_array_set_checked=_array_set_checked,_bounded_insert=bounded_insert,_structure_insert=structure_insert,_array_constructor_bounds=bounded_array,_new_structure=new_structure,_structure_from_schema=structure_from_schema,_host_name_reference=_host_name_reference,_Cell=_Cell,_ForwardReference=_ForwardReference,_as_ref=_as_ref,_bound_ref=_bound_ref,_UNSET_REF=_UNSET_REF,_OMITTED_REF=_OMITTED_REF,_argument_count_error=_argument_count_error,_routine_value_error=_routine_value_error,_procedure_value_error=_procedure_value_error,_identity_reference=_identity_reference,_IndexRef=_IndexRef,_AttributeRef=_AttributeRef,_SlotReference=live_state._SlotReference,_source_reference=source_reference,_canonical_reference=_canonical_reference,_structure_property=structure_property,_native_method_missing=_native_method_missing,_native_count=_native_count,_MapEntry=_MapEntry,_array_member=_array_member,_native_property_missing=_native_property_missing,_structure_get_known=structure_get_known,_structure_set_known=structure_set_known,_native_property_write_missing=_native_property_write_missing,_checked_array_index=_checked_array_index,_checked_literal_array_index=_checked_literal_array_index,_partial=partial,_native_getitem=_NATIVE_GETITEM,_list_get=_list_get,_TypedMap=_TypedMap,_NakedMap=_NakedMap,_DirectStructure=_DirectStructure,_host_reference=host_reference,_UNSET=UNSET,_missing=missing,_native_add=_NATIVE_ADD,_concatenate=scalar.concatenate,_divide=scalar.decimal_divide,_sign=scalar.decimal_sign,_order=scalar.uca_order,_truth=scalar.truth,_equal=equal,_not_equal=not_equal,_MISSING=_MISSING,_handled_error=handled_error,_reraise_handled=reraise_handled,_raise_error=raise_error,_presentation=scalar.presentation,_BSLRuntimeError=BSLRuntimeError)
     if emitter.known_calls:
-        from yadinassi.execution.direct.python_direct_known_methods import execute, construct_table, detached_after_publication
+        from yadinassi.execution.direct.python_direct_known_methods import execute, construct_table, detached_after_publication, generic_call
         namespace.update(_known_query_execute=execute,_known_construct_table=construct_table,
-                         _known_detached_after_publication=detached_after_publication)
+                         _known_detached_after_publication=detached_after_publication,
+                         _known_generic_call=generic_call)
     if destinations:namespace['_GotoTransfer']=_GotoTransfer
     namespace['_nonconstructible_date'] = _nonconstructible_date
     if emitter.http_body_receiver:

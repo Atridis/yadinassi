@@ -77,6 +77,35 @@ class DirectDatabaseTests(unittest.TestCase):
             self.assertIs(vm.variables['b'],True)
         self.assertFalse(set(visits) & {'execute','select','next'})
 
+    def test_routine_local_query_methods_use_detached_origin_after_alias_rebind(self):
+        from yadinassi.execution.direct.python_direct_database import CatalogBoundary
+        from yadinassi.syntax.parser import parse
+        source=('Function Work() Q=New Query("SELECT COUNT(*) AS N FROM Catalog.Склады"); '
+                'Results=Q.Execute(); Alias=Results; Results=0; S=Alias.Select(); S.Next(); '
+                'Return S.N; EndFunction\nWork()')
+        plan=self.vm.prepare_program(parse(source))
+        generated=plan._plan.generated_source
+        self.assertIn('.select()',generated)
+        self.assertIn('.next()',generated)
+        self.assertNotIn('_known_detached_after_publication',generated)
+        with patch.object(CatalogBoundary,'resolve_member',side_effect=AssertionError('generic query method')):
+            self.assertEqual(self.vm.execute(source),0)
+            self.assertEqual(self.vm.execute_prepared(plan),0)
+
+    def test_second_routine_origin_does_not_relicense_an_earlier_result_alias(self):
+        from yadinassi.execution.direct.python_direct_database import CatalogBoundary
+        source=('Function Work() Q=New Query("SELECT COUNT(*) AS N FROM Catalog.Склады"); '
+                'R=Q.Execute(); Other=Q.Execute(); S=R.Select(); S.Next(); '
+                'Return S.N; EndFunction\nWork()')
+        original=CatalogBoundary.resolve_member
+        seen=[]
+        def observe(context,value,name):
+            seen.append(name.casefold())
+            return original(context,value,name)
+        with patch.object(CatalogBoundary,'resolve_member',observe):
+            self.assertEqual(self.vm.execute(source),0)
+        self.assertEqual(seen,['execute','select','next'])
+
     def test_prepared_query_uses_rebound_method_protocol_via_original_fallback(self):
         from yadinassi.db.query.queries import BSLQueryResultSelection
         from yadinassi.syntax.parser import parse
