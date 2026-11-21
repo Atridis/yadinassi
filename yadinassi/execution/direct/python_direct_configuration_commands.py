@@ -16,6 +16,7 @@ from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse
 from yadinassi.types.values import HostFunction
 from . import python_direct_configuration_metadata as metadata
+from . import python_direct_configuration_enums as enums
 from yadinassi.types.errors import BSLRuntimeError
 
 _MESSAGE = _DIRECT_CONFIGURATION_MESSAGE_ABI
@@ -56,6 +57,7 @@ class _Scope:
         self.owner_records={}
         self.used_routines={}
         self._metadata=None
+        self._enums=None
         self._reuse_request=None
         self.module_bindings={}
         self._admit_owner(root)
@@ -65,6 +67,11 @@ class _Scope:
     def metadata(self):
         if self._metadata is None:self._metadata=metadata.Readers(self)
         return self._metadata
+
+    @property
+    def enums(self):
+        if self._enums is None:self._enums=enums.Enums(self)
+        return self._enums
 
     def _admit_owner(self,owner):
         if any(owner is current for current in self.owners):return
@@ -98,9 +105,21 @@ class _Scope:
         self._check_state(self.app,module.interpreter)
 
     @staticmethod
-    def values(values):
+    def literal(value):
+        return (type(value) is type(None) or type(value) is bool
+                or type(value) is str or type(value) is Decimal)
+
+    @classmethod
+    def literals(cls,values):
         for value in values:
-            if not any(type(value) is kind for kind in (type(None),bool,str,Decimal)):_deny()
+            if not cls.literal(value):_deny()
+
+    def values(self,values,owner=None):
+        for value in values:
+            if self.literal(value):continue
+            if enums.transfer_value(value):
+                self.enums.check_transfer(self.root if owner is None else owner, value)
+            else:_deny()
 
     def enter(self):
         if get_ident()!=self.thread or self.active or _COMMAND_SCOPE.get() is not None:_deny()
@@ -159,7 +178,7 @@ class _Scope:
         # Direct generated variable loads currently bypass a per-name boundary.
         # Retain scalar admission for this active owner until that compiler
         # interface can validate only actually read/written values.
-        self.values(current.variables.values())
+        self.values(current.variables.values(), current)
         if (current.execution_context!='client'
                 or current._direct_configuration_plan is not plan or plan.function is not code
                 or type(current.routines) is not dict
@@ -187,7 +206,7 @@ class _Scope:
             if node is not None:
                 if type(node) is not ast.Literal:_unsupported()
                 if node.value is not value:_deny()
-                self.values((value,))
+                self.literals((value,))
         return entries
 
     def omissions(self,owner,routine,omitted):
@@ -221,20 +240,26 @@ class _Scope:
 
 def _validate_command(program,app):
     referenced=set()
+    enum_names=enums.NAMES if app.configuration.enumerations else ()
     def readonly(token,message='metadata is read-only'):
         raise BSLRuntimeError(message,token.source,token.line,token.column,source_line=token.source_line)
     def reader_kind(node):
         kind=type(node)
         if kind is ast.Name and node.name.casefold() in metadata.ROOT_NAMES:return 'root'
+        if kind is ast.Name and node.name.casefold() in enum_names:return 'enum'
         if kind is ast.Group:return reader_kind(node.expression)
         if kind is ast.Attribute:
             parent=reader_kind(node.object);key=node.name.casefold()
             if parent=='root' and key in metadata.COLLECTION_NAMES:return 'collection'
+            if parent=='root' and key in enum_names:return 'enum'
+            if parent=='enum' and not key.startswith('_'):return 'enum'
             if parent=='collection':return 'item'
             if parent=='item' and key in metadata.SCALAR_FIELDS:return 'scalar'
             if parent is not None:_unsupported()
-        if kind is ast.Index and reader_kind(node.object)=='collection':
-            expression(node.index);return 'item'
+        if kind is ast.Index:
+            parent=reader_kind(node.object)
+            if parent in ('collection','enum'):
+                expression(node.index);return 'item' if parent=='collection' else 'enum'
         if kind is ast.Call:
             callee=node.callee
             while type(callee) is ast.Group:callee=callee.expression
@@ -243,6 +268,9 @@ def _validate_command(program,app):
                 if parent=='collection' and key in metadata.COUNT:result,count='scalar',0
                 elif parent=='collection' and key in metadata.FIND+metadata.GET:result,count='item',1
                 elif parent=='item' and key in metadata.FULLNAME:result,count='scalar',0
+                elif enum_names and parent=='root' and key in enums.FIND_TYPE+enums.FIND_NAME:result,count='enum',1
+                elif parent=='enum' and key in enums.bridge._ZERO:result,count='enum',0
+                elif parent=='enum' and key in enums.bridge._ONE:result,count='enum',1
                 elif parent is not None:_unsupported()
                 else:return None
                 if len(node.arguments)!=count:_unsupported()
@@ -251,10 +279,12 @@ def _validate_command(program,app):
         return None
     def expression(node):
         reader=reader_kind(node)
-        if reader=='scalar':return
+        if reader in ('scalar','enum'):return
         if reader is not None:_unsupported()
         kind=type(node)
-        if kind is ast.Literal:_Scope.values((node.value,));return
+        if kind is ast.Literal:
+            if not _Scope.literal(node.value):_deny()
+            return
         if kind is ast.Name:
             if node.name.casefold() in app._definitions:_unsupported()
             return
@@ -268,7 +298,8 @@ def _validate_command(program,app):
                 if callee.object.name.casefold() not in app._definitions:_unsupported()
                 referenced.add(callee.object.name.casefold())
             elif type(callee) is ast.Name:
-                if callee.name.casefold() not in ('message','сообщить'):_unsupported()
+                key=callee.name.casefold()
+                if key not in ('message','сообщить') and not (enum_names and key in enums.SERVICES and len(node.arguments)==1):_unsupported()
             else:_unsupported()
             for argument in node.arguments:
                 if type(argument) is ast.OmittedArgument and type(callee) is ast.Attribute:continue
@@ -278,7 +309,7 @@ def _validate_command(program,app):
     def statements(nodes):
         for node in nodes:
             if type(node) is ast.Assign and type(node.target) is ast.Name:
-                if node.target.name.casefold() in metadata.ROOT_NAMES:readonly(node.token)
+                if node.target.name.casefold() in metadata.ROOT_NAMES+enum_names:readonly(node.token)
                 try:app.check_assignment(node.target.name.casefold(),app.interpreter)
                 except ValueError as error:readonly(node.token,str(error))
                 expression(node.value)
@@ -300,7 +331,7 @@ def _validate_command(program,app):
                 if node.value is not None:expression(node.value)
             else:_unsupported()
     statements(program)
-    return tuple(referenced)
+    return tuple(referenced)+enum_names
 
 
 def execute_command(app,text,source):

@@ -121,18 +121,18 @@ def _public(name):
     if type(name) is not str or name.startswith('_'):raise BoundaryViolation('private enumeration member')
 
 
-def get(boundary,value,name):
-    check(boundary,value);_public(name)
+def get(boundary,value,name,*,validate=check):
+    validate(boundary,value);_public(name)
     try:
         if type(value) is BSLEnumManager and name.casefold() not in value._named and name.casefold() in _ZERO|_ONE:
             result=value.get_method(name)
         else:result=value.get_member(name)
         if type(result) is HostFunction:
-            bound=_method(boundary,value,name,result)
+            bound=_method(boundary,value,name,result,validate=validate)
             return HostFunction(name,bound,returns_value=result.returns_value,reference_parameters=result.reference_parameters)
-        if type(result) in _TYPES or type(result) is _DeclaredMetadataCollection:check(boundary,result)
+        if type(result) in _TYPES or type(result) is _DeclaredMetadataCollection:validate(boundary,result)
         return result
-    finally:check(boundary,value)
+    finally:validate(boundary,value)
 
 
 def set_member(boundary,value,name):
@@ -142,46 +142,46 @@ def set_member(boundary,value,name):
     return reject
 
 
-def _method(boundary,value,name,function,*,require_value=False,argument_count=None,allow_references=False):
+def _method(boundary,value,name,function,*,require_value=False,argument_count=None,allow_references=False,validate=check):
     if type(function) is not HostFunction:raise BoundaryViolation('noncanonical enumeration method')
     key=name.casefold();arity=0 if key in _ZERO else 1 if key in _ONE else None
     if arity is None:raise ValueError('unsupported source enumeration method')
     if argument_count is not None and argument_count!=arity:raise TypeError('invalid enumeration argument count')
     implementation=function.function
     def invoke(*args):
-        check(boundary,value)
+        validate(boundary,value)
         if function.function is not implementation:raise BoundaryViolation('enumeration method changed')
         if len(args)!=arity:raise TypeError('invalid enumeration argument count')
         if type(value) is BSLEnumManager and key in ('indexof','индекс'):
-            check(boundary,args[0])
+            validate(boundary,args[0])
         try:
             result=function(*args)
-            if type(result) in _TYPES or type(result) is _DeclaredMetadataCollection:check(boundary,result)
+            if type(result) in _TYPES or type(result) is _DeclaredMetadataCollection:validate(boundary,result)
             return result
-        finally:check(boundary,value)
+        finally:validate(boundary,value)
     return boundary.resolve_callable(HostFunction(name,invoke,returns_value=function.returns_value,
         reference_parameters=function.reference_parameters),require_value=require_value,allow_references=allow_references)
 
 
-def resolve(boundary,value,name,*,require_value=False,argument_count=None,allow_references=False):
-    check(boundary,value)
+def resolve(boundary,value,name,*,require_value=False,argument_count=None,allow_references=False,validate=check):
+    validate(boundary,value)
     if name=='__iter__':return lambda:iterate(boundary,value)
     if name=='__setitem__':
         def reject(*args):
-            check(boundary,value);raise ValueError('enumerations are read-only')
+            validate(boundary,value);raise ValueError('enumerations are read-only')
         return reject
     if name=='__getitem__':
         if type(value) not in (BSLEnumerations,BSLEnumManager,_DeclaredMetadataCollection):raise ValueError('enum receiver not indexable')
         def index(key):
-            check(boundary,value)
+            validate(boundary,value)
             try:
-                result=value.get_index(key);check(boundary,result);return result
-            finally:check(boundary,value)
+                result=value.get_index(key);validate(boundary,result);return result
+            finally:validate(boundary,value)
         return index
     _public(name)
     if name.casefold() not in _ZERO|_ONE:raise ValueError('unsupported source enumeration method')
     return _method(boundary,value,name,value.get_method(name),require_value=require_value,
-        argument_count=argument_count,allow_references=allow_references)
+        argument_count=argument_count,allow_references=allow_references,validate=validate)
 
 
 def iterate(boundary,value):

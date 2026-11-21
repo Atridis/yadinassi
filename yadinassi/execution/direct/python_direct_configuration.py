@@ -39,6 +39,7 @@ from .python_direct import REPAIRS, _snapshot
 from yadinassi.execution.codegen.native_targets import target_context
 from yadinassi.syntax import ast
 from yadinassi.types.values import HostFunction
+from . import python_direct_configuration_enums as enums
 
 
 def check_owner(app, owner, *, allow_database=False):
@@ -71,6 +72,7 @@ class ConfigurationBoundary(BoundaryContext):
         self._services=owner.functions
         self.app,self.owner,self.routine=app,owner,routine
         self._command_scope=_COMMAND_SCOPE.get()
+        self._enum_binding=None
         if self._command_scope is not None:
             from .python_direct_configuration_commands import _Scope
             if type(self._command_scope) is not _Scope:raise BoundaryViolation('invalid command scope')
@@ -85,11 +87,16 @@ class ConfigurationBoundary(BoundaryContext):
         if scope is not None:scope.check(self.app,self.owner)
         else:check_owner(self.app,self.owner)
         if self.routine is not None:self.app.check_call(self.routine,self.owner)
+    def _enums(self):
+        if self._enum_binding is None:self._enum_binding=self._command_scope.enums.bind(self)
+        return self._enum_binding
+
     def external_get(self,name):
         self._check()
         if self._command_scope is not None:
             from .python_direct_configuration_metadata import ROOT_NAMES
             if name.casefold() in ROOT_NAMES:return self._command_scope.metadata.root(self)
+            if name.casefold() in enums.NAMES:return self._enums().root()
         result=self.app.resolve_module(name,self.owner)
         if result is None:raise BoundaryViolation('unsupported configuration name: '+name)
         if self._command_scope is not None:self._command_scope.admit_module(name,result)
@@ -97,13 +104,24 @@ class ConfigurationBoundary(BoundaryContext):
     def get_member(self,value,name):
         if self._command_scope is not None:
             from .python_direct_configuration_metadata import is_reader
-            if is_reader(value):return self._command_scope.metadata.get(self,value,name)
+            if is_reader(value):
+                readers=self._command_scope.metadata
+                if name.casefold() in enums.NAMES and readers.record(self,value)[0]=='root':
+                    return self._enums().root().metadata
+                return readers.get(self,value,name)
+            if enums.receiver_type(value):
+                return self._enums().get(value,name)
         return super().get_member(value,name)
 
     def external_set(self,name,value):
         raise ValueError('common module names are read-only')
     def resolve_service(self,name,fallback=None,*,require_value=False,allow_references=False,argument_count=None):
         self._check()
+        if (self._command_scope is not None and self._command_scope.configuration.enumerations
+                and name.casefold() in enums.SERVICES):
+            if argument_count is not None and argument_count!=1:
+                raise TypeError('enumeration service argument count mismatch')
+            return self._enums().service(name.casefold(),require_value=require_value,allow_references=allow_references)
         if name.casefold() in ('new:uuid','new:уникальныйидентификатор'):
             from yadinassi.types.unique_identifiers import BSLUUID
             alias=name.split(':',1)[1].casefold()
@@ -134,9 +152,9 @@ class ConfigurationBoundary(BoundaryContext):
         call=super().resolve_service(name,require_value=require_value,allow_references=allow_references)
         def invoke(*args):
             self._check();self.app.check_host_service(function,self.owner)
-            if scope is not None:scope.service(function,self.owner);scope.values(args)
+            if scope is not None:scope.service(function,self.owner);scope.literals(args)
             result=call(*args)
-            if scope is not None:scope.values((result,))
+            if scope is not None:scope.literals((result,))
             return result
         if allow_references:invoke.requires_reference=call.requires_reference
         return invoke
@@ -149,8 +167,8 @@ class ConfigurationBoundary(BoundaryContext):
         call=super().resolve_callable(value,require_value=require_value,allow_references=allow_references,_extension_value=_extension_value)
         def invoke(*args):
             self._check();self.app.check_host_service(value,self.owner)
-            scope.service(value,self.owner);scope.values(args)
-            result=call(*args);scope.values((result,));return result
+            scope.service(value,self.owner);scope.literals(args)
+            result=call(*args);scope.literals((result,));return result
         if allow_references:invoke.requires_reference=call.requires_reference
         return invoke
 
@@ -158,7 +176,16 @@ class ConfigurationBoundary(BoundaryContext):
         self._check()
         if self._command_scope is not None:
             from .python_direct_configuration_metadata import is_reader
-            if is_reader(value):return self._command_scope.metadata.method(self,value,name)
+            if is_reader(value):
+                readers=self._command_scope.metadata
+                key=name.casefold()
+                if key in enums.FIND_TYPE+enums.FIND_NAME and readers.record(self,value)[0]=='root':
+                    return self._enums().metadata_method(key)
+                return readers.method(self,value,name)
+            if enums.receiver_type(value):
+                bound=self._enums().method(value,name)
+                bound.returns_value=True
+                return bound
         if self._command_scope is not None:
             binding=self._command_scope.module_bindings.get(id(value))
             if binding is None or binding[1] is not value:
@@ -225,6 +252,9 @@ class ConfigurationBoundary(BoundaryContext):
         return invoke
 
     def resolve_configuration_member_call(self,value,name,*,require_value=False,omitted=(),argument_count):
+        if self._command_scope is not None and enums.receiver_type(value):
+            if omitted:raise TypeError('enumeration methods do not accept omitted arguments')
+            return self._enums().method(value,name,require_value=require_value,argument_count=argument_count)
         bound=self.resolve_member_call(value,name,require_value=require_value,omitted=omitted)
         if self._command_scope is not None and hasattr(bound,'check_argument_count'):
             bound.check_argument_count(argument_count)
@@ -251,7 +281,8 @@ def install(app,owner,program,source_text=''):
         raise BoundaryViolation('direct configured async/dual routines are not connected')
     owned=_snapshot(program)
     plan=compile_owned(owned,retain_generated=False,source_text=source_text,source_name=program[0].token.source if program else '<configuration>',
-        external_names=tuple(app._definitions),constructors=('uuid','уникальныйидентификатор'),
+        external_names=tuple(app._definitions)+(enums.NAMES+('metadata','метаданные')
+            if app.configuration.enumerations else ()),constructors=('uuid','уникальныйидентификатор'),
         exports=True,authority_checks=True,configuration_calls=True,
         lean_configuration=app._cli_database is not None)
     # Capture original declaration bindings when this exact plan is installed.
@@ -278,7 +309,7 @@ def invoke_reusable(app,caller,owner,routine,arguments):
     from .python_direct_configuration_commands import _Scope
     if type(scope) is not _Scope:raise BoundaryViolation('invalid reusable command scope')
     scope.check(app,owner)
-    scope.values(arguments)
+    scope.literals(arguments)
     from decimal import Decimal
     if any(type(value) is Decimal and not value.is_finite() for value in arguments):
         raise TypeError('reusable arguments require finite numbers')
@@ -302,7 +333,7 @@ def invoke_reusable(app,caller,owner,routine,arguments):
             result=invoke_routine(app,owner,routine,args)
             scope=_COMMAND_SCOPE.get()
             if scope is None:raise BoundaryViolation('reusable command scope is absent')
-            scope.values((result,))
+            scope.literals((result,))
             return result
         entry=(owner,routine,plan.function,call)
         wrappers[key]=entry

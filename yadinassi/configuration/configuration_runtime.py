@@ -273,6 +273,7 @@ class ConfigurationApplication:
                 self._common_routines[id(routine)] = routine
                 self._declared_routines[id(routine)] = routine
         self.bind_interpreter(root)
+        self._command_enum_root = root._metadata._enumerations
         from yadinassi.execution.invocation import InvocationBinding, InvocationPort
         remote = []
         for name in sorted(self._definitions):
