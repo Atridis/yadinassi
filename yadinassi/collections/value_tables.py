@@ -970,7 +970,7 @@ class BSLValueTable(BSLObject):
 # Old helper functions remain only for independent tree/codec modules during
 # migration; no compiler selector or VM fallback is involved.
 from .plain_value_table_runtime import (BSLValueTable, BSLValueTableRow,
-    BSLValueTableColumn, BSLValueTableColumnCollection, BSLCollectionIndexes)
+    BSLValueTableColumn, BSLValueTableColumnCollection, BSLCollectionIndexes, BSLCollectionIndex)
 
 # Definition-time receiver identities/raw storage for direct read iteration.
 _DIRECT_ITERATION_TYPES = (BSLValueTable, BSLValueTableColumnCollection,

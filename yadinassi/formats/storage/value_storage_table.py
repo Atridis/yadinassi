@@ -15,11 +15,13 @@ from yadinassi.types.type_descriptions import BSLTypeDescription, _query_nullabl
 from yadinassi.types.type_qualifiers import (BSLAllowedLength, BSLAllowedSign, BSLBinaryDataQualifiers,
                               BSLDateFractions, BSLDateQualifiers, BSLNumberQualifiers,
                               BSLStringQualifiers)
-from yadinassi.collections.value_tables import (BSLCollectionIndexes, BSLValueTable,
+from yadinassi.collections.value_tables import (BSLCollectionIndex, BSLCollectionIndexes, BSLValueTable,
                            BSLValueTableColumn, BSLValueTableColumnCollection,
                            BSLValueTableRow, _index_key_units, _index_token,
                            _MAX_INDEX_UNITS)
-from yadinassi.types.values import BSLArray, BSLType, NULL
+from yadinassi.types.values import BSLArray, BSLObject, BSLType, NULL
+
+_INDEX_FIELDS = vars(BSLObject)['__dict__']
 
 MAX_COLUMNS = 64
 MAX_ROWS = 1024
@@ -192,6 +194,31 @@ def _index_bounds(count, positions, rows):
         raise TableSnapshotError('table index budget exceeded')
 
 
+def _wire_index_definitions(table, indexes, columns):
+    """Verify the public handles exactly fit the existing positional subset."""
+    state = _INDEX_FIELDS.__get__(indexes, BSLCollectionIndexes)
+    if any(type(key) is not str for key in state):
+        raise TableSnapshotError('invalid index field names')
+    signatures, handles = state.get('items'), state.get('_handles')
+    if type(signatures) is not list or type(handles) is not list or len(handles) != len(signatures):
+        raise TableSnapshotError('unsupported index declaration for serialization')
+    positions = {id(col): i for i,col in enumerate(columns)}
+    for handle, signature in zip(handles, signatures):
+        if (type(handle) is not BSLCollectionIndex
+                or type(signature) is not tuple or not 0 < len(signature) <= len(positions)):
+            raise TableSnapshotError('unsupported index declaration for serialization')
+        state = _INDEX_FIELDS.__get__(handle, BSLCollectionIndex)
+        if (any(type(key) is not str for key in state) or state.get('table') is not table
+                or state.get('_detached') is not False or state.get('_cleared') is not False):
+            raise TableSnapshotError('invalid public index handle for serialization')
+        ordered = state.get('_columns')
+        if (type(ordered) is not tuple or len(ordered) != len(signature)
+                or any(type(i) is not int for i in signature)
+                or any(positions.get(id(col)) != i for i, col in zip(signature, ordered))):
+            raise TableSnapshotError('unsupported index declaration for serialization')
+    return signatures
+
+
 def _take_indexes(indexes, column_count, row_count, reserve):
     _index_bounds(len(indexes), 0, row_count)
     definitions, seen, positions = [], set(), 0
@@ -346,7 +373,8 @@ def take_table(table, *, encode, charge_text, reserve, charge_default_text=None)
             descriptions.append(description)
         if not plain:
             reserve(sum(_schema_extra(column[1]) for column in schema))
-        definitions = _take_indexes(indexes.items, len(col_items), len(rows), reserve)
+        definitions = _take_indexes(_wire_index_definitions(table,indexes,col_items),
+                                    len(col_items), len(rows), reserve)
         search = _field(table, '_search')
         if type(search) is not SearchIndexes or type(search.declarations) is not set:
             raise TableSnapshotError('invalid direct index declarations')
@@ -451,7 +479,7 @@ def restore_table(node, *, decode, charge_text, reserve, charge_default_text=Non
             list.__setitem__(row, position, value)
     try:
         for definition in definitions:
-            table.indexes.items.append(table._search.declare(definition))
+            BSLCollectionIndexes._add_positions(table.indexes, definition)
     except (TypeError, ValueError, ArithmeticError):
         raise TableSnapshotError('table index cannot be rebuilt within runtime limits') from None
     return table

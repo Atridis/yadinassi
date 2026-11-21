@@ -118,8 +118,8 @@ class NativeIndexTests(unittest.TestCase):
                 table.indexes.delete(index if selector == 'object' else selector)
                 self.assertEqual(names(table), [['Amount']])
                 self.assertEqual(list(index), ['Key', 'Second'])
-                self.assertEqual(index._keys, {})
-                self.assertEqual(index._buckets, {})
+                self.assertEqual(table._search.declarations, {(2,)})
+                self.assertEqual(table._search.cache, {})
                 with self.assertRaises(ValueError):
                     table.indexes.delete(index)
         table = sample()

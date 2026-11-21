@@ -96,7 +96,7 @@ def validate(value,pure=False,*,row_only=False):
     if set(cols)!={'table','_items','_query_columns'} or cols['table'] is not table or type(cols['_items']) is not list:fail()
     if type(cols['_query_columns']) is not int or not 0<=cols['_query_columns']<=len(keys):fail()
     if pure and cols['_query_columns']:return False
-    if set(ix)!={'table','items'} or ix['table'] is not table or type(ix['items']) is not list:fail()
+    if set(ix)!={'table','items','_handles'} or ix['table'] is not table or type(ix['items']) is not list or type(ix['_handles']) is not list:fail()
     if any(type(sig) is not tuple or any(type(i) is not int or i<0 for i in sig) for sig in ix['items']):fail()
     if set(ix['items'])!=cache.declarations:fail()
     if len(cols['_items'])!=len(keys):fail()

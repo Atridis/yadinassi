@@ -26,6 +26,7 @@ from yadinassi.collections.plain_table_storage import Schema, TableStorage, vali
 from yadinassi.collections.plain_table_search import SearchIndexes
 from yadinassi.collections.value_tables import (BSLValueTable, BSLValueTableRow, BSLValueTableColumn,
                            BSLValueTableColumnCollection, BSLCollectionIndexes)
+from .value_storage_table import _wire_index_definitions
 from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
 from yadinassi.collections.plain_value_list import PlainValueList, PlainValueListItem
 from yadinassi.types.type_values import type_of
@@ -621,9 +622,10 @@ class _Writer:
                 raise _resource("ЗначениеВСтрокуВнутр")
             if any(type(position) is not int for position in signature):
                 raise ValueError("ЗначениеВСтрокуВнутр: недопустимый индекс таблицы")
+        definitions = _wire_index_definitions(table, collection, table.columns._items)
         self.emit('{0,' + str(count))
         seen = set()
-        for signature in collection.items:
+        for signature in definitions:
             if type(signature) is not tuple or not 0 < len(signature) <= column_count:
                 raise ValueError("ЗначениеВСтрокуВнутр: недопустимый индекс таблицы")
             self.nodes += len(signature)
@@ -973,7 +975,7 @@ class _Reader:
                 self.fail()
             # The table is fresh and fully owned. Declare only; no eager index
             # work or dependence on column name parsing.
-            table.indexes.items.append(table._search.declare(signature))
+            BSLCollectionIndexes._add_positions(table.indexes, signature)
 
     def value(self, group, depth=0):
         self.nodes += 1

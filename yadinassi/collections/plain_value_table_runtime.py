@@ -128,12 +128,10 @@ class BSLValueTableColumnCollection(BSLObject):
     def delete(self,column):
         _writable(self.table)
         column=self.resolve(column)
-        position=self.table._storage.schema.offset(column.name)
-        self.table._storage.delete_column(column.name)
         indexes=self.table.indexes
-        indexes.items[:]=[tuple(i-(i>position) for i in sig) for sig in indexes.items if position not in sig]
-        self.table._search.declarations=set(indexes.items)
-        self.table._search.cache.clear()
+        plan=indexes._without_column(column)
+        self.table._storage.delete_column(column.name)
+        indexes._apply_column_delete(plan)
         self._items.remove(column);column._deleted=True
         self._query_columns -= _query_column(column.value_type)
     def clear(self):
@@ -284,20 +282,166 @@ class BSLValueTableRow(RowStorage,BSLObject):
     def __str__(self):return 'СтрокаТаблицыЗначений'
 
 
+class BSLCollectionIndex(BSLObject):
+    """A public definition, not a bucket owner or a retained row inventory."""
+    def __init__(self, table, columns):
+        self.table = table
+        self._columns = columns
+        self._detached = self._cleared = False
+
+    def _name(self, position):
+        column = self._columns[position]
+        if column is None:
+            return ''
+        if type(column) is not BSLValueTableColumn or column.table is not self.table:
+            raise ValueError('foreign index column')
+        if column._deleted is True:
+            return ''
+        if column._deleted is not False or type(column._name) is not str:
+            raise ValueError('invalid index column')
+        return column._name
+
+    def __iter__(self):
+        columns = self._columns
+        if type(columns) is not tuple:
+            raise ValueError('invalid index columns')
+        return iter(tuple(self._name(i) for i in range(len(columns))))
+
+    def get_index(self, index):
+        if type(self._columns) is not tuple:
+            raise ValueError('invalid index columns')
+        return self._name(_index(index, len(self._columns)))
+
+    def set_index(self, *args):
+        raise ValueError('index definition is readonly')
+
+    def __str__(self):
+        if self._cleared:
+            raise ValueError('Индекс коллекции очищен')
+        return ', '.join(self)
+
+
 class BSLCollectionIndexes(BSLObject):
-    def __init__(self,table):self.table=table;self.items=[]
-    def count(self):return Decimal(len(self.items))
-    def add(self,names):
+    def __init__(self, table):
+        self.table = table
+        self.items = []  # unique sorted offset signatures, not public handles
+        self._handles = []
+
+    def __str__(self):return 'ИндексыКоллекции'
+    def __iter__(self):return iter(tuple(self._active()))
+    def count(self):
+        if type(self._handles) is not list:raise ValueError('invalid index handles')
+        return Decimal(len(self._handles))
+    def get_index(self,index):
+        handles = self._handles
+        if type(handles) is not list:raise ValueError('invalid index handles')
+        return self._handle(handles[_index(index,len(handles))])
+    def set_index(self,*args):raise ValueError('index collection is readonly')
+
+    def _add_positions(self, positions):
+        columns = tuple(self.table.columns._items[i] for i in positions)
+        handle = BSLCollectionIndex(self.table, columns)
+        signature = self._signature(positions)
+        if signature and signature not in self.items:
+            self.table._search.declare(signature)
+            self.items.append(signature)
+        self._handles.append(handle)
+        return handle
+
+    def add(self,names=None):
         _writable(self.table)
+        if names is None:
+            return self._add_positions(())
         if type(names) is not str:raise TypeError('index columns must be str')
-        offsets=tuple(self.table._storage.schema.offset(n.strip()) for n in names.split(','))
-        signature=self.table._search.declare(offsets)
-        if signature not in self.items:self.items.append(signature)
-        return signature
+        schema = self.table._storage.schema
+        return self._add_positions(tuple(schema.offset(name) for part in names.split(',')
+                                         if (name := part.strip())))
+
+    def _positions(self, columns, positions):
+        if type(columns) is not tuple:
+            raise ValueError('invalid index columns')
+        result = []
+        for column in columns:
+            if (type(column) is not BSLValueTableColumn or column.table is not self.table
+                    or column._deleted is not False or id(column) not in positions):
+                raise ValueError('foreign index column')
+            result.append(positions[id(column)])
+        return tuple(result)
+
+    def _handle(self, handle):
+        if (type(handle) is not BSLCollectionIndex or handle.table is not self.table
+                or handle._detached is not False or handle._cleared is not False
+                or type(handle._columns) is not tuple):
+            raise ValueError('foreign index handle')
+        return handle
+
+    def _active(self):
+        if type(self._handles) is not list:
+            raise ValueError('invalid index handles')
+        for handle in self._handles:self._handle(handle)
+        return self._handles
+
+    @staticmethod
+    def _signature(positions):
+        if len(set(positions)) != len(positions):
+            return ()
+        return tuple(sorted(positions))
+
+    def _replace_signatures(self, signatures, *, preserve_cache=False):
+        self.items[:] = signatures
+        search = self.table._search
+        search.declarations = set(signatures)
+        if preserve_cache:
+            for dropped in search.cache.keys() - search.declarations:
+                del search.cache[dropped]
+        else:
+            search.cache.clear()
+
+    def _without_column(self, removed):
+        columns = [col for col in self.table.columns._items if col is not removed]
+        positions = {id(col): i for i,col in enumerate(columns)}
+        plans = [(handle, tuple(col for col in handle._columns if col is not removed))
+                 for handle in self._active()]
+        signatures = [self._signature(self._positions(columns, positions)) for _,columns in plans]
+        return plans, list(dict.fromkeys(sig for sig in signatures if sig))
+
+    def _apply_column_delete(self, plan):
+        plans, signatures = plan
+        for handle,columns in plans:
+            handle._columns = columns
+        self._replace_signatures(signatures)
+
+    def delete(self, index):
+        _writable(self.table)
+        handles = self._active()
+        if type(index) is str:
+            from decimal import InvalidOperation
+            try:index = Decimal(index)
+            except InvalidOperation:raise ValueError('expected numeric index') from None
+        if type(index) is not BSLCollectionIndex:
+            index = self.get_index(index)
+        if index.table is not self.table or not any(handle is index for handle in handles):
+            raise ValueError('foreign or detached index')
+        remaining = [handle for handle in handles if handle is not index]
+        positions = {id(col): i for i,col in enumerate(self.table.columns._items)}
+        signatures = [self._signature(self._positions(handle._columns, positions)) for handle in remaining]
+        self._replace_signatures(list(dict.fromkeys(sig for sig in signatures if sig)), preserve_cache=True)
+        self._handles[:] = remaining
+        index._detached = True
+
     def clear(self):
-        _writable(self.table);self.items.clear();self.table._search.clear()
+        _writable(self.table)
+        plans = [(handle, (None,) * len(handle._columns)) for handle in self._active()]
+        for handle,columns in plans:
+            handle._columns = columns
+            handle._detached = handle._cleared = True
+        self._handles.clear()
+        self.items.clear()
+        self.table._search.clear()
+
     def get_method(self,name):return _method(self,name,(
-        (('count','количество'),'count',True),(('add','добавить'),'add',True),(('clear','очистить'),'clear',False)))
+        (('count','количество'),'count',True),(('add','добавить'),'add',True),
+        (('delete','удалить'),'delete',False),(('clear','очистить'),'clear',False)))
 
 
 class BSLValueTable(BSLObject):
@@ -436,7 +580,7 @@ class BSLValueTable(BSLObject):
     def __str__(self):return 'ТаблицаЗначений'
 
 _DIRECT_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items())) for cls in
-    (BSLValueTable,BSLValueTableRow,BSLValueTableColumn,BSLValueTableColumnCollection,BSLCollectionIndexes,BSLObject))
+    (BSLValueTable,BSLValueTableRow,BSLValueTableColumn,BSLValueTableColumnCollection,BSLCollectionIndexes,BSLCollectionIndex,BSLObject))
 _DIRECT_FUNCTIONS=tuple((fn,fn.__code__,fn.__defaults__,tuple((fn.__kwdefaults__ or {}).items()))
     for fn in [*globals().values(),*(fn for cls,_,fields in _DIRECT_CLASSES for _,v in fields
         for fn in ((v.fget,v.fset,v.fdel) if type(v) is property else (v,)) if fn is not None)]

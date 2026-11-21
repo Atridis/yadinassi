@@ -513,5 +513,5 @@ _DIRECT_VALUE_STORAGE_RECEIVER_CLASSES=tuple(
 from types import FunctionType as _DirectSnapshotFunctionType
 _DIRECT_VALUE_STORAGE_TABLE_FUNCTIONS=tuple(
     (name,value) for name,value in tuple(vars(_direct_table_snapshot).items())
-    if type(value) is _DirectSnapshotFunctionType
+    if type(value) is _DirectSnapshotFunctionType or name == '_INDEX_FIELDS'
 )
