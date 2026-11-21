@@ -8,12 +8,13 @@ from unittest.mock import patch
 
 from scripts.native_historical_replay import historical_collections_source, without_value_tree_probes
 
-from yadinassi import Interpreter, serialization
+from yadinassi import Interpreter
+from yadinassi.formats.storage import serialization
 from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse
-from yadinassi.value_tables import (BSLValueTable, BSLValueTableColumn,
+from yadinassi.collections.value_tables import (BSLValueTable, BSLValueTableColumn,
                                    BSLValueTableColumnCollection, BSLValueTableRow)
-from yadinassi.values import BSLArray, BSLType, HostFunction
+from yadinassi.types.values import BSLArray, BSLType, HostFunction
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/collections.bsl'
@@ -216,7 +217,7 @@ class IndexProbeTests(unittest.TestCase):
             return original_set(table, name, value)
 
         output = []
-        vm = Interpreter(output=output.append)
+        vm = Interpreter(output=output.append, allow_extensions=True)
         vm.execute(source().split('#Область МассивыИСтруктуры', 1)[0])
         with patch.object(BSLValueTable, 'get_member', get_member), patch.object(BSLValueTable, 'set_member', set_member), patch.object(BSLValueTable, 'get_method', table_method), patch.object(BSLValueTableColumnCollection, 'get_method', columns_method), patch.object(BSLValueTableColumn, 'set_member', column_set), patch.object(BSLValueTableRow, 'set_member', row_set):
             for call in observations():

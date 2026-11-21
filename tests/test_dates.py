@@ -13,22 +13,22 @@ import re
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.dates import (
+from yadinassi.temporal.dates import (
     BSLDate, UnsupportedDateRange, component, date, date_difference,
     literal_date, shift_date,
 )
-from yadinassi.errors import BSLRuntimeError, IncompleteInput
+from yadinassi.types.errors import BSLRuntimeError, IncompleteInput
 from yadinassi.syntax.lexer import Lexer
-from yadinassi.maps import BSLFixedMap, BSLMap
+from yadinassi.collections.maps import BSLFixedMap, BSLMap
 from yadinassi.syntax.parser import parse, parse_expression
-from yadinassi.serialization import (
+from yadinassi.formats.storage.serialization import (
     FORMAT_ERROR, value_from_string_internal as read,
     value_to_string_internal as write,
 )
-from yadinassi.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
-from yadinassi.type_values import type_by_name, type_of
-from yadinassi.value_checks import value_is_filled
-from yadinassi.values import BSLArray, BSLFixedArray, BSLObject, BSLType, equal, to_string
+from yadinassi.collections.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
+from yadinassi.types.type_values import type_by_name, type_of
+from yadinassi.types.value_checks import value_is_filled
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLObject, BSLType, equal, to_string
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -338,7 +338,7 @@ class DateArithmeticTests(unittest.TestCase):
 class DateRuntimeTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(output=self.output.append)
+        self.vm = Interpreter(output=self.output.append, allow_extensions=True)
 
     def test_bilingual_constructor_component_and_type_aliases(self):
         for name in ('Date', 'Дата', 'dAtE', 'дАтА'):
@@ -464,7 +464,7 @@ class DateRuntimeTests(unittest.TestCase):
         self.vm.register_function('Date', lambda *arguments: 'override')
         self.assertEqual(self.vm.execute('Date(2024, 2, 29)'), 'override')
         self.assertEqual(self.vm.execute('Дата(2024, 2, 29)'), date('20240229'))
-        self.assertEqual(Interpreter().execute('Date(2024, 2, 29)'), date('20240229'))
+        self.assertEqual(Interpreter(allow_extensions=True).execute('Date(2024, 2, 29)'), date('20240229'))
 
 
 class DateCollectionAndCodecTests(unittest.TestCase):

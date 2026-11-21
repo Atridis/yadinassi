@@ -8,7 +8,7 @@ import json
 import sqlite3
 import unittest
 from uuid import UUID
-from yadinassi.catalog_backend import BackendError
+from yadinassi.db.catalog.catalog_backend import BackendError
 import test_document_posting_host as posting_fixtures
 
 

@@ -68,7 +68,7 @@ class DataIOFamilyMeasurementTests(unittest.TestCase):
         with self.assertRaises(wire.AvailabilityError): wire.require_available(emit(missing=True))
 
     def test_action_failure_still_cleans_owned_paths(self):
-        from yadinassi.data_io import BSLDataWriter
+        from yadinassi.streams.data_io import BSLDataWriter
         with mock.patch.object(BSLDataWriter, 'write_chars', side_effect=ValueError('injected')):
             raw = emit()
         records = wire.validate_output(raw)
@@ -76,7 +76,7 @@ class DataIOFamilyMeasurementTests(unittest.TestCase):
         self.assertFalse(any(row['status'] == 'observer-error' for row in records))
 
     def test_unexpected_children_are_not_recursively_swept(self):
-        import yadinassi.file_io as files
+        import yadinassi.streams.file_io as files
         original = files.create_directory
         def create_with_sentinel(path):
             original(path)
@@ -84,7 +84,7 @@ class DataIOFamilyMeasurementTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='data-io-unexpected-') as tmp, \
                 mock.patch('tempfile.gettempdir', return_value=tmp):
             output = []
-            vm = Interpreter(output.append)
+            vm = Interpreter(output.append, allow_extensions=True)
             vm.register_function('СоздатьКаталог', create_with_sentinel, 'CreateDirectory', returns_value=False)
             vm.execute(SOURCE)
             roots = list(Path(tmp).iterdir())
@@ -102,7 +102,7 @@ class DataIOFamilyMeasurementTests(unittest.TestCase):
             sentinel = root / 'keep.bin'
             sentinel.write_bytes(b'owned-sentinel')
             output = []
-            vm = Interpreter(output.append)
+            vm = Interpreter(output.append, allow_extensions=True)
             vm.register_function('ПолучитьИмяВременногоФайла', lambda *args: str(root), 'GetTempFileName')
             vm.execute(SOURCE)
             self.assertEqual(list(root.iterdir()), [sentinel])

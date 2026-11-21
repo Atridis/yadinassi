@@ -1,8 +1,8 @@
 """Additional transaction publication, buffer and read boundaries."""
 from unittest.mock import patch
-from yadinassi.catalog_backend import BackendError
-from yadinassi.database_transactions import execution, begin, commit, rollback, current
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.database_transactions import execution, begin, commit, rollback, current
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 import test_bsl_transactions as fixtures
 import unittest
 
@@ -25,7 +25,7 @@ class TransactionBoundariesTests(unittest.TestCase):
     def test_query_wrapper_memoryerror_releases_lease(self):
         with execution(self.backend):
             begin(self.backend)
-            with patch('yadinassi.sqlite_catalog.DocumentView', side_effect=MemoryError):
+            with patch('yadinassi.db.sqlite.sqlite_catalog.DocumentView', side_effect=MemoryError):
                 with self.assertRaises(MemoryError): self.backend.begin_query_read()
             self.assertEqual(current(self.backend).leases,0)
             rollback(self.backend)
@@ -35,6 +35,26 @@ class TransactionBoundariesTests(unittest.TestCase):
 BeginTransaction();D.Write();Q=New Query("SELECT Number FROM Document.Orders");
 T=Q.Execute().Unload();Message(T.Count());CommitTransaction();''')
         self.assertEqual(self.output,['1'])
+
+    def test_typed_report_joins_staged_rows_and_releases_borrowed_lease(self):
+        from yadinassi.db.query.queries import BSLQuery
+        item = self.catalog()
+        item.write()
+        catalogs = self.vm._catalogs
+        report = BSLQuery(catalogs, 'SELECT Ref AS Item FROM Catalog.Products').execute().unload()
+        query = BSLQuery(catalogs, 'SELECT P.Description FROM &Input AS T '
+                         'JOIN Catalog.Products AS P ON T.Item=P.Ref')
+        query.set_parameter('Input', report)
+        with execution(self.backend):
+            begin(self.backend)
+            transaction = current(self.backend)
+            item.set_member('Description', 'staged')
+            item.write()
+            self.assertEqual(query.execute()._rows, (('staged',),))
+            self.assertIs(current(self.backend), transaction)
+            self.assertEqual(transaction.leases, 0)
+            rollback(self.backend)
+        self.assertEqual(query.execute()._rows, (('edited',),))
 
     def test_register_query_sees_staged_row(self):
         self.vm.execute('''R=InformationRegisters.Prices.CreateRecordManager();R.Period=Date(2026,1,1);R.Item="A";R.Price=2;

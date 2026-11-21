@@ -13,11 +13,11 @@ from pathlib import Path
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.dates import BSLDate, MAX_TICKS, TICKS_PER_SECOND, date
-from yadinassi.maps import BSLMap
-from yadinassi.structures import BSLStructure
-from yadinassi.type_values import type_of
-from yadinassi.values import BSLArray, BSLType, NULL
+from yadinassi.temporal.dates import BSLDate, MAX_TICKS, TICKS_PER_SECOND, date
+from yadinassi.collections.maps import BSLMap
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.types.type_values import type_of
+from yadinassi.types.values import BSLArray, BSLType, NULL
 
 
 CORE = (Path(__file__).resolve().parents[1] /
@@ -42,7 +42,7 @@ def nested(value, edges):
 class ExecutionContextDateNullTests(unittest.TestCase):
     def setUp(self):
         self.messages = []
-        self.vm = Interpreter(self.messages.append)
+        self.vm = Interpreter(self.messages.append, allow_extensions=True)
 
     def tearDown(self):
         self.vm.close()

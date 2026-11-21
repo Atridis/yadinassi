@@ -8,7 +8,7 @@ results, not universal libm parity across all platforms and arguments.
 import math
 from decimal import Decimal
 
-from ..values import number
+from yadinassi.types.values import number
 from .powers import integral_power
 from .binary_exp import binary_exp
 from .math_conversion import UnsupportedConversionRange, decimal_to_binary64

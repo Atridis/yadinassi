@@ -154,12 +154,12 @@ from decimal import Decimal
 from hashlib import sha256
 from pathlib import Path
 import sys
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.catalogs import BSLCatalogs
-from yadinassi.metadata import BSLCatalogMetadataCollection
-from yadinassi.catalog_backend import CatalogKey
-from yadinassi.document_backend import DocumentSelection
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.catalog.catalogs import BSLCatalogs
+from yadinassi.configuration.metadata import BSLCatalogMetadataCollection
+from yadinassi.db.catalog.catalog_backend import CatalogKey
+from yadinassi.db.document.document_backend import DocumentSelection
 root=Path(sys.argv[1]); target=Path(sys.argv[2]); mode=sys.argv[3]
 files={p.relative_to(root).as_posix():p.read_bytes() for p in root.rglob('*') if p.is_file()}
 if mode=='create':
@@ -331,8 +331,8 @@ async function sourceBinding(){
     'examples/configuration-reference-application','tests/browser_ui',
     'tests/test_configuration_reference_profile.py','tests/test_configuration_reference_app.py',
     'tests/test_configuration_reference_browser_qa_contract.py','.github/workflows/ui-browser-qa.yml').split('\0').filter(Boolean);
-  for(const required of ['yadinassi/configuration_reference_profile.py','yadinassi/configuration_references.py',
-    'yadinassi/configuration_reference_choice.py','yadinassi/form_references.py',
+  for(const required of ['yadinassi/configuration/configuration_reference_profile.py','yadinassi/configuration/configuration_references.py',
+    'yadinassi/configuration/configuration_reference_choice.py','yadinassi/forms/form_references.py',
     'yadinassi/ui/configuration_app.py','frontend/form/src/attachment.mjs','frontend/configuration/src/app.mjs',
     'examples/configuration-reference-application/Configuration.xml',
     'tests/browser_ui/configuration_reference_browser_qa.mjs','tests/test_configuration_reference_browser_qa_contract.py'])

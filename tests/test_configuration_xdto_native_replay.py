@@ -2,7 +2,7 @@ import hashlib
 import json
 import unittest
 from configuration_xdto_fixture import ROOT, files
-from yadinassi.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
 
 class CoreNativeReplay(unittest.TestCase):
     linked=False

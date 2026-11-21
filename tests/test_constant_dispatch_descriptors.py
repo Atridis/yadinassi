@@ -5,21 +5,23 @@ import sqlite3
 import tempfile
 import unittest
 from test_source_constant_store import configuration
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_constants_runtime import SourceConstants, SourceConstant, SourceConstantSet, ConstantCall, ConstantSetCall
-from yadinassi.source_constant_managers import SourceConstantValueManager, ValueManagerCall
-from yadinassi.values import InterpreterCall
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.metadata.source_constants_runtime import SourceConstants, SourceConstant, SourceConstantSet, ConstantCall, ConstantSetCall
+from yadinassi.db.metadata.source_constant_managers import SourceConstantValueManager, ValueManagerCall
+from yadinassi.types.values import InterpreterCall
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.runtime import Interpreter
-from yadinassi.errors import BSLError
+from yadinassi.types.errors import BSLError
 
 
 class ConstantDispatchTests(unittest.TestCase):
-    def app(self,module=''):
+    def app(self,module='', *, allow_extensions=False):
         directory=tempfile.TemporaryDirectory();self.addCleanup(directory.cleanup)
         path=Path(directory.name)/'scratch.sqlite'
         files={'Ext/SessionModule.bsl':b'Procedure SessionParametersSetting(Names) EndProcedure'}
         if module:files['Constants/Text/Ext/ValueManagerModule.bsl']=module.encode()
-        app=SourceApplication(configuration(files),scratch_database=path,output=lambda _:None)
+        app=SourceApplication(configuration(files),scratch_database=path,output=lambda _:None,
+                              allow_extensions=allow_extensions)
         self.addCleanup(app.close);app.start()
         return app,path
 
@@ -46,16 +48,17 @@ class ConstantDispatchTests(unittest.TestCase):
                     self.assertIs(type(receiver.get_method(name).function),InterpreterCall)
 
     def test_foreign_descriptor_authorizes_before_arguments(self):
-        owner,_=self.app();other,_=self.app();effects=[]
+        owner,_=self.app();other,_=self.app(allow_extensions=True);effects=[]
         other._session_owner.register_function('Touch',lambda:effects.append('bad') or 'x')
         for descriptor in self.descriptors(owner):
             other._session_owner.register_function('Captured',descriptor)
-            with self.subTest(descriptor=descriptor),self.assertRaises(BSLError):
+            with self.subTest(descriptor=descriptor),self.assertRaisesRegex(BoundaryViolation,
+                                                                            "foreign source constants"):
                 self.run_server(other,'Captured(Touch())')
         self.assertEqual(effects,[])
 
     def test_arity_before_argument_effects(self):
-        app,_=self.app();effects=[]
+        app,_=self.app(allow_extensions=True);effects=[]
         app._session_owner.register_function('Touch',lambda:effects.append('bad') or 'x')
         for code in ['Constants.Text.Get(Touch())','Constants.Text.Set(Touch(),Touch());',
                      'Constants.CreateSet(Touch(),Touch())','Constants.Text.CreateValueManager(Touch())']:
@@ -66,13 +69,13 @@ class ConstantDispatchTests(unittest.TestCase):
         self.assertEqual(effects,[])
 
     def test_procedure_returns_value_guard_precedes_arguments(self):
-        app,_=self.app();effects=[]
+        app,_=self.app(allow_extensions=True);effects=[]
         app._session_owner.register_function('Touch',lambda:effects.append('bad') or 'x')
         with self.assertRaises(BSLError):self.run_server(app,'X=Constants.Text.Set(Touch());')
         self.assertEqual(effects,[])
 
     def test_argument_can_invalidate_owner_and_invoke_reauthorizes(self):
-        app,path=self.app()
+        app,path=self.app(allow_extensions=True)
         def close():
             # Full app.close() intentionally refuses resetting an active
             # scheduler. Model an external owner/database invalidation without
@@ -81,7 +84,9 @@ class ConstantDispatchTests(unittest.TestCase):
             app.state='closed'
             return 'x'
         app._session_owner.register_function('CloseOwner',close)
-        with self.assertRaises(BSLError):self.run_server(app,'Constants.Text.Set(CloseOwner());')
+        with self.assertRaisesRegex(BoundaryViolation,'direct source owner is no longer active'):
+            self.run_server(app,'Constants.Text.Set(CloseOwner());')
+        self.assertEqual(app.state,'closed')
         with closing(sqlite3.connect(path)) as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM constant_value').fetchone()[0],0)
 
@@ -104,7 +109,7 @@ class ConstantDispatchTests(unittest.TestCase):
                 self.assertEqual(db.execute('SELECT COUNT(*) FROM constant_value').fetchone()[0],0)
 
     def test_raw_marker_does_not_gain_interpreter_dispatch(self):
-        app,_=self.app();owner=SourceConstants(app)
+        app,_=self.app(allow_extensions=True);owner=SourceConstants(app)
         for marker in [ConstantCall(owner,'Text',False),ConstantSetCall(owner,'create'),
                        ValueManagerCall(SourceConstant(owner,'Text'),'create')]:
             app._session_owner.register_function('Raw',marker)
@@ -117,7 +122,7 @@ class ConstantDispatchTests(unittest.TestCase):
             def __call__(self):return 'ordinary'
             def invoke(self,*args):effects.append('bad')
         class Derived(InterpreterCall):pass
-        vm=Interpreter(lambda _:None);self.addCleanup(vm.close)
+        vm=Interpreter(lambda _:None, allow_extensions=True);self.addCleanup(vm.close)
         vm.register_function('Ordinary',Ordinary())
         self.assertEqual(vm.execute('Ordinary()'),'ordinary')
         vm.register_function('Derived',Derived(0,0,lambda caller:effects.append('bad'),lambda caller,args:iter(())))
@@ -128,14 +133,19 @@ class ConstantDispatchTests(unittest.TestCase):
         effects=[]
         descriptor=InterpreterCall(0,0,lambda caller:effects.append('authorize'),lambda caller,args:[])
         with self.assertRaises(AttributeError):descriptor.maximum_arguments=2
-        vm=Interpreter(lambda _:None);self.addCleanup(vm.close);vm.register_function('Bad',descriptor)
-        with self.assertRaisesRegex(BSLError,'requires a generator'):vm.execute('Bad()')
+        vm=Interpreter(lambda _:None, allow_extensions=True);self.addCleanup(vm.close);vm.register_function('Bad',descriptor)
+        with self.assertRaisesRegex(BSLError,'requires an explicit interpreter dispatch'):
+            vm.execute('Bad()')
+        self.assertEqual(effects,[])
+        descriptor.prepare(vm,0)
+        with self.assertRaisesRegex(TypeError,'requires a generator'):
+            next(descriptor.invoke(vm,()))
         self.assertEqual(effects,['authorize','authorize'])
 
     def test_closed_value_manager_descriptor_rejects_before_arguments(self):
         app,_=self.app();owner=SourceConstants(app)
         descriptor=ValueManagerCall(SourceConstantValueManager(owner,'Text'),'write').descriptor()
-        app.close();vm=Interpreter(lambda _:None);self.addCleanup(vm.close);effects=[]
+        app.close();vm=Interpreter(lambda _:None, allow_extensions=True);self.addCleanup(vm.close);effects=[]
         vm.register_function('Captured',descriptor,returns_value=False)
         vm.register_function('Touch',lambda:effects.append('bad'))
         with self.assertRaises(BSLError):vm.execute('Captured(Touch());')

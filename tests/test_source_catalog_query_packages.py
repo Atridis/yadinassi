@@ -2,8 +2,8 @@
 import unittest
 from unittest.mock import patch
 import test_source_catalog_queries as support
-from yadinassi.errors import BSLError
-from yadinassi.source_catalog_store import SourceCatalogStore
+from yadinassi.types.errors import BSLError
+from yadinassi.db.catalog.source_catalog_store import SourceCatalogStore
 
 
 class SourceCatalogPackageTests(unittest.TestCase):
@@ -57,9 +57,9 @@ class SourceCatalogPackageTests(unittest.TestCase):
         _,out=self.run_body('BeginTransaction(); O=Catalogs.Items.CreateItem(); O.Code="3"; O.Write(); Q=New Query("SELECT Ref INTO T FROM Catalog.Items; SELECT COUNT(*) AS N FROM T"); S=Q.Execute().Select(); S.Next(); Message(S.N); RollbackTransaction(); Q.Text="SELECT COUNT(*) AS N FROM Catalog.Items"; S=Q.Execute().Select(); S.Next(); Message(S.N);')
         self.assertEqual(out,['3','2'])
     def test_scalar_temp_retains_source_owner(self):
-        from yadinassi.source_constant_queries import SourceConstantQuery
-        from yadinassi.source_catalog_queries import has_source_inputs
-        from yadinassi.query_packages import BSLTempTablesManager
+        from yadinassi.db.query.source_constant_queries import SourceConstantQuery
+        from yadinassi.db.query.source_catalog_queries import has_source_inputs
+        from yadinassi.db.query.query_packages import BSLTempTablesManager
         app,_=self.run_body('')
         query=SourceConstantQuery(app.interpreter,app,'SELECT Code AS C INTO Saved FROM Catalog.Items')
         query._temp_tables_manager=BSLTempTablesManager()
@@ -70,9 +70,9 @@ class SourceCatalogPackageTests(unittest.TestCase):
         query._text='SELECT C FROM Saved';app.close()
         with self.assertRaises(ValueError):query.read(app.interpreter)
     def test_scalar_temp_foreign_application_refused(self):
-        from yadinassi.source_constant_queries import SourceConstantQuery
-        from yadinassi.query_packages import BSLTempTablesManager
-        from yadinassi.configuration_source_runtime import SourceApplication
+        from yadinassi.db.query.source_constant_queries import SourceConstantQuery
+        from yadinassi.db.query.query_packages import BSLTempTablesManager
+        from yadinassi.configuration.configuration_source_runtime import SourceApplication
         app,_=self.run_body('')
         query=SourceConstantQuery(app.interpreter,app,'SELECT Code AS C INTO Saved FROM Catalog.Items')
         manager=BSLTempTablesManager();query._temp_tables_manager=manager

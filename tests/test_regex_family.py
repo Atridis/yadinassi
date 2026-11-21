@@ -5,12 +5,13 @@ import unittest
 from unittest import mock
 
 from yadinassi import Interpreter
-from yadinassi import regex_functions as api, regex_parser as limits
-from yadinassi.regex_parser import Parser, Budget, RegexLimitError
-from yadinassi.regex_vm import Program, run
-from yadinassi.search_directions import BSLSearchDirection as Direction
-from yadinassi.values import BSLType
-from yadinassi import type_values, serialization
+from yadinassi.formats.regex import regex_functions as api, regex_parser as limits
+from yadinassi.formats.regex.regex_parser import Parser, Budget, RegexLimitError
+from yadinassi.formats.regex.regex_vm import Program, run
+from yadinassi.collections.search_directions import BSLSearchDirection as Direction
+from yadinassi.types.values import BSLType
+from yadinassi.types import type_values
+from yadinassi.formats.storage import serialization
 
 
 class RegexFamilyTests(unittest.TestCase):

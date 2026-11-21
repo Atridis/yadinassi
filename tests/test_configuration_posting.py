@@ -2,8 +2,8 @@
 from dataclasses import replace
 import unittest
 from uuid import UUID
-from yadinassi.configuration_posting import import_posting_configuration,canonical,PROFILE
-from yadinassi.configuration_xml import import_configuration
+from yadinassi.configuration.configuration_posting import import_posting_configuration,canonical,PROFILE
+from yadinassi.configuration.configuration_xml import import_configuration
 
 MD='http://v8.1c.ru/8.3/MDClasses'
 XR='http://v8.1c.ru/8.3/xcf/readable'

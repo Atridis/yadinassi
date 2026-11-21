@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from unittest import mock
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
 import test_native_tree_profile_budget as budget
 from test_native_tree_profile_host import synthetic_producer_reader
 from test_native_1c_smoke import bootstrap_report
@@ -57,10 +57,10 @@ class JSONFamilyProfileTests(unittest.TestCase):
     def test_generated_client_captures_helpers_and_utf16(self):
         source=(ROOT/spec().source).read_text(encoding='utf-8').encode()
         module=tree.client_module(source,(ROOT/full.CLIENT_SOURCE).read_text(encoding='utf-8').encode(),profile=PROFILE)
-        vm=Interpreter(native_target=LINUX_8_3_27_1508)
+        vm=Interpreter(native_target=LINUX_8_3_27_1508, allow_extensions=True)
         with temporary_file_helpers(vm):
             vm.execute(module.decode('utf-8-sig'));vm.execute('Result = ВычислитьПробу();')
-        self.assertEqual(('\n'.join(vm.variables['result'].items)+'\n').encode(),emit())
+        self.assertEqual(('\n'.join(vm.variables['result'])+'\n').encode(),emit())
         for bad in (source+b'\n',source.replace(b'\n',b'\r\n')):
             with self.assertRaises(full.FullError):tree.client_module(bad,(ROOT/full.CLIENT_SOURCE).read_bytes(),profile=PROFILE)
 

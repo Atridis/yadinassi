@@ -10,15 +10,15 @@ import unittest
 from uuid import UUID
 
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.accumulation_movements import validate_schema
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_accumulation import import_accumulation_configuration, PROFILE as SCALAR
-from yadinassi.configuration_accumulation_references import (PROFILE, canonical,
+from yadinassi.db.registers.accumulation_movements import validate_schema
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_accumulation import import_accumulation_configuration, PROFILE as SCALAR
+from yadinassi.configuration.configuration_accumulation_references import (PROFILE, canonical,
     import_inventory_configuration)
-from yadinassi.configuration_profile_import import prepare_files, create_prepared
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_accumulation_movements import schema_data
+from yadinassi.configuration.configuration_profile_import import prepare_files, create_prepared
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_accumulation_movements import schema_data
 from test_configuration_accumulation import wrap, field, document, value_type
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -209,5 +209,5 @@ class InventoryRuntimeTests(unittest.TestCase):
         for table in ('document_record','accumulation_movement','unit_of_work_receipt'):
             self.assertEqual(self.sql('SELECT COUNT(*) FROM '+table),[(0,)])
     def test_no_migration_admission(self):
-        from yadinassi.sqlite_migration_plan import prepare
+        from yadinassi.db.sqlite.sqlite_migration_plan import prepare
         with self.assertRaises(BackendError): prepare(self.path,maintenance=True)

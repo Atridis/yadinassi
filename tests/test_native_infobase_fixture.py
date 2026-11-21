@@ -850,9 +850,9 @@ class PlatformAndErrorTests(unittest.TestCase):
 class OwnedSQLiteFixtureSourceTests(unittest.TestCase):
     def test_source_owned_fixture_hash_schema_and_configuration(self):
         import hashlib
-        from yadinassi.configuration_xml import import_configuration
-        from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-        from yadinassi.database_context import SQLiteDBContext
+        from yadinassi.configuration.configuration_xml import import_configuration
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+        from yadinassi.db.database_context import SQLiteDBContext
         self.assertEqual(hashlib.sha256(fixture._FIXTURE_BYTES).hexdigest(), fixture._FIXTURE_SHA256)
         self.assertTrue(fixture._FIXTURE_BYTES.startswith(b'SQLite format 3\x00'))
         configuration = import_configuration(fixture._FIXTURE_SOURCE_FILES)

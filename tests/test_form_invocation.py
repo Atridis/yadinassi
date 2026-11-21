@@ -8,10 +8,10 @@ import sys
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.form_model import BSLFormAttribute
-from yadinassi.form_runtime import FormSession
-from yadinassi.invocation import InvocationBinding, InvocationPort, InvocationServer
-from yadinassi.type_descriptions import BSLTypeDescription
+from yadinassi.forms.form_model import BSLFormAttribute
+from yadinassi.forms.form_runtime import FormSession
+from yadinassi.execution.invocation import InvocationBinding, InvocationPort, InvocationServer
+from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.ui.protocol import decode_line
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -85,7 +85,7 @@ class FormInvocationTests(unittest.TestCase):
 
     def test_real_separate_process_calculates_form_result_without_client_server_body(self):
         child = '''import sys
-from yadinassi.invocation import InvocationServer
+from yadinassi.execution.invocation import InvocationServer
 server = InvocationServer(%r, {1: 'Calculate'})
 sys.stdout.buffer.write(server.exchange(sys.stdin.buffer.readline(131073)))
 ''' % SERVER

@@ -1,0 +1,48 @@
+UNPUBLISHED RESEARCH, not compatibility-green.
+General standalone module local variables; dynamic boundary publish/reload and finally state publication. Source-owned profiles, imports, routine definitions retain their existing respective scope protocol. Source/host binding checks are not disabled.
+Known differences: old module objects and temporary returned objects can finalize later; profiler/out-of-band observers can see stale module state between explicit boundaries. Exact native list subclass allows Python negative indices and truncates Decimal fractional indices. Foreign __int__/__index__ objects rejected. Type-proved arrays use direct native operations; other dynamic expressions retain exact receiver dispatch. Integral literal-bound loops with nonmutated control variable use Python range and convert loop value to Decimal. Decimal-context edge behavior for huge literal ranges has not been claimed identical.
+18 pre-subclass focused checks: 17 PASS, one existing finalizer ordering mismatch. Last measurements before PlainArray/range did not meet target2–3x; do not use these as final subclass results.
+
+Actual prepared-only paired 46d versus this prototype before equality closure:
+3 fresh-process pairs AB/BA/AB. Same source, expected Decimal(n*(n-1)/2), same
+Python interpreter, n512/4096. 5 rotated rounds,30/5 calls; gc.collect before
+measuring each lane, GC remains enabled; no default recompilation between
+samples. Common Python reference = median of6 process medians.
+512: Python0.100971ms,46d prepared1.444375ms (14.30x),prototype0.914347ms(9.06x).
+4096: Python1.146534ms,46d prepared11.178116ms(9.75x),prototype3.709776ms(3.24x).
+Paired new/old512:0.740,0.485,0.607;4096:0.300,0.332,0.388.
+These are local noisy observations, not a universal2-3x claim. Raw process files
+live in the external ast-array-plain-ab-20261118 experiment directory.
+
+Current performance limit: compile-time scalar/array facts avoid all dynamic
+syncs in their supported domain. Other general module programs DO use locals,
+but conservatively publish/reload around dynamic operations. This is not yet
+an operation-level typed IR covering Map/Table and arbitrary host interactions.
+Programs with routine definitions/imports/owning database/source profiles retain
+existing scope treatment; no text compiler or legacy fallback is introduced.
+
+Known prior test mismatch intentionally recorded, not called green:
+test_direct_ast_complex_index.test_index_finalizer_success_error_and_close,
+byref=False/action=error: finalizer observes Done=1 rather than absent. This is
+object lifetime/publication timing, not a disabled close/revocation boundary.
+9 current focused native-array/dynamic-module tests passed before final identity
+security tests. Full compatibility suite has NOT run on this research tree.
+
+Follow-up (not timed yet): proven native array reads call pinned list.__getitem__
+directly, avoiding a Python __getitem__ frame. General integral literal-bound
+loops inspect uses of the induction variable: a counter used only as a native
+array index stays int internally; numeric uses still receive Decimal once per
+iteration. Decimal publication preserves the current counter on error/Break.
+Nested loops, modified counters, numeric uses and exceptional index failure are
+tested. This applies by syntax/type facts, not by benchmark source identity.
+Private PlainArray override hooks are not part of the supported extension ABI.
+
+Native-slot follow-up: PlainArray inherits list indexing slots rather than
+wrapping __getitem__/__setitem__. Explicit get/set methods accept exact numeric
+indices. Generated BSL index access still rejects foreign conversion hooks in
+all checked dynamic value/reference paths; static typed indices are converted
+by compiler facts. Direct Python use follows native list __index__ semantics.
+Actual BSL tests cover read, assignment, by-value/byref actuals, Property output,
+Get/Set, and captured Get with a hostile index object: zero conversion hooks.
+Compiled typed reads now use native subscript bytecode, not a Python method or
+an explicit C-descriptor call. No new benchmark is claimed before merged timing.

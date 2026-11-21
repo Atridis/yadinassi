@@ -3,13 +3,13 @@ import unittest
 from dataclasses import replace
 from uuid import UUID
 
-from yadinassi.catalog_backend import (
+from yadinassi.db.catalog.catalog_backend import (
     BackendError, CatalogSchema, FieldSchema, TabularSectionSchema,
 )
-from yadinassi.sqlite_catalog_layout import (
+from yadinassi.db.sqlite.sqlite_catalog_layout import (
     REGISTRY_DDL, Layout, build_layout, catalog_ddl, quote_identifier, save_layout,
 )
-from yadinassi.sqlite_catalog_sections import (
+from yadinassi.db.sqlite.sqlite_catalog_sections import (
     SECTION_REGISTRY_DDL, build_section_layout, load_section_layout,
     save_section_layout, section_ddl,
 )

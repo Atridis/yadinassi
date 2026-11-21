@@ -22,8 +22,8 @@ The Python import boundary accepts a mapping of relative Designer-export paths
 to their exact UTF-8 bytes:
 
 ```python
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi import Interpreter
 
 configuration = import_configuration({

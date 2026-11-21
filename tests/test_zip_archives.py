@@ -11,13 +11,13 @@ from unittest import mock
 import zipfile
 
 from yadinassi import Interpreter
-from yadinassi.binary_streams import BSLMemoryStream, BSLPositionInStream, BSLBinaryDataBuffer
-from yadinassi.zip_archives import (BSLZipFileReader as Reader, BSLZipFileWriter as Writer,
+from yadinassi.streams.binary_streams import BSLMemoryStream, BSLPositionInStream, BSLBinaryDataBuffer
+from yadinassi.streams.zip_archives import (BSLZipFileReader as Reader, BSLZipFileWriter as Writer,
     BSLZIPStorePathMode as Paths, BSLZIPSubDirProcessingMode as Recurse,
     BSLZIPRestoreFilePathsMode as Restore, BSLZIPCompressionMethod as Method,
     BSLZIPCompressionLevel as Level, BSLFileNamesEncodingInZipFile as Encoding,
     BSLZIPEncryptionMethod as Encryption, _preflight_zip)
-from yadinassi import zip_archives as module
+from yadinassi.streams import zip_archives as module
 
 
 ANCHORED = os.open in os.supports_dir_fd and hasattr(os, 'O_NOFOLLOW') and hasattr(os, 'O_DIRECTORY')

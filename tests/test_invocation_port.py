@@ -1,6 +1,6 @@
 """Scalar client/server calls, including a real process boundary; no network/1C."""
 from asyncio import CancelledError
-from decimal import Decimal
+from decimal import Decimal, localcontext
 import os
 from pathlib import Path
 import subprocess
@@ -9,11 +9,12 @@ import unittest
 from unittest import mock
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.dates import BSLDate, TICKS_PER_SECOND
-from yadinassi.invocation import (InvocationBinding, InvocationError,
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.temporal.dates import BSLDate, TICKS_PER_SECOND
+from yadinassi.execution.invocation import (InvocationBinding, InvocationError,
     InvocationPort, InvocationServer, MAX_CALLS, PROTOCOL)
 from yadinassi.ui.protocol import decode_line, encode_line
-from yadinassi.values import BSLArray, NULL
+from yadinassi.types.values import BSLArray, NULL
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = '''&AtServerNoContext
@@ -60,8 +61,9 @@ class InvocationPortTests(unittest.TestCase):
         self.assertEqual(len(seen), 1)
         self.assertEqual(decode_line(seen[0]), {'protocol': PROTOCOL, 'id': 1,
             'endpoint': 1, 'arguments': [{'type': 'Number', 'value': '10.25'}, {'type': 'Number', 'value': '2'}]})
-        self.assertEqual(client.server_routines['total'].body, [])
-        self.assertTrue(server._interpreter.server_routines['total'].body)
+        self.assertTrue(type(client._direct_invocation_ports['total'][1]) is InvocationBinding)
+        self.assertNotIn('total', getattr(client,'_direct_routine_modules',{}))
+        self.assertIn('total', server._interpreter._direct_routine_modules)
 
     def test_by_value_arguments_keep_existing_left_to_right_late_name_reads(self):
         client, unused, port, seen, messages = self.setup_port()
@@ -210,7 +212,7 @@ X=3; Message(Total(X,Change(X))); Message(X);''')
                 cancellation = kind('cancelled')
                 client, server, port, seen, messages = self.setup_port()
                 binding = InvocationBinding('Echo', 2, ('Value',))
-                with mock.patch('yadinassi.invocation._encode_scalar', side_effect=cancellation):
+                with mock.patch('yadinassi.execution.invocation._encode_scalar', side_effect=cancellation):
                     with self.assertRaises(kind) as raised:
                         port.invoke(binding, [Decimal(7)])
                 self.assertIs(raised.exception, cancellation)
@@ -261,6 +263,35 @@ Function LocalServer() Return Echo(Effect()); EndFunction''')
                      ('X',1,('a','A')), ('X',1,('a)',)), ('X',1,tuple('p'+str(n) for n in range(33)))]:
             with self.subTest(args=args), self.assertRaises(ValueError): InvocationBinding(*args)
 
+    def test_closed_client_stops_reply_delivery(self):
+        source = ('&AtServerNoContext\n'
+                  'Procedure Announce() Message("first"); Message("second"); EndProcedure')
+        for phase, expected in (('transport',[]),('output',['first'])):
+            with self.subTest(phase=phase):
+                messages=[]
+                def output(message):
+                    messages.append(message)
+                    if phase=='output':
+                        client.close()
+                client=Interpreter(output)
+                def exchange(raw):
+                    reply=server.exchange(raw)
+                    if phase=='transport':
+                        client.close()
+                    return reply
+                # Each case exercises an independent server/port lifetime.
+                server=InvocationServer(source,{1:'Announce'})
+                port=InvocationPort(exchange)
+                port.bind(client,server.bindings[0])
+                with self.assertRaises(BoundaryViolation):
+                    client.execute('Announce();')
+                self.assertEqual(messages,expected)
+                self.assertTrue(port.uncertain)
+                self.assertFalse(port._gate.locked())
+                with self.assertRaisesRegex(InvocationError,'outcome_unknown'):
+                    port.invoke(server.bindings[0],[])
+                self.assertEqual(server._requests,1)
+
     def test_client_request_limit_is_local_and_does_not_dispatch(self):
         client, unused, port, seen, messages = self.setup_port()
         port._counter=MAX_CALLS
@@ -268,9 +299,32 @@ Function LocalServer() Return Echo(Effect()); EndFunction''')
         self.assertEqual(seen, [])
         self.assertFalse(port.uncertain)
 
+    def test_server_decimal_precision_is_independent_of_host(self):
+        source='&AtServerNoContext\nFunction Calculate(Val X) Return X*3; EndFunction'
+        expected=Decimal('37037036703703703670370370367.370368')
+        server=InvocationServer(source,{1:'Calculate'})
+        binding=server.bindings[0]
+        child=(
+            'import sys\nfrom decimal import getcontext\n'
+            'from yadinassi.execution.invocation import InvocationServer\n'
+            'getcontext().prec=28\n'
+            f'server=InvocationServer({source!r}, {{1:"Calculate"}})\n'
+            'sys.stdout.buffer.write(server.exchange(sys.stdin.buffer.readline(131073)))\n'
+        )
+        def exchange(raw):
+            done=subprocess.run([sys.executable,'-c',child],input=raw,
+                stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=10,cwd=ROOT)
+            self.assertEqual(done.returncode,0,done.stderr)
+            return done.stdout
+        for dispatch in (server.exchange,exchange):
+            with self.subTest(dispatch=dispatch), localcontext() as ambient:
+                ambient.prec=28
+                self.assertEqual(InvocationPort(dispatch).invoke(binding,[Decimal('12345678901234567890123456789.123456')]),expected)
+                self.assertEqual(ambient.prec,28)
+
     def test_real_separate_process_returns_result_without_loading_server_body_on_client(self):
         child = '''import sys
-from yadinassi.invocation import InvocationServer
+from yadinassi.execution.invocation import InvocationServer
 server=InvocationServer("&AtServerNoContext\\nFunction Calculate(Val X) Return X * 3; EndFunction", {1:"Calculate"})
 sys.stdout.buffer.write(server.exchange(sys.stdin.buffer.readline(131073)))
 '''
@@ -289,7 +343,8 @@ sys.stdout.buffer.write(server.exchange(sys.stdin.buffer.readline(131073)))
         port.bind(client,InvocationBinding('ServerTotal',1,('Price',)))
         client.execute('Message(ServerTotal(20.10)+0.70);')
         self.assertEqual(messages,['61'])
-        self.assertEqual(client.server_routines['servertotal'].body,[])
+        self.assertTrue(type(client._direct_invocation_ports['servertotal'][1]) is InvocationBinding)
+        self.assertNotIn('servertotal', getattr(client,'_direct_routine_modules',{}))
         self.assertNotIn('calculate',client.server_routines)
         self.assertEqual(set(decode_line(transmissions[0])),{'protocol','id','endpoint','arguments'})
         self.assertNotIn(b'Calculate',transmissions[0])
@@ -348,6 +403,22 @@ Function ReadClient() Return Secret; EndFunction''',{1:'Outer',2:'ReadClient'})
         self.assertEqual(client.execute('Outer(2)'),Decimal(3))
         with self.assertRaisesRegex(BSLError,'server_error'): client.execute('ReadClient()')
         self.assertEqual(client.execute('Secret'),Decimal(123))
+
+    def test_active_server_rejects_scheduler_reset_without_using_it(self):
+        from yadinassi.execution.direct.python_direct_server import ServerBoundary
+        enter=ServerBoundary.enter
+        observed=[]
+
+        def checked_enter(context):
+            with self.assertRaisesRegex(RuntimeError,'Cannot reset an active scheduler'):
+                self.server._interpreter.cancel_pending()
+            observed.append(True)
+            return enter(context)
+
+        with mock.patch.object(ServerBoundary,'enter',checked_enter):
+            self.assertEqual(self.request()['status'],'ok')
+        self.assertEqual(observed,[True])
+        self.server._interpreter.cancel_pending()
 
     def test_server_busy_and_request_limits_never_run_an_endpoint(self):
         self.server._gate.acquire()

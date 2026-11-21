@@ -3,8 +3,8 @@ from decimal import Decimal
 import unittest
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.strings import occurrence_count
-from yadinassi.serialization import value_to_string_internal, value_from_string_internal
+from yadinassi.text.strings import occurrence_count
+from yadinassi.formats.storage.serialization import value_to_string_internal, value_from_string_internal
 
 
 class StringOccurrenceTests(unittest.TestCase):

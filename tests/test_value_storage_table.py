@@ -3,12 +3,12 @@ from decimal import Decimal
 import unittest
 from unittest import mock
 
-from yadinassi import value_storage_table as table_hook
-from yadinassi import value_storage as storage
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.value_tables import BSLValueTable, BSLValueTableColumn
+from yadinassi.formats.storage import value_storage_table as table_hook
+from yadinassi.formats.storage import value_storage as storage
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.collections.value_tables import BSLValueTable, BSLValueTableColumn
 from yadinassi.runtime import Interpreter
-from yadinassi.values import BSLArray
+from yadinassi.types.values import BSLArray
 
 D = Decimal
 

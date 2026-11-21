@@ -6,11 +6,12 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
+from sqlite_test_templates import copy_inventory_enum
 
 from inventory_enum_application_fixture import source
-from yadinassi.configuration_inventory_enum_application import import_inventory_application, PROFILE
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.catalog_backend import BackendError, CatalogDraft, CatalogKey
+from yadinassi.configuration.configuration_inventory_enum_application import import_inventory_application, PROFILE
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogDraft, CatalogKey
 from yadinassi.ui.record_pages import RecordPages, load_record_snapshot, RecordRow, validate_navigation
 
 
@@ -18,7 +19,9 @@ class RecordPagesTests(unittest.TestCase):
     def setUp(self):
         tmp=tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
         self.files=source(); config=import_inventory_application(self.files,inventory_runtime=PROFILE)
-        self.context=SQLiteDBContext.create_inventory_enum_application(Path(tmp.name)/'db.sqlite',config)
+        path=Path(tmp.name)/'db.sqlite'
+        copy_inventory_enum(path)
+        self.context=SQLiteDBContext(path)
         self.addCleanup(self.context.close)
         self.schema=next(s for s in config.catalogs if s.name=='Warehouses')
         self.doc=next(s for s in config.documents if s.name=='Receipt')

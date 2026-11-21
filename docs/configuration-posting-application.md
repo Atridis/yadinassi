@@ -62,9 +62,9 @@ locks the application rather than guessing whether the request ran.
 Create a new database explicitly from `examples/configuration-posting-application`:
 
 ```python
-from yadinassi.configuration_import import read_configuration_directory
-from yadinassi.configuration_posting_application import import_posting_application, PROFILE
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.configuration.configuration_import import read_configuration_directory
+from yadinassi.configuration.configuration_posting_application import import_posting_application, PROFILE
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 source = read_configuration_directory('examples/configuration-posting-application')
 configuration = import_posting_application(source, posting_runtime=PROFILE)
 SQLiteCatalogBackend.create_posting('posting.sqlite', configuration).close()

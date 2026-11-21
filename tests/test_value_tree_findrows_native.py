@@ -7,7 +7,7 @@ native acceptance. Literal public fixed-input output only; no private artifacts.
 import hashlib
 import unittest
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
 from test_native_tree_findrows_measurement import fragments, PRESENT, raw_source, SOURCE_SHA, LABELS
 
 CAPTURE = {

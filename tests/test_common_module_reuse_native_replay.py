@@ -1,7 +1,7 @@
 """Recovered source-bound client replay; earlier PASS results are not inherited."""
 import hashlib,json,sys,unittest
 from pathlib import Path
-from yadinassi.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
 from configuration_runtime_fixture import module_files
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))

@@ -3,12 +3,12 @@ from decimal import Decimal
 from pathlib import Path
 import tempfile
 import unittest
-from yadinassi.configuration_document_profile import import_document_forms_configuration
-from yadinassi.configuration_forms import load_configuration_forms
-from yadinassi.configuration_document import DocumentObjectSession
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.form_replication import ReplicatedFormSession
+from yadinassi.configuration.configuration_document_profile import import_document_forms_configuration
+from yadinassi.configuration.configuration_forms import load_configuration_forms
+from yadinassi.configuration.configuration_document import DocumentObjectSession
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.forms.form_replication import ReplicatedFormSession
 
 EXAMPLE=Path(__file__).resolve().parents[1]/'examples/configuration-document-forms'
 
@@ -103,7 +103,7 @@ class DocumentFormReplicaTests(unittest.TestCase):
 
     def test_profile_rejects_declaration_and_column_overflow(self):
         from dataclasses import replace
-        from yadinassi.configuration_forms import _definition
+        from yadinassi.configuration.configuration_forms import _definition
         schema=replace(self.schema,tabular_sections=self.schema.tabular_sections*5)
         prefix='Documents/Orders/Forms/Card/Ext/Form'
         with self.assertRaises(ValueError):

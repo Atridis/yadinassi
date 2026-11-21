@@ -10,11 +10,11 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.sqlite_catalog import _View
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.db.sqlite.sqlite_catalog import _View
 from catalog_sections_fixture import configuration_files_with_sections
 
 
@@ -270,7 +270,7 @@ Message(R.Text);'''), ['indexed', 'Да', 'nonstring', 'unknown', 'indexed'])
         row.set_member('Text', 'keep')
         self.vm.execute('N=O.Notes.Add(); N.Text="note";')
         size = obj._section_buffer_bytes()
-        with patch('yadinassi.catalog_sections._MAX_BUFFER_BYTES', size):
+        with patch('yadinassi.db.catalog.catalog_sections._MAX_BUFFER_BYTES', size):
             for code in ('O.Lines.Add();', 'O.Notes.Add();',
                          'R.Text="longer";', 'N.Text="longer";'):
                 with self.subTest(code=code), self.assertRaisesRegex(BSLRuntimeError, 'buffer limit'):

@@ -6,10 +6,10 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.queries import BSLQuery
-from yadinassi.query_packages import BSLTempTablesManager
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.values import NULL, BSLType
+from yadinassi.db.query.queries import BSLQuery
+from yadinassi.db.query.query_packages import BSLTempTablesManager
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.values import NULL, BSLType
 import test_catalog_queries as catalogs
 import test_document_queries as documents
 
@@ -71,9 +71,8 @@ class ReferenceReportTests(unittest.TestCase):
 
     def test_forged_callback_rejected_in_unprojected_column(self):
         t = self.table()
-        c = t.columns.items[0]
-        good = t.rows[0].cells[c]
-        t.rows[0].cells[c] = replace(good, read_member=lambda *_: None)
+        good = list.__getitem__(t.rows[0], 0)
+        list.__setitem__(t.rows[0], 0, replace(good, read_member=lambda *_: None))
         with self.assertRaises((TypeError, ValueError)):
             self.query('SELECT TOP 1 Amount FROM &Input WHERE Amount<0', t).execute()
 
@@ -106,32 +105,48 @@ class ReferenceReportTests(unittest.TestCase):
         self.assertEqual(self.query('SELECT Item FROM Saved', manager=m).execute()._rows, before)
 
     def test_generic_reference_descriptor_still_cannot_create_column(self):
-        from yadinassi.type_descriptions import _reference_description
-        from yadinassi.value_tables import BSLValueTable
+        from yadinassi.types.type_descriptions import _reference_description
+        from yadinassi.collections.value_tables import BSLValueTable
         d = _reference_description(self.vm._catalogs.get_index('Products')._value_type)
         with self.assertRaises((TypeError, ValueError)): BSLValueTable().columns.add('Ref', d)
 
 
     def test_reference_external_only_opens_one_view_no_row_scan(self):
-        from yadinassi.sqlite_catalog import _View
+        from yadinassi.db.sqlite.sqlite_catalog import _View
         t = self.table()
         backend = self.context.backend
-        with patch.object(backend, 'begin_read', wraps=backend.begin_read) as reads, \
+        with patch.object(backend, 'begin_query_read', wraps=backend.begin_query_read) as query_reads, \
+                patch.object(backend, 'begin_read', wraps=backend.begin_read) as reads, \
                 patch.object(_View, 'scan_catalog_values', side_effect=AssertionError('no existence scan')):
             self.assertEqual(len(self.query('SELECT Item FROM &Input', t).execute()._rows), 3)
+        query_reads.assert_called_once_with()
         self.assertEqual(reads.call_count, 1)
 
     def test_reference_external_and_catalog_share_view(self):
         t = self.table()
         backend = self.context.backend
-        with patch.object(backend, 'begin_read', wraps=backend.begin_read) as reads:
+        with patch.object(backend, 'begin_query_read', wraps=backend.begin_query_read) as query_reads, \
+                patch.object(backend, 'begin_read', wraps=backend.begin_read) as reads:
             self.query('SELECT T.Item FROM &Input AS T JOIN Catalog.Products AS P ON T.Item=P.Ref', t).execute()
+        query_reads.assert_called_once_with()
         self.assertEqual(reads.call_count, 1)
 
     def test_scalar_external_still_zero_io(self):
         t = self.query('SELECT Amount FROM Catalog.Products').execute().unload()
-        with patch.object(self.context.backend, 'begin_read', side_effect=AssertionError('scalar I/O')):
+        backend = self.context.backend
+        with patch.object(backend, 'begin_read', side_effect=AssertionError('scalar I/O')), \
+                patch.object(backend, 'begin_query_read', side_effect=AssertionError('scalar query I/O')):
             self.assertEqual(len(self.query('SELECT Amount FROM &Input', t).execute()._rows), 3)
+
+    def test_scalar_external_join_keeps_lean_query_view(self):
+        t = self.query('SELECT Amount FROM Catalog.Products').execute().unload()
+        backend = self.context.backend
+        with patch.object(backend, 'begin_read', side_effect=AssertionError('strict scalar I/O')), \
+                patch.object(backend, 'begin_query_read', wraps=backend.begin_query_read) as reads:
+            output = self.query('SELECT T.Amount FROM &Input AS T JOIN Catalog.Products AS P '
+                                'ON T.Amount=P.Amount', t).execute()
+        self.assertEqual(len(output._rows), 3)
+        reads.assert_called_once_with(query_language=True)
 
     def test_unload_inspection_assignment_do_not_open_view(self):
         result = self.query('SELECT Ref AS Item FROM Catalog.Products').execute()
@@ -141,23 +156,26 @@ class ReferenceReportTests(unittest.TestCase):
             t.rows[0].set_member('Item', t.rows[1].get_member('Item'))
 
     def test_closed_context_refused_even_empty(self):
-        from yadinassi.catalog_backend import BackendError
+        from yadinassi.db.catalog.catalog_backend import BackendError
         t = self.query('SELECT Ref AS Item FROM Catalog.Products WHERE Code="missing"').execute().unload()
         self.context.close()
         with self.assertRaises(BackendError): self.query('SELECT Item FROM &Input', t).execute()
 
     def test_changed_generation_refused_even_empty(self):
         import sqlite3
-        from yadinassi.catalog_backend import BackendError
+        from yadinassi.db.catalog.catalog_backend import BackendError
         t = self.query('SELECT Ref AS Item FROM Catalog.Products WHERE Code="missing"').execute().unload()
+        manager = BSLTempTablesManager()
+        self.query('SELECT Item INTO Saved FROM &Input', t, manager).execute()
         with closing(sqlite3.connect(self.context.path)) as connection:
             with connection:
                 connection.execute('UPDATE database_info SET generation=generation+1')
         with self.assertRaises(BackendError): self.query('SELECT Item FROM &Input', t).execute()
+        with self.assertRaises(BackendError): self.query('SELECT Item FROM Saved', manager=manager).execute()
 
     def test_all_domains_validated_not_only_projected(self):
-        from yadinassi.sqlite_catalog import _View
-        from yadinassi.catalog_backend import BackendError
+        from yadinassi.db.sqlite.sqlite_catalog import _View
+        from yadinassi.db.catalog.catalog_backend import BackendError
         t = self.table()
         category = self.vm._catalogs.get_index('Categories')._schema.identity
         original = _View.catalog_schema
@@ -168,7 +186,7 @@ class ReferenceReportTests(unittest.TestCase):
             with self.assertRaises(BackendError): self.query('SELECT Amount FROM &Input', t).execute()
 
     def test_view_close_failure_does_not_publish_temps(self):
-        from yadinassi.sqlite_catalog import _View
+        from yadinassi.db.sqlite.sqlite_catalog import _View
         t = self.table()
         manager = BSLTempTablesManager()
         original = _View.close

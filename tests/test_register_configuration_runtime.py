@@ -5,10 +5,10 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from yadinassi.configuration_modules import MODULE_RUNTIME
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.configuration.configuration_modules import MODULE_RUNTIME
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
 from configuration_runtime_fixture import CLIENT, module_files
 from test_information_registers import register_files
 

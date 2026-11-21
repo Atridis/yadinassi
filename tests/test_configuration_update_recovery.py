@@ -10,15 +10,15 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
-from yadinassi.catalog_backend import BackendError, CatalogDraft, CatalogKey
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.configuration_modules import MODULE_RUNTIME
-from yadinassi.document_backend import DocumentDraft, DocumentKey
-from yadinassi.register_backend import RegisterDraft, RegisterKey, RegisterSetDraft
-from yadinassi.transaction_backend import TransactionRequest
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_migration_plan import prepare as prepare_profile, apply as apply_profile
-from yadinassi.sqlite_configuration_update import prepare, apply, resolve
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogDraft, CatalogKey
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.configuration.configuration_modules import MODULE_RUNTIME
+from yadinassi.db.document.document_backend import DocumentDraft, DocumentKey
+from yadinassi.db.registers.register_backend import RegisterDraft, RegisterKey, RegisterSetDraft
+from yadinassi.db.transaction_backend import TransactionRequest
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_migration_plan import prepare as prepare_profile, apply as apply_profile
+from yadinassi.db.sqlite.sqlite_configuration_update import prepare, apply, resolve
 from test_configuration_evolution import append_field
 from test_periodic_information_registers import periodic_files
 from test_document_configuration_xml import document_files
@@ -123,7 +123,7 @@ class ConfigurationUpdateRecoveryTests(unittest.TestCase):
 
     def test_lost_commit_acknowledgement_resolves_without_replay(self):
         self.backend.close();plan=prepare(self.path,self.target,maintenance=True)
-        import yadinassi.sqlite_migration_plan as migration
+        import yadinassi.db.sqlite.sqlite_migration_plan as migration
         original=migration._open
         def faulty(path,*,readonly):
             connection=original(path,readonly=readonly)
@@ -134,7 +134,7 @@ class ConfigurationUpdateRecoveryTests(unittest.TestCase):
 
     def test_commit_failure_before_effect_resolves_not_committed(self):
         self.backend.close();plan=prepare(self.path,self.target,maintenance=True);before=self.path.read_bytes()
-        import yadinassi.sqlite_migration_plan as migration
+        import yadinassi.db.sqlite.sqlite_migration_plan as migration
         original=migration._open
         with patch.object(migration,'_open',side_effect=lambda p,readonly:original(p,readonly=True) if readonly else FaultConnection(original(p,readonly=False),commit_fault='before')):
             with self.assertRaisesRegex(BackendError,'uncertain_commit'):apply(self.path,plan,maintenance=True)
@@ -164,7 +164,7 @@ class ConfigurationUpdateRecoveryTests(unittest.TestCase):
         with self.assertRaises(BackendError):SQLiteCatalogBackend(self.path)
 
     def test_retained_plan_roundtrip_resolves_after_reopen(self):
-        from yadinassi.sqlite_configuration_update import dump_plan,load_plan
+        from yadinassi.db.sqlite.sqlite_configuration_update import dump_plan,load_plan
         self.backend.close();plan=prepare(self.path,self.target,maintenance=True)
         persisted=dump_plan(plan);self.assertEqual(load_plan(persisted),plan)
         apply(self.path,load_plan(persisted),maintenance=True)
@@ -172,7 +172,7 @@ class ConfigurationUpdateRecoveryTests(unittest.TestCase):
 
     def test_retained_plan_rejects_changed_source_and_diff(self):
         import json
-        from yadinassi.sqlite_configuration_update import dump_plan,load_plan
+        from yadinassi.db.sqlite.sqlite_configuration_update import dump_plan,load_plan
         self.backend.close();plan=prepare(self.path,self.target,maintenance=True)
         raw=dump_plan(plan)
         for key,value in (('source_hash','0'*64),('source_generation',True),('added_catalogs',[str(uuid4())]),('table_mapping',[])):
@@ -192,7 +192,7 @@ class ConfigurationUpdateRecoveryTests(unittest.TestCase):
                '</Type></Properties></Attribute>').encode()
         files['Catalogs/Categories.xml']=files['Catalogs/Categories.xml'].replace(b'</ChildObjects>',field+b'</ChildObjects>')
         target=import_configuration(files,numbering_policy='decimal_v1',module_runtime=MODULE_RUNTIME)
-        with patch('yadinassi.sqlite_catalog._MAX_CONFIG_BYTES',8000):
+        with patch('yadinassi.db.sqlite.sqlite_catalog._MAX_CONFIG_BYTES',8000):
             plan=prepare(self.path,target,maintenance=True);before=self.path.read_bytes()
             with self.assertRaisesRegex(BackendError,'unsupported'):apply(self.path,plan,maintenance=True)
         self.assertEqual(self.path.read_bytes(),before)
@@ -200,7 +200,7 @@ class ConfigurationUpdateRecoveryTests(unittest.TestCase):
 
     def test_writer_page_cap_refuses_before_commit(self):
         self.backend.close();plan=prepare(self.path,self.target,maintenance=True);before=self.path.read_bytes()
-        with patch('yadinassi.sqlite_catalog._MAX_DATABASE_BYTES',len(before)):
+        with patch('yadinassi.db.sqlite.sqlite_catalog._MAX_DATABASE_BYTES',len(before)):
             with self.assertRaises(BackendError):apply(self.path,plan,maintenance=True)
         self.assertEqual(self.path.read_bytes(),before)
         self.assertEqual(resolve(self.path,plan,maintenance=True),'not_committed')

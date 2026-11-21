@@ -10,9 +10,9 @@ from contextlib import closing
 from unittest import mock
 import unittest
 
-from yadinassi.catalog_backend import BackendError
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _View
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _View
 from yadinassi.ui.catalog_editor import CatalogEditorApplication
 from yadinassi.ui.protocol import UIError
 
@@ -84,7 +84,7 @@ class ImportedKindEditorTests(unittest.TestCase):
         self.change(' valid ')
         before = self.editor.snapshot()['fields']
         backend = self.context.backend
-        with mock.patch.object(backend, 'read_form_source', side_effect=BackendError('schema_changed')):
+        with mock.patch.object(backend, 'read_catalog_editor_source', side_effect=BackendError('schema_changed')):
             with self.assertRaises(BackendError): self.change('other')
         with self.assertRaises(BackendError): self.change('another')
         self.assertEqual(self.editor.snapshot()['fields'], before)

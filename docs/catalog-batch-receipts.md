@@ -46,7 +46,7 @@ using an already admitted backend and two host-prepared drafts:
 ```python
 from contextlib import closing
 from uuid import uuid4
-from yadinassi.catalog_backend import BackendError, CatalogWriteRequest
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogWriteRequest
 
 operation_id = uuid4()
 requests = (CatalogWriteRequest(first_draft), CatalogWriteRequest(second_draft))

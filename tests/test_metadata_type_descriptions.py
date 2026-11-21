@@ -8,25 +8,25 @@ from unittest.mock import patch
 from uuid import UUID
 
 from yadinassi import Interpreter
-from yadinassi.catalog_types import BSLCatalogReference, BSLCatalogType
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.document_types import BSLDocumentReference, BSLDocumentType
-from yadinassi.json_processing import BSLJSONWriter, write_json
-from yadinassi.query_sources import _snapshot
-from yadinassi.serialization import value_to_string_internal
-from yadinassi.structures import BSLStructure
-from yadinassi.type_descriptions import (BSLTypeDescription, _reference_description,
+from yadinassi.db.catalog.catalog_types import BSLCatalogReference, BSLCatalogType
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.document.document_types import BSLDocumentReference, BSLDocumentType
+from yadinassi.formats.json.json_processing import BSLJSONWriter, write_json
+from yadinassi.db.query.query_sources import _snapshot
+from yadinassi.formats.storage.serialization import value_to_string_internal
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.types.type_descriptions import (BSLTypeDescription, _reference_description,
                                          _query_nullable_description)
-from yadinassi.type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
+from yadinassi.types.type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
                                        BSLDateQualifiers, BSLBinaryDataQualifiers)
-from yadinassi.type_values import type_of
-from yadinassi.unique_identifiers import BSLUUID
-from yadinassi.value_storage import BSLValueStorage
-from yadinassi.value_tables import BSLValueTable
-from yadinassi.value_trees import BSLValueTree
-from yadinassi.values import BSLArray, BSLType, NULL
-from yadinassi.xml_values import xml_string
+from yadinassi.types.type_values import type_of
+from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.formats.storage.value_storage import BSLValueStorage
+from yadinassi.collections.value_tables import BSLValueTable
+from yadinassi.collections.value_trees import BSLValueTree
+from yadinassi.types.values import BSLArray, BSLType, NULL
+from yadinassi.formats.xml.xml_values import xml_string
 from test_document_configuration_xml import document_files
 
 D = Decimal
@@ -199,7 +199,7 @@ class MetadataReferenceDescriptionTests(unittest.TestCase):
         source = array(self.catalog); source.items = Hostile(source.items)
         with self.assertRaises(TypeError): BSLTypeDescription(source)
         source.items = [self.catalog]
-        with patch('yadinassi.type_descriptions._MAX_TYPE_ARGUMENT', 0), self.assertRaises(ValueError):
+        with patch('yadinassi.types.type_descriptions._MAX_TYPE_ARGUMENT', 0), self.assertRaises(ValueError):
             BSLTypeDescription(source)
 
     def test_malformed_reference_type_state_rejected_before_hash_or_comparison(self):

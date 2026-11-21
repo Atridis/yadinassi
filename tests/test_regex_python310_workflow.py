@@ -13,16 +13,16 @@ def check_job(case, source):
 
 class RegexPython310WorkflowTests(unittest.TestCase):
     def test_exact_closed_actual_interpreter_gate(self):
-        source = (ROOT/'.github/workflows/build.yml').read_text()
+        source = (ROOT/'.github/workflows/build.yml').read_text(encoding='utf-8')
         check_job(self, source)
         for forbidden in ('secrets.', 'upload-artifact', 'workflow_dispatch', 'native-1c', 'continue-on-error'):
             self.assertNotIn(forbidden, EXPECTED)
-        project = (ROOT/'pyproject.toml').read_text()
+        project = (ROOT/'pyproject.toml').read_text(encoding='utf-8')
         for pin in ('prompt-toolkit==3.0.53', 'pyuca==1.2', 'tzdata==2026.5'):
             self.assertIn(pin, project)
 
     def test_downgraded_version_permissions_timeout_or_release_rejected(self):
-        source = (ROOT/'.github/workflows/build.yml').read_text()
+        source = (ROOT/'.github/workflows/build.yml').read_text(encoding='utf-8')
         for old, new in (("python-version: '3.10'", "python-version: '3.12'"),
                          ('timeout-minutes: 10', 'timeout-minutes: 60'),
                          ('persist-credentials: false', 'persist-credentials: true'),

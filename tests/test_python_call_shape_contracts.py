@@ -1,32 +1,23 @@
 """Live invocation semantics for immutable compiled call-site descriptions.
 
-These compare ordinary translated defaults with the explicit interpreter oracle;
+These assert direct invocation results and effect order independently;
 no test substitutes a cached callable, grants, arguments or reference binding.
 """
 import unittest
 from decimal import Decimal
-from yadinassi import Interpreter
-from yadinassi.values import InterpreterCall
+from yadinassi import Interpreter, BSLError
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+from yadinassi.types.values import InterpreterCall
 
 
 class CallShapeContracts(unittest.TestCase):
     def pair(self, operation):
-        results=[]
-        for oracle in (True,False):
-            vm=Interpreter(execution_backend='interpreter') if oracle else Interpreter()
-            events=[]
-            try:
-                result=operation(vm,events)
-                results.append((result,events))
-                self.assertIsNone(vm.locals)
-                if not oracle:
-                    stats=vm.compiled_backend_stats
-                    self.assertGreater(stats.get('python_translated_blocks',0),0)
-                    self.assertEqual(stats.get('interpreter_fallbacks',0),0)
-                    self.assertEqual(stats.get('plain_adapter_blocks',0),0)
-            finally:vm.close()
-        self.assertEqual(results[0],results[1])
-        return results[1]
+        vm=Interpreter(allow_extensions=True);events=[]
+        try:
+            result=operation(vm,events)
+            self.assertIsNone(vm.locals)
+            return result,events
+        finally:vm.close()
 
     def test_byref_default_grouped_and_member_actuals(self):
         def run(vm,events):
@@ -71,40 +62,29 @@ class CallShapeContracts(unittest.TestCase):
             first=vm.variables['r']
             vm.execute('unrelated=100;')
             vm.execute('Function F(Val x=8) Return x+1;EndFunction')
-            vm.execute('r=Caller();')
+            with self.assertRaisesRegex(PythonDirectUnsupported,'partially replaced'):
+                vm.execute('r=Caller();')
+            self.assertEqual(vm.variables['r'],first)
+            vm.execute('Function F(Val x=8) Return x+1;EndFunction Function Caller() Return F();EndFunction r=Caller();')
             return first,vm.variables['r']
         self.assertEqual(self.pair(run)[0],(2,9))
 
-    def test_interpreter_call_reauthorizes_after_argument_revocation(self):
-        def run(vm,events):
-            active=[True]
+    def test_interpreter_aware_callable_rejected_before_arguments_or_authorization(self):
+        # This old adapter is not a capability for direct execution. Its own
+        # authorization/dispatch hooks must not run, even if they would allow it.
+        for denied in (False,True):
+            vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);events=[]
             def authorize(caller):
-                events.append(('authorize',active[0]))
-                if not active[0]:raise PermissionError('revoked')
+                events.append('authorize')
+                if denied:raise PermissionError('denied')
             def dispatch(caller,values):
                 events.append('dispatch')
                 if False:yield
                 return values[0]
-            def revoke():
-                events.append('argument');active[0]=False;return Decimal(1)
             vm.register_function('Guarded',InterpreterCall(1,1,authorize,dispatch))
-            vm.register_function('Revoke',revoke)
-            with self.assertRaisesRegex(PermissionError,'revoked'):
-                vm.execute('r=0;Try r=Guarded(Revoke());Except r=9;EndTry;')
-            return vm.variables['r']
-        result,events=self.pair(run)
-        self.assertEqual(result,0)
-        self.assertEqual(events,[('authorize',True),'argument',('authorize',False)])
-
-    def test_denied_interpreter_call_rejects_before_argument(self):
-        def run(vm,events):
-            def deny(caller):events.append('deny');raise PermissionError('denied')
-            def dispatch(caller,values):
-                events.append('dispatch')
-                if False:yield
-            vm.register_function('Guarded',InterpreterCall(1,1,deny,dispatch))
-            vm.register_function('Tick',lambda:events.append('argument') or Decimal(1))
-            with self.assertRaisesRegex(PermissionError,'denied'):
-                vm.execute('r=0;Try r=Guarded(Tick());Except r=9;EndTry;')
-            return vm.variables['r']
-        self.assertEqual(self.pair(run),(0,['deny']))
+            vm.register_function('Tick',lambda:events.append('argument'))
+            with self.subTest(denied=denied), self.assertRaisesRegex(BSLError,'explicit interpreter dispatch'):
+                vm.execute('R=0;R=Guarded(Tick());After=True;')
+            self.assertEqual(events,[])
+            self.assertEqual(vm.variables['r'],0)
+            self.assertNotIn('after',vm.variables)

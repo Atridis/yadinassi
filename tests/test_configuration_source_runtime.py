@@ -5,9 +5,9 @@ import tempfile
 import unittest
 from uuid import UUID
 
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 from yadinassi.cli import main
 
 
@@ -19,6 +19,38 @@ def source(code=b'', extra=None):
 
 
 class SourceStartupTests(unittest.TestCase):
+    def test_platform_services_do_not_enable_python_registration(self):
+        app = SourceApplication(source())
+        self.addCleanup(app.close)
+        vm = app.interpreter
+        self.assertFalse(vm.allow_extensions)
+        self.assertIs(vm.functions['safemode'], vm.functions['безопасныйрежим'])
+        self.assertIs(vm.types['systeminfo'], vm.types['системнаяинформация'])
+        self.assertIs(vm._builtin_functions['safemode'][0], vm.functions['safemode'])
+        self.assertIs(vm._builtin_types['systeminfo'][0], vm.types['systeminfo'])
+        for register in (vm.register_function, vm.register_type):
+            with self.assertRaisesRegex(ValueError, 'allow_extensions=True'):
+                register('HostExtension', lambda: 1)
+        self.assertTrue(app.start())
+        self.assertIs(vm.execute('SafeMode()'), False)
+        child = vm._activation_interpreter()
+        self.addCleanup(child.close)
+        self.assertFalse(child.allow_extensions)
+
+    def test_explicit_python_extension_mode_propagates_to_source_family(self):
+        app = SourceApplication(source(extra={'Ext/SessionModule.bsl':
+            b'Procedure SessionParametersSetting(Names) EndProcedure'}),
+            allow_extensions=True)
+        self.addCleanup(app.close)
+        vm = app.interpreter
+        vm.register_function('HostExtension', lambda: 'host-result')
+        self.assertTrue(app.start())
+        self.assertEqual(vm.execute('HostExtension()'), 'host-result')
+        self.assertTrue(app._session_owner.allow_extensions)
+        child = vm._activation_interpreter()
+        self.addCleanup(child.close)
+        self.assertTrue(child.allow_extensions)
+
     def test_start_event_runs(self):
         output = []
         app = SourceApplication(source(b'Procedure OnStart()\n Message("ready");\nEndProcedure'), output=output.append)
@@ -84,7 +116,7 @@ class SourceStartupTests(unittest.TestCase):
                 self.assertEqual(main(['--configuration-source', directory, '--run-startup']), 1)
 
     def test_source_archive_roundtrip_startup(self):
-        from yadinassi.configuration_source import save_source_archive, load_source_archive
+        from yadinassi.configuration.configuration_source import save_source_archive, load_source_archive
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'source.zip'
             save_source_archive(path, source())

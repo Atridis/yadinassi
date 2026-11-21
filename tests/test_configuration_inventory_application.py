@@ -5,15 +5,15 @@ from pathlib import Path
 import unittest
 from uuid import UUID, uuid5
 
-from yadinassi.configuration_inventory_application import (
+from yadinassi.configuration.configuration_inventory_application import (
     PROFILE, FORMAT_VERSION, NAMESPACE, InventoryApplicationConfiguration,
     InventoryCommandGrant, InventoryReportGrant, import_inventory_application,
     canonical, validated_core)
-from yadinassi.configuration_accumulation_references import (
+from yadinassi.configuration.configuration_accumulation_references import (
     import_inventory_configuration, PROFILE as CORE_PROFILE)
-from yadinassi.configuration_accumulation import import_accumulation_configuration
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.configuration_forms import load_configuration_forms
+from yadinassi.configuration.configuration_accumulation import import_accumulation_configuration
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.configuration.configuration_forms import load_configuration_forms
 from inventory_application_fixture import (source, ROOT, MANIFEST, DOC, DOC_FORM,
     DOC_MODULE, CATALOG, CATALOG_FORM)
 
@@ -308,7 +308,7 @@ class InventoryApplicationSourceTests(unittest.TestCase):
 
     def test_old_posting13_document_only_behavior_is_unchanged(self):
         from posting_application_fixture import source as old_source
-        from yadinassi.configuration_posting_application import import_posting_application, PROFILE as OLD_PROFILE
+        from yadinassi.configuration.configuration_posting_application import import_posting_application, PROFILE as OLD_PROFILE
         config=import_posting_application(old_source(),posting_runtime=OLD_PROFILE)
         forms=load_configuration_forms(dict(config.files),document_schemas=config.documents,posting_application=True)
         self.assertTrue(all(d.posting_application for d in forms.forms.values()))

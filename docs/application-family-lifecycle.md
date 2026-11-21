@@ -47,3 +47,25 @@ not become successful Undefined, leak host-failure state into later calls, retai
 caller's objects, or grow an accumulating traceback. Cancellation releases pending
 tasks; already terminal promise values remain available without owning prior
 host frames.
+
+### Synchronous direct execute and cancellation
+
+`cancel_pending()` rejects cancellation during an active synchronous direct
+`Interpreter.execute`/AST/prepared execution, including admitted imported-child
+execution and nested calls in that family. Direct configuration commands use the
+same accounting. Rejection remains the raw `RuntimeError` used for an active
+scheduler, not a catchable BSL error. Completion or unwinding releases the count
+in `finally` on the original family owner; cancellation does not retire the family.
+
+A per-family lock protects the short counter/flag transitions, not user code or
+scheduler callbacks. Concurrent sibling execution cannot release another sibling's
+activity. During reset, a cancellation flag rejects new direct execution before
+module initialization or declaration updates; it clears even when reset fails.
+Other interpreter families are independent. This does not change `close()` or
+scheduler dispatch and does not admit asynchronous direct routines.
+
+The accounting belongs to these execute entrypoints. Persistent routines/import
+initializers reached inside them are covered by the enclosing entry. Independently
+host-activated source/form/catalog-preparation plans are not newly registered by
+this slice; their own lifecycle and admission checks remain unchanged. This is
+not a claim that every direct plan entrypoint has a new universal lifecycle lease.

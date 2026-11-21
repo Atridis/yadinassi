@@ -6,12 +6,12 @@ import unittest
 from unittest import mock
 from yadinassi import launcher as entrypoint
 
-from yadinassi.configuration_forms import load_configuration_forms
+from yadinassi.configuration.configuration_forms import load_configuration_forms
 from yadinassi.ui.configuration_app import (ConfigurationBroker, ConfigurationController,
     ConfigurationProcess, PROTOCOL, load_application, serve_runtime, _parameters)
 from yadinassi.ui.local_app import LocalTransportError
 from yadinassi.ui.protocol import decode_line, encode_line
-from yadinassi.structures import BSLStructure
+from yadinassi.collections.structures import BSLStructure
 from test_configuration_forms import sources
 
 ROOT = Path(__file__).resolve().parents[1] / 'examples/configuration-forms'
@@ -186,7 +186,7 @@ class ConfigurationApplicationTests(unittest.TestCase):
             self.assertEqual(entrypoint.main(['-c', '--configuration-ui']), 9)
 
     def test_frozen_child_reuses_executable_without_python_mode(self):
-        from yadinassi.execution_policy import execution_backend_policy
+        from yadinassi.execution.execution_policy import execution_backend_policy
         for mode in ('interpreter', 'compiled-strict'):
             with self.subTest(backend=mode), execution_backend_policy(mode), mock.patch.object(ConfigurationProcess, '_start') as start, mock.patch.object(sys, 'frozen', True, create=True):
                 ConfigurationProcess(ROOT/'counter', ROOT/'existing.sqlite')

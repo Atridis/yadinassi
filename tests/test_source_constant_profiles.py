@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from test_source_constant_store import configuration
-from yadinassi.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 
 WRITES=(
     'Constants.Text.Set("original");',

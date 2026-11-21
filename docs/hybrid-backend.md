@@ -1,5 +1,9 @@
 # Opt-in hybrid backend: Decimal module loops
 
+> Historical note: the backend and reproducer described here were retired from #337. Current execution uses only python-direct.
+
+> [Archived reproducer](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/scripts/benchmark_hybrid_backend.py). Commands below refer to that checkpoint.
+
 The default remains the ordinary interpreter. The opt-in `hybrid` backend lowers
 eligible BSL `Для` loops to Python AST and uses Python `compile`; it does not emit
 version-specific CPython opcodes. Unsupported regions execute once through the

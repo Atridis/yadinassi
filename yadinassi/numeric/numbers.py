@@ -2,9 +2,9 @@
 
 from decimal import Decimal, ROUND_DOWN
 
-from ..values import number
+from yadinassi.types.values import number
 from .round_modes import BSLRoundMode
-from ..collation import string_key
+from yadinassi.text.collation import string_key
 
 
 def integer_part(value: object) -> Decimal:

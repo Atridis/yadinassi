@@ -12,15 +12,15 @@ import unittest
 from uuid import uuid4
 
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.accumulation_movements import validate_schema
-from yadinassi.catalog_backend import BackendError
-from yadinassi.catalog_types import BSLCatalogReference
-from yadinassi.configuration_accumulation_references import PROFILE
-from yadinassi.configuration_profile_import import prepare_directory, create_prepared
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.db.registers.accumulation_movements import validate_schema
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.catalog.catalog_types import BSLCatalogReference
+from yadinassi.configuration.configuration_accumulation_references import PROFILE
+from yadinassi.configuration.configuration_profile_import import prepare_directory, create_prepared
+from yadinassi.db.database_context import SQLiteDBContext
 from test_inventory_reference_profile import imported
 from test_main_demo_configuration import source as main_demo_source
-from yadinassi.configuration_main_demo import import_main_demo_configuration
+from yadinassi.configuration.configuration_main_demo import import_main_demo_configuration
 
 ROOT=Path(__file__).resolve().parents[1]
 ASSETS=ROOT/'scripts/inventory_reference_behavior'
@@ -86,7 +86,7 @@ class InventoryScenarioTests(unittest.TestCase):
         context,vm,_=self.make(ASSETS/'runtime_source')
         other_path=Path(self.temp.name)/'other.sqlite'
         with closing(create_prepared(other_path,prepare_directory(ASSETS/'runtime_source',profile=PROFILE))) as other:
-            with closing(Interpreter(database_context=other,output=lambda text:None)) as foreign:
+            with closing(Interpreter(database_context=other,output=lambda text:None, allow_extensions=True)) as foreign:
                 foreign.execute('P=Catalogs.Products.CreateItem();P.Code="X";P.Write();')
                 value=foreign.execute('P.Ref')
                 vm.register_function('ForeignRef',lambda:value)
@@ -94,7 +94,7 @@ class InventoryScenarioTests(unittest.TestCase):
     def test_same_database_different_family_is_not_coerced(self):
         context,vm,_=self.make(ASSETS/'runtime_source')
         vm.execute('D=Documents.Receipt.CreateDocument(); L=D.Lines.Add(); R=D.RegisterRecords.Stock.Add();')
-        with closing(Interpreter(database_context=context,output=lambda text:None)) as other:
+        with closing(Interpreter(database_context=context,output=lambda text:None, allow_extensions=True)) as other:
             for expression in ('Catalogs.Products.EmptyRef()','Catalogs.Warehouses.EmptyRef()'):
                 value=other.execute(expression)
                 vm.register_function('ForeignRef',lambda:value)
@@ -134,7 +134,7 @@ class InventoryScenarioTests(unittest.TestCase):
         self.assertFalse(vm.execute('C.IsNew()'))
     def test_staged_reference_never_bypasses_owner_or_uncertain_state(self):
         context,vm,_=self.make(ASSETS/'runtime_source')
-        from yadinassi import database_transactions as transactions
+        from yadinassi.db import database_transactions as transactions
         def inspect():
             obj=vm.execute('C')
             transaction=transactions.current(context.backend)

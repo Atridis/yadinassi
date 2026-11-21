@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
 import test_native_tree_profile_budget as budget
 from test_native_tree_profile_host import synthetic_producer_reader
 from test_native_1c_smoke import bootstrap_report
@@ -92,7 +92,7 @@ class DateAcquisitionProfileTests(unittest.TestCase):
             template = (ROOT / full.CLIENT_SOURCE).read_text(encoding='utf-8').encode()
             module = tree.client_module(raw_source, template, profile=profile(kind))
             for witness in (lambda *args: ' \u00a0\U0001f600', lambda *args: 'x' * 32, lambda *args: 42):
-                vm = Interpreter(native_target=LINUX_8_3_27_1508)
+                vm = Interpreter(native_target=LINUX_8_3_27_1508, allow_extensions=True)
                 vm.register_function('Format', witness)
                 vm.register_function('Формат', witness)
                 vm.execute(module.decode('utf-8-sig'))

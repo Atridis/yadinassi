@@ -3,12 +3,12 @@ from decimal import Decimal, localcontext, Inexact, Rounded
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.maps import BSLMap, BSLFixedMap
-from yadinassi.structures import BSLStructure, BSLFixedStructure, BSLKeyAndValue
-from yadinassi.values import BSLArray, BSLFixedArray, BSLType
+from yadinassi.collections.maps import BSLMap, BSLFixedMap
+from yadinassi.collections.structures import BSLStructure, BSLFixedStructure, BSLKeyAndValue
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLType
 from yadinassi.numeric.round_modes import BSLRoundMode, ROUND_MODES
-from yadinassi.strings import _WHITESPACE
-from yadinassi.value_checks import value_is_filled
+from yadinassi.text.strings import _WHITESPACE
+from yadinassi.types.value_checks import value_is_filled
 
 
 class ValueFilledTests(unittest.TestCase):

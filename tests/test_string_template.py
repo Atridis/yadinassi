@@ -4,8 +4,8 @@ from decimal import Decimal
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.strings import template
-from yadinassi.values import BSLArray
+from yadinassi.text.strings import template
+from yadinassi.types.values import BSLArray
 
 
 class StringTemplateTests(unittest.TestCase):

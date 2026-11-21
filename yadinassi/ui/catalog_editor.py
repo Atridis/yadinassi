@@ -13,21 +13,21 @@ import re
 from types import MappingProxyType
 from uuid import UUID, uuid4
 
-from ..catalog_backend import (BackendError, CatalogScanRequest, CatalogOrder,
+from yadinassi.db.catalog.catalog_backend import (BackendError, CatalogScanRequest, CatalogOrder,
     CatalogValuePage, CatalogValueRow, CatalogKey, CatalogSchema)
-from ..catalogs import BSLCatalogs
-from ..metadata import BSLCatalogMetadataCollection
-from ..unique_identifiers import BSLUUID
-from ..dates import BSLDate, _date_from_datetime, _parts, TICKS_PER_SECOND
-from ..form_model import BSLFormAttribute
-from ..form_runtime import FormApplicationAction, FormActionResult, FormSession
-from ..form_event_simulation import VerifiedFormDraftSession, simulate_product_form_event
-from ..catalog_object_preparation import CatalogWriteRefused
-from ..type_descriptions import BSLTypeDescription
-from ..type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers, BSLAllowedSign
+from yadinassi.db.catalog.catalogs import BSLCatalogs
+from yadinassi.configuration.metadata import BSLCatalogMetadataCollection
+from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.temporal.dates import BSLDate, _date_from_datetime, _parts, TICKS_PER_SECOND
+from yadinassi.forms.form_model import BSLFormAttribute
+from yadinassi.forms.form_runtime import FormApplicationAction, FormActionResult, FormSession
+from yadinassi.forms.form_event_simulation import _draft_from_checked_record, simulate_product_form_event
+from yadinassi.db.catalog.catalog_object_preparation import CatalogWriteRefused
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers, BSLAllowedSign
 from .catalog_view import CatalogRepository
 from .legacy_reference_choice import LegacyReferenceChooser
-from ..catalog_sections import BSLCatalogSection
+from yadinassi.db.catalog.catalog_sections import BSLCatalogSection
 from .protocol import CatalogRef, UIError, bounded_text, encode_line, encode_value, uuid_text, MAX_LINE_BYTES
 
 # Fixed reviewed application code. Metadata names and user values are host values,
@@ -168,9 +168,8 @@ class CatalogEditController:
         self._source_stale = False
         self._source_messages = ()
         if imported_form:
-            self._source_record = manager._backend.read_form_source(schema.identity)
-            self._product_source = manager._backend.catalog_write_preparation(
-                schema.identity, expected=self._source_record.identity)
+            self._source_record, self._product_source = manager._backend.read_catalog_editor_source(
+                schema.identity)
             if self._product_source is None:
                 if schema.fields or schema.tabular_sections:
                     raise BackendError('unsupported')
@@ -233,12 +232,11 @@ class CatalogEditController:
         if self._source_stale:
             raise BackendError('schema_changed')
         try:
-            current = self.manager._backend.read_form_source(
+            current, policy = self.manager._backend.read_catalog_editor_source(
                 self.schema.identity, expected=self._source_record.identity)
             if current != self._source_record:
                 raise BackendError('schema_changed')
-            if self._product_source is not None and self.manager._backend.catalog_write_preparation(
-                    self.schema.identity, expected=current.identity) != self._product_source:
+            if policy != self._product_source:
                 raise BackendError('schema_changed')
         except BackendError as error:
             if error.code in ('schema_changed', 'integrity'):
@@ -250,11 +248,10 @@ class CatalogEditController:
         # mutable draft. The pinned source is checked around detached execution.
         self._verify_source()
         try:
-            draft = VerifiedFormDraftSession(self._source_backend, self.schema.identity,
+            draft = _draft_from_checked_record(self._source_record, self._source_backend, self.schema.identity,
                 code=code, description=description,
                 deletion_mark=(self.object.get_member('DeletionMark')
                                if deletion_mark is None else deletion_mark))
-            self._verify_source()
             return draft
         except BackendError as error:
             if error.code in ('schema_changed', 'integrity'):
@@ -740,7 +737,7 @@ class CatalogEditorApplication:
             if type(reference) is not CatalogRef or reference.catalog != self.selected:
                 raise UIError('catalog_identity')
             selected = manager.get_ref(BSLUUID(reference.record))
-        from ..product_list_check import check_product_list
+        from yadinassi.configuration.demos.product_list_check import check_product_list
         view = self.backend.begin_read()
         try:
             sources = view.product_list_sources(schema.identity)

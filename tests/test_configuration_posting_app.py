@@ -4,10 +4,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_posting_application import import_posting_application, PROFILE
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_posting_application import import_posting_application, PROFILE
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from yadinassi.ui.configuration_app import ConfigurationBroker, ConfigurationController, ConfigurationProcess, load_application, PROTOCOL, main
 from yadinassi.ui.protocol import encode_line, decode_line, encode_value
 
@@ -58,7 +58,7 @@ class PostingApplicationTests(unittest.TestCase):
     def read(self):
         backend = SQLiteCatalogBackend(self.path)
         try:
-            from yadinassi.document_backend import DocumentSelection
+            from yadinassi.db.document.document_backend import DocumentSelection
             view = backend.begin_document_read()
             try: cards = view.select_documents(self.configuration.documents[0].identity, DocumentSelection())
             finally: view.close()
@@ -103,22 +103,22 @@ class PostingApplicationTests(unittest.TestCase):
     def test_receipt_allocation_failure_does_not_lock_form(self):
         sid = self.open(); owned = self.broker.objects[sid]
         for function in ('uuid4','token_hex'):
-            with patch('yadinassi.configuration_posting_document.'+function,side_effect=MemoryError):
+            with patch('yadinassi.configuration.configuration_posting_document.'+function,side_effect=MemoryError):
                 with self.assertRaises(MemoryError): owned.execute('Post',owned.image())
             self.assertFalse(owned._saving); self.assertFalse(owned.pending_commit)
             self.assertIsNone(owned.receipt_token)
         self.assertEqual(self.read(),((),[]))
 
     def test_retained_cleanup_recovery_does_not_dispatch_or_replay(self):
-        from yadinassi.sqlite_transactions import UnitOfWork
+        from yadinassi.db.sqlite.sqlite_transactions import UnitOfWork
         sid = self.open(); owned = self.broker.objects[sid]
-        with patch('yadinassi.document_posting.PostingRuntime.write',side_effect=ValueError('handler fault')), \
+        with patch('yadinassi.db.document.document_posting.PostingRuntime.write',side_effect=ValueError('handler fault')), \
                 patch.object(UnitOfWork,'rollback',side_effect=RuntimeError('cleanup fault')):
             state = self.event(sid,control='PostButton')['state']['posting'][0]
         self.assertTrue(owned.pending_commit); self.assertIsNone(state['posted'])
         server = self.broker.sessions[sid][0]
         with patch.object(server,'exchange',side_effect=AssertionError('no BSL dispatch')), \
-                patch('yadinassi.document_posting.PostingRuntime.write',side_effect=AssertionError('no replay')):
+                patch('yadinassi.db.document.document_posting.PostingRuntime.write',side_effect=AssertionError('no replay')):
             response = self.rpc('recoverPosting',session=sid,receipt=state['receipt'])
         self.assertEqual(response['state']['posting'][0]['state'],'rejected')
         self.assertFalse(owned.pending_commit); self.assertEqual(self.read(),((),[]))
@@ -143,7 +143,7 @@ class PostingApplicationTests(unittest.TestCase):
             finally:session._busy = False
 
     def test_posted_replica_delta_is_denied(self):
-        from yadinassi.form_replication import _admit_delta
+        from yadinassi.forms.form_replication import _admit_delta
         sid = self.open(); server = self.broker.sessions[sid][0]
         slot = dict(self.broker.definitions[1].object_fields)['Posted']
         with self.assertRaises(ValueError):
@@ -246,7 +246,7 @@ class PostingApplicationTests(unittest.TestCase):
 
     def test_child_transaction_control_remains_denied(self):
         sid=self.open();server=self.broker.sessions[sid][0]
-        from yadinassi.errors import BSLError
+        from yadinassi.types.errors import BSLError
         with self.assertRaises((BSLError,ValueError,BackendError)):
             server.session.interpreter.execute('BeginTransaction();')
         self.assertEqual(self.read(),((),[]))

@@ -4,11 +4,11 @@ from unittest.mock import patch
 import test_source_record_enums as fixture
 import test_source_document_records as records
 from test_source_enums import xml, value, identity
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_catalog_store import SourceCatalogStore
-from yadinassi.source_document_section_store import SourceDocumentSectionStore
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.catalog.source_catalog_store import SourceCatalogStore
+from yadinassi.db.document.source_document_section_store import SourceDocumentSectionStore
+from yadinassi.types.errors import BSLError
 
 class SourceRecordEnumGuardTests(unittest.TestCase):
     setUp=records.SourceDocumentRecordTests.setUp
@@ -40,7 +40,7 @@ class SourceRecordEnumGuardTests(unittest.TestCase):
             with self.assertRaises(ValueError):store.write_document_bundle('Invoice',rid,rev,fields,sections)
         current=store.read_document_bundle('Invoice',rid);self.assertEqual(current[1],rev);self.assertIs(current[3]['lines'][0]['choice'],app.enumerations.get_member('State')._values[0])
     def test_legacy_unsupported_schema_not_silently_migrated(self):
-        from yadinassi import source_catalog_definitions as definitions
+        from yadinassi.db.catalog import source_catalog_definitions as definitions
         source=fixture.package();original=definitions.source_catalog_definitions
         def old(*args,**kwargs):
             supported,errors=original(*args,**kwargs);supported.pop('items');errors['items']='enum unsupported';return supported,errors

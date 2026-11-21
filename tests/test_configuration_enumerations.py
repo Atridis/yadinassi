@@ -3,11 +3,11 @@ from decimal import Decimal
 from uuid import uuid4
 import unittest
 from configuration_runtime_fixture import module_files
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.configuration_modules import MODULE_RUNTIME
-from yadinassi.enum_types import BSLEnumReference
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_modules import MODULE_RUNTIME
+from yadinassi.db.metadata.enum_types import BSLEnumReference
+from yadinassi.types.errors import BSLRuntimeError
 
 
 def enum_files():

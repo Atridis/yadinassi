@@ -6,7 +6,7 @@ from unittest import mock
 import unittest
 
 from ui_catalog_fixture import repository
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.ui.catalog_editor import CatalogEditorApplication
 from yadinassi.ui.editor_protocol import CatalogEditorSession, PROTOCOL
 from yadinassi.ui.protocol import encode_line, encode_value
@@ -52,7 +52,7 @@ class CatalogEditorProtocolTests(unittest.TestCase):
         self.assertEqual(state['editor']['saveState'], 'committed')
         self.assertTrue(state['editor']['editingLocked'])
         self.assertNotIn('/private/', json.dumps(failed))
-        from yadinassi.sqlite_catalog import _View
+        from yadinassi.db.sqlite.sqlite_catalog import _View
         with mock.patch.object(_View, 'commit', side_effect=AssertionError('must not replay write')):
             recovered = self.event('command', control='SaveButton')['result']
         self.assertEqual(recovered['state']['list']['total'], 2)

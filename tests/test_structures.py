@@ -12,7 +12,7 @@ import tempfile
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 
 
 class StructureTests(unittest.TestCase):
@@ -533,6 +533,8 @@ class StructureTests(unittest.TestCase):
         self.assertEqual(self.output, ['2'])
 
     def test_ordinary_host_functions_receive_values_not_reference_wrappers(self):
+        self.vm.close()
+        self.vm = Interpreter(output=self.output.append, allow_extensions=True)
         received = []
         self.vm.register_function('Observe', lambda *values: received.append(values))
         self.vm.execute('''

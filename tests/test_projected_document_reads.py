@@ -7,9 +7,9 @@ from unittest.mock import patch
 
 import test_document_query_port as fixtures
 import test_document_posting_query_runtime as posting
-from yadinassi.catalog_backend import BackendError
-from yadinassi.document_backend import DocumentScanRequest, DocumentSelection
-from yadinassi.sqlite_documents import DocumentView
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.document.document_backend import DocumentScanRequest, DocumentSelection
+from yadinassi.db.sqlite.sqlite_documents import DocumentView
 
 
 class ProjectedDocumentReadTests(unittest.TestCase):
@@ -131,7 +131,7 @@ class BatchedPostedReadTests(unittest.TestCase):
         schema=context.backend._document_schemas[0]
         with closing(context.backend.begin_query_read()) as view:
             trace=[];view._connection.set_trace_callback(trace.append)
-            with patch('yadinassi.sqlite_document_posting_state.read_posted',side_effect=AssertionError('per-row Posted')):
+            with patch('yadinassi.db.sqlite.sqlite_document_posting_state.read_posted',side_effect=AssertionError('per-row Posted')):
                 page=view.scan_document_values(schema.identity,DocumentScanRequest(),('number','posted'))
             self.assertEqual(len(page.rows),5)
             self.assertTrue(all(row.values[1] is False for row in page.rows))

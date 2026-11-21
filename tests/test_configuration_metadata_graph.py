@@ -8,11 +8,11 @@ import unittest
 from uuid import uuid4
 
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.metadata import BSLMetadata, is_metadata_collection
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.configuration.metadata import BSLMetadata, is_metadata_collection
 from sqlite_catalog_fixture import configuration_files
 from test_document_configuration_xml import document_files
 from test_information_registers import register_files
@@ -21,11 +21,11 @@ from configuration_runtime_fixture import module_files
 
 
 class MetadataGraphTests(unittest.TestCase):
-    def runtime(self, files=None):
+    def runtime(self, files=None, *, allow_extensions=False):
         directory = tempfile.TemporaryDirectory(); self.addCleanup(directory.cleanup)
         context = SQLiteDBContext.create(Path(directory.name)/'app.sqlite',import_configuration(files or configuration_files()))
         self.addCleanup(context.close)
-        vm = Interpreter(database_context=context); self.addCleanup(vm.close)
+        vm = Interpreter(allow_extensions=allow_extensions, database_context=context); self.addCleanup(vm.close)
         return vm, context
 
     def test_configuration_name_and_empty_presentation(self):

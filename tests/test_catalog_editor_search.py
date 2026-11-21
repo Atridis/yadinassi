@@ -86,7 +86,7 @@ class CatalogEditorSearchTests(unittest.TestCase):
 
     def test_external_writer_visible_only_after_refresh(self):
         from uuid import uuid4
-        from yadinassi.catalog_backend import CatalogDraft
+        from yadinassi.db.catalog.catalog_backend import CatalogDraft
         self.select('category');reference=self.app.view.cards[0].reference
         card=support.CatalogEditorTests.row(self,reference.catalog,reference.record)
         tx=self.context.backend.begin_write(uuid4())

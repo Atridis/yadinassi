@@ -48,7 +48,7 @@ class ObjectFormPreflightBrowserContractTests(unittest.TestCase):
     def test_fixture_hash_and_python_syntax(self):
         ast.parse(self.fixture)
         self.assertEqual(hashlib.sha256(self.fixture.encode()).hexdigest(),
-            '1c9b76113c02246d0c8a7221ad243acf17a7017f1adc50ae02587d45d63ee39f')
+            '2e537e6b2d336579e8175e132234974fc429841b98ca9dca5b9ba15bb98aff64')
         self.assertIn("print('{\"error\":\"owned_preflight_fixture_failed\"}',file=sys.stderr)", self.fixture)
 
     def test_seed_is_typed_explicit_and_before_chromium(self):
@@ -205,8 +205,8 @@ class ObjectFormPreflightBrowserContractTests(unittest.TestCase):
         self.assertIn('timeout-minutes: 5', self.workflow)
 
     def test_source_manifest_and_fixed_diagnostics(self):
-        self.contains("'yadinassi/configuration_document.py'", "'yadinassi/inventory_application_sessions.py'",
-            "'yadinassi/configuration_posting_document.py'", "'tests/test_document_open_preflight.py'",
+        self.contains("'yadinassi/configuration/configuration_document.py'", "'yadinassi/configuration/demos/inventory_application_sessions.py'",
+            "'yadinassi/configuration/configuration_posting_document.py'", "'tests/test_document_open_preflight.py'",
             "'docs/object-form-preflight-browser-qa.md'", "'tracked_checkout_dirty'", "'source_binding_changed'",
             'const wireStages=', 'const wireReasons=', 'report.wire={stage:', 'requestBytes:byteCount(',
             'const diagnosticPhases=', 'const diagnosticReasons=', 'report.failureClass=', 'report.observerFailure=')

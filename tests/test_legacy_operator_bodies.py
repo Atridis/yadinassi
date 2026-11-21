@@ -42,7 +42,7 @@ class LegacyOperatorBodiesTests(unittest.TestCase):
         for mode in ('interpreter', 'compiled-strict'):
             with self.subTest(mode=mode):
                 calls=[]
-                vm=Interpreter(execution_backend=mode)
+                vm=Interpreter(execution_backend=mode, allow_extensions=True)
                 vm.register_function('A', lambda: calls.append('a') or Decimal(3))
                 vm.register_function('B', lambda: calls.append('b') or Decimal(4))
                 vm.execute(source)

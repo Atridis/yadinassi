@@ -10,8 +10,8 @@ from decimal import Decimal
 from uuid import uuid4
 
 from ui_catalog_fixture import CATEGORY, PRODUCT
-from yadinassi.catalog_backend import CatalogDraft, CatalogKey, CatalogSelection
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import CatalogDraft, CatalogKey, CatalogSelection
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 
 ROOT = Path(__file__).resolve().parents[1]
 QA = ROOT / 'tests' / 'browser_ui'

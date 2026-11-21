@@ -5,13 +5,14 @@ from decimal import Decimal
 import tempfile
 import unittest
 from unittest.mock import patch
+from sqlite_test_templates import copy_inventory
 
 from yadinassi import Interpreter
-from yadinassi.configuration_inventory_application import import_inventory_application, PROFILE, validated_core
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.catalog_backend import BackendError
-from yadinassi.document_backend import DocumentSelection
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.configuration.configuration_inventory_application import import_inventory_application, PROFILE, validated_core
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.document.document_backend import DocumentSelection
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from yadinassi.ui.configuration_app import ConfigurationBroker, ConfigurationController, ConfigurationProcess, load_application, PROTOCOL
 from yadinassi.ui.protocol import encode_line, decode_line, encode_value
 from yadinassi.ui.database_launch import binding, verify_binding, main as launch_main
@@ -23,10 +24,7 @@ class InventoryApplicationTests(unittest.TestCase):
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
         self.path=Path(temp.name)/'stock.sqlite'
         self.config=import_inventory_application(source(),inventory_runtime=PROFILE)
-        with closing(SQLiteDBContext.create_inventory_application(self.path,self.config)) as context:
-            with closing(Interpreter(database_context=context,output=lambda value:None)) as vm:
-                vm.execute('P=Catalogs.Products.CreateItem();P.Code="P1";P.Description="Product";P.Write();'
-                    'W=Catalogs.Warehouses.CreateItem();W.Code="W1";W.Description="Warehouse";W.Write();')
+        copy_inventory(self.path,products=True)
         forms=load_application(EXAMPLE,inventory_application=True)
         self.broker=ConfigurationBroker(forms,self.path,inventory_application=True)
         self.addCleanup(self.broker.close)
@@ -197,10 +195,10 @@ class InventoryApplicationTests(unittest.TestCase):
         revision=self.app.sessions[sid][0].session.revision
         entry,record=self.seed_saved_lines(52)
         before=self.path.read_bytes();allocated=self.broker.allocated
-        from yadinassi.configuration_forms import FormDefinition
+        from yadinassi.configuration.configuration_forms import FormDefinition
         create=FormDefinition.create_server
-        with patch('yadinassi.inventory_application_sessions.InventoryRootOperations') as root, patch(
-                'yadinassi.configuration_forms.FormDefinition.create_server',autospec=True,side_effect=create) as server:
+        with patch('yadinassi.configuration.demos.inventory_application_sessions.InventoryRootOperations') as root, patch(
+                'yadinassi.configuration.configuration_forms.FormDefinition.create_server',autospec=True,side_effect=create) as server:
             for request in ('capacity-probe','capacity-probe','another-capacity-probe'):
                 result=self.open_saved_result(entry,record,request)
                 self.assertEqual(result['error'],'form_capacity');self.assertIsNone(result['session'])
@@ -229,7 +227,7 @@ class InventoryApplicationTests(unittest.TestCase):
     def test_open_preflight_preserves_unknown_failure_as_uncertain(self):
         from yadinassi.ui.local_app import LocalTransportError
         entry,record=self.seed_saved_lines(1)
-        with patch('yadinassi.configuration_document._read_form_document',side_effect=ValueError('unknown failure')):
+        with patch('yadinassi.configuration.configuration_document._read_form_document',side_effect=ValueError('unknown failure')):
             with self.assertRaises(LocalTransportError):self.open_saved_result(entry,record)
         self.assertTrue(self.app.uncertain)
 
@@ -243,13 +241,13 @@ class InventoryApplicationTests(unittest.TestCase):
             context.backend.export_configuration=lambda:dict(actual(), **{'extra.bsl':b'// mismatched source'})
             return context
         with patch.object(self.broker,'_open_context',side_effect=other_source), patch(
-                'yadinassi.configuration_document._read_form_document') as read:
+                'yadinassi.configuration.configuration_document._read_form_document') as read:
             with self.assertRaises(LocalTransportError):self.open_saved_result(entry,record)
             read.assert_not_called()
         self.assertTrue(self.app.uncertain)
 
     def test_preflight_reuses_pinned_card_instead_of_rereading_after_admission(self):
-        from yadinassi.configuration_document import _read_form_document
+        from yadinassi.configuration.configuration_document import _read_form_document
         entry,record=self.seed_saved_lines(1);card=self.cards()[0]
         def captured(context,definition,key):
             opened=_read_form_document(context,definition,key)
@@ -262,14 +260,14 @@ class InventoryApplicationTests(unittest.TestCase):
                 return view
             context.backend.begin_document_read=no_record_read
             return opened
-        with patch('yadinassi.configuration_document._read_form_document',side_effect=captured):
+        with patch('yadinassi.configuration.configuration_document._read_form_document',side_effect=captured):
             result=self.open_saved_result(entry,record)
         self.assertIsNone(result['error'])
         self.assertEqual(self.broker.objects[result['session']].object._revision,card.revision)
 
     def test_concurrent_growth_keeps_open_snapshot_and_rejects_stale_write(self):
-        from yadinassi.configuration_document import _read_form_document
-        from yadinassi.unique_identifiers import BSLUUID
+        from yadinassi.configuration.configuration_document import _read_form_document
+        from yadinassi.types.unique_identifiers import BSLUUID
         entry,record=self.seed_saved_lines(1)
         def grow_after_read(context,definition,key):
             opened=_read_form_document(context,definition,key)
@@ -280,7 +278,7 @@ class InventoryApplicationTests(unittest.TestCase):
                         'L=D.Lines.Add();L.Product=Catalogs.Products.FindByCode("P1");'
                         'L.Quantity=2;L.Amount=20;D.Write();')
             return opened
-        with patch('yadinassi.configuration_document._read_form_document',side_effect=grow_after_read):
+        with patch('yadinassi.configuration.configuration_document._read_form_document',side_effect=grow_after_read):
             result=self.open_saved_result(entry,record)
         self.assertIsNone(result['error']);sid=result['session']
         self.assertEqual(len(self.broker.objects[sid].image().sections[0][1]),1)
@@ -297,7 +295,7 @@ class InventoryApplicationTests(unittest.TestCase):
             context=original();context.backend.accumulation_configuration=validated_core(self.config)
             return context
         with patch.object(self.broker,'_open_context',side_effect=wrong_profile), patch(
-                'yadinassi.configuration_document._read_form_document') as read:
+                'yadinassi.configuration.configuration_document._read_form_document') as read:
             with self.assertRaises(LocalTransportError):self.open_saved_result(entry,record)
             read.assert_not_called()
         self.assertTrue(self.app.uncertain)

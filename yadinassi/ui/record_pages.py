@@ -10,9 +10,9 @@ import secrets
 import re
 from uuid import UUID
 
-from ..catalog_backend import (BackendError, CatalogKey, CatalogSchema, CatalogScanRequest,
+from yadinassi.db.catalog.catalog_backend import (BackendError, CatalogKey, CatalogSchema, CatalogScanRequest,
     CatalogOrder, CatalogValuePage, CatalogValueRow)
-from ..document_backend import (DocumentSchema, DocumentKey, DocumentScanRequest,
+from yadinassi.db.document.document_backend import (DocumentSchema, DocumentKey, DocumentScanRequest,
     DocumentValuePage, DocumentValueRow)
 
 MAX_RECORDS = 8192
@@ -163,8 +163,8 @@ def _row(row, document, database, schema_id):
 
 
 def load_record_snapshot(backend, schema, *, document=False, source_files):
-    from ..sqlite_catalog import SQLiteCatalogBackend
-    from ..database_transactions import require_admission, current
+    from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+    from yadinassi.db.database_transactions import require_admission, current
     require_admission()
     if (type(backend) is not SQLiteCatalogBackend or type(document) is not bool
             or type(schema) is not (DocumentSchema if document else CatalogSchema)
@@ -236,7 +236,7 @@ class RecordPages:
 
     def capture(self, context, entry, catalog_schema=None, document_schema=None,
                 query='', order=None, page=0, filters=None):
-        from ..database_context import SQLiteDBContext
+        from yadinassi.db.database_context import SQLiteDBContext
         if (type(context) is not SQLiteDBContext or (catalog_schema is None) == (document_schema is None)
                 or type(page) is not int or page < 0):
             raise BackendError('invalid_input')
@@ -254,7 +254,7 @@ class RecordPages:
             raise
 
     def _verify_context(self, context):
-        from ..database_context import SQLiteDBContext
+        from yadinassi.db.database_context import SQLiteDBContext
         if (type(context) is not SQLiteDBContext or context.backend is not self._backend
                 or self._snapshot is None):
             raise BackendError('schema_changed')

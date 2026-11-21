@@ -5,8 +5,8 @@ from unittest.mock import Mock
 import unittest
 import test_bsl_transactions as fixtures
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import BackendError
-from yadinassi.database_transactions import execution, begin, rollback, current
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.database_transactions import execution, begin, rollback, current
 
 
 class TransactionExecutionGuardTests(unittest.TestCase):

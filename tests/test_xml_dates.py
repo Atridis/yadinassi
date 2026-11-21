@@ -14,17 +14,19 @@ import re
 import unittest
 from unittest.mock import patch
 
-from yadinassi import BSLError, Interpreter, timezones, xml_values
-from yadinassi.dates import (
+from yadinassi import BSLError, Interpreter
+from yadinassi.temporal import timezones
+from yadinassi.formats.xml import xml_values
+from yadinassi.temporal.dates import (
     BSLDate, MAX_TICKS, TICKS_PER_SECOND, UnsupportedDateRange, date,
     date_difference, shift_date,
 )
-from yadinassi.serialization import (
+from yadinassi.formats.storage.serialization import (
     value_from_string_internal as read_internal,
     value_to_string_internal as write_internal,
 )
-from yadinassi.values import BSLType, NULL
-from yadinassi.xml_values import xml_string, xml_value
+from yadinassi.types.values import BSLType, NULL
+from yadinassi.formats.xml.xml_values import xml_string, xml_value
 
 
 ROOT = Path(__file__).resolve().parents[1]

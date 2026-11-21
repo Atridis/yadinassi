@@ -29,7 +29,7 @@ existing behavior. The host explicitly selects the exact source and a disposable
 object from an admitted logical schema.
 
 ```python
-from yadinassi.catalog_object_preparation import (
+from yadinassi.db.catalog.catalog_object_preparation import (
     CatalogWriteRefused, write_prepared_catalog_object,
 )
 

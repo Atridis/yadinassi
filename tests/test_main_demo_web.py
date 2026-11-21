@@ -5,19 +5,20 @@ from threading import Thread
 import tempfile
 import unittest
 from unittest.mock import patch
-from test_main_demo_configuration import source, ROOT
-from yadinassi.configuration_main_demo import PROFILE, import_main_demo_configuration
-from yadinassi.database_context import SQLiteDBContext
+from test_main_demo_configuration import ROOT
+from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.ui.database_launch import binding, main
 from yadinassi.ui.main_demo_host import MainDemoHost
 from yadinassi.ui.main_demo_web import MainDemoHandler
 from yadinassi.ui.local_app import LocalUIServer
+from sqlite_test_templates import copy_main_demo
 
 class MainDemoWebTests(unittest.TestCase):
     def setUp(self):
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
         self.path=Path(temp.name)/'demo.sqlite'
-        with SQLiteDBContext.create_main_demo(self.path,import_main_demo_configuration(source(),profile=PROFILE)) as context:
+        copy_main_demo(self.path)
+        with SQLiteDBContext(self.path) as context:
             self.binding=binding(context.backend.launch_snapshot())
 
     def test_ui_routes_one_existing_database_without_materializing_second_configuration(self):

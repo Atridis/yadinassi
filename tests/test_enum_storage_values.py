@@ -3,10 +3,10 @@ from dataclasses import FrozenInstanceError, replace
 import unittest
 from uuid import UUID
 
-from yadinassi.catalog_backend import BackendError, CatalogKey
-from yadinassi.configuration_enumerations import EnumDefinition, EnumValueDefinition
-from yadinassi.enum_storage_values import EnumKey, EnumValueDomain
-from yadinassi.enum_types import BSLEnumReference, BSLEnumType
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogKey
+from yadinassi.configuration.configuration_enumerations import EnumDefinition, EnumValueDefinition
+from yadinassi.db.metadata.enum_storage_values import EnumKey, EnumValueDomain
+from yadinassi.db.metadata.enum_types import BSLEnumReference, BSLEnumType
 
 
 DB, OTHER_DB = UUID(int=1), UUID(int=2)

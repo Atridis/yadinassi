@@ -3,15 +3,15 @@ from copy import deepcopy
 from uuid import UUID, uuid4
 import unittest
 
-from yadinassi.catalog_types import BSLCatalogReference, BSLCatalogType
-from yadinassi.form_references import FormReferenceBinding, FormReferenceScope, FormCatalogReference
-from yadinassi.form_model import BSLFormAttribute, scalar
-from yadinassi.form_tables import FormTableColumn, FormTableSchema
-from yadinassi.form_replication import (ReplicatedFormServer, ReplicatedFormSession,
+from yadinassi.db.catalog.catalog_types import BSLCatalogReference, BSLCatalogType
+from yadinassi.forms.form_references import FormReferenceBinding, FormReferenceScope, FormCatalogReference
+from yadinassi.forms.form_model import BSLFormAttribute, scalar
+from yadinassi.forms.form_tables import FormTableColumn, FormTableSchema
+from yadinassi.forms.form_replication import (ReplicatedFormServer, ReplicatedFormSession,
     _pack_state, _unpack_state, _admit_delta, _capture)
-from yadinassi.form_table_replication import admit_table_delta
-from yadinassi.invocation import _encode_scalar
-from yadinassi.type_descriptions import BSLTypeDescription
+from yadinassi.forms.form_table_replication import admit_table_delta
+from yadinassi.execution.invocation import _encode_scalar
+from yadinassi.types.type_descriptions import BSLTypeDescription
 
 
 def scopes():

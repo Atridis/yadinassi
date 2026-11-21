@@ -2,15 +2,15 @@
 import unittest
 
 from test_configuration_source_runtime import source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
-from yadinassi.safe_mode import require_external_access
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
+from yadinassi.execution.safe_mode import require_external_access
 
 
 class SourceSafeModeTests(unittest.TestCase):
-    def vm(self):
+    def vm(self, *, allow_extensions=False):
         output = []
-        app = SourceApplication(source(), output=output.append)
+        app = SourceApplication(source(), output=output.append, allow_extensions=allow_extensions)
         self.addCleanup(app.close)
         app.start()
         return app, app.interpreter, output
@@ -77,7 +77,7 @@ Main(); Message(SafeMode());''')
             vm.execute('SetSafeMode(True);')
 
     def test_real_effect_boundary_denies_before_effect(self):
-        _, vm, output = self.vm()
+        _, vm, output = self.vm(allow_extensions=True)
         effects = []
         def external():
             require_external_access('test effect')
@@ -101,7 +101,7 @@ Main(); Message(SafeMode());''')
             vm.execute('Async Function Child() Return 1; EndFunction; Procedure Main() SetSafeMode(True); Child(); EndProcedure; Main();')
 
     def test_source_sessions_do_not_share_counter(self):
-        first, vm, _ = self.vm()
+        first, vm, _ = self.vm(allow_extensions=True)
         second, other, output = self.vm()
         def foreign():
             other.execute('Message(SafeMode());')

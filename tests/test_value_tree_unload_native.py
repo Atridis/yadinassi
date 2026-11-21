@@ -7,7 +7,7 @@ The 27 observations occupy records947–973 of the exact pinned collections sour
 import hashlib
 import unittest
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
 from test_native_tree_unload_measurement import (
     fragments, raw_source, SOURCE_SHA, CALLS_START, CALLS_END,
     block, HELPER_START, HELPER_END,

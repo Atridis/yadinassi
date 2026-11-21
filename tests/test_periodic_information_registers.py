@@ -10,13 +10,13 @@ import unittest
 from uuid import uuid4
 
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.dates import BSLDate, literal_date
-from yadinassi.periodic_information_registers import period
-from yadinassi.queries import BSLQuery
-from yadinassi.register_backend import RegisterKey, RegisterDraft, RegisterScanRequest
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.temporal.dates import BSLDate, literal_date
+from yadinassi.db.registers.periodic_information_registers import period
+from yadinassi.db.query.queries import BSLQuery
+from yadinassi.db.registers.register_backend import RegisterKey, RegisterDraft, RegisterScanRequest
 from test_information_registers import register_files
 
 
@@ -163,7 +163,7 @@ class PeriodicRegisterTests(unittest.TestCase):
         with self.assertRaises(BackendError):SQLiteDBContext(self.path)
     def test_read_only_reads_and_rejects_write(self):
         self.seed();self.context.close();ctx=SQLiteDBContext(self.path);ctx.close()
-        from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
         ctx._backend=SQLiteCatalogBackend(self.path,read_only=True)
         try:
             vm=Interpreter(database_context=ctx,output=self.output.append)
@@ -185,8 +185,8 @@ class PeriodicRegisterTests(unittest.TestCase):
 class PeriodicConfigurationRuntimeTests(unittest.TestCase):
     def test_explicit_module_runtime_and_v9_query_share_validated_schema(self):
         from test_register_configuration_runtime import combined_files
-        from yadinassi.configuration_modules import MODULE_RUNTIME
-        from yadinassi.configuration_runtime import ConfigurationApplication
+        from yadinassi.configuration.configuration_modules import MODULE_RUNTIME
+        from yadinassi.configuration.configuration_runtime import ConfigurationApplication
         files=combined_files()
         files['InformationRegisters/Prices.xml']=files['InformationRegisters/Prices.xml'].replace(b'Nonperiodical',b'Day')
         config=import_configuration(files,numbering_policy='decimal_v1',module_runtime=MODULE_RUNTIME)
@@ -207,7 +207,7 @@ class PeriodicConfigurationRuntimeTests(unittest.TestCase):
 
     def test_module_canonical_import_rejects_forged_periodicity(self):
         from test_register_configuration_runtime import combined_files
-        from yadinassi.configuration_modules import MODULE_RUNTIME
+        from yadinassi.configuration.configuration_modules import MODULE_RUNTIME
         files=combined_files()
         config=import_configuration(files,numbering_policy='decimal_v1',module_runtime=MODULE_RUNTIME)
         forged=replace(config,information_registers=(replace(config.information_registers[0],periodicity='Day'),))

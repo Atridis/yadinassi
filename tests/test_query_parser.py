@@ -5,7 +5,7 @@ import unittest
 from decimal import Decimal
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from yadinassi.query_parser import parse_query, Parameter, Predicate, MAX_TEXT
+from yadinassi.db.query.query_parser import parse_query, Parameter, Predicate, MAX_TEXT
 
 
 class QueryParserTests(unittest.TestCase):
@@ -46,7 +46,7 @@ class QueryParserTests(unittest.TestCase):
                 parse_query(text)
 
     def test_relational_extension_accepts_previously_unsupported_shapes(self):
-        from yadinassi.query_parser import Aggregate, Field
+        from yadinassi.db.query.query_parser import Aggregate, Field
         materialized = parse_query('SELECT Code INTO Temp FROM Catalog.Products')
         self.assertEqual(materialized.into, 'Temp')
         temporary = parse_query('SELECT Code FROM Temp')

@@ -1,199 +1,121 @@
+"""Live behavior retained from the retired hybrid differential suite.
+
+There is no interpreter/hybrid oracle or fallback. Arithmetic uses independent
+expected values; effects and errors are asserted directly. Old compiler tier,
+eligibility, depth-budget and instrumentation-fallback tests were implementation
+only. The removed benchmark had no workflow/script/test consumers.
+"""
+import random
+import subprocess
+import sys
 import unittest
 from decimal import Decimal, localcontext
+
 from yadinassi import Interpreter
-def HybridInterpreter(**kwargs):
-    return Interpreter(execution_backend="hybrid", **kwargs)
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.syntax.parser import parse
 
-class Differential(unittest.TestCase):
-    def pair(self, source, compiled=None, initial=None):
-        records=[]
-        for cls in (lambda **kw: Interpreter(execution_backend="interpreter", **kw), Interpreter, HybridInterpreter):
-            out=[];vm=cls(output=out.append)
-            if initial: vm.variables.update(initial)
-            error=None
-            try: vm.execute(source)
-            except Exception as e: error=(type(e),str(e))
-            records.append((dict(vm.variables),out,error))
-        self.assertEqual(records[0],records[1])
-        self.assertEqual(records[0],records[2])
-        if compiled is not None: self.assertEqual(vm.execution_backend_stats['compiled'],compiled)
-        return vm
-    def test_numeric(self):
-        cases=[
-            'r=0; Для i=1 По 100 Цикл r=r+i*3-7; КонецЦикла;',
-            'Для i=1 По 0 Цикл r=7; КонецЦикла;',
-            'Для i=0.5 По 3.7 Цикл r=i; КонецЦикла;',
-            'Для i=-3 По -1 Цикл r=-i; КонецЦикла;',
-            'r=0; Для i=1 По 10 Цикл i=i+1;r=r+i;КонецЦикла;',
-            'n=3; r=0;Для i=1 По n Цикл n=0;r=r+1;КонецЦикла;',
-            'i=5;Для i=i-4 По i+1 Цикл r=i;КонецЦикла;',
-            'Для i=1 По 2 Цикл r=1.23456789012345678901234567890123456789*9;КонецЦикла;',
-            'Для i=1 По 2 Цикл r=+(1.23456789012345678901234567890123456789);КонецЦикла;',
-            'Для i=1 По 2 Цикл r=-(1.23456789012345678901234567890123456789);КонецЦикла;',
-            'Для i=1 По 2 Цикл r=1;s=r+2;КонецЦикла;',
-            'Для i=1 По 2 Цикл Для j=1 По 2 Цикл r=j;КонецЦикла;КонецЦикла;',
-        ]
-        for index,src in enumerate(cases):
-            with self.subTest(src=src):self.pair(src,2 if index==11 else 1)
-    def test_unsupported_no_replay(self):
-        cases=[
-            'r=0;Для i=1 По 3 Цикл r=r+1;Сообщить(r);КонецЦикла;',
-            'Для i=1 По 3 Цикл r=1/0;КонецЦикла;',
-            'Для i=1 По 3 Цикл r="a"+i;КонецЦикла;',
-            'r=0;Для i=1 По 3 Цикл r=r+1;Прервать;КонецЦикла;',
-            'r=0;Для i=1 По 3 Цикл Продолжить;r=r+1;КонецЦикла;',
-            'Для i=1 По 3 Цикл r=undefinedName+1;КонецЦикла;',
-            'Функция f(x) Для i=1 По 2 Цикл x=x+1;КонецЦикла; Возврат x;КонецФункции r=0;s=f(r);',
-            'Функция f() Сообщить(7);Возврат 2;КонецФункции Для i=1 По f() Цикл r=i;КонецЦикла;',
-        ]
-        for src in cases:
-            with self.subTest(src=src):self.pair(src,0)
-    def test_generated_decimal_cases(self):
-        import random
-        rng=random.Random(813)
+
+class DirectBehaviorTests(unittest.TestCase):
+    def vm(self, **kwargs):
+        return Interpreter(execution_backend='python-direct', **kwargs)
+
+    def test_generated_integer_arithmetic_has_independent_oracle(self):
+        rng = random.Random(813)
         for _ in range(60):
-            a,b,c=[rng.randrange(-100,100) for _ in range(3)]
-            op=rng.choice(['+','-','*'])
-            self.pair(f'r={a};Для i=-2 По 5 Цикл r=(r {op} {b})+i*{c};КонецЦикла;',1)
-    def test_instance_instrumentation_fallback(self):
-        vm=HybridInterpreter();writes=[];original=vm.set_variable
-        def traced(name,value):
-            writes.append((name,value));return original(name,value)
-        vm.set_variable=traced
-        vm.execute('Для i=1 По 2 Цикл r=i;КонецЦикла;')
-        self.assertEqual(vm.execution_backend_stats['compiled'],0)
-        self.assertEqual(len(writes),5)
-    def test_reference_fallback(self):
-        self.pair('Процедура f(x) Для x=1 По 3 Цикл x=x+1;КонецЦикла;КонецПроцедуры r=0;f(r);',0)
-    def test_side_effect_bound_once(self):
-        vm=self.pair('Функция f() Сообщить(7);Возврат 2;КонецФункции Для i=f() По f()+1 Цикл r=i;КонецЦикла;',0)
-        self.assertEqual(vm.execution_backend_stats['fallback'],1)
-    def test_overflow_error_location(self):
-        self.pair('Для i=1 По 2 Цикл\nr=big*big;\nКонецЦикла;',1,{'big':Decimal('1e999999')})
-    def test_compiled_error_never_replays(self):
-        vm=self.pair('r=0;Для i=1 По 2 Цикл r=r+1;z=big*big;КонецЦикла;',1,{'big':Decimal('1e999999')})
-        self.assertEqual(vm.variables['r'],Decimal(1))
-    def test_counter_nonfinite_error(self):
-        self.pair('Для i=1 По big Цикл r=i;КонецЦикла;',1,{'big':Decimal('NaN')})
-    def test_decimal_scheduler_context(self):
-        with localcontext() as ctx:
-            ctx.prec=7
-            vm=self.pair('Для i=1 По 1 Цикл r=12345678901234567890*12345678901234567890;КонецЦикла;',1)
+            a,b,c = [rng.randrange(-100,100) for _ in range(3)]
+            op = rng.choice(['+','-','*'])
+            expected = a
+            for i in range(-2,6):
+                expected = {'+':lambda:expected+b, '-':lambda:expected-b,
+                            '*':lambda:expected*b}[op]() + i*c
+            vm = self.vm()
+            vm.execute(f'r={a};For i=-2 To 5 Do r=(r {op} {b})+i*{c};EndDo;')
+            self.assertEqual(vm.variables['r'], expected)
+
+    def test_loop_results_and_effects(self):
+        cases = [
+            ('r=0;For i=1 To 100 Do r=r+i*3-7;EndDo;',14450,[]),
+            ('r=0;For i=1 To 0 Do r=7;EndDo;',0,[]),
+            ('For i=0.5 To 3.7 Do r=i;EndDo;',Decimal('3.5'),[]),
+            ('For i=-3 To -1 Do r=-i;EndDo;',1,[]),
+            ('r=0;For i=1 To 3 Do r=r+1;Message(r);EndDo;',3,['1','2','3']),
+            ('r=0;For i=1 To 3 Do r=r+1;Break;EndDo;',1,[]),
+            ('r=0;For i=1 To 3 Do Continue;r=r+1;EndDo;',0,[]),
+            ('Function F() Message(7);Return 2;EndFunction For i=F() To F()+1 Do r=i;EndDo;',3,['7','7']),
+        ]
+        for source,expected,messages in cases:
+            with self.subTest(source=source):
+                output=[];vm=self.vm(output=output.append);vm.execute(source)
+                self.assertEqual(vm.variables['r'],expected)
+                self.assertEqual(output,messages)
+
+    def test_reference_counter_behavior(self):
+        vm=self.vm()
+        vm.execute('Procedure F(x) For x=1 To 3 Do x=x+1;EndDo;EndProcedure r=0;F(r);')
+        self.assertEqual(vm.variables['r'],5)
+
+    def test_error_never_replays_and_preserves_location(self):
+        vm=self.vm(allow_extensions=True);events=[]
+        vm.register_function('Touch',lambda:events.append(1))
+        with self.assertRaises(BSLRuntimeError) as caught:
+            vm.execute('r=0;For i=1 To 2 Do Touch();r=r+1;\nz=1/0;EndDo;','once.bsl')
+        self.assertEqual(events,[1]);self.assertEqual(vm.variables['r'],1)
+        self.assertNotIn('z',vm.variables)
+        self.assertIn('once.bsl:2:',str(caught.exception))
+
+    def test_overflow_preserves_prior_write(self):
+        vm=self.vm();vm.variables['big']=Decimal('1e999999')
+        with self.assertRaises(BSLRuntimeError):
+            vm.execute('r=0;For i=1 To 2 Do r=r+1;z=big*big;EndDo;')
+        self.assertEqual(vm.variables['r'],1);self.assertNotIn('z',vm.variables)
+
+    def test_nonfinite_counter_rejected(self):
+        vm=self.vm();vm.variables['big']=Decimal('NaN')
+        with self.assertRaises(BSLRuntimeError):vm.execute('For i=1 To big Do r=i;EndDo;')
+        self.assertNotIn('r',vm.variables)
+
+    def test_decimal_context_is_not_host_precision(self):
+        with localcontext() as context:
+            context.prec=7
+            vm=self.vm();vm.execute('For i=1 To 1 Do r=12345678901234567890*12345678901234567890;EndDo;')
             self.assertEqual(len(vm.variables['r'].as_tuple().digits),38)
-            self.assertEqual(ctx.prec,7)
-    def test_mutable_ast_recompiled(self):
-        from yadinassi.syntax.parser import parse
-        nodes=parse('Для i=1 По 2 Цикл r=1;КонецЦикла;')
-        vm=HybridInterpreter();vm.execute_program(nodes)
-        nodes[0].body[0].value.value=Decimal(4)
-        vm.execute_program(nodes)
-        self.assertEqual(vm.variables['r'],Decimal(4))
+            self.assertEqual(context.prec,7)
 
+    def test_new_ast_execution_observes_explicit_edit(self):
+        nodes=parse('For i=1 To 2 Do r=1;EndDo;');vm=self.vm()
+        vm.execute_program(nodes);nodes[0].body[0].value.value=Decimal(4)
+        vm.execute_program(nodes);self.assertEqual(vm.variables['r'],4)
 
+    def test_later_execution_observes_changed_state_type(self):
+        vm=self.vm();vm.execute('r=0;For i=1 To 1 Do r=r+1;EndDo;')
+        vm.variables['r']='s';vm.execute('For i=1 To 1 Do r=r+1;EndDo;')
+        self.assertEqual(vm.variables['r'],'s1')
 
-class AdmissionTests(unittest.TestCase):
-    def test_translated_default_explicit_oracle_and_stats_are_copy(self):
-        vm=Interpreter();vm.execute('Для i=1 По 2 Цикл r=i;КонецЦикла;')
-        self.assertEqual(vm.execution_backend,'compiled-strict')
-        self.assertGreater(vm.compiled_backend_stats.get('python_translated_blocks',0),0)
-        self.assertEqual(vm.compiled_backend_stats['interpreter_fallbacks'],0)
-        oracle=Interpreter(execution_backend='interpreter')
-        try:
-            oracle.execute('Для i=1 По 2 Цикл r=i;КонецЦикла;')
-            self.assertEqual(oracle.variables['r'],vm.variables['r'])
-            self.assertEqual(oracle.execution_backend,'interpreter')
-        finally:oracle.close()
-        self.assertEqual(vm.execution_backend_stats['compiled'],0)
-        copy=vm.execution_backend_stats;copy['compiled']=99
-        self.assertEqual(vm.execution_backend_stats['compiled'],0)
-        with self.assertRaises(ValueError):Interpreter(execution_backend='python')
-
-    def test_class_hook_instrumentation_falls_back(self):
-        from unittest.mock import patch
-        original=Interpreter.set_variable
-        writes=[]
-        def trace(vm,name,value):
-            writes.append(name);return original(vm,name,value)
-        with patch.object(Interpreter,'set_variable',trace):
-            vm=HybridInterpreter();vm.execute('Для i=1 По 2 Цикл r=i;КонецЦикла;')
-        self.assertEqual(vm.execution_backend_stats['compiled'],0)
-        self.assertEqual(len(writes),5)
-
-    def test_numeric_helper_instrumentation_falls_back(self):
-        from unittest.mock import patch
-        from yadinassi import runtime
-        original=runtime.require_number;seen=[]
-        def traced(value):
-            seen.append(value);return original(value)
-        with patch.object(runtime,'require_number',traced):
-            vm=HybridInterpreter();vm.execute('Для i=1 По 2 Цикл r=i;КонецЦикла;')
-        self.assertEqual(vm.execution_backend_stats['compiled'],0)
-        self.assertTrue(seen)
-
-    def test_profile_and_trace_fall_back(self):
-        import sys
+    def test_profile_and_trace_preserve_direct_results(self):
         for setter,getter in ((sys.settrace,sys.gettrace),(sys.setprofile,sys.getprofile)):
             previous=getter()
             try:
-                setter(lambda *args: None)
-                vm=HybridInterpreter();vm.execute('Для i=1 По 2 Цикл r=i;КонецЦикла;')
-                self.assertEqual(vm.execution_backend_stats['compiled'],0)
-            finally: setter(previous)
+                setter(lambda *args:None)
+                vm=self.vm();vm.execute('For i=1 To 2 Do r=i;EndDo;')
+                self.assertEqual(vm.variables['r'],2)
+                self.assertEqual(vm.execution_backend,'python-direct')
+            finally:setter(previous)
 
-    def test_subclass_falls_back(self):
-        class Traced(Interpreter):pass
-        vm=Traced(execution_backend='hybrid')
-        vm.execute('Для i=1 По 2 Цикл r=i;КонецЦикла;')
-        self.assertEqual(vm.execution_backend_stats['compiled'],0)
-        self.assertEqual(vm.execution_backend_stats['fallback'],1)
 
-    def test_restricted_contexts_not_admitted(self):
-        from yadinassi.hybrid_backend import eligible
-        for field,value in (('_configuration_runtime',object()),('_database_context',object()),
-                            ('_family_owner',object()),('imports',{'x':object()})):
-            vm=HybridInterpreter();setattr(vm,field,value)
-            self.assertFalse(eligible(vm))
-        vm=HybridInterpreter();vm.locals={};self.assertFalse(eligible(vm))
-        vm=HybridInterpreter();vm._eval_depth[0]=1;self.assertFalse(eligible(vm))
-        vm=HybridInterpreter(compilation_profile='managed-thick-file');self.assertFalse(eligible(vm))
-
-    def test_compile_body_budget_falls_back_before_effects(self):
-        vm=HybridInterpreter();vm.execute('r=0;Для i=1 По 1 Цикл '+'r=r+1;'*257+'КонецЦикла;')
-        self.assertEqual(vm.variables['r'],Decimal(257))
-        self.assertEqual(vm.execution_backend_stats['compiled'],0)
-        self.assertEqual(vm.execution_backend_stats['fallback'],1)
-
-    def test_compile_depth_budget_is_bounded(self):
-        from yadinassi.hybrid_backend import Compiler, Unsupported
-        from yadinassi.syntax.parser import parse
-        from yadinassi.syntax import ast
-        node=parse('Для i=1 По 1 Цикл r=1;КонецЦикла;')[0]
-        for _ in range(80):node.body[0].value=ast.Group(node.token,node.body[0].value)
-        with self.assertRaises(Unsupported):Compiler(HybridInterpreter()).build(node)
-
-    def test_no_code_cache_after_state_type_changes(self):
-        vm=HybridInterpreter();vm.execute('r=0;Для i=1 По 1 Цикл r=r+1;КонецЦикла;')
-        vm.variables['r']='s'
-        vm.execute('Для i=1 По 1 Цикл r=r+1;КонецЦикла;')
-        self.assertEqual(vm.variables['r'],'s1')
-        self.assertEqual(vm.execution_backend_stats['compiled'],1)
-        self.assertEqual(vm.execution_backend_stats['fallback'],1)
-
-class HybridCLITests(unittest.TestCase):
+class DirectCLITests(unittest.TestCase):
     def run_cli(self,*args):
-        import subprocess,sys
         return subprocess.run([sys.executable,'-m','yadinassi',*args],capture_output=True,
                               encoding='utf-8',timeout=15)
-    def test_explicit_cli_mode(self):
-        for mode in ('interpreter','hybrid'):
-            r=self.run_cli('--execution-backend',mode,'-c',
-                           'r=0;Для i=1 По 10 Цикл r=r+i*3-7;КонецЦикла;Сообщить(r);')
-            self.assertEqual((r.returncode,r.stdout.strip(),r.stderr),(0,'95',''))
-    def test_source_and_database_modes_are_rejected(self):
-        for args in (('--f','missing.sqlite'),('--preprocessor-profile','managed-thick-file'),
-                     ('--configuration-source','missing')):
-            r=self.run_cli('--execution-backend','hybrid',*args)
-            self.assertEqual(r.returncode,2)
-            self.assertIn('standalone BSL only',r.stderr)
 
-if __name__=='__main__':unittest.main()
+    def test_explicit_direct_mode(self):
+        result=self.run_cli('--execution-backend','python-direct','-c',
+            'r=0;For i=1 To 10 Do r=r+i*3-7;EndDo;Message(r);')
+        self.assertEqual((result.returncode,result.stdout.strip(),result.stderr),(0,'95',''))
+
+    def test_retired_modes_are_rejected_before_body(self):
+        for mode in ('interpreter','hybrid','compiled-strict'):
+            with self.subTest(mode=mode):
+                result=self.run_cli('--execution-backend',mode,'-c','Message("BAD");')
+                self.assertEqual(result.returncode,2)
+                self.assertNotIn('BAD',result.stdout)

@@ -6,11 +6,11 @@ Each process reads only its side's two fixed UTF-8 files at startup.
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..form_model import BSLFormAttribute, name
-from ..form_runtime import MAX_SOURCE
-from ..form_tables import FormTableSchema, FormTableColumn, MAX_TABLES, MAX_TABLE_COLUMNS
-from ..invocation import InvocationBinding, _decode_scalar
-from ..type_descriptions import BSLTypeDescription
+from yadinassi.forms.form_model import BSLFormAttribute, name
+from yadinassi.forms.form_runtime import MAX_SOURCE
+from yadinassi.forms.form_tables import FormTableSchema, FormTableColumn, MAX_TABLES, MAX_TABLE_COLUMNS
+from yadinassi.execution.invocation import InvocationBinding, _decode_scalar
+from yadinassi.types.type_descriptions import BSLTypeDescription
 from .protocol import decode_document, MAX_LINE_BYTES, bounded_text
 
 PACKAGE_PROTOCOL = 'yadinassi-form-app/0'

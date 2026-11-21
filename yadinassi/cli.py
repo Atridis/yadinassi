@@ -5,13 +5,14 @@ from pathlib import Path
 import sys
 
 from . import __version__
-from .database_context import SQLiteDBContext
-from .catalog_backend import BackendError
-from .errors import BSLError, BSLRuntimeError, IncompleteInput
+from .db.database_context import SQLiteDBContext
+from .db.catalog.catalog_backend import BackendError
+from .types.errors import BSLError, BSLRuntimeError, IncompleteInput
 from .syntax.parser import parse
 from .syntax.preprocessor import COMPILATION_PROFILES
 from .runtime import Interpreter
-from .values import to_string
+from .execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from .types.values import to_string
 
 
 _UNSUPPORTED_AUTH = "yadinassi: authentication options --user/--psw are not supported"
@@ -46,7 +47,7 @@ def _has_empty_database_option(arguments: list[str]) -> bool:
                for argument, following in _option_arguments(arguments))
 
 
-def repl(interpreter: Interpreter) -> int:
+def repl(interpreter: Interpreter, *, application=None) -> int:
     interactive = sys.stdin.isatty()
     read_line = input
     if interactive:
@@ -64,7 +65,8 @@ def repl(interpreter: Interpreter) -> int:
         except EOFError:
             if buffer:
                 try:
-                    interpreter.execute(buffer, "<консоль>")
+                    owner = interpreter if application is None else application
+                    owner.execute(buffer, "<консоль>")
                 except BSLError as error:
                     print(error, file=sys.stderr)
                     had_error = True
@@ -95,9 +97,10 @@ def repl(interpreter: Interpreter) -> int:
             had_error = True
             buffer = ""
             continue
-        buffer = ""
+        text, buffer = buffer, ""
         try:
-            result = interpreter.execute_program(program)
+            result = (interpreter.execute_program(program) if application is None
+                      else application.execute(text, "<консоль>"))
             if result is not None:
                 try:
                     presentation = to_string(result)
@@ -135,6 +138,8 @@ def main(argv: list[str] | None = None) -> int:
                                      allow_abbrev=False,
                                      epilog="UI: yadinassi --ui --f SQLITE_FILE [--open-browser]. The database must already grant a supported UI profile.")
     parser.add_argument("file", nargs="?", help="файл BSL для исполнения; '-' — стандартный ввод")
+    parser.add_argument("--emit-python", metavar="DIRECTORY",
+                        help="сохранить Python-код default backend без исполнения BSL; нужен один файл")
     parser.add_argument("-c", "-с", "--command", help="код BSL для исполнения")
     parser.add_argument("--f", metavar="SQLITE_FILE",
                         help="файл SQLite базы yadinassi с конфигурацией и данными")
@@ -148,13 +153,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--module-runtime", choices=("managed-client-server-v1",),
                         help="явный runtime общих модулей и приложения; импорт не исполняет код")
     parser.add_argument("--inactive", action="store_true", help="сохранить конфигурацию без активации исполнения")
-    parser.add_argument("--execution-backend", choices=("interpreter", "hybrid", "compiled-strict"), default="compiled-strict",
-                        help="standalone execution: Python-translated compiled-strict (default); explicit interpreter oracle or hybrid")
+    backend = parser.add_mutually_exclusive_group()
+    backend.add_argument("--execution-backend", choices=("python-direct",), default="python-direct",
+                         help="direct Python execution (the only supported backend)")
     parser.add_argument("--encoding", default="utf-8-sig", help="кодировка файла (по умолчанию UTF-8)")
     parser.add_argument("--preprocessor-profile", choices=COMPILATION_PROFILES, default="standalone",
                         help="профиль условной компиляции (по умолчанию standalone)")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    from .configuration_profile_import import PROFILES
+    from .configuration.configuration_profile_import import PROFILES
     parser.add_argument('--source-profile', choices=PROFILES,
                         help='explicit closed source grant; default legacy, never auto-detected')
     parser.add_argument('--check-xml', metavar='DIRECTORY',
@@ -183,8 +189,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--source-compatibility-target', metavar='VERSION',
                         help='явный экспериментальный AppVersion target, не установленная версия 1С')
     args = parser.parse_args(arguments)
-    from .execution_policy import execution_backend_policy
+    from .execution.execution_policy import execution_backend_policy
     with execution_backend_policy(args.execution_backend):
+        if args.emit_python is not None:
+            from .cli_support.cli_emit_python import run
+            return run(args, parser)
         return _run_selected(args, parser)
 
 
@@ -209,19 +218,19 @@ def _run_selected(args, parser):
             parser.error('--source-catalog-records/--source-document-records/--source-document-sections требует scratch-базу')
         if (args.source_scratch_db or args.open_source_scratch_db) and not args.run_startup:
             parser.error('--source-scratch-db/--open-source-scratch-db требует --run-startup')
-        from .configuration_source import load_source_directory, load_source_archive, save_source_archive
-        from .configuration_source_runtime import SourceApplication
+        from .configuration.configuration_source import load_source_directory, load_source_archive, save_source_archive
+        from .configuration.configuration_source_runtime import SourceApplication
         application = None
         try:
-            from .source_constant_store import SourceConstantStore
+            from .db.metadata.source_constant_store import SourceConstantStore
             if args.source_catalog_records:
-                from .source_catalog_store import SourceCatalogStore
+                from .db.catalog.source_catalog_store import SourceCatalogStore
                 SourceConstantStore = SourceCatalogStore
             if args.source_document_records:
-                from .source_document_store import SourceDocumentStore
+                from .db.document.source_document_store import SourceDocumentStore
                 SourceConstantStore = SourceDocumentStore
             if args.source_document_sections:
-                from .source_document_section_store import SourceDocumentSectionStore
+                from .db.document.source_document_section_store import SourceDocumentSectionStore
                 SourceConstantStore = SourceDocumentSectionStore
             if args.configuration_source is None:
                 source = SourceConstantStore.load_source(args.open_source_scratch_db)
@@ -264,13 +273,13 @@ def _run_selected(args, parser):
 
     demo = args.create_demo_db is not None
     main_demo = False
-    from .configuration_diagnostics import from_exception
+    from .configuration.configuration_diagnostics import from_exception
     if args.report_json and args.check_xml is None:
         parser.error('--report-json requires --check-xml')
     if args.check_xml is not None:
         if args.create_db is not None or demo or args.import_xml is not None or args.f is not None or args.file is not None or args.command is not None:
             parser.error('--check-xml cannot be combined with creation or execution')
-        from .configuration_profile_import import prepare_directory
+        from .configuration.configuration_profile_import import prepare_directory
         import json
         try:
             prepared = prepare_directory(args.check_xml, profile=args.source_profile or 'legacy',
@@ -297,8 +306,8 @@ def _run_selected(args, parser):
             parser.error("импорт конфигурации не совмещается с исполнением или --f")
         if demo and (args.inactive or args.numbering_policy is not None or args.module_runtime is not None):
             parser.error("--create-demo-db не совмещается с --inactive или --numbering-policy")
-        from .configuration_import import read_configuration_directory
-        from .configuration_profile_import import prepare_directory, create_prepared
+        from .configuration.configuration_import import read_configuration_directory
+        from .configuration.configuration_profile_import import prepare_directory, create_prepared
         try:
             if demo:
                 configuration = read_configuration_directory(args.import_xml)
@@ -307,8 +316,8 @@ def _run_selected(args, parser):
                 # failure never falls back to weaker legacy admission.
                 main_demo = 'InventoryApplication.xml' in configuration
                 if main_demo:
-                    from .configuration_profile_import import prepare_files
-                    from .configuration_main_demo import PROFILE as MAIN_DEMO
+                    from .configuration.configuration_profile_import import prepare_files
+                    from .configuration.configuration_main_demo import PROFILE as MAIN_DEMO
                     prepared = prepare_files(configuration, profile=MAIN_DEMO)
             else:
                 prepared = prepare_directory(args.import_xml, profile=args.source_profile or 'legacy',
@@ -316,7 +325,7 @@ def _run_selected(args, parser):
                     activate=not args.inactive)
                 configuration = prepared.configuration
                 if prepared.diagnostics:
-                    from .configuration_diagnostics import ImportRefusal
+                    from .configuration.configuration_diagnostics import ImportRefusal
                     raise ImportRefusal(prepared.diagnostics[0])
         except (BackendError, BSLError, ValueError, OSError) as error:
             diagnostic = from_exception(error)
@@ -325,7 +334,7 @@ def _run_selected(args, parser):
             return 1
         try:
             if demo:
-                from .sqlite_catalog import SQLiteCatalogBackend
+                from .db.sqlite.sqlite_catalog import SQLiteCatalogBackend
                 context = (create_prepared(args.create_demo_db, prepared) if main_demo else
                            SQLiteCatalogBackend.create_demo_products(args.create_demo_db, configuration))
             else:
@@ -347,7 +356,7 @@ def _run_selected(args, parser):
         else:
             print("Created inactive SQLite archive." if args.inactive else "Created SQLite database.")
         if args.inactive:
-            from .configuration_diagnostics import activation_diagnostics
+            from .configuration.configuration_diagnostics import activation_diagnostics
             for diagnostic in activation_diagnostics(configuration):
                 print("Activation issue: " + diagnostic.text())
         return 0
@@ -365,17 +374,20 @@ def _run_selected(args, parser):
     application = None
     try:
         if args.module_runtime is not None:
-            from .configuration_runtime import ConfigurationApplication
-            application = ConfigurationApplication.from_database(database_context)
+            from .configuration.configuration_runtime import ConfigurationApplication
+            application = ConfigurationApplication._from_cli_database(database_context)
             interpreter = application.interpreter
         else:
             interpreter = Interpreter(encoding=args.encoding, database_context=database_context,
                                       compilation_profile=args.preprocessor_profile,
                                       execution_backend=args.execution_backend)
-    except (BSLError, ValueError, TypeError):
+            # This CLI owns the activation; opening SQLite is not equivalent
+            # to allowing embedded Python callbacks between BSL instructions.
+            interpreter._standalone_script = True
+    except (BSLError, ValueError, TypeError, BoundaryViolation) as error:
         if database_context is not None:
             database_context.close()
-        print("yadinassi: configuration runtime refused", file=sys.stderr)
+        print(f"yadinassi: configuration runtime refused: {error}", file=sys.stderr)
         return 1
     except BackendError as error:
         if database_context is not None:
@@ -385,8 +397,9 @@ def _run_selected(args, parser):
     try:
         if application is not None and not application.start():
             return 0
+        owner = interpreter if application is None else application
         if args.command is not None:
-            interpreter.execute(args.command, "<команда>")
+            owner.execute(args.command, "<команда>")
         elif args.file is not None:
             if args.file == "-":
                 text = sys.stdin.read()
@@ -394,9 +407,9 @@ def _run_selected(args, parser):
             else:
                 text = Path(args.file).read_text(encoding=args.encoding)
                 source = args.file
-            interpreter.execute(text, source)
+            owner.execute(text, source)
         else:
-            result = repl(interpreter)
+            result = repl(interpreter) if application is None else repl(interpreter, application=application)
             if result:
                 return result
             interpreter.ensure_complete()
@@ -411,7 +424,7 @@ def _run_selected(args, parser):
     except BSLError as error:
         print(error, file=sys.stderr)
         return 1
-    except (OSError, UnicodeError, LookupError, ValueError, TypeError) as error:
+    except (OSError, UnicodeError, LookupError, ValueError, TypeError, BoundaryViolation) as error:
         print(f"yadinassi: {error}", file=sys.stderr)
         return 1
     except RecursionError:
@@ -421,7 +434,10 @@ def _run_selected(args, parser):
         print("\nИсполнение прервано.", file=sys.stderr)
         return 130
     finally:
-        interpreter.close()
+        if application is None:
+            interpreter.close()
+        else:
+            application.close(force=True)
         if database_context is not None:
             database_context.close()
     return 0

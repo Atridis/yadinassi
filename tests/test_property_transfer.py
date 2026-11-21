@@ -6,20 +6,20 @@ import unittest
 from unittest import mock
 
 from yadinassi import Interpreter, BSLError
-from yadinassi import property_transfer as policy
-from yadinassi.catalog_backend import BackendError
-from yadinassi.catalogs import BSLCatalogObject
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.dates import date
-from yadinassi.documents import BSLDocumentObject
-from yadinassi.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, target_context
-from yadinassi.structures import BSLStructure, BSLFixedStructure, fill_property_values
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers, BSLAllowedLength
-from yadinassi.value_tables import BSLValueTable, BSLValueTableRow
-from yadinassi.value_trees import BSLValueTree
-from yadinassi.values import BSLArray
+from yadinassi.collections import property_transfer as policy
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.catalog.catalogs import BSLCatalogObject
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.temporal.dates import date
+from yadinassi.db.document.documents import BSLDocumentObject
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, target_context
+from yadinassi.collections.structures import BSLStructure, BSLFixedStructure, fill_property_values
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers, BSLAllowedLength
+from yadinassi.collections.value_tables import BSLValueTable, BSLValueTableRow
+from yadinassi.collections.value_trees import BSLValueTree
+from yadinassi.types.values import BSLArray
 from catalog_sections_fixture import configuration_files_with_sections
 from test_document_configuration_xml import document_files
 
@@ -48,6 +48,26 @@ class PropertyTransferRowTests(unittest.TestCase):
                 fill_property_values(target, source)
                 self.assertEqual((target.get_member('Text'), target.get_member('Amount')), ('new', D(4)))
                 self.assertEqual(len(target.cells), 2)
+
+    def test_table_fill_accepts_rows_beyond_former_owner_limit(self):
+        table = BSLValueTable()
+        table.columns.add('Amount')
+        first = table.add()
+        first.set(0, D(7))
+        for _ in range(99_999):
+            table.add()
+        last = table.add()
+        fill_property_values(last, first)
+        self.assertEqual(last.get_member('Amount'), D(7))
+        self.assertEqual(table.count(), D(100_001))
+
+    def test_table_fill_accepts_columns_beyond_former_width_limit(self):
+        table = BSLValueTable()
+        for i in range(4097):
+            table.columns.add(f'C{i}')
+        target = table.add()
+        fill_property_values(target, BSLStructure('C4096', D(7)))
+        self.assertEqual(target.get(4096), D(7))
 
     def test_both_row_families_to_structure_without_adding_properties(self):
         for family in ('table', 'tree'):
@@ -399,7 +419,7 @@ class PropertyTransferLinuxRowTests(unittest.TestCase):
             self.assertEqual(target.get_member('First'), D(10))
 
     def test_interpreter_linux_target_selects_measured_order_without_new_dispatch(self):
-        vm = Interpreter(native_target=LINUX_8_3_27_1508)
+        vm = Interpreter(native_target=LINUX_8_3_27_1508, allow_extensions=True)
         vm.execute('T=New ValueTable;T.Columns.Add("First");T.Columns.Add("Last");'
                    'R=T.Add();R.First=1;R.Last="old";S=New Structure("First,Last",10,"new");'
                    'Try ЗаполнитьЗначенияСвойств(R,S,"First,Missing,Last");Except Caught=True;EndTry;')
@@ -675,7 +695,7 @@ class PropertyTransferObjectTests(unittest.TestCase):
 
 class PropertyTransferInterpreterTests(unittest.TestCase):
     def test_bilingual_calls_omissions_and_identity_dispatch(self):
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         vm.execute('T=New ValueTable;T.Columns.Add("Text");R=T.Add();S=New Structure("Text","new");'
                    'FillPropertyValues(R,S,,);ЗаполнитьЗначенияСвойств(S,R,Undefined,Undefined);')
         self.assertEqual(vm.variables['r'].get_member('Text'), 'new')

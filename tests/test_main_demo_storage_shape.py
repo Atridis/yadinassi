@@ -5,9 +5,9 @@ from uuid import UUID
 import sqlite3
 import unittest
 from unittest import mock
-from yadinassi.catalog_backend import BackendError, CatalogSchema, FieldSchema, TabularSectionSchema
-from yadinassi.enum_storage_values import EnumValueDomain
-from yadinassi import sqlite_main_demo_profile as profile
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogSchema, FieldSchema, TabularSectionSchema
+from yadinassi.db.metadata.enum_storage_values import EnumValueDomain
+from yadinassi.db.sqlite import sqlite_main_demo_profile as profile
 
 class MainDemoStorageShapeTests(unittest.TestCase):
     def fixture(self):

@@ -91,7 +91,9 @@ class BitwiseShiftRightTests(unittest.TestCase):
         self.assertEqual(self.vm.variables['recovered'], 3)
 
     def test_registration_is_per_interpreter_and_alias(self):
-        self.vm.register_function('BitwiseShiftRight', lambda value, offset: 'override')
-        self.assertEqual(self.vm.execute('BitwiseShiftRight(26, 3)'), 'override')
-        self.assertEqual(self.vm.execute('ПобитовыйСдвигВправо(26, 3)'), 3)
-        self.assertEqual(Interpreter().execute('BitwiseShiftRight(26, 3)'), 3)
+        extended = Interpreter(allow_extensions=True)
+        self.addCleanup(extended.close)
+        extended.register_function('BitwiseShiftRight', lambda value, offset: 'override')
+        self.assertEqual(extended.execute('BitwiseShiftRight(26, 3)'), 'override')
+        self.assertEqual(extended.execute('ПобитовыйСдвигВправо(26, 3)'), 3)
+        self.assertEqual(self.vm.execute('BitwiseShiftRight(26, 3)'), 3)

@@ -1,6 +1,6 @@
 """Closed AST projections, not source rewriting or native Object compatibility."""
 import unittest
-from yadinassi.form_program import compile_form_module
+from yadinassi.forms.form_program import compile_form_module
 from yadinassi.syntax import ast
 
 class ObjectProgramTests(unittest.TestCase):

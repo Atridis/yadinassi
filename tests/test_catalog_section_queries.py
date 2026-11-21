@@ -6,12 +6,12 @@ import unittest
 from unittest.mock import patch
 
 import test_catalog_tabular_runtime as fixtures
-from yadinassi.catalog_backend import (
+from yadinassi.db.catalog.catalog_backend import (
     BackendError, CatalogKey, CatalogScanRequest, CatalogSectionPage,
     CatalogSectionRecord, TabularRow,
 )
-from yadinassi.queries import BSLQuery, _section_value
-from yadinassi.sqlite_catalog import _View
+from yadinassi.db.query.queries import BSLQuery, _section_value
+from yadinassi.db.sqlite.sqlite_catalog import _View
 
 
 class CatalogSectionQueryTests(unittest.TestCase):
@@ -202,7 +202,7 @@ T=Q.Execute().Unload();Message(T[0].Owner=O.Ref);''')
 
     def test_top_and_selective_filter_cannot_reduce_source_preflight_budget(self):
         self.seed()
-        with patch('yadinassi.sqlite_catalog._MAX_ROWS', 2):
+        with patch('yadinassi.db.sqlite.sqlite_catalog._MAX_ROWS', 2):
             with self.assertRaises(BackendError):
                 self.query('SELECT TOP 1 Text FROM Catalog.Products.Lines WHERE Amount=99').execute()
         view = self.context.backend.begin_read(); view.close()

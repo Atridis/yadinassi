@@ -155,9 +155,9 @@ class ConfigurationReferenceBrowserContractTests(unittest.TestCase):
         self.assertNotIn('return value.error', diagnostic)
 
     def test_source_binding_includes_new_runtime_example_and_shared_application(self):
-        self.requires("'examples/configuration-reference-application'", "'yadinassi/configuration_reference_profile.py'",
-                      "'yadinassi/configuration_references.py'", "'yadinassi/configuration_reference_choice.py'",
-                      "'yadinassi/form_references.py'", "'yadinassi/ui/configuration_app.py'",
+        self.requires("'examples/configuration-reference-application'", "'yadinassi/configuration/configuration_reference_profile.py'",
+                      "'yadinassi/configuration/configuration_references.py'", "'yadinassi/configuration/configuration_reference_choice.py'",
+                      "'yadinassi/forms/form_references.py'", "'yadinassi/ui/configuration_app.py'",
                       "'frontend/form/src/attachment.mjs'", "'frontend/configuration/src/app.mjs'",
                       "'tests/test_configuration_reference_browser_qa_contract.py'", "'required_source_not_tracked'",
                       "tree:git('rev-parse','HEAD^{tree}')", 'source[name]=sha256(await readFile',

@@ -7,9 +7,9 @@ import unittest
 from unittest.mock import patch
 
 from test_main_demo_configuration import source
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_main_demo import PROFILE, import_main_demo_configuration
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_main_demo import PROFILE, import_main_demo_configuration
+from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.ui.main_demo import document_forms, require_backend
 
 

@@ -413,8 +413,8 @@ from decimal import Decimal
 from uuid import UUID
 import sys
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import CatalogKey
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.db.catalog.catalog_backend import CatalogKey
+from yadinassi.db.database_context import SQLiteDBContext
 with SQLiteDBContext(sys.argv[1]) as context:
     vm = Interpreter(database_context=context)
     try:

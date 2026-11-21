@@ -12,12 +12,13 @@ import sys
 import unittest
 from unittest.mock import patch
 
-from yadinassi import BSLError, Interpreter, value_lists
-from yadinassi.dates import BSLDate, literal_date
-from yadinassi.maps import BSLMap
-from yadinassi.structures import BSLStructure
-from yadinassi.value_lists import BSLValueList, BSLValueListItem
-from yadinassi.values import BSLArray, BSLType, NULL, to_string
+from yadinassi import BSLError, Interpreter
+from yadinassi.collections import value_lists
+from yadinassi.temporal.dates import BSLDate, literal_date
+from yadinassi.collections.maps import BSLMap
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.types.values import BSLArray, BSLType, NULL, to_string
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -222,7 +223,7 @@ class ValueListItemStringTests(unittest.TestCase):
     def test_huge_numeric_exponents_reject_without_expansion(self):
         program = """
 from decimal import Decimal
-from yadinassi.value_lists import BSLValueList
+from yadinassi.collections.value_lists import BSLValueList
 owner = BSLValueList()
 for spelling in ('1e1000000000', '-1e1000000000', '1e-1000000000'):
     item = owner.add(Decimal(spelling))

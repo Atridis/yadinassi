@@ -10,8 +10,8 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.values import BSLType, number, to_string
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.types.values import BSLType, number, to_string
 
 
 class NumericPresentationTests(unittest.TestCase):

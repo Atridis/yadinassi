@@ -12,10 +12,10 @@ from unittest.mock import patch
 
 from legacy_demo_fixture import legacy_demo_files
 from yadinassi import cli
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_import import read_configuration_directory
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_import import read_configuration_directory
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from yadinassi.ui.catalog_editor import CatalogEditorApplication
 from yadinassi.ui.protocol import CatalogRef
 
@@ -152,7 +152,7 @@ class DemoCreationCLITests(unittest.TestCase):
         self.assertFalse(self.database.exists())
 
     def test_source_reader_refusal_never_reaches_creation(self):
-        with patch('yadinassi.configuration_import.read_configuration_directory',
+        with patch('yadinassi.configuration.configuration_import.read_configuration_directory',
                    side_effect=ValueError('/PRIVATE/source')), \
              patch.object(SQLiteCatalogBackend, 'create_main_demo') as create:
             result = self.run_cli()
@@ -168,7 +168,7 @@ class DemoCreationCLITests(unittest.TestCase):
                    base + ['-c', 'Message(1);'], base + ['missing.bsl']]
         for arguments in invalid:
             with self.subTest(arguments=arguments), redirect_stderr(StringIO()), \
-                 patch('yadinassi.configuration_import.read_configuration_directory') as read, \
+                 patch('yadinassi.configuration.configuration_import.read_configuration_directory') as read, \
                  self.assertRaises(SystemExit) as error:
                 cli.main(arguments)
             self.assertEqual(error.exception.code, 2)
@@ -242,7 +242,7 @@ class DemoCreationCLITests(unittest.TestCase):
                     self.assertEqual(backend.export_configuration(), read_configuration_directory(SOURCE))
 
     def test_help_describes_demo_without_creating_or_reading_sources(self):
-        with patch('yadinassi.configuration_import.read_configuration_directory') as read, \
+        with patch('yadinassi.configuration.configuration_import.read_configuration_directory') as read, \
              redirect_stdout(StringIO()) as output, self.assertRaises(SystemExit) as error:
             cli.main(['--help'])
         self.assertEqual(error.exception.code, 0)

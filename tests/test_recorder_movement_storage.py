@@ -3,10 +3,10 @@ from decimal import Decimal
 import sqlite3
 import unittest
 from uuid import UUID,uuid4
-from yadinassi.catalog_backend import BackendError,FieldSchema
-from yadinassi.document_backend import DocumentKey
-from yadinassi.document_movements import RecorderRegisterSchema,RecorderReplacement,RecorderMovementRow
-from yadinassi.sqlite_recorder_movements import RecorderMovementPort,RECORDER_DDL,schema_data,_json
+from yadinassi.db.catalog.catalog_backend import BackendError,FieldSchema
+from yadinassi.db.document.document_backend import DocumentKey
+from yadinassi.db.document.document_movements import RecorderRegisterSchema,RecorderReplacement,RecorderMovementRow
+from yadinassi.db.sqlite.sqlite_recorder_movements import RecorderMovementPort,RECORDER_DDL,schema_data,_json
 
 class RecorderStorageTests(unittest.TestCase):
     def setUp(self):
@@ -97,8 +97,8 @@ class RecorderJournalTests(RecorderStorageTests):
                 self.closed=True
         self.View=View
     def test_root_batch_assigns_distinct_existing_child_ids(self):
-        from yadinassi.sqlite_transactions import UnitOfWork,_child
-        from yadinassi.transaction_backend import TransactionRequest
+        from yadinassi.db.sqlite.sqlite_transactions import UnitOfWork,_child
+        from yadinassi.db.transaction_backend import TransactionRequest
         other=DocumentKey(self.db,self.doc,uuid4())
         self.c.execute('INSERT INTO document_record VALUES(?,?)',(str(self.doc),str(other.record_id)))
         op=uuid4();tx=UnitOfWork(self.View(op))
@@ -110,8 +110,8 @@ class RecorderJournalTests(RecorderStorageTests):
         self.assertEqual(child_ids,{str(_child(op,0)),str(_child(op,1))})
         self.assertIsNotNone(self.c.execute('SELECT 1 FROM unit_of_work_receipt WHERE operation_id=?',(str(op),)).fetchone())
     def test_outer_stage_failure_keeps_other_partition_and_root_bookkeeping(self):
-        from yadinassi.sqlite_transactions import UnitOfWork
-        from yadinassi.transaction_backend import TransactionRequest
+        from yadinassi.db.sqlite.sqlite_transactions import UnitOfWork
+        from yadinassi.db.transaction_backend import TransactionRequest
         tx=UnitOfWork(self.View(uuid4()));tx.stage(TransactionRequest('recorder_replace',self.request()))
         missing=DocumentKey(self.db,self.doc,uuid4())
         with self.assertRaises(BackendError):tx.stage(TransactionRequest('recorder_replace',self.request(missing)))
@@ -120,8 +120,8 @@ class RecorderJournalTests(RecorderStorageTests):
         tx.rollback()
         self.c.execute('BEGIN');self.assertEqual(self.port.read(self.reg,self.key).revision,0)
     def test_same_partition_repeated_write_requires_fresh_snapshot(self):
-        from yadinassi.sqlite_transactions import UnitOfWork
-        from yadinassi.transaction_backend import TransactionRequest
+        from yadinassi.db.sqlite.sqlite_transactions import UnitOfWork
+        from yadinassi.db.transaction_backend import TransactionRequest
         tx=UnitOfWork(self.View(uuid4()));old=self.request();tx.stage(TransactionRequest('recorder_replace',old))
         with self.assertRaises(BackendError):tx.stage(TransactionRequest('recorder_replace',old))
         tx.stage(TransactionRequest('recorder_replace',self.request(rows=())))
@@ -130,12 +130,12 @@ class RecorderJournalTests(RecorderStorageTests):
         tx.rollback()
     def test_unactivated_backend_refuses_before_recorder_table_access(self):
         from types import SimpleNamespace
-        from yadinassi.sqlite_transactions import _recorder_port
+        from yadinassi.db.sqlite.sqlite_transactions import _recorder_port
         with self.assertRaises(BackendError):_recorder_port(SimpleNamespace(_backend=SimpleNamespace()))
     def test_root_recovery_uses_immutable_child_receipt_after_later_replace(self):
         from types import SimpleNamespace
-        from yadinassi.sqlite_transactions import UnitOfWork,resolve
-        from yadinassi.transaction_backend import TransactionRequest
+        from yadinassi.db.sqlite.sqlite_transactions import UnitOfWork,resolve
+        from yadinassi.db.transaction_backend import TransactionRequest
         operation=uuid4();request=TransactionRequest('recorder_replace',self.request())
         tx=UnitOfWork(self.View(operation));tx.stage(request);expected=tx.commit()
         self.c.execute('BEGIN');self.port.replace(uuid4(),self.request(rows=()));self.c.execute('COMMIT')
@@ -146,8 +146,8 @@ class RecorderJournalTests(RecorderStorageTests):
         self.assertEqual(resolve(backend,operation,(request,)),expected)
     def test_root_recovery_rejects_missing_child_without_replay(self):
         from types import SimpleNamespace
-        from yadinassi.sqlite_transactions import UnitOfWork,resolve
-        from yadinassi.transaction_backend import TransactionRequest
+        from yadinassi.db.sqlite.sqlite_transactions import UnitOfWork,resolve
+        from yadinassi.db.transaction_backend import TransactionRequest
         op=uuid4();request=TransactionRequest('recorder_replace',self.request());tx=UnitOfWork(self.View(op));tx.stage(request);tx.commit()
         self.c.execute('DELETE FROM recorder_movement_receipt')
         def begin_read():
@@ -156,15 +156,15 @@ class RecorderJournalTests(RecorderStorageTests):
         self.assertEqual(self.c.execute('SELECT COUNT(*) FROM recorder_movement_receipt').fetchone()[0],0)
     def test_fresh_only_profile_cannot_enter_additive_update_planner(self):
         from unittest.mock import patch,Mock
-        from yadinassi.sqlite_configuration_update import prepare
+        from yadinassi.db.sqlite.sqlite_configuration_update import prepare
         backend=Mock(format_version=13,activated=True)
-        with patch('yadinassi.configuration_evolution.canonical',return_value=object()), patch('yadinassi.sqlite_catalog.SQLiteCatalogBackend',return_value=backend), patch('yadinassi.sqlite_migration_plan._open') as writer:
+        with patch('yadinassi.configuration.configuration_evolution.canonical',return_value=object()), patch('yadinassi.db.sqlite.sqlite_catalog.SQLiteCatalogBackend',return_value=backend), patch('yadinassi.db.sqlite.sqlite_migration_plan._open') as writer:
             with self.assertRaises(BackendError):prepare('unused',object(),maintenance=True)
             backend.begin_read.assert_not_called();writer.assert_not_called()
             backend.close.assert_called_once()
     def test_group_savepoint_rolls_back_rows_and_all_root_journal_fields(self):
-        from yadinassi.sqlite_transactions import UnitOfWork
-        from yadinassi.transaction_backend import TransactionRequest
+        from yadinassi.db.sqlite.sqlite_transactions import UnitOfWork
+        from yadinassi.db.transaction_backend import TransactionRequest
         tx=UnitOfWork(self.View(uuid4()))
         with self.assertRaises(RuntimeError):
             with tx.savepoint():
@@ -175,17 +175,17 @@ class RecorderJournalTests(RecorderStorageTests):
         self.assertEqual(self.port.read(self.reg,self.key).rows,())
         tx.stage(TransactionRequest('recorder_replace',self.request()));self.assertEqual(len(tx.commit()),1)
     def test_commit_inside_operation_group_is_forbidden(self):
-        from yadinassi.sqlite_transactions import UnitOfWork
-        from yadinassi.transaction_backend import TransactionRequest
+        from yadinassi.db.sqlite.sqlite_transactions import UnitOfWork
+        from yadinassi.db.transaction_backend import TransactionRequest
         tx=UnitOfWork(self.View(uuid4()))
         with tx.savepoint():
             tx.stage(TransactionRequest('recorder_replace',self.request()))
             with self.assertRaises(BackendError):tx.commit()
         self.assertEqual(len(tx.commit()),1)
     def test_posted_state_requires_document_write_in_same_root(self):
-        from yadinassi.sqlite_transactions import UnitOfWork
-        from yadinassi.sqlite_document_posting_state import PostedIntent
-        from yadinassi.transaction_backend import TransactionRequest
+        from yadinassi.db.sqlite.sqlite_transactions import UnitOfWork
+        from yadinassi.db.sqlite.sqlite_document_posting_state import PostedIntent
+        from yadinassi.db.transaction_backend import TransactionRequest
         tx=UnitOfWork(self.View(uuid4()))
         with self.assertRaises(BackendError):tx.stage(TransactionRequest('document_set_posted',PostedIntent(self.key,1,True)))
         self.assertEqual(tx.requests,())

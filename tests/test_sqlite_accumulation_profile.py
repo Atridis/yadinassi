@@ -9,14 +9,14 @@ import tempfile
 import unittest
 from uuid import uuid4
 
-from yadinassi.accumulation_movements import (AccumulationDirection, AccumulationMovementRow,
+from yadinassi.db.registers.accumulation_movements import (AccumulationDirection, AccumulationMovementRow,
     AccumulationReplacement)
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_accumulation import import_accumulation_configuration, PROFILE
-from yadinassi.document_backend import DocumentKey, DocumentDraft
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_document_posting_state import PostedIntent
-from yadinassi.transaction_backend import TransactionRequest
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_accumulation import import_accumulation_configuration, PROFILE
+from yadinassi.db.document.document_backend import DocumentKey, DocumentDraft
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_document_posting_state import PostedIntent
+from yadinassi.db.transaction_backend import TransactionRequest
 from test_configuration_posting import wrap
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -91,8 +91,8 @@ class AccumulationProfileTests(unittest.TestCase):
         with self.assertRaises(BackendError):SQLiteCatalogBackend(self.path)
     def test_migration_and_additive_update_are_refused(self):
         self.create()
-        from yadinassi.sqlite_migration_plan import prepare
-        from yadinassi.sqlite_configuration_update import prepare as update
+        from yadinassi.db.sqlite.sqlite_migration_plan import prepare
+        from yadinassi.db.sqlite.sqlite_configuration_update import prepare as update
         with self.assertRaises(BackendError):prepare(self.path,maintenance=True)
         with self.assertRaises(BackendError):update(self.path,self.config,maintenance=True)
     def test_same_root_stages_document_posted_and_accumulation(self):
@@ -166,18 +166,18 @@ class AccumulationProfileTests(unittest.TestCase):
 
     def test_interpreter_is_activated_but_plain_document_editor_is_not(self):
         from yadinassi import Interpreter
-        from yadinassi.database_context import SQLiteDBContext
-        from yadinassi.configuration_document import DocumentObjectSession
+        from yadinassi.db.database_context import SQLiteDBContext
+        from yadinassi.configuration.configuration_document import DocumentObjectSession
         context=SQLiteDBContext.create_accumulation(self.path,self.config);self.addCleanup(context.close)
         vm=Interpreter(database_context=context);self.addCleanup(vm.close)
         self.assertIsNotNone(vm.execute('Documents.OwnedAccumulationDoc'))
         with self.assertRaises(BackendError):DocumentObjectSession(context,self.config.documents[0],dict(self.config.files))
         self.assertEqual(self.sql('SELECT COUNT(*) FROM document_record'),[(0,)])
     def test_direct_document_adapter_uses_source_bound_accumulation_runtime(self):
-        from yadinassi.database_context import SQLiteDBContext
-        from yadinassi.metadata import BSLMetadata
-        from yadinassi.catalogs import BSLCatalogs
-        from yadinassi.documents import BSLDocuments
+        from yadinassi.db.database_context import SQLiteDBContext
+        from yadinassi.configuration.metadata import BSLMetadata
+        from yadinassi.db.catalog.catalogs import BSLCatalogs
+        from yadinassi.db.document.documents import BSLDocuments
         context=SQLiteDBContext.create_accumulation(self.path,self.config);self.addCleanup(context.close)
         metadata=BSLMetadata(context);catalogs=BSLCatalogs(metadata._catalogs,context)
         docs=BSLDocuments(metadata._documents,context,catalogs)
@@ -193,8 +193,8 @@ class AccumulationProfileTests(unittest.TestCase):
         with closing(SQLiteCatalogBackend(self.path)) as other:self.assertEqual(other.accumulation_configuration,self.config)
         with closing(b.begin_read()) as view:self.assertEqual(view.database_id,b.database_id)
     def test_well_formed_extra_catalog_is_outside_source_grant(self):
-        from yadinassi.catalog_backend import CatalogSchema
-        from yadinassi import sqlite_catalog as storage
+        from yadinassi.db.catalog.catalog_backend import CatalogSchema
+        from yadinassi.db.sqlite import sqlite_catalog as storage
         b=self.create();schema=CatalogSchema(uuid4(),'Unowned',9,32)
         layout=storage.build_layout((schema,))
         with closing(sqlite3.connect(self.path)) as c:
@@ -222,13 +222,13 @@ class AccumulationProfileTests(unittest.TestCase):
         with self.assertRaises(BackendError):SQLiteCatalogBackend(self.path)
     def test_host_storage_preflight_rejects_total_source_budget_before_file(self):
         from unittest.mock import patch
-        from yadinassi.sqlite_accumulation_profile import _preflight_config
+        from yadinassi.db.sqlite.sqlite_accumulation_profile import _preflight_config
         oversized=replace(self.config,files=tuple((str(n),b'x'*(1024*1024)) for n in range(9)))
         with self.assertRaises(BackendError):_preflight_config(oversized)
         self.assertFalse(self.path.exists())
     def test_host_storage_preflight_rejects_aggregate_sections(self):
-        from yadinassi.catalog_backend import TabularSectionSchema
-        from yadinassi.sqlite_accumulation_profile import _preflight_config
+        from yadinassi.db.catalog.catalog_backend import TabularSectionSchema
+        from yadinassi.db.sqlite.sqlite_accumulation_profile import _preflight_config
         docs=tuple(replace(self.config.documents[0],identity=uuid4(),name='Doc'+str(n),
             tabular_sections=tuple(TabularSectionSchema(uuid4(),'Section'+str(i)) for i in range(16))) for n in range(33))
         with self.assertRaises(BackendError):_preflight_config(replace(self.config,documents=docs))

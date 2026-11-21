@@ -5,7 +5,7 @@ from uuid import uuid4
 import unittest
 
 import test_sqlite_catalog_backend as fixtures
-from yadinassi.catalog_backend import (BackendError, CatalogComparison,
+from yadinassi.db.catalog.catalog_backend import (BackendError, CatalogComparison,
     CatalogPredicate, CatalogOrder, CatalogScanRequest, CatalogKey)
 
 
@@ -35,33 +35,80 @@ class ScanTests(unittest.TestCase):
         view.close()
         with self.assertRaisesRegex(BackendError,'closed'):view.scan_catalog(self.product.identity,request)
 
-    def test_card_reads_reuse_one_schema_per_operation(self):
+    def test_card_reads_reuse_admitted_snapshot_schema(self):
         from unittest.mock import patch
-        import yadinassi.sqlite_catalog as storage
+        import yadinassi.db.sqlite.sqlite_catalog as storage
         self.seed(20)
         view = self.backend.begin_read()
         self.addCleanup(view.close)
         queries = []
         view._connection.set_trace_callback(queries.append)
+        # begin_read already admitted the pinned snapshot's schemas. Operators
+        # must reuse them without another SELECT or JSON schema decode.
         with patch.object(storage, '_schema', wraps=storage._schema) as parse_schema:
             def schema_reads():
                 return [query for query in queries
                         if query.startswith('SELECT definition FROM catalog_schema')]
             cards = view.select_catalog(self.product.identity)
             self.assertEqual(len(cards), 20)
-            self.assertEqual(len(schema_reads()), 1)
-            self.assertEqual(parse_schema.call_count, 1)
+            self.assertEqual(len(schema_reads()), 0)
+            self.assertEqual(parse_schema.call_count, 0)
             queries.clear(); parse_schema.reset_mock()
             page = view.scan_catalog(self.product.identity, CatalogScanRequest(
                 CatalogComparison('code', 'eq', '0019'), page_size=1))
             self.assertEqual(page.cards, (cards[-1],))
             self.assertIsNone(page.continuation)
-            self.assertEqual(len(schema_reads()), 1)
-            self.assertEqual(parse_schema.call_count, 1)
+            self.assertEqual(len(schema_reads()), 0)
+            self.assertEqual(parse_schema.call_count, 0)
             queries.clear(); parse_schema.reset_mock()
             self.assertEqual(view.read_catalog(cards[-1].key), cards[-1])
-            self.assertEqual(len(schema_reads()), 1)
-            self.assertEqual(parse_schema.call_count, 1)
+            self.assertEqual(len(schema_reads()), 0)
+            self.assertEqual(parse_schema.call_count, 0)
+
+    def test_count_sql_omits_only_unconditional_source_predicate(self):
+        from yadinassi.db.catalog.catalog_backend import CatalogAggregateRequest, CatalogNumericAggregateRequest
+        self.seed(5)
+        view = self.backend.begin_read()
+        self.addCleanup(view.close)
+        queries = []
+        view._connection.set_trace_callback(queries.append)
+        self.assertEqual(view.aggregate_catalog(self.product.identity, CatalogAggregateRequest()).count, 5)
+        queries.clear()
+        self.assertEqual(view.aggregate_catalog(self.product.identity, CatalogAggregateRequest()).count, 5)
+        table = view._source(self.product)[0]
+        self.assertIn('SELECT COUNT(*) FROM ' + table, queries)
+        result = view.aggregate_catalog(self.product.identity,
+            CatalogNumericAggregateRequest((('count', None),)))
+        self.assertEqual(result.values, (5,))
+        counts = [sql for sql in queries if sql.startswith('SELECT COUNT(*)')]
+        self.assertTrue(counts)
+        self.assertTrue(all(' WHERE 1' not in sql for sql in counts), counts)
+        view.close()
+        tx = self.backend.begin_write(uuid4())
+        self.addCleanup(tx.close)
+        queries.clear()
+        tx._connection.set_trace_callback(queries.append)
+        tx.create(self.draft(code='new'))
+        self.assertIn('SELECT COUNT(*) FROM ' + table, queries)
+
+    def test_v1_create_count_keeps_catalog_filter(self):
+        from test_sqlite_catalog_migration import MigrationTests
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+        from yadinassi.db.catalog.catalog_backend import CatalogDraft
+        fixture = MigrationTests()
+        fixture.setUp()
+        self.addCleanup(fixture.tearDown)
+        backend = SQLiteCatalogBackend(fixture.path)
+        self.addCleanup(backend.close)
+        tx = backend.begin_write(uuid4())
+        self.addCleanup(tx.close)
+        queries = []
+        tx._connection.set_trace_callback(queries.append)
+        tx.create(CatalogDraft(CatalogKey(backend.database_id, fixture.b, uuid4()),
+            'new', 'New', False, (CatalogKey(backend.database_id, fixture.a, fixture.ra),)))
+        expected = "SELECT COUNT(*) FROM catalog_record WHERE catalog_id='" + str(fixture.b) + "'"
+        self.assertIn(expected, queries)
+        self.assertNotIn('SELECT COUNT(*) FROM catalog_record', queries)
 
     def test_scan_schema_reuse_keeps_continuation_order_and_validation(self):
         self.seed()
@@ -77,7 +124,7 @@ class ScanTests(unittest.TestCase):
             self.assertEqual(len(page.cards), expected_length)
             codes.extend(card.code for card in page.cards)
             self.assertEqual(sum(query.startswith('SELECT definition FROM catalog_schema')
-                                 for query in queries), 1)
+                                 for query in queries), 0)
             request = replace(request, continuation=page.continuation)
         self.assertEqual(codes, ['0000', '0001', '0002', '0003', '0004'])
         self.assertIsNone(page.continuation)
@@ -148,21 +195,29 @@ class ScanTests(unittest.TestCase):
         tx.rollback()
 
 
-    def test_materialization_preflight_rejects_before_payload_fetch(self):
-        from unittest import mock
-        import yadinassi.sqlite_catalog as storage
-        self.seed();view=self.backend.begin_read();connection=view._connection
-        class Guard:
-            def execute(self,sql,*args):
-                if sql.startswith('SELECT record_id,revision'):
-                    raise AssertionError('payload materialized before resource refusal')
-                return connection.execute(sql,*args)
-            def __getattr__(self,name):return getattr(connection,name)
-        view._connection=Guard()
-        with mock.patch.object(storage,'_MAX_CONFIG_BYTES',1):
-            with self.assertRaisesRegex(BackendError,'unsupported'):
-                view.scan_catalog(self.product.identity,CatalogScanRequest())
-        view.close()
+    def test_catalog_reads_skip_separate_scalar_preflight_queries(self):
+        self.seed()
+        view=self.backend.begin_read()
+        self.addCleanup(view.close)
+        trace=[]
+        view._connection.set_trace_callback(trace.append)
+        cards=view.select_catalog(self.product.identity)
+        self.assertEqual(len(cards),5)
+        key=cards[0].key
+        trace.clear()
+        self.assertEqual(view.read_catalog(key),cards[0])
+        reads=[q for q in trace if q.startswith('SELECT record_id,revision,')]
+        self.assertEqual(len(reads),1, trace)
+        self.assertIn('AND record_id=',reads[0])
+        self.assertFalse(any('typeof(record_id)' in q or 'COALESCE(SUM(length(' in q for q in trace),trace)
+        for read in (
+            lambda: view.select_catalog(self.product.identity),
+            lambda: view.read_catalog_values(key,('code',)),
+            lambda: view.scan_catalog(self.product.identity,CatalogScanRequest()),
+        ):
+            trace.clear()
+            self.assertIsNotNone(read())
+            self.assertFalse(any('typeof(record_id)' in q or 'COALESCE(SUM(length(' in q for q in trace),trace)
 
     def test_large_decimal_coefficient_refuses_before_tuple_expansion(self):
         view=self.backend.begin_read();amount=self.product.fields[1].identity
@@ -173,8 +228,8 @@ class ScanTests(unittest.TestCase):
 
     def test_runtime_exact_find_reaches_late_row_and_refuses_ambiguous_description(self):
         from yadinassi import Interpreter
-        from yadinassi.errors import BSLRuntimeError
-        from yadinassi.database_context import SQLiteDBContext
+        from yadinassi.types.errors import BSLRuntimeError
+        from yadinassi.db.database_context import SQLiteDBContext
         self.seed(1002);self.backend.close()
         context=SQLiteDBContext(self.path);output=[]
         try:

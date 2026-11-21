@@ -2,8 +2,8 @@ import sqlite3
 import unittest
 from uuid import UUID, uuid4
 
-from yadinassi.catalog_backend import BackendError, CatalogSchema, FieldSchema
-from yadinassi.sqlite_catalog_layout import (REGISTRY_DDL, build_layout, save_layout,
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogSchema, FieldSchema
+from yadinassi.db.sqlite.sqlite_catalog_layout import (REGISTRY_DDL, build_layout, save_layout,
     load_layout, quote_identifier, catalog_ddl)
 
 

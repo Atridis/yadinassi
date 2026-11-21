@@ -8,10 +8,10 @@ from dataclasses import dataclass
 import secrets
 from uuid import UUID
 
-from ..catalog_backend import BackendError, CatalogKey
-from ..document_backend import DocumentKey
-from ..inventory_host_operations import canonical
-from ..inventory_application_reports import (InventoryReports, InventoryReportFilter,
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogKey
+from yadinassi.db.document.document_backend import DocumentKey
+from yadinassi.configuration.demos.inventory_host_operations import canonical
+from yadinassi.configuration.demos.inventory_application_reports import (InventoryReports, InventoryReportFilter,
     InventoryReportChoices, InventoryReportChoiceSnapshot, InventoryReportChoice, InventoryReportResult,
     MAX_CHOICES, MAX_LABELS, MAX_LABEL_LENGTH, _statement_options)
 

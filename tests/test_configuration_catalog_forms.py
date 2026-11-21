@@ -6,11 +6,11 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
-from yadinassi.configuration_forms import load_configuration_forms
-from yadinassi.configuration_xml import import_catalog_forms_configuration
-from yadinassi.form_program import compile_form_module
-from yadinassi.invocation import _encode_scalar
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.configuration.configuration_forms import load_configuration_forms
+from yadinassi.configuration.configuration_xml import import_catalog_forms_configuration
+from yadinassi.forms.form_program import compile_form_module
+from yadinassi.execution.invocation import _encode_scalar
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from yadinassi.ui.configuration_app import ConfigurationBroker, ConfigurationController, PROTOCOL
 from yadinassi.ui.protocol import decode_line, encode_line
 
@@ -208,7 +208,7 @@ class ConfigurationCatalogFormIntegrationTests(unittest.TestCase):
             with self.subTest(new=new),self.assertRaises(ValueError): import_catalog_forms_configuration(files)
 
     def test_catalog_dates_and_boolean_survive_real_save_reopen(self):
-        from yadinassi.dates import BSLDate, TICKS_PER_SECOND
+        from yadinassi.temporal.dates import BSLDate, TICKS_PER_SECOND
         broker,app=self.setup_app();self.rpc(app,'catalog',entry=self.entry(app))
         sid=self.create(app);self.fill(app,sid)
         date=BSLDate(86400*TICKS_PER_SECOND)

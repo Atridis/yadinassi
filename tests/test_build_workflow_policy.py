@@ -33,6 +33,21 @@ def assert_concurrency_contract(case, source):
         case.assertNotIn(forbidden, remainder)
 
 
+def assert_error_bypass_contract(case, source):
+    """The known-divergence report is the only permitted nonblocking job."""
+    advisory = '\n  compatibility:\n'
+    case.assertEqual(source.count(advisory), 1)
+    block = re.split(r'\n  [a-z][a-z0-9-]*:\n', source.split(advisory, 1)[1], maxsplit=1)[0]
+    header = block.split('    steps:\n', 1)[0]
+    case.assertEqual(re.findall(r'(?m)^    continue-on-error: (.+)$', header), ['true'])
+    case.assertEqual(source.count('continue-on-error'), 1)
+    # Do not let an advisory result be a direct or transitive dependency
+    # of required validation/release. Cover flow and block needs lists.
+    for needs in re.findall(r'(?m)^    needs:[^\n]*(?:\n {6,}[^\n]*)*', source):
+        case.assertNotRegex(needs, r'(?<![\w-])compatibility(?![\w-])')
+    case.assertNotIn('needs.compatibility', source)
+
+
 def scheduling_example(event, run_id, attempt, pr=None):
     """Semantic examples for the exact expression above, not GitHub emulation.
 
@@ -84,10 +99,33 @@ class BuildWorkflowPolicyTests(unittest.TestCase):
 
     def test_no_skip_paths_or_error_bypass(self):
         for forbidden in ('paths:', 'paths-ignore:', 'branches-ignore:',
-                          'tags-ignore:', 'continue-on-error:', 'pull_request_target:',
+                          'tags-ignore:', 'pull_request_target:',
                           'workflow_run:', 'pull_request.draft'):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, self.source)
+        assert_error_bypass_contract(self, self.source)
+
+    def test_error_bypass_is_rejected_outside_advisory_and_in_gate_dependencies(self):
+        flag = '    continue-on-error: true\n'
+        mutations = {
+            'required job': self.source.replace('\n  light:\n', '\n  light:\n' + flag),
+            'advisory step': self.source.replace(flag, '', 1).replace(
+                '      - name: Compare historical ValueTable ordering with 1C\n',
+                '      - name: Compare historical ValueTable ordering with 1C\n  ' + flag
+            ),
+            'verdict depends on advisory': self.source.replace(
+                'build, regex-python310, javascript]', 'build, regex-python310, javascript, compatibility]'
+            ),
+            'release depends on advisory': self.source.replace(
+                'needs: [build, regex-python310, verdict]',
+                'needs:\n      - build\n      - regex-python310\n      - verdict\n      - compatibility'
+            ),
+        }
+        for label, source in mutations.items():
+            with self.subTest(mutation=label):
+                self.assertNotEqual(source, self.source)
+                with self.assertRaises(AssertionError):
+                    assert_error_bypass_contract(self, source)
 
     def test_only_exact_top_level_first_attempt_pr_concurrency(self):
         assert_concurrency_contract(self, self.source)

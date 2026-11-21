@@ -6,12 +6,12 @@ from unittest import mock
 from uuid import UUID, uuid4
 
 from ui_catalog_fixture import repository, configuration_files
-from yadinassi.catalog_backend import BackendError
-from yadinassi.catalog_object_preparation import CatalogWriteRefused
-from yadinassi.catalogs import BSLCatalogObject
-from yadinassi.configuration_catalog import CatalogObjectSession
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import _View
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.catalog.catalog_object_preparation import CatalogWriteRefused
+from yadinassi.db.catalog.catalogs import BSLCatalogObject
+from yadinassi.configuration.configuration_catalog import CatalogObjectSession
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import _View
 from yadinassi.ui.protocol import CatalogRef, UIError
 
 

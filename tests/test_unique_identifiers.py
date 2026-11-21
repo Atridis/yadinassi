@@ -5,11 +5,11 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.unique_identifiers import BSLUUID
-from yadinassi.values import BSLType, equal
-from yadinassi.type_values import type_of
-from yadinassi.value_checks import value_is_filled
-from yadinassi.maps import BSLMap, BSLFixedMap
+from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.types.values import BSLType, equal
+from yadinassi.types.type_values import type_of
+from yadinassi.types.value_checks import value_is_filled
+from yadinassi.collections.maps import BSLMap, BSLFixedMap
 
 A = '01234567-89ab-4cde-8f01-23456789abcd'
 B = '01234567-89ab-4cde-8f01-23456789abce'
@@ -46,7 +46,7 @@ class UUIDCandidateTests(unittest.TestCase):
                 BSLUUID(value)
 
     def test_generation_policy_is_local_provisional_and_omission_is_distinct(self):
-        with patch('yadinassi.unique_identifiers.secrets.token_bytes', return_value=bytes(16)):
+        with patch('yadinassi.types.unique_identifiers.secrets.token_bytes', return_value=bytes(16)):
             self.assertEqual(str(BSLUUID()), '00000000-0000-4000-8000-000000000000')
         with self.assertRaises(TypeError):
             BSLUUID(None)

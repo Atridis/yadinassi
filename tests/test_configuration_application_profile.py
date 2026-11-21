@@ -7,13 +7,13 @@ import sqlite3
 import tempfile
 import unittest
 
-from yadinassi.configuration_application_profile import import_application_configuration, APPLICATION_SOURCE_ISSUE
-from yadinassi.configuration_xml import import_catalog_forms_configuration
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.configuration_forms import load_configuration_forms
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.catalog_backend import BackendError
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.configuration.configuration_application_profile import import_application_configuration, APPLICATION_SOURCE_ISSUE
+from yadinassi.configuration.configuration_xml import import_catalog_forms_configuration
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_forms import load_configuration_forms
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.database_context import SQLiteDBContext
 from configuration_runtime_fixture import module_files, CLIENT
 from test_configuration_catalog_profile import catalog_form_sources
 from test_configuration_forms import sources

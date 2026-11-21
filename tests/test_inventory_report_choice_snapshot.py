@@ -7,11 +7,11 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 import test_inventory_application_reports as support
-from yadinassi.catalog_backend import CatalogDraft, CatalogKey, CatalogValuePage, BackendError
-from yadinassi.inventory_application_reports import InventoryReportChoiceSnapshot, InventoryReportFilter, UNAVAILABLE
-from yadinassi.sqlite_catalog import _View
+from yadinassi.db.catalog.catalog_backend import CatalogDraft, CatalogKey, CatalogValuePage, BackendError
+from yadinassi.configuration.demos.inventory_application_reports import InventoryReportChoiceSnapshot, InventoryReportFilter, UNAVAILABLE
+from yadinassi.db.sqlite.sqlite_catalog import _View
 
-MODULE='yadinassi.inventory_application_reports.'
+MODULE='yadinassi.configuration.demos.inventory_application_reports.'
 
 class ChoiceSnapshotTests(unittest.TestCase):
     setUp=support.InventoryReportTests.setUp

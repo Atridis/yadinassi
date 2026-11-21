@@ -3,9 +3,9 @@ import json
 from pathlib import Path
 import sys
 from uuid import UUID
-from yadinassi.catalog_backend import CatalogSchema, FieldSchema, CatalogDraft, CatalogKey, CatalogSelection, TabularSectionSchema
-from yadinassi.configuration_xml import ConfigurationImport, ConfigurationFile
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import CatalogSchema, FieldSchema, CatalogDraft, CatalogKey, CatalogSelection, TabularSectionSchema
+from yadinassi.configuration.configuration_xml import ConfigurationImport, ConfigurationFile
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 
 W, P, S, F, A = (UUID(int=i) for i in (62001,62002,63001,64001,64002))
 

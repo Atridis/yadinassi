@@ -6,10 +6,10 @@ import tempfile
 import unittest
 from uuid import uuid4
 
-from yadinassi.catalog_backend import BackendError, CatalogDraft, CatalogKey
-from yadinassi.configuration_xml import import_configuration
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogDraft, CatalogKey
+from yadinassi.configuration.configuration_xml import import_configuration
 from yadinassi.cli import main
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from sqlite_catalog_fixture import configuration_files
 
 

@@ -1,6 +1,6 @@
 """Shared inventory scenarios on the canonical demo, not another configuration."""
 from datetime import datetime
-from yadinassi.inventory_application_reports import InventoryReports, UNAVAILABLE
+from yadinassi.configuration.demos.inventory_application_reports import InventoryReports, UNAVAILABLE
 import test_main_demo_runtime as runtime_fixture
 SEED = runtime_fixture.SEED
 
@@ -31,7 +31,7 @@ class MainDemoInventoryScenarios(unittest.TestCase):
         rows = self.reports().read('StockMovements')
         values = dict(zip((c.name for c in rows.columns), rows.rows[0]))
         self.assertEqual((values['Unit'], values['State']), ('Piece', 'Approved'))
-        from yadinassi.database_context import SQLiteDBContext
+        from yadinassi.db.database_context import SQLiteDBContext
         with SQLiteDBContext(self.path) as reopened:
             reports=InventoryReports(reopened,reopened.backend.accumulation_configuration)
             self.assertEqual(reports.read('StockMovements').rows, rows.rows)
@@ -51,8 +51,9 @@ class MainDemoInventoryScenarios(unittest.TestCase):
         self.vm.execute('''I=Documents.Issue.CreateDocument();I.Number="i1";I.Date=Date(2024,1,2);
 I.Warehouse=Склад.Ссылка;I.State=Enums.States.Approved;R=I.Lines.Add();
 R.Product=Карточка.Ссылка;R.Unit=Enums.Units.Piece;R.Quantity=6;R.Amount=12;''')
-        with self.assertRaises(BSLRuntimeError):
+        with self.assertRaises(BSLRuntimeError) as refused:
             self.vm.execute('I.Write(DocumentWriteMode.Posting);')
+        self.assertIn('document write cancelled',str(refused.exception))
         self.assertEqual(self.reports().read('StockMovements').rows,before.rows)
         self.vm.execute('Q=New Query("SELECT COUNT(*) AS N FROM Document.Issue");S=Q.Execute().Select();S.Next();Message(S.N);')
         self.assertEqual(self.output,['0'])

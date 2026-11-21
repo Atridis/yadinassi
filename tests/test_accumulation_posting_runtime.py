@@ -10,14 +10,14 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.accumulation_movements import AccumulationDirection, AccumulationReplacement
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_accumulation import import_accumulation_configuration, PROFILE
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.database_transactions import begin, current, execution
-from yadinassi.document_posting import PostingLimitError
-from yadinassi.document_posting_values import DocumentWriteMode
-from yadinassi.transaction_backend import TransactionRequest
+from yadinassi.db.registers.accumulation_movements import AccumulationDirection, AccumulationReplacement
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_accumulation import import_accumulation_configuration, PROFILE
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.database_transactions import begin, current, execution
+from yadinassi.db.document.document_posting import PostingLimitError
+from yadinassi.db.document.document_posting_values import DocumentWriteMode
+from yadinassi.db.transaction_backend import TransactionRequest
 from test_configuration_accumulation import source, MODULE, DOC
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -363,7 +363,7 @@ EndProcedure''')
         self.assertEqual(self.rows(obj), ())
 
     def test_transaction_status_cannot_inspect_another_execution_backend(self):
-        from yadinassi.database_transactions import rollback
+        from yadinassi.db.database_transactions import rollback
         owner = self.backend
         self.make()
         with execution(owner):
@@ -375,7 +375,7 @@ EndProcedure''')
                 rollback(owner)
 
     def test_transaction_status_does_not_resolve_uncertain_owner(self):
-        from yadinassi.database_transactions import rollback
+        from yadinassi.db.database_transactions import rollback
         with execution(self.backend):
             begin(self.backend)
             transaction = current(self.backend)
@@ -391,7 +391,7 @@ EndProcedure''')
                 rollback(self.backend)
 
     def test_transaction_status_binding_is_owned_by_inherited_activation(self):
-        with closing(Interpreter(database_context=self.context)) as child:
+        with closing(Interpreter(database_context=self.context, allow_extensions=True)) as child:
             child._inherit_host_bindings(self.vm)
             for name in ('transactionactive', 'транзакцияактивна'):
                 self.assertIs(child.functions[name].function.__self__, child)
@@ -431,11 +431,11 @@ EndProcedure''')
 
     def test_buffer_count_and_bytes_are_checked_before_growth(self):
         self.new(row=False)
-        with patch('yadinassi.document_posting_values.MAX_MOVEMENT_ROWS', 1):
+        with patch('yadinassi.db.document.document_posting_values.MAX_MOVEMENT_ROWS', 1):
             self.vm.execute('S.Add();')
             with self.assertRaises(BSLRuntimeError): self.vm.execute('S.Add();')
         self.vm.execute('S.Clear();')
-        with patch('yadinassi.document_posting_values.MAX_BUFFER_BYTES', 1):
+        with patch('yadinassi.db.document.document_posting_values.MAX_BUFFER_BYTES', 1):
             with self.assertRaises(BSLRuntimeError): self.vm.execute('S.Add();')
         self.assertEqual(self.vm.execute('S.Count()'), Decimal(0))
 
@@ -443,7 +443,7 @@ EndProcedure''')
         self.make('Procedure Posting(Cancel,Mode) RegisterRecords.Rows.Write();'
                   'Try While True Do EndDo;Except EndTry;EndProcedure')
         obj = self.new()
-        with patch('yadinassi.document_posting.MAX_STEPS', 50):
+        with patch('yadinassi.db.document.document_posting.MAX_STEPS', 50):
             with self.assertRaises(PostingLimitError): self.post()
         self.assertTrue(obj.is_new())
         self.assertEqual(self.rows(obj), ())
@@ -474,7 +474,7 @@ EndProcedure''')
                     import_accumulation_configuration(files, accumulation_runtime=PROFILE)
 
     def test_reopen_and_plain_editor_remains_outside_posting_grant(self):
-        from yadinassi.configuration_document import DocumentObjectSession
+        from yadinassi.configuration.configuration_document import DocumentObjectSession
         obj = self.new()
         self.post()
         with closing(SQLiteDBContext(self.path)) as context:

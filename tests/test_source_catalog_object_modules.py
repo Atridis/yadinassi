@@ -4,10 +4,10 @@ import unittest
 from pathlib import Path
 from uuid import uuid4
 from test_source_catalog_records import package
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_catalog_store import SourceCatalogStore
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.catalog.source_catalog_store import SourceCatalogStore
+from yadinassi.types.errors import BSLError
 
 CREATE='O=Catalogs.Items.CreateItem(); O.Code="A"; '
 

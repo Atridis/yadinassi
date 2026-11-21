@@ -17,6 +17,12 @@ class TimedTextTestResult(unittest.TextTestResult):
         self._statuses = []
         self._sequence = 0
 
+    def _exc_info_to_string(self, err, test):
+        text = super()._exc_info_to_string(err, test)
+        # A diagnostic can contain lone UTF-16 surrogates. Escape those
+        # before printing so a test failure cannot hide the runner summary.
+        return text.encode('utf-8', 'backslashreplace').decode('utf-8')
+
     def _without_progress(self, method, *args):
         show_all, dots = self.showAll, self.dots
         if show_all:

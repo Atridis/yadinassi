@@ -7,16 +7,16 @@ import unittest
 from unittest import mock
 
 from yadinassi import Interpreter
-from yadinassi.binary_streams import (
+from yadinassi.streams.binary_streams import (
     BSLBinaryDataBuffer as Buffer, BSLMemoryStream as Memory,
     BSLFileStream as File, BSLStream, BSLByteOrder as Order,
     BSLFileOpenMode as Mode, BSLFileAccess as Access,
     BSLPositionInStream as Origin, binary_data_to_buffer, buffer_to_binary_data,
     MAX_BYTES)
-from yadinassi.file_io import BSLBinaryData
-from yadinassi.type_values import type_of
-from yadinassi.values import BSLType
-from yadinassi import serialization
+from yadinassi.streams.file_io import BSLBinaryData
+from yadinassi.types.type_values import type_of
+from yadinassi.types.values import BSLType
+from yadinassi.formats.storage import serialization
 
 
 class BufferTests(unittest.TestCase):
@@ -69,7 +69,7 @@ class BufferTests(unittest.TestCase):
         with self.assertRaises(TypeError): b.write16(0, 1, 'little')
 
     def test_copy_and_concat_resource_bounds(self):
-        with mock.patch('yadinassi.binary_streams.MAX_BYTES', 8):
+        with mock.patch('yadinassi.streams.binary_streams.MAX_BYTES', 8):
             a = Buffer.from_bytes(b'12345')
             with self.assertRaises(ValueError): a.concat(a)
         self.assertEqual(bytes(a._view), b'12345')
@@ -232,7 +232,7 @@ class FileTests(unittest.TestCase):
                  r"\\?\UNC\server\share\a.bin", r"\??\C:\a.bin", "NUL", "nul.txt",
                  r"C:\owned\COM1", r"C:\owned\LPT9.log", "CONIN$", "AUX ", "NUL:", "NUL .txt", "file:stream")
         for path in paths:
-            with self.subTest(path=path), mock.patch('yadinassi.binary_streams.os.open') as opened:
+            with self.subTest(path=path), mock.patch('yadinassi.streams.binary_streams.os.open') as opened:
                 with self.assertRaises(ValueError): File(path, Mode.OPEN)
                 opened.assert_not_called()
 

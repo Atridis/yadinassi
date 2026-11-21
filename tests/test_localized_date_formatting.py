@@ -4,10 +4,10 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.dates import BSLDate, date, UnsupportedDateRange
-from yadinassi.date_formatting import date_tokens
-from yadinassi.formatting import format_value
-from yadinassi.values import NULL, to_string
+from yadinassi.temporal.dates import BSLDate, date, UnsupportedDateRange
+from yadinassi.temporal.date_formatting import date_tokens
+from yadinassi.text.formatting import format_value
+from yadinassi.types.values import NULL, to_string
 
 
 class LocalizedDateFormattingTests(unittest.TestCase):

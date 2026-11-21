@@ -5,11 +5,11 @@ escape decoding happens once, after schema detection; intrinsic CR/LF survive.
 """
 import re
 
-from yadinassi.serialization import _Reader
-from yadinassi.structures import BSLStructure
-from yadinassi.values import BSLArray, BSLType, equal, to_string
-from yadinassi.type_values import type_of
-from yadinassi.serialization import value_to_string_internal as write
+from yadinassi.formats.storage.serialization import _Reader
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.types.values import BSLArray, BSLType, equal, to_string
+from yadinassi.types.type_values import type_of
+from yadinassi.formats.storage.serialization import value_to_string_internal as write
 
 
 def _unescape(text):
@@ -244,7 +244,7 @@ def assert_type_inverse(case, record):
 
 def _read_stream(text):
     # Local alias avoids changing the public runtime stream reader.
-    from yadinassi.serialization import value_from_string_internal
+    from yadinassi.formats.storage.serialization import value_from_string_internal
     return value_from_string_internal(text)
 
 
@@ -302,7 +302,7 @@ def extract_payload(text, label):
 def assert_view(case, observed, value):
     """Check all table view fields in either the old Columns or new Names schema."""
     from decimal import Decimal
-    from yadinassi.value_tables import (BSLValueTable, BSLValueTableRow,
+    from yadinassi.collections.value_tables import (BSLValueTable, BSLValueTableRow,
         BSLValueTableColumn, BSLValueTableColumnCollection)
     if type(value) is BSLValueTable:
         case.assertIs(type(observed), BSLStructure)

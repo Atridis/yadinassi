@@ -12,12 +12,12 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.queries import BSLQuery
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_documents import DocumentView
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.query.queries import BSLQuery
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_documents import DocumentView
 from test_document_configuration_xml import document_files
 
 
@@ -194,9 +194,9 @@ Message(Q.Execute().Unload()[0].Total);''')
 
     def test_input_budget_and_row_bound_fail_before_top_result(self):
         self.seed()
-        with patch('yadinassi.queries._MAX_CELLS', 1), self.assertRaisesRegex(ValueError, 'input resource'):
+        with patch('yadinassi.db.query.queries._MAX_CELLS', 1), self.assertRaisesRegex(ValueError, 'input resource'):
             self.rows('SELECT TOP 1 Key FROM InformationRegister.Rates')
-        with patch('yadinassi.query_parser.MAX_ROWS', 2), self.assertRaisesRegex(ValueError, 'input row'):
+        with patch('yadinassi.db.query.query_parser.MAX_ROWS', 2), self.assertRaisesRegex(ValueError, 'input row'):
             self.rows('SELECT TOP 1 Key FROM InformationRegister.Rates')
         self.assertIsNone(self.context.backend._active)
 

@@ -3,7 +3,7 @@ from dataclasses import fields
 import unittest
 
 from yadinassi.syntax import ast
-from yadinassi.errors import BSLError
+from yadinassi.types.errors import BSLError
 from yadinassi.syntax.parser import parse, validate_async
 
 

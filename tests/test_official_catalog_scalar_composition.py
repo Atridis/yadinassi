@@ -15,13 +15,13 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_xml import (
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_xml import (
     MD, V8, XR, XS, XSI, DUMP_INFO, MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, _PROFILE_SHA256,
     _catalog_profile_fingerprint, _object, import_configuration,
 )
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog_layout import quote_identifier
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
 from test_official_catalog_scalar_profile import CATALOG, NAME, files, field_properties
 
 DESCRIPTORS = (('number', (12, 2, 'Any'), None),

@@ -8,11 +8,11 @@ from unittest.mock import patch
 from uuid import UUID,uuid4
 import test_document_posting_host as posting
 import test_inventory_host_operations as inventory
-from yadinassi.catalog_backend import BackendError
-from yadinassi.database_transactions import Transaction,RootOperation,admission
-from yadinassi.sqlite_transactions import UnitOfWork
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.document_posting_host import PostingRecoveryUnavailable
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.database_transactions import Transaction,RootOperation,admission
+from yadinassi.db.sqlite.sqlite_transactions import UnitOfWork
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.document.document_posting_host import PostingRecoveryUnavailable
 
 
 class RootAcknowledgementTests(unittest.TestCase):
@@ -47,7 +47,7 @@ class RootAcknowledgementTests(unittest.TestCase):
             with self.assertRaisesRegex(BackendError,'conflict'):reopened.begin_unit_of_work(receipt.operation_id)
     def test_failure_before_commit_rolls_back_and_retry_is_idempotent(self):
         receipt=self.execute();before=self.rows()
-        with patch('yadinassi.sqlite_transactions._commit_acknowledgement',side_effect=OSError('before commit')):
+        with patch('yadinassi.db.sqlite.sqlite_transactions._commit_acknowledgement',side_effect=OSError('before commit')):
             with self.assertRaisesRegex(BackendError,'uncertain_commit'):self.host.acknowledge(receipt.operation_id)
         self.assertEqual(before,self.rows())
         self.assertEqual(self.backend.resolve_unit_of_work(receipt.operation_id,receipt.requests),receipt.outcomes)
@@ -55,10 +55,10 @@ class RootAcknowledgementTests(unittest.TestCase):
     def test_lost_commit_response_retries_without_callback_or_writes(self):
         receipt=self.execute()
         def lost(connection):connection.execute('COMMIT');raise OSError('lost response')
-        with patch('yadinassi.sqlite_transactions._commit_acknowledgement',side_effect=lost):
+        with patch('yadinassi.db.sqlite.sqlite_transactions._commit_acknowledgement',side_effect=lost):
             with self.assertRaisesRegex(BackendError,'uncertain_commit'):self.host.acknowledge(receipt.operation_id)
         after=self.rows()
-        with patch('yadinassi.document_posting.PostingRuntime.write',side_effect=AssertionError('replay')):
+        with patch('yadinassi.db.document.document_posting.PostingRuntime.write',side_effect=AssertionError('replay')):
             self.host.acknowledge(receipt.operation_id)
             self.assertEqual(self.backend.resolve_unit_of_work(receipt.operation_id,receipt.requests),receipt.outcomes)
         self.assertEqual(after,self.rows())
@@ -105,7 +105,7 @@ class RootAcknowledgementTests(unittest.TestCase):
             return result
         def writer(*args):
             view=begin(*args);view._connection.set_trace_callback(trace.append);return view
-        with patch('yadinassi.sqlite_transactions.MAX_BYTES',1024), \
+        with patch('yadinassi.db.sqlite.sqlite_transactions.MAX_BYTES',1024), \
                 patch.object(self.backend,'resolve_unit_of_work',side_effect=race), \
                 patch.object(self.backend,'begin_write',side_effect=writer):
             with self.assertRaisesRegex(BackendError,'integrity'):self.host.acknowledge(receipt.operation_id)
@@ -149,7 +149,7 @@ class RootAcknowledgementTests(unittest.TestCase):
             def interrupt(connection):
                 if committed:connection.execute('COMMIT')
                 raise KeyboardInterrupt()
-            with patch('yadinassi.sqlite_transactions._commit_acknowledgement',side_effect=interrupt):
+            with patch('yadinassi.db.sqlite.sqlite_transactions._commit_acknowledgement',side_effect=interrupt):
                 with self.assertRaises(KeyboardInterrupt):self.host.acknowledge(receipt.operation_id)
             self.assertIs(self.host.receipt(receipt.operation_id),receipt)
             self.assertEqual(self.backend.resolve_unit_of_work(receipt.operation_id,receipt.requests),receipt.outcomes)
@@ -162,7 +162,7 @@ class RootAcknowledgementTests(unittest.TestCase):
         begin=self.backend.begin_read
         def reader():
             view=begin();view._connection.set_trace_callback(trace.append);return view
-        with patch('yadinassi.sqlite_transactions.MAX_BYTES',4096),patch.object(self.backend,'begin_read',side_effect=reader):
+        with patch('yadinassi.db.sqlite.sqlite_transactions.MAX_BYTES',4096),patch.object(self.backend,'begin_read',side_effect=reader):
             with self.assertRaisesRegex(BackendError,'integrity'):
                 self.backend.resolve_unit_of_work(receipt.operation_id,receipt.requests)
         self.assertFalse(any(sql.startswith('SELECT outcome_json FROM recorder_movement_receipt') for sql in trace))
@@ -188,7 +188,7 @@ class RootAcknowledgementTests(unittest.TestCase):
         receipt=self.execute();self.host.acknowledge(receipt.operation_id)
         with closing(sqlite3.connect(self.context.path)) as db,db:
             db.execute('UPDATE recorder_movement_receipt SET outcome_json=?',('\x00'*1000,))
-        with patch('yadinassi.sqlite_transactions.MAX_BYTES',4096):
+        with patch('yadinassi.db.sqlite.sqlite_transactions.MAX_BYTES',4096):
             with self.assertRaisesRegex(BackendError,'unsupported'):
                 self.backend.resolve_unit_of_work(receipt.operation_id,receipt.requests)
     def test_later_object_update_does_not_change_acknowledged_outcomes(self):
@@ -229,10 +229,10 @@ class EnumInventoryAcknowledgementTests(unittest.TestCase):
         import tempfile
         from pathlib import Path
         from inventory_enum_application_fixture import source
-        from yadinassi.configuration_inventory_enum_application import import_inventory_application,PROFILE
-        from yadinassi.database_context import SQLiteDBContext
+        from yadinassi.configuration.configuration_inventory_enum_application import import_inventory_application,PROFILE
+        from yadinassi.db.database_context import SQLiteDBContext
         from yadinassi.runtime import Interpreter
-        from yadinassi.inventory_host_operations import InventoryRootOperation
+        from yadinassi.configuration.demos.inventory_host_operations import InventoryRootOperation
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'enum.sqlite'
             with SQLiteDBContext.create_inventory_enum_application(path,import_inventory_application(source(),inventory_runtime=PROFILE)) as context:
@@ -249,7 +249,7 @@ class EnumInventoryAcknowledgementTests(unittest.TestCase):
 
 class AcknowledgementSizeTests(unittest.TestCase):
     def test_ascii_json_size_matches_serializer_without_large_copy(self):
-        from yadinassi.sqlite_transactions import _quoted_json_size,_json
+        from yadinassi.db.sqlite.sqlite_transactions import _quoted_json_size,_json
         for value in ('', ''.join(chr(i) for i in range(128)), 'я😀', '\\"\n'*100):
             expected=len(_json(value))
             self.assertEqual(_quoted_json_size(value,expected),expected)

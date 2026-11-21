@@ -7,14 +7,14 @@ from pathlib import Path
 import unittest
 from test_source_constant_store import configuration
 from test_source_session_parameters import declaration
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_constants import source_constant_definitions
-from yadinassi.source_constant_store import SourceConstantStore
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.unique_identifiers import BSLUUID
-from yadinassi.value_storage import BSLValueStorage
-from yadinassi.values import NULL
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_constants import source_constant_definitions
+from yadinassi.db.metadata.source_constant_store import SourceConstantStore
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.formats.storage.value_storage import BSLValueStorage
+from yadinassi.types.values import NULL
+from yadinassi.types.errors import BSLError
 
 TYPES = '<v8:Type>xs:boolean</v8:Type><v8:Type>v8:UUID</v8:Type><v8:Type>v8:ValueStorage</v8:Type><v8:Type>xs:string</v8:Type><v8:StringQualifiers><v8:Length>64</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers>'
 ID='01234567-89ab-cdef-0123-456789abcdef'
@@ -61,7 +61,7 @@ class CompositeConstantsTests(unittest.TestCase):
             self.assertEqual(store.get('Choice'),'old')
 
     def test_number_date_qualifiers(self):
-        from yadinassi.dates import BSLDate
+        from yadinassi.temporal.dates import BSLDate
         types='<v8:Type>xs:decimal</v8:Type><v8:NumberQualifiers><v8:Digits>8</v8:Digits><v8:FractionDigits>2</v8:FractionDigits><v8:AllowedSign>Nonnegative</v8:AllowedSign></v8:NumberQualifiers><v8:Type>xs:dateTime</v8:Type><v8:DateQualifiers><v8:DateFractions>DateTime</v8:DateFractions></v8:DateQualifiers>'
         store=self.store(package(types))
         for value in (Decimal('12.25'), BSLDate(0), None):

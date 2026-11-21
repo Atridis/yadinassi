@@ -10,11 +10,11 @@ import weakref
 
 from yadinassi import Interpreter, BSLRuntimeError
 from yadinassi import cli
-from yadinassi.async_runtime import _HostFault
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.configuration_modules import MODULE_RUNTIME
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.application.async_runtime import _HostFault
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.configuration.configuration_modules import MODULE_RUNTIME
+from yadinassi.db.database_context import SQLiteDBContext
 from configuration_runtime_fixture import module_files
 
 
@@ -25,7 +25,7 @@ class FamilyIdentityTests(unittest.TestCase):
         self.path = Path(self.temp.name) / 'data.sqlite'
         self.context = SQLiteDBContext.create(self.path, import_configuration(self.files, module_runtime=MODULE_RUNTIME))
         self.addCleanup(self.context.close)
-        self.root = Interpreter(database_context=self.context); self.addCleanup(self.root.close)
+        self.root = Interpreter(database_context=self.context, allow_extensions=True); self.addCleanup(self.root.close)
 
     def test_common_module_assignment_query_and_metadata(self):
         app = ConfigurationApplication.from_files(self.files, database_context=self.context, side='client')
@@ -126,7 +126,7 @@ class FamilyIdentityTests(unittest.TestCase):
 
 class HostFailureLifetimeTests(unittest.TestCase):
     def test_repeated_await_does_not_keep_caller_frames(self):
-        vm=Interpreter(); self.addCleanup(vm.close)
+        vm=Interpreter(allow_extensions=True); self.addCleanup(vm.close)
         def fail(): raise RuntimeError('host fault') from KeyError('cause')
         vm.register_function('HostFail',fail)
         vm.execute('Var p; Async Function F() Await 0; HostFail(); EndFunction '
@@ -182,8 +182,8 @@ class HostFailureLifetimeTests(unittest.TestCase):
         self.assertEqual(calls,[])
 
     def test_failed_await_does_not_read_custom_class_attribute(self):
-        from yadinassi.async_runtime import Scheduler, AwaitRequest
-        from yadinassi.native_targets import WINDOWS_8_3_27_2342
+        from yadinassi.application.async_runtime import Scheduler, AwaitRequest
+        from yadinassi.execution.codegen.native_targets import WINDOWS_8_3_27_2342
         calls=[]
         class Fault(RuntimeError):
             def __getattribute__(self,name):
@@ -230,7 +230,7 @@ class ReplCancellationTests(unittest.TestCase):
     def test_interrupt_keeps_import_and_repeat_import_usable(self):
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'Helper.bsl';path.write_text('Function F() Export Return 42; EndFunction',encoding='utf-8')
-            vm=Interpreter();self.addCleanup(vm.close)
+            vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close)
             vm.execute('// #Import Helper.bsl\n', str(path.parent/'main.bsl'))
             handle=vm.imports['helper']
             def interrupt(): raise KeyboardInterrupt()

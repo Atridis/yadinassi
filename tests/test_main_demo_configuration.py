@@ -2,9 +2,9 @@
 from dataclasses import replace
 from pathlib import Path
 import unittest
-from yadinassi.configuration_main_demo import (
+from yadinassi.configuration.configuration_main_demo import (
     PROFILE, MainDemoConfiguration, import_main_demo_configuration, canonical)
-from yadinassi.configuration_xml import _DEMO_KINDS_SOURCE_SHA256
+from yadinassi.configuration.configuration_xml import _DEMO_KINDS_SOURCE_SHA256
 from hashlib import sha256
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -106,7 +106,7 @@ class MainDemoConfigurationTests(unittest.TestCase):
             stripped=re.sub(rb'<Synonym><v8:item><v8:lang>ru</v8:lang><v8:content>[^<]+</v8:content></v8:item></Synonym>',b'',stripped,count=1)
             self.assertEqual(sha256(stripped).hexdigest(),digest)
 
-        from yadinassi.configuration_main_demo import _runtime_metadata_projection
+        from yadinassi.configuration.configuration_main_demo import _runtime_metadata_projection
         files=source(); projected=_runtime_metadata_projection(files)
         self.assertIn(b'<InternalInfo>',files['Documents/Receipt.xml'])
         self.assertNotIn(b'<InternalInfo',projected['Documents/Receipt.xml'])
@@ -117,7 +117,7 @@ class MainDemoConfigurationTests(unittest.TestCase):
 
     def test_native_layout_projection_preserves_source_and_semantics(self):
         import xml.etree.ElementTree as ET
-        from yadinassi.configuration_main_demo import _NATIVE_LAYOUTS, _runtime_metadata_projection
+        from yadinassi.configuration.configuration_main_demo import _NATIVE_LAYOUTS, _runtime_metadata_projection
         files=source(); before=dict(files); projected=_runtime_metadata_projection(files)
         L='{http://v8.1c.ru/8.3/xcf/logform}'; V='{http://v8.1c.ru/8.1/data/core}'
         prior = {'CommonForms/DraftDetails/Ext/Form.xml':'67f34e7bebf16a62bc8e8616bccc82d170d2bc13d7a543f30a16c03ad6251983',
@@ -143,8 +143,8 @@ class MainDemoConfigurationTests(unittest.TestCase):
 
     def test_native_layout_projection_rejects_unpinned_and_wrong_shape(self):
         from unittest.mock import patch
-        from yadinassi.configuration_main_demo import _NATIVE_LAYOUTS, _runtime_layout_projection
-        import yadinassi.configuration_main_demo as module
+        from yadinassi.configuration.configuration_main_demo import _NATIVE_LAYOUTS, _runtime_layout_projection
+        import yadinassi.configuration.configuration_main_demo as module
         path='CommonForms/DraftDetails/Ext/Form.xml'; raw=source()[path]
         variants=(raw.replace(b'>ru<',b'>en<',1),
                   raw.replace(b'<v8:item>',b'<v8:item bad="1">',1),

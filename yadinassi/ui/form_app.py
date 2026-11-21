@@ -11,10 +11,10 @@ import sys
 from threading import Lock
 import webbrowser
 
-from ..database_context import SQLiteDBContext
-from ..form_replication import ReplicatedFormServer, ReplicatedFormSession
-from ..invocation import InvocationError
-from ..form_replication import _decode_form_scalar
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.forms.form_replication import ReplicatedFormServer, ReplicatedFormSession
+from yadinassi.execution.invocation import InvocationError
+from yadinassi.forms.form_replication import _decode_form_scalar
 from .form_package import load_client, load_server
 from .local_app import RuntimeBridge, LocalTransportError, LocalUIServer, _Handler, EXCHANGE_TIMEOUT
 from .protocol import encode_line, encode_value, decode_value, decode_line, MAX_LINE_BYTES, MAX_COUNTER
@@ -34,7 +34,7 @@ class FormProcess(RuntimeBridge):
             command = [sys.executable, '-m', 'yadinassi.ui.form_app', '--runtime', str(Path(directory).resolve())]
         if database is not None:
             command += ['--f', str(Path(database).resolve())]
-        from ..execution_policy import ui_backend
+        from yadinassi.execution.execution_policy import ui_backend
         self.execution_backend = ui_backend()
         command += ['--execution-backend', self.execution_backend]
         self._start(command, environment)
@@ -121,7 +121,7 @@ class FormController:
 
     @staticmethod
     def _encode_view_value(descriptor, value):
-        from ..form_references import encode
+        from yadinassi.forms.form_references import encode
         return encode(descriptor, value, encode_value)
 
     @staticmethod
@@ -132,9 +132,9 @@ class FormController:
         preflight. BSL assignment and normalization remain authoritative. No
         generic Invocation, XML/storage schema or reference authority is added.
         """
-        from ..type_descriptions import BSLTypeDescription
-        from ..type_qualifiers import BSLAllowedSign, BSLAllowedLength, BSLDateFractions
-        from ..values import BSLType
+        from yadinassi.types.type_descriptions import BSLTypeDescription
+        from yadinassi.types.type_qualifiers import BSLAllowedSign, BSLAllowedLength, BSLDateFractions
+        from yadinassi.types.values import BSLType
         if type(descriptor) is not BSLTypeDescription or len(descriptor.types) != 1:
             return None
         kind = descriptor.types[0]
@@ -307,7 +307,7 @@ class FormHandler(_Handler):
     methods = ('form.hello', 'form.snapshot', 'form.event')
 
 
-from ..execution_policy import backend_entrypoint, UI_BACKENDS
+from yadinassi.execution.execution_policy import backend_entrypoint, UI_BACKENDS
 
 
 @backend_entrypoint

@@ -6,14 +6,14 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.dates import BSLDate
-from yadinassi.form_model import BSLFormAttribute, BSLFormTable
-from yadinassi.form_runtime import FormSession
-from yadinassi.form_tables import (FormTableColumn, FormTableSchema,
+from yadinassi.temporal.dates import BSLDate
+from yadinassi.forms.form_model import BSLFormAttribute, BSLFormTable
+from yadinassi.forms.form_runtime import FormSession
+from yadinassi.forms.form_tables import (FormTableColumn, FormTableSchema,
     BSLFormDataCollection, BSLFormDataCollectionItem, validate_table_data)
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.type_qualifiers import BSLStringQualifiers, BSLAllowedLength
-from yadinassi.values import BSLType
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.type_qualifiers import BSLStringQualifiers, BSLAllowedLength
+from yadinassi.types.values import BSLType
 
 
 def column(name, kind='String', **kwargs):
@@ -266,7 +266,7 @@ class FormTableTests(unittest.TestCase):
 
     def test_lifetime_row_budget_is_not_reset_by_clear(self):
         session = make(); session.open(); table = session.form._tables['lines']
-        with patch('yadinassi.form_tables.MAX_TABLE_ALLOCATED', 2), active(session):
+        with patch('yadinassi.forms.form_tables.MAX_TABLE_ALLOCATED', 2), active(session):
             table.clear(); table.add(); table.clear()
             with self.assertRaises(ValueError): table.add()
         self.assertEqual(table._allocated, 2)
@@ -295,22 +295,22 @@ class FormTableTests(unittest.TestCase):
         with active(session):
             row = table._rows[0]
             row.set_member('Label', 'é' * 3000)
-            with patch('yadinassi.form_tables.MAX_TABLE_DATA_BYTES', 100):
+            with patch('yadinassi.forms.form_tables.MAX_TABLE_DATA_BYTES', 100):
                 with self.assertRaises(ValueError): row.set_member('Label', 'é' * 50)
             self.assertEqual(row.get_member('Label'), 'é' * 3000)
         with self.assertRaises(ValueError): validate_table_data(session.form, {'missing': ()})
 
     def test_scalar_and_table_text_share_budget(self):
         session = make(); session.open(); row = session.form._tables['lines']._rows[0]
-        with active(session), patch('yadinassi.form_model.MAX_TOTAL_TEXT', 10), patch('yadinassi.form_tables.MAX_TOTAL_TEXT', 10):
+        with active(session), patch('yadinassi.forms.form_model.MAX_TOTAL_TEXT', 10), patch('yadinassi.forms.form_tables.MAX_TOTAL_TEXT', 10):
             session.form.set_member('Status', 'abcde')
             with self.assertRaises(ValueError): row.set_member('Label', 'abcdef')
             with self.assertRaises(ValueError): session.form.set_member('Status', 'abcdef')
             self.assertEqual(row.get_member('Label'), 'first')
 
     def test_types_registered_but_internal_serialization_refused(self):
-        from yadinassi.type_values import type_of, type_by_name
-        from yadinassi.serialization import value_to_string_internal
+        from yadinassi.types.type_values import type_of, type_by_name
+        from yadinassi.formats.storage.serialization import value_to_string_internal
         session = make(); session.open(); table = session.form._tables['lines']
         for value, kind, english in ((table, BSLType.FORM_DATA_COLLECTION, 'FormDataCollection'),
                                     (table._rows[0], BSLType.FORM_DATA_COLLECTION_ITEM, 'FormDataCollectionItem'),
@@ -322,7 +322,7 @@ class FormTableTests(unittest.TestCase):
                 with self.assertRaises((TypeError, ValueError)): value_to_string_internal(unsupported)
 
     def test_no_constructor_or_ordinary_context_codec(self):
-        from yadinassi.invocation import _encode_scalar
+        from yadinassi.execution.invocation import _encode_scalar
         session = make(); session.open(); table = session.form._tables['lines']
         for value in (table, table._rows[0], session.form.items._values['grid']):
             with self.assertRaises((TypeError, ValueError)): _encode_scalar(value)

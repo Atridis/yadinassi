@@ -9,7 +9,7 @@ from scripts.native_historical_replay import (
     without_fill_exclude_order_probes,
 )
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, current_native_target
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, current_native_target
 
 ROOT = Path(__file__).resolve().parents[1]
 CHECKPOINT_SHA = 'fef5af9c34d3af7ae73e427ac1e846c539246530aa9bcd5858932fc397754ed9'

@@ -11,18 +11,19 @@ import unittest
 from unittest.mock import patch
 
 from tests.native_observations import extract_payload, inverse_stream, read_observation
-from yadinassi import Interpreter, serialization
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.maps import BSLFixedMap, BSLMap
+from yadinassi import Interpreter
+from yadinassi.formats.storage import serialization
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.collections.maps import BSLFixedMap, BSLMap
 from yadinassi.numeric.round_modes import BSLRoundMode
-from yadinassi.search_directions import BSLSearchDirection
-from yadinassi.serialization import (
+from yadinassi.collections.search_directions import BSLSearchDirection
+from yadinassi.formats.storage.serialization import (
     FORMAT_ERROR, value_from_string_internal as read, value_to_string_internal as write,
 )
-from yadinassi.sort_directions import BSLSortDirection, BSLSortDirections, SORT_DIRECTIONS
-from yadinassi.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
-from yadinassi.type_values import type_by_name, type_of
-from yadinassi.values import BSLArray, BSLFixedArray, BSLObject, BSLType, equal, to_string
+from yadinassi.collections.sort_directions import BSLSortDirection, BSLSortDirections, SORT_DIRECTIONS
+from yadinassi.collections.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
+from yadinassi.types.type_values import type_by_name, type_of
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLObject, BSLType, equal, to_string
 
 
 ASC, DESC = BSLSortDirection.ASC, BSLSortDirection.DESC
@@ -172,6 +173,8 @@ class SortDirectionIterationTests(unittest.TestCase):
         self.assertEqual(list(SORT_DIRECTIONS), [ASC, DESC])
 
     def test_aliases_and_loop_expression_evaluated_once(self):
+        self.vm.close()
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
         calls = []
 
         def directions():
@@ -213,6 +216,8 @@ class SortDirectionIterationTests(unittest.TestCase):
         self.assertEqual(self.output[-2:], ['По возрастанию', 'По убыванию'])
 
     def test_host_subclasses_and_hostile_metaclasses_are_not_iterated(self):
+        self.vm.close()
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
         calls = []
 
         class HostNamespace(BSLSortDirections):

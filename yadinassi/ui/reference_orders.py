@@ -10,11 +10,11 @@ from dataclasses import dataclass
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from ..catalog_backend import (BackendError, CatalogComparison, CatalogKey,
+from yadinassi.db.catalog.catalog_backend import (BackendError, CatalogComparison, CatalogKey,
     CatalogOrder, CatalogPredicate, CatalogScanRequest, CatalogValuePage,
     CatalogValueRow, TabularRow)
-from ..catalog_sections import BSLCatalogSection
-from ..form_runtime import FormServerBinding
+from yadinassi.db.catalog.catalog_sections import BSLCatalogSection
+from yadinassi.forms.form_runtime import FormServerBinding
 from .order_workbench import OrdersWorkbenchSession
 
 _UNSET = object()

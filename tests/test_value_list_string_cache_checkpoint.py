@@ -16,12 +16,13 @@ import unittest
 from unittest.mock import patch
 import weakref
 
-from yadinassi import Interpreter, serialization
+from yadinassi import Interpreter
+from yadinassi.formats.storage import serialization
 from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse
-from yadinassi.structures import BSLStructure
-from yadinassi.value_lists import BSLValueList, BSLValueListItem
-from yadinassi.values import BSLArray, HostFunction
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.types.values import BSLArray, HostFunction
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -140,7 +141,7 @@ class Instrumentation:
         self.fail, self.text, self.truthy_miss = fail, text, truthy_miss
         self.cache = weakref.WeakKeyDictionary()
         self.events, self.actions, self.outputs = [], [], []
-        self.vm = Interpreter(self.outputs.append)
+        self.vm = Interpreter(self.outputs.append, allow_extensions=True)
         self.vm.register_function('Строка', self.stringify, 'String')
         self.vm.register_function('ЗначениеВСтрокуВнутр', self.write, 'ValueToStringInternal')
         helpers = helper_source()

@@ -13,12 +13,12 @@ from uuid import uuid4
 
 from test_configuration_export_snapshot import InterleavingConnection
 from test_sqlite_catalog_backend import configuration
-from yadinassi.catalog_backend import (BackendError, CatalogDraft, CatalogKey, FieldSchema,
+from yadinassi.db.catalog.catalog_backend import (BackendError, CatalogDraft, CatalogKey, FieldSchema,
                                       TabularRow, TabularSectionRows, TabularSectionSchema)
-from yadinassi.configuration_xml import ConfigurationFile
-import yadinassi.sqlite_catalog as storage
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_catalog_layout import quote_identifier
+from yadinassi.configuration.configuration_xml import ConfigurationFile
+import yadinassi.db.sqlite.sqlite_catalog as storage
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
 
 
 class ConfigurationSectionExportSnapshotTests(unittest.TestCase):

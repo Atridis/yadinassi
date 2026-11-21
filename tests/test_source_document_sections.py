@@ -3,11 +3,11 @@ import unittest
 from uuid import uuid4
 import test_source_document_records as base
 import test_source_catalog_definitions as catalog
-from yadinassi.source_document_section_store import SourceDocumentSectionStore
-from yadinassi.source_document_store import SourceDocumentStore
-from yadinassi.source_document_definitions import source_document_definitions
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
+from yadinassi.db.document.source_document_section_store import SourceDocumentSectionStore
+from yadinassi.db.document.source_document_store import SourceDocumentStore
+from yadinassi.db.document.source_document_definitions import source_document_definitions
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 
 SECTION='<TabularSection uuid="00000000-0000-0000-0000-000000000099"><Properties><Name>Lines</Name></Properties><ChildObjects>'+catalog.attribute('Flag')+'</ChildObjects></TabularSection>'
 def package(body='',children=SECTION,**kwargs):return base.package(body,children=children,**kwargs)

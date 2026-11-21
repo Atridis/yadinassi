@@ -5,10 +5,10 @@ from pathlib import Path
 import unittest
 from unittest import mock
 from test_source_server_call import configuration
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 from yadinassi.runtime import Interpreter
-from yadinassi import temporary_storage as storage
+from yadinassi.application import temporary_storage as storage
 
 BODY='''Function Put(Val V, Val Owner=Undefined) Export If Owner=Undefined Then Owner=New UUID; EndIf; Return PutToTempStorage(V,Owner); EndFunction
 Function Get(Val Address) Export Return GetFromTempStorage(Address); EndFunction
@@ -16,8 +16,8 @@ Procedure Delete(Val Address) Export DeleteFromTempStorage(Address); EndProcedur
 Function Recognize(Val Address) Export Return IsTempStorageURL(Address); EndFunction'''
 
 class SourceTemporaryTests(unittest.TestCase):
-    def app(self, body=BODY, startup=''):
-        app=SourceApplication(configuration(startup,body),output=lambda _:None)
+    def app(self, body=BODY, startup='', *, allow_extensions=False):
+        app=SourceApplication(configuration(startup,body),output=lambda _:None, allow_extensions=allow_extensions)
         self.addCleanup(app.close)
         app.start()
         return app
@@ -98,7 +98,7 @@ class SourceTemporaryTests(unittest.TestCase):
             self.execute(app,'PutToTempStorage(Touch(),New UUID)')
 
     def test_foreign_marker_denied_before_arguments(self):
-        app=self.app();vm=Interpreter(lambda _:None);self.addCleanup(vm.close)
+        app=self.app();vm=Interpreter(lambda _:None, allow_extensions=True);self.addCleanup(vm.close)
         vm.register_function('Put',storage.SourceTemporaryCall(app.temporary_storage,storage.put_marker))
         vm.execute('Function Touch() Raise "wrong-side-effect"; EndFunction')
         with self.assertRaisesRegex(BSLError,'another or closed'):

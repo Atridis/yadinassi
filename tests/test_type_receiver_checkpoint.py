@@ -6,8 +6,8 @@ import unittest
 from yadinassi import Interpreter
 from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse, parse_expression
-from yadinassi.errors import BSLError
-from yadinassi.values import BSLObject, HostFunction
+from yadinassi.types.errors import BSLError
+from yadinassi.types.values import BSLObject, HostFunction
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/values.bsl'
@@ -50,10 +50,10 @@ class TypeReceiverCheckpointTests(unittest.TestCase):
     def test_compact_formatter_preserves_scalar_bytes_and_container_kinds(self):
         # Local formatter contract, never a newly manufactured native golden.
         from decimal import Decimal
-        from yadinassi.serialization import value_to_string_internal
-        from yadinassi.structures import BSLStructure
-        from yadinassi.values import BSLArray, NULL
-        vm = Interpreter()
+        from yadinassi.formats.storage.serialization import value_to_string_internal
+        from yadinassi.collections.structures import BSLStructure
+        from yadinassi.types.values import BSLArray, NULL
+        vm = Interpreter(allow_extensions=True)
         vm.execute(helpers())
         scalars = [None, NULL, False, Decimal(0), '0', '',
                    'quotes " and delimiters ;[]= with \\n and CR\rLF\nTAB\t Я😀']
@@ -71,7 +71,7 @@ class TypeReceiverCheckpointTests(unittest.TestCase):
         self.assertEqual(len(set(representations)), 3)
 
         # Actual controls and their literal escape spellings must never collide.
-        from yadinassi.serialization import value_from_string_internal
+        from yadinassi.formats.storage.serialization import value_from_string_internal
         pairs = ['\n', r'\n', '\r', r'\r', '\\', '"', ';[]=', '\t', r'\t', '\x00']
         encoded = []
         for value in pairs:
@@ -156,7 +156,7 @@ class TypeReceiverCheckpointTests(unittest.TestCase):
 
     def test_observer_recovers_after_each_error(self):
         output = []
-        vm = Interpreter(output=output.append)
+        vm = Interpreter(output=output.append, allow_extensions=True)
         vm.register_function('UnknownHost', lambda: object())
         vm.execute(helpers() + '''
 НаблюдатьДополнениеТипов("missing", "NoSuchFunction()");
@@ -176,7 +176,7 @@ class TypeReceiverCheckpointTests(unittest.TestCase):
                     seen.append(name)
                     return 'synthetic'
                 return HostFunction(name, default)
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         vm.register_function('SyntheticDescription', SyntheticDescription)
         vm.execute(helpers())
         result = vm.execute('УмолчаниеТипаДополнения(SyntheticDescription())')

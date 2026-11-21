@@ -11,7 +11,8 @@ import tarfile
 import zipfile
 
 from yadinassi import __version__
-from yadinassi.collation import TABLE_NAME
+from yadinassi.execution.runtime_dependencies import _MODULE_NAMES
+from yadinassi.text.collation import TABLE_NAME
 import pyuca
 
 
@@ -59,6 +60,8 @@ def main() -> int:
         "--collect-data", "tzdata",
         "--collect-data", "yadinassi",
     ]
+    for module in sorted(set(_MODULE_NAMES.values())):
+        command += ["--hidden-import", module]
     if platform.system() == "Darwin":
         command += ["--target-architecture", platform.machine()]
     command.append(str(ROOT / "scripts" / "entrypoint.py"))

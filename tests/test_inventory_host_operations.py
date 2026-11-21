@@ -8,15 +8,15 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
+from sqlite_test_templates import copy_inventory
 
-from yadinassi import Interpreter
-from yadinassi.catalog_backend import BackendError, CatalogKey, TabularSectionRows, TabularRow
-from yadinassi.configuration_inventory_application import import_inventory_application, PROFILE, validated_core
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.database_transactions import RootOperation, admission, execution
-from yadinassi.document_backend import DocumentDraft, DocumentKey
-from yadinassi.document_posting_host import PostingRecoveryUnavailable
-from yadinassi.inventory_host_operations import InventoryRootOperations, InventoryRootOperation
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogKey, TabularSectionRows, TabularRow
+from yadinassi.configuration.configuration_inventory_application import import_inventory_application, PROFILE, validated_core
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.database_transactions import RootOperation, admission, execution
+from yadinassi.db.document.document_backend import DocumentDraft, DocumentKey
+from yadinassi.db.document.document_posting_host import PostingRecoveryUnavailable
+from yadinassi.configuration.demos.inventory_host_operations import InventoryRootOperations, InventoryRootOperation
 from inventory_application_fixture import source, ROOT
 from test_document_posting_host import PostingHostTests as _ScalarHostTests
 
@@ -28,14 +28,11 @@ class InventoryHostTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory(dir=ROOT.parent);self.addCleanup(self.temp.cleanup)
         self.files=source();self.config=import_inventory_application(self.files,inventory_runtime=PROFILE)
         self.path=Path(self.temp.name)/'inventory.sqlite'
-        self.context=SQLiteDBContext.create_inventory_application(self.path,self.config)
+        p,w=copy_inventory(self.path,products=True)
+        self.context=SQLiteDBContext(self.path)
         self.addCleanup(self.context.close);self.backend=self.context.backend
-        with closing(Interpreter(database_context=self.context,output=lambda value:None)) as vm:
-            vm.execute('P=Catalogs.Products.CreateItem();P.Code="P1";P.Description="Product";P.Write();'
-                'W=Catalogs.Warehouses.CreateItem();W.Code="W1";W.Description="Warehouse";W.Write();')
-            p=vm.execute('P.Ref');w=vm.execute('W.Ref')
-            self.product=CatalogKey(self.backend.database_id,p.value_type.metadata_uuid,p.reference_uuid)
-            self.warehouse=CatalogKey(self.backend.database_id,w.value_type.metadata_uuid,w.reference_uuid)
+        self.product=CatalogKey(self.backend.database_id,*p)
+        self.warehouse=CatalogKey(self.backend.database_id,*w)
         self.host=InventoryRootOperations(self.context,self.config);self.addCleanup(self.cleanup_host)
         self.schema=next(s for s in self.config.documents if s.name=='Receipt')
         self.key=DocumentKey(self.backend.database_id,self.schema.identity,uuid4())
@@ -102,7 +99,7 @@ class InventoryHostTests(unittest.TestCase):
                 form='Document.Other.Form.Card',command='Post')
 
     def test_old_nonposting_session_still_refuses_backend(self):
-        from yadinassi.configuration_document import DocumentObjectSession
+        from yadinassi.configuration.configuration_document import DocumentObjectSession
         with self.assertRaises(BackendError):
             DocumentObjectSession(self.context,self.schema,self.files,reference_fields=True)
 
@@ -150,7 +147,7 @@ class InventoryHostTests(unittest.TestCase):
             with self.assertRaises(PostingRecoveryUnavailable):other.resolve(receipt.operation_id)
 
     def test_max_receipts_never_evicts_recovery(self):
-        with patch('yadinassi.inventory_host_operations.MAX_RECEIPTS',1):
+        with patch('yadinassi.configuration.demos.inventory_host_operations.MAX_RECEIPTS',1):
             self.execute()
             with self.assertRaises(BackendError):self.execute(expected=self.card().revision)
 

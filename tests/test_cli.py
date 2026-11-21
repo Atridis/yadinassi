@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -27,6 +28,32 @@ def diagnostic_transport_cases(cases, message, seen_messages):
 
 
 class CLITests(unittest.TestCase):
+    def test_repl_uses_standalone_codegen_with_live_session_state(self):
+        from contextlib import redirect_stderr, redirect_stdout
+        from io import StringIO
+        from unittest.mock import patch
+        from yadinassi.cli import main
+        from yadinassi.execution.direct import python_direct
+
+        program = ('A=New Array;A.Add(2);\n'
+                   'Execute("A[0]=A[0]+3;");\n'
+                   'A[0]+Eval("A[0]")\n/exit\n')
+        generated = []
+        original = python_direct._compile
+
+        def capture(*args, **kwargs):
+            plan = original(*args, **kwargs)
+            generated.append(plan.generated_source)
+            return plan
+
+        with patch.object(sys, 'stdin', StringIO(program)), \
+                patch.object(python_direct, '_compile', side_effect=capture), \
+                redirect_stdout(StringIO()) as stdout, redirect_stderr(StringIO()) as stderr:
+            status = main([])
+        self.assertEqual((status, stdout.getvalue(), stderr.getvalue()), (0, '10\n', ''))
+        self.assertEqual(len(generated), 3)
+        self.assertTrue(all('_context._check()' not in source for source in generated))
+
     def run_cli(self, *arguments, stdin=None, cwd=ROOT):
         environment = os.environ.copy()
         environment["PYTHONPATH"] = os.pathsep.join(
@@ -338,6 +365,33 @@ class CLITests(unittest.TestCase):
                     self.assertIn(location, result.stderr)
                     self.assertIn('предел роста массива Yadinassi', result.stderr)
                     self.assertNotIn('Traceback', result.stderr)
+
+    def array_bounds_diagnostics(self):
+        code = 'A=New Array;A.Add(4);R=7;\nR=A[99];\nAfter=1;\n'
+        column = 4 if hasattr((lambda: None).__code__, 'co_positions') else 1
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary).resolve() / 'bounds.bsl'
+            path.write_text(code, encoding='utf-8')
+            cases = (
+                ('команда', ('-c', code), None, '<команда>', 2, ''),
+                ('файл', (str(path),), None, str(path), 2, ''),
+                ('stdin', ('-',), code, '<stdin>', 2, ''),
+                ('консоль', (), code + 'After\nR\nA[0]\n/exit\n', '<консоль>', 1, '1\n7\n4\n'),
+            )
+            for mode, args, stdin, source, line, stdout in cases:
+                result = self.run_cli(*args, stdin=stdin, cwd=temporary)
+                self.assertEqual((result.returncode, result.stdout), (1, stdout), mode)
+                self.assertNotIn('Traceback', result.stderr, mode)
+                match = re.fullmatch(re.escape(f'{source}:{line}:{column}: ') + r'([^\r\n]+)\n',
+                                     result.stderr)
+                self.assertIsNotNone(match, (mode, result.stderr))
+                wording = match.group(1)
+                self.assertRegex(wording.casefold(), r'index.*(?:range|bound)|индекс.*границ')
+                yield mode, wording
+
+    def test_array_bounds_diagnostics_and_console_recovery(self):
+        self.assertEqual([mode for mode, _ in self.array_bounds_diagnostics()],
+                         ['команда', 'файл', 'stdin', 'консоль'])
 
     def test_array_defaults_all_cli_inputs(self):
         from scripts.smoke_test import ARRAY_DEFAULT_PROGRAM, ARRAY_DEFAULT_OUTPUT

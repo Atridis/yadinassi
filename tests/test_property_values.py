@@ -3,7 +3,7 @@ from decimal import Decimal
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.structures import BSLStructure, BSLFixedStructure, fill_property_values
+from yadinassi.collections.structures import BSLStructure, BSLFixedStructure, fill_property_values
 
 
 class PropertyValuesTests(unittest.TestCase):

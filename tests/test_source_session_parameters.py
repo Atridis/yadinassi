@@ -4,11 +4,11 @@ import unittest
 from uuid import uuid5, NAMESPACE_URL
 
 from test_configuration_source_runtime import source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 from yadinassi.runtime import Interpreter
-from yadinassi.maps import BSLMap, BSLFixedMap
-from yadinassi.configuration_source_session import source_session_definitions
+from yadinassi.collections.maps import BSLMap, BSLFixedMap
+from yadinassi.configuration.configuration_source_session import source_session_definitions
 
 
 def declaration(name, body):
@@ -226,18 +226,18 @@ class SourceUnboundedStringSessionTests(unittest.TestCase):
         with self.assertRaises(BSLError):self.app('SessionParameters.State=42;').start()
 
     def test_old_profile_stays_closed(self):
-        from yadinassi.configuration_session_parameters import read_session_parameters
+        from yadinassi.configuration.configuration_session_parameters import read_session_parameters
         files={f.path:f.content for f in self.configuration('').files}
         with self.assertRaises(ValueError):read_session_parameters(files,['State'],set(),[])
 
     def test_resource_limit_does_not_truncate(self):
         import unittest.mock
-        with unittest.mock.patch('yadinassi.session_parameters._SOURCE_STRING_MAX_UNITS',4):
+        with unittest.mock.patch('yadinassi.application.session_parameters._SOURCE_STRING_MAX_UNITS',4):
             with self.assertRaisesRegex(BSLError,'resource limit'):
                 self.app('SessionParameters.State="abcde";').start()
 
     def test_utf16_resource_limit(self):
         import unittest.mock
-        with unittest.mock.patch('yadinassi.session_parameters._SOURCE_STRING_MAX_UNITS',3):
+        with unittest.mock.patch('yadinassi.application.session_parameters._SOURCE_STRING_MAX_UNITS',3):
             with self.assertRaisesRegex(BSLError,'resource limit'):
                 self.app('SessionParameters.State="😀😀";').start()

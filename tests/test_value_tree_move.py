@@ -3,8 +3,8 @@ from decimal import Decimal as D, localcontext, InvalidOperation, Rounded, Inexa
 import unittest
 from unittest import mock
 from yadinassi import Interpreter, BSLError
-from yadinassi.value_trees import BSLValueTree, BSLValueTreeRowCollection as Rows
-from yadinassi.values import NULL
+from yadinassi.collections.value_trees import BSLValueTree, BSLValueTreeRowCollection as Rows
+from yadinassi.types.values import NULL
 
 
 def fixture():
@@ -108,7 +108,7 @@ class MoveTests(unittest.TestCase):
 
     def test_local_row_budget_and_corrupt_membership_guard_before_mutation(self):
         tree,rows,_=fixture()
-        with mock.patch('yadinassi.value_trees._MAX_ROWS',2),self.assertRaises(ValueError):tree.rows.move(rows[0],D(1))
+        with mock.patch('yadinassi.collections.value_trees._MAX_ROWS',2),self.assertRaises(ValueError):tree.rows.move(rows[0],D(1))
         self.assertEqual(tree.rows.items,rows)
         orphan=tree.rows.add();tree.rows.items.pop()
         with self.assertRaises(ValueError):tree.rows.move(orphan,D(0))

@@ -1,6 +1,6 @@
 # Static form-module name-validation profile v1
 
-`yadinassi.form_module_analysis.analyze_form_module` describes a **complete,
+`yadinassi.forms.form_module_analysis.analyze_form_module` describes a **complete,
 non-executable** catalog form module in the deliberately narrow
 `catalog-form-name-validation-static-v1` profile. `native_parity = False`.
 This is infrastructure for the user's two-handler name-validation example, not

@@ -18,13 +18,13 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.date_time_conversions import to_local_time, to_universal_time
-from yadinassi.dates import BSLDate, MAX_TICKS, TICKS_PER_SECOND, UnsupportedDateRange, date
-from yadinassi.maps import BSLFixedMap, BSLMap
-from yadinassi.serialization import value_from_string_internal as read, value_to_string_internal as write
-from yadinassi.structures import BSLFixedStructure, BSLStructure
-from yadinassi.type_values import type_of
-from yadinassi.values import BSLArray, BSLFixedArray, BSLType
+from yadinassi.temporal.date_time_conversions import to_local_time, to_universal_time
+from yadinassi.temporal.dates import BSLDate, MAX_TICKS, TICKS_PER_SECOND, UnsupportedDateRange, date
+from yadinassi.collections.maps import BSLFixedMap, BSLMap
+from yadinassi.formats.storage.serialization import value_from_string_internal as read, value_to_string_internal as write
+from yadinassi.collections.structures import BSLFixedStructure, BSLStructure
+from yadinassi.types.type_values import type_of
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLType
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -147,7 +147,7 @@ class FractionalFixedOffsetTests(unittest.TestCase):
                 patch('time.mktime', side_effect=AssertionError('host mktime used')), \
                 patch('time.time', side_effect=AssertionError('host clock used')), \
                 patch('time.time_ns', side_effect=AssertionError('host clock used')), \
-                patch('yadinassi.timezones._load_zone', side_effect=AssertionError('named zone used')), \
+                patch('yadinassi.temporal.timezones._load_zone', side_effect=AssertionError('named zone used')), \
                 localcontext() as context:
             context.prec = 1
             context.Emin = -1

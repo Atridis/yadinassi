@@ -6,10 +6,10 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import test_catalog_queries as fixtures
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _View
-from yadinassi.sqlite_catalog_layout import quote_identifier
-from yadinassi.sqlite_query_indexes import register_query_collations
-from yadinassi.sqlite_query_index_maintenance import prepare, apply
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _View
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
+from yadinassi.db.sqlite.sqlite_query_indexes import register_query_collations
+from yadinassi.db.sqlite.sqlite_query_index_maintenance import prepare, apply
 
 
 class PublicIndexedLookupTests(unittest.TestCase):

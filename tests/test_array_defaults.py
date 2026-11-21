@@ -2,14 +2,16 @@
 from decimal import Decimal
 import unittest
 
-from yadinassi import BSLError, Interpreter
-from yadinassi.values import BSLArray
-from yadinassi.serialization import value_to_string_internal, value_from_string_internal
+from array_backend_contract import ArrayBackendContract
+
+from yadinassi import BSLError
+from yadinassi.types.values import BSLArray
+from yadinassi.formats.storage.serialization import value_from_string_internal
 
 
-class ArrayDefaultTests(unittest.TestCase):
+class _ArrayDefaultTests(ArrayBackendContract):
     def setUp(self):
-        self.vm = Interpreter(output=lambda message: None)
+        self.vm = self.interpreter(output=lambda message: None)
 
     def test_host_methods_default_to_undefined(self):
         a = BSLArray()
@@ -21,7 +23,7 @@ class ArrayDefaultTests(unittest.TestCase):
         for method in ('Добавить', 'Add', 'дОбАвИтЬ', 'aDd'):
             with self.subTest(method=method):
                 self.vm.execute(f'a = New Array; a.{method}(); a.{method}();')
-                self.assertEqual(self.vm.execute('a').items, [None, None])
+                self.assertEqual(self.array_items(self.vm.execute('a')), [None, None])
                 self.assertEqual(self.vm.execute('a.Count()'), Decimal(2))
                 self.assertEqual(self.vm.execute('a.UBound()'), Decimal(1))
                 self.assertEqual(self.vm.execute('a.Find(Undefined)'), Decimal(0))
@@ -30,29 +32,28 @@ class ArrayDefaultTests(unittest.TestCase):
         for method in ('Вставить', 'Insert', 'вСтАвИтЬ', 'iNsErT'):
             with self.subTest(method=method):
                 self.vm.execute(f'a = New Array; a.Add("A"); a.Add("B"); a.{method}(1);')
-                self.assertEqual(self.vm.execute('a').items, ['A', None, 'B'])
+                self.assertEqual(self.array_items(self.vm.execute('a')), ['A', None, 'B'])
                 self.vm.execute(f'a.{method}(0); a.{method}(a.Count());')
-                self.assertEqual(self.vm.execute('a').items, [None, 'A', None, 'B', None])
+                self.assertEqual(self.array_items(self.vm.execute('a')), [None, 'A', None, 'B', None])
 
     def test_insert_into_empty_array(self):
         self.vm.execute('a = New Array; a.Insert(0);')
-        self.assertEqual(self.vm.execute('a').items, [None])
+        self.assertEqual(self.array_items(self.vm.execute('a')), [None])
 
     def test_omitted_and_explicit_undefined_have_same_serialization(self):
         self.vm.execute('a = New Array; a.Add(); a.Insert(0); '
                         'b = New Array; b.Add(Undefined); b.Insert(0, Undefined);')
-        a, b = self.vm.execute('a'), self.vm.execute('b')
-        self.assertEqual(value_to_string_internal(a), value_to_string_internal(b))
-        self.assertEqual(value_from_string_internal(value_to_string_internal(a)).items, [None, None])
+        self.assertEqual(self.serialize_array('a'), self.serialize_array('b'))
+        self.assertEqual(value_from_string_internal(self.serialize_array('a')).items, [None, None])
         self.assertEqual(self.vm.execute('TypeOf(a[0])'), self.vm.execute('TypeOf(Undefined)'))
 
     def test_explicit_values_preserve_identity(self):
         self.vm.execute('a = New Array; child = New Array; a.Add(child); a.Insert(0, child);')
         a, child = self.vm.execute('a'), self.vm.execute('child')
-        self.assertIs(a.items[0], child)
-        self.assertIs(a.items[1], child)
+        self.assertIs(self.array_items(a)[0], child)
+        self.assertIs(self.array_items(a)[1], child)
         self.vm.execute('child.Add();')
-        self.assertEqual(a.items[0].items, [None])
+        self.assertEqual(self.array_items(self.array_items(a)[0]), [None])
 
     def test_defaults_remain_writable_and_collection_aliases_are_live(self):
         self.vm.execute('a = New Array; alias = a; a.Add(); alias.Insert(0); '
@@ -67,17 +68,17 @@ class ArrayDefaultTests(unittest.TestCase):
             Procedure SetValue(x) x = "changed"; EndProcedure
             a = New Array; Append(a);
         ''')
-        self.assertEqual(self.vm.execute('a').items, [None, None])
+        self.assertEqual(self.array_items(self.vm.execute('a')), [None, None])
         self.vm.execute('SetValue(a[1]);')
-        self.assertEqual(self.vm.execute('a').items, [None, 'changed'])
+        self.assertEqual(self.array_items(self.vm.execute('a')), [None, 'changed'])
 
     def test_fixed_snapshot_and_fixed_methods_unchanged(self):
         self.vm.execute('a = New Array; a.Add(); f = New FixedArray(a); a.Insert(0); a[1] = 7;')
-        self.assertEqual(self.vm.execute('f').items, (None,))
+        self.assertEqual(self.fixed_items(self.vm.execute('f')), (None,))
         for call in ('f.Add()', 'f.Insert(0)', 'f.Добавить()', 'f.Вставить(0)'):
             with self.subTest(call=call), self.assertRaises(BSLError):
                 self.vm.execute(call)
-        self.assertEqual(self.vm.execute('f').items, (None,))
+        self.assertEqual(self.fixed_items(self.vm.execute('f')), (None,))
 
     def test_invalid_calls_preserve_contents_and_recover(self):
         # Index coercions are not expanded in this change.
@@ -88,9 +89,9 @@ class ArrayDefaultTests(unittest.TestCase):
                 self.vm.execute('a = New Array; a.Add("old");')
                 with self.assertRaises(BSLError):
                     self.vm.execute(call)
-                self.assertEqual(self.vm.execute('a').items, ['old'])
+                self.assertEqual(self.array_items(self.vm.execute('a')), ['old'])
                 self.vm.execute('Try ' + call + '; Except a.Add(); EndTry;')
-                self.assertEqual(self.vm.execute('a').items, ['old', None])
+                self.assertEqual(self.array_items(self.vm.execute('a')), ['old', None])
 
     def test_explicit_empty_slots_still_rejected_before_mutation(self):
         for call in ('a.Add(,)', 'a.Insert(0,)', 'a.Insert(, 1)'):
@@ -98,4 +99,8 @@ class ArrayDefaultTests(unittest.TestCase):
                 self.vm.execute('a = New Array; a.Add("old");')
                 with self.assertRaises(BSLError):
                     self.vm.execute(call)
-                self.assertEqual(self.vm.execute('a').items, ['old'])
+                self.assertEqual(self.array_items(self.vm.execute('a')), ['old'])
+
+
+class ArrayDefaultTests(_ArrayDefaultTests, unittest.TestCase):
+    """Default direct backend."""

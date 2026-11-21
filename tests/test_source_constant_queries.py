@@ -5,10 +5,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from test_source_constant_store import configuration
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_constant_queries import SourceConstantQuery
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.query.source_constant_queries import SourceConstantQuery
+from yadinassi.types.errors import BSLError
 
 
 def package(body=''):
@@ -102,7 +102,7 @@ class SourceConstantQueryTests(unittest.TestCase):
         with self.assertRaises(ValueError):query.read(other.interpreter)
 
     def test_sql_snapshot_once(self):
-        from yadinassi.source_constant_store import SourceConstantStore
+        from yadinassi.db.metadata.source_constant_store import SourceConstantStore
         original=SourceConstantStore.get_many;calls=[]
         def read(store,names):calls.append(names);return original(store,names)
         with patch.object(SourceConstantStore,'get_many',read):

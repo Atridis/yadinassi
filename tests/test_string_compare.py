@@ -5,8 +5,8 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.collation import caseless_string_key, string_key
-from yadinassi.strings import compare
+from yadinassi.text.collation import caseless_string_key, string_key
+from yadinassi.text.strings import compare
 
 
 PAIRS = (('ascii-case', 'aBc', 'AbC', 0), ('less', 'a', 'b', -1),
@@ -70,7 +70,7 @@ class StringCompareTests(unittest.TestCase):
         for first, second in (('a' * 4097, ''), ('', 'a' * 4097), ('a' * 4097, 'a' * 4097)):
             with self.assertRaisesRegex(ValueError, '4096'):
                 compare(first, second)
-        with patch('yadinassi.collation.MAX_NORMALIZED_LENGTH', 1):
+        with patch('yadinassi.text.collation.MAX_NORMALIZED_LENGTH', 1):
             with self.assertRaisesRegex(ValueError, 'нормализации'):
                 compare('é', 'é')
 

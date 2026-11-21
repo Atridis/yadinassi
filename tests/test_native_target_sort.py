@@ -10,16 +10,18 @@ The probe source is integrational_tests/tests/collections.bsl at that commit.
 The 48 compact expected tuples below were extracted from the 96 exact native
 "target-probes.v1.sort.*" records after independently checking the file digest,
 status=ok, identity=true and byte-identical IDs for pass1/pass2 of every case.
-Every tuple is asserted on BOTH consecutive sorts. Inputs are reconstructed
+Every tuple is asserted on BOTH consecutive sorts by the explicit
+`tests.compatibility_native_table_sort` diagnostic. Inputs are reconstructed
 from the BSL probe's key literals and insertion rules, without using the sorter
 or its pivot/partition rules to generate expected orders. The record checksum
 covers all 96 original labelled records, not a local sort prediction.
 
 Tests under ModelSafetyTests are synthetic correctness/resource checks, not
-additional native observations. Native equivalence beyond the observed lengths
-15..18 is unverified; the API retains its existing size/resource limits.
+additional native observations. Native equivalence beyond the observed lengths 15..18 is unverified. The
+blocking API tests below assert the documented stable Python scalar ordering.
 """
 from decimal import Decimal as D, Inexact, Rounded, localcontext
+from contextlib import nullcontext
 from hashlib import sha256
 from itertools import product
 from pathlib import Path
@@ -28,17 +30,17 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi import native_target_sort as model
-from yadinassi.dates import BSLDate
-from yadinassi.maps import BSLMap
-from yadinassi.native_targets import (
+from yadinassi.execution.codegen import native_target_sort as model
+from yadinassi.temporal.dates import BSLDate
+from yadinassi.collections.maps import BSLMap
+from yadinassi.execution.codegen.native_targets import (
     LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, target_context,
 )
-from yadinassi.structures import BSLStructure
-from yadinassi.value_lists import BSLValueList
-from yadinassi.value_table_sort import _string_key
-from yadinassi.value_tables import BSLValueTable
-from yadinassi.values import BSLArray, NULL
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.collections.value_lists import BSLValueList
+from yadinassi.collections.value_table_sort import _string_key
+from yadinassi.collections.value_tables import BSLValueTable
+from yadinassi.types.values import BSLArray, NULL
 
 ROOT = Path(__file__).resolve().parents[1]
 KEYS = "я|е|Ё|Е|ё|a|A|á|a |a-1|a1|a10|a2| |!|😀|Я|A".split("|")
@@ -111,6 +113,17 @@ def input_ids(size, insertion):
     return [i for i in list(range(1, 19, 2)) + list(range(18, 0, -2)) if i <= size]
 
 
+
+def python_order(size, insertion, mode):
+    ids = input_ids(size, insertion)
+    if mode == 'asc-id-desc':
+        ids.sort(reverse=True)
+    elif mode == 'desc-id-asc':
+        ids.sort()
+    return tuple(sorted(ids, key=lambda i: KEYS[i - 1],
+                        reverse=mode.startswith('desc')))
+
+
 def table_for(values):
     table = BSLValueTable()
     table.columns.add('Key')
@@ -153,61 +166,121 @@ class NativeTargetSortTests(unittest.TestCase):
         unique = sorted(set(keys))
         self.assertEqual(tuple(unique.index(key) for key in keys), RANKS)
 
-    def test_all_96_native_orders_and_row_identity(self):
+    def test_all_96_python_orders_preserve_records_and_metadata(self):
+        # Python scalar ordering is the documented lightweight contract.
+        # Historical native IDs remain unchanged in the explicit diagnostic:
+        # python -m unittest tests.compatibility_native_table_sort -v
         observed = 0
         with target_context(LINUX_8_3_27_1508):
-            for (size, insertion, mode), expected in NATIVE_ORDERS.items():
+            for size, insertion, mode in NATIVE_ORDERS:
                 table, original = probe_table(size, insertion)
                 container = table.rows
                 columns = list(table.columns)
-                cells = {i: row.cells for i, row in original.items()}
+                metadata = [(c.name, type(c.name), c.title, type(c.title),
+                             c.width, type(c.width), id(c.value_type)) for c in columns]
+                payloads = {i: tuple(row) for i, row in original.items()}
+                expected = python_order(size, insertion, mode)
                 for repeat in (1, 2):
                     with self.subTest(size=size, insertion=insertion, mode=mode, repeat=repeat):
                         self.assertIsNone(table.sort(ORDERS[mode]))
                         observed += 1
                         actual = tuple(int(row.get_member('ID')) for row in table.rows)
                         self.assertEqual(actual, expected)
+                        self.assertEqual(sorted(actual), list(range(1, size + 1)))
                         self.assertIs(table.rows, container)
-                        self.assertEqual(list(table.columns), columns)
+                        self.assertEqual([id(c) for c in table.columns], [id(c) for c in columns])
+                        self.assertEqual([(c.name, type(c.name), c.title, type(c.title),
+                                           c.width, type(c.width), id(c.value_type))
+                                          for c in table.columns], metadata)
                         for identifier, row in zip(actual, table.rows):
                             self.assertIs(row, original[identifier])
-                            self.assertIs(row.cells, cells[identifier])
                             self.assertIs(row.owner(), table)
-                            self.assertEqual(row.get_member('Key'), KEYS[identifier - 1])
+                            self.assertEqual(tuple(row), payloads[identifier])
+                            for actual_value, prior_value in zip(row, payloads[identifier]):
+                                self.assertIs(actual_value, prior_value)
+                            self.assertEqual(dict(row.cells), dict(zip(columns, payloads[identifier])))
         self.assertEqual(observed, 96)
 
-    def test_original_two_locale_checkpoints_through_interpreter(self):
+    def test_readonly_cells_snapshot_contract_is_separate_from_order(self):
+        # docs/plain-table-runtime-contract.md specifies an inspection snapshot,
+        # not the identity of a mutable backing dict. Verify values and writes.
+        table = table_for(['b', 'a'])
+        row = table.rows[0]
+        column = table.columns.get(0)
+        snapshot = row.cells
+        with self.assertRaises(TypeError):
+            snapshot[column] = 'changed'
+        table.sort('Key')
+        self.assertIs(table.rows[1], row)
+        self.assertIs(row.owner(), table)
+        self.assertEqual(snapshot[column], 'b')
+        self.assertEqual(dict(row.cells), dict(snapshot))
+        row.set_member('Key', 'c')
+        self.assertEqual(snapshot[column], 'b')
+        self.assertEqual(row.cells[column], 'c')
+
+    def test_python_numeric_sort_preserves_decimal_and_payload_identity(self):
+        values = [D('1.00'), D('-2'), D('1.0'), D('0'),
+                  D('999999999999999999999.001'), D('-0')]
+        for reverse in (False, True):
+            table = table_for([])
+            table.columns.add('Payload')
+            original = []
+            for value in values:
+                row = table.add()
+                row.set_member('Key', value)
+                row.set_member('Payload', object())
+                original.append(row)
+            payloads = {id(row): tuple(row) for row in original}
+            expected = sorted(original, key=lambda row: row.get_member('Key'), reverse=reverse)
+            for repeat in (1, 2):
+                with self.subTest(reverse=reverse, repeat=repeat):
+                    table.sort('Key Desc' if reverse else 'Key Asc')
+                    self.assertEqual([id(row) for row in table.rows], [id(row) for row in expected])
+                    for row in table.rows:
+                        self.assertIs(row.get_member('Key'), payloads[id(row)][0])
+                        self.assertIs(row.get_member('Payload'), payloads[id(row)][1])
+                        self.assertIs(row.owner(), table)
+
+    def test_python_sort_rejects_opaque_key_without_callback_or_partial_order(self):
+        events = []
+        class Opaque:
+            def __lt__(self, other):
+                events.append('comparison')
+                raise AssertionError('opaque comparator executed')
+        table = table_for([D(2), Opaque(), D(1)])
+        original = list(table.rows)
+        with self.assertRaises(NotImplementedError):
+            table.sort('Key')
+        self.assertEqual([id(row) for row in table.rows], [id(row) for row in original])
+        self.assertEqual(events, [])
+
+    def test_locale_probe_through_direct_bsl_preserves_order_and_row_alias(self):
         vm = Interpreter(native_target=LINUX_8_3_27_1508)
+        self.addCleanup(vm.close)
         source = (ROOT / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig')
         vm.execute(source.split('#Область МассивыИСтруктуры', 1)[0])
         for mode in ('asc', 'desc'):
             with self.subTest(mode=mode):
-                result = vm.execute(
-                    f'СортировкаТаблицыПробы("locale", "{ORDERS[mode]}", "omitted")')
-                expected = NATIVE_ORDERS[17, 'forward', mode]
-                self.assertEqual(result.get_member('Status'), 'ok')
-                self.assertEqual(result.get_member('Order').items, list(expected))
-                self.assertEqual(result.get_member('FirstID'), 1)
-                self.assertEqual(result.get_member('FirstIndex'), expected.index(1))
-                self.assertIs(result.get_member('SameRow'), True)
+                vm.execute(f'Probe=СортировкаТаблицыПробы("locale", "{ORDERS[mode]}", "omitted");')
+                expected = python_order(17, 'forward', mode)
+                self.assertEqual(vm.execute('Probe.Status'), 'ok')
+                self.assertEqual(tuple(vm.execute('Probe.Order').items), expected)
+                self.assertEqual(vm.execute('Probe.FirstID'), 1)
+                self.assertEqual(vm.execute('Probe.FirstIndex'), expected.index(1))
+                self.assertIs(vm.execute('Probe.SameRow'), True)
 
-    def test_default_and_explicit_windows_orders_remain_stable(self):
-        # Stable order is independently derived, not replaced by Linux tuples.
+    def test_default_and_explicit_windows_use_stable_python_order(self):
         for selected in (None, WINDOWS_8_3_27_2342):
-            for size, insertion, mode in NATIVE_ORDERS:
-                table, original = probe_table(size, insertion)
-                key = lambda i: (
-                    -RANKS[i - 1] if mode.startswith('desc') else RANKS[i - 1],
-                    -i if mode == 'asc-id-desc' else i if mode == 'desc-id-asc' else 0,
-                )
-                expected = sorted(input_ids(size, insertion), key=key)
-                with self.subTest(target=selected, size=size, insertion=insertion, mode=mode):
-                    if selected is None:
+            context = nullcontext() if selected is None else target_context(selected)
+            with context:
+                for size, insertion, mode in NATIVE_ORDERS:
+                    table, original = probe_table(size, insertion)
+                    expected = python_order(size, insertion, mode)
+                    with self.subTest(target=selected, size=size, insertion=insertion, mode=mode):
                         table.sort(ORDERS[mode])
-                    else:
-                        with target_context(selected):
-                            table.sort(ORDERS[mode])
-                    self.assertEqual(table.rows, [original[i] for i in expected])
+                        self.assertEqual([id(row) for row in table.rows],
+                                         [id(original[i]) for i in expected])
 
     def test_value_list_sort_is_not_changed_by_table_target(self):
         owner = BSLValueList()
@@ -221,74 +294,58 @@ class NativeTargetSortTests(unittest.TestCase):
         self.assertEqual(owner.items, [original[i] for i in expected])
 
     def test_rejected_inputs_and_comparators_are_still_atomic(self):
-        bad = ('中', 'a\t', '😂', 'a😀', '😁a', '\ue000x', '\ud800', 'x' * 4097,
-               D('NaN'), D('Infinity'), D('1e5000'), BSLDate(0, True), BSLMap(), object())
+        bad_keys = (
+            (D('NaN'), ValueError), (D('Infinity'), ValueError),
+            (BSLDate(0, True), NotImplementedError), (BSLMap(), NotImplementedError),
+            (BSLArray(), NotImplementedError),
+            (BSLStructure(), NotImplementedError), (object(), NotImplementedError),
+        )
+        # The native ValueTable observation accepts 'Key Sideways' as ascending.
+        operations = [
+            (order, None, error)
+            for order, error in (('', ValueError), ('Key,Missing', ValueError),
+                                 ('Key Asc extra', ValueError),
+                                 (None, TypeError))
+        ] + [('Key', comparator, TypeError) for comparator in (1, D(1))] + [
+            ('Key', comparator, NotImplementedError)
+            for comparator in (NULL, False, BSLStructure())
+        ]
         with target_context(LINUX_8_3_27_1508):
-            for value in bad:
-                table = table_for([D(2), D(1), value])
-                before = list(table.rows)
-                with self.subTest(value=repr(value)), self.assertRaises((TypeError, ValueError)):
-                    table.sort('Key')
-                self.assertEqual(table.rows, before)
-            for values in ([D(1), BSLArray()], [BSLArray(), D(1)], [NULL, BSLStructure()]):
-                table = table_for(values)
-                before = list(table.rows)
-                with self.assertRaisesRegex(ValueError, 'смешанный'):
-                    table.sort('Key')
-                self.assertEqual(table.rows, before)
-            for comparator in (D(1), NULL, False, BSLStructure()):
-                table = table_for([D(2), D(1)])
-                before = list(table.rows)
-                with self.assertRaises(TypeError):
-                    table.sort('Key', comparator)
-                self.assertEqual(table.rows, before)
-            for order in ('', 'Key,Missing', 'Key Asc extra', None):
-                table = table_for([D(2), D(1)])
-                before = list(table.rows)
-                with self.assertRaises((TypeError, ValueError)):
-                    table.sort(order)
-                self.assertEqual(table.rows, before)
+            for value, error in bad_keys:
+                with self.subTest(value=repr(value)):
+                    table = table_for([D(2), D(1), value])
+                    before = [id(row) for row in table.rows]
+                    with self.assertRaises(error):
+                        table.sort('Key')
+                    self.assertEqual([id(row) for row in table.rows], before)
+            for order, comparator, error in operations:
+                with self.subTest(order=order, comparator=comparator):
+                    table = table_for([D(2), D(1)])
+                    before = [id(row) for row in table.rows]
+                    with self.assertRaises(error):
+                        table.sort(order, comparator)
+                    self.assertEqual([id(row) for row in table.rows], before)
 
-    def test_every_column_and_resource_limit_precedes_sorting(self):
-        with target_context(LINUX_8_3_27_1508), patch(
-                'yadinassi.value_table_sort.introsort', side_effect=AssertionError('must not sort')):
-            for constant, limit, order in (
-                ('_MAX_SORT_CELLS', 1, 'Key'),
-                ('_MAX_SORT_TEXT', 3, 'Key'),
-                ('_MAX_KEY_WEIGHTS', 1, 'Key'),
-                ('_MAX_SORT_TOKENS', 3, 'Key,,,')
-            ):
-                table = table_for(['bb', 'aa'])
-                before = list(table.rows)
-                with self.subTest(constant=constant):
-                    with patch('yadinassi.value_table_sort.' + constant, limit):
-                        with self.assertRaises(ValueError):
-                            table.sort(order)
-                self.assertEqual(table.rows, before)
-            table = table_for([D(2), D(1)])
-            table.columns.add('Other')
-            table.rows[0].set_member('Other', '中')
-            before = list(table.rows)
-            with self.assertRaises(ValueError):
-                table.sort('Key, Other')
-            self.assertEqual(table.rows, before)
+    def test_scalar_strings_do_not_require_legacy_alphabet_or_length_budget(self):
+        values = ['中', 'a\t', '😂', 'a😀', '😁a', '\ue000x', '\ud800', 'x' * 4097]
+        table = table_for(values)
+        table.sort('Key')
+        self.assertEqual([row.get_member('Key') for row in table.rows], sorted(values))
 
-    def test_sort_stage_failure_does_not_commit_private_row_order(self):
+    def test_rejected_secondary_key_does_not_publish_partial_sort(self):
         table, original = probe_table(18, 'forward')
+        table.columns.add('Other')
+        opaque = object()
+        original[18].set_member('Other', opaque)
         container = table.rows
-        before = list(table.rows)
+        before = [id(row) for row in table.rows]
 
-        def fail_after_mutation(rows, less):
-            self.assertIsNot(rows, container)
-            rows.reverse()
-            raise RuntimeError('synthetic sort failure')
+        with target_context(LINUX_8_3_27_1508), self.assertRaises(NotImplementedError):
+            table.sort('Key Asc, Other Desc')
 
-        with target_context(LINUX_8_3_27_1508), patch(
-                'yadinassi.value_table_sort.introsort', side_effect=fail_after_mutation):
-            with self.assertRaisesRegex(RuntimeError, 'synthetic sort failure'):
-                table.sort('Key')
         self.assertIs(table.rows, container)
-        self.assertEqual(table.rows, before)
+        self.assertEqual([id(row) for row in table.rows], before)
+        self.assertIs(original[18].get_member('Other'), opaque)
         for identifier, row in original.items():
             self.assertIs(row.owner(), table)
             self.assertEqual(row.get_member('Key'), KEYS[identifier - 1])

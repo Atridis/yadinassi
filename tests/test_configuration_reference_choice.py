@@ -5,11 +5,11 @@ from unittest.mock import patch
 import unittest
 
 from test_form_references import scopes
-from yadinassi.form_model import BSLFormAttribute
-from yadinassi.form_tables import FormTableColumn,FormTableSchema
-from yadinassi.form_replication import ReplicatedFormServer,ReplicatedFormSession
-from yadinassi.catalog_backend import CatalogKey,CatalogValueRow,CatalogValuePage,BackendError
-from yadinassi.configuration_reference_choice import ConfigurationReferenceChoice
+from yadinassi.forms.form_model import BSLFormAttribute
+from yadinassi.forms.form_tables import FormTableColumn,FormTableSchema
+from yadinassi.forms.form_replication import ReplicatedFormServer,ReplicatedFormSession
+from yadinassi.db.catalog.catalog_backend import CatalogKey,CatalogValueRow,CatalogValuePage,BackendError
+from yadinassi.configuration.configuration_reference_choice import ConfigurationReferenceChoice
 
 SOURCE='''&AtServer
 Procedure Create(Cancel, StandardProcessing)
@@ -77,7 +77,7 @@ class PickerTests(unittest.TestCase):
         self.assertIsNone(self.choice.changed_control);self.assertTrue(self.server.session.form._data['product'].is_empty())
 
     def test_overflow_is_empty_explicit_not_truncated(self):
-        with patch('yadinassi.reference_choice_pages.MAX_ROWS',0):p=self.begin()
+        with patch('yadinassi.forms.reference_choice_pages.MAX_ROWS',0):p=self.begin()
         self.assertEqual(p['rows'],[]);self.assertEqual(p['error'],'snapshot_limit');self.assertIsNone(p['navigation'])
         self.overflow=False;self.execute({'action':'filter','ticket':p['ticket'],'code':'P1'})
         self.assertEqual(len(self.choice.projection()['rows']),1);self.assertIsNone(self.choice.projection()['error'])
@@ -113,7 +113,7 @@ class PickerTests(unittest.TestCase):
 
     def test_preflight_failure_preserves_value_ticket_and_row_handles(self):
         p=self.begin(True);table=self.server.session.form._tables['lines'];row=table._by_id[1]
-        with patch('yadinassi.configuration_reference_choice.encode_line',side_effect=ValueError('budget')):
+        with patch('yadinassi.configuration.configuration_reference_choice.encode_line',side_effect=ValueError('budget')):
             with self.assertRaises(ValueError):self.execute({'action':'apply','ticket':p['ticket'],'choice':p['rows'][0]['choice']})
         self.assertIs(table._by_id[1],row);self.assertTrue(row._data['product'].is_empty())
         self.assertTrue(self.choice.active);self.assertIsNone(self.choice.changed_control)

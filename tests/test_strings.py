@@ -12,7 +12,7 @@ import sys
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.values import BSLArray
+from yadinassi.types.values import BSLArray
 
 
 class StringTests(unittest.TestCase):
@@ -291,6 +291,28 @@ class StringTests(unittest.TestCase):
         self.assertEqual(self.evaluate('СтрСоединить(fixedHalves)'), '🙂')
         self.assertIs(self.vm.variables['fixed'].items, items)
         self.assertEqual(self.evaluate('source.Count()'), Decimal(5))
+
+    def test_string_length_matches_utf16_units_for_python_inputs(self):
+        from yadinassi.text.strings import string_length
+
+        for text in ('', 'abcdefgh', 'abc\x00def', 'кириллица', '\uffff',
+                     '😀', 'Я😀a', '\ud800', '\udc00', '\ud83d\ude00'):
+            with self.subTest(text=text):
+                result = string_length(text)
+                self.assertIs(type(result), Decimal)
+                self.assertEqual(result, len(text.encode('utf-16-le', 'surrogatepass')) // 2)
+        self.assertEqual(string_length(None), Decimal(0))
+        self.assertEqual(string_length(Decimal('1234.5')), Decimal(7))
+        self.assertEqual(string_length(True), Decimal(2))
+
+    def test_prepared_string_length_on_dynamic_ascii_and_non_ascii(self):
+        plan = self.vm.prepare('Результат = СтрДлина(Текст);')
+        for text, length in (('abc', 3), ('Я', 1), ('Я😀', 3), ('\ud800', 1)):
+            self.vm.variables['текст'] = text
+            self.vm.execute_prepared(plan)
+            result = self.vm.variables['результат']
+            self.assertIs(type(result), Decimal)
+            self.assertEqual(result, length)
 
     def test_utf16_length_slices_find_and_reassembly(self):
         self.assert_cases([

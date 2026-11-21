@@ -11,12 +11,12 @@ import unittest
 from uuid import UUID, uuid4
 
 from test_sqlite_catalog_backend import configuration
-from yadinassi.catalog_backend import (
+from yadinassi.db.catalog.catalog_backend import (
     BackendError, CatalogDraft, CatalogKey, CatalogSchema, FieldSchema,
     TabularRow, TabularSectionRows, TabularSectionSchema,
 )
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _json, _schema_data
-from yadinassi.sqlite_catalog_layout import quote_identifier
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _json, _schema_data
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
 
 
 class ConnectionFault:
@@ -527,7 +527,7 @@ class CatalogSectionTests(unittest.TestCase):
         self.assertEqual(self.read(draft.key), before_card)
 
     def test_v3_capability_and_runtime_activation_are_explicit(self):
-        from yadinassi.database_context import SQLiteDBContext
+        from yadinassi.db.database_context import SQLiteDBContext
         self.assertTrue(self.backend.capabilities().catalog_tabular_sections)
         self.backend.close()
         before = self.path.read_bytes()
@@ -542,10 +542,10 @@ class CatalogSectionTests(unittest.TestCase):
 
     def test_selection_and_scan_share_nested_row_budget(self):
         from unittest.mock import patch
-        from yadinassi.catalog_backend import CatalogSelection, CatalogScanRequest
+        from yadinassi.db.catalog.catalog_backend import CatalogSelection, CatalogScanRequest
         for code in ('10', '20'):
             self.create(self.draft((self.section(self.row(), self.row()),), code=code))
-        with patch('yadinassi.sqlite_catalog._MAX_ROWS', 3):
+        with patch('yadinassi.db.sqlite.sqlite_catalog._MAX_ROWS', 3):
             view = self.backend.begin_read()
             try:
                 with self.assertRaisesRegex(BackendError, 'unsupported'):
@@ -556,7 +556,7 @@ class CatalogSectionTests(unittest.TestCase):
                 view.close()
 
     def test_schema_reuse_preserves_full_section_cards(self):
-        from yadinassi.catalog_backend import CatalogScanRequest, CatalogOrder
+        from yadinassi.db.catalog.catalog_backend import CatalogScanRequest, CatalogOrder
         expected = []
         for code in ('10', '20'):
             draft = self.draft((self.section(self.row(text=code)),), code=code)
@@ -747,7 +747,7 @@ class CatalogSectionTests(unittest.TestCase):
         first = self.draft((self.section(self.row(), self.row()),), code='10')
         excess = self.draft((self.section(self.row(), self.row()),), code='20')
         last = self.draft((self.section(self.row()),), code='30')
-        with patch('yadinassi.sqlite_catalog._MAX_ROWS', 3):
+        with patch('yadinassi.db.sqlite.sqlite_catalog._MAX_ROWS', 3):
             tx = self.backend.begin_write(uuid4())
             try:
                 tx.create(first)
@@ -777,7 +777,7 @@ class CatalogSectionTests(unittest.TestCase):
             second_size = len(_json(view._draft_sections(excess)))
         finally:
             view.close()
-        with patch('yadinassi.sqlite_catalog._MAX_CONFIG_BYTES', first_size + second_size - 1):
+        with patch('yadinassi.db.sqlite.sqlite_catalog._MAX_CONFIG_BYTES', first_size + second_size - 1):
             tx = self.backend.begin_write(uuid4())
             try:
                 tx.create(first)
@@ -847,7 +847,7 @@ class CatalogSectionTests(unittest.TestCase):
 
     def test_interpreter_opts_into_v3_while_default_context_stays_closed(self):
         from yadinassi import Interpreter
-        from yadinassi.database_context import SQLiteDBContext
+        from yadinassi.db.database_context import SQLiteDBContext
         before = self.path.read_bytes()
         output = []
         with SQLiteDBContext(self.path) as context:
@@ -860,7 +860,7 @@ class CatalogSectionTests(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(), before)
 
     def test_ui_opts_into_v3_but_unsupported_section_shapes_remain_readonly(self):
-        from yadinassi.database_context import SQLiteDBContext
+        from yadinassi.db.database_context import SQLiteDBContext
         from yadinassi.ui.catalog_editor import CatalogEditorApplication
         before = self.path.read_bytes()
         with SQLiteDBContext(self.path) as context:
@@ -910,8 +910,8 @@ class LegacySectionCompatibilityTests(unittest.TestCase):
                 backend.close()
 
     def test_v1_rejects_nonempty_section_intent_without_upgrade(self):
-        from yadinassi.sqlite_catalog import _APPLICATION_ID
-        from yadinassi.sqlite_catalog_migration import _V1_DDL
+        from yadinassi.db.sqlite.sqlite_catalog import _APPLICATION_ID
+        from yadinassi.db.sqlite.sqlite_catalog_migration import _V1_DDL
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'legacy-v1.sqlite'
             database_id, config_id = uuid4(), uuid4()
@@ -945,8 +945,8 @@ class LegacySectionCompatibilityTests(unittest.TestCase):
 
     def test_non_ascii_legacy_schema_read_limit_remains_compatible(self):
         import json
-        from yadinassi.sqlite_catalog import _APPLICATION_ID
-        from yadinassi.sqlite_catalog_migration import _V1_DDL
+        from yadinassi.db.sqlite.sqlite_catalog import _APPLICATION_ID
+        from yadinassi.db.sqlite.sqlite_catalog_migration import _V1_DDL
         names = tuple(FieldSchema(uuid4(), 'f%d' % n + '😀'*120, 'string', (8,)) for n in range(64))
         legacy = CatalogSchema(uuid4(), 'Legacy', 8, 64, names)
         data = _schema_data(legacy, enforce_serialized_limit=False)

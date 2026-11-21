@@ -6,7 +6,7 @@ catalog forms and document forms retain separate protocols and authority.
 from threading import Lock
 from uuid import uuid4
 
-from ..database_context import SQLiteDBContext
+from yadinassi.db.database_context import SQLiteDBContext
 from .database_launch import verify_binding
 from .main_demo import require_backend, document_forms
 from .protocol import MAX_COUNTER, encode_line, decode_line

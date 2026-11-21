@@ -12,12 +12,12 @@ from unittest.mock import patch
 from io import StringIO
 from contextlib import redirect_stdout, redirect_stderr
 
-from yadinassi.catalog_backend import BackendError, CatalogDraft, CatalogKey, FieldSchema
-from yadinassi.document_backend import DocumentDraft, DocumentKey
-from yadinassi.register_backend import RegisterDraft, RegisterKey, RegisterSetDraft
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_migration_plan import prepare, apply, resolve, transition_status
-from yadinassi.transaction_backend import TransactionRequest, StagedTicket
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogDraft, CatalogKey, FieldSchema
+from yadinassi.db.document.document_backend import DocumentDraft, DocumentKey
+from yadinassi.db.registers.register_backend import RegisterDraft, RegisterKey, RegisterSetDraft
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_migration_plan import prepare, apply, resolve, transition_status
+from yadinassi.db.transaction_backend import TransactionRequest, StagedTicket
 from test_sqlite_catalog_hierarchy import configuration
 from test_catalog_commit_cleanup_recovery import FaultConnection
 
@@ -175,7 +175,7 @@ class UnitOfWorkTests(unittest.TestCase):
     def test_child_receipt_failure_rolls_back_document(self):
         request=self.trio()[1]
         with self.backend.begin_unit_of_work(uuid4()) as tx:
-            with patch('yadinassi.sqlite_transactions._receipt_hash',side_effect=MemoryError):
+            with patch('yadinassi.db.sqlite.sqlite_transactions._receipt_hash',side_effect=MemoryError):
                 with self.assertRaises(MemoryError):tx.stage(request)
             self.assertIsNone(tx.read_document(request.draft.key));self.assertEqual(tx.requests,())
             tx.stage(request);tx.commit()
@@ -230,12 +230,12 @@ class UnitOfWorkTests(unittest.TestCase):
         self.assertEqual(self.backend.resolve_unit_of_work(operation,updates),outcomes)
 
     def test_operation_budget_is_global(self):
-        with self.backend.begin_unit_of_work(uuid4()) as tx,patch('yadinassi.sqlite_transactions.MAX_OPERATIONS',1):
+        with self.backend.begin_unit_of_work(uuid4()) as tx,patch('yadinassi.db.sqlite.sqlite_transactions.MAX_OPERATIONS',1):
             tx.stage(self.trio()[0])
             with self.assertRaisesRegex(BackendError,'unsupported'):tx.stage(self.trio()[1])
 
     def test_payload_budget_is_global(self):
-        with self.backend.begin_unit_of_work(uuid4()) as tx,patch('yadinassi.sqlite_transactions.MAX_BYTES',1):
+        with self.backend.begin_unit_of_work(uuid4()) as tx,patch('yadinassi.db.sqlite.sqlite_transactions.MAX_BYTES',1):
             with self.assertRaisesRegex(BackendError,'unsupported'):tx.stage(self.trio()[0])
             self.assertEqual(tx.requests,())
 
@@ -333,7 +333,7 @@ class MigrationPlanTests(unittest.TestCase):
 
     def test_rollback_during_migration_leaves_source(self):
         plan=prepare(self.path,maintenance=True)
-        import yadinassi.sqlite_migration_plan as migration
+        import yadinassi.db.sqlite.sqlite_migration_plan as migration
         original=migration._fingerprint;count=0
         def fail(db,**kwargs):
             nonlocal count
@@ -345,7 +345,7 @@ class MigrationPlanTests(unittest.TestCase):
         self.assertEqual(resolve(self.path,plan,maintenance=True),'not_committed')
 
     def test_cli_plan_roundtrip_apply_resolve(self):
-        from yadinassi.storage_migration_cli import main
+        from yadinassi.cli_support.storage_migration_cli import main
         saved=Path(self.temp.name)/'plan.json'
         with redirect_stdout(StringIO()) as out:
             self.assertEqual(main(['plan',str(self.path),'--maintenance','--plan-file',str(saved)]),0)
@@ -354,7 +354,7 @@ class MigrationPlanTests(unittest.TestCase):
         self.assertEqual(out.getvalue(),'plan_saved\ncommitted\ncommitted\n')
 
     def test_cli_does_not_overwrite_saved_plan(self):
-        from yadinassi.storage_migration_cli import main
+        from yadinassi.cli_support.storage_migration_cli import main
         saved=Path(self.temp.name)/'plan.json';saved.write_text('retained',encoding='utf-8')
         with redirect_stderr(StringIO()):self.assertEqual(main(['plan',str(self.path),'--maintenance','--plan-file',str(saved)]),2)
         self.assertEqual(saved.read_text(),'retained')

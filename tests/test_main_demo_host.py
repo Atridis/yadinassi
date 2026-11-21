@@ -3,18 +3,20 @@ from pathlib import Path
 import tempfile
 import unittest
 from test_main_demo_configuration import source
-from yadinassi.configuration_main_demo import PROFILE, import_main_demo_configuration
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.configuration.configuration_main_demo import PROFILE, import_main_demo_configuration
+from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.ui.database_launch import binding
 from yadinassi.ui.main_demo_host import MainDemoHost, PROTOCOL
 from yadinassi.ui.configuration_app import PROTOCOL as APP_PROTOCOL
+from sqlite_test_templates import copy_main_demo
 
 class MainDemoHostTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
         self.path = Path(tmp.name)/'demo.sqlite'
         self.config = import_main_demo_configuration(source(), profile=PROFILE)
-        with SQLiteDBContext.create_main_demo(self.path, self.config) as context:
+        copy_main_demo(self.path)
+        with SQLiteDBContext(self.path) as context:
             self.expected = binding(context.backend.launch_snapshot())
         self.host = MainDemoHost(self.path, self.expected);self.addCleanup(self.host.close)
 
@@ -166,7 +168,7 @@ class MainDemoHostTests(unittest.TestCase):
         self.assertTrue(owner.backend._closed);self.assertEqual(self.host._retired,[])
 
     def test_answered_dialog_history_does_not_block_switch_but_live_dialog_does(self):
-        from yadinassi.form_dialogs import DIALOG_CAPABILITY
+        from yadinassi.forms.form_dialogs import DIALOG_CAPABILITY
         self.rpc('select', epoch=self.host.epoch, surface='documents')
         def dispatch(method, **params):
             return self.rpc('dispatch', epoch=self.host.epoch, request={

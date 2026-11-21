@@ -3,9 +3,9 @@ import unittest
 from unittest.mock import Mock
 
 from test_form_runtime import SOURCE
-from yadinassi.form_runtime import FormApplicationAction, FormActionResult, FormSession
-from yadinassi.form_model import BSLFormAttribute
-from yadinassi.type_descriptions import BSLTypeDescription
+from yadinassi.forms.form_runtime import FormApplicationAction, FormActionResult, FormSession
+from yadinassi.forms.form_model import BSLFormAttribute
+from yadinassi.types.type_descriptions import BSLTypeDescription
 
 
 def session(callback, *, outputs=('Name',), source=SOURCE):
@@ -89,7 +89,7 @@ EndProcedure
 '''
         attributes = tuple(BSLFormAttribute(key, BSLTypeDescription('String')) for key in ('First', 'Second', 'Third'))
         ack = Mock()
-        with patch('yadinassi.form_model.MAX_TOTAL_TEXT', 20), patch('yadinassi.form_runtime.MAX_TOTAL_TEXT', 20):
+        with patch('yadinassi.forms.form_model.MAX_TOTAL_TEXT', 20), patch('yadinassi.forms.form_runtime.MAX_TOTAL_TEXT', 20):
             form = FormSession(source, attributes=attributes,
                 initial_values={'First': '', 'Second': '1234567890', 'Third': 'abcdefghij'},
                 bindings={'OnCreateAtServer': 'Create'}, application_actions=(

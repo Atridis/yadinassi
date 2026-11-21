@@ -10,10 +10,10 @@ import sys
 import unittest
 
 from yadinassi import BSLError
-from yadinassi.form_model import BSLFormAttribute
-from yadinassi.form_replication import ReplicatedFormServer, ReplicatedFormSession
-from yadinassi.invocation import InvocationBinding, InvocationPort, InvocationServer
-from yadinassi.type_descriptions import BSLTypeDescription
+from yadinassi.forms.form_model import BSLFormAttribute
+from yadinassi.forms.form_replication import ReplicatedFormServer, ReplicatedFormSession
+from yadinassi.execution.invocation import InvocationBinding, InvocationPort, InvocationServer
+from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.ui.protocol import decode_line, encode_line
 
 ROOT = Path(__file__).resolve().parents[1]

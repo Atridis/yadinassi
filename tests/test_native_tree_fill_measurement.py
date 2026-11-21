@@ -5,8 +5,8 @@ from pathlib import Path
 import unittest
 from unittest import mock
 from yadinassi import Interpreter
-from yadinassi.values import HostFunction
-from yadinassi.value_trees import BSLValueTreeRowCollection as Rows
+from yadinassi.types.values import HostFunction
+from yadinassi.collections.value_trees import BSLValueTreeRowCollection as Rows
 from scripts import native_1c_tree_fill_contract as contract
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -78,7 +78,7 @@ class FillObserverTests(unittest.TestCase):
     def test_alias_and_equal_but_distinct_structure_are_observable(self):
         def shared(rows, args):
             rows.items[0].set_member('Key', args[0])
-        from yadinassi.structures import BSLStructure
+        from yadinassi.collections.structures import BSLStructure
         def copied(rows, args):
             rows.items[0].set_member('Key', BSLStructure('Mark', 'base'))
         first = contract.validate_payload(self.run_action(shared, 31).encode(), 31)

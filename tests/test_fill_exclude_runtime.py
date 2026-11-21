@@ -21,12 +21,12 @@ _spec.loader.exec_module(contract)
 contract.SOURCE_SHA256 = '42c1fedddb8a689f3ba2ca6a241b1d19d38c0bea4da8a29e5934b3082a43fdfb'
 contract.RECORD_COUNT = 854
 from yadinassi import BSLRuntimeError, Interpreter
-from yadinassi.native_targets import (
+from yadinassi.execution.codegen.native_targets import (
     LINUX_8_3_27_1508, WINDOWS_8_3_27_2342,
     current_native_target, target_context,
 )
-from yadinassi.structures import BSLFixedStructure, BSLStructure, fill_property_values
-from yadinassi.values import BSLArray
+from yadinassi.collections.structures import BSLFixedStructure, BSLStructure, fill_property_values
+from yadinassi.types.values import BSLArray
 from test_fill_exclude_checkpoint import CASES
 
 

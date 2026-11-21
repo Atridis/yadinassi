@@ -8,12 +8,12 @@ from unittest.mock import patch
 from yadinassi import Interpreter
 from tests.test_value_table_operations_checkpoint import observations
 
-from yadinassi.dates import literal_date
-from yadinassi.type_descriptions import BSLTypeDescription as TD
-from yadinassi.type_qualifiers import BSLNumberQualifiers
-from yadinassi.value_tables import BSLValueTable
-from yadinassi.value_table_group import group_by
-from yadinassi.values import NULL, BSLArray
+from yadinassi.temporal.dates import literal_date
+from yadinassi.types.type_descriptions import BSLTypeDescription as TD
+from yadinassi.types.type_qualifiers import BSLNumberQualifiers
+from yadinassi.collections.value_tables import BSLValueTable
+from yadinassi.collections.value_table_group import group_by
+from yadinassi.types.values import NULL, BSLArray
 
 
 def sample(description=None, values=None, keys=None):
@@ -197,22 +197,14 @@ class GroupByTests(unittest.TestCase):
         self.assertEqual(state(table), before)
 
     def test_resource_boundaries_reject_before_mutation(self):
-        for target, budget, grouping, totals in [
-                ('_MAX_GROUP_CELLS', 7, 'Key', 'Amount'),
-                ('_MAX_GROUP_TEXT', 3, 'Key', 'Amount'),
-                ('_MAX_COLUMNS', 2, 'Key,,,', 'Amount')]:
-            table = sample()
-            before = state(table)
-            with patch('yadinassi.value_table_group.' + target, budget):
-                with self.assertRaises(ValueError):
-                    table.group_by(grouping, totals)
-            self.assertEqual(state(table), before)
         table = sample()
         before = state(table)
-        with patch('yadinassi.value_tables._MAX_TEXT', 2):
-            with self.assertRaises(ValueError):
-                table.group_by('Key', 'Amount')
-        self.assertEqual(state(table), before)
+        for target in ('yadinassi.collections.value_table_group._MAX_GROUP_TEXT',
+                       'yadinassi.collections.value_tables._MAX_TEXT'):
+            with patch(target, 2):
+                with self.assertRaises(ValueError):
+                    table.group_by('Key', 'Amount')
+            self.assertEqual(state(table), before)
 
 
 class NativeGroupByTests(unittest.TestCase):

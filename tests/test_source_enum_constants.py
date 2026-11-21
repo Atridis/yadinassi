@@ -8,12 +8,12 @@ import unittest
 from test_source_constant_store import configuration
 from test_source_session_parameters import declaration
 from test_source_enums import xml, value, identity
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_constants import source_constant_definitions
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_constant_store import SourceConstantStore
-from yadinassi.enum_types import BSLEnumReference
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_constants import source_constant_definitions
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.metadata.source_constant_store import SourceConstantStore
+from yadinassi.db.metadata.enum_types import BSLEnumReference
+from yadinassi.types.errors import BSLError
 
 
 def package(body='', types=None, extra=None):

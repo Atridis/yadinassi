@@ -171,3 +171,28 @@ Database creation preserves a reserved destination after failure, including an
 uncertain COMMIT. See [creation failure boundary](sqlite-catalog-create-failure.md)
 before retrying or removing a failed destination.
 
+
+
+### Format16 transaction-local layout reuse
+
+Every format16 read/write transaction still rehashes current stored source,
+validates its profile/domain, complete physical DDL and both persisted catalog
+layout registries. `_begin` uses those just-validated maps to compare against its
+open-time snapshots, rather than loading the identical maps a second time in the
+same SQLite transaction. The source catalogs must also equal the exact backend
+schema tuple before reuse; stored catalog-schema and document/register admission
+checks remain in place. The ordinary `read_source` triple is unchanged; its private
+output-only option exposes the freshly validated maps only to this call chain.
+
+No map is retained on the backend, prepared-source cache or read handle. No map is
+accepted as a caller input, and no result crosses a commit, rollback or connection
+boundary. Other storage formats keep their original layout loads.
+
+Format16 header-only accumulation admission also avoids constructing an unused
+reference layout after that fresh source validation. A private helper runs the
+same current metadata initialization and ordinary `_require` checks on an
+internal ephemeral object, then returns no port or grant. It performs no row or
+reference operations. Explicit row validation and all normal movement-port
+constructors still load their full reference layout; actual reads and writes
+retain their reference checks. This is a reduction in duplicate admission SQL,
+not relaxed source/DDL validation or a new row-cache authority.

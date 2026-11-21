@@ -8,9 +8,9 @@ from pathlib import Path
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.dates import date, BSLDate
-from yadinassi.number_in_words import number_in_words
-from yadinassi.period_presentation import period_presentation
+from yadinassi.temporal.dates import date, BSLDate
+from yadinassi.text.number_in_words import number_in_words
+from yadinassi.temporal.period_presentation import period_presentation
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / 'tests/fixtures/localized_presentation'

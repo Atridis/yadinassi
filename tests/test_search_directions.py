@@ -7,19 +7,19 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.maps import BSLFixedMap, BSLMap
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.collections.maps import BSLFixedMap, BSLMap
 from yadinassi.numeric.round_modes import BSLRoundMode, ROUND_MODES
-from yadinassi.search_directions import (
+from yadinassi.collections.search_directions import (
     BSLSearchDirection, BSLSearchDirections, SEARCH_DIRECTIONS,
 )
-from yadinassi import serialization
-from yadinassi.serialization import (
+from yadinassi.formats.storage import serialization
+from yadinassi.formats.storage.serialization import (
     FORMAT_ERROR, value_from_string_internal as read, value_to_string_internal as write,
 )
-from yadinassi.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
-from yadinassi.type_values import type_by_name, type_of
-from yadinassi.values import BSLArray, BSLFixedArray, BSLObject, BSLType, equal, to_string
+from yadinassi.collections.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
+from yadinassi.types.type_values import type_by_name, type_of
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLObject, BSLType, equal, to_string
 
 
 DIRECTION_ID = 'bee8fa9f-59d0-4e71-9f6e-599d83cb1960'
@@ -198,6 +198,8 @@ class SearchDirectionIterationTests(unittest.TestCase):
         self.assertEqual(list(SEARCH_DIRECTIONS), [BEGIN, END])
 
     def test_global_aliases_and_loop_expression_evaluated_once(self):
+        self.vm.close()
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
         calls = []
 
         def directions():
@@ -212,7 +214,11 @@ class SearchDirectionIterationTests(unittest.TestCase):
                     alias = SearchDirection; found = New Array;
                     Для Каждого item Из {name} Цикл found.Add(item); КонецЦикла;
                 ''')
-                self.assertEqual(self.vm.variables['found'].items, [BEGIN, END])
+                found = self.vm.variables['found']
+                self.assertIs(type(found), list)
+                self.assertEqual(found, [BEGIN, END])
+                self.assertIs(found[0], BEGIN)
+                self.assertIs(found[1], END)
         self.assertEqual(calls, [True])
 
     def test_nested_break_continue_return_and_repeated_iteration(self):
@@ -244,6 +250,8 @@ class SearchDirectionIterationTests(unittest.TestCase):
         self.assertEqual(self.output, ['С начала', 'С конца'])
 
     def test_host_iterables_subclasses_and_individual_values_remain_rejected(self):
+        self.vm.close()
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
         class HostIterable(BSLObject):
             def __iter__(self):
                 raise AssertionError('Host iterable must not run')

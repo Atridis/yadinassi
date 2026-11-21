@@ -11,19 +11,19 @@ import unittest
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
-from yadinassi.catalog_backend import BackendError, CatalogDraft, CatalogKey
-from yadinassi.configuration_inventory_application import (
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogDraft, CatalogKey
+from yadinassi.configuration.configuration_inventory_application import (
     PROFILE, InventoryReportFilterGrant, import_inventory_application, canonical, validated_core)
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.inventory_application_reports import InventoryReports, InventoryReportFilter, UNAVAILABLE
-from yadinassi.sqlite_accumulation_movements import AccumulationMovementPort
-from yadinassi.sqlite_catalog import _View
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.configuration.demos.inventory_application_reports import InventoryReports, InventoryReportFilter, UNAVAILABLE
+from yadinassi.db.sqlite.sqlite_accumulation_movements import AccumulationMovementPort
+from yadinassi.db.sqlite.sqlite_catalog import _View
 import test_inventory_application_reports as support
 from inventory_application_fixture import ROOT, MANIFEST, source
 
 START = datetime(2024, 1, 15, 12)
 END = datetime(2024, 3, 20, 12)
-REPORTS = 'yadinassi.inventory_application_reports.'
+REPORTS = 'yadinassi.configuration.demos.inventory_application_reports.'
 
 
 def legacy_source():
@@ -116,7 +116,7 @@ class StatementSourceTests(unittest.TestCase):
         with self.assertRaises(ValueError): canonical(replace(config,reports=config.reports[:-1]+(replace(grant,periodicities=list(grant.periodicities)),)))
 
     def test_statement_filter_count_is_bounded(self):
-        with patch('yadinassi.configuration_inventory_application.MAX_REPORT_FILTERS',1):
+        with patch('yadinassi.configuration.configuration_inventory_application.MAX_REPORT_FILTERS',1):
             self.refused(source())
 
 
@@ -192,7 +192,7 @@ class StatementReportTests(unittest.TestCase):
 
     def test_reducer_is_reused_without_query_or_handler_execution(self):
         self.post(date=START)
-        from yadinassi.accumulation_periods import StatementReducer
+        from yadinassi.db.registers.accumulation_periods import StatementReducer
         original=StatementReducer.add
         with patch.object(StatementReducer,'add',autospec=True,side_effect=original) as add, \
              patch.object(self.backend,'begin_write',side_effect=AssertionError('write')), \
@@ -352,14 +352,14 @@ class StatementReportTests(unittest.TestCase):
 
     def test_interrupt_during_reducer_or_filter_lookup_releases_lease(self):
         self.post(date=START)
-        from yadinassi.accumulation_periods import StatementReducer
+        from yadinassi.db.registers.accumulation_periods import StatementReducer
         for target,method in ((StatementReducer,'add'),(_View,'read_catalog')):
             with self.subTest(method=method),patch.object(target,method,side_effect=KeyboardInterrupt):
                 with self.assertRaises(KeyboardInterrupt):self.read(filters=(self.selection('Product',self.product),))
             self.assertIsNone(self.backend._active)
 
     def test_live_writer_or_execution_never_gains_report_authority(self):
-        from yadinassi.database_transactions import execution, admission
+        from yadinassi.db.database_transactions import execution, admission
         with execution(self.backend):self.refused(self.read,'unsupported')
         with admission(False):self.refused(self.read,'unsupported')
         with closing(self.backend.begin_read()) as owner:

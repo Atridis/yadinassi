@@ -21,20 +21,20 @@ from scripts.native_historical_replay import historical_dates_source
 
 from yadinassi import BSLError, Interpreter
 from yadinassi.syntax import ast
-from yadinassi.dates import (
+from yadinassi.temporal.dates import (
     BSLDate, MAX_TICKS, TICKS_PER_SECOND, UnsupportedDateRange, add_month,
     begin_period, component, date, date_difference, day_of_year, end_period,
     shift_date, week_day, week_of_year,
 )
-from yadinassi.maps import BSLFixedMap, BSLMap
+from yadinassi.collections.maps import BSLFixedMap, BSLMap
 from yadinassi.syntax.parser import parse
-from yadinassi.serialization import (
+from yadinassi.formats.storage.serialization import (
     value_from_string_internal as read, value_to_string_internal as write,
 )
-from yadinassi.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
-from yadinassi.type_values import type_of
-from yadinassi.value_checks import value_is_filled
-from yadinassi.values import BSLArray, BSLFixedArray, BSLType, equal, to_string
+from yadinassi.collections.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
+from yadinassi.types.type_values import type_of
+from yadinassi.types.value_checks import value_is_filled
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLType, equal, to_string
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -531,7 +531,7 @@ class CalendarBoundaryTests(unittest.TestCase):
 
 class CalendarRuntimeTests(unittest.TestCase):
     def setUp(self):
-        self.vm = Interpreter()
+        self.vm = Interpreter(allow_extensions=True)
         self.vm.execute('source = Date(2024, 2, 29, 12, 34, 56) + 0.1234;')
 
     def test_all_18_bilingual_functions_and_case_variants(self):
@@ -573,7 +573,7 @@ class CalendarRuntimeTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('BegOfDay(source)'), 'start override')
         self.assertEqual(self.vm.execute('ДобавитьМесяц(source, 1)'), date('20240329123456'))
         self.assertEqual(self.vm.execute('НачалоДня(source)'), date('20240229000000'))
-        self.assertEqual(Interpreter().execute('AddMonth(Date(2024,2,29),1)'), date('20240329'))
+        self.assertEqual(Interpreter(allow_extensions=True).execute('AddMonth(Date(2024,2,29),1)'), date('20240329'))
 
     def test_arguments_evaluate_once_and_normal_calls_do_not_mutate_source(self):
         self.vm.execute('''

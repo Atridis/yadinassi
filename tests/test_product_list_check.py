@@ -4,8 +4,8 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import test_imported_product_editor as fixture
-from yadinassi.catalog_backend import BackendError
-from yadinassi.sqlite_catalog import _View
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.sqlite.sqlite_catalog import _View
 from yadinassi.ui.protocol import CatalogRef, UIError, encode_value, encode_line, decode_line
 from yadinassi.ui.editor_protocol import CatalogEditorSession, PROTOCOL
 
@@ -112,7 +112,7 @@ class ProductListCheckTests(unittest.TestCase):
         self.assertIsNone(self.app.backend._active)
 
     def test_repeated_check_does_not_normalize_saved_name_or_revision(self):
-        from yadinassi.catalog_backend import CatalogDraft
+        from yadinassi.db.catalog.catalog_backend import CatalogDraft
         ref = self.saved(); key = self.editor.object._key
         view = self.app.backend.begin_read()
         try: card = view.read_catalog(key)
@@ -137,7 +137,7 @@ class ProductListCheckTests(unittest.TestCase):
         with self.assertRaises(UIError): self.check(self.ref(self.kind))
 
     def test_invalid_saved_card_emits_original_errors(self):
-        from yadinassi.catalog_backend import CatalogDraft
+        from yadinassi.db.catalog.catalog_backend import CatalogDraft
         ref = self.saved(); key = self.editor.object._key
         view = self.app.backend.begin_read()
         try: card = view.read_catalog(key)

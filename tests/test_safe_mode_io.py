@@ -5,10 +5,12 @@ from decimal import Decimal
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
-from yadinassi import safe_mode, file_io, zip_archives, http_client, http_security
-from yadinassi.binary_streams import BSLFileStream, BSLMemoryStream, BSLFileOpenMode, BSLPositionInStream
-from yadinassi.json_processing import BSLJSONWriter, BSLJSONReader
-from yadinassi.xml_writer import BSLXMLWriter
+from yadinassi.execution import safe_mode
+from yadinassi.streams import file_io, zip_archives
+from yadinassi.http import http_client, http_security
+from yadinassi.streams.binary_streams import BSLFileStream, BSLMemoryStream, BSLFileOpenMode, BSLPositionInStream
+from yadinassi.formats.json.json_processing import BSLJSONWriter, BSLJSONReader
+from yadinassi.formats.xml.xml_writer import BSLXMLWriter
 
 @contextmanager
 def restricted():
@@ -52,8 +54,8 @@ class SafeModeIOTests(unittest.TestCase):
     def test_preexisting_live_file_stream(self):
         stream = BSLFileStream(str(self.path), BSLFileOpenMode.OPEN)
         self.addCleanup(stream.close)
-        from yadinassi.data_io import BSLDataReader
-        from yadinassi.text_streams import BinaryStreamSink
+        from yadinassi.streams.data_io import BSLDataReader
+        from yadinassi.streams.text_streams import BinaryStreamSink
         reader = BSLDataReader(stream)
         alias = reader.source_stream()
         sink = BinaryStreamSink(stream)

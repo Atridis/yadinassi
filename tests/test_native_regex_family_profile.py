@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from unittest import mock
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
 import test_native_tree_profile_budget as budget
 from test_native_tree_profile_host import synthetic_producer_reader
 from test_native_1c_smoke import bootstrap_report
@@ -59,7 +59,11 @@ class RegexFamilyProfileTests(unittest.TestCase):
         vm=Interpreter(native_target=LINUX_8_3_27_1508)
         with tempfile.TemporaryDirectory(prefix='regex-client-') as tmp, mock.patch('tempfile.gettempdir', return_value=tmp):
             vm.execute(module.decode('utf-8-sig'));vm.execute('Result = ВычислитьПробу();')
-        self.assertEqual(('\n'.join(vm.variables['result'].items)+'\n').encode(),emit())
+        # Compare the complete observable BSL result, independent of backend
+        # array storage (direct list versus legacy BSLArray).
+        observed=[];vm.output=observed.append
+        vm.execute('For Each Line In Result Do Message(Line);EndDo;')
+        self.assertEqual(('\n'.join(observed)+'\n').encode(),emit())
         for bad in (source+b'\n',source.replace(b'\n',b'\r\n')):
             with self.assertRaises(full.FullError):tree.client_module(bad,(ROOT/full.CLIENT_SOURCE).read_bytes(),profile=PROFILE)
 
@@ -91,6 +95,20 @@ class RegexFamilyProfileTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stderr, b'')
         self.assertEqual(result.stdout, emit())
+
+    def test_child_rejects_retired_backends_before_source_effects(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / 'probe.bsl'
+            source.write_text('Message("must-not-run");', encoding='utf-8')
+            for backend in ('interpreter', 'hybrid', 'compiled-strict'):
+                with self.subTest(backend=backend):
+                    result = subprocess.run(
+                        [sys.executable, '-I', '-B', '-c', host.FULL.EXECUTE_SCRIPT,
+                         str(ROOT), str(source), host.FULL.LINUX_TARGET, backend],
+                        capture_output=True, timeout=30)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(result.stdout, b'')
+                    self.assertIn(b'invalid execution backend', result.stderr)
 
     @unittest.skipUnless(os.name == 'posix', 'Native host containment requires POSIX pipes/process groups')
     def test_real_isolated_replay_adapter_matches_its_own_local_observation(self):

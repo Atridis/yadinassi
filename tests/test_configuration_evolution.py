@@ -6,9 +6,9 @@ import unittest
 from uuid import uuid4
 
 from sqlite_catalog_fixture import configuration_files
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.configuration_evolution import additive_delta, default_value
-from yadinassi.catalog_backend import BackendError, FieldSchema
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.configuration.configuration_evolution import additive_delta, default_value
+from yadinassi.db.catalog.catalog_backend import BackendError, FieldSchema
 
 
 def append_field(files, kind='xs:boolean'):

@@ -9,9 +9,9 @@ from unittest import mock
 from uuid import uuid4
 
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import BackendError, CatalogKey
-from yadinassi.configuration_import import load_configuration_directory
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogKey
+from yadinassi.configuration.configuration_import import load_configuration_directory
+from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.ui.form_app import PROTOCOL as FORM_PROTOCOL
 from yadinassi.ui.form_package import load_server
 from yadinassi.ui.reference_orders import OwnedChoice, APPLY_CHOICE_ENDPOINT
@@ -225,7 +225,7 @@ class ReferenceOrdersTests(unittest.TestCase):
         owner = self.open()['session']; before = self.read_order()
         for event in ('cancel', 'close'):
             child = self.choice(owner)
-            with mock.patch('yadinassi.sqlite_catalog.SQLiteCatalogBackend.begin_write', side_effect=AssertionError('no write')):
+            with mock.patch('yadinassi.db.sqlite.sqlite_catalog.SQLiteCatalogBackend.begin_write', side_effect=AssertionError('no write')):
                 closed = self.command(child, 'Cancel') if event == 'cancel' else self.form(child, 'close')
             self.assertEqual(closed['form']['result']['state']['kind'], 'closed')
             self.assertEqual(self.broker.applications[owner].customer, self.refs['C001'])
@@ -515,7 +515,7 @@ class ReferenceOrdersTests(unittest.TestCase):
         self.assertEqual(app.customer, self.refs['C001'])
 
     def test_uncertain_commit_resolves_exact_retained_receipt_and_keys(self):
-        from yadinassi.sqlite_catalog import _View
+        from yadinassi.db.sqlite.sqlite_catalog import _View
         owner = self.open()['session']; app = self.broker.applications[owner]
         self.select(self.choice(owner), 'C002'); self.change(owner, 'Description', 'Retained intent')
         commit = _View.commit
@@ -532,7 +532,7 @@ class ReferenceOrdersTests(unittest.TestCase):
         self.assertEqual(self.read_order()[1][0], self.refs['C002'])
 
     def test_absent_receipt_retries_only_retained_reference_intent(self):
-        from yadinassi.sqlite_catalog import _View
+        from yadinassi.db.sqlite.sqlite_catalog import _View
         owner = self.open()['session']; app = self.broker.applications[owner]
         self.select(self.choice(owner), 'C002')
         with mock.patch.object(_View, 'commit', side_effect=BackendError('uncertain_commit')):

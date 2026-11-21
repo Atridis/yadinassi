@@ -7,7 +7,7 @@ import unittest
 from unittest import mock
 from decimal import Decimal as D
 from yadinassi import Interpreter
-from yadinassi.value_trees import BSLValueTree
+from yadinassi.collections.value_trees import BSLValueTree
 from scripts import native_1c_tree_copy_contract as contract
 from scripts import native_1c_tree_access_probe as probe
 from scripts import native_1c_tree_profiles as profiles
@@ -81,19 +81,19 @@ class CopyLocalPolicyTests(unittest.TestCase):
 
     def test_width_coefficients_are_bounded_before_integral_conversion(self):
         t=self.fixture();col=t.columns.items[0];col.width=D('1.00000000')
-        with mock.patch('yadinassi.value_trees._MAX_NUMBER_DIGITS',8):
+        with mock.patch('yadinassi.collections.value_trees._MAX_NUMBER_DIGITS',8):
             with self.assertRaises(ValueError):t.copy()
         self.assertEqual(col.width,D('1.00000000'))
         col.width=D('1.0000000')
-        with mock.patch('yadinassi.value_trees._MAX_NUMBER_DIGITS',8):self.assertEqual(t.copy().columns.items[0].width,col.width)
+        with mock.patch('yadinassi.collections.value_trees._MAX_NUMBER_DIGITS',8):self.assertEqual(t.copy().columns.items[0].width,col.width)
 
     def test_text_and_default_budgets_fail_without_mutating_source(self):
         t=self.fixture();rows=tuple(t.rows.items);columns=tuple(t.columns.items)
-        with mock.patch('yadinassi.value_trees._MAX_COPY_TEXT',1):
+        with mock.patch('yadinassi.collections.value_trees._MAX_COPY_TEXT',1):
             with self.assertRaises(ValueError):t.copy()
         vm=Interpreter();vm.execute('t=New ValueTree; q=New StringQualifiers(10,AllowedLength.Fixed); t.Columns.Add("S",New TypeDescription("String",,q)); t.Rows.Add();')
         padded=vm.execute('t')
-        with mock.patch('yadinassi.value_trees._MAX_DEFAULT_TEXT',9):
+        with mock.patch('yadinassi.collections.value_trees._MAX_DEFAULT_TEXT',9):
             with self.assertRaises(ValueError):padded.copy()
         self.assertEqual(tuple(t.rows.items),rows);self.assertEqual(tuple(t.columns.items),columns)
         self.assertEqual(len(padded.columns.items[0].default),10)
@@ -112,7 +112,7 @@ class CopyLocalPolicyTests(unittest.TestCase):
                  lambda t:setattr(t.columns.items[0],'table',BSLValueTree()),
                  lambda t:setattr(t.rows.items[0].rows,'parent',None),
                  lambda t:setattr(t.rows.items[0],'depth',False),
-                 lambda t:t._all_rows.__setitem__(t.rows.items[0],D(1)))
+                 lambda t:setattr(t,'_all_rows',{t.rows.items[0]:D(1)}))
         for change in changes:
             t=self.fixture();change(t)
             with self.subTest(change=change),self.assertRaises(ValueError):t.copy()
@@ -120,9 +120,9 @@ class CopyLocalPolicyTests(unittest.TestCase):
     def test_deep_graph_clone_is_iterative_and_limit_is_inclusive(self):
         t=self.fixture();row=t.rows.items[0]
         for _ in range(32):row=row.rows.add()
-        with mock.patch('yadinassi.value_trees._MAX_DEPTH',32):
+        with mock.patch('yadinassi.collections.value_trees._MAX_DEPTH',32):
             c=t.copy();node=c.rows.items[0]
             for _ in range(32):node=node.rows.items[0]
             self.assertEqual(node.depth,32);self.assertIs(node.owner(),c)
-        with mock.patch('yadinassi.value_trees._MAX_DEPTH',31):
+        with mock.patch('yadinassi.collections.value_trees._MAX_DEPTH',31):
             with self.assertRaises(ValueError):t.copy()

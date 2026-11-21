@@ -133,4 +133,4 @@ packet, body, headers, assertion actual/expected or exception string is exported
 Screenshots: `statement-pages.png`, `statement-filters.png`,
 `statement-fences.png`, `statement-reopened.png`, `statement-historical.png`.
 
-Fixture SHA256: `8a0b1808ea656d769d85aa4e4b07ac20fe83dbc465e337f8cbb7cff50e84db87`
+Fixture SHA256: `637d33cc5e62fcd0c9045a88a3884bd7aff82547df9741aa66d74273e8b5f507`

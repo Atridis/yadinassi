@@ -8,9 +8,9 @@ from pathlib import Path
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508
-from yadinassi.structures import BSLStructure
-from yadinassi.values import BSLObject, HostFunction
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.types.values import BSLObject, HostFunction
 import test_native_async_execution as execution
 
 suite = execution.suite
@@ -145,7 +145,7 @@ def exercise(raw, launch_path='/tmp/offline/request.json', fault=None, tokens=No
     end = module.index('&НаКлиенте\nПроцедура АсинхЗаписатьВход')
     source = module[start:end]
     reader = ControlledReader(stream_tokens(raw) if tokens is None else tokens, launch_path, fault)
-    vm = Interpreter(lambda _: None, native_target=LINUX_8_3_27_1508)
+    vm = Interpreter(lambda _: None, native_target=LINUX_8_3_27_1508, allow_extensions=True)
     vm.register_type('JSONReader', lambda: reader)
     if fault in ('request_fields', 'request_nonce', 'request_paths'):
         vm.register_type('Structure', lambda: ControlledStructure(fault))

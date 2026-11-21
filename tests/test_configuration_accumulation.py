@@ -7,13 +7,13 @@ import unittest
 from unittest.mock import patch
 from uuid import UUID
 
-from yadinassi import configuration_xml as xml
-from yadinassi.accumulation_movements import AccumulationRegisterKind
-from yadinassi.configuration_accumulation import (
+from yadinassi.configuration import configuration_xml as xml
+from yadinassi.db.registers.accumulation_movements import AccumulationRegisterKind
+from yadinassi.configuration.configuration_accumulation import (
     AccumulationConfiguration, FORMAT_VERSION, PROFILE, SOURCE_PROJECTION,
     canonical, import_accumulation_configuration,
 )
-from yadinassi.configuration_posting import import_posting_configuration
+from yadinassi.configuration.configuration_posting import import_posting_configuration
 
 MD = xml.MD
 XR = xml.XR

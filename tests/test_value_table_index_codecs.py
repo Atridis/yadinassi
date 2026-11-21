@@ -11,12 +11,12 @@ from unittest.mock import patch
 
 from tests.native_observations import extract_payload, inverse_stream, read_observation
 from yadinassi import Interpreter
-from yadinassi.serialization import value_from_string_internal as read
-from yadinassi.serialization import value_to_string_internal as write
-from yadinassi.structures import BSLStructure
-from yadinassi.type_values import type_by_name, type_of
-from yadinassi.value_tables import BSLCollectionIndex, BSLCollectionIndexes, BSLValueTable
-from yadinassi.values import BSLArray, BSLType, equal, to_string
+from yadinassi.formats.storage.serialization import value_from_string_internal as read
+from yadinassi.formats.storage.serialization import value_to_string_internal as write
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.types.type_values import type_by_name, type_of
+from yadinassi.collections.value_tables import BSLCollectionIndex, BSLCollectionIndexes, BSLValueTable
+from yadinassi.types.values import BSLArray, BSLType, equal, to_string
 
 
 OUTPUT = Path(__file__).resolve().parents[1] / 'tests/fixtures/native_windows/collections.out'
@@ -240,7 +240,7 @@ class DefensiveIndexCodecTests(unittest.TestCase):
         for _ in range(4):
             table.indexes.add('Key,Key')
         stream = write(table)
-        with patch('yadinassi.serialization._MAX_NODES', 12):
+        with patch('yadinassi.formats.storage.serialization._MAX_NODES', 12):
             with self.assertRaisesRegex(ValueError, 'предел ресурсов'):
                 write(table)
             with self.assertRaisesRegex(ValueError, 'предел ресурсов'):

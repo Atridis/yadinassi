@@ -2,11 +2,11 @@
 import unittest
 from unittest.mock import patch
 import test_source_document_sections as fixture
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_document_section_store import SourceDocumentSectionStore
-from yadinassi.source_constant_queries import SourceConstantQuery
-from yadinassi.source_query_references import SourcePackageScope
-from yadinassi.query_packages import BSLTempTablesManager
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.document.source_document_section_store import SourceDocumentSectionStore
+from yadinassi.db.query.source_constant_queries import SourceConstantQuery
+from yadinassi.db.query.source_query_references import SourcePackageScope
+from yadinassi.db.query.query_packages import BSLTempTablesManager
 
 CREATE=fixture.CREATE+'R=D.Lines.Add(); R.Flag=True; D.Write(); '
 class SourceDocumentSectionQueryGuardTests(unittest.TestCase):

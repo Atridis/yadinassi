@@ -11,10 +11,10 @@ import unittest
 from unittest.mock import patch
 from uuid import UUID
 
-from yadinassi import object_module_analysis as analysis
-from yadinassi import object_module_simulation as sim
-from yadinassi.catalog_backend import CatalogSchema, FieldSchema, TabularSectionSchema
-from yadinassi.configuration_xml import import_configuration
+from yadinassi.execution import object_module_analysis as analysis
+from yadinassi.execution import object_module_simulation as sim
+from yadinassi.db.catalog.catalog_backend import CatalogSchema, FieldSchema, TabularSectionSchema
+from yadinassi.configuration.configuration_xml import import_configuration
 from sqlite_catalog_fixture import configuration_files
 
 

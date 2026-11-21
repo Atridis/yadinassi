@@ -8,12 +8,12 @@ from uuid import UUID, uuid4
 
 import test_sqlite_catalog_sections as section_fixtures
 import test_sqlite_catalog_migration as migration_fixtures
-from yadinassi.catalog_backend import (
+from yadinassi.db.catalog.catalog_backend import (
     BackendError, CatalogCard, CatalogComparison, CatalogDraft, CatalogKey,
     CatalogOrder, CatalogPredicate, CatalogScanRequest, CatalogValueRow,
 )
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_catalog_layout import quote_identifier
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
 
 
 class ScanOptimizationTests(unittest.TestCase):
@@ -281,7 +281,7 @@ class ScanOptimizationTests(unittest.TestCase):
 
 
     def test_full_selection_batches_all_owners_without_partial_cards(self):
-        from yadinassi.catalog_backend import CatalogSelection
+        from yadinassi.db.catalog.catalog_backend import CatalogSelection
         drafts = self.seed(1000)
         view = self.view(); statements = []
         view._connection.set_trace_callback(statements.append)
@@ -293,11 +293,13 @@ class ScanOptimizationTests(unittest.TestCase):
         self.assertTrue(all(type(card) is CatalogCard and card.tabular_sections == self.expected()
                             for card in cards))
         self.assertLessEqual(len(statements), 52, statements)
+        # Schema admission happened before tracing; selection reuses that
+        # snapshot while the total statement bound still guards batching.
         self.assertEqual(sum(sql.startswith('SELECT definition FROM catalog_schema')
-                             for sql in statements), 1)
+                             for sql in statements), 0)
 
     def test_selection_corruption_refuses_before_constructing_cards(self):
-        from yadinassi.catalog_backend import CatalogSelection
+        from yadinassi.db.catalog.catalog_backend import CatalogSelection
         for code in ('10', '20'):
             draft = self.draft(self.expected(self.row(text=code)), code=code)
             self.create(draft)
@@ -318,9 +320,9 @@ class ProjectionBoundaryTests(unittest.TestCase):
         self.addCleanup(self.context.close)
 
     def test_projected_ref_cannot_substitute_another_row_identity(self):
-        from yadinassi.catalog_backend import CatalogValuePage
-        from yadinassi.queries import BSLQuery
-        from yadinassi.sqlite_catalog import _View
+        from yadinassi.db.catalog.catalog_backend import CatalogValuePage
+        from yadinassi.db.query.queries import BSLQuery
+        from yadinassi.db.sqlite.sqlite_catalog import _View
         manager = self.vm._catalogs.get_index('Products')
         with closing(manager._view()) as view:
             key = view.scan_catalog_values(manager._schema.identity,
@@ -334,9 +336,9 @@ class ProjectionBoundaryTests(unittest.TestCase):
             pass
 
     def test_hostile_key_components_are_rejected_before_equality_and_release_view(self):
-        from yadinassi.catalog_backend import CatalogValuePage
-        from yadinassi.queries import BSLQuery
-        from yadinassi.sqlite_catalog import _View
+        from yadinassi.db.catalog.catalog_backend import CatalogValuePage
+        from yadinassi.db.query.queries import BSLQuery
+        from yadinassi.db.sqlite.sqlite_catalog import _View
         class Hostile:
             def __eq__(self, other):
                 raise AssertionError('hostile equality executed')

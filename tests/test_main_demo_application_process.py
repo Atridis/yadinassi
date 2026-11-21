@@ -3,9 +3,9 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from yadinassi.configuration_main_demo import import_main_demo_configuration, PROFILE
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.form_dialogs import DIALOG_CAPABILITY
+from yadinassi.configuration.configuration_main_demo import import_main_demo_configuration, PROFILE
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.forms.form_dialogs import DIALOG_CAPABILITY
 from yadinassi.ui.configuration_app import ConfigurationController, ConfigurationProcess, PROTOCOL, load_application
 
 ROOT = Path(__file__).resolve().parents[1] / 'examples/demo'

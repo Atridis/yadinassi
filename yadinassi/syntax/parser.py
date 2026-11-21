@@ -3,9 +3,9 @@
 from dataclasses import fields
 
 from . import ast
-from ..errors import BSLError, IncompleteInput
+from yadinassi.types.errors import BSLError, IncompleteInput
 from .lexer import Lexer, Token
-from ..values import NULL
+from yadinassi.types.values import NULL
 
 
 PRECEDENCE = {

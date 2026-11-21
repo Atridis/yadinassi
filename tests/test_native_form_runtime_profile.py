@@ -146,7 +146,7 @@ class ManagedFormProfileTests(unittest.TestCase):
                 with self.assertRaises(lane.full.FullError):lane._dump_files(root)
 
     def test_comparison_contract_uses_closed_session_entry(self):
-        from yadinassi.form_runtime import FormSession
+        from yadinassi.forms.form_runtime import FormSession
         from form_runtime_packet import source
         session=FormSession(source(),bindings={'OnCreateAtServer':'FormCreate','OnOpen':'FormOpen','BeforeClose':'FormBeforeClose'})
         raw=dict(session.open().attributes)['FLog'].encode('ascii')
@@ -161,7 +161,7 @@ class ManagedFormProfileTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name=='posix','Production native-host bounded-child containment requires POSIX')
     def test_actual_bounded_child_replay(self):
-        from yadinassi.form_runtime import FormSession
+        from yadinassi.forms.form_runtime import FormSession
         from form_runtime_packet import source
         session=FormSession(source(),bindings={'OnCreateAtServer':'FormCreate','OnOpen':'FormOpen','BeforeClose':'FormBeforeClose'})
         raw=dict(session.open().attributes)['FLog'].encode('ascii')

@@ -4,7 +4,7 @@ from importlib.resources import files
 import sys
 import webbrowser
 
-from ..sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from .database_launch import binding, verify_binding
 from .local_app import LocalUIServer, _Handler
 from .main_demo import require_backend
@@ -39,7 +39,7 @@ class MainDemoHandler(_Handler):
         return self._reply(200, body, kind)
 
 
-from ..execution_policy import backend_entrypoint, UI_BACKENDS
+from yadinassi.execution.execution_policy import backend_entrypoint, UI_BACKENDS
 
 
 @backend_entrypoint

@@ -5,11 +5,11 @@ import tempfile
 import unittest
 
 from test_configuration_reference_profile import sources
-from yadinassi.catalogs import BSLCatalogs
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.metadata import BSLCatalogMetadataCollection, BSLMetadata
-from yadinassi.documents import BSLDocuments
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalogs import BSLCatalogs
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.configuration.metadata import BSLCatalogMetadataCollection, BSLMetadata
+from yadinassi.db.document.documents import BSLDocuments
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from yadinassi.ui.configuration_app import ConfigurationProcess, ConfigurationController, PROTOCOL, load_application
 
 
@@ -106,7 +106,7 @@ class ReferenceApplicationTests(unittest.TestCase):
             manager=BSLDocuments(metadata._documents,context,catalogs).get_index('Orders')
             view=manager._view()
             try:
-                from yadinassi.document_backend import DocumentSelection
+                from yadinassi.db.document.document_backend import DocumentSelection
                 card=view.select_documents(manager._schema.identity,DocumentSelection())[0]
                 stored=view.read_document(card.key)
             finally:view.close()

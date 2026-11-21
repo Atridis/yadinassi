@@ -10,11 +10,11 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.register_backend import RegisterDraft, RegisterKey, RegisterScanRequest, RegisterSetDraft
-from yadinassi.sqlite_registers import RegisterView
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.registers.register_backend import RegisterDraft, RegisterKey, RegisterScanRequest, RegisterSetDraft
+from yadinassi.db.sqlite.sqlite_registers import RegisterView
 from sqlite_catalog_fixture import configuration_files
 
 
@@ -138,7 +138,7 @@ class InformationRegisterTests(unittest.TestCase):
         with self.assertRaises(BSLRuntimeError):self.execute('X.Price=3;')
         self.execute('S.Filter.Region.Set("North");')
     def test_read_only_can_read_but_not_write(self):
-        self.seed();self.context.close();self.context._backend=__import__('yadinassi.sqlite_catalog',fromlist=['SQLiteCatalogBackend']).SQLiteCatalogBackend(self.path,read_only=True);self.vm=Interpreter(database_context=self.context,output=self.lines.append)
+        self.seed();self.context.close();self.context._backend=__import__('yadinassi.db.sqlite.sqlite_catalog',fromlist=['SQLiteCatalogBackend']).SQLiteCatalogBackend(self.path,read_only=True);self.vm=Interpreter(database_context=self.context,output=self.lines.append)
         self.assertEqual(self.execute('R=InformationRegisters.Prices.CreateRecordManager();R.Item="A";R.Region="North";R.Read();Message(R.Price);'),['12,5'])
         with self.assertRaises(BSLRuntimeError):self.execute('R.Write();')
     def test_scan_page_tokens_and_complete_rows(self):
@@ -177,7 +177,7 @@ class InformationRegisterTests(unittest.TestCase):
             with self.subTest(code=code),self.assertRaises(BSLRuntimeError):self.execute(code)
         self.assertEqual(self.execute('R.Item="'+('x'*40)+'";R.Price=1.236;Message(StrLen(R.Item));Message(R.Price);'),['30','1,24'])
     def test_numeric_dimension_signed_zero_has_one_identity(self):
-        from yadinassi.catalog_backend import FieldSchema
+        from yadinassi.db.catalog.catalog_backend import FieldSchema
         files=register_files();config=import_configuration(files)
         schema=config.information_registers[0]
         dimension=replace(schema.dimensions[0],kind='number',qualifiers=(12,2,'Any'))

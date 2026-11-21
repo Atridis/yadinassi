@@ -4,8 +4,8 @@ import itertools
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.search_directions import BSLSearchDirection as Direction
-from yadinassi.strings import str_find
+from yadinassi.collections.search_directions import BSLSearchDirection as Direction
+from yadinassi.text.strings import str_find
 
 BEGIN = Direction.FROM_BEGIN
 END = Direction.FROM_END
@@ -176,13 +176,15 @@ class ExtendedStrFindRuntimeTests(unittest.TestCase):
                 self.vm.execute(code)
 
     def test_override_and_shadow_cannot_inherit_special_omission_policy(self):
+        self.vm.close()
+        self.vm = Interpreter(allow_extensions=True)
         calls = []
         self.vm.register_function('StrFind', lambda *args: calls.append(args))
         with self.assertRaises(BSLError):
             self.vm.execute('StrFind("abc", "b", , 1)')
         self.assertEqual(calls, [])
         self.assertEqual(self.vm.execute('СтрНайти("abcabc", "b", , 3)'), 5)
-        fresh = Interpreter()
+        fresh = Interpreter(allow_extensions=True)
         fresh.execute('StrFind = Find;')
         with self.assertRaises(BSLError):
             fresh.execute('StrFind("abc", "b", , 1)')

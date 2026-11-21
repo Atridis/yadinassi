@@ -11,14 +11,14 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
-from yadinassi.catalog_backend import (BackendError, CatalogDraft, CatalogKey,
+from yadinassi.db.catalog.catalog_backend import (BackendError, CatalogDraft, CatalogKey,
     CatalogSchema, FieldSchema, TabularRow, TabularSectionRows, TabularSectionSchema)
-from yadinassi.configuration_xml import ConfigurationFile, ConfigurationImport
-from yadinassi.document_backend import DocumentDraft, DocumentKey, DocumentSchema
-from yadinassi.register_backend import InformationRegisterSchema, RegisterDraft, RegisterKey, RegisterScanRequest, RegisterSetDraft
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_documents import DOCUMENT_DDL
-from yadinassi.sqlite_registers import REGISTER_DDL
+from yadinassi.configuration.configuration_xml import ConfigurationFile, ConfigurationImport
+from yadinassi.db.document.document_backend import DocumentDraft, DocumentKey, DocumentSchema
+from yadinassi.db.registers.register_backend import InformationRegisterSchema, RegisterDraft, RegisterKey, RegisterScanRequest, RegisterSetDraft
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_documents import DOCUMENT_DDL
+from yadinassi.db.sqlite.sqlite_registers import REGISTER_DDL
 from test_sqlite_catalog_admission_cleanup import AdmissionFaultConnection
 from test_sqlite_catalog_create_uncertain import CreateConnection
 
@@ -279,7 +279,7 @@ class RegisterStorageIntegrationTests(unittest.TestCase):
 
     def test_register_wrapper_failure_closes_owned_transaction(self):
         error = MemoryError('injected')
-        with patch('yadinassi.sqlite_catalog.RegisterView', side_effect=error):
+        with patch('yadinassi.db.sqlite.sqlite_catalog.RegisterView', side_effect=error):
             with self.assertRaises(MemoryError) as raised:
                 self.backend.begin_register_read()
         self.assertIs(raised.exception, error)
@@ -296,8 +296,8 @@ class RegisterStorageIntegrationTests(unittest.TestCase):
             connections.append(proxy)
             return proxy
         try:
-            with patch('yadinassi.sqlite_catalog.sqlite3.connect', side_effect=connect), \
-                    patch('yadinassi.sqlite_catalog.RegisterView', side_effect=error):
+            with patch('yadinassi.db.sqlite.sqlite_catalog.sqlite3.connect', side_effect=connect), \
+                    patch('yadinassi.db.sqlite.sqlite_catalog.RegisterView', side_effect=error):
                 with self.assertRaises(MemoryError) as raised:
                     self.backend.begin_register_read()
             self.assertIs(raised.exception, error)
@@ -312,7 +312,7 @@ class RegisterStorageIntegrationTests(unittest.TestCase):
 
     def test_register_schema_load_fault_releases_pending_connection(self):
         error = MemoryError('injected')
-        with patch('yadinassi.sqlite_catalog.load_register_schemas', side_effect=error):
+        with patch('yadinassi.db.sqlite.sqlite_catalog.load_register_schemas', side_effect=error):
             with self.assertRaises(MemoryError) as raised:
                 self.backend.begin_register_read()
         self.assertIs(raised.exception, error)
@@ -329,7 +329,7 @@ class RegisterStorageIntegrationTests(unittest.TestCase):
             proxy = CreateConnection(connection, commit='after')
             connections.append(proxy)
             return proxy
-        with patch('yadinassi.sqlite_catalog.sqlite3.connect', side_effect=connect):
+        with patch('yadinassi.db.sqlite.sqlite_catalog.sqlite3.connect', side_effect=connect):
             with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
                 SQLiteCatalogBackend.create(path, self.config)
         self.assertTrue(path.exists())

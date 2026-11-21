@@ -14,7 +14,7 @@ or coercion. A failed measurement comparison is not implementation acceptance.
 
 The intended later slice is bounded multilingual string selection through
 `НСтр / NStr` with an explicit String language argument. Its implementation, if
-justified by evidence, belongs in the existing `yadinassi/strings.py`; this
+justified by evidence, belongs in the existing `yadinassi/text/strings.py`; this
 measurement changes no runtime file and keeps the runtime inventory at 63.
 The initial explicit-language-only scope cannot establish complete scenario
 parity while any retained observation remains unsupported. The initial capture

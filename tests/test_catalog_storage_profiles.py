@@ -7,9 +7,9 @@ import tempfile
 import unittest
 from uuid import uuid4
 
-from yadinassi.catalog_backend import BackendError, CatalogDraft, CatalogKey
-from yadinassi.configuration_xml import import_inert_configuration
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogDraft, CatalogKey
+from yadinassi.configuration.configuration_xml import import_inert_configuration
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from test_catalog_atomic_numbering import numbered_configuration
 from test_inert_configuration_sources import sources, CATALOG
 

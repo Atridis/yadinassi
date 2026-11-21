@@ -1,4 +1,5 @@
 """Recorder navigation consumes server-owned capabilities, never display labels."""
+from contextlib import closing
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
@@ -7,9 +8,10 @@ import unittest
 
 from test_main_demo_configuration import source, ROOT
 from test_main_demo_runtime import SEED
-from yadinassi.configuration_main_demo import PROFILE, import_main_demo_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.inventory_application_reports import InventoryReports
+from sqlite_test_templates import copy_main_demo
+from yadinassi.configuration.configuration_main_demo import PROFILE, import_main_demo_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.configuration.demos.inventory_application_reports import InventoryReports
 from yadinassi.runtime import Interpreter
 from yadinassi.ui.configuration_app import ConfigurationBroker, ConfigurationController, ConfigurationHandler, load_application, PROTOCOL
 from yadinassi.ui.protocol import encode_line, decode_line
@@ -19,21 +21,27 @@ from yadinassi.ui.report_protocol import validate_projection
 REPORT = {'report':'StockMovements','at':None,'start':None,'end':None}
 
 
-class RecorderNavigationTests(unittest.TestCase):
-    def setUp(self):
-        temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
-        self.path = Path(temp.name)/'demo.sqlite'
-        self.configuration = import_main_demo_configuration(source(), profile=PROFILE)
-        with SQLiteDBContext.create_main_demo(self.path, self.configuration) as context:
-            vm = Interpreter(database_context=context)
-            try:
-                vm.execute(SEED + '''
+def _seed_recorder(context):
+    with closing(Interpreter(database_context=context)) as vm:
+        vm.execute(SEED + '''
 D=Documents.Receipt.CreateDocument();D.Number="r1";D.Date=Date(2024,1,1);D.Warehouse=Склад.Ссылка;
 L=D.Lines.Add();L.Product=Карточка.Ссылка;L.Quantity=5;L.Amount=10;L.Unit=Enums.Units.Piece;D.Write(DocumentWriteMode.Posting);
 D=Documents.Issue.CreateDocument();D.Number="i1";D.Date=Date(2024,1,2);D.Warehouse=Склад.Ссылка;
 L=D.Lines.Add();L.Product=Карточка.Ссылка;L.Quantity=1;L.Amount=2;L.Unit=Enums.Units.Piece;D.Write(DocumentWriteMode.Posting);
 ''')
-            finally: vm.close()
+
+
+class RecorderHandlerTests(unittest.TestCase):
+    def test_handler_explicitly_admits_new_recorder_method(self):
+        self.assertIn('application.openRecorder', ConfigurationHandler.methods)
+
+
+class RecorderNavigationTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
+        self.path = Path(temp.name)/'demo.sqlite'
+        copy_main_demo(self.path, seed=_seed_recorder)
+        self.configuration = import_main_demo_configuration(source(), profile=PROFILE)
         self.forms = load_application(ROOT/'examples/demo', main_demo_application=True)
         self.broker = ConfigurationBroker(self.forms, self.path, main_demo_application=True)
         self.addCleanup(self.broker.close)
@@ -58,9 +66,6 @@ L=D.Lines.Add();L.Product=Карточка.Ссылка;L.Quantity=1;L.Amount=2;
         with SQLiteDBContext(self.path) as context:
             result = InventoryReports(context,self.configuration).read('StockMovements')
             return result.rows
-
-    def test_handler_explicitly_admits_new_recorder_method(self):
-        self.assertIn('application.openRecorder',ConfigurationHandler.methods)
 
     def test_both_recorders_open_separate_existing_document_forms_without_writes(self):
         before = self.saved(); names = set()

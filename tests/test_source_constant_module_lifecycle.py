@@ -6,9 +6,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from test_source_constant_store import configuration
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_constant_managers import _ValueInterpreter
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.metadata.source_constant_managers import _ValueInterpreter
+from yadinassi.types.errors import BSLError
 
 
 class SourceConstantModuleLifecycleTests(unittest.TestCase):
@@ -16,10 +16,10 @@ class SourceConstantModuleLifecycleTests(unittest.TestCase):
         directory=tempfile.TemporaryDirectory();self.addCleanup(directory.cleanup)
         self.path=Path(directory.name)/'scratch.sqlite'
 
-    def app(self,body,module,extra=None):
+    def app(self,body,module,extra=None, *, allow_extensions=False):
         files={'Ext/SessionModule.bsl':('Procedure SessionParametersSetting(Names) '+body+' EndProcedure').encode(),'Constants/Text/Ext/ValueManagerModule.bsl':module.encode()}
         files.update(extra or {})
-        app=SourceApplication(configuration(files),scratch_database=self.path);self.addCleanup(app.close);return app
+        app=SourceApplication(configuration(files),scratch_database=self.path, allow_extensions=allow_extensions);self.addCleanup(app.close);return app
 
     def count(self):
         with closing(sqlite3.connect(self.path)) as db:return db.execute('SELECT COUNT(*) FROM constant_value').fetchone()[0]
@@ -40,7 +40,7 @@ class SourceConstantModuleLifecycleTests(unittest.TestCase):
         body='M=Constants.Text.CreateValueManager();M.Value="initial";Change(M.Value);M.Write();'
         app=self.app(body,'')
         # Shared helper lives in the session module to exercise actual external caller.
-        from yadinassi.configuration_source import import_source
+        from yadinassi.configuration.configuration_source import import_source
         files={item.path:item.content for item in app.source.files};app.close();self.path.unlink()
         files['Ext/SessionModule.bsl']=('Procedure Change(V) V="helper";EndProcedure Procedure SessionParametersSetting(Names) '+body+' EndProcedure').encode()
         app=SourceApplication(import_source(files),scratch_database=self.path);self.addCleanup(app.close)
@@ -115,7 +115,7 @@ class SourceConstantModuleLifecycleTests(unittest.TestCase):
         leaked=[];original=_ValueInterpreter.__init__
         def init(vm,*args,**kwargs):
             original(vm,*args,**kwargs);vm.register_function('Capture',leaked.append,returns_value=False)
-        app=self.app('Try M=Constants.Text.CreateValueManager();Except EndTry;','Capture(ThisObject);Raise "fail";')
+        app=self.app('Try M=Constants.Text.CreateValueManager();Except EndTry;','Capture(ThisObject);Raise "fail";', allow_extensions=True)
         with patch.object(_ValueInterpreter,'__init__',init):app.start()
         self.assertEqual(len(leaked),1);caller=app._session_owner;caller._context_stack.append('server')
         try:
@@ -124,8 +124,8 @@ class SourceConstantModuleLifecycleTests(unittest.TestCase):
 
     def test_saved_manager_export_rejects_client(self):
         app=self.app('','Function Answer() Export Return 1;EndFunction');app.start()
-        from yadinassi.source_constant_managers import create_manager
-        from yadinassi.source_constants_runtime import SourceConstants
+        from yadinassi.db.metadata.source_constant_managers import create_manager
+        from yadinassi.db.metadata.source_constants_runtime import SourceConstants
         caller=app._session_owner;caller._context_stack.append('server')
         try:
             generator=create_manager(caller,SourceConstants(app),'Text')

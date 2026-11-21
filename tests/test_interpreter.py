@@ -3,9 +3,9 @@ from pathlib import Path
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.errors import IncompleteInput
+from yadinassi.types.errors import IncompleteInput
 from yadinassi.syntax.parser import parse
-from yadinassi.values import BSLObject, HostFunction
+from yadinassi.types.values import BSLObject, HostFunction
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class InterpreterTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(output=self.output.append)
+        self.vm = Interpreter(output=self.output.append, allow_extensions=True)
 
     def run_bsl(self, code):
         self.vm.execute(code, "test.bsl")

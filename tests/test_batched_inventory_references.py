@@ -8,10 +8,10 @@ import unittest
 from uuid import uuid4
 
 import test_inventory_reference_profile as fixtures
-from yadinassi.catalog_backend import BackendError, CatalogKey
-from yadinassi.document_backend import DocumentSelection, DocumentScanRequest
-from yadinassi.sqlite_catalog_layout import reference_presence, quote_identifier
-from yadinassi.sqlite_transactions import _accumulation_port
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogKey
+from yadinassi.db.document.document_backend import DocumentSelection, DocumentScanRequest
+from yadinassi.db.sqlite.sqlite_catalog_layout import reference_presence, quote_identifier
+from yadinassi.db.sqlite.sqlite_transactions import _accumulation_port
 
 
 class InventoryReferenceBatchTests(unittest.TestCase):

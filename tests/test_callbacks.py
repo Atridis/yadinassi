@@ -5,8 +5,8 @@ import tempfile
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.callbacks import BSLCallbackDescription
-from yadinassi.values import BSLType
+from yadinassi.application.callbacks import BSLCallbackDescription
+from yadinassi.types.values import BSLType
 
 
 SOURCE = '''
@@ -31,7 +31,7 @@ Count=0; Trace="";
 class CallbackTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(self.output.append)
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
         self.vm.execute(SOURCE, 'Handlers.bsl')
 
     def tearDown(self):

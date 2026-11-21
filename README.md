@@ -1,5 +1,11 @@
 # yadinassi
 
+> **Breaking change:** `python-direct` is the only execution backend.
+> The old interpreter, hybrid and compiled backends have been removed.
+> Unsupported BSL features fail explicitly, including configuration, UI and
+> async cases that have not been migrated. See [the execution contract and gaps](docs/python-direct-default.md).
+
+
 ![yadinassi logo](.github/large.png)
 
 **Yet Another oDIN ASS Interpreter**  
@@ -33,6 +39,18 @@ yadinassi --create-db application.sqlite --import-xml /path/to/designer-xml
 yadinassi --f "/path/to/application.sqlite" basic.bsl
 yadinassi --f "/path/to/application.sqlite" -c 'Сообщить(СтрокаСоединенияИнформационнойБазы());'
 ```
+
+### Посмотреть сгенерированный Python без запуска BSL
+
+```console
+python -m yadinassi basic.bsl --emit-python generated
+```
+
+Создаёт `generated/basic.py` из обычного backend `python-direct` и завершает
+работу, не исполняя BSL. Это диагностический код для чтения, не автономный
+Python-скрипт: ему нужны контекст и служебные объекты yadinassi.
+Существующие файлы не перезаписываются.
+[Границы экспорта, имена файлов и примеры](docs/emit-python.md).
 
 ### Локальный редактор справочников (экспериментальный)
 
@@ -261,7 +279,7 @@ git push origin v0.2.0
 from yadinassi import Interpreter
 
 output = []
-vm = Interpreter(output=output.append)
+vm = Interpreter(output=output.append, allow_extensions=True)
 vm.register_function("Удвоить", lambda value: value * 2, "Double")
 vm.execute('Сообщить(Удвоить(21));', source="example.bsl")
 assert output == ["42"]
@@ -273,6 +291,16 @@ BSL методами наследует `BSLObject` и реализует `get_m
 `Decimal`, логические как `bool`, неопределенное значение как `None`.
 Имена функций, типов и переменных нормализуются через `casefold()`; расширение
 нормализует имена своих методов в `get_member` самостоятельно.
+
+Обычный `Interpreter()` исполняет BSL без Python-расширений и не добавляет
+проверки контекста к обычным операциям. Для регистрации функций и типов
+явно передайте `allow_extensions=True`. Подключение БД задаётся отдельно
+через `database_context=`; оно не разрешает регистрировать расширения.
+Обычные приложения конфигурации, приложения из исходников и формы также
+не включают этот режим. Если приложение запускается из Python и должно
+регистрировать свои расширения, укажите `allow_extensions=True` при
+создании приложения или самостоятельной сессии формы. Штатные службы
+платформы не требуют этого флага.
 
 Интерпретатор предназначен для исполнения доверенного кода: лимиты времени
 и памяти не предусмотрены. Встроенные функции расширения исполняются с правами
@@ -342,10 +370,3 @@ CatalogRef в карточке справочника, шапке докумен
 Пример `examples/configuration-scalar-editors` сохраняет DateTime справочника,
 шапки документа и строк в существующем явном reference-профиле. Схемы хранения,
 generic Invocation, миграции и права транзакций не расширяются.
-
-### Opt-in hybrid execution
-
-Standalone numeric loops can be tried with
-`yadinassi --execution-backend hybrid file.bsl`; the default remains the ordinary
-interpreter. Unsupported contexts fall back before loop effects. See
-[the bounded hybrid backend contract and benchmark](docs/hybrid-backend.md).

@@ -3,11 +3,11 @@ import tempfile
 import unittest
 from pathlib import Path
 from uuid import uuid4
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_migration_plan import prepare as transaction_plan, apply as upgrade
-from yadinassi.sqlite_configuration_update import prepare
-from yadinassi.catalog_backend import BackendError
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_migration_plan import prepare as transaction_plan, apply as upgrade
+from yadinassi.db.sqlite.sqlite_configuration_update import prepare
+from yadinassi.db.catalog.catalog_backend import BackendError
 from sqlite_catalog_fixture import configuration_files
 from test_configuration_evolution import append_field
 
@@ -64,8 +64,8 @@ class ConfigurationUpdateApplyTests(ConfigurationUpdatePlanningTests):
     def plan(self): return prepare(self.path,self.target,maintenance=True)
 
     def test_apply_backfill_source_and_generation(self):
-        from yadinassi.catalog_backend import CatalogDraft, CatalogKey
-        from yadinassi.sqlite_configuration_update import apply, resolve
+        from yadinassi.db.catalog.catalog_backend import CatalogDraft, CatalogKey
+        from yadinassi.db.sqlite.sqlite_configuration_update import apply, resolve
         backend=SQLiteCatalogBackend(self.path)
         key=CatalogKey(backend.database_id,self.source.catalogs[0].identity,uuid4())
         operation=uuid4();draft=CatalogDraft(key,'saved','saved',False,())
@@ -84,7 +84,7 @@ class ConfigurationUpdateApplyTests(ConfigurationUpdatePlanningTests):
         finally:backend.close()
 
     def test_stale_backend_refuses_after_update(self):
-        from yadinassi.sqlite_configuration_update import apply
+        from yadinassi.db.sqlite.sqlite_configuration_update import apply
         old=SQLiteCatalogBackend(self.path)
         try:
             apply(self.path,self.plan(),maintenance=True)
@@ -92,8 +92,8 @@ class ConfigurationUpdateApplyTests(ConfigurationUpdatePlanningTests):
         finally:old.close()
 
     def test_changed_database_rejects_plan_without_ddl(self):
-        from yadinassi.catalog_backend import CatalogDraft, CatalogKey
-        from yadinassi.sqlite_configuration_update import apply
+        from yadinassi.db.catalog.catalog_backend import CatalogDraft, CatalogKey
+        from yadinassi.db.sqlite.sqlite_configuration_update import apply
         plan=self.plan();backend=SQLiteCatalogBackend(self.path)
         tx=backend.begin_write(uuid4());tx.create(CatalogDraft(CatalogKey(backend.database_id,self.source.catalogs[0].identity,uuid4()),'later','',False,()));tx.commit();backend.close()
         before=self.path.read_bytes()
@@ -102,21 +102,21 @@ class ConfigurationUpdateApplyTests(ConfigurationUpdatePlanningTests):
 
     def test_precommit_failure_rolls_back_exactly(self):
         from unittest.mock import patch
-        from yadinassi.sqlite_configuration_update import apply
+        from yadinassi.db.sqlite.sqlite_configuration_update import apply
         plan=self.plan();before=self.path.read_bytes()
-        with patch('yadinassi.sqlite_configuration_history.validate',side_effect=BackendError('integrity')):
+        with patch('yadinassi.db.sqlite.sqlite_configuration_history.validate',side_effect=BackendError('integrity')):
             with self.assertRaises(BackendError):apply(self.path,plan,maintenance=True)
         self.assertEqual(self.path.read_bytes(),before)
 
     def test_update_cannot_be_replayed_or_chained_implicitly(self):
-        from yadinassi.sqlite_configuration_update import apply
+        from yadinassi.db.sqlite.sqlite_configuration_update import apply
         plan=self.plan();apply(self.path,plan,maintenance=True)
         with self.assertRaises(BackendError):apply(self.path,plan,maintenance=True)
 
     def test_old_unit_receipt_resolves_after_schema_addition(self):
-        from yadinassi.catalog_backend import CatalogDraft, CatalogKey
-        from yadinassi.transaction_backend import TransactionRequest
-        from yadinassi.sqlite_configuration_update import apply
+        from yadinassi.db.catalog.catalog_backend import CatalogDraft, CatalogKey
+        from yadinassi.db.transaction_backend import TransactionRequest
+        from yadinassi.db.sqlite.sqlite_configuration_update import apply
         backend=SQLiteCatalogBackend(self.path);operation=uuid4()
         draft=CatalogDraft(CatalogKey(backend.database_id,self.source.catalogs[0].identity,uuid4()),'unit','',False,())
         request=TransactionRequest('catalog_create',draft)
@@ -128,8 +128,8 @@ class ConfigurationUpdateApplyTests(ConfigurationUpdatePlanningTests):
         finally:backend.close()
 
     def test_new_generation_writes_resolve_normally(self):
-        from yadinassi.catalog_backend import CatalogDraft, CatalogKey
-        from yadinassi.sqlite_configuration_update import apply
+        from yadinassi.db.catalog.catalog_backend import CatalogDraft, CatalogKey
+        from yadinassi.db.sqlite.sqlite_configuration_update import apply
         apply(self.path,self.plan(),maintenance=True)
         backend=SQLiteCatalogBackend(self.path);operation=uuid4()
         draft=CatalogDraft(CatalogKey(backend.database_id,self.source.catalogs[0].identity,uuid4()),'new','',False,(True,))
@@ -140,6 +140,6 @@ class ConfigurationUpdateApplyTests(ConfigurationUpdatePlanningTests):
 
     def test_wrong_operation_cannot_resolve_update(self):
         from dataclasses import replace
-        from yadinassi.sqlite_configuration_update import apply,resolve
+        from yadinassi.db.sqlite.sqlite_configuration_update import apply,resolve
         plan=self.plan();apply(self.path,plan,maintenance=True)
         self.assertEqual(resolve(self.path,replace(plan,operation_id=uuid4()),maintenance=True),'uncertain')

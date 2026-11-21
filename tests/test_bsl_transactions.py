@@ -4,16 +4,16 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.catalog_backend import BackendError
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.database_transactions import execution, begin, commit, rollback, current
-from yadinassi.sqlite_migration_plan import prepare, apply
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.database_transactions import execution, begin, commit, rollback, current
+from yadinassi.db.sqlite.sqlite_migration_plan import prepare, apply
 from test_sqlite_catalog_hierarchy import configuration
 from test_catalog_commit_cleanup_recovery import FaultConnection
 
 
 class BSLTransactionsTests(unittest.TestCase):
-    def setUp(self):
+    def setUp(self, *, allow_extensions=False):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name)/'owned.sqlite'
         context = SQLiteDBContext.create(self.path, configuration(mixed=True)); context.close()
@@ -21,7 +21,8 @@ class BSLTransactionsTests(unittest.TestCase):
         self.context = SQLiteDBContext(self.path); self.addCleanup(self.context.close)
         self.backend = self.context.backend
         self.output = []
-        self.vm = Interpreter(database_context=self.context, output=self.output.append)
+        self.vm = Interpreter(database_context=self.context, output=self.output.append,
+                              allow_extensions=allow_extensions)
 
     def catalog(self):
         return self.vm.execute('C=Catalogs.Products.CreateItem();C.Code="A";C.Description="edited";C')

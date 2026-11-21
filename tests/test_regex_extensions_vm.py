@@ -3,8 +3,8 @@ import ast
 from pathlib import Path
 import unittest
 from unittest.mock import patch
-from yadinassi import regex_functions as api, regex_parser as limits
-from yadinassi.regex_parser import RegexLimitError
+from yadinassi.formats.regex import regex_functions as api, regex_parser as limits
+from yadinassi.formats.regex.regex_parser import RegexLimitError
 
 class RegexExtensionsVMTests(unittest.TestCase):
     def groups(self,result):return [(g._value,int(g._position),int(g._length)) for g in result.get_groups().items]

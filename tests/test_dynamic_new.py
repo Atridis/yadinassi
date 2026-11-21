@@ -5,19 +5,22 @@ import tempfile
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.values import BSLArray, BSLType
+from yadinassi.types.values import BSLType
 
 
 class DynamicNewTests(unittest.TestCase):
     def setUp(self):
-        self.vm = Interpreter()
+        self.vm = Interpreter(allow_extensions=True)
+
+    def assert_array_representation(self, value):
+        self.assertIs(type(value), list)
 
     def test_keyword_and_type_aliases(self):
         for keyword in ('Новый', 'New', 'нОвЫй', 'nEw'):
             for name in ('Массив', 'Array', 'мАсСиВ', 'aRrAy'):
                 with self.subTest(keyword=keyword, name=name):
-                    self.assertIsInstance(self.vm.execute(f'{keyword}("{name}")'), BSLArray)
-                    self.assertIsInstance(self.vm.execute(f'{keyword}(Type("{name}"))'), BSLArray)
+                    self.assert_array_representation(self.vm.execute(f'{keyword}("{name}")'))
+                    self.assert_array_representation(self.vm.execute(f'{keyword}(Type("{name}"))'))
 
     def test_empty_mutable_collections(self):
         for name in ('Array', 'Structure', 'Map'):
@@ -42,6 +45,19 @@ class DynamicNewTests(unittest.TestCase):
             else:  # FixedArray/FixedMap need arguments; other scalar types have no factory.
                 with self.assertRaises(BSLError):
                     self.vm.execute('New(kind)')
+
+    def test_type_of_direct_collection_representations(self):
+        for expression, expected in (
+                ('New Array', BSLType.ARRAY),
+                ('New Map', BSLType.MAP),
+                ('New ValueList', BSLType.VALUE_LIST),
+                ('ListValue.Add(1)', BSLType.VALUE_LIST_ITEM)):
+            for allow_extensions in (False, True):
+                with self.subTest(expression=expression, allow_extensions=allow_extensions):
+                    vm = Interpreter(allow_extensions=allow_extensions)
+                    self.addCleanup(vm.close)
+                    vm.execute('ListValue = New ValueList;')
+                    self.assertEqual(vm.execute(f'TypeOf({expression})'), expected)
 
     def test_constructor_parameter_array_and_multidimensional_shape(self):
         self.vm.execute('args = New Array; args.Add(2); args.Add(3); x = New(Type("Array"), args); '

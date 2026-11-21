@@ -8,8 +8,8 @@ from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse
-from yadinassi.value_tables import BSLValueTable
-from yadinassi.values import HostFunction
+from yadinassi.collections.value_tables import BSLValueTable
+from yadinassi.types.values import HostFunction
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/collections.bsl'

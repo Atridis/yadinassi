@@ -9,10 +9,10 @@ from uuid import uuid4
 
 import test_sqlite_documents as fixtures
 from sqlite_catalog_fixture import configuration_files
-from yadinassi.catalog_backend import BackendError, CatalogKey, CatalogScanRequest
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.document_backend import DocumentKey, DocumentScanRequest, DocumentSelection
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogKey, CatalogScanRequest
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.document.document_backend import DocumentKey, DocumentScanRequest, DocumentSelection
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 
 
 class DocumentQueryPortTests(unittest.TestCase):
@@ -202,7 +202,7 @@ class DocumentQueryPortTests(unittest.TestCase):
         self.assertEqual(len(self.view().scan_documents(self.schema.identity, DocumentScanRequest()).rows), 3)
 
     def test_query_view_constructor_failure_releases_transaction(self):
-        with patch('yadinassi.sqlite_catalog.DocumentView', side_effect=BackendError('integrity')):
+        with patch('yadinassi.db.sqlite.sqlite_catalog.DocumentView', side_effect=BackendError('integrity')):
             with self.assertRaisesRegex(BackendError, 'integrity'):
                 self.context.backend.begin_query_read()
         self.assertIsNone(self.context.backend._active)
@@ -314,7 +314,7 @@ class DocumentQueryPortTests(unittest.TestCase):
         # Cleanup must release the connection without replacing an interruption
         # from its owned stream with a later ordinary rollback failure.
         from types import SimpleNamespace
-        from yadinassi.sqlite_catalog import _close_owned_connection
+        from yadinassi.db.sqlite.sqlite_catalog import _close_owned_connection
         class Stream:
             def close(self): raise MemoryError('stream interruption')
         class Connection:

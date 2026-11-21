@@ -9,11 +9,11 @@ import unittest
 from unittest import mock
 
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import BackendError, CatalogDraft, TabularRow, TabularSectionRows
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.configuration_import import load_configuration_directory
-from yadinassi.form_replication import ReplicatedFormServer
-from yadinassi.form_runtime import FormServerBinding
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogDraft, TabularRow, TabularSectionRows
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.configuration.configuration_import import load_configuration_directory
+from yadinassi.forms.form_replication import ReplicatedFormServer
+from yadinassi.forms.form_runtime import FormServerBinding
 from yadinassi.ui.form_app import FormController, FormProcess, create_server
 from yadinassi.ui.form_package import load_client, load_server
 from yadinassi.ui.order_workbench import OrdersWorkbenchSession
@@ -216,7 +216,7 @@ class OrdersWorkbenchTests(WorkbenchHelpers, unittest.TestCase):
             seed(independent, 'O003', 'No held read view', 1)
 
     def test_healthy_channel_uncertain_commit_locks_and_resolves_exact_intent_once(self):
-        from yadinassi.sqlite_catalog import _View
+        from yadinassi.db.sqlite.sqlite_catalog import _View
         self.open_order(self.controller); self.description(self.controller, 'Committed exact intent')
         commit = _View.commit; calls = []
         def lost(tx):
@@ -281,7 +281,7 @@ class OrdersWorkbenchTests(WorkbenchHelpers, unittest.TestCase):
         self.assertFalse(result['state']['dirty'])
 
     def test_uncertain_absent_receipt_retries_only_retained_intent(self):
-        from yadinassi.sqlite_catalog import _View
+        from yadinassi.db.sqlite.sqlite_catalog import _View
         self.open_order(self.controller); self.description(self.controller, 'Exact absent intent')
         with mock.patch.object(_View, 'commit', side_effect=BackendError('uncertain_commit')):
             self.good(event(self.controller))
@@ -295,7 +295,7 @@ class OrdersWorkbenchTests(WorkbenchHelpers, unittest.TestCase):
         self.assertEqual(self.readback(self.path)[0][1], 'Exact absent intent')
 
     def test_absent_receipt_then_conflict_releases_lock_but_preserves_draft(self):
-        from yadinassi.sqlite_catalog import _View
+        from yadinassi.db.sqlite.sqlite_catalog import _View
         self.open_order(self.controller); self.description(self.controller, 'My retained draft')
         with mock.patch.object(_View, 'commit', side_effect=BackendError('uncertain_commit')):
             self.good(event(self.controller))
@@ -339,7 +339,7 @@ class OrdersWorkbenchTests(WorkbenchHelpers, unittest.TestCase):
         bad = FormServerBinding('ReturnObject', lambda session: object())
         server = ReplicatedFormServer('&AtServer\nProcedure Create(Cancel, StandardProcessing) ReturnObject(); EndProcedure', {},
             handlers=(), bindings={'OnCreateAtServer': 'Create'}, server_bindings=(bad,))
-        from yadinassi.form_replication import ReplicatedFormSession
+        from yadinassi.forms.form_replication import ReplicatedFormSession
         client = ReplicatedFormSession('', server.exchange, handlers=())
         with self.assertRaises(Exception): client.open()
         self.assertFalse(client.uncertain)

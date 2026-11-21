@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLError
-from yadinassi import file_io as f
+from yadinassi.streams import file_io as f
 
 
 class FileIOTests(unittest.TestCase):

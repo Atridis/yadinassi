@@ -16,10 +16,12 @@ import unittest
 from unittest.mock import patch
 
 from tests.native_observations import extract_payload, read_observation
-from yadinassi import Interpreter, serialization, value_lists
-from yadinassi.structures import BSLStructure
-from yadinassi.value_lists import BSLValueList, BSLValueListItem
-from yadinassi.values import BSLArray, NULL, to_string
+from yadinassi import Interpreter
+from yadinassi.formats.storage import serialization
+from yadinassi.collections import value_lists
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.types.values import BSLArray, NULL, to_string
 
 
 ROOT = Path(__file__).resolve().parents[1]

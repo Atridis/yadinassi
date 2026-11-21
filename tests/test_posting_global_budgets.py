@@ -2,11 +2,11 @@
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
-from yadinassi.catalog_backend import BackendError
-from yadinassi.document_backend import DocumentKey
-from yadinassi.sqlite_document_posting_state import PostedIntent,stage_posted
-from yadinassi import sqlite_recorder_movements as movements
-from yadinassi import sqlite_document_posting_state as posted
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.document.document_backend import DocumentKey
+from yadinassi.db.sqlite.sqlite_document_posting_state import PostedIntent,stage_posted
+from yadinassi.db.sqlite import sqlite_recorder_movements as movements
+from yadinassi.db.sqlite import sqlite_document_posting_state as posted
 import test_recorder_movement_storage as movement_fixture
 import test_document_posting_state as posted_fixture
 

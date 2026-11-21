@@ -8,12 +8,12 @@ import unittest
 from unittest.mock import patch
 
 from business_configuration_fixture import sources
-from yadinassi.catalog_backend import BackendError
-from yadinassi.catalogs import BSLCatalogs
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.metadata import BSLCatalogMetadataCollection
-from yadinassi.prepared_source import PreparedSource
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.catalog.catalogs import BSLCatalogs
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.configuration.metadata import BSLCatalogMetadataCollection
+from yadinassi.execution.prepared_source import PreparedSource
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 
 
 class PreparedSourceTests(unittest.TestCase):
@@ -49,8 +49,8 @@ class PreparedBusinessAdmissionTests(unittest.TestCase):
         manager = BSLCatalogs(BSLCatalogMetadataCollection(context), context).get_index('Items')
         obj = manager.create_item(); obj.set_member('Code', '1'); obj.set_member('Description', 'kept'); obj.write()
         reference = obj.get_member('Ref')
-        with patch('yadinassi.configuration_business_profile.business_configuration') as importer, \
-                patch('yadinassi.configuration_forms.compile_form_module') as compiler:
+        with patch('yadinassi.configuration.configuration_business_profile.business_configuration') as importer, \
+                patch('yadinassi.configuration.configuration_forms.compile_form_module') as compiler:
             for _ in range(10): self.assertEqual(reference.get_member('Description'), 'kept')
             importer.assert_not_called(); compiler.assert_not_called()
 
@@ -61,7 +61,7 @@ class PreparedBusinessAdmissionTests(unittest.TestCase):
         manager = BSLCatalogs(metadata, context).get_index('Items')
         obj = manager.create_item(); obj.set_member('Description', 'kept'); obj.write()
         reference = obj.get_member('Ref')
-        with patch('yadinassi.inventory_enum_runtime.read_snapshot',
+        with patch('yadinassi.configuration.demos.inventory_enum_runtime.read_snapshot',
                    side_effect=AssertionError('standalone metadata has no enum owner')):
             self.assertEqual(reference.get_member('Description'), 'kept')
         metadata._root = object()
@@ -70,7 +70,7 @@ class PreparedBusinessAdmissionTests(unittest.TestCase):
 
     def test_reads_exports_and_form_preparation_reuse_positive_import(self):
         from test_configuration_catalog_profile import CATALOG
-        with patch('yadinassi.configuration_business_profile.business_configuration') as importer:
+        with patch('yadinassi.configuration.configuration_business_profile.business_configuration') as importer:
             for _ in range(3):
                 with closing(self.backend.begin_read()) as view: self.assertEqual(len(view.catalogs()), 1)
                 with closing(self.backend.begin_document_read()) as view: self.assertEqual(len(view.documents()), 1)
@@ -79,8 +79,8 @@ class PreparedBusinessAdmissionTests(unittest.TestCase):
             importer.assert_not_called()
 
     def test_each_backend_reimports_and_does_not_share_positive_state(self):
-        from yadinassi.configuration_business_profile import business_configuration
-        with patch('yadinassi.configuration_business_profile.business_configuration', wraps=business_configuration) as importer:
+        from yadinassi.configuration.configuration_business_profile import business_configuration
+        with patch('yadinassi.configuration.configuration_business_profile.business_configuration', wraps=business_configuration) as importer:
             with closing(SQLiteCatalogBackend(self.path)) as second:
                 self.assertEqual(importer.call_count, 1)
                 self.assertIsNot(second._prepared_source, self.backend._prepared_source)
@@ -126,7 +126,7 @@ class PreparedBusinessAdmissionTests(unittest.TestCase):
 
     def test_failed_import_is_not_published(self):
         self.backend._prepared_source.clear()
-        with patch('yadinassi.configuration_business_profile.business_configuration', side_effect=ValueError('refused')):
+        with patch('yadinassi.configuration.configuration_business_profile.business_configuration', side_effect=ValueError('refused')):
             with self.assertRaises(BackendError): self.backend.begin_read()
         self.assertIsNone(self.backend._prepared_source._entry)
         with closing(self.backend.begin_read()): pass
@@ -134,7 +134,7 @@ class PreparedBusinessAdmissionTests(unittest.TestCase):
 
     def test_interrupted_import_is_not_published(self):
         self.backend._prepared_source.clear()
-        with patch('yadinassi.configuration_business_profile.business_configuration', side_effect=KeyboardInterrupt):
+        with patch('yadinassi.configuration.configuration_business_profile.business_configuration', side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt): self.backend.begin_read()
         self.assertIsNone(self.backend._prepared_source._entry)
         with closing(self.backend.begin_read()): pass
@@ -153,7 +153,7 @@ class PreparedProfileTests(unittest.TestCase):
 
     def assert_profile_reused(self, create, files, target):
         backend = create(self.path, files); self.addCleanup(backend.close)
-        with patch(target) as importer, patch('yadinassi.configuration_forms.compile_form_module') as compiler:
+        with patch(target) as importer, patch('yadinassi.configuration.configuration_forms.compile_form_module') as compiler:
             for _ in range(3):
                 with closing(backend.begin_read()): pass
                 self.assertEqual(backend.export_configuration(), files)
@@ -162,25 +162,25 @@ class PreparedProfileTests(unittest.TestCase):
     def test_reference_profile_retains_typed_grant(self):
         from test_configuration_reference_profile import sources as reference_sources
         self.assert_profile_reused(SQLiteCatalogBackend.create_reference_application, reference_sources(),
-            'yadinassi.configuration_reference_profile.reference_configuration')
+            'yadinassi.configuration.configuration_reference_profile.reference_configuration')
 
     def test_document_form_profile_reuses_admission(self):
         from document_form_fixture import sources as document_sources
         self.assert_profile_reused(SQLiteCatalogBackend.create_document_forms, document_sources(),
-            'yadinassi.configuration_document_profile.import_document_forms_configuration')
+            'yadinassi.configuration.configuration_document_profile.import_document_forms_configuration')
 
     def test_catalog_form_profile_reuses_admission(self):
         from test_configuration_catalog_profile import catalog_form_sources
         self.assert_profile_reused(SQLiteCatalogBackend.create_catalog_forms, catalog_form_sources(),
-            'yadinassi.configuration_xml._demo_configuration')
+            'yadinassi.configuration.configuration_xml._demo_configuration')
 
     def test_posting_core_reuses_import_not_recorder_validation(self):
         from test_configuration_posting import source
-        from yadinassi.configuration_posting import import_posting_configuration, PROFILE
-        from yadinassi.sqlite_recorder_movements import RecorderMovementPort
+        from yadinassi.configuration.configuration_posting import import_posting_configuration, PROFILE
+        from yadinassi.db.sqlite.sqlite_recorder_movements import RecorderMovementPort
         config = import_posting_configuration(source(), posting_runtime=PROFILE)
         backend = SQLiteCatalogBackend.create_posting(self.path, config); self.addCleanup(backend.close)
-        with patch('yadinassi.sqlite_posting_profile.import_variant') as importer:
+        with patch('yadinassi.db.sqlite.sqlite_posting_profile.import_variant') as importer:
             for _ in range(3):
                 with closing(backend.begin_read()): pass
             importer.assert_not_called()
@@ -189,11 +189,11 @@ class PreparedProfileTests(unittest.TestCase):
 
     def test_posting_forms_reuse_full_variant_not_core_projection(self):
         from posting_application_fixture import source
-        from yadinassi.configuration_posting_application import import_posting_application, PROFILE
+        from yadinassi.configuration.configuration_posting_application import import_posting_application, PROFILE
         files = source(); config = import_posting_application(files, posting_runtime=PROFILE)
         backend = SQLiteCatalogBackend.create_posting(self.path, config); self.addCleanup(backend.close)
-        with patch('yadinassi.sqlite_posting_profile.import_variant') as importer, \
-                patch('yadinassi.configuration_forms.compile_form_module') as compiler:
+        with patch('yadinassi.db.sqlite.sqlite_posting_profile.import_variant') as importer, \
+                patch('yadinassi.configuration.configuration_forms.compile_form_module') as compiler:
             for _ in range(3):
                 with closing(backend.begin_read()): pass
             importer.assert_not_called(); compiler.assert_not_called()

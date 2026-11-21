@@ -11,10 +11,10 @@ import tempfile
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.maps import BSLFixedMap, BSLMap
-from yadinassi.structures import BSLFixedStructure, BSLStructure
-from yadinassi.values import BSLArray, BSLFixedArray
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.collections.maps import BSLFixedMap, BSLMap
+from yadinassi.collections.structures import BSLFixedStructure, BSLStructure
+from yadinassi.types.values import BSLArray, BSLFixedArray
 
 
 class FixedCollectionTests(unittest.TestCase):
@@ -850,6 +850,40 @@ class FixedCollectionTests(unittest.TestCase):
             Message(fa[0]); Message(fs.Known); Message(fm["Known"]);
         ''')
         self.assertEqual(self.output, ['Да', 'Да', 'Да', '7', '7', '7'])
+
+    def test_direct_fixed_map_index_distinguishes_missing_and_undefined(self):
+        self.vm.execute("""
+            m = New Map; m.Insert("present", Undefined);
+            fm = New FixedMap(m);
+            a = New FixedArray(New Array);
+        """)
+        self.assertIsNone(self.vm.execute('fm["present"]'))
+        self.assertIsNone(self.vm.execute('fm.Get("absent")'))
+        for expression in ('fm["absent"]', 'fm[a]'):
+            with self.subTest(expression=expression), self.assertRaisesRegex(
+                    BSLRuntimeError, 'Ключ фиксированного соответствия не найден'):
+                self.vm.execute(expression)
+        with self.assertRaisesRegex(BSLRuntimeError, 'requires a scalar Python value'):
+            self.vm.execute('fm.Get(a)')
+        with self.assertRaisesRegex(BSLRuntimeError, 'requires a scalar Python value'):
+            self.vm.execute('m.Insert(a, 7);')
+
+    def test_direct_fixed_map_assignment_reports_readonly_after_rhs(self):
+        self.vm.execute("""
+            Function RHS()
+                Message("evaluated");
+                Return 8;
+            EndFunction
+            m = New Map; m[1] = 7;
+            fm = New FixedMap(m);
+        """)
+        with self.assertRaisesRegex(BSLRuntimeError,
+                                    'Элементы фиксированного соответствия недоступны для записи') as caught:
+            self.vm.execute('\nfm[1] = RHS();', 'fixed-map.bsl')
+        self.assertEqual((caught.exception.source, caught.exception.line,
+                          caught.exception.column), ('fixed-map.bsl', 2, 1))
+        self.assertEqual(self.output, ['evaluated'])
+        self.assertEqual(self.vm.execute('fm[1]'), 7)
 
     def test_fixed_errors_report_source_location_and_restore_routine_scope(self):
         self.make_collections()

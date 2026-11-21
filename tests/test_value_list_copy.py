@@ -9,10 +9,11 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from yadinassi import Interpreter, value_lists
-from yadinassi.sort_directions import BSLSortDirection as Direction
-from yadinassi.value_lists import BSLValueList
-from yadinassi.values import BSLArray
+from yadinassi import Interpreter
+from yadinassi.collections import value_lists
+from yadinassi.collections.sort_directions import BSLSortDirection as Direction
+from yadinassi.collections.value_lists import BSLValueList
+from yadinassi.types.values import BSLArray
 
 
 ROOT = Path(__file__).resolve().parents[1]

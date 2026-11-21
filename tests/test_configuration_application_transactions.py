@@ -5,13 +5,13 @@ import unittest
 from unittest.mock import patch
 
 from configuration_runtime_fixture import module_files
-from yadinassi.configuration_modules import MODULE_RUNTIME
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.errors import BSLError
-from yadinassi.form_runtime import FormSession
-from yadinassi.sqlite_migration_plan import prepare, apply
+from yadinassi.configuration.configuration_modules import MODULE_RUNTIME
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.types.errors import BSLError
+from yadinassi.forms.form_runtime import FormSession
+from yadinassi.db.sqlite.sqlite_migration_plan import prepare, apply
 
 
 class ApplicationTransactionOriginTests(unittest.TestCase):

@@ -2,13 +2,15 @@
 from decimal import Decimal, Inexact, Rounded, localcontext
 import unittest
 
-from yadinassi import BSLError, Interpreter
-from yadinassi.values import BSLArray
+from array_backend_contract import ArrayBackendContract
+
+from yadinassi import BSLError
+from yadinassi.types.values import BSLArray
 
 
-class ArrayDeleteBoundaryTests(unittest.TestCase):
+class _ArrayDeleteBoundaryTests(ArrayBackendContract):
     def setUp(self):
-        self.vm = Interpreter(output=lambda text: None)
+        self.vm = self.interpreter(output=lambda text: None)
 
     def test_bilingual_empty_and_above_upper_bound(self):
         for method in ('Delete', 'Удалить', 'dElEtE', 'уДаЛиТь'):
@@ -19,7 +21,7 @@ class ArrayDeleteBoundaryTests(unittest.TestCase):
                         with self.assertRaises(BSLError):
                             self.vm.execute(f'a.{method}({size + offset});')
                         self.assertIs(self.vm.variables['a'], self.vm.variables['alias'])
-                        self.assertEqual(self.vm.variables['a'].items, [None] * size)
+                        self.assertEqual(self.array_items(self.vm.variables['a']), [None] * size)
                         self.assertEqual(self.vm.execute('a.Count()'), size)
                         self.assertEqual(self.vm.execute('a.UBound()'), size - 1)
 
@@ -29,17 +31,17 @@ class ArrayDeleteBoundaryTests(unittest.TestCase):
                 self.vm.execute('a = New Array; a.Add("first"); a.Add("last"); alias = a;')
                 self.vm.execute(f'alias.{method}(0);')
                 self.assertIs(self.vm.variables['alias'], self.vm.variables['a'])
-                self.assertEqual(self.vm.variables['a'].items, ['last'])
+                self.assertEqual(self.array_items(self.vm.variables['a']), ['last'])
 
     def test_failure_does_not_leak_between_interpreters(self):
-        other = Interpreter(output=lambda text: None)
+        other = self.interpreter(output=lambda text: None)
         self.vm.execute('a = New Array; a.Add("first");')
         other.execute('a = New Array; a.Add("other");')
         with self.assertRaises(BSLError):
             self.vm.execute('a.Delete(1);')
         other.execute('a.Delete(0); a.Add("recovered");')
-        self.assertEqual(self.vm.variables['a'].items, ['first'])
-        self.assertEqual(other.variables['a'].items, ['recovered'])
+        self.assertEqual(self.array_items(self.vm.variables['a']), ['first'])
+        self.assertEqual(self.array_items(other.variables['a']), ['recovered'])
 
     def test_every_valid_index_and_retained_identity(self):
         for index in range(5):
@@ -58,7 +60,7 @@ class ArrayDeleteBoundaryTests(unittest.TestCase):
         for index in (0, 1):
             with self.assertRaises(BSLError):
                 self.vm.execute(f'a.Delete({index});')
-        self.assertEqual(self.vm.variables['a'].items, [])
+        self.assertEqual(self.array_items(self.vm.variables['a']), [])
 
     def test_huge_positive_indices_never_expand_to_host_integer(self):
         a = BSLArray(); a.add('kept')
@@ -75,7 +77,7 @@ class ArrayDeleteBoundaryTests(unittest.TestCase):
     def test_scaled_integer_and_negative_zero(self):
         self.vm.execute('a = New Array; a.Add("first"); a.Add("last"); '
                         'a.Delete(-0.000); a.Delete(0.000);')
-        self.assertEqual(self.vm.variables['a'].items, [])
+        self.assertEqual(self.array_items(self.vm.variables['a']), [])
 
     def test_existing_unsupported_index_contract_is_atomic(self):
         for expression in ('-1', '-0.5', '0.5', '1.5', '100.5',
@@ -85,7 +87,7 @@ class ArrayDeleteBoundaryTests(unittest.TestCase):
                 self.vm.execute('a = New Array; a.Add("kept");')
                 with self.assertRaises(BSLError):
                     self.vm.execute(f'a.Delete({expression});')
-                self.assertEqual(self.vm.variables['a'].items, ['kept'])
+                self.assertEqual(self.array_items(self.vm.variables['a']), ['kept'])
 
     def test_host_invalid_values_are_atomic(self):
         a = BSLArray(); a.add('kept')
@@ -100,7 +102,7 @@ class ArrayDeleteBoundaryTests(unittest.TestCase):
         for arguments in ('', ', 1', '0, 1', '0,'):
             with self.subTest(arguments=arguments), self.assertRaises(BSLError):
                 self.vm.execute(f'a.Delete({arguments})')
-            self.assertEqual(self.vm.variables['a'].items, ['kept'])
+            self.assertEqual(self.array_items(self.vm.variables['a']), ['kept'])
 
     def test_error_preserves_serialization_aliases_and_snapshot(self):
         self.vm.execute('a = New Array; nested = New Structure("Text", "Я😀"); '
@@ -111,13 +113,13 @@ class ArrayDeleteBoundaryTests(unittest.TestCase):
                         'restored = ValueFromStringInternal(after);')
         self.assertEqual(self.vm.variables['before'], self.vm.variables['after'])
         a = self.vm.variables['a']
-        self.assertIs(a.items[0], a.items[1])
+        self.assertIs(self.array_items(a)[0], self.array_items(a)[1])
         restored = self.vm.variables['restored']
         # Existing native codec serializes repeated references by value.
         self.assertIsNot(restored.items[0], restored.items[1])
         self.assertEqual(self.vm.execute('restored[0].Text'), 'Я😀')
         self.assertEqual(self.vm.execute('ValueToStringInternal(restored)'), self.vm.variables['before'])
-        self.assertEqual(len(self.vm.variables['snapshot'].items), 2)
+        self.assertEqual(len(self.fixed_items(self.vm.variables['snapshot'])), 2)
         self.assertTrue(self.vm.execute('(TypeOf(restored) = Type("Array"))'))
 
     def test_error_retains_self_reference_without_traversal(self):
@@ -132,14 +134,14 @@ class ArrayDeleteBoundaryTests(unittest.TestCase):
         for expression in ('fixed.Delete(0)', 'fixed.Удалить(100)'):
             with self.subTest(expression=expression), self.assertRaises(BSLError):
                 self.vm.execute(expression)
-        self.assertEqual(self.vm.variables['fixed'].items, ())
+        self.assertEqual(self.fixed_items(self.vm.variables['fixed']), ())
 
     def test_reads_and_writes_remain_strict_after_error(self):
         self.vm.execute('a = New Array; a.Add("kept"); Try a.Delete(1); Except EndTry;')
         for expression in ('a.Get(1)', 'a[1]', 'a.Set(1, 2)', 'a[1] = 2'):
             with self.subTest(expression=expression), self.assertRaises(BSLError):
                 self.vm.execute(expression)
-        self.assertEqual(self.vm.variables['a'].items, ['kept'])
+        self.assertEqual(self.array_items(self.vm.variables['a']), ['kept'])
 
     def test_live_reference_survives_error_and_can_write(self):
         # Local integration of the existing reference mechanism; no structural mutation.
@@ -149,7 +151,7 @@ class ArrayDeleteBoundaryTests(unittest.TestCase):
             slot = slot + "!";
         EndProcedure
         a = New Array; a.Add("Я😀"); Change((a[0]), a);''')
-        self.assertEqual(self.vm.variables['a'].items, ['Я😀!'])
+        self.assertEqual(self.array_items(self.vm.variables['a']), ['Я😀!'])
 
     def test_error_during_iteration_and_eval_execute_routines(self):
         self.vm.execute('''Function Index() calls = calls + 1; Return 100; EndFunction
@@ -162,8 +164,8 @@ class ArrayDeleteBoundaryTests(unittest.TestCase):
         self.assertIs(self.vm.variables['executecaught'], True)
         self.assertIs(self.vm.variables['evalcaught'], True)
         self.assertEqual(self.vm.variables['calls'], 2)
-        self.assertEqual(self.vm.variables['seen'].items, [Decimal(1), Decimal(2)])
-        self.assertEqual(self.vm.variables['a'].items, [Decimal(1), Decimal(2)])
+        self.assertEqual(self.array_items(self.vm.variables['seen']), [Decimal(1), Decimal(2)])
+        self.assertEqual(self.array_items(self.vm.variables['a']), [Decimal(1), Decimal(2)])
 
     def test_error_recovery_enters_except_and_allows_valid_deletion(self):
         self.vm.execute('''a = New Array; a.Add("kept"); caught = False;
@@ -174,7 +176,7 @@ class ArrayDeleteBoundaryTests(unittest.TestCase):
         self.assertIs(self.vm.variables['caught'], True)
         self.assertIs(self.vm.variables['emptycaught'], True)
         self.assertIs(self.vm.variables['failed'], True)
-        self.assertEqual(self.vm.variables['a'].items, ['recovered'])
+        self.assertEqual(self.array_items(self.vm.variables['a']), ['recovered'])
 
     def test_decimal_context_does_not_affect_deletion_or_error(self):
         a = BSLArray(); a.add('first'); a.add('last')
@@ -188,3 +190,7 @@ class ArrayDeleteBoundaryTests(unittest.TestCase):
             a.delete(Decimal('0.000'))
             self.assertFalse(any(context.flags.values()))
         self.assertEqual(a.items, ['last'])
+
+
+class ArrayDeleteBoundaryTests(_ArrayDeleteBoundaryTests, unittest.TestCase):
+    """Default direct backend."""

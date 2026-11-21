@@ -24,7 +24,7 @@ SOURCE_SHA = '7fbdcca1257bc6d754fd8a640f3ed4790196db12b8c61be2a8a88f93ee5adccb'
 
 def emit(witness=None, source=SOURCE, *, missing=False):
     output = []
-    vm = Interpreter(output.append)
+    vm = Interpreter(output.append, allow_extensions=True)
     if missing:
         vm.functions.pop("format", None)
         vm.functions.pop("формат", None)

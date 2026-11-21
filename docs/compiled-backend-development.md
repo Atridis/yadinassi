@@ -1,4 +1,9 @@
-# Whole-program compiled backend: development status
+> Archived design, not a current execution mode. The engine and its dedicated
+> runner/report self-tests have been removed. Historical runner source:
+> [713fb157](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/scripts/run_compiled_tests.py).
+> Current product execution uses python-direct only.
+
+# Historical whole-program compiled backend
 
 `compiled-strict` is an explicit experimental execution backend, not a sandbox
 and not a claim of full native 1C parity. The old interpreter remains an
@@ -25,7 +30,7 @@ A resource-cap rejection is explicit and is not counted as compiled success.
 
 ## Validation and reporting
 
-`scripts/run_compiled_tests.py --report PATH` runs existing tests under strict
+The archived `scripts/run_compiled_tests.py --report PATH` ran existing tests under strict
 policy and records emitted/helper execution, explicit rejection, old-backend use,
 and cases without observed compiled execution. A caught rejection still produces
 an unsuccessful strict coverage verdict. Existing explicit interpreter/hybrid tests,

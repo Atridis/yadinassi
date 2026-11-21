@@ -43,7 +43,7 @@ class MainDemoDesignerTests(unittest.TestCase):
     def test_source_is_canonical_47_and_projection_is_exact_46(self):
         source=host.source_files()
         self.assertEqual(len(source),47)
-        original=ast.literal_eval(ast.parse((ROOT/'yadinassi/main_demo_source.py').read_text(encoding='utf-8')).body[1].value)
+        original=ast.literal_eval(ast.parse((ROOT/'yadinassi/configuration/demos/main_demo_source.py').read_text(encoding='utf-8')).body[1].value)
         self.assertEqual(host.SOURCE_SHA256,original)
         with tempfile.TemporaryDirectory() as temp:
             target=Path(temp)/'source';host.stage_source(target,source)

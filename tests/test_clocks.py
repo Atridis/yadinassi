@@ -17,18 +17,19 @@ import time
 import unittest
 from unittest.mock import patch
 
-from yadinassi import BSLError, Interpreter, clocks
-from yadinassi.dates import (
+from yadinassi import BSLError, Interpreter
+from yadinassi.temporal import clocks
+from yadinassi.temporal.dates import (
     BSLDate, TICKS_PER_SECOND, UnsupportedDateRange, date, date_difference,
 )
-from yadinassi.maps import BSLFixedMap, BSLMap
-from yadinassi.serialization import (
+from yadinassi.collections.maps import BSLFixedMap, BSLMap
+from yadinassi.formats.storage.serialization import (
     value_from_string_internal as read, value_to_string_internal as write,
 )
-from yadinassi.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
-from yadinassi.type_values import type_of
-from yadinassi.value_checks import value_is_filled
-from yadinassi.values import BSLArray, BSLFixedArray, BSLType, equal, to_string
+from yadinassi.collections.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
+from yadinassi.types.type_values import type_of
+from yadinassi.types.value_checks import value_is_filled
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLType, equal, to_string
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -305,8 +306,8 @@ class HostTimezoneTests(unittest.TestCase):
         program = '''
 import json, sys, time
 from unittest.mock import patch
-from yadinassi import clocks
-from yadinassi.serialization import value_to_string_internal as write
+from yadinassi.temporal import clocks
+from yadinassi.formats.storage.serialization import value_to_string_internal as write
 time.tzset()
 rows = []
 for timestamp in json.loads(sys.argv[1]):
@@ -364,7 +365,7 @@ class ClockRuntimeTests(unittest.TestCase):
         self.addCleanup(sample.stop)
         local.start()
         self.addCleanup(local.stop)
-        self.vm = Interpreter()
+        self.vm = Interpreter(allow_extensions=True)
 
     def test_all_bilingual_names_case_variants_and_type_identity(self):
         expected = (date('20240229181956'), date('20240229123456'), Decimal('63844806896123'))
@@ -455,7 +456,7 @@ class ClockRuntimeTests(unittest.TestCase):
             self.vm.register_function(en, lambda: 'override')
             self.assertEqual(self.vm.execute(en + '()'), 'override')
             self.assertNotEqual(self.vm.execute(ru + '()'), 'override')
-            self.assertNotEqual(Interpreter().execute(en + '()'), 'override')
+            self.assertNotEqual(Interpreter(allow_extensions=True).execute(en + '()'), 'override')
 
     def test_bom_imported_routines_have_clock_builtins(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -544,7 +545,7 @@ class ConfiguredClockTests(unittest.TestCase):
                                  (seconds + clocks._UNIX_EPOCH_SECONDS) * 1000)
 
     def test_invalid_explicit_zone_is_not_hidden_or_used_by_utc_clocks(self):
-        from yadinassi.timezones import TimezoneConfigurationError
+        from yadinassi.temporal.timezones import TimezoneConfigurationError
         with patch.dict(os.environ, {'YADINASSI_TIMEZONE': '../UTC'}), \
                 patch.object(clocks, '_read_time_ns', return_value=0):
             with self.assertRaisesRegex(TimezoneConfigurationError, 'YADINASSI_TIMEZONE'):

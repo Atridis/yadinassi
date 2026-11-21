@@ -2,13 +2,13 @@
 from decimal import Decimal
 import unittest
 
-from yadinassi.dates import BSLDate, date, MAX_TICKS
-from yadinassi.form_model import BSLFormAttribute
-from yadinassi.form_replication import ReplicatedFormServer, _decode_form_scalar
-from yadinassi.form_tables import FormTableColumn, FormTableSchema
-from yadinassi.invocation import InvocationBinding, _encode_scalar
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
+from yadinassi.temporal.dates import BSLDate, date, MAX_TICKS
+from yadinassi.forms.form_model import BSLFormAttribute
+from yadinassi.forms.form_replication import ReplicatedFormServer, _decode_form_scalar
+from yadinassi.forms.form_tables import FormTableColumn, FormTableSchema
+from yadinassi.execution.invocation import InvocationBinding, _encode_scalar
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
     BSLDateQualifiers, BSLAllowedSign, BSLAllowedLength, BSLDateFractions)
 from yadinassi.ui.form_app import FormController, PROTOCOL
 from yadinassi.ui.form_package import ClientPackage

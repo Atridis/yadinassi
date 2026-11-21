@@ -6,14 +6,14 @@ from enum import Enum
 import unittest
 from uuid import UUID, uuid4
 
-from yadinassi.accumulation_movements import (
+from yadinassi.db.registers.accumulation_movements import (
     AccumulationDirection, AccumulationMovementRow, AccumulationRegisterKind,
     AccumulationRegisterSchema, AccumulationReplacement, mutation_identity,
     validate_replacement, validate_schema,
 )
-from yadinassi.catalog_backend import BackendError, FieldSchema
-from yadinassi.document_backend import DocumentKey
-from yadinassi.document_movements import RecorderReplacement, mutation_identity as recorder_identity
+from yadinassi.db.catalog.catalog_backend import BackendError, FieldSchema
+from yadinassi.db.document.document_backend import DocumentKey
+from yadinassi.db.document.document_movements import RecorderReplacement, mutation_identity as recorder_identity
 
 
 class AccumulationIntentTests(unittest.TestCase):
@@ -180,9 +180,9 @@ class AccumulationIntentTests(unittest.TestCase):
 
     def test_row_and_field_budgets_are_checked(self):
         from unittest.mock import patch
-        with patch('yadinassi.accumulation_movements.MAX_MOVEMENT_ROWS', 0), self.assertRaises(BackendError):
+        with patch('yadinassi.db.registers.accumulation_movements.MAX_MOVEMENT_ROWS', 0), self.assertRaises(BackendError):
             self.check()
-        with patch('yadinassi.accumulation_movements.MAX_FIELDS', 1), self.assertRaises(BackendError):
+        with patch('yadinassi.db.registers.accumulation_movements.MAX_FIELDS', 1), self.assertRaises(BackendError):
             validate_schema(self.schema)
 
     def test_mutation_domain_is_separate_and_recorder_scoped(self):

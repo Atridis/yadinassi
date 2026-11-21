@@ -10,13 +10,13 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.dates import BSLDate
-from yadinassi.structures import BSLStructure
-from yadinassi.type_qualifiers import BSLAllowedSign, BSLNumberQualifiers
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.value_tables import (BSLCollectionIndex, BSLCollectionIndexes,
+from yadinassi.temporal.dates import BSLDate
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.types.type_qualifiers import BSLAllowedSign, BSLNumberQualifiers
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.collections.value_tables import (BSLCollectionIndex, BSLCollectionIndexes,
                                    BSLValueTable, _index_token)
-from yadinassi.values import BSLArray, BSLFixedArray, BSLObject, BSLType, NULL, equal
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLObject, BSLType, NULL, equal
 
 
 def sample():
@@ -262,14 +262,14 @@ class NativeIndexTests(unittest.TestCase):
         table = supplement_sample()
         table.indexes.add('Key')
         first, second, third = table.rows
-        with patch('yadinassi.value_tables._index_token', wraps=_index_token) as tokenize:
+        with patch('yadinassi.collections.value_tables._index_token', wraps=_index_token) as tokenize:
             table.sort('Amount Desc')
         self.assertEqual(tokenize.call_count, 0)
         self.assertEqual(table.rows, [third, second, first])
         self.assertEqual(found(table, Key='a'), [third, second, first])
         for columns in (None, 'Key', 'Second,Key'):
             self.assertIs(table.find('a', columns), third)
-        with patch('yadinassi.value_tables._index_token', wraps=_index_token) as tokenize:
+        with patch('yadinassi.collections.value_tables._index_token', wraps=_index_token) as tokenize:
             table.move(third, D(2))
         self.assertEqual(tokenize.call_count, 0)
         self.assertEqual(table.rows, [second, first, third])
@@ -392,17 +392,17 @@ class IndexSafetyTests(unittest.TestCase):
 
     def test_index_and_key_resource_failures_are_atomic(self):
         table = sample()
-        with patch('yadinassi.value_tables._MAX_INDEXES', 1):
+        with patch('yadinassi.collections.value_tables._MAX_INDEXES', 1):
             saved = table.indexes.add('Key')
             with self.assertRaisesRegex(ValueError, 'ресурсов'):
                 table.indexes.add('Second')
             self.assertEqual(list(table.indexes), [saved])
-        with patch('yadinassi.value_tables._MAX_INDEX_COLUMNS', 2):
+        with patch('yadinassi.collections.value_tables._MAX_INDEX_COLUMNS', 2):
             with self.assertRaisesRegex(ValueError, 'предел'):
                 table.indexes.add('Key,,Second')
             with self.assertRaisesRegex(ValueError, 'ресурсов'):
                 table.indexes.add('Key,Second')
-        with patch('yadinassi.value_tables._MAX_INDEX_CELLS', 2):
+        with patch('yadinassi.collections.value_tables._MAX_INDEX_CELLS', 2):
             with self.assertRaisesRegex(ValueError, 'ресурсов'):
                 table.add()
             self.assertEqual(len(table.rows), 2)
@@ -414,14 +414,14 @@ class IndexSafetyTests(unittest.TestCase):
                 table.rows[0].set_member('Key', value)
             self.assertEqual(table.rows[0].get_member('Key'), old)
             self.assertEqual(found(table, Key='a'), table.rows)
-        with patch('yadinassi.value_tables._MAX_TEXT', 3):
+        with patch('yadinassi.collections.value_tables._MAX_TEXT', 3):
             with self.assertRaisesRegex(ValueError, 'ресурсов'):
                 table.rows[0].set_member('Key', 'xxxx')
         self.assertEqual(found(table, Key='a'), table.rows)
 
     def test_aggregate_key_content_budget_is_atomic_and_released(self):
         table = sample()
-        with patch('yadinassi.value_tables._MAX_INDEX_UNITS', 4):
+        with patch('yadinassi.collections.value_tables._MAX_INDEX_UNITS', 4):
             index = table.indexes.add('Key')
             second = table.indexes.add('Second')
             self.assertEqual(index._units + second._units, 4)
@@ -452,7 +452,7 @@ class IndexSafetyTests(unittest.TestCase):
         table.rows[0].set_member('Key', 'a')
         before = [list(row) for row in table]
         order = found(table, Key='a')
-        with patch('yadinassi.value_tables._MAX_INDEX_WORK', 8):
+        with patch('yadinassi.collections.value_tables._MAX_INDEX_WORK', 8):
             # Two rows * ((1 + 3) Key work + (1 + 2) Second work).
             with self.assertRaisesRegex(ValueError, 'предел работы'):
                 table.fill_values('z', 'Key,Second')
@@ -460,7 +460,7 @@ class IndexSafetyTests(unittest.TestCase):
                 table.fill_values('z', 'Key,Key')
             self.assertEqual([list(row) for row in table], before)
             self.assertEqual(found(table, Key='a'), order)
-        with patch('yadinassi.value_tables._MAX_INDEX_WORK', 7):
+        with patch('yadinassi.collections.value_tables._MAX_INDEX_WORK', 7):
             with self.assertRaisesRegex(ValueError, 'предел работы'):
                 table.load_column(array('b', 'b'), 'Key')
             self.assertEqual([list(row) for row in table], before)
@@ -474,7 +474,7 @@ class IndexSafetyTests(unittest.TestCase):
         row.set_member('A', D(1))
         row.set_member('B', 'x')
         row.set_member('C', 'xxxx')
-        with patch('yadinassi.value_tables._MAX_INDEX_UNITS', 6):
+        with patch('yadinassi.collections.value_tables._MAX_INDEX_UNITS', 6):
             index = table.indexes.add('A,B')
             row.set_member('A', D('1.000'))
             self.assertEqual(index._units, 5)
@@ -499,7 +499,7 @@ class IndexSafetyTests(unittest.TestCase):
         table.indexes.add('Key,Second')
         table.indexes.add('Amount')
         before = [list(row) for row in table]
-        with patch('yadinassi.value_tables._MAX_INDEX_UNITS', 1):
+        with patch('yadinassi.collections.value_tables._MAX_INDEX_UNITS', 1):
             with self.assertRaisesRegex(ValueError, 'содержимого ключей'):
                 table.columns.delete('Second')
         self.assertEqual(names(table), [['Key', 'Second'], ['Amount']])
@@ -514,7 +514,7 @@ class IndexSafetyTests(unittest.TestCase):
         table.rows[0].set_member('Key', 'a')
         before = [list(row) for row in table]
         order = found(table, Key='a')
-        with patch('yadinassi.value_tables._MAX_INDEX_UNITS', 4):
+        with patch('yadinassi.collections.value_tables._MAX_INDEX_UNITS', 4):
             with self.assertRaisesRegex(ValueError, 'содержимого ключей'):
                 table.fill_values('xxx', 'Key')
             with self.assertRaisesRegex(ValueError, 'содержимого ключей'):
@@ -529,7 +529,7 @@ class IndexSafetyTests(unittest.TestCase):
         table.rows[0].set_member('Second', D('1' * 100))
         table.indexes.add('Key,Second')
         before = [list(row) for row in table]
-        with patch('yadinassi.value_tables._MAX_INDEX_WORK', 50):
+        with patch('yadinassi.collections.value_tables._MAX_INDEX_WORK', 50):
             with self.assertRaisesRegex(ValueError, 'предел работы'):
                 table.fill_values('z', 'Key')
             with self.assertRaisesRegex(ValueError, 'предел работы'):
@@ -673,7 +673,7 @@ class IndexSafetyTests(unittest.TestCase):
         for i in range(80):
             table.add().set_member('C0', D(i))
         table.indexes.add(','.join(column.name for column in table.columns))
-        with patch('yadinassi.value_tables._index_token', wraps=_index_token) as tokenize:
+        with patch('yadinassi.collections.value_tables._index_token', wraps=_index_token) as tokenize:
             table.group_by('C0')
         self.assertEqual(tokenize.call_count, 0)
         self.assertEqual(names(table), [])

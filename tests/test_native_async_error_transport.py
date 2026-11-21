@@ -14,10 +14,10 @@ import unittest
 from unittest import mock
 
 from yadinassi import Interpreter
-from yadinassi.error_info import BSLErrorInfo
-from yadinassi.native_targets import LINUX_8_3_27_1508
-from yadinassi.structures import BSLStructure
-from yadinassi.values import BSLArray, BSLObject, HostFunction, NULL
+from yadinassi.types.error_info import BSLErrorInfo
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.types.values import BSLArray, BSLObject, HostFunction, NULL
 import test_native_async_protocol as protocol
 from test_native_async_fixture import without_error_payload_sentinels
 
@@ -106,7 +106,7 @@ def harness(case_id=6, *, previous=False):
     if previous:
         # Negative control only: exact inverse to the reviewed previous template.
         module = without_error_payload_sentinels(module)
-    vm = Interpreter(lambda _: None, native_target=LINUX_8_3_27_1508)
+    vm = Interpreter(lambda _: None, native_target=LINUX_8_3_27_1508, allow_extensions=True)
     writer = ControlledWriter()
     vm.register_type('ЗаписьJSON', lambda: writer)
     vm.register_function('ЗаписатьJSON', lambda actual, value: actual.write(value), returns_value=False)

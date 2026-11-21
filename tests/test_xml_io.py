@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLError
-from yadinassi import xml_io as x
+from yadinassi.formats.xml import xml_io as x
 
 
 class XMLReaderTests(unittest.TestCase):

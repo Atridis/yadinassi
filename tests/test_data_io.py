@@ -5,14 +5,15 @@ import tempfile
 import unittest
 from unittest import mock
 
-from yadinassi import Interpreter, serialization
-from yadinassi import data_io as api
-from yadinassi.data_io import BSLDataReader as Reader, BSLDataWriter as Writer, BSLReadDataResult as Result
-from yadinassi.binary_streams import (BSLMemoryStream as Memory, BSLBinaryDataBuffer as Buffer,
+from yadinassi import Interpreter
+from yadinassi.formats.storage import serialization
+from yadinassi.streams import data_io as api
+from yadinassi.streams.data_io import BSLDataReader as Reader, BSLDataWriter as Writer, BSLReadDataResult as Result
+from yadinassi.streams.binary_streams import (BSLMemoryStream as Memory, BSLBinaryDataBuffer as Buffer,
     BSLByteOrder as Order, BSLPositionInStream as Origin)
-from yadinassi.file_io import BSLBinaryData as Binary
-from yadinassi.values import BSLArray, BSLType
-from yadinassi.type_values import type_of
+from yadinassi.streams.file_io import BSLBinaryData as Binary
+from yadinassi.types.values import BSLArray, BSLType
+from yadinassi.types.type_values import type_of
 
 
 def reader(data): return Reader(Binary.from_bytes(data))

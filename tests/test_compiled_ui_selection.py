@@ -5,7 +5,7 @@ import subprocess
 import sys
 import unittest
 from unittest.mock import patch
-from yadinassi.execution_policy import backend_entrypoint, current_backend, execution_backend_policy
+from yadinassi.execution.execution_policy import backend_entrypoint, current_backend, execution_backend_policy
 from yadinassi.ui.form_app import FormProcess
 from yadinassi.ui.configuration_app import ConfigurationProcess
 from yadinassi.ui.local_app import RuntimeBridge
@@ -18,17 +18,17 @@ class UIBackendSelectionTests(unittest.TestCase):
         @backend_entrypoint
         def entry(argv):
             return current_backend(), argv
-        self.assertEqual(entry(['--execution-backend', 'compiled-strict', 'file']),
-                         ('compiled-strict', ['file']))
+        self.assertEqual(entry(['--execution-backend', 'python-direct', 'file']),
+                         ('python-direct', ['file']))
         self.assertEqual(current_backend(), entry_backend)
-        self.assertEqual(entry(['--', '--execution-backend', 'compiled-strict']),
-                         (entry_backend, ['--', '--execution-backend', 'compiled-strict']))
-        with execution_backend_policy('compiled-strict'):
-            self.assertEqual(entry(['file']), ('compiled-strict', ['file']))
+        self.assertEqual(entry(['--', '--execution-backend', 'python-direct']),
+                         (entry_backend, ['--', '--execution-backend', 'python-direct']))
+        with execution_backend_policy('python-direct'):
+            self.assertEqual(entry(['file']), ('python-direct', ['file']))
 
-    def test_child_argv_preserves_explicit_backend_including_interpreter(self):
+    def test_child_argv_preserves_direct_backend(self):
         for cls in (RuntimeBridge, FormProcess, ConfigurationProcess):
-            for mode in ('interpreter', 'compiled-strict'):
+            for mode in ('python-direct',):
                 with self.subTest(cls=cls.__name__, mode=mode), execution_backend_policy(mode), \
                         patch.object(cls, '_start') as start:
                     cls('owned-path')
@@ -38,12 +38,12 @@ class UIBackendSelectionTests(unittest.TestCase):
 
     def test_fresh_stdio_children_select_and_restore_backend(self):
         for module in ('form_app', 'configuration_app', 'editor_stdio'):
-          for mode in ('interpreter', 'compiled-strict'):
+          for mode in ('python-direct',):
             with self.subTest(module=module, mode=mode):
                 code = '''import sys,json,io
 sys.path.insert(0,sys.argv[1])
 from unittest.mock import patch,Mock
-from yadinassi.execution_policy import current_backend
+from yadinassi.execution.execution_policy import current_backend
 from yadinassi.ui import MODULE as app
 seen=[]
 def runtime(*a,**kw): seen.append(current_backend()); return 0
@@ -58,7 +58,7 @@ print(json.dumps({'result':result,'seen':seen,'after':current_backend()}))
                 completed = subprocess.run([sys.executable, '-I', '-B', '-c', code, str(ROOT)],
                     check=True, capture_output=True, text=True, timeout=20)
                 self.assertEqual(json.loads(completed.stdout),
-                    {'result': 0, 'seen': [mode], 'after': 'compiled-strict'})
+                    {'result': 0, 'seen': [mode], 'after': 'python-direct'})
 
     def test_legacy_hybrid_ui_is_rejected_before_body(self):
         seen = []
@@ -73,5 +73,5 @@ print(json.dumps({'result':result,'seen':seen,'after':current_backend()}))
         @backend_entrypoint
         def entry(argv): seen.append(current_backend())
         with patch('sys.stderr'), self.assertRaises(SystemExit):
-            entry(['--execution-back', 'compiled-strict'])
+            entry(['--execution-back', 'python-direct'])
         self.assertEqual(seen, [])

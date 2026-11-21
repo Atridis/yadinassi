@@ -1,13 +1,13 @@
 """Packaged explicit local editor NDJSON entrypoint; no GUI or network."""
 import sys
 
-from ..database_context import SQLiteDBContext
+from yadinassi.db.database_context import SQLiteDBContext
 from .catalog_editor import CatalogEditorApplication
 from .editor_protocol import CatalogEditorSession
 from .protocol import MAX_LINE_BYTES
 
 
-from ..execution_policy import backend_entrypoint
+from yadinassi.execution.execution_policy import backend_entrypoint
 
 
 @backend_entrypoint

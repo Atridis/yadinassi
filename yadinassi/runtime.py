@@ -1,90 +1,95 @@
-from .runtime_dependencies import runtime_module as _runtime_module
+from .execution.runtime_dependencies import runtime_module as _runtime_module
 from functools import lru_cache
 from weakref import WeakValueDictionary
+from threading import RLock
 from contextlib import nullcontext, contextmanager
-from .http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
+from .http.http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
                             BSLOSCertificationAuthorityCertificates, BSLInternetProxy)
-from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BYTE_ORDER_MARK_USE
-from .xdto_values import (BSLXDTODataObject, BSLXDTODataValue, BSLXDTOList, BSLXDTOValueType, BSLXDTOObjectType, BSLXDTOProperty, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection)
-from .xdto_io import BSLXDTOFactory, BSLXMLForm, XML_FORMS, create_xdto_factory
-from .dom_nodes import (BSLDOMDocument, BSLDOMElement, BSLDOMAttribute, BSLDOMText, BSLDOMCDATASection, BSLDOMComment, BSLDOMProcessingInstruction, BSLDOMDocumentFragment, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDOMNodeType, DOM_NODE_TYPES)
-from .dom_xpath import BSLDOMNamespaceResolver
-from .dom_io import BSLDOMBuilder, BSLDOMWriter
-from .data_hashing import BSLDataHashing, HASH_FUNCTIONS
-from .data_io import BSLDataReader, BSLDataWriter
-from . import zip_archives
-from .zip_archives import BSLZipFileReader, BSLZipFileWriter, BSLZipFileEntries
-"""Tree-walking interpreter with persistent state and injectable builtins."""
+from .http.http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BYTE_ORDER_MARK_USE
+from .formats.xml.xdto_values import (BSLXDTODataObject, BSLXDTODataValue, BSLXDTOList, BSLXDTOValueType, BSLXDTOObjectType, BSLXDTOProperty, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection)
+from .formats.xml.xdto_io import BSLXDTOFactory, BSLXMLForm, XML_FORMS, create_xdto_factory
+from .formats.xml.dom_nodes import (BSLDOMDocument, BSLDOMElement, BSLDOMAttribute, BSLDOMText, BSLDOMCDATASection, BSLDOMComment, BSLDOMProcessingInstruction, BSLDOMDocumentFragment, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDOMNodeType, DOM_NODE_TYPES)
+from .formats.xml.dom_xpath import BSLDOMNamespaceResolver
+from .formats.xml.dom_io import BSLDOMBuilder, BSLDOMWriter
+from .streams.data_hashing import BSLDataHashing, HASH_FUNCTIONS
+from .streams.data_io import BSLDataReader, BSLDataWriter
+from .streams import zip_archives
+from .streams.zip_archives import BSLZipFileReader, BSLZipFileWriter, BSLZipFileEntries
+"""Direct runtime state, canonical services and live ownership boundaries."""
 
 from decimal import Decimal, localcontext
 from types import GeneratorType, MethodType
 
-from . import file_io
-from .xml_io import (BSLXMLReader, BSLXMLReaderSettings, BSLXMLNodeType, BSLXMLSpace,
+from .streams import file_io
+from .formats.xml.xml_io import (BSLXMLReader, BSLXMLReaderSettings, BSLXMLNodeType, BSLXMLSpace,
                      BSLXMLValidationType, BSLXMLNamespaceContext, XML_NODE_TYPES, XML_SPACES, XML_VALIDATION_TYPES)
-from .xml_writer import BSLXMLWriter, BSLXMLWriterSettings
-from . import binary_streams
-from .binary_streams import BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream
-from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, TEXT_ENCODINGS
-from .text_documents import BSLTextDocument
-from .user_messages import BSLUserMessage, UserMessageContext
-from .value_storage import BSLValueStorage
-from .data_compression import BSLDeflation
-from . import json_processing
-from .json_dates import (BSLJSONSerializerSettings, JSON_DATE_FORMATS, JSON_DATE_WRITING_VARIANTS,
+from .formats.xml.xml_writer import BSLXMLWriter, BSLXMLWriterSettings
+from .streams import binary_streams
+from .streams.binary_streams import BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream
+from .streams.file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, TEXT_ENCODINGS
+from .streams.text_documents import BSLTextDocument
+from .application.user_messages import BSLUserMessage, UserMessageContext
+from .formats.storage.value_storage import BSLValueStorage
+from .streams.data_compression import BSLDeflation
+from .formats.json import json_processing
+from .formats.json.json_dates import (BSLJSONSerializerSettings, JSON_DATE_FORMATS, JSON_DATE_WRITING_VARIANTS,
                          read_json_date, write_json_date)
-from .json_processing import BSLJSONReader, BSLJSONWriter, JSON_VALUE_TYPES, JSON_LINE_BREAKS, BSLJSONWriterSettings, read_json, write_json
-from .unique_identifiers import BSLUUID
-from .async_runtime import Scheduler, Promise, AwaitRequest, SchedulerLimitError
-from .callbacks import BSLCallbackDescription, callback_description_marker, run_callback_marker
+from .formats.json.json_processing import BSLJSONReader, BSLJSONWriter, JSON_VALUE_TYPES, JSON_LINE_BREAKS, BSLJSONWriterSettings, read_json, write_json
+from .types.unique_identifiers import BSLUUID
+from .application.async_runtime import Scheduler, Promise, AwaitRequest, SchedulerLimitError
+from .application.callbacks import BSLCallbackDescription, callback_description_marker, run_callback_marker
 from pathlib import Path
 from typing import Callable
 
 from .syntax import ast
 from .numeric import bits, elementary, numbers
-from . import regex_functions
-from . import clocks, date_time_conversions, dates, formatting, number_in_words, period_presentation, serialization, strings, type_values, value_checks, xml_values
-from .chars import BSLChars, CHARS
-from .metadata import BSLCommonModuleMetadataCollection, BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection, is_metadata_collection, is_metadata_object
-from .catalogs import BSLCatalogs
-from .enumerations import BSLEnumerations, BSLEnumManager
-from .session_parameters import BSLSessionParameters
-from .catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
-from .queries import BSLQuery
-from .query_packages import BSLTempTablesManager
-from .documents import BSLDocuments, BSLDocumentObject
-from .information_registers import BSLInformationRegisters, BSLInformationRegisterType, BSLInformationRegisterRecordSet
-from .document_types import BSLDocumentType
-from .document_lines import BSLDocumentLines, BSLDocumentLinesType, BSLDocumentLine, BSLDocumentSectionType
-from .catalog_types import BSLCatalogType
-from .database_context import SQLiteDBContext, require_database_context
+from .formats.regex import regex_functions
+from yadinassi.temporal import clocks, date_time_conversions, dates, period_presentation
+from yadinassi.text import formatting, number_in_words, strings
+from yadinassi.formats.storage import serialization
+from yadinassi.types import type_values, value_checks
+from yadinassi.formats.xml import xml_values
+from .text.chars import BSLChars, CHARS
+from .configuration.metadata import BSLCommonModuleMetadataCollection, BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection, is_metadata_collection, is_metadata_object
+from .db.catalog.catalogs import BSLCatalogs
+from .db.metadata.enumerations import BSLEnumerations, BSLEnumManager
+from .application.session_parameters import BSLSessionParameters
+from .db.catalog.catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
+from .db.query.queries import BSLQuery
+from .db.query.query_packages import BSLTempTablesManager
+from .db.document.documents import BSLDocuments, BSLDocumentObject
+from .db.registers.information_registers import BSLInformationRegisters, BSLInformationRegisterType, BSLInformationRegisterRecordSet
+from .db.document.document_types import BSLDocumentType
+from .db.document.document_lines import BSLDocumentLines, BSLDocumentLinesType, BSLDocumentLine, BSLDocumentSectionType
+from .db.catalog.catalog_types import BSLCatalogType
+from .db.database_context import SQLiteDBContext, require_database_context
 from .numeric.round_modes import BSLRoundModes, ROUND_MODES
-from .search_directions import BSLSearchDirections, SEARCH_DIRECTIONS
-from .sort_directions import BSLSortDirections, SORT_DIRECTIONS
-from .xml_processing import XML_STRING_PROCESSING
-from .type_descriptions import BSLTypeDescription
-from .value_trees import (BSLValueTree, BSLValueTreeColumnCollection, BSLValueTreeColumn,
+from .collections.search_directions import BSLSearchDirections, SEARCH_DIRECTIONS
+from .collections.sort_directions import BSLSortDirections, SORT_DIRECTIONS
+from .formats.xml.xml_processing import XML_STRING_PROCESSING
+from .types.type_descriptions import BSLTypeDescription
+from .collections.value_trees import (BSLValueTree, BSLValueTreeColumnCollection, BSLValueTreeColumn,
                           BSLValueTreeRow, BSLValueTreeRowCollection)
-from .value_tables import (BSLValueTable, BSLValueTableColumnCollection,
+from .collections.value_tables import (BSLValueTable, BSLValueTableColumnCollection,
                            BSLValueTableColumn, BSLValueTableRow,
                            BSLCollectionIndexes, BSLCollectionIndex)
-from .value_lists import BSLValueList, BSLValueListItem
-from .type_qualifiers import (
+from .collections.value_lists import BSLValueList, BSLValueListItem
+from .types.type_qualifiers import (
     ALLOWED_SIGNS, ALLOWED_LENGTHS, DATE_FRACTIONS,
     BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers,
 )
-from .errors import BSLError, BSLRuntimeError
-from .error_info import (BSLErrorInfo, BSLErrorCategory, ERROR_CATEGORIES,
+from .types.errors import BSLError, BSLRuntimeError
+from .types.error_info import (BSLErrorInfo, BSLErrorCategory, ERROR_CATEGORIES,
                          FORBIDDEN_RAISE_CATEGORIES, empty_error_info)
-from .collation import string_key
+from .text.collation import string_key
 from .syntax.parser import (parse, parse_expression, parse_fragment, validate_labels, validate_async,
                             prepare_control_flow, PreparedBlock)
 from .syntax.lexer import KEYWORDS
 from .syntax.preprocessor import validate_compilation_profile
-from .maps import BSLFixedMap, BSLMap
-from .native_targets import WINDOWS_8_3_27_2342, target_context, validate_native_target
-from .structures import BSLFixedStructure, BSLStructure, fill_property_values
-from .values import (
+from .collections.maps import BSLFixedMap, BSLMap
+from .execution.codegen.native_targets import WINDOWS_8_3_27_2342, target_context, validate_native_target
+from .collections.structures import BSLFixedStructure, BSLStructure, fill_property_values
+from .types.values import (
     BSLArray, BSLFixedArray, BSLObject, BSLType, HostFunction, InterpreterCall, NULL, Reference as _Reference,
     boolean, divide, equal, number, require_number, to_string,
 )
@@ -197,8 +202,9 @@ class Interpreter:
                  family_owner: "Interpreter | None" = None,
                  execution_backend: str | None = None,
                  compiled_ast_contract: str | None = None,
-                 compiled_plain_routines: bool | None = None):
-        from .execution_policy import current_backend, BACKENDS, current_ast_contract, AST_CONTRACTS
+                 compiled_plain_routines: bool | None = None,
+                 allow_extensions: bool | None = None):
+        from .execution.execution_policy import current_backend, BACKENDS, current_ast_contract, AST_CONTRACTS
         if execution_backend is None:
             execution_backend = (family_owner.execution_backend if isinstance(family_owner, Interpreter)
                                  else current_backend())
@@ -223,6 +229,14 @@ class Interpreter:
         if type(compiled_plain_routines) is not bool:
             raise ValueError('compiled_plain_routines must be bool')
         self._compiled_plain_routines = compiled_plain_routines
+        inherited_extensions = family_owner.allow_extensions if isinstance(family_owner, Interpreter) else False
+        if allow_extensions is None:
+            allow_extensions = inherited_extensions
+        if type(allow_extensions) is not bool:
+            raise TypeError('allow_extensions must be bool')
+        if isinstance(family_owner, Interpreter) and allow_extensions != inherited_extensions:
+            raise ValueError('interpreter family cannot change extension policy')
+        self._allow_extensions = allow_extensions
         self._compiled_engine = None
         self._execution_backend = execution_backend
         self._hybrid_stats = {"compiled": 0, "fallback": 0, "compile_seconds": 0.0}
@@ -244,6 +258,9 @@ class Interpreter:
         self._family_released = False
         self._family_generation = 0 if family_owner is None else family_owner._family_generation
         if family_owner is None:
+            self._direct_execution_lock = RLock()
+            self._direct_executions = 0
+            self._direct_cancelling = False
             self._schema_scopes = WeakValueDictionary()
         self._bind_schema_scope()
         self._scheduler = (Scheduler(self._native_target, execution_backend=self.execution_backend, compiled_ast_contract=self.compiled_ast_contract) if family_owner is None
@@ -281,112 +298,128 @@ class Interpreter:
         self._handled_errors: list[BSLRuntimeError | None] = []
         self._error_info_boundaries: list[int] = []
         self._execute_depth = [0]
-        from .common_templates import get_common_template_marker
-        self.register_function('ПолучитьОбщийМакет',get_common_template_marker,'GetCommonTemplate')
-        from .reusable_values import refresh_reusable_marker
-        self.register_function('ОбновитьПовторноИспользуемыеЗначения',refresh_reusable_marker,'RefreshReusableValues',returns_value=False)
+        register_function = self._register_function
+        register_type = self._register_type
+        from .configuration.common_templates import get_common_template_marker
+        register_function('ПолучитьОбщийМакет',get_common_template_marker,'GetCommonTemplate')
+        from .application.reusable_values import refresh_reusable_marker
+        register_function('ОбновитьПовторноИспользуемыеЗначения',refresh_reusable_marker,'RefreshReusableValues',returns_value=False)
         self._eval_depth = [0]  # Shared by imported modules, like the handler stack.
-        from . import temporary_storage
-        self.register_function('ПоместитьВоВременноеХранилище',temporary_storage.put_marker,'PutToTempStorage')
-        self.register_function('ПолучитьИзВременногоХранилища',temporary_storage.get_marker,'GetFromTempStorage')
-        self.register_function('УдалитьИзВременногоХранилища',temporary_storage.delete_marker,'DeleteFromTempStorage',returns_value=False)
-        self.register_function('ЭтоАдресВременногоХранилища',temporary_storage.recognize_marker,'IsTempStorageURL')
-        self.register_function("Вычислить", _eval_marker, "Eval")
-        self.register_function("ВыполнитьОбработкуОповещения", run_callback_marker, "RunCallback")
-        self.register_type("ОписаниеОповещения", callback_description_marker, "CallbackDescription")
-        self.register_function("Сообщить", self._message, "Message")
-        self.register_function("Строка", to_string, "String")
-        self.register_function("Число", number, "Number")
-        self.register_function("Булево", boolean, "Boolean")
+        from .application import temporary_storage
+        register_function('ПоместитьВоВременноеХранилище',temporary_storage.put_marker,'PutToTempStorage')
+        register_function('ПолучитьИзВременногоХранилища',temporary_storage.get_marker,'GetFromTempStorage')
+        register_function('УдалитьИзВременногоХранилища',temporary_storage.delete_marker,'DeleteFromTempStorage',returns_value=False)
+        register_function('ЭтоАдресВременногоХранилища',temporary_storage.recognize_marker,'IsTempStorageURL')
+        register_function("Вычислить", _eval_marker, "Eval")
+        register_function("ВыполнитьОбработкуОповещения", run_callback_marker, "RunCallback")
+        register_type("ОписаниеОповещения", callback_description_marker, "CallbackDescription")
+        register_function("Сообщить", self._message, "Message")
+        register_function("Строка", to_string, "String")
+        register_function("Число", number, "Number")
+        register_function("Булево", boolean, "Boolean")
         # Bind only immutable startup data, never the interpreter's client frame.
         connection_string = (database_context.connection_string if database_context is not None
                              else require_database_context)
-        self.register_function("НачатьТранзакцию", self._begin_transaction, "BeginTransaction", returns_value=False)
-        self.register_function("ЗафиксироватьТранзакцию", self._commit_transaction, "CommitTransaction", returns_value=False)
-        self.register_function("ОтменитьТранзакцию", self._rollback_transaction, "RollbackTransaction", returns_value=False)
-        self.register_function("ТранзакцияАктивна", self._transaction_active, "TransactionActive")
-        self.register_function("СтрокаСоединенияИнформационнойБазы", connection_string,
+        register_function("НачатьТранзакцию", self._begin_transaction, "BeginTransaction", returns_value=False)
+        register_function("ЗафиксироватьТранзакцию", self._commit_transaction, "CommitTransaction", returns_value=False)
+        register_function("ОтменитьТранзакцию", self._rollback_transaction, "RollbackTransaction", returns_value=False)
+        register_function("ТранзакцияАктивна", self._transaction_active, "TransactionActive")
+        register_function("СтрокаСоединенияИнформационнойБазы", connection_string,
                                "InfoBaseConnectionString")
-        self.register_function("ЗаполнитьЗначенияСвойств", fill_property_values,
+        register_function("ЗаполнитьЗначенияСвойств", fill_property_values,
                                "FillPropertyValues", returns_value=False)
-        self.register_function("ЗначениеЗаполнено", value_checks.value_is_filled, "ValueIsFilled")
-        self.register_function("Тип", self._type_by_name, "Type")
-        self.register_function("ТипЗнч", type_values.type_of, "TypeOf")
-        self.register_function("ЗначениеВСтрокуВнутр", serialization.value_to_string_internal,
+        register_function("ЗначениеЗаполнено", value_checks.value_is_filled, "ValueIsFilled")
+        register_function("Тип", self._type_by_name, "Type")
+        register_function("ТипЗнч", type_values.type_of, "TypeOf")
+        register_function("ЗначениеВСтрокуВнутр", serialization.value_to_string_internal,
                                "ValueToStringInternal")
-        self.register_function("ЗначениеИзСтрокиВнутр", serialization.value_from_string_internal,
+        register_function("ЗначениеИзСтрокиВнутр", serialization.value_from_string_internal,
                                "ValueFromStringInternal")
         for name, function, alias in (*regex_functions.BUILTINS, *strings.BUILTINS, *formatting.BUILTINS, *number_in_words.BUILTINS, *period_presentation.BUILTINS, *numbers.BUILTINS,
                                       *xml_values.BUILTINS, *bits.BUILTINS, *elementary.BUILTINS,
                                       *dates.BUILTINS, *clocks.BUILTINS,
                                       *date_time_conversions.BUILTINS):
-            self.register_function(name, function, alias)
-        self.register_function("ОписаниеОшибки", self._error_description, "ErrorDescription")
-        self.register_function("ИнформацияОбОшибке", self._error_info, "ErrorInfo")
-        self.register_type("ПараметрыЗаписиJSON", BSLJSONWriterSettings, "JSONWriterSettings")
-        self.register_type("НастройкиСериализацииJSON", BSLJSONSerializerSettings, "JSONSerializerSettings")
-        self.register_function("ПрочитатьДатуJSON", read_json_date, "ReadJSONDate")
-        self.register_function("ЗаписатьДатуJSON", write_json_date, "WriteJSONDate")
-        self.register_type("ЧтениеXML", BSLXMLReader, "XMLReader")
-        self.register_type("ЗаписьXML", BSLXMLWriter, "XMLWriter")
-        self.register_type("ПараметрыЧтенияXML", BSLXMLReaderSettings, "XMLReaderSettings")
-        self.register_type("ПараметрыЗаписиXML", BSLXMLWriterSettings, "XMLWriterSettings")
-        self.register_type("ФабрикаXDTO", BSLXDTOFactory, "XDTOFactory")
-        self.register_function("СоздатьФабрикуXDTO", create_xdto_factory, "CreateXDTOFactory")
-        self.register_type("Разыменователь пространств имен DOM XPath", BSLDOMNamespaceResolver, "DOMNamespaceResolver")
-        self.register_type("ДокументDOM", BSLDOMDocument, "DOMDocument")
-        self.register_type("ПостроительDOM", BSLDOMBuilder, "DOMBuilder")
-        self.register_type("ЗаписьDOM", BSLDOMWriter, "DOMWriter")
-        self.register_type("ЗащищенноеСоединениеOpenSSL", BSLOpenSSLSecureConnection, "OpenSSLSecureConnection")
-        self.register_type("СертификатыУдостоверяющихЦентровФайл", BSLFileCertificationAuthorityCertificates, "FileCertificationAuthorityCertificates")
-        self.register_type("СертификатыУдостоверяющихЦентровОС", BSLOSCertificationAuthorityCertificates, "OSCertificationAuthorityCertificates")
-        self.register_type("ИнтернетПрокси", BSLInternetProxy, "InternetProxy")
-        self.register_type("HTTPСоединение", BSLHTTPConnection, "HTTPConnection")
-        self.register_type("HTTPЗапрос", BSLHTTPRequest, "HTTPRequest")
-        self.register_type("ХешированиеДанных", BSLDataHashing, "DataHashing")
-        self.register_type("ЧтениеДанных", BSLDataReader, "DataReader")
-        self.register_type("ЗаписьДанных", BSLDataWriter, "DataWriter")
-        self.register_type("ЧтениеZipФайла", BSLZipFileReader, "ZipFileReader")
-        self.register_type("ЗаписьZipФайла", BSLZipFileWriter, "ZipFileWriter")
-        self.register_type("ЧтениеJSON", BSLJSONReader, "JSONReader")
-        self.register_type("ЗаписьJSON", BSLJSONWriter, "JSONWriter")
-        self.register_function("ПрочитатьJSON", read_json, "ReadJSON")
-        self.register_function("ЗаписатьJSON", write_json, "WriteJSON", returns_value=False)
+            register_function(name, function, alias)
+        register_function("ОписаниеОшибки", self._error_description, "ErrorDescription")
+        register_function("ИнформацияОбОшибке", self._error_info, "ErrorInfo")
+        register_type("ПараметрыЗаписиJSON", BSLJSONWriterSettings, "JSONWriterSettings")
+        register_type("НастройкиСериализацииJSON", BSLJSONSerializerSettings, "JSONSerializerSettings")
+        register_function("ПрочитатьДатуJSON", read_json_date, "ReadJSONDate")
+        register_function("ЗаписатьДатуJSON", write_json_date, "WriteJSONDate")
+        register_type("ЧтениеXML", BSLXMLReader, "XMLReader")
+        register_type("ЗаписьXML", BSLXMLWriter, "XMLWriter")
+        register_type("ПараметрыЧтенияXML", BSLXMLReaderSettings, "XMLReaderSettings")
+        register_type("ПараметрыЗаписиXML", BSLXMLWriterSettings, "XMLWriterSettings")
+        register_type("ФабрикаXDTO", BSLXDTOFactory, "XDTOFactory")
+        register_function("СоздатьФабрикуXDTO", create_xdto_factory, "CreateXDTOFactory")
+        register_type("Разыменователь пространств имен DOM XPath", BSLDOMNamespaceResolver, "DOMNamespaceResolver")
+        register_type("ДокументDOM", BSLDOMDocument, "DOMDocument")
+        register_type("ПостроительDOM", BSLDOMBuilder, "DOMBuilder")
+        register_type("ЗаписьDOM", BSLDOMWriter, "DOMWriter")
+        register_type("ЗащищенноеСоединениеOpenSSL", BSLOpenSSLSecureConnection, "OpenSSLSecureConnection")
+        register_type("СертификатыУдостоверяющихЦентровФайл", BSLFileCertificationAuthorityCertificates, "FileCertificationAuthorityCertificates")
+        register_type("СертификатыУдостоверяющихЦентровОС", BSLOSCertificationAuthorityCertificates, "OSCertificationAuthorityCertificates")
+        register_type("ИнтернетПрокси", BSLInternetProxy, "InternetProxy")
+        register_type("HTTPСоединение", BSLHTTPConnection, "HTTPConnection")
+        register_type("HTTPЗапрос", BSLHTTPRequest, "HTTPRequest")
+        register_type("ХешированиеДанных", BSLDataHashing, "DataHashing")
+        register_type("ЧтениеДанных", BSLDataReader, "DataReader")
+        register_type("ЗаписьДанных", BSLDataWriter, "DataWriter")
+        register_type("ЧтениеZipФайла", BSLZipFileReader, "ZipFileReader")
+        register_type("ЗаписьZipФайла", BSLZipFileWriter, "ZipFileWriter")
+        register_type("ЧтениеJSON", BSLJSONReader, "JSONReader")
+        register_type("ЗаписьJSON", BSLJSONWriter, "JSONWriter")
+        register_function("ПрочитатьJSON", read_json, "ReadJSON")
+        register_function("ЗаписатьJSON", write_json, "WriteJSON", returns_value=False)
         for ru, factory, en in (("Файл", BSLFile, "File"),
                                 ("ЧтениеТекста", BSLTextReader, "TextReader"),
                                 ("ЗаписьТекста", BSLTextWriter, "TextWriter"),
                                 ("ДвоичныеДанные", BSLBinaryData, "BinaryData")):
-            self.register_type(ru, factory, en)
+            register_type(ru, factory, en)
         for ru, factory, en in (("БуферДвоичныхДанных", BSLBinaryDataBuffer, "BinaryDataBuffer"),
                                 ("ПотокВПамяти", BSLMemoryStream, "MemoryStream"),
                                 ("ФайловыйПоток", BSLFileStream, "FileStream")):
-            self.register_type(ru, factory, en)
+            register_type(ru, factory, en)
         for ru, function, en in binary_streams.FUNCTIONS:
-            self.register_function(ru, function, en)
+            register_function(ru, function, en)
         for ru, function, en, returns_value in file_io.FUNCTIONS:
-            self.register_function(ru, function, en, returns_value=returns_value)
-        self.register_type("ТекстовыйДокумент", BSLTextDocument, "TextDocument")
-        self.register_type("СообщениеПользователю", self._new_user_message, "UserMessage")
-        self.register_type("ХранилищеЗначения", BSLValueStorage, "ValueStorage")
-        self.register_type("СжатиеДанных", BSLDeflation, "Deflation")
-        self.register_type("УникальныйИдентификатор", BSLUUID, "UUID")
-        self.register_type("Массив", BSLArray, "Array")
-        self.register_type("Структура", BSLStructure, "Structure")
-        self.register_type("Соответствие", BSLMap, "Map")
-        self.register_type("ФиксированныйМассив", BSLFixedArray, "FixedArray")
-        self.register_type("ФиксированнаяСтруктура", BSLFixedStructure, "FixedStructure")
-        self.register_type("ФиксированноеСоответствие", BSLFixedMap, "FixedMap")
+            register_function(ru, function, en, returns_value=returns_value)
+        register_type("ТекстовыйДокумент", BSLTextDocument, "TextDocument")
+        register_type("СообщениеПользователю", self._new_user_message, "UserMessage")
+        register_type("ХранилищеЗначения", BSLValueStorage, "ValueStorage")
+        register_type("СжатиеДанных", BSLDeflation, "Deflation")
+        register_type("УникальныйИдентификатор", BSLUUID, "UUID")
+        register_type("Массив", BSLArray, "Array")
+        register_type("Структура", BSLStructure, "Structure")
+        register_type("Соответствие", BSLMap, "Map")
+        register_type("ФиксированныйМассив", BSLFixedArray, "FixedArray")
+        register_type("ФиксированнаяСтруктура", BSLFixedStructure, "FixedStructure")
+        register_type("ФиксированноеСоответствие", BSLFixedMap, "FixedMap")
 
-        self.register_type("МенеджерВременныхТаблиц", self._new_temp_tables_manager, "TempTablesManager")
-        self.register_type("Запрос", self._new_query, "Query")
-        self.register_type("ТаблицаЗначений", BSLValueTable, "ValueTable")
-        self.register_type("ДеревоЗначений", BSLValueTree, "ValueTree")
-        self.register_type("СписокЗначений", BSLValueList, "ValueList")
-        self.register_type("ОписаниеТипов", BSLTypeDescription, "TypeDescription")
-        self.register_type("КвалификаторыЧисла", BSLNumberQualifiers, "NumberQualifiers")
-        self.register_type("КвалификаторыСтроки", BSLStringQualifiers, "StringQualifiers")
-        self.register_type("КвалификаторыДаты", BSLDateQualifiers, "DateQualifiers")
-        self.register_type("КвалификаторыДвоичныхДанных", BSLBinaryDataQualifiers, "BinaryDataQualifiers")
+        register_type("МенеджерВременныхТаблиц", self._new_temp_tables_manager, "TempTablesManager")
+        register_type("Запрос", self._new_query, "Query")
+        register_type("ТаблицаЗначений", BSLValueTable, "ValueTable")
+        register_type("ДеревоЗначений", BSLValueTree, "ValueTree")
+        register_type("СписокЗначений", BSLValueList, "ValueList")
+        register_type("ОписаниеТипов", BSLTypeDescription, "TypeDescription")
+        register_type("КвалификаторыЧисла", BSLNumberQualifiers, "NumberQualifiers")
+        register_type("КвалификаторыСтроки", BSLStringQualifiers, "StringQualifiers")
+        register_type("КвалификаторыДаты", BSLDateQualifiers, "DateQualifiers")
+        register_type("КвалификаторыДвоичныхДанных", BSLBinaryDataQualifiers, "BinaryDataQualifiers")
+
+        if not self.allow_extensions:
+            self._builtin_functions = self._binding_snapshot(self.functions)
+            self._builtin_types = self._binding_snapshot(self.types)
+
+    @staticmethod
+    def _binding_snapshot(registry):
+        return {key: (value, value.function, value.name, value.reference_parameters, value.returns_value)
+                for key, value in registry.items()}
+
+    @property
+    def allow_extensions(self) -> bool:
+        """Allow custom host registrations and extension-aware code generation."""
+        return self._allow_extensions
 
     @property
     def database_context(self) -> SQLiteDBContext | None:
@@ -503,14 +536,32 @@ class Interpreter:
         if metadata is None:
             self._metadata._catalog_managers = self._catalogs
             self._metadata._document_managers = self._documents
-            from .inventory_enum_runtime import bind as bind_storage_enums
+            from .configuration.demos.inventory_enum_runtime import bind as bind_storage_enums
             bind_storage_enums(self,self._metadata)
+
+    @contextmanager
+    def _direct_execution_scope(self):
+        """Account for synchronous direct execution without driving the scheduler."""
+        root=self._family_owner
+        with root._direct_execution_lock:
+            if root._direct_cancelling:
+                raise RuntimeError('Cannot execute while scheduler cancellation is active')
+            root._direct_executions+=1
+        try:yield
+        finally:
+            with root._direct_execution_lock:root._direct_executions-=1
 
     def cancel_pending(self):
         """Cancel current cooperative work without retiring the module family."""
         if self._family_owner is not self or self._family_closed:
             raise ValueError('active root interpreter required')
-        self._scheduler.reset()
+        with self._direct_execution_lock:
+            if self._direct_executions or self._direct_cancelling:
+                raise RuntimeError('Cannot reset an active scheduler')
+            self._direct_cancelling=True
+        try:self._scheduler.reset()
+        finally:
+            with self._direct_execution_lock:self._direct_cancelling=False
 
     def close(self):
         """Release suspended frames explicitly at the embedding lifecycle boundary."""
@@ -541,14 +592,8 @@ class Interpreter:
         return self._scheduler.pending
 
     def visit(self, node: ast.Node) -> object:
-        """Synchronous embedding boundary; language evaluation uses _visit."""
-        if self.execution_backend == 'compiled-strict':
-            engine = self._compiled()
-            if not engine.has_executable_node(node):
-                engine.prepare_node(node)
-            else:
-                engine.verify_node(node)
-        return self._scheduler.run_inline(self._visit(node))
+        from .execution.direct.python_direct import _reject
+        _reject("visit is a retired execution entrypoint; use execute or prepare")
 
     @property
     def compilation_profile(self) -> str:
@@ -567,14 +612,45 @@ class Interpreter:
 
     def register_function(self, name: str, function: Callable, *aliases: str,
                           returns_value: bool = True) -> None:
+        if not self.allow_extensions:
+            raise ValueError('register_function requires allow_extensions=True')
+        Interpreter._register_function(self, name, function, *aliases, returns_value=returns_value)
+
+    def _register_function(self, name, function, *aliases, returns_value=True):
         wrapper = HostFunction(name, function, returns_value=returns_value)
         for alias in (name, *aliases):
             self.functions[alias.casefold()] = wrapper
 
     def register_type(self, name: str, factory: Callable, *aliases: str) -> None:
+        if not self.allow_extensions:
+            raise ValueError('register_type requires allow_extensions=True')
+        Interpreter._register_type(self, name, factory, *aliases)
+
+    def _register_type(self, name, factory, *aliases):
         wrapper = HostFunction(name, factory)
         for alias in (name, *aliases):
             self.types[alias.casefold()] = wrapper
+
+    def _register_platform_function(self, name, function, *aliases, returns_value=True):
+        """Install an application-owned service without enabling Python extensions."""
+        Interpreter._register_function(self, name, function, *aliases, returns_value=returns_value)
+        if not self.allow_extensions:
+            self._record_platform_binding(self.functions, self._builtin_functions, name, aliases)
+
+    def _register_platform_type(self, name, factory, *aliases):
+        """Install an application-owned factory without enabling Python extensions."""
+        Interpreter._register_type(self, name, factory, *aliases)
+        if not self.allow_extensions:
+            self._record_platform_binding(self.types, self._builtin_types, name, aliases)
+
+    @staticmethod
+    def _record_platform_binding(registry, snapshot, name, aliases):
+        # Never resnapshot the whole registry: unrelated host mutations do not
+        # become canonical as a side effect of installing one platform binding.
+        wrapper = registry[name.casefold()]
+        binding = (wrapper, wrapper.function, wrapper.name, wrapper.reference_parameters, wrapper.returns_value)
+        for alias in (name, *aliases):
+            snapshot[alias.casefold()] = binding
 
     def _new_type_description(self, *values):
         # Resolve only one application-owned enum type name. Mixed/reference
@@ -613,6 +689,9 @@ class Interpreter:
         bound Type or Query factory crosses that boundary even with the same DB.
         Explicit host overrides remain untouched; names alone grant no rebinding.
         """
+        # Plain children already have their own canonical registrations.
+        if not self.allow_extensions:
+            return
         core_helpers = (Interpreter._message, Interpreter._error_description,
                         Interpreter._error_info, Interpreter._type_by_name,
                         Interpreter._new_query, Interpreter._new_temp_tables_manager,
@@ -665,106 +744,25 @@ class Interpreter:
         return error.info
 
     def _evaluate(self, argument: ast.Node, *, _evaluation=None) -> object:
-        evaluate = self._visit if _evaluation is None else _evaluation.evaluate
-        value = (yield from evaluate(argument))
-        # Native evidence covers a Number argument 12. Other non-string values
-        # are deliberately rejected; do not call arbitrary Python __str__ hooks.
-        if type(value) is str:
-            text = value
-        elif type(value) is Decimal and value.is_finite():
-            text = to_string(value)
-        else:
-            raise TypeError("Вычислить: ожидается строка или конечное число")
-        if len(text) > EVAL_MAX_SOURCE:
-            raise ValueError("Вычислить: превышен предел текста Yadinassi (65536 символов)")
-        if self._eval_depth[0] >= EVAL_MAX_DEPTH:
-            raise ValueError("Вычислить: превышен предел вложенности Yadinassi (16)")
-        self._eval_depth[0] += 1
-        # Native Eval does not inherit the enclosing ErrorInfo context. A handler
-        # entered by evaluated code can still establish its own diagnostic frame.
-        self._error_info_boundaries.append(len(self._handled_errors))
-        transient = None
-        try:
-            # Parse and consume the entire input before executing even its first call.
-            try:
-                expression = parse_expression(text)
-                if self._execution_backend == "compiled-strict":
-                    engine = self._compiled()
-                    if engine.FORCE_PYTHON_TRANSLATION and engine.OWNED_SNAPSHOT and not engine.ORIGIN_MUTATION_MONITOR:
-                        transient = engine.prepare_transient([expression], expression_entry=True)
-                    else:
-                        self._admit_compiled_node(expression)
-            except BSLError as error:
-                raise BSLRuntimeError(error.message, error.source, error.line, error.column) from None
-            from .safe_mode import routine_frame
-            with routine_frame(self, self):
-                return (yield from self._visit(expression))
-        except RecursionError:
-            raise ValueError("Вычислить: превышен предел глубины выражения Yadinassi") from None
-        finally:
-            if transient is not None: transient.close()
-            self._error_info_boundaries.pop()
-            self._eval_depth[0] -= 1
+        from .execution.direct.python_direct import _reject
+        _reject("_evaluate is a retired execution entrypoint; use execute or prepare")
 
     def semantic_execute(self, node: ast.Execute, *, _evaluation=None) -> None:
-        evaluate = self._visit if _evaluation is None else _evaluation.evaluate
-        value = (yield from evaluate(node.expression))
-        # Native checkpoint accepts Undefined as an empty fragment, not Number.
-        if value is None:
-            value = ""
-        if type(value) is not str:
-            raise TypeError("Выполнить: ожидается строка или Неопределено")
-        if len(value) > EXECUTE_MAX_SOURCE:
-            raise ValueError("Выполнить: превышен предел текста Yadinassi (65536 символов)")
-        if self._execute_depth[0] >= EXECUTE_MAX_DEPTH:
-            raise ValueError("Выполнить: превышен предел вложенности Yadinassi (16)")
-        self._execute_depth[0] += 1
-        previous = self.locals
-        transient = None
-        try:
-            try:
-                program = parse_fragment(value)
-                if self._execution_backend == "compiled-strict":
-                    engine = self._compiled()
-                    if engine.FORCE_PYTHON_TRANSLATION and engine.OWNED_SNAPSHOT and not engine.ORIGIN_MUTATION_MONITOR:
-                        transient = engine.prepare_transient(program)
-                    else:
-                        engine.prepare(program, allow_reprepare=False)
-            except BSLError as error:
-                raise BSLRuntimeError(error.message, error.source, error.line, error.column) from None
-            # Existing bindings are live references, including reference parameters.
-            # Newly assigned names belong only to this fragment. A nested fragment
-            # may see them, but does not leak its own new names back to this one.
-            scope = self.variables if previous is None else previous
-            self.locals = {
-                name: item if isinstance(item, _Reference) else _VariableReference(
-                    lambda name=name: scope[name],
-                    lambda value, name=name: scope.__setitem__(name, value))
-                for name, item in scope.items()
-            }
-            # Dynamic code may inherit restrictions, never own its caller's counter.
-            from .safe_mode import routine_frame
-            with routine_frame(self, self):
-                (yield from self.block(program))
-        except RecursionError:
-            raise ValueError("Выполнить: превышен предел глубины фрагмента Yadinassi") from None
-        finally:
-            if transient is not None: transient.close()
-            self.locals = previous
-            self._execute_depth[0] -= 1
+        from .execution.direct.python_direct import _reject
+        _reject("semantic_execute is a retired execution entrypoint; use execute or prepare")
 
     def _transaction_backend(self):
         return None if self.database_context is None else self.database_context.backend
 
     def _transaction_active(self):
-        from .database_transactions import active
+        from .db.database_transactions import active
         if (not getattr(self, '_transaction_activation_allowed', True)
                 or self._scheduler._active_task is not None or self._scheduler.pending):
             raise ValueError('Transaction status requires an authorized synchronous activation')
         return active(self._transaction_backend())
 
     def _begin_transaction(self):
-        from .database_transactions import begin
+        from .db.database_transactions import begin
         if (not getattr(self, '_transaction_activation_allowed', True)
                 or self._scheduler._active_task is not None or self._scheduler.pending):
             raise ValueError('Transactions require synchronous execution without pending tasks')
@@ -773,48 +771,22 @@ class Interpreter:
     def _commit_transaction(self):
         if not getattr(self, '_transaction_activation_allowed', True):
             raise ValueError('Transaction control is unavailable in this activation')
-        from .database_transactions import commit
+        from .db.database_transactions import commit
         commit(self._transaction_backend())
 
     def _rollback_transaction(self):
         if not getattr(self, '_transaction_activation_allowed', True):
             raise ValueError('Transaction control is unavailable in this activation')
-        from .database_transactions import rollback
+        from .db.database_transactions import rollback
         rollback(self._transaction_backend())
 
     def _compiled(self):
-        if self._compiled_engine is None:
-            from .compiled_backend import Engine, CompiledUnsupported
-            import sys
-            cls = type(self)
-            contexts = {
-                ('yadinassi.runtime', 'Interpreter'),
-                ('yadinassi.configuration_source_runtime', '_SourceInterpreter'),
-                ('yadinassi.form_runtime', '_FormInterpreter'),
-                ('yadinassi.source_forms', '_SourceFormInterpreter'),
-                ('yadinassi.source_forms', '_SourceNoContextInterpreter'),
-                ('yadinassi.document_posting', '_PostingInterpreter'),
-                ('yadinassi.catalog_object_preparation', '_ObjectInterpreter'),
-                ('yadinassi.source_constant_managers', '_ValueInterpreter'),
-                ('yadinassi.source_catalog_runtime', '_ObjectInterpreter'),
-                ('yadinassi.source_document_runtime', '_ObjectInterpreter'),
-                ('yadinassi.form_event_simulation', '_EventInterpreter'),
-                ('yadinassi.product_list_check', 'ListInterpreter'),
-                ('yadinassi.form_event_simulation', 'ProductInterpreter'),
-            }
-            if ((cls.__module__, cls.__name__) not in contexts
-                    or getattr(sys.modules.get(cls.__module__), cls.__name__, None) is not cls):
-                raise CompiledUnsupported(None, 'unregistered Python interpreter context adapter')
-            self._compiled_engine = Engine(self)
-            self._scheduler.register_compiler(self._compiled_engine)
-        return self._compiled_engine
+        from .execution.direct.python_direct import _reject
+        _reject("_compiled is a retired execution entrypoint; use execute or prepare")
 
     def _admit_compiled_node(self, node):
-        engine = self._compiled()
-        if engine.has_node(node):
-            engine.verify_node(node)
-        else:
-            engine.prepare_node(node)
+        from .execution.direct.python_direct import _reject
+        _reject("_admit_compiled_node is a retired execution entrypoint; use execute or prepare")
 
     @property
     def compiled_plain_routines(self):
@@ -836,196 +808,56 @@ class Interpreter:
     def execution_backend_stats(self):
         return dict(self._hybrid_stats)
 
+    def prepare(self, text: str, source: str = "<строка>"):
+        """Compile a reusable owned module snapshot for python-direct only."""
+        from .execution.direct.python_direct import prepare_module, _reject
+        if type(self) is not Interpreter:
+            _reject('specialized Interpreter contexts are not integrated')
+        return prepare_module(self, parse(text, source, compilation_profile=self.compilation_profile),
+                              source_text=text, source_name=source)
+
+    def prepare_program(self, program: list[ast.Node]):
+        """Snapshot and compile an AST; later caller edits do not affect it."""
+        from .execution.direct.python_direct import prepare_module
+        return prepare_module(self, program)
+
+    def execute_prepared(self, prepared):
+        """Run an explicit prepared snapshot with current namespace/services."""
+        from .execution.direct.python_direct import execute_prepared
+        return execute_prepared(self, prepared)
+
     def execute(self, text: str, source: str = "<строка>") -> object:
-        return self.execute_program(parse(text, source, compilation_profile=self.compilation_profile))
+        from .execution.direct.python_direct import execute
+        return execute(self, parse(text, source, compilation_profile=self.compilation_profile),
+                       source_text=text, source_name=source)
 
     def execute_program(self, program: list[ast.Node]) -> object:
-        """Execute already-compiled AST; this does not select source branches."""
-        self._require_family()
-        if self._execution_backend == 'compiled-strict':
-            engine = self._compiled()
-            engine.prepare(program, allow_reprepare=not (self._scheduler.is_active or
-                                                        engine.active_frames or self._scheduler.pending),
-                           module_entry=(engine.FORCE_PYTHON_TRANSLATION or not (self._scheduler.is_active or engine.active_frames or self._scheduler.pending)))
-        outermost = not self._scheduler.is_active
-        try:
-            from .database_transactions import admission, execution
-            with admission(getattr(self, "_transaction_activation_allowed", True)), execution(self._transaction_backend()):
-                return self._execute_program_boundary(program, outermost)
-        finally:
-            if outermost:
-                # A synchronous root failure can bypass the pump altogether.
-                # Such a failure already takes precedence over procedure errors.
-                self._scheduler.procedure_errors.clear()
+        """Compile and execute the supplied AST through the direct compiler only."""
+        from .execution.direct.python_direct import execute
+        return execute(self, program)
 
     def _execute_program_boundary(self, program, outermost):
-        from .execution_policy import execution_backend_policy, compiled_ast_policy
-        with target_context(self.native_target), execution_backend_policy(self.execution_backend), compiled_ast_policy(self.compiled_ast_contract):
-            if self._configuration_runtime is not None:
-                self._configuration_runtime.check_program(program)
-            # A diagnostic source label need not name a readable filesystem path.
-            if not any(isinstance(node, ast.Import) for node in program):
-                result = self._scheduler.run_inline(self._execute_program(program, module_entry=outermost))
-            else:
-                source = program[0].token.source if program else "<строка>"
-                path = None if source.startswith("<") else Path(source).resolve()
-                if path is None:
-                    result = self._scheduler.run_inline(self._execute_program(program, module_entry=outermost))
-                else:
-                    self._loading.append(path)
-                    try:
-                        result = self._scheduler.run_inline(self._execute_program(program, module_entry=outermost))
-                    finally:
-                        self._loading.pop()
-            # Native public fields and routines become available only after the
-            # first successful whole module initialization. Later REPL executions
-            # keep the same receiver, storage and public availability.
-            self._self_module.ready = True
-            if outermost:
-                from .database_transactions import forbid_transfer
-                forbid_transfer(self._transaction_backend())
-                self.run_until_idle()
-            return result
+        from .execution.direct.python_direct import _reject
+        _reject("_execute_program_boundary is a retired execution entrypoint; use execute or prepare")
 
     def _execute_program(self, program: list[ast.Node], *, module_entry=False) -> object:
         # Also validate callers supplying an AST directly. No import or declaration
         # effects may precede label resolution.
-        validate_labels(program)
-        validate_async(program)
-        # Reserve import names before any module initialization effects.
-        names = set(self.imports)
-        names.update(node.filename.split(".")[0].casefold()
-                     for node in program if isinstance(node, ast.Import))
-        for node in program:
-            declared = ([node.name] if isinstance(node, ast.Routine) else
-                        node.names if isinstance(node, ast.Var) else [])
-            if any(name.casefold() in names for name in declared):
-                token = node.token
-                raise BSLError("Имя импорта конфликтует с объявлением", token.source,
-                               token.line, token.column)
-        routine_groups: dict[str, list[ast.Routine]] = {}
-        for node in program:
-            if isinstance(node, ast.Routine):
-                if not self._valid_routine_context(node):
-                    token = node.token
-                    raise BSLError("Подпрограмма требует неподдерживаемый контекст исполнения",
-                                   token.source, token.line, token.column)
-                routine_groups.setdefault(node.name.casefold(), []).append(node)
-        for group in routine_groups.values():
-            first = group[0]
-            if len(group) > 1 and (not all(node.is_dual for node in group)
-                    or len(group) > 2
-                    or len({node.execution_context for node in group}) != len(group)
-                    or len({(node.token.source, node.token.line, node.token.column,
-                             node.token.kind) for node in group}) != 1):
-                token = first.token
-                raise BSLError("Одноименные подпрограммы разных объявлений в одном модуле пока не поддерживаются",
-                               token.source, token.line, token.column)
-        # Preflight the whole incoming program before publishing any replacement.
-        # A declaration family replaces both old sides and its availability marker
-        # atomically, even when preprocessing retained only one new dual variant.
-        routines = self.routines.copy()
-        server_routines = self.server_routines.copy()
-        dual_names = self._dual_routine_names.copy()
-        for key, group in routine_groups.items():
-            routines.pop(key, None)
-            server_routines.pop(key, None)
-            dual_names.discard(key)
-            if group[0].is_dual:
-                dual_names.add(key)
-            for node in group:
-                registry = server_routines if node.execution_context == "server" else routines
-                registry[key] = node
-        self.routines, self.server_routines = routines, server_routines
-        self._dual_routine_names = dual_names
-        # Register side-local storage before any module statement executes.
-        for node in program:
-            if isinstance(node, ast.ServerInitializer):
-                self.server_initializers.append(node)
-            elif isinstance(node, ast.Var):
-                if node.execution_context == "server":
-                    self.server_module_names.update(name.casefold() for name in node.names)
-                    continue
-                self.exported_variables.update(name.casefold() for name in node.exported_names)
-                for name in node.names:
-                    self.module_names.add(name.casefold())
-                    self.variables.setdefault(name.casefold(), None)
-        for node in program:
-            if isinstance(node, ast.Import):
-                yield from self._visit(node)
-        return (yield from self._planned_module_block([node for node in program
-            if not isinstance(node, (ast.Import, ast.ServerInitializer))
-            and not (isinstance(node, ast.Var) and node.execution_context == "server")], enabled=module_entry))
+        from .execution.direct.python_direct import _reject
+        _reject("_execute_program is a retired execution entrypoint; use execute or prepare")
 
     def _planned_module_block(self, statements, *, enabled=False):
-        if (enabled and self._execution_backend=='compiled-strict' and type(self) is Interpreter
-                and type(self).block is _PLAIN_BLOCK_ABI and 'block' not in vars(self)):
-            return (yield from self._compiled().run_module(statements))
-        return (yield from self.block(statements))
+        from .execution.direct.python_direct import _reject
+        _reject("_planned_module_block is a retired execution entrypoint; use execute or prepare")
 
-    @staticmethod
-    def _routine_plan(function):
-        plan = getattr(function, '_prepared_control_flow', None)
-        if type(plan) is not PreparedBlock or not plan.matches(function.body):
-            # Validation completes before publication: invalid mutations do not
-            # install a partially prepared plan or reach argument side effects.
-            plan = prepare_control_flow(function.body)
-            function._prepared_control_flow = plan
-        return plan
 
     def _planned_routine_block(self, function):
-        if self._execution_backend == 'compiled-strict':
-            if type(self) is not Interpreter or type(self).block is not _PLAIN_BLOCK_ABI or 'block' in vars(self):
-                return (yield from self.block(function.body))
-            engine = self._compiled()
-            if not engine.has_block(function.body): engine.prepare_block(function.body)
-            return (yield from engine.run_block(function.body, plain_routine=function))
-        plan = self._routine_plan(function)
-        state = self._scheduler.active_context.state
-        entry = state.setdefault(_CONTROL_FLOW_PLANS, {'stack': []})
-        stack = entry['stack']
-        frame = [self, function, plan]
-        stack.append(frame)
-        try:
-            return (yield from self.block(function.body))
-        finally:
-            stack.pop()
-            if not stack:
-                state.pop(_CONTROL_FLOW_PLANS, None)
+        from .execution.direct.python_direct import _reject
+        _reject("_planned_routine_block is a retired execution entrypoint; use execute or prepare")
 
     def block(self, statements: list[ast.Node]) -> object:
-        if self._execution_backend == 'compiled-strict':
-            engine = self._compiled()
-            if not engine.has_executable_block(statements):
-                engine.prepare_block(statements)
-            return (yield from engine.run_block(statements))
-        result = None
-        prepared = None
-        entry = self._scheduler.active_context.state.get(_CONTROL_FLOW_PLANS)
-        if entry and entry['stack']:
-            frame = entry['stack'][-1]
-            if frame[0] is self:
-                prepared = frame[2].find(statements)
-                if prepared is None or not prepared.matches(statements):
-                    # Nested loop entries normally inspect only their subtree,
-                    # not every statement in the owning routine. A changed or
-                    # newly attached block revalidates its complete scope.
-                    frame[2] = self._routine_plan(frame[1])
-                    prepared = frame[2].find(statements)
-        labels = (prepared.labels if prepared is not None else
-                  {node.name.casefold(): index for index, node in enumerate(statements)
-                   if isinstance(node, ast.Label)})
-        position = 0
-        while position < len(statements):
-            try:
-                result = (yield from self._visit(statements[position]))
-            except _Goto as jump:
-                if jump.name not in labels:
-                    raise
-                position = labels[jump.name]
-            else:
-                position += 1
-        return result
+        from .execution.direct.python_direct import _reject
+        _reject("block is a retired execution entrypoint; use execute or prepare")
 
     def compiled_before(self, node):
         """Strict node ABI; reference context subclasses preserve their original wrappers."""
@@ -1053,41 +885,9 @@ class Interpreter:
     def _visit(self, node: ast.Node) -> object:
         # Select this frame's path on entry. Runtime backend selection is fixed
         # at construction; private mutation during a yield is not a mode API.
-        if self._execution_backend != 'compiled-strict':
-            try:
-                handler = getattr(self, f"visit_{type(node).__name__}")
-                result = handler(node)
-                if isinstance(result, GeneratorType):
-                    return (yield from result)
-                return result
-            except BSLError:
-                raise
-            except (ArithmeticError, ValueError, TypeError, IndexError, RecursionError) as error:
-                if error is self._scheduler.active_context.host_failure:
-                    raise
-                message = str(error) or type(error).__name__
-                if isinstance(error, RecursionError) and self._eval_depth[0]:
-                    message = "Вычислить: превышен предел глубины выражения Yadinassi"
-                if isinstance(error, ZeroDivisionError):
-                    message = "Деление на ноль"
-                token = node.token
-                raise BSLRuntimeError(message, token.source, token.line, token.column,
-                                      source_line=token.source_line) from None
+        from .execution.direct.python_direct import _reject
+        _reject("_visit is a retired execution entrypoint; use execute or prepare")
 
-        self.compiled_before(node)
-        try:
-            result = self._compiled().run_node(node)
-            if isinstance(result, GeneratorType):
-                result = yield from result
-        except BaseException as error:
-            converted = self.compiled_exception(node, error)
-            if converted is error:
-                raise
-            raise converted from None
-        return self.compiled_after(node, result)
-
-    def visit_Literal(self, node: ast.Literal) -> object:
-        return node.value
 
     def semantic_name(self, node: ast.Name) -> object:
         name = node.name.casefold()
@@ -1122,11 +922,11 @@ class Interpreter:
             posting = self._documents.posting_runtime()
             if posting is None or not posting.accumulation:
                 raise ValueError("accumulation posting profile required")
-            from .accumulation_posting_values import ACCUMULATION_RECORD_TYPES
+            from .db.registers.accumulation_posting_values import ACCUMULATION_RECORD_TYPES
             return ACCUMULATION_RECORD_TYPES
         if name in ("documentwritemode", "режимзаписидокумента"):
             if self._documents.posting_runtime() is None: raise ValueError("posting profile required")
-            from .document_posting_values import DOCUMENT_WRITE_MODES
+            from .db.document.document_posting_values import DOCUMENT_WRITE_MODES
             return DOCUMENT_WRITE_MODES
         if name in ("enums", "перечисления"):
             if self._metadata._enumerations is None: raise ValueError("enumerations require an active configuration application")
@@ -1148,10 +948,10 @@ class Interpreter:
         if name in ("режимокругления", "roundmode"):
             return ROUND_MODES
         if name in ('questiondialogmode', 'режимдиалогавопрос'):
-            from .form_dialogs import QUESTION_DIALOG_MODES
+            from .forms.form_dialogs import QUESTION_DIALOG_MODES
             return QUESTION_DIALOG_MODES
         if name in ('dialogreturncode', 'кодвозвратадиалога'):
-            from .form_dialogs import DIALOG_RETURN_CODES
+            from .forms.form_dialogs import DIALOG_RETURN_CODES
             return DIALOG_RETURN_CODES
         if name in ("форматдатыjson", "jsondateformat"):
             return JSON_DATE_FORMATS
@@ -1187,80 +987,9 @@ class Interpreter:
             return SORT_DIRECTIONS
         raise ValueError(f"Переменная или функция не определена: {node.name}")
 
-    def visit_Group(self, node: ast.Group) -> object:
-        return (yield from self._visit(node.expression))
 
-    def visit_Unary(self, node: ast.Unary) -> object:
-        value = (yield from self._visit(node.operand))
-        if node.operator == "NOT":
-            return not boolean(value)
-        value = require_number(value)
-        return value if node.operator == "+" else value.copy_negate()
 
-    def visit_Binary(self, node: ast.Binary) -> object:
-        left = (yield from self._visit(node.left))
-        operator = node.operator
-        if operator == "AND":
-            return boolean(left) and boolean((yield from self._visit(node.right)))
-        if operator == "OR":
-            return boolean(left) or boolean((yield from self._visit(node.right)))
-        right = (yield from self._visit(node.right))
-        if operator in ("=", "<>", "<", "<=", ">", ">="):
-            if type(left) is dates.BSLDate:
-                left.require_known()
-            if type(right) is dates.BSLDate:
-                right.require_known()
-        if (operator in ("=", "<>", "<", "<=", ">", ">=")
-                and ((type(left) is Decimal and type(right) is bool)
-                     or (type(left) is bool and type(right) is Decimal))):
-            # BSL operator comparisons convert Boolean to Number (0 or 1).
-            # Keep this separate from typed collection lookup equality.
-            left = Decimal(1 if left else 0) if type(left) is bool else left
-            right = Decimal(1 if right else 0) if type(right) is bool else right
-        if operator == "=":
-            return equal(left, right)
-        if operator == "<>":
-            return not equal(left, right)
-        if operator in ("<", "<=", ">", ">="):
-            if type(left) is dates.BSLDate and type(right) is dates.BSLDate:
-                left, right = Decimal(left.ticks), Decimal(right.ticks)
-            if type(left) is not type(right) or not isinstance(left, (Decimal, str, bool)):
-                raise TypeError("Значения несовместимы для сравнения")
-            if isinstance(left, str):
-                left, right = string_key(left), string_key(right)
-            if operator == "<":
-                return left < right
-            if operator == "<=":
-                return left <= right
-            if operator == ">":
-                return left > right
-            return left >= right
-        if operator == "+" and isinstance(left, str):
-            return strings.concatenate(left, to_string(right))
-        if type(left) is dates.BSLDate and operator in ("+", "-"):
-            if operator == "-" and type(right) is dates.BSLDate:
-                return dates.date_difference(left, right)
-            if type(right) is not Decimal:
-                raise TypeError("Арифметика даты: ожидается число секунд")
-            return dates.shift_date(left, right if operator == "+" else right.copy_negate())
-        left, right = require_number(left), require_number(right)
-        if operator == "+":
-            return left + right
-        if operator == "-":
-            return left - right
-        if operator == "*":
-            return left * right
-        if operator == "/":
-            return divide(left, right)
-        if operator == "%":
-            if right == 0:
-                raise ZeroDivisionError
-            return left % right
-        raise ValueError(f"Неизвестный оператор: {operator}")
 
-    def visit_Conditional(self, node: ast.Conditional) -> object:
-        branch = node.when_true if boolean((yield from self._visit(node.condition))) else node.when_false
-        return (yield from self._visit(branch))
 
     def semantic_attribute(self, node: ast.Attribute) -> object:
         value = (yield from self.receiver(node.object))
@@ -1345,8 +1074,6 @@ class Interpreter:
             return value.get_index(index)
         return value.get(index)
 
-    def visit_Call(self, node: ast.Call) -> object:
-        return (yield from self.call(node, require_value=True))
 
     @staticmethod
     def _valid_routine_context(function: ast.Routine) -> bool:
@@ -1384,231 +1111,8 @@ class Interpreter:
         return candidates[0] or candidates[1]
 
     def call(self, node: ast.Call, *, require_value: bool, _evaluation=None) -> object:
-        evaluate = self._visit if _evaluation is None else _evaluation.evaluate
-        receiver = self.receiver if _evaluation is None else _evaluation.receiver
-        argument_value = self.argument if _evaluation is None else _evaluation.argument
-        if self._execution_backend == "compiled-strict" and not self._compiled().has_node(node):
-            self._admit_compiled_node(node)
-        site = None if _evaluation is None else _evaluation.call_site(node)
-        site_is_name = site is not None and site.callee_kind == 'name'
-        site_is_attribute = site is not None and site.callee_kind == 'attribute'
-        site_name = None if site is None else site.name
-        callee = self.ungroup(node.callee) if site is None else site.callee
-        bound_callee = () if _evaluation is None else _evaluation.bound_callee(node.callee)
-        routine = self._resolve_routine((callee.name if site is None else site_name)) if not bound_callee and (isinstance(callee, ast.Name) if site is None else site_is_name) else None
-        if (not bound_callee and (isinstance(callee, ast.Name) if site is None else site_is_name) and routine is None
-                and (callee.name if site is None else site_name).casefold() in self._client_routine_names):
-            raise ValueError("Вызов клиентской подпрограммы с сервера недопустим")
-        owner = self
-        if not bound_callee and routine is None and (isinstance(callee, ast.Name) if site is None else site_is_name) and self._configuration_runtime is not None:
-            configured = self._configuration_runtime.resolve_global((callee.name if site is None else site_name), self)
-            if configured is not None:
-                routine, owner = configured
-        has_omissions = (any(isinstance(a, ast.OmittedArgument) for a in node.arguments)
-                         if site is None else site.has_omissions)
-        known_receiver = None
-        if (isinstance(callee, ast.Attribute) if site is None else site_is_attribute):
-            module = self.import_receiver(callee.object)
-            if module is not None:
-                if type(module) is not _Module:
-                    raise TypeError("Пространство каталога не содержит вызываемых подпрограмм")
-                owner = module.interpreter
-                routine = module.routine((callee.name if site is None else site_name))
-            elif has_omissions:
-                # Classify only stored receivers. Calling a factory to discover
-                # optional arguments would violate the host side-effect guard.
-                known_receiver = self.known_table_receiver(callee.object)
-                if type(known_receiver) is _Module:
-                    owner = known_receiver.interpreter
-                    routine = known_receiver.routine((callee.name if site is None else site_name))
-        if routine is not None:
-            return (yield from self.call_routine(routine, node.arguments, owner, require_value=require_value, qualified=(isinstance(callee, ast.Attribute) if site is None else site_is_attribute), _evaluation=_evaluation))
-        # Existing host calls reject omitted arguments before receiver effects.
-        # Native table/list methods need optional holes; admit them only for a known
-        # exact built-in receiver (a variable or its Columns property). We never
-        # execute a factory merely to discover whether it allows omissions.
-        table_receiver = None
-        table_optional = None
-        if (isinstance(callee, ast.Attribute) if site is None else site_is_attribute) and has_omissions:
-            table_receiver = known_receiver
-            table_optional = self.table_optional_arguments(table_receiver, (callee.name if site is None else site_name))
-        registered = bound_callee[0] if bound_callee else (self.functions.get((callee.name if site is None else site_name).casefold())
-                      if (isinstance(callee, ast.Name) if site is None else site_is_name) else None)
-        if table_optional is None and (registered is None or
-                (registered.function is not run_callback_marker
-                 and registered.function is not read_json
-                 and registered.function is not write_json
-                 and registered.function is not write_json_date
-                 and registered.function is not fill_property_values
-                 and registered.function is not strings.str_find
-                 and not any(registered.function is fn for fn in regex_functions.FUNCTIONS)
-                 and not any(registered.function is fn for fn in (file_io.binary_from_string, file_io.string_from_binary, file_io.find_files)))):
-            self.reject_host_omissions(node.arguments)
-        if (isinstance(callee, ast.Attribute) if site is None else site_is_attribute):
-            receiver = table_receiver if table_optional is not None else (yield from receiver(callee.object))
-            _dependency = _runtime_module('source_constant_managers')
-            SourceConstantValueManager = _dependency.SourceConstantValueManager
-            _STANDARD_METHODS = _dependency._STANDARD_METHODS
-            if type(receiver) is SourceConstantValueManager and (callee.name if site is None else site_name).casefold() not in _STANDARD_METHODS:
-                routine = receiver.exported_routine(self, (callee.name if site is None else site_name))
-                return (yield from self.call_routine(routine, node.arguments, receiver.interpreter, require_value=require_value, qualified=True, _evaluation=_evaluation))
-            _dependency = _runtime_module('source_document_runtime')
-            SourceDocumentObject = _dependency.SourceDocumentObject
-            _DOCUMENT_OBJECT_METHODS = _dependency._OBJECT_METHODS
-            if type(receiver) is SourceDocumentObject and (callee.name if site is None else site_name).casefold() not in _DOCUMENT_OBJECT_METHODS:
-                routine=receiver.exported_routine(self,(callee.name if site is None else site_name))
-                return (yield from self.call_routine(routine,node.arguments,receiver.interpreter,require_value=require_value,qualified=True, _evaluation=_evaluation))
-            _dependency = _runtime_module('source_catalog_runtime')
-            SourceCatalogObject = _dependency.SourceCatalogObject
-            _OBJECT_METHODS = _dependency._OBJECT_METHODS
-            if type(receiver) is SourceCatalogObject and (callee.name if site is None else site_name).casefold() not in _OBJECT_METHODS:
-                routine=receiver.exported_routine(self,(callee.name if site is None else site_name))
-                return (yield from self.call_routine(routine,node.arguments,receiver.interpreter,require_value=require_value,qualified=True, _evaluation=_evaluation))
-            _dependency = _runtime_module('source_references')
-            SourceReferenceManager = _dependency.SourceReferenceManager
-            _REF_METHODS = _dependency._METHODS
-            _dependency = _runtime_module('source_catalog_runtime')
-            _MANAGER_METHODS = _dependency._MANAGER_METHODS
-            reference_call = _dependency.reference_call
-            _dependency = _runtime_module('source_document_runtime')
-            _DOCUMENT_METHODS = _dependency._MANAGER_METHODS
-            document_call = _dependency.reference_call
-            if type(receiver) is SourceReferenceManager and (callee.name if site is None else site_name).casefold() not in (_REF_METHODS.keys() | (_MANAGER_METHODS.keys() if receiver.family == 'Catalog' else _DOCUMENT_METHODS.keys() if receiver.family == 'Document' else set())):
-                receiver = receiver.module(self)
-            if type(receiver) is _Module:
-                return (yield from self.call_routine(receiver.routine((callee.name if site is None else site_name)), node.arguments,
-                                         receiver.interpreter, require_value=require_value, qualified=True, _evaluation=_evaluation))
-            if not isinstance(receiver, BSLObject):
-                raise TypeError("Значение не имеет методов или свойств")
-            function = document_call(self, receiver, (callee.name if site is None else site_name)) or reference_call(self, receiver, (callee.name if site is None else site_name)) or receiver.get_method((callee.name if site is None else site_name))
-        else:
-            function = (yield from evaluate(node.callee))
-        if not isinstance(function, HostFunction):
-            raise TypeError("Значение не является функцией")
-        interpreter_call = function.function if type(function.function) is InterpreterCall else None
-        if interpreter_call is not None:
-            interpreter_call.prepare(self, len(node.arguments))
-        refresh_reusable_marker = _runtime_module('reusable_values').refresh_reusable_marker
-        refresh_call = function.function is refresh_reusable_marker
-        if refresh_call:
-            if self._configuration_runtime is None:
-                raise ValueError('reusable values require a configuration application')
-            self._configuration_runtime.reusable_values.authorize(self)
-            if node.arguments:
-                raise TypeError('RefreshReusableValues requires no arguments')
-        _ChooseItemMarker = _runtime_module('value_lists')._ChooseItemMarker
-        choosing = type(function.function) is _ChooseItemMarker
-        if choosing:
-            if self._configuration_runtime is None:
-                raise ValueError('ShowChooseItem requires an application-owned client dispatch')
-            self._configuration_runtime.require_value_selection(self)
-        _dependency = _runtime_module('common_templates')
-        get_common_template_marker = _dependency.get_common_template_marker
-        SourceTemplateCall = _dependency.SourceTemplateCall
-        if type(function.function) is SourceTemplateCall:
-            function.function.owner.authorize(self)
-            if len(node.arguments) != 1:
-                raise TypeError("GetCommonTemplate requires one argument")
-        template_call=function.function is get_common_template_marker
-        if template_call:
-            if self._configuration_runtime is None:raise ValueError('common templates require an application')
-            self._configuration_runtime.common_templates.authorize(self)
-            if len(node.arguments)!=1:raise TypeError('GetCommonTemplate arity')
-        temporary_storage = _runtime_module('temporary_storage')
-        if type(function.function) is temporary_storage.SourceTemporaryCall:
-            function.function.authorize_call(self, len(node.arguments))
-        temporary_call=any(function.function is marker for marker in temporary_storage.MARKERS)
-        if temporary_call:
-            if self._configuration_runtime is None:
-                raise ValueError('temporary storage requires an explicit application')
-            self._configuration_runtime.temporary_storage.authorize(self)
-            count=len(node.arguments)
-            if not (1<=count<=2 if function.function is temporary_storage.put_marker else count==1):
-                raise TypeError('temporary storage function arity')
-        if self._configuration_runtime is not None:
-            self._configuration_runtime.check_host_service(function, self)
-        if function.function is run_callback_marker:
-            forbid_transfer = _runtime_module('database_transactions').forbid_transfer
-            forbid_transfer(self._transaction_backend())
-            return (yield from self._run_callback(node, _evaluation=_evaluation))
-        if function.function is read_json or function.function is write_json:
-            if require_value and not function.returns_value:
-                raise TypeError(f"Процедура не возвращает значение: {function.name}")
-            return (yield from self._convert_json(node, writing=function.function is write_json, _evaluation=_evaluation))
-        if any(function.function is fn for fn in (file_io.binary_from_string, file_io.string_from_binary, file_io.find_files)):
-            self.reject_host_omissions(node.arguments[:1])
-        elif function.function is fill_property_values:
-            if not 2 <= len(node.arguments) <= 4:
-                raise TypeError("ЗаполнитьЗначенияСвойств ожидает от 2 до 4 аргументов")
-            self.reject_host_omissions(node.arguments[:2])
-        elif any(function.function is fn for fn in regex_functions.FUNCTIONS):
-            required = 3 if function.function is regex_functions.str_replace else 2
-            maximum = 7 if function.function is regex_functions.str_find else 5 if required == 3 else 4
-            if not required <= len(node.arguments) <= maximum:
-                raise TypeError("Регулярное выражение: неверное количество аргументов")
-            self.reject_host_omissions(node.arguments[:required])
-        elif function.function is write_json_date:
-            if not 2 <= len(node.arguments) <= 3:
-                raise TypeError("ЗаписатьДатуJSON ожидает от 2 до 3 аргументов")
-            self.reject_host_omissions(node.arguments[:2])
-        elif function.function is strings.str_find:
-            if not 2 <= len(node.arguments) <= 5:
-                raise TypeError("СтрНайти ожидает от 2 до 5 аргументов")
-            self.reject_host_omissions(node.arguments[:2])
-        elif table_optional is not None:
-            self.reject_host_omissions([argument for index, argument in enumerate(node.arguments)
-                                       if index not in table_optional])
-        else:
-            self.reject_host_omissions(node.arguments)
-        if require_value and not function.returns_value:
-            raise TypeError(f"Процедура не возвращает значение: {function.name}")
-        if function.function is _eval_marker:
-            if len(node.arguments) != 1:
-                raise TypeError("Вычислить ожидает 1 аргумент")
-            return (yield from self._evaluate(node.arguments[0], _evaluation=_evaluation))
-        defaults = None
-        if table_optional is not None:
-            if type(table_receiver) in (BSLValueTableColumnCollection, BSLValueTreeColumnCollection):
-                defaults = ("", None, "", Decimal(0))
-                if (callee.name if site is None else site_name).casefold() in {"insert", "вставить"}:
-                    defaults = (None,) + defaults
-            elif type(table_receiver) is BSLValueList:
-                defaults = (None, "", False)
-                if (callee.name if site is None else site_name).casefold() in {"insert", "вставить"}:
-                    defaults = (None,) + defaults
-        values = []
-        for index, argument in enumerate(node.arguments):
-            if isinstance(argument, ast.OmittedArgument):
-                value = (strings._OMITTED if (function.function is strings.str_find or
-                         any(function.function is fn for fn in regex_functions.FUNCTIONS)) else
-                         defaults[index] if defaults is not None else None)
-            elif index in function.reference_parameters:
-                value = (yield from argument_value(argument))
-            else:
-                value = (yield from evaluate(argument))
-            values.append(value)
-        if refresh_call:
-            return self._configuration_runtime.reusable_values.refresh(self)
-        if choosing:
-            return self._configuration_runtime.dispatch_value_selection(self, function.function.source, values)
-        if template_call:
-            return self._configuration_runtime.common_templates.get(self,values[0])
-        if temporary_call:
-            return self._configuration_runtime.temporary_storage.invoke(self,function.function,values)
-        if interpreter_call is not None:
-            return (yield from interpreter_call.invoke(self, values))
-        (SourceCatalogCall, SourceDocumentSectionCall, SourceDocumentCall,
-         SourceReferenceCall, ConstantCall, ConstantSetCall, SourceQueryCall,
-         ExtensionCall, SourceSessionCall, SourceTransactionCall,
-         ValueManagerCall, write_values) = _source_call_dispatch_types()
-        marker = function.function
-        if type(marker) in (SourceCatalogCall, SourceDocumentCall):
-            return (yield from marker.invoke(self, values))
-        if type(marker) in (ExtensionCall, SourceSessionCall, SourceTransactionCall,
-                            SourceQueryCall, SourceReferenceCall, SourceDocumentSectionCall,
-                            SourceTemplateCall, temporary_storage.SourceTemporaryCall):
-            return function.function.invoke(self, values)
-        return function(*values)
+        from .execution.direct.python_direct import _reject
+        _reject("call is a retired execution entrypoint; use execute or prepare")
 
     def _convert_json(self, node, *, writing, _evaluation=None):
         evaluate = self._visit if _evaluation is None else _evaluation.evaluate
@@ -1738,7 +1242,7 @@ class Interpreter:
         self._require_callback_context()
         if type(description) is not BSLCallbackDescription:
             raise TypeError('ВыполнитьОбработкуОповещения: ожидается ОписаниеОповещения')
-        from .callbacks import _FormCallbackTarget
+        from .application.callbacks import _FormCallbackTarget
         target = description._form_target
         if target is not None:
             if type(target) is not _FormCallbackTarget or description.module is not target.receiver:
@@ -1829,7 +1333,7 @@ class Interpreter:
     @staticmethod
     def table_optional_arguments(receiver: object, name: str) -> frozenset[int] | None:
         key = name.casefold()
-        from .source_extensions import SourceExtensions
+        from .configuration.source_extensions import SourceExtensions
         if type(receiver) is SourceExtensions and key in ('get', 'получить'):
             return frozenset({0, 1})
         if type(receiver) is BSLTextDocument and key in {"read", "прочитать", "write", "записать"}:
@@ -1913,266 +1417,15 @@ class Interpreter:
             return child
         return None
 
-    def _admit_routine_call(self, function: ast.Routine, arguments: list[ast.Node],
-                            owner: "Interpreter", *, require_value: bool):
-        """Live per-invocation checks, not a reusable permission/plan cache.
-
-        Keep check order before actual argument effects. This transient result
-        must be consumed immediately by the same invocation; no authority is
-        stored in an immutable compilation plan.
-        """
-        self._require_family()
-        owner._require_family()
-        # Authority registries key the original declaration object. An optional
-        # owned compilation view snapshots execution fields, never grants.
-        authority_function = function
-        layout = None
-        if owner._execution_backend == 'compiled-strict':
-            owner._admit_compiled_node(function)
-            authority_function = owner._compiled().origin_node(function)
-            function = owner._compiled().execution_view(function)
-            if self._execution_backend == 'compiled-strict':
-                layout = owner._compiled().routine_call_metadata(function)
-        if self._configuration_runtime is not None:
-            self._configuration_runtime.check_call(function, self)
-        if function.is_async and function.execution_context != "client":
-            raise ValueError("Асинхронные подпрограммы допустимы только на клиенте")
-        if not self._valid_routine_context(function):
-            raise ValueError("Подпрограмма требует неподдерживаемый контекст исполнения")
-        caller_side = self.execution_context
-        if function.is_dual and function.execution_context != caller_side:
-            raise ValueError(f"Двухконтекстная подпрограмма недоступна на стороне {caller_side}: {function.name}")
-        if caller_side == "server" and function.execution_context == "client":
-            raise ValueError("Вызов клиентской подпрограммы с сервера недопустим")
-        if (not self._has_module_context and function.module_context
-                and not (self._configuration_runtime is not None
-                         and self._configuration_runtime.is_common_routine(authority_function))):
-            raise ValueError("Подпрограмма без контекста не может вызывать контекстную подпрограмму")
-        crossing = caller_side == "client" and function.execution_context == "server"
-        if crossing or function.is_async:
-            from .safe_mode import require_transfer
-            require_transfer('cross-context or asynchronous calls')
-        invocation = owner._invocation_bindings.get(function.name.casefold())
-        invocation = invocation[1] if invocation and invocation[0] is authority_function else None
-        if invocation is not None and not crossing:
-            raise ValueError("InvocationPort доступен только с логического клиента")
-        if require_value and not function.is_function:
-            raise TypeError(f"Процедура не возвращает значение: {function.name}")
-        required = (layout.required if layout is not None else
-                    max((index + 1 for index, parameter in enumerate(function.parameters)
-                         if parameter.default is None), default=0))
-        if not required <= len(arguments) <= len(function.parameters):
-            raise TypeError(f"{function.name} ожидает {len(function.parameters)} аргументов, "
-                            f"получено {len(arguments)}")
-        return function, authority_function, caller_side, crossing, invocation, layout
 
     def call_routine(self, function: ast.Routine, arguments: list[ast.Node],
                      owner: "Interpreter", *, require_value: bool, qualified: bool = False, _evaluation=None) -> object:
-        evaluate = self._visit if _evaluation is None else _evaluation.evaluate
-        argument_value = self.argument if _evaluation is None else _evaluation.argument
-        (function, authority_function, caller_side, crossing, invocation, layout) = self._admit_routine_call(
-            function, arguments, owner, require_value=require_value)
-        parameters = function.parameters if layout is None else layout.parameters
-        if self._execution_backend != 'compiled-strict':
-            self._routine_plan(function)
-        if self._execution_backend == 'compiled-strict':
-            if layout is None:
-                validate_labels(function.body)
-            elif layout.label_error is not None:
-                raise BSLError(*layout.label_error)
-            # Actuals may be host-materialized Literal plans, and defaults execute
-            # in the caller even when the declaration is owned by another VM.
-            defaults = (tuple(p.default for p in parameters if p.default is not None)
-                        if layout is None else layout.defaults)
-            for expression in arguments:
-                self._admit_compiled_node(expression)
-            for expression in defaults:
-                self._admit_compiled_node(expression)
-        if crossing:
-            # The measured copy-in/copy-out slice covers named variable actuals.
-            # Reject properties, indexes, expressions and omitted non-Val slots
-            # before evaluating even an earlier, otherwise supported argument.
-            byref_indexes = (tuple(i for i, p in enumerate(parameters) if not p.by_value)
-                             if layout is None else layout.byref_indexes)
-            for index in byref_indexes:
-                if (index >= len(arguments) or
-                        not isinstance(self.ungroup(arguments[index]), ast.Name)):
-                    raise TypeError("Межконтекстные параметры без Знач пока требуют имя переменной")
-        # Evaluate expression actuals once, left to right. At a measured crossing,
-        # named actual storage (including Val) is read after all actual effects.
-        # Same-side argument semantics remain unchanged.
-        bindings = {}
-        copyback: list[tuple[str, _VariableReference]] = []
-        late_inputs: dict[str, _VariableReference] = {}
-        for index, parameter in enumerate(parameters):
-            argument = arguments[index] if index < len(arguments) else None
-            if argument is None or isinstance(argument, ast.OmittedArgument):
-                value = (yield from evaluate(parameter.default)) if parameter.default is not None else None
-            else:
-                if crossing and isinstance(self.ungroup(argument), ast.Name):
-                    value = (yield from (self._invocation_argument(argument) if _evaluation is None else self._invocation_argument(argument, _evaluation=_evaluation))) if invocation is not None else (yield from argument_value(argument))
-                else:
-                    value = (yield from evaluate(argument)) if parameter.by_value or function.is_async else (yield from argument_value(argument))
-            if self.execution_backend == 'compiled-strict':
-                owner._compiled().verify_node(function)
-            name = parameter.name.casefold() if layout is None else parameter.name
-            if crossing and not parameter.by_value:
-                # A named caller formal may itself alias a property/index.
-                # Only dictionary variable storage has a safe copy-out setter;
-                # do not let forwarding widen the supported sink boundary.
-                if not isinstance(value, _VariableReference):
-                    raise TypeError("Межконтекстные параметры без Знач пока требуют имя переменной")
-                copyback.append((name, value))
-            if crossing and isinstance(value, _Reference):
-                if not isinstance(value, _VariableReference):
-                    raise TypeError("Межконтекстная передача ссылок на свойства пока не поддерживается")
-                late_inputs[name] = value
-            bindings[name] = value
-        # A local server cache hit cannot bypass transaction transfer admission.
-        if crossing or function.is_async:
-            from .database_transactions import forbid_transfer
-            forbid_transfer(self._transaction_backend())
-        reusable_runtime = self._configuration_runtime or getattr(self, '_source_reusable_runtime', None)
-        scalar_server_reuse = (reusable_runtime is not None
-            and reusable_runtime.is_scalar_server_reuse(authority_function))
-        if scalar_server_reuse:
-            from .invocation import _encode_scalar
-            for value in bindings.values(): _encode_scalar(value.get() if isinstance(value, _Reference) else value)
-        reuse = None
-        if reusable_runtime is not None:
-            selected = (reusable_runtime.reusable_call(self, owner, authority_function, qualified)
-                        if function is authority_function else
-                        reusable_runtime.reusable_call(self, owner, authority_function, qualified,
-                                                       execution_routine=function))
-            if selected is not None:
-                from .reusable_values import argument_key
-                cache, identity = selected
-                actuals = tuple(value.get() if isinstance(value, _Reference) else value for value in bindings.values())
-                key = argument_key(actuals)
-                if key is None:
-                    raise ValueError('unsupported reusable common-module argument')
-                key = (*identity, key)
-                found, cached = cache.lookup(key)
-                if found:
-                    try:
-                        if scalar_server_reuse: _encode_scalar(cached)
-                        cache.revalidate(key, reusable_runtime.reusable_values.measure(cached))
-                    except (TypeError, ValueError):
-                        cache.discard(key)
-                        raise
-                    return cached
-                reuse = (cache, cache.reserve(key))
-        if crossing:
-            # Native 8.3.27.1508: names remain storage, expression results remain
-            # values/handles. Clone the complete packet only after actual effects.
-            for name, reference in late_inputs.items():
-                bindings[name] = reference.get()
-            names = list(bindings)
-            copied = self._copy_context_packet([bindings[name] for name in names])
-            bindings = dict(zip(names, copied))
-            if invocation is not None:
-                return self._copy_context_packet([invocation(copied)])[0]
-            owner = (owner._new_server_activation() if function.module_context else
-                     owner._new_server_activation(module_context=False))
-        return (yield from self._invoke_bound_routine(function, owner, bindings,
-            caller_side=caller_side, crossing=crossing, copyback=copyback,
-            scalar_server_reuse=scalar_server_reuse, reuse=reuse,
-            reusable_runtime=reusable_runtime))
+        from .execution.direct.python_direct import _reject
+        _reject("call_routine is a retired execution entrypoint; use execute or prepare")
 
-    def _invoke_bound_routine(self, function, owner, bindings, *, caller_side,
-                              crossing, copyback, scalar_server_reuse, reuse,
-                              reusable_runtime):
-        """Execute one already-admitted, already-bound invocation.
 
-        Shared by calling paths, never an authorization cache or a public call
-        bypass. Preserve suspension, policy callbacks, cleanup and copyback;
-        callers must not repeat argument effects if optimized dispatch deopts.
-        """
-        if scalar_server_reuse:
-            from .invocation import _encode_scalar
-        if function.is_async:
-            promise = self._scheduler.start(owner._async_body(function, bindings),
-                                            procedure=not function.is_function)
-            return promise if function.is_function else None
-        input_call = (nullcontext() if self._configuration_runtime is None else
-                      self._configuration_runtime.input_call(self, owner,
-                          not crossing and caller_side == 'client' and function.execution_context == 'client'
-                          and function.module_context))
-        with self._routine_activation(owner, function, bindings, crossing, input_call):
-            if crossing:
-                for initializer in owner.server_initializers:
-                    yield from owner.block(initializer.body)
-                owner.locals = bindings
-            result = None
-            try:
-                (yield from owner._planned_routine_block(function))
-            except _Return as returned:
-                result = returned.value
-            if scalar_server_reuse: _encode_scalar(result)
-            if crossing:
-                # Validate the entire outgoing packet before touching caller
-                # storage. Escaping errors never reach this normal-return path.
-                packet = self._copy_context_packet(
-                    [result] + [bindings[name] for name, _ in copyback])
-                result = packet[0]
-                # Every output/result gets an independent per-occurrence copy.
-                # Publish only after the whole packet validates and allocates.
-                for (_, reference), value in zip(copyback, packet[1:]):
-                    reference.set(value)
-            if reuse is not None:
-                reusable_runtime.reusable_values.authorize(self)
-                cache, reservation = reuse
-                cache.publish(reservation, result, reusable_runtime.reusable_values.measure(result))
-            return result
 
-    @contextmanager
-    def _routine_activation(self, owner, function, bindings, crossing, input_call):
-        """Shared live activation/cleanup boundary, never a stored grant."""
-        previous = owner.locals
-        # Fresh server module initialization precedes formal parameter storage.
-        owner.locals = None if crossing else bindings
-        owner._context_stack.append(function.execution_context)
-        owner._module_context_stack.append(function.module_context)
-        from .database_transactions import admission
-        with admission(not crossing and getattr(self, '_transaction_activation_allowed', True)):
-            try:
-                from .safe_mode import routine_frame
-                with input_call, routine_frame(self, owner):
-                    yield
-            finally:
-                owner._module_context_stack.pop()
-                owner._context_stack.pop()
-                owner.locals = previous
-                if crossing:
-                    self._scheduler.active_context.state.pop(owner._diagnostic_owner, None)
 
-    def _async_body(self, function: ast.Routine, bindings: dict):
-        if self._execution_backend == "compiled-strict":
-            self._admit_compiled_node(function)
-        previous = self.locals
-        self.locals = bindings
-        self._context_stack.append("client")
-        self._module_context_stack.append(True)
-        try:
-            try:
-                yield from self._planned_routine_block(function)
-            except _Return as returned:
-                return returned.value
-            return None
-        finally:
-            self._module_context_stack.pop()
-            self._context_stack.pop()
-            self.locals = previous
-
-    def visit_Await(self, node: ast.Await):
-        from .safe_mode import require_transfer
-        require_transfer('Await')
-        from .database_transactions import forbid_transfer
-        forbid_transfer(self._transaction_backend())
-        value = yield from self._visit(node.operand)
-        # Even settled promises suspend in the measured client profile.
-        # Scalar operands also resume as themselves; no synchronous unwrap.
-        return (yield AwaitRequest(value))
 
     @staticmethod
     def _copy_context_packet(values: list[object]) -> list[object]:
@@ -2648,34 +1901,21 @@ class Interpreter:
             child._eval_depth = self._eval_depth
             child._execute_depth = self._execute_depth
             child._self_module.path = path
-            child.execute(text, str(path))
-            module = child._self_module
-            self._module_cache[path] = module
+            if self.execution_backend == 'python-direct':
+                from .execution.direct.python_direct_imports import loading_child
+                with loading_child(self,child,path):
+                    child.execute(text,str(path))
+                    module=child._self_module
+                    self._module_cache[path]=module
+            else:
+                child.execute(text, str(path))
+                module = child._self_module
+                self._module_cache[path] = module
         return module
 
-    def visit_Label(self, node: ast.Label) -> None:
-        pass
 
-    def visit_Goto(self, node: ast.Goto) -> None:
-        raise _Goto(node)
 
-    def visit_Routine(self, node: ast.Routine) -> None:
-        # Declarations are registered by execute_program, never executed in place.
-        pass
 
-    def visit_Try(self, node: ast.Try) -> None:
-        try:
-            (yield from self.block(node.body))
-        except BSLRuntimeError as error:
-            # 1C discards parent diagnostic information on entering a nested handler.
-            # Keep frames for reliable unwinding, but never revive their stale errors.
-            for index in range(len(self._handled_errors)):
-                self._handled_errors[index] = None
-            self._handled_errors.append(error)
-            try:
-                (yield from self.block(node.handler))
-            finally:
-                self._handled_errors.pop()
 
     def semantic_raise(self, node: ast.Raise, *, _evaluation=None) -> None:
         evaluate = self._visit if _evaluation is None else _evaluation.evaluate
@@ -2730,57 +1970,17 @@ class Interpreter:
                             frozenset(categories), token.source, token.line, token.source_line)
         raise BSLRuntimeError(message, token.source, token.line, token.column, info=info)
 
-    def visit_Return(self, node: ast.Return) -> None:
-        raise _Return((yield from self._visit(node.value)) if node.value is not None else None)
 
-    def visit_ExpressionStatement(self, node: ast.ExpressionStatement) -> object:
-        expression = self.ungroup(node.expression)
-        if isinstance(expression, ast.Call):
-            # A procedure is allowed only when its result is discarded.
-            return (yield from self.call(expression, require_value=False))
-        return (yield from self._visit(node.expression))
 
-    def visit_Var(self, node: ast.Var) -> None:
-        if self.locals is None and any(name.casefold() in self.imports for name in node.names):
-            raise ValueError("Имя импорта конфликтует с объявлением")
-        for name in node.names:
-            (self.variables if self.locals is None else self.locals).setdefault(name.casefold(), None)
 
-    def visit_If(self, node: ast.If) -> None:
-        for condition, body in node.branches:
-            if boolean((yield from self._visit(condition))):
-                (yield from self.block(body))
-                return
-        (yield from self.block(node.otherwise))
 
-    def iteration(self, body: list[ast.Node]) -> bool:
-        try:
-            (yield from self.block(body))
-        except _Continue:
-            pass
-        except _Break:
-            return False
-        return True
 
-    def visit_For(self, node: ast.For) -> None:
-        if self._execution_backend == "hybrid":
-            from .hybrid_backend import execute_for
-            if execute_for(self, node):
-                return
-        start = require_number((yield from self._visit(node.start)))
-        end = require_number((yield from self._visit(node.end)))
-        name = node.name.casefold()
-        self.set_variable(name, start)
-        while require_number(self.visit_Name(ast.Name(node.token, name))) <= end:
-            if not (yield from self.iteration(node.body)):
-                break
-            self.set_variable(name, require_number(self.visit_Name(ast.Name(node.token, name))) + Decimal(1))
 
     def compiled_iterable(self, collection):
-        from .source_document_sections import SourceDocumentSection
+        from .db.document.source_document_sections import SourceDocumentSection
         if type(collection) is SourceDocumentSection:
             return collection.iterate(self)
-        from .source_constants_runtime import SourceConstants
+        from .db.metadata.source_constants_runtime import SourceConstants
         if type(collection) is SourceConstants:
             members = collection.members(self)
             collection = BSLArray()
@@ -2794,23 +1994,9 @@ class Interpreter:
             raise TypeError("Для Каждого ожидает массив, структуру, соответствие или поддержанное пространство системного перечисления")
         return collection
 
-    def visit_ForEach(self, node: ast.ForEach) -> None:
-        collection = (yield from self._visit(node.collection))
-        for item in self.compiled_iterable(collection):
-            self.set_variable(node.name, item)
-            if not (yield from self.iteration(node.body)):
-                break
 
-    def visit_While(self, node: ast.While) -> None:
-        while boolean((yield from self._visit(node.condition))):
-            if not (yield from self.iteration(node.body)):
-                break
 
-    def visit_Break(self, node: ast.Break) -> None:
-        raise _Break
 
-    def visit_Continue(self, node: ast.Continue) -> None:
-        raise _Continue
 
     # Independent dispatch names share implementations, not forwarding frames.
     # Legacy hooks are visit_*; compiled adapters resolve semantic_* directly.
@@ -2825,12 +2011,8 @@ class Interpreter:
     visit_Execute = semantic_execute
 
 
-# Fail closed when embedders instrument dispatch after class definition. These
-# identities are admission guards, never authority or caller state caches.
-_HYBRID_RUNTIME_HOOKS = {name: Interpreter.__dict__[name] for name in (
-    '_visit', 'visit_For', 'visit_Name', 'set_variable', 'block', 'iteration',
-    'visit_Assign', 'visit_Binary', 'visit_Unary', 'visit_Literal', 'visit_Group',
-    'locals', '_has_module_context', '_eval_depth', 'semantic_name')}
+# Definition-time direct admission guard; no visitor evaluator is retained.
+_DIRECT_VISITOR_ABI = Interpreter._visit
 
 
 def unary_value(operator, value):
@@ -2898,6 +2080,13 @@ def binary_values(operator, left, right):
 _COMPILED_BASE_ABI_NAMES = ('compiled_before', 'compiled_after', 'compiled_exception',
                             'semantic_name', 'semantic_assign', 'set_variable')
 _COMPILED_BASE_ABI = tuple(getattr(Interpreter, name) for name in _COMPILED_BASE_ABI_NAMES)
+# Definition-time identities: a lazy direct-import adapter must not bless hooks
+# installed before its first import.
+_DIRECT_IMPORT_LOADER_ABI = tuple((name,vars(Interpreter)[name]) for name in
+    ('semantic_import','_load_module','_check_import_binding','_inherit_host_bindings'))
+_DIRECT_IMPORT_RECEIVER_ABI = tuple((cls,tuple(vars(cls).items()),cls.__mro__)
+                                   for cls in (_Module,_Namespace))
+
 
 @lru_cache(maxsize=1)
 def _source_call_dispatch_types():
@@ -2907,16 +2096,16 @@ def _source_call_dispatch_types():
     avoid runtime/configuration-source circular imports during module loading.
     Failed imports do not populate functools.lru_cache.
     """
-    from .source_catalog_runtime import SourceCatalogCall
-    from .source_document_sections import SourceDocumentSectionCall
-    from .source_document_runtime import SourceDocumentCall
-    from .source_references import SourceReferenceCall
-    from .source_constants_runtime import ConstantCall, ConstantSetCall
-    from .source_constant_queries import SourceQueryCall
-    from .source_extensions import ExtensionCall
-    from .source_host_session import SourceSessionCall
-    from .source_transactions import SourceTransactionCall
-    from .source_constant_managers import ValueManagerCall, write_values
+    from .db.catalog.source_catalog_runtime import SourceCatalogCall
+    from .db.document.source_document_sections import SourceDocumentSectionCall
+    from .db.document.source_document_runtime import SourceDocumentCall
+    from .db.metadata.source_references import SourceReferenceCall
+    from .db.metadata.source_constants_runtime import ConstantCall, ConstantSetCall
+    from .db.query.source_constant_queries import SourceQueryCall
+    from .configuration.source_extensions import ExtensionCall
+    from .application.source_host_session import SourceSessionCall
+    from .db.source_transactions import SourceTransactionCall
+    from .db.metadata.source_constant_managers import ValueManagerCall, write_values
     return (SourceCatalogCall, SourceDocumentSectionCall, SourceDocumentCall,
             SourceReferenceCall, ConstantCall, ConstantSetCall, SourceQueryCall,
             ExtensionCall, SourceSessionCall, SourceTransactionCall,
@@ -2926,6 +2115,17 @@ _PLAIN_BLOCK_ABI = Interpreter.block
 
 _PLAIN_SCOPE_ABI = (Interpreter.locals, Interpreter._context_stack, Interpreter._module_context_stack)
 
-from .async_runtime import ExecutionContext as _PlainExecutionContext
+from .application.async_runtime import ExecutionContext as _PlainExecutionContext
 _PLAIN_STORAGE_ABI = tuple((cls, vars(cls).get('__dict__'), cls.__mro__)
                            for cls in (Interpreter, Scheduler, _PlainExecutionContext))
+
+# Capture canonical diagnostic identity before trusted host class overrides.
+_DIRECT_ERROR_DESCRIPTION_ABI = Interpreter._error_description
+_DIRECT_ERROR_INFO_ABI = Interpreter._error_info
+_DIRECT_TRANSACTION_ABI = (Interpreter._begin_transaction, Interpreter._commit_transaction, Interpreter._rollback_transaction, Interpreter._transaction_active)
+
+# Definition-time Message identity for the finite direct configuration command lane.
+_DIRECT_CONFIGURATION_MESSAGE_ABI = Interpreter._message
+
+# Definition-time execute lease; instance/class rebinding cannot replace it.
+_DIRECT_EXECUTION_SCOPE_ABI = Interpreter._direct_execution_scope

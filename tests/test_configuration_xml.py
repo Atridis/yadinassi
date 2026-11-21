@@ -1,7 +1,7 @@
 from pathlib import Path
 import sys,unittest
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
-from yadinassi.configuration_xml import import_configuration
+from yadinassi.configuration.configuration_xml import import_configuration
 from sqlite_catalog_fixture import configuration_files
 
 class ConfigurationXMLTests(unittest.TestCase):

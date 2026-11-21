@@ -4,8 +4,8 @@ from unittest.mock import patch
 from uuid import uuid4
 import unittest
 import test_configuration_reference_choice as base
-from yadinassi.catalog_backend import CatalogKey,CatalogValueRow,CatalogValuePage,BackendError
-from yadinassi.reference_choice_pages import load_choices,SnapshotLimit
+from yadinassi.db.catalog.catalog_backend import CatalogKey,CatalogValueRow,CatalogValuePage,BackendError
+from yadinassi.forms.reference_choice_pages import load_choices,SnapshotLimit
 
 
 class ReferencePageTests(unittest.TestCase):
@@ -50,7 +50,7 @@ class ReferencePageTests(unittest.TestCase):
 
     def test_overflow_filter_recovery_and_search_overflow(self):
         f=self.fixture
-        with patch('yadinassi.reference_choice_pages.MAX_ROWS',32):
+        with patch('yadinassi.forms.reference_choice_pages.MAX_ROWS',32):
             p=f.begin();self.assertEqual(p['error'],'snapshot_limit');self.assertIsNone(p['navigation'])
             f.execute(dict(action='filter',ticket=p['ticket'],code='P0001'))
             self.assertEqual(f.choice.projection()['navigation']['total'],1)
@@ -67,7 +67,7 @@ class ReferencePageTests(unittest.TestCase):
 
     def test_wire_preflight_failure_does_not_revoke_previous_page(self):
         f=self.fixture;p=f.begin();action=dict(action='page',ticket=p['ticket'],cursor=p['navigation']['next'])
-        with patch('yadinassi.configuration_reference_choice.encode_line',side_effect=ValueError('budget')):
+        with patch('yadinassi.configuration.configuration_reference_choice.encode_line',side_effect=ValueError('budget')):
             with self.assertRaises(ValueError):f.execute(action)
         self.assertEqual(f.choice.projection(),p)
         f.execute(action);self.assertEqual(f.choice.projection()['navigation']['page'],2)
@@ -76,6 +76,6 @@ class ReferencePageTests(unittest.TestCase):
         f=self.fixture;p=f.begin()
         for query in (False,'x'*129,'\x00'):
             with self.assertRaises(ValueError):f.execute(dict(action='search',ticket=p['ticket'],query=query))
-        with patch('yadinassi.reference_choice_pages.MAX_BYTES',1):
+        with patch('yadinassi.forms.reference_choice_pages.MAX_BYTES',1):
             with self.assertRaises(SnapshotLimit):load_choices(f.server.session._reference_managers[1])
         self.assertEqual(f.views_closed,2)

@@ -11,15 +11,15 @@ import tempfile
 import unittest
 from uuid import UUID, uuid4
 
-from yadinassi.catalog_backend import (BackendError, CatalogDraft, CatalogKey,
+from yadinassi.db.catalog.catalog_backend import (BackendError, CatalogDraft, CatalogKey,
     TabularRow, TabularSectionRows, CatalogScanRequest, CatalogOrder)
-from yadinassi.document_backend import DocumentDraft, DocumentKey
-from yadinassi.transaction_backend import TransactionRequest
-from yadinassi.accumulation_movements import (AccumulationMovementRow,
+from yadinassi.db.document.document_backend import DocumentDraft, DocumentKey
+from yadinassi.db.transaction_backend import TransactionRequest
+from yadinassi.db.registers.accumulation_movements import (AccumulationMovementRow,
     AccumulationDirection, AccumulationReplacement)
-from yadinassi.configuration_inventory_enums import import_inventory_enum_configuration, PROFILE
-from yadinassi.enum_storage_values import EnumKey
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.configuration.configuration_inventory_enums import import_inventory_enum_configuration, PROFILE
+from yadinassi.db.metadata.enum_storage_values import EnumKey
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from test_configuration_inventory_enums import source
 
 ROOT=Path(__file__).resolve().parents[1]

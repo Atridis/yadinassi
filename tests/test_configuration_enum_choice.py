@@ -3,10 +3,10 @@ from types import SimpleNamespace
 import unittest
 from test_form_enumerations import scopes
 from test_configuration_reference_choice import SOURCE
-from yadinassi.form_model import BSLFormAttribute
-from yadinassi.form_tables import FormTableColumn,FormTableSchema
-from yadinassi.form_replication import ReplicatedFormServer,ReplicatedFormSession
-from yadinassi.configuration_reference_choice import ConfigurationReferenceChoice
+from yadinassi.forms.form_model import BSLFormAttribute
+from yadinassi.forms.form_tables import FormTableColumn,FormTableSchema
+from yadinassi.forms.form_replication import ReplicatedFormServer,ReplicatedFormSession
+from yadinassi.configuration.configuration_reference_choice import ConfigurationReferenceChoice
 
 class EnumPickerTests(unittest.TestCase):
     def setUp(self):

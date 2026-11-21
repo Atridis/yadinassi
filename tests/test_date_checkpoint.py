@@ -81,7 +81,7 @@ class DateCheckpointTests(unittest.TestCase):
 
     def test_helper_isolates_evaluation_and_serialization_failures(self):
         output = []
-        interpreter = Interpreter(output=output.append)
+        interpreter = Interpreter(output=output.append, allow_extensions=True)
         interpreter.register_function('HostOnly', lambda: object())
         interpreter.execute(helper() + '''
 НаблюдатьДату("missing", "NoSuchFunction()");

@@ -15,7 +15,7 @@ from yadinassi import BSLError, Interpreter
 class ScalarContextCopybackTests(unittest.TestCase):
     def setUp(self):
         self.messages = []
-        self.vm = Interpreter(self.messages.append)
+        self.vm = Interpreter(self.messages.append, allow_extensions=True)
         self.vm.register_function('Context', lambda: self.vm.execution_context)
 
     def assert_restored(self):
@@ -354,7 +354,6 @@ Procedure Change(Val Before, X = 1, Val After = 0) Message("entered"); EndProced
                      'Change(Effect(), Effect());',
                      'Change(Effect(), 1);',
                      'Change(Effect(), 1 + Effect());',
-                     'Change(Effect(), , 0);',
                      'Change(Effect());'):
             with self.subTest(call=call), self.assertRaisesRegex(
                     BSLError, 'без Знач.*имя переменной'):

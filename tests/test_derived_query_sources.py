@@ -3,11 +3,12 @@ from decimal import Decimal
 import unittest
 from unittest.mock import patch
 
-from yadinassi import Interpreter, query_parser as syntax
-from yadinassi.queries import BSLQuery
-from yadinassi.query_packages import BSLTempTablesManager
-from yadinassi.values import NULL
-from yadinassi.sqlite_catalog import _View
+from yadinassi import Interpreter
+from yadinassi.db.query import query_parser as syntax
+from yadinassi.db.query.queries import BSLQuery
+from yadinassi.db.query.query_packages import BSLTempTablesManager
+from yadinassi.types.values import NULL
+from yadinassi.db.sqlite.sqlite_catalog import _View
 import test_catalog_queries as catalog_fixtures
 import test_document_queries as document_fixtures
 import test_periodic_information_registers as register_fixtures
@@ -242,14 +243,14 @@ class DerivedQueryTests(unittest.TestCase):
         self.assertEqual(self.rows('SELECT COUNT(*) AS C FROM Catalog.Products'),((Decimal(3),),))
 
     def test_derived_resource_budget_includes_unprojected_columns(self):
-        import yadinassi.queries as queries
+        import yadinassi.db.query.queries as queries
         text='SELECT D.N FROM (SELECT Amount AS N,Text AS Large FROM Catalog.Products) AS D'
         with patch.object(queries,'_MAX_CELLS',7):
             with self.assertRaisesRegex(ValueError,'resource limit'): self.rows(text)
         self.assertEqual(len(self.rows(text)),3)
 
     def test_global_join_work_shared_across_derived_plans(self):
-        import yadinassi.relational_queries as relational
+        import yadinassi.db.query.relational_queries as relational
         text='SELECT L.N FROM (SELECT P.Amount AS N FROM Catalog.Products AS P '
         text+='JOIN Catalog.Products AS Q ON P.Ref=Q.Ref) AS L JOIN '
         text+='(SELECT P.Amount AS N FROM Catalog.Products AS P JOIN Catalog.Products AS Q ON P.Ref=Q.Ref) AS R ON L.N=R.N'
@@ -258,7 +259,7 @@ class DerivedQueryTests(unittest.TestCase):
         self.assertEqual(len(self.rows(text)),3)
 
     def test_outer_null_rows_obey_intermediate_limit(self):
-        import yadinassi.relational_queries as relational
+        import yadinassi.db.query.relational_queries as relational
         text='SELECT P.Code FROM Catalog.Products AS P FULL JOIN Catalog.Products AS Q ON P.Amount>100'
         with patch.object(relational,'MAX_INTERMEDIATE_ROWS',4):
             with self.assertRaisesRegex(ValueError,'intermediate row'): self.rows(text)
@@ -304,7 +305,7 @@ class DerivedRegisterTests(unittest.TestCase):
     query=register_fixtures.PeriodicRegisterTests.query
 
     def test_derived_periodic_slice_and_aggregate(self):
-        from yadinassi.dates import literal_date
+        from yadinassi.temporal.dates import literal_date
         self.seed()
         q=self.query('SELECT SUM(D.Price) AS Total FROM '
             '(SELECT Item,Price FROM InformationRegister.Prices.SliceLast(&At)) AS D',literal_date('20240102120000'))

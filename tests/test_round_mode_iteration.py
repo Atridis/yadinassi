@@ -3,9 +3,9 @@
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.numeric.round_modes import BSLRoundMode, BSLRoundModes, ROUND_MODES
-from yadinassi.values import BSLObject
+from yadinassi.types.values import BSLObject
 
 
 class RoundModeIterationTests(unittest.TestCase):
@@ -22,6 +22,8 @@ class RoundModeIterationTests(unittest.TestCase):
         self.assertEqual(len(list(ROUND_MODES)), 2)
 
     def test_bilingual_names_alias_and_expression_evaluated_once(self):
+        self.vm.close()
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
         calls = []
         def modes():
             calls.append(True)
@@ -33,7 +35,8 @@ class RoundModeIterationTests(unittest.TestCase):
                     alias = RoundMode; found = New Array;
                     Для Каждого item Из {expression} Цикл found.Add(item); КонецЦикла;
                 ''')
-                found = self.vm.variables['found'].items
+                found = self.vm.variables['found']
+                self.assertIs(type(found), list)
                 self.assertEqual(len(found), 2)
                 self.assertEqual(set(found), set(BSLRoundMode))
         self.assertEqual(calls, [True])
@@ -120,6 +123,8 @@ class RoundModeIterationTests(unittest.TestCase):
         self.assertEqual(set(ROUND_MODES), set(BSLRoundMode))
 
     def test_closed_runtime_boundary_rejects_host_iterables_and_individual_modes(self):
+        self.vm.close()
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
         class HostIterable(BSLObject):
             def __iter__(self):
                 raise AssertionError('Host iterator must not be invoked')

@@ -4,12 +4,12 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from configuration_runtime_fixture import module_files, SERVER
-from yadinassi.configuration_modules import MODULE_RUNTIME
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_migration_plan import prepare, apply
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_modules import MODULE_RUNTIME
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_migration_plan import prepare, apply
+from yadinassi.types.errors import BSLError
 
 
 class TransactionOriginTests(unittest.TestCase):

@@ -3,9 +3,9 @@ import unittest
 from pathlib import Path
 from uuid import uuid4
 from test_source_catalog_records import package
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_catalog_store import SourceCatalogStore
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.catalog.source_catalog_store import SourceCatalogStore
+from yadinassi.types.errors import BSLError
 
 class SourceCatalogQueryTests(unittest.TestCase):
     def setUp(self):
@@ -14,7 +14,7 @@ class SourceCatalogQueryTests(unittest.TestCase):
         source=package(body)
         if constants:
             from test_source_constant_store import configuration
-            from yadinassi.configuration_source import import_source
+            from yadinassi.configuration.configuration_source import import_source
             files={e.path:e.content for e in configuration().files}
             files.update({e.path:e.content for e in source.files if e.path!='Configuration.xml'})
             source=import_source(files)
@@ -74,21 +74,21 @@ class SourceCatalogQueryTests(unittest.TestCase):
     def test_combined_transaction_snapshot(self):
         _,out=self.run_body('BeginTransaction(); Constants.Flag.Set(False); O=Catalogs.Items.CreateItem(); O.Code="3"; O.Write(); Q=New Query("SELECT COUNT(*) AS X FROM Catalog.Items AS A INNER JOIN Constants AS C ON C.Flag=FALSE"); S=Q.Execute().Select(); S.Next(); Message(S.X); RollbackTransaction(); S=Q.Execute().Select(); S.Next(); Message(S.X);',constants=True);self.assertEqual(out,['3','0'])
     def test_binding_rejects_foreign_application(self):
-        from yadinassi.source_query_references import make_binding
+        from yadinassi.db.query.source_query_references import make_binding
         app,_=self.run_body('');other=SourceApplication(package());self.addCleanup(other.close)
         binding=make_binding(app,app.interpreter._catalogs,'Items')
         with self.assertRaises(TypeError):binding.value(other.references.ref('Catalog','Items',self.ids[0]))
     def test_binding_rejects_forged_callback(self):
         from dataclasses import replace
-        from yadinassi.source_query_references import make_binding
+        from yadinassi.db.query.source_query_references import make_binding
         app,_=self.run_body('');binding=make_binding(app,app.interpreter._catalogs,'Items');ref=app.references.ref('Catalog','Items',self.ids[0])
         with self.assertRaises(TypeError):binding.value(replace(ref,read_member=lambda r,n:'fake'))
     def test_binding_closed_owner(self):
-        from yadinassi.source_query_references import make_binding
+        from yadinassi.db.query.source_query_references import make_binding
         app,_=self.run_body('');binding=make_binding(app,app.interpreter._catalogs,'Items');ref=app.references.ref('Catalog','Items',self.ids[0]);app.close()
         with self.assertRaises(ValueError):binding.value(ref)
     def test_query_rejects_foreign_caller(self):
-        from yadinassi.source_constant_queries import SourceConstantQuery
+        from yadinassi.db.query.source_constant_queries import SourceConstantQuery
         app,_=self.run_body('');other=SourceApplication(package());self.addCleanup(other.close);other.start();other.interpreter._context_stack.append('server')
         query=SourceConstantQuery(app.interpreter,app,'SELECT Code FROM Catalog.Items')
         with self.assertRaises(ValueError):query.read(other.interpreter)

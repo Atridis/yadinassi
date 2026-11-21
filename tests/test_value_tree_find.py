@@ -4,8 +4,8 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLError
-from yadinassi import value_trees as trees
-from yadinassi.values import NULL
+from yadinassi.collections import value_trees as trees
+from yadinassi.types.values import NULL
 from test_value_tree_findrows import setup
 
 

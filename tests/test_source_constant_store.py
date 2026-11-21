@@ -8,10 +8,10 @@ import unittest
 
 from test_configuration_source_runtime import source
 from test_source_session_parameters import declaration
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_constants import source_constant_definitions
-from yadinassi.source_constant_store import SourceConstantStore
-from yadinassi.dates import BSLDate, TICKS_PER_SECOND
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_constants import source_constant_definitions
+from yadinassi.db.metadata.source_constant_store import SourceConstantStore
+from yadinassi.temporal.dates import BSLDate, TICKS_PER_SECOND
 
 
 def configuration(extra=None):

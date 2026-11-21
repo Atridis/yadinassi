@@ -9,9 +9,9 @@ import unittest
 from unittest import mock
 
 from ui_catalog_fixture import repository
-from yadinassi.catalog_backend import BackendError, Capabilities
+from yadinassi.db.catalog.catalog_backend import BackendError, Capabilities
 from uuid import UUID
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from scripts.ui_catalog_bridge import main as bridge_main
 from scripts.ui_catalog_client import HeadlessCatalogClient
 from yadinassi.ui.browser import CatalogBrowserSession

@@ -6,8 +6,8 @@ import unittest
 from unittest import mock
 from yadinassi import cli
 from yadinassi.cli import main
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_import import load_configuration_directory
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_import import load_configuration_directory
 from sqlite_catalog_fixture import configuration_files
 
 # Test-only failure localization. Never print exception text, paths or arguments.
@@ -57,7 +57,7 @@ def _diagnostic_call(records, phase, operation, *args, **kwargs):
 
 @contextmanager
 def _creation_diagnostics(records):
-    import yadinassi.configuration_import as reader
+    import yadinassi.configuration.configuration_import as reader
     original_import = reader.load_configuration_directory
     original_create = cli.SQLiteDBContext.create
     original_close = cli.SQLiteDBContext.close
@@ -115,7 +115,7 @@ class ConfigurationImportCLITests(unittest.TestCase):
         self.assertFalse(self.database.exists())
 
     def test_directory_entry_bound_precedes_file_inspection(self):
-        import yadinassi.configuration_import as reader
+        import yadinassi.configuration.configuration_import as reader
         @contextmanager
         def entries(path):
             # No file methods: overflow must be rejected before any stat/read.
@@ -131,7 +131,7 @@ class ConfigurationImportCLITests(unittest.TestCase):
         from types import SimpleNamespace
         from pathlib import PurePosixPath
         import posixpath
-        import yadinassi.configuration_import as reader
+        import yadinassi.configuration.configuration_import as reader
         directory = SimpleNamespace(st_mode=stat.S_IFDIR | 0o700, st_file_attributes=0)
         canonical = str(self.source.resolve())
         # Canonical spelling is not an alias test: Windows may expand 8.3 names.
@@ -149,7 +149,7 @@ class ConfigurationImportCLITests(unittest.TestCase):
 
     def test_fresh_stat_not_windows_direntry_identity_cache(self):
         import os
-        import yadinassi.configuration_import as reader
+        import yadinassi.configuration.configuration_import as reader
         real_scandir = os.scandir
         class Entry:
             def __init__(self, entry):self.path=entry.path;self.name=entry.name
@@ -207,7 +207,7 @@ class ConfigurationImportCLITests(unittest.TestCase):
         self.assertEqual(len(records),3)
 
     def test_diagnostic_scope_restores_methods_and_cli_failure(self):
-        import yadinassi.configuration_import as reader
+        import yadinassi.configuration.configuration_import as reader
         original_import=reader.load_configuration_directory
         original_create=cli.SQLiteDBContext.create.__func__
         original_close=cli.SQLiteDBContext.close

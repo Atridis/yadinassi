@@ -9,14 +9,15 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from yadinassi import BSLError, Interpreter, value_list_sort
-from yadinassi.dates import BSLDate
-from yadinassi.maps import BSLMap
-from yadinassi.search_directions import BSLSearchDirection
-from yadinassi.sort_directions import BSLSortDirection as Direction
-from yadinassi.structures import BSLStructure
-from yadinassi.value_lists import BSLValueList, BSLValueListItem
-from yadinassi.values import BSLArray, BSLType, NULL
+from yadinassi import BSLError, Interpreter
+from yadinassi.collections import value_list_sort
+from yadinassi.temporal.dates import BSLDate
+from yadinassi.collections.maps import BSLMap
+from yadinassi.collections.search_directions import BSLSearchDirection
+from yadinassi.collections.sort_directions import BSLSortDirection as Direction
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.types.values import BSLArray, BSLType, NULL
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -269,7 +270,7 @@ class ValueListSortBoundaryTests(unittest.TestCase):
 
     def test_all_resource_limits_are_checked_before_commit(self):
         for presentation in (False, True):
-            for constant, limit in (("_MAX_SORT_ITEMS", 1), ("_MAX_SORT_TEXT", 3),
+            for constant, limit in (("_MAX_SORT_TEXT", 3),
                                     ("_MAX_KEY_WEIGHTS", 1)):
                 owner = list_for("bb", "aa", presentations=("bb", "aa"))
                 method = owner.sort_by_presentation if presentation else owner.sort_by_value

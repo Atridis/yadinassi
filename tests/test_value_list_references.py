@@ -20,10 +20,11 @@ from pathlib import Path
 import unittest
 
 from tests.native_observations import extract_payload, read_observation
-from yadinassi import BSLError, Interpreter, serialization
-from yadinassi.structures import BSLStructure
-from yadinassi.value_lists import BSLValueList, BSLValueListItem
-from yadinassi.values import BSLArray
+from yadinassi import BSLError, Interpreter
+from yadinassi.formats.storage import serialization
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.types.values import BSLArray
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_SHA256 = "f8a5be47e937e39500c51a2b9c8fdaaf4becd68aa908cf7e99abe068a6c8cd4a"
@@ -291,15 +292,21 @@ class NativeValueListReferenceTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(source_bytes.replace(b'\r\n', b'\n')).hexdigest(),
                          SOURCE_SHA256)
         source = source_bytes.decode('utf-8-sig')
-        vm = Interpreter(native_target='linux-8.3.27.1508')
-        vm.execute(source.split('#Область МассивыИСтруктуры', 1)[0])
         self.assertEqual(NATIVE_RECORDS.count('table.list.reference.'), len(CASES))
-        for name in CASES:
-            with self.subTest(case=name):
-                expected = plain(read_observation(extract_payload(
-                    NATIVE_RECORDS, 'table.list.reference.' + name), compact=True))
-                actual = plain(vm.execute('ПробаСсылкиСписка("' + name + '")'))
-                self.assertEqual(actual, expected)
+        for backend in ('python-direct', 'compiled-strict'):
+            vm = Interpreter(native_target='linux-8.3.27.1508', execution_backend=backend)
+            self.addCleanup(vm.close)
+            vm.execute(source.split('#Область МассивыИСтруктуры', 1)[0])
+            for name in CASES:
+                with self.subTest(backend=backend, case=name):
+                    expected = serialization.value_to_string_internal(read_observation(
+                        extract_payload(NATIVE_RECORDS, 'table.list.reference.' + name),
+                        compact=True))
+                    # Compare the full BSL-observable value, not either backend's
+                    # private Python storage layout. This retains field spelling,
+                    # order, types and every nested value from the native record.
+                    actual = vm.execute('ValueToStringInternal(ПробаСсылкиСписка("' + name + '"))')
+                    self.assertEqual(actual, expected)
 
 
 class ValueListReferenceRuntimeTests(unittest.TestCase):
@@ -453,7 +460,7 @@ class ValueListReferenceBoundaryTests(unittest.TestCase):
         for operation in ('Message(x);', 'x = 99;'):
             with self.subTest(operation=operation):
                 output = []
-                vm = Interpreter(output.append)
+                vm = Interpreter(output.append, allow_extensions=True)
                 vm.execute('owner = New ValueList; item = owner.Add(10);')
                 item = vm.variables['item']
 

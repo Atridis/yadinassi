@@ -8,10 +8,10 @@ import unittest
 from unittest.mock import patch
 from test_source_storage_values import package, UUID
 from test_source_session_parameters import declaration
-from yadinassi.configuration_source import import_source, source_digest, save_source_archive
-from yadinassi.source_constant_store import SourceConstantStore
-from yadinassi.unique_identifiers import BSLUUID
-from yadinassi.value_storage import BSLValueStorage
+from yadinassi.configuration.configuration_source import import_source, source_digest, save_source_archive
+from yadinassi.db.metadata.source_constant_store import SourceConstantStore
+from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.formats.storage.value_storage import BSLValueStorage
 from yadinassi.cli import main
 
 
@@ -109,7 +109,7 @@ class SourceScratchUpdateTests(unittest.TestCase):
 
     def test_injected_failure_after_replacement_rolls_back_source_and_values(self):
         self.create();new=add_constant(self.new_source())
-        import yadinassi.source_constant_store as module
+        import yadinassi.db.metadata.source_constant_store as module
         original=module._verify_source
         def verify(connection,source):
             if source_digest(source)==source_digest(new):raise ValueError('injected final verification failure')
@@ -147,7 +147,7 @@ class SourceScratchUpdateTests(unittest.TestCase):
 
     def test_cli_update_no_startup_or_code_execution(self):
         self.create();archive=self.path.with_suffix('.zip');save_source_archive(archive,self.new_source());out=io.StringIO()
-        with patch('yadinassi.configuration_source_runtime.SourceApplication.start',side_effect=AssertionError('never execute')),redirect_stdout(out):
+        with patch('yadinassi.configuration.configuration_source_runtime.SourceApplication.start',side_effect=AssertionError('never execute')),redirect_stdout(out):
             self.assertEqual(main(['--configuration-source',str(archive),'--update-source-scratch-db',str(self.path)]),0)
         self.assertIn('Код не запускался',out.getvalue());self.assertEqual(self.reopened(self.new_source()).get('Text'),'saved')
 

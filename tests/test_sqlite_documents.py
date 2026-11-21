@@ -12,13 +12,13 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.catalog_backend import BackendError, CatalogKey, CatalogSelection, CatalogScanRequest, TabularRow, TabularSectionRows
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.document_backend import DocumentDraft, DocumentKey, DocumentSelection
-from yadinassi.document_types import BSLDocumentReference
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_documents import DocumentView
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogKey, CatalogSelection, CatalogScanRequest, TabularRow, TabularSectionRows
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.document.document_backend import DocumentDraft, DocumentKey, DocumentSelection
+from yadinassi.db.document.document_types import BSLDocumentReference
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_documents import DocumentView
 from test_document_configuration_xml import document_files
 
 
@@ -181,7 +181,7 @@ D.Write();O=D.Ref.GetObject();Message(O.Lines.Count());O.Lines.Clear();O.Write()
         try:
             card = tx.read_document(obj._key)
             draft = DocumentDraft(replace(card.key,record_id=uuid4()),'',card.date,False,card.values,(),True)
-            with patch('yadinassi.sqlite_documents.DocumentWriteOutcome',side_effect=MemoryError),self.assertRaises(MemoryError): tx.create(draft)
+            with patch('yadinassi.db.sqlite.sqlite_documents.DocumentWriteOutcome',side_effect=MemoryError),self.assertRaises(MemoryError): tx.create(draft)
             self.assertIsNone(tx.read_document(draft.key))
             tx.create(replace(draft,key=replace(draft.key,record_id=uuid4())))
             outcome = tx.commit()

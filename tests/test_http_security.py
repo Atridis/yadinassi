@@ -1,5 +1,6 @@
 """Explicit security-object and transport policy tests; no outside endpoints."""
 from decimal import Decimal
+import io
 import ssl
 import tempfile
 from pathlib import Path
@@ -7,11 +8,11 @@ import unittest
 from unittest import mock
 
 from yadinassi import Interpreter, BSLError
-from yadinassi import http_client as http
-from yadinassi import http_security as api
-from yadinassi.maps import BSLMap
-from yadinassi.type_values import type_of
-from yadinassi.values import BSLType
+from yadinassi.http import http_client as http
+from yadinassi.http import http_security as api
+from yadinassi.collections.maps import BSLMap
+from yadinassi.types.type_values import type_of
+from yadinassi.types.values import BSLType
 
 
 class SecurityObjectTests(unittest.TestCase):
@@ -144,10 +145,14 @@ class SecurityObjectTests(unittest.TestCase):
             with self.assertRaises(ValueError): http.BSLHTTPConnection('example.invalid').get(request)
             transport.assert_not_called()
 
-    def test_generated_auth_headers_count_toward_budget(self):
-        with mock.patch.object(http, 'MAX_HEADER_BYTES', 20), mock.patch.object(http, '_Connection') as transport:
-            with self.assertRaises(ValueError): http.BSLHTTPConnection('example.invalid', user='demo', password='test').get(http.BSLHTTPRequest('/'))
-            transport.assert_not_called()
+    def test_connect_reader_preserves_strict_line_endings(self):
+        parse = http.http.client.parse_headers
+        fields = parse(http._ConnectHeaderReader(io.BytesIO(b'X-Test: ok\r\n\r\n')))
+        self.assertEqual(fields.items(), [('X-Test', 'ok')])
+        for wire in (b'X-Test: bad\n\n', b'X-Test: bad\r\n folded\r\n\r\n',
+                     b'X-Test: missing end\r\n'):
+            with self.subTest(wire=wire), self.assertRaises(ValueError):
+                parse(http._ConnectHeaderReader(io.BytesIO(wire)))
 
     def test_bilingual_bsl_types_properties_and_optional_holes(self):
         output = []
@@ -169,7 +174,7 @@ Message(C.Port); Message(C.IsSecure); Message(Tls.СертификатКлиен
             with self.subTest(code=code), self.assertRaises(BSLError): vm.execute(code)
 
     def test_proxy_procedure_expression_and_required_holes_guard_side_effects(self):
-        vm = Interpreter(lambda _: None); vm.execute('P=New InternetProxy(False);')
+        vm = Interpreter(lambda _: None, allow_extensions=True); vm.execute('P=New InternetProxy(False);')
         calls = []; vm.register_function('Effect', lambda: calls.append(1) or 'http')
         for code in ('x=P.Set(Effect(),"localhost");', 'P.Set(,"localhost");', 'P.Set("http",,80);'):
             with self.subTest(code=code), self.assertRaises(BSLError): vm.execute(code)

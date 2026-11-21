@@ -2,23 +2,29 @@
 import unittest
 from unittest.mock import patch
 import test_bsl_transactions as fixtures
-from yadinassi import BSLRuntimeError, Interpreter
-from yadinassi.catalog_backend import CatalogScanRequest
-from yadinassi.document_backend import DocumentScanRequest
-from yadinassi.database_transactions import execution, begin, commit, rollback
+from yadinassi import Interpreter
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+from yadinassi.db.catalog.catalog_backend import CatalogScanRequest
+from yadinassi.db.document.document_backend import DocumentScanRequest
+from yadinassi.db.database_transactions import execution, begin, commit, rollback
 
 
 class TransactionReadPlanTests(unittest.TestCase):
-    setUp = fixtures.BSLTransactionsTests.setUp
+    def setUp(self):
+        fixtures.BSLTransactionsTests.setUp(self, allow_extensions=True)
     catalog = fixtures.BSLTransactionsTests.catalog
 
     def test_catalog_write_lease_does_not_cache_integrity(self):
         obj = self.catalog()
         with execution(self.backend):
             begin(self.backend);obj.write();view=self.backend.begin_read()
-            with patch.object(view,'_preflight_v2',wraps=view._preflight_v2) as check:
-                for _ in range(2):view.scan_catalog_values(obj._key.catalog_id,CatalogScanRequest(),('code',))
-                self.assertEqual(check.call_count,2)
+            with patch.object(view,'_scalar',wraps=view._scalar) as check:
+                first=view.scan_catalog_values(obj._key.catalog_id,CatalogScanRequest(),('code',))
+                calls=check.call_count
+                second=view.scan_catalog_values(obj._key.catalog_id,CatalogScanRequest(),('code',))
+                self.assertEqual(first.rows,second.rows)
+                self.assertGreater(calls,0)
+                self.assertEqual(check.call_count,2*calls)
             self.assertEqual(view._validated_sources,{})
             view.close();commit(self.backend)
 
@@ -43,11 +49,18 @@ class TransactionReadPlanTests(unittest.TestCase):
         server=self.vm._new_server_activation()
         for name in ('begintransaction','committransaction','rollbacktransaction'):
             self.assertIs(server.functions[name].function.__self__,server)
-        with self.assertRaises(BSLRuntimeError):server.execute('BeginTransaction();')
+        with self.assertRaisesRegex(ValueError, 'Transactions require synchronous execution'):
+            server.functions['begintransaction'].function()
+        self.assertIsNone(getattr(self.backend,'_bsl_transaction',None))
+
+    def test_public_execute_does_not_enter_internal_server_activation(self):
+        server=self.vm._new_server_activation()
+        with self.assertRaisesRegex(PythonDirectUnsupported, 'server/NoContext'):
+            server.execute('BeginTransaction();')
         self.assertIsNone(getattr(self.backend,'_bsl_transaction',None))
 
     def test_host_override_is_not_rebound_by_name(self):
         def host(): return None
         self.vm.register_function('BeginTransaction',host)
-        child=Interpreter(database_context=self.context);child._inherit_host_bindings(self.vm)
+        child=Interpreter(database_context=self.context, allow_extensions=True);child._inherit_host_bindings(self.vm)
         self.assertIs(child.functions['begintransaction'].function,host)

@@ -4,8 +4,8 @@ from unittest import mock
 from scripts import native_1c_tree_copy_contract as wire
 from scripts import native_1c_tree_access_probe as probe
 from test_native_tree_copy_measurement import SOURCE, emit, emit_capture, maximum_output, maximum_snapshot, synthetic_method
-from yadinassi.value_trees import BSLValueTree, BSLValueTreeRow, BSLValueTreeRowCollection
-from yadinassi.values import BSLObject
+from yadinassi.collections.value_trees import BSLValueTree, BSLValueTreeRow, BSLValueTreeRowCollection
+from yadinassi.types.values import BSLObject
 
 
 class FreshRows(BSLValueTreeRowCollection):

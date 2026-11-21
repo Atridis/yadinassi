@@ -1,0 +1,809 @@
+# Native CI: known direct host gaps
+
+Investigation of PR #337 run `43968817166` (candidate `2dc26d2d`,
+GitHub merge checkout `0fb06a48`). These are **host implementation gaps**, not
+permission to skip comparisons or substitute the legacy backend. Local host
+reproductions on the later direct tree reproduce the first failures below.
+No native container is needed for these reproductions.
+
+| Job | First local host failure | What this proves |
+| --- | --- | --- |
+| Six scenarios, `133655283568` | `PythonDirectUnsupported` in `_admit_vm`: the client witness uses `managed-thick-file`, not the admitted standalone profile | Host preflight fails before native execution. CI reports `unexpected_host_failure`; this is not a native measurement. |
+| Catalog object, `133655283566` | `PythonDirectUnsupported: constructor UUID` | The host replay cannot compile the original observation source; no host comparison output is produced. |
+| Managed form, `133655283682` | `UnsupportedNakedSyntax: constructor TypeDescription` in `prepare_form` | The host form cannot compile its original declaration/event source; no host comparison output is produced. |
+
+The catalog and managed-form reports separately accepted their real native
+measurements, but rejected host comparison (`interpreter_size: 0`). Accepted
+native evidence does **not** mean interpreter parity or an accepted comparison.
+Their job logs end with a measurement/comparison failure. The six-scenario
+report instead has native completion and acceptance fields false.
+
+## Reproduce the host routes
+
+Run from the repository root with its Python dependencies installed. Each
+command intentionally raises the current failure. No GHCR credentials or
+native execution are involved.
+
+Catalog object, the exact replay used by its host comparator:
+
+```sh
+PYTHONPATH=scripts:. python -B -c 'from catalog_object_behavior.replay import replay; replay()'
+```
+
+Managed form, the same source and lifecycle binding used by its comparator:
+
+```sh
+PYTHONPATH=scripts:. python -B - <<'PY'
+from form_runtime_packet import source
+from yadinassi.forms.form_runtime import FormSession
+session = FormSession(source(), bindings={
+    'OnCreateAtServer': 'FormCreate', 'OnOpen': 'FormOpen',
+    'BeforeClose': 'FormBeforeClose'})
+session.open()
+PY
+```
+
+Six-scenario preflight, including its existing exclusively owned synthetic
+SQLite fixture. This needs Linux and a free fixture location under `/tmp`.
+The diagnostic runner only reveals the stderr which the finite public report
+otherwise hides. It neither substitutes the backend nor changes the source.
+
+```sh
+PYTHONPATH=scripts:. python -B - <<'PY'
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import subprocess
+import native_1c_full_host as full
+import native_1c_smoke as smoke
+
+def diagnostic_runner(arguments, root):
+    result = subprocess.run(arguments, cwd=root, capture_output=True, timeout=60)
+    print(result.stderr.decode('utf-8', errors='replace'))
+    return result.returncode, result.stdout, result.stderr
+
+with TemporaryDirectory() as temporary:
+    staged = Path(temporary) / 'staged'
+    hashes = smoke.stage_inputs(staged, full_suite=True, client_probe=True)
+    full.verify_client_interpreter(
+        Path.cwd(), staged / 'bootstrap/client_probe.bsl',
+        hashes[full.CLIENT_SOURCE], runner=diagnostic_runner)
+PY
+```
+
+The child rejects its first `execute`; `verify_client_interpreter` then raises
+`FullError('interpreter_failed')`. A small standalone-profile smoke would not
+exercise this contract.
+
+## Scope of follow-up work
+
+* UUID is a bounded scalar value already implemented by `BSLUUID`. A narrow
+  direct constructor binding is plausible; it is not implemented by this
+  report. Completing it would not prove the entire catalog replay: later
+  reference/metadata operations still need their own actual run.
+* The managed-form source also constructs `FormAttribute`, changes declarations
+  through `ChangeAttributes`, and exercises public form operations. Allowing
+  `TypeDescription` alone is not evidence that the complete form passes.
+* The six-scenario witness requires the managed compilation profile and its
+  actual context/routine contracts. Removing standalone admission or silently
+  executing an old VM is not a correction.
+
+There are no changed CI allowances, expected outputs, source hashes, backend
+selectors, or runtime permissions in this documentation-only change.
+
+## Narrow UUID follow-up
+
+The direct standalone/database entry now accepts the two existing UUID
+constructor aliases, with exact canonical `HostFunction(BSLUUID)` admission.
+Prepared reuse checks the current registry; a new constructor resolution checks
+it again before argument effects. An already bound constructor remains the
+callee if an argument callback replaces the registry entry. Construction still
+uses the existing scalar value implementation, not a new object/member adapter.
+
+With this change the unchanged catalog replay reaches observations 1–17,
+including assigned UUID references, writes, reads, and duplicate-write rejection.
+Its next failure is the unsupported `BSLCatalogSelection.Next()` receiver at the
+public database boundary. The complete catalog comparison remains unsupported;
+no native remeasurement or CI pass is claimed. Six-scenario and managed-form
+failures above are unchanged. Focused tests cover aliases, invalid arguments,
+registry substitution before execution and at a service boundary, argument
+ordering, prepared-module revalidation, and the actual catalog replay prefix.
+
+## Owned catalog selection follow-up
+
+On `7486c984`, the unchanged replay command above reproduces
+`BoundaryViolation: unregistered or foreign database receiver` at `CS.Next()`
+after observations 1–17. The direct database boundary now admits the exact
+`BSLCatalogSelection` type only through its manager's current catalog root,
+using the same owner check as catalog objects. Public Next/Следующий,
+GetObject/ПолучитьОбъект and field access use the existing selection protocol.
+There is no VM dispatch, generic getattr, detached-selection exemption or new
+iterator adapter. Selection fields remain read-only; explicit database
+transactions and existing writer/source/schema checks are unchanged.
+
+The original replay now emits observations 1–23, including count=1 and the
+rejected stale write (persisted `first-update`, buffer `stale-update`). It still
+fails at observation 24: `BSLRuntimeError: Переменная или функция не определена:
+Metadata`. No fixture, native expected output or comparison gate changed.
+This is a host replay prefix, **not** a complete accepted comparison or native
+remeasurement. Managed-form TypeDescription, six-scenario managed-thick-file,
+Python 3.10 source positions and broader legacy parity gaps remain.
+
+Focused regressions exercise actual SQLite selection, both aliases, fields,
+GetObject, empty/end/restart behavior, foreign/subclass rejection, private and
+write/iteration denial, owner replacement after method binding, closed-family
+checks and the unchanged original replay with legacy dispatch forbidden:
+
+```sh
+PYTHONPATH=tests:scripts:. python -B -m unittest test_python_direct_database test_python_direct_uuid
+PYTHONPATH=tests:scripts:. python -B -O -m unittest test_python_direct_database test_python_direct_uuid
+```
+
+Validation for this slice: 60 tests PASS in normal mode and the same 60 PASS
+under `-O`: the two modules above plus `test_python_direct_form_database_admission`,
+`test_python_direct_catalog_preparation`, `test_python_direct_prepared_validator`
+and `test_python_direct_default`. Independent review found no blockers.
+The additional `test_catalog_dynamic_types` probe had one existing failure,
+`test_interpreter_value_operations` on `ref.IsEmpty()` (foreign database
+receiver); it was reproduced separately on unchanged `7486c984`. Combined with
+the first three focused modules, that probe ran 38 tests: 37 PASS, one error,
+in both modes. No full CI success is claimed.
+
+## Catalog metadata follow-up
+
+On `392b6fa5`, the unchanged CatalogObject replay reproduced the undefined
+`Metadata` failure at observation 24. The direct database namespace now resolves
+`Metadata`/`Метаданные` to the current runtime metadata root. Exact root,
+catalog metadata collection and catalog metadata item receivers use current
+runtime identity checks before public protocol access and again before a bound
+method invocation. The existing metadata implementation still owns lazy snapshot
+loading, source order and schema validation; no VM dispatch or new cache is added.
+Public catalog lookup, indexing, Name/FullName and identity are available.
+Private members, writes, subclasses, foreign runtime metadata and collection
+iteration remain rejected. Other metadata receiver families (including document
+collections and catalog child collections) have not been admitted by this slice.
+The namespace remains scoped to the existing host-selected database profile;
+no-database/configuration/managed-profile compatibility is not claimed.
+
+The exact original `catalog_object_behavior.replay.replay()` now returns all
+24 observations, including the final reference/metadata identity `True`:
+
+```text
+[True, True, True, True, True, True, True, True, 'initial', 'initial',
+ True, True, 'edited', False, True, True, '100', 1, False,
+ 'first-update', 'stale-update', True, True, True]
+```
+
+The full host replay regression forbids Interpreter.block/call_routine. No
+native fixture, expected output, source binding, comparison gate or backend
+selector changed. This completes that owned logical host replay, **not** a new
+native measurement or a claim that its output matches native observations.
+Managed-form TypeDescription, six-scenario managed-thick-file, Python 3.10 source
+positions and broader direct compatibility gaps remain.
+
+Validation: 67 tests PASS normal and the same 67 PASS under `-O`, using
+`test_python_direct_database`, `test_python_direct_uuid`,
+`test_python_direct_form_database_admission`,
+`test_python_direct_catalog_preparation`,
+`test_python_direct_prepared_validator`, and `test_python_direct_default`.
+New tests cover both aliases, public lookup/identity, foreign/subclass/private/
+write/iteration denials, prepared current-runtime binding, and owner/context
+replacement after method binding before invocation.
+
+The actual comparator's `EXECUTE_SCRIPT` also ran in an isolated `-I -B` child:
+exit 0, empty stderr, 156 bytes, 24 observations accepted by `parse_output`.
+Canonical output SHA-256:
+`5a94916806539bfdd40517a7092b3a543ea6dc53d52f0f0cedbd8d37ba3b23f4`.
+This establishes valid host output; native comparison was not run locally.
+
+## Dynamic form declarations follow-up
+
+On `bc0d117d`, the unchanged managed-form command above failed during preparation
+with `UnsupportedNakedSyntax: constructor TypeDescription`. The direct form
+bridge now admits TypeDescription/ОписаниеТипов only with the existing exact
+BSLTypeDescription constructor and FormAttribute/РеквизитФормы only with the
+current form interpreter's canonical `_make_attribute` binding. Binding checks
+run before constructor argument effects. Existing descriptor/form-model type,
+qualifier, side, scope and lifecycle validation remains in place.
+
+A small ChangeAttributes/ИзменитьРеквизиты service adapter converts exact native
+Python lists to the existing BSLArray input protocol; the model still validates
+and atomically installs/removes declarations. The exact current self-form gets
+public property reads/writes through its existing model methods. Foreign forms,
+private members, missing properties, client-side declaration mutation and
+transaction activation remain rejected. No generic reflection, VM dispatch,
+source fallback or new cache is introduced.
+
+The original unchanged source now executes all 24 server observations and client
+observation 25. It creates the five scalar attributes, controls and commands,
+sets String/Number/Boolean fields and successfully adds/removes `Temporary`.
+The next failure is `BoundaryViolation: unregistered host service: serverread`
+in `FormOpen` at client observation 26. No complete managed-form comparison or
+native parity is claimed, and no fixture/gate/source hash changed.
+
+This slice supports dynamic scalar declarations and own-self properties, not
+all TypeDescription overloads or descriptor operations: native-list type arrays,
+qualifier constructors, methods on unattached descriptors and arbitrary
+self-form methods remain outside this bridge. The standalone form's cross-side
+server routine binding needs a separate implementation; the existing enrolled
+form/RPC route was not replaced.
+
+Validation: 36 tests PASS normal and the same 36 PASS with `-O`, combining
+`test_python_direct_forms`, `test_python_direct_form_database_admission`,
+`test_python_direct_bound_forms`, `test_python_direct_form_invocation`,
+`test_python_direct_form_callbacks` and `test_python_direct_form_rpc`.
+The original replay-prefix regression forbids Interpreter.block/call_routine.
+Independent review found a private-member exception-class regression, which was
+fixed while retaining the original boundary test; the reviewer then passed 19
+combined `-O` tests plus the two final live-binding/client-mutation regressions.
+No remaining review blockers; no full CI/native pass is claimed.
+
+## Standalone zero-argument server calls
+
+On `1cd9d1f4`, the original managed-form host source reproduced
+`BoundaryViolation: unregistered host service: serverread` at MF26. Direct
+handler preparation deliberately separates client and server closure families;
+standalone FormSession had not installed a cross-side invocation binding.
+
+The default standalone FormSession now opts in to bindings for its own
+zero-argument server routines. Custom interpreter factories, DB contexts and
+reference scopes do not opt in. The existing invocation binding protocol checks
+current binding/routine identity, side, signature, arity and function/procedure
+use. Existing bound transports take precedence; no renderer dispatch, network
+RPC or general configuration-module route is replaced. Later enrollment or
+acquisition of DB/configuration/reference ownership rejects the local path.
+
+Invocation uses the existing prepared Python export entry with fresh server
+state and the existing side/transaction scope. Return values pass through the
+existing cross-context packet copier, so form/capability objects do not escape.
+No AST body dispatch, legacy activation interpreter or fallback is used.
+Parameterized calls, default/byref argument transfer and native Python
+collection transfer are outside this narrow slice.
+
+The unchanged managed-form source now reaches MF1–MF30: MF26 reads `Ada`, MF27
+observes `server-updated`, and MF30 is `programmatic`. It next fails at MF31 with
+`BoundaryViolation: unregistered host member: NameField`, while preparing the
+byref `Items.NameField` argument of FieldChanged. This is a separate control
+reference boundary, not a failed server call. Full managed-form output/native
+comparison remains incomplete; fixtures, source hashes and gates are unchanged.
+
+Validation: 43 tests PASS normal and the same 43 PASS under `-O`, combining
+`test_python_direct_forms`, `test_python_direct_form_invocation`,
+`test_python_direct_form_database_admission`, `test_python_direct_bound_forms`,
+`test_python_direct_form_callbacks` and `test_python_direct_form_rpc`.
+Independent review: no blockers; 29 focused `-O` tests PASS, including actual
+Receipt RPC. Tests cover actual server side/restoration, failure restoration,
+capability-return rejection, custom-factory and parameterized-call exclusion,
+retained binding/signature/side/lifetime checks, later enrollment rejection and
+transaction denial. Original source replay forbids legacy block/call_routine.
+
+## Public form-member references
+
+On `e2eea8c6`, the unchanged managed-form source failed at MF31:
+`BoundaryViolation: unregistered host member: NameField`. The generated call
+correctly prepared a byref argument, but inherited reference binding still used
+the generic HostMembers registry instead of the already-admitted form protocol.
+
+FormBoundary now binds exact current-form model/self-form members after an eager
+public read and reuses the existing `_HostMemberReference`. Reads remain live;
+deferred writes use the existing form setter. Binding does not grant write
+access: `Items.NameField` and `Commands.Apply` can be read by a handler but cannot
+be reassigned. Writable public fields still use model validation. Foreign,
+private, missing, retired and inactive/closed receivers are rejected. No new
+reference implementation, raw attributes, alias cache or VM dispatch was added.
+
+The exact unchanged managed-form source now completes MF1–MF40, including
+FieldChanged, ApplyCommand, flag transfer and the two direct BeforeClose calls.
+The actual comparator `EXECUTE_SCRIPT` also passes in an isolated `-I -B` child:
+exit 0, empty stderr, 541 output bytes, 40 records accepted by
+`parse_records`/`require_available`. Output SHA-256:
+`3cbf5b2e8dee544690cd560f3405ab9029dfd3e0d711b2410c59ba288d8acb34`.
+This is valid host output, **not** a new native measurement or native comparison.
+The source's direct event calls do not prove automatic UI event parity.
+
+Existing standalone zero-argument cross-side restrictions, excluded descriptor
+operations, six-scenario managed-thick-file and Python 3.10 gaps remain. No
+fixtures, native outputs, source hashes, gates or backend selectors changed.
+
+Validation: 49 tests PASS normal and the same 49 PASS under `-O`, combining
+`test_python_direct_forms`, `test_python_direct_form_invocation`,
+`test_python_direct_form_database_admission`, `test_python_direct_bound_forms`,
+`test_python_direct_form_callbacks` and `test_python_direct_form_rpc`.
+Independent review: no blockers, 38 combined `-O` tests PASS. Regressions cover
+read-only binding/deferred rejection, live writable properties, self-form writes,
+foreign/private/missing members, retired controls/collections and inactive/closed
+families. Original replay and source-level byref writes forbid legacy dispatch.
+
+## Python 3.10: line-only direct diagnostics
+
+CI on `944c6274`: Test/build run `44060348171`, Python 3.10 job
+`133960636116` ran 32 regex tests with 9 errors, all initially blocked by
+`error_boundaries requires Python code position metadata (3.11+)`. Performance
+run `44060348045` succeeded; the browser job `133960729283` succeeded. Native
+managed-form job `133960365934` in run `44060348318` succeeded and logged
+`Managed form measurement accepted`. Linux light job `133960729266` failed;
+its large log could not be retrieved through the connector (Transport closed),
+so no new aggregate failure count is asserted here.
+
+The chosen shared cause was the unconditional requirement for column metadata,
+not the regex implementation. On real CPython 3.10.22, even the default Array
+smoke failed before executing any BSL. SourceMap already rewrites generated AST
+line numbers to the original BSL source. Python 3.10's line metadata is therefore
+sufficient for execution and line-level diagnostics. Admission now requires
+`co_lines` (3.10+); error conversion uses traceback line and column **1** when
+`co_positions` is unavailable. Python 3.11+ keeps its existing exact-position
+path. This is an explicit diagnostic precision difference, not VM fallback.
+No execution wrapper, hot-loop check, exception-type widening, source/schema/
+transaction change, CI allowance or backend selector was introduced.
+
+Validation used actual CPython 3.10.22 and 3.12.14, not a mocked version:
+
+* On **each** version, the same 84 focused tests passed normal and `-O`: mapping
+  unit tests, portable diagnostics, permission-error control, direct default,
+  prepared API, SQLite database and forms. Another 13 neighboring review tests
+  passed normal and `-O` on each version. The missing-line-support test still
+  rejects before execution; only its required-version diagnostic was updated.
+* Independent review found that stale `3.11` assertion; it was fixed and the
+  reviewer independently passed all 13 tests under `-O` on both versions.
+  No remaining blockers. The older full error suite still has the previously
+  confirmed Array wording mismatch (`list index out of range` versus the Russian
+  checked-index message); it was reproduced on the unchanged 3.12 baseline.
+* Exact isolated comparator children on 3.10 now complete CatalogObject
+  (24 observations, 156 bytes) and managed form (40 records, 541 bytes). Their
+  output hashes exactly match the 3.12 results above. This is host output
+  equivalence, not a new native measurement on 3.10.
+* The unchanged 32-test Python 3.10 regex CI command now has **7 errors**, down
+  from 9. Remaining failures are real direct gaps: regex-result receivers,
+  optional argument holes, unsupported constructors and Chars/other system
+  names in routines. The native regex replay also fails on 3.12, independently
+  of line metadata. Neither the regex suite nor full CI is claimed green.
+
+The source-map precision tests retain exact columns on 3.11+ and assert the
+explicit column-1 contract on 3.10. Nested prepared errors, host-call errors,
+partial effects, catchable arithmetic errors and noncatchable authority failures
+are covered. More precise 3.10 columns would require additional bookkeeping;
+this change deliberately does not add it.
+
+
+### Direct immutable system names follow-up (2026-11-17)
+
+Baseline `cba04ee94f1eeb067b0533a274a00f01093cd625`: Test/build
+`44062308838` has failed Linux light and Python 3.10 regex jobs, successful
+browser job `133967476079`. Native run `44062308424` has successful managed-form
+`133967091980` and CatalogObject `133967092258`, but fails its required verdict
+(including regex, CatalogQuery and six scenarios). These are exact baseline CI
+results, not claims about this follow-up or general native parity.
+
+The unchanged regex source stopped at RF-05 because routine `Chars.LF` compiled
+to an undefined Python local. The direct compiler now binds eight finite system
+namespaces through the existing external-name seam: Chars, SearchDirection,
+SortDirection, RoundMode, AllowedSign, AllowedLength, DateFractions and
+ErrorCategory, including their Russian aliases. Public operations use the
+existing value implementations. Only the canonical singleton identities are
+admitted; only the three already implemented direction/rounding iterators are
+connected. There is no legacy name resolver, arbitrary reflection, new cache,
+VM fallback or relaxation of database owner/source/schema/transaction checks.
+
+The exact unchanged regex replay now emits its two controls and RF-01 through
+RF-06 successfully, then stops at RF-07 on the still unsupported regex-result
+receiver. This is progression, not completion. On the same 73 existing tests
+(`test_round_modes`, `test_round_mode_iteration`, `test_search_directions`,
+`test_sort_directions`), failures/errors fell from **8/115 to 7/71**; these
+include subtest errors. Old Array representation, host return values, cross-call
+routines and other compatibility gaps remain, and no old fixtures were edited.
+
+Validation: 97 focused tests passed normal and `-O` (new system names, direct
+default/prepared/database/forms/external namespaces, three Chars public API
+tests). The eight new tests also passed on real Python 3.10 under `-O`.
+Independent review passed 40 combined `-O` tests and eight normal tests, without
+code/security blockers. Exact isolated CatalogObject and managed-form children
+still produce the same 156-byte and 541-byte outputs and hashes recorded above.
+
+Known naming limitation: these registered names are read-only externals.
+Module rebinding/declarations, implicit routine-local assignment to such names,
+and same-name routine declarations reject. Parameters and explicit routine-local
+`Var` declarations can shadow them. This deliberately retains the existing
+external-name contract rather than adding a general dynamic name resolver.
+Qualified byref namespace members and other system namespaces are outside this
+slice. No performance improvement or full CI success is claimed.
+
+### Transaction-local source read (audit8, 2026-11-17)
+
+On baseline `8da65871`, format-16 `_begin` read and validated source twice inside
+one SQLite transaction. The second admission now consumes the first local tuple;
+public standalone admission still reads fresh source. All subsequent validation
+and prepared-import publication remain. No long-lived admission cache or VM
+change. Source SELECT count for read/write/read: 6 -> 3.
+
+85 normal + 85 optimized targeted tests pass; independent review: 47 optimized
+pass, no blockers. Seven alternating actual MainDemoHost pairs show Product Save
+55.643 -> 43.161ms, with all pair medians improved. Other operations have small
+or negative/noisy changes; no generic speedup claimed. Current-snapshot and
+corruption cases pass. [Raw results, reproducer, limits and next-candidate profile](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/transaction_source_read/README.md) accompany this slice.
+
+### Current-layout validation without creation preflight (audit8, 2026-11-17)
+
+Baseline `0cdb512c`: existing main-demo database validation constructed and
+discarded a new layout/DDL before loading the actual persisted layout and
+constructing DDL again. Shared fresh catalog validation is now separated from
+creation-only construction. All current canonical/domain/codec/bounds/reference,
+SQLite layout/DDL/index checks remain. Creation still preflights before allocation;
+no cache or change to transaction/data-row validation.
+
+98 normal + 98 optimized tests pass; independent review: 47 optimized, no blockers.
+Seven alternating actual host pairs: Kind Save 31.255 -> 27.493ms, Product Save
+42.692 -> 36.484ms. Six of seven pair medians improve; noise and all raw samples
+are retained. [Reproducer, results and scope](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/current_catalog_shape/README.md).
+No general speedup/full CI/native parity claim.
+
+### Array presence proofs; Map candidate rejected (audit8, 2026-11-17)
+
+On baseline `f52b1bfa`, existing Array analysis proved callback-free native loops
+but module reads still repeated missing-value branches. The same facts now feed
+module definite reads and counters, using the live dictionary without snapshots,
+flushes or runtime guards. Unknown effects/opaque names retain the checked path.
+
+88 normal + 88 optimized tests pass; independent review: 80 optimized, no blockers.
+Seven paired representative 10k-entry aggregations improve in every pair:
+prepared sum 9.151 -> 7.369ms, alias 11.125 -> 8.426ms; public execute also improves.
+Private routine control has no gain. A separate 20k-event Map token prototype
+showed no stable meaningful prepared gain and was removed from production.
+[Sources, all samples, rejected candidate and limitations](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/array_map_audit8/README.md).
+Canonical BSLMap semantics, source/schema/transaction gates and VM dispatch are
+unchanged. Full compatibility/CI/native parity remain outside this evidence.
+
+### Detached host results and canonical arrays (2026-11-17)
+
+Baseline `315e4651`: fresh Test/build `44068436107` has failed Python 3.10 regex
+job `133988455026`; native run `44068436082` has failed regex job `133988167581`
+and successful CatalogObject `133988167254`. Performance run `44068435804`
+succeeded. Other jobs were still running during inspection; no overall green
+claim. Locally the unchanged 32-test regex suite reproduced seven errors, and
+original `regex_family.bsl` stopped at RF-07 on a regex-result receiver.
+
+The existing direct public-value bridge now admits the concrete detached
+`BSLRegexResult`, `BSLRegexGroup`, `BSLArray` and `BSLFixedArray` types. Array index
+operations use their existing checked `get`/`set`, and iteration uses their public
+iterator. Members/methods keep the existing before/after boundary checks. No
+legacy Interpreter dispatch, constructor expansion, arbitrary object admission,
+new serialization, deep conversion or replacement data representation was added.
+
+This also fixes ordinary `StrSplit` results: Count/Get/index/iteration and mutable
+aliases work without converting the returned object to a new list. Fixed arrays
+stay read-only. Regex GetGroups retains its independent-array semantics; result
+and group fields remain read-only. Foreign database objects retrieved through
+these containers still require their own current owner. Negative/fractional/bool
+and out-of-range indexes preserve the canonical errors without partial mutation.
+Default `New Array` still uses the existing direct native-list implementation;
+this slice does not unify every legacy/direct collection representation.
+
+The **unchanged** regex source now completes 42 records (two controls and all
+40 available cases). Exact host output: 2088 bytes, SHA256
+`f29009bf8ade447ab95250e77bf004c7191cdea3fa363d4032a7e5e7d486dd76`.
+Both the portable isolated child and actual POSIX comparison adapter match this
+local capture. This is not a fresh native capture or a native-parity claim; the
+historical `original40` fixture has a different source and was not rewritten.
+The earlier system-name regression expecting the RF-07 blocker was strengthened
+to require all 40 successful records.
+
+Validation: 95 combined tests pass normal and optimized, plus a new canonical
+index-boundary regression passes in both modes (all seven host-value tests were
+rerun). Independent review passed 69 combined tests under `-O`, without blockers.
+Exact isolated CatalogObject/managed-form children retain the previously recorded
+156/541-byte outputs and hashes. Tests include subtype/reflection denial, mutable
+alias identity, FixedArray read-only behavior, callback owner-close detection,
+and foreign catalog receiver rejection through an Array.
+
+The unchanged 32-test regex suite now has **three errors instead of seven**, on
+both real Python 3.12 and 3.10. Remaining causes are host optional-argument holes,
+compile-time rejection of the nonconstructible regex-result constructor inside
+Try, and generated-client JSON writer settings construction. Those admission
+rules were not relaxed. Reproducer for the full local replay and isolated child:
+
+```sh
+PYTHONPATH=tests:scripts:. python -B -m unittest \
+  test_python_direct_host_values test_python_direct_system_names \
+  test_native_regex_family_measurement \
+  test_native_regex_family_profile.RegexFamilyProfileTests.test_portable_child_replay_matches_its_own_local_observation \
+  test_native_regex_family_profile.RegexFamilyProfileTests.test_real_isolated_replay_adapter_matches_its_own_local_observation
+```
+
+### Managed profile client path (2026-11-17)
+
+Baseline `3bd91286`: the real `verify_client_interpreter` child was rejected solely
+because direct admission required standalone compilation. The existing managed
+frontend is now admitted for the same client execution path, with prepared plans
+still bound to their compilation profile. Runtime server/NoContext/configuration
+checks and source-side declarations remain enforced; profile flags grant no
+runtime authority. No VM dispatch or persistent routine implementation was added.
+
+The original dates/numbers scenarios now complete under managed-thick-file with
+185/427 messages, matching standalone direct output. **The entire six-scenario
+preflight still fails**: the exact isolated child now rejects server declarations,
+before producing any witness values. Original collections still stops at
+FixedStructure; functions/strings/values at Execute. 72 combined tests pass normal
+and optimized. [Precise progression, hashes, context limits and reproducer](direct-managed-client-profile.md).
+
+### Persistent client routines (2026-11-17)
+
+Baseline `e5cb5a68`: separate execute/execute_prepared calls can now invoke stored
+client routine code with fresh globals and boundary context. Unchanged regex
+source emits 42 records, then its helpers can be called separately (two matching
+records). This closes the client load/call prerequisite of the native verifier;
+**the full six-scenario verifier still fails at server declarations**. Server,
+NoContext and dual semantics remain unsupported. No fixture/gate was relaxed.
+
+[Implementation, restrictions, regression coverage and cold cost](direct-persistent-client-routines.md).
+
+### Persistent routine cold compilation (2026-11-17)
+
+One generated module now supports both normal execution and bind-only exports;
+the second compilation introduced by 6b060d62 is removed. Current globals and
+boundary are rebound without module initialization or statements. Cold unchanged
+regex median **843.19→485.87ms** in five alternating pairs; 118 normal/118 optimized
+regressions pass, independent review 66 optimized. Server/NoContext gaps remain.
+[Mechanism, raw samples and reproducer](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/direct_routine_compile/README.md).
+
+### Audit9 host access (2026-11-17)
+
+Canonical singleton identity lookup and direct BSLArray/FixedArray Get method
+selection remove repeated scan/method wrappers; current boundary checks remain.
+No array copy, Find change or relaxed readonly/index/owner rules. Representative
+2000-token StrSplit/Get processing: **35.10→25.02ms**, five alternating rounds;
+regex/SQLite Save show no stable gain. 45 tests pass normal and optimized,
+independent review 40 optimized. [Raw, controls and limits](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/direct_host_access_audit9/README.md).
+
+### Remaining audit9 candidates (2026-11-17)
+
+Only bounded pure SQL identifier quoting is selected: exact-str admission precedes
+cache lookup; current byte limit stays in its key. Schema/source/transaction
+validation remains fresh. Actual Product Save improves in seven final pairs
+(median42.80→30.62ms; first exact series36.91→33.19ms, noisy environment).
+62 normal/62 optimized tests and50 independent optimized checks pass.
+
+Map inlining is rejected as mixed/noisy. Module locals are rejected despite
+compute-only gains: a live callback counterexample returns3 instead of10.
+No production Map rewrite or flush/snapshot layer was added.
+[All samples, rejection evidence and reproducer](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/audit9_remaining/README.md).
+
+### Named server byref copyback (2026-11-17)
+
+Base2b492f54: именованные клиентские переменные теперь поддерживают серверный
+copyback через независимые formal cells и проверку всего выходного packet до
+публикации. Property/index sinks, включая forwarding, не допускаются. Общие
+transfer limits, owner/context checks, отсутствие copyback при escaping error
+сохранены. NoContext/dual/init не разрешались этим изменением.
+
+Неизменённый scalar witness:35 records,33 совпадения с explicit legacy control;
+два известных ErrorDescription расхождения. Full owned-SQLite verifier остаётся
+красным на server initialization; object witness — stage8 TypeOf(Structure).
+125+8 tests normal и optimized,85 independent optimized PASS.
+[Контракт, ограничения и воспроизведение](direct-logical-server.md).
+
+### Direct server initialization (2026-11-17)
+
+Base ed6feafb: явно скомпилированные серверные initializers исполняются по порядку
+один раз на новый client→server crossing, до callee, в отдельном server state.
+Nested calls не переинициализируют state; ошибки/closed owner не дают copyback.
+Current constructor/dependency/profile/layout checks сохранены, code-only plans
+не удерживают closures. Server layout expansion требует fresh Interpreter.
+
+Original module-context witness:10 records,9 совпадений; index6 — прежний
+ErrorDescription gap. Full original/owned-SQLite witness теперь блокируется
+NoContext и всё ещё не даёт полного результата. 144 normal/144 optimized,
+78 independent optimized PASS. Audit10 source-map сохранён.
+[Контракт и воспроизведение](direct-logical-server.md).
+
+### Direct server NoContext (2026-11-17)
+
+Base9f727099: synchronous NoContext routines now use separate direct Python
+exports without module globals or server initialization. Same-side byref stays
+live; client copyback keeps its aggregate validation and failure atomicity.
+NoContext cannot call contextual server/client code, including argument effects.
+Owner/context/transaction checks remain; callback close/reset unwinds captured
+stacks without corrupting replacement root scopes.
+
+Original NoContext witness completes15 records,12 match explicit compiled-strict;
+indices6,8,12 remain the known ErrorDescription gap. Full original admission now
+stops at dual routines; actual owned-SQLite verifier still returns
+`interpreter_failed`. 159 normal/159 optimized tests PASS, independent review
+without blockers. No native fixture changes or parity claim.
+[Contract, limits and reproducer](direct-logical-server.md).
+
+### Direct dual NoContext routines (2026-11-17)
+
+Base5a78cac5: paired client/server dual declarations now compile to side-specific
+Python plans without module globals, VM dispatch or same-side collection copies.
+Current capabilities and cross-side transfer validation remain. Partial or
+signature-mismatched AST pairs are explicitly unsupported. 169 normal/169 optimized
+tests PASS; independent58 optimized PASS, no blockers.
+
+Original dual operation positive values agree with explicit compiled-strict;
+the unchanged complete dual witness still rethrows its controlled exception due
+to the known ErrorDescription gap. Full source advances to JSON writer parameters
+constructor admission; owned-SQLite verifier remains `interpreter_failed`.
+No native fixture rewrite or parity claim.
+[Contract, exact observations and reproducer](direct-logical-server.md).
+
+### Direct handler ErrorDescription (2026-11-17)
+
+Base88438f0e: generated recoverable Except scopes now expose normalized current
+error text through the canonical own-VM builtin. Same-side diagnostic inheritance,
+nested-handler invalidation, rethrow and finally cleanup are explicit; cross-side
+scopes remain separate. Custom host overrides and fail-closed boundaries remain.
+ExceptionInfo is not added.
+
+Unchanged scalar35/module10/NoContext15/dual9 records now exactly match explicit
+compiled-strict control. Original numbers emits421 records, matching control:
+all six stream-format errors are recognized. No native fixture was rewritten.
+Full source advances past JSON constructors to unsupported Execute in a server
+NoContext plan; actual owned-SQLite verifier still fails. Baseline array-error
+wording mismatch remains documented, with its existing test unchanged.
+[Contract, regressions and reproducer](direct-logical-server.md).
+
+Integrated verification:203 Python3.12 normal +203 Python3.10 optimized PASS;
+independent65 optimized PASS, including regex binding release without cyclic GC.
+
+### Direct Execute fragments (2026-11-17)
+
+Basec8999470: Execute/Выполнить now compiles dynamic fragments directly over live
+existing bindings and private new names. Whole-fragment parsing/admission, current
+capabilities, name-reference provenance, source/depth restrictions and transaction
+checks remain. Reference callbacks are checked immediately and stale fragment
+references cannot revive in later executions. No VM dispatch or locals flush.
+
+219 Python3.12 normal +219 Python3.10 optimized tests PASS. Original whole native
+child now exits0, emits81 records/1142bytes with no stderr; exact expected138 still
+fails. First50 match, object-transfer remains stage8, and Date/Null graph token
+88 differs from77. Dual/infobase/preprocessor tokens match. No native fixture or
+strict gate changes. [Contract, residual gaps and reproducible report](direct-execute.md).
+
+### Exact whole-client replay: direct types and named Val timing (2026-11-17)
+
+Basee00be58f: canonical TypeOf recognizes exact direct Array/Structure/Map values;
+host overrides, service policy and canonical global API remain unchanged. Named
+Val arguments on client→server calls are read after all argument effects; ordinary
+expression results remain eager. Transfer checks and Val no-copyback are preserved.
+
+Original unchanged owned-SQLite whole client verifier now passes138/138 with exact
+bytes in managed and standalone/preprocessor modes. 228 normal Python3.12 and228
+optimized Python3.10 tests PASS; independent52 focused optimized PASS. This is local
+bounded replay, not new1C measurement or full CI green. Broader type/constructor
+compatibility remains incomplete. [Contract and exact reports](direct-native-client-replay.md).
+
+### CatalogQuery Unload detached table access (2026-11-17)
+
+Basee242b35c: original CatalogQuery replay failed at observation19 after Unload,
+when the direct boundary rejected ValueTable.Count. Exact detached table/row/column
+protocols and type qualifiers are now connected, preserving current database
+ownership for values extracted from cells and canonical slice/deletion checks.
+Unchanged logical-model replay matches accepted native artifact14334693411 exactly:
+24 records,513 bytes,SHA256 2a0a0e7db4025a5babc7ece3edd833feddba7ccffc16027bd6139cc184aa5c84.
+No fixture, schema gate or VM dispatch change. This is local replay against the
+existing native run44098520311, not a new1C run or full CI success.
+[Reproducer, evidence and remaining scope](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/direct_query_table/README.md).
+
+### Direct HTTP owned-loopback replay (2026-11-17)
+
+Base593c1dbd: native HTTP accepted40 observations but host compilation rejected
+File. A finite canonical file/binary/HTTP protocol set is now connected, with
+narrow optional HTTP constructor holes and post-argument factory identity checks.
+Direct header Map aliases are retained under existing exact header validation.
+Original owned-loopback replay now matches native40 plus controls exactly:
+1838bytes,SHA256 d159e9a8b3a11329b453871870e44794478edd30a4ea4681ffa1e31ecb91d971.
+107normal/107optimized tests and30 independent optimized tests PASS. No native
+fixture/security gate changes; TLS/client-context/full-CI parity not claimed.
+[Reproducer, evidence and limits](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/direct_http_protocol/README.md).
+
+### Associative comparator evidence ordering (2026-11-17)
+
+Native run44105800556 on HTTP head2900ac37 passed the individual profiles, but
+six-scenario job134117746049 stopped with semantic_result_invalid (summary artifact
+14337928616). Its preprocessor_status=failed is set by discard_infobase_capture
+on the later failure; it is not independent evidence of a preprocessor mismatch.
+The six-scenario EXECUTE_SCRIPT explicitly selects the legacy interpreter oracle,
+so this failure must not be described as direct-language parity evidence.
+
+A real comparator/validator composition defect is reproduced with the existing
+source-bound1023-record fixture: permitted Structure and nested Map permutations
+produce equivalent with accepted_labels in source order, but the strict validator
+requires ELIGIBLE_LABELS order (lexicographic for associative-order-v2). The producer
+now sorts only that evidence list. Raw bytes/hashes, record counts, typed payload
+relation, eligible labels, rejection paths and validator are unchanged. No gate is
+relaxed, and no native fixture is rewritten. Regression composes freshly loaded
+comparator with the unchanged validator and tests wrong-order/ineligible-mutation
+rejections.114 tests PASS normalPython3.12 and optimizedPython3.10.
+
+The failed CI private comparison payload was not exported; this is a reproduced
+contract bug consistent with its error, not proof of the precise failed payload
+or a green rerun. Actual subsequent CI must establish further progress.
+
+### Direct iterator pair readonly and idempotent Map.Delete (2026-11-18)
+
+On base4ecd7fa9, assigning to a direct Map/Structure iterator pair accidentally
+entered database receiver admission. The resulting BoundaryViolation escaped BSL
+Try/Except and unittest setUpClass, aborting the light runner. Exact canonical
+iterator pairs now return a readonly writer: receiver resolution and RHS effects
+keep their order, authority is checked both before and after the RHS, then the
+ordinary catchable BSL property-write error is raised. Subclasses, counterfeits,
+foreign receivers and closed execution remain fail-closed. No payload is inspected,
+no mutability is granted, and no VM or legacy fallback is used.
+
+The next replay blocker was deleting an absent direct Map key. Typed Map.Delete
+now matches BSL's idempotent behavior while preserving typed and identity keys.
+Fixed collections and other receiver protocols are unchanged.
+
+The unchanged DescriptorMapNativeRuntimeTests setup now reaches source line3013,
+where Structure construction from FixedStructure remains unsupported. This is an
+ordinary reported BSLRuntimeError, not successful full collections parity. The
+larger focused cohort still has its pre-existing array diagnostic-text mismatch
+(test_exact_source_errors_and_partial_effects); this slice does not hide or update
+that assertion. Python3.10 source-column precision also remains limited.
+
+### Direct mutable Structure from FixedStructure (2026-11-18)
+
+An exact canonical FixedStructure can now be copied into direct mutable Structure,
+including the dynamic constructor path. Storage is fresh at the top level; field
+spelling/order and nested payload identity remain unchanged. Extra arguments are
+still evaluated before the one-argument diagnostic. Canonical definition identity
+and raw dictionary access avoid receiver hooks; subclasses, foreign values and
+malformed storage shapes are rejected without traversing payload objects.
+
+The unchanged descriptor-map replay advances from source line3013 to line3014,
+where New Map(FixedMap) is still unsupported. No native fixtures or expected output
+were changed, and full collections parity is not claimed. The existing shallow
+Structure snapshot/copy-back and spelling tests pass. Python3.10 still has the
+pre-existing literal-error source-column mismatch; that test is not weakened.
+
+### Bounded direct mutable Map from FixedMap (2026-11-18)
+
+Direct Map can copy an exact canonical FixedMap containing string, number,
+boolean, Undefined, Type/Null singleton and identity-object keys. Storage is a
+fresh shallow map: original keys and nested payload aliases remain. The dynamic
+constructor uses the same route. No arbitrary iterable expansion, receiver hooks,
+payload hashing/equality or deep traversal is introduced; malformed storage and
+noncanonical roots reject. Extra arguments run before the arity error.
+
+**Explicit remaining key limitation:** canonical Date, UUID, TypeDescription and
+CatalogReference keys use value equality; the present direct Map uses identity
+for these domains. Copy therefore rejects them explicitly and atomically rather
+than silently changing lookups or losing entries. Completing those semantics
+requires a separate change to direct insertion, lookup, deletion, snapshots and
+serialization, with canonical-field/ABI authority checks. The source and prior
+assignment target remain unchanged on refusal. No full Map parity is claimed.
+
+Descriptor-map replay now reaches source line3106, where the existing direct
+Array.Find rejects a host value with UnsupportedScalarSemantics. That is still a
+BaseException boundary failure and can abort unittest setup; this copy slice
+must not be presented as making the complete light runner or native replay pass.
+
+### Direct Array.Find exact fixed-collection identity (2026-11-18)
+
+Mutable direct Array.Find now accepts exact canonical FixedArray, FixedStructure
+and FixedMap values using identity only. The first matching reference wins; a
+separate equal-content collection does not match. This agrees with the recorded
+fixed-*.find-alias=[0] / fixed-*.find-copy=[] observations and the existing combined
+mutable/fixed receiver regression. Definition-time identities survive lazy module
+name rebinding. Receiver/value subclasses and arbitrary host values remain denied;
+no equality, attribute, hash or payload hook is called for these fixed operands.
+Other scalar operations are not widened.
+
+Whole descriptor-map replay advances again but still aborts at the pre-existing
+ValueTable.Columns iteration boundary (source helper line578). This is not full
+native replay parity or a green light runner. No fixtures/gates were changed.
+
+### Detached direct ValueTable iteration (2026-11-18)
+
+Exact canonical ValueTable, column collection and row receivers now have a bounded
+read iterator. Table/column traversal follows the live list; live row iteration
+snapshots cell values at iterator creation, and a deleted row enumerates the
+still-live owner's rows, matching the existing canonical/native contract. Raw
+storage access avoids receiver iteration/attribute hooks. Receiver ownership and
+execution lifetime are rechecked before every advance; foreign rows/columns,
+forged container/key shapes and patched column hash/equality hooks reject without
+running those hooks. Cell values are not inspected and gain no database authority.
+Bounded-slice writes remain prohibited. This is not generic host iteration.
+
+The unchanged descriptor-map replay now gets beyond the table iteration boundary
+and reports ordinary UnsupportedNakedSyntax for ValueTableRow construction inside
+an Eval probe. No complete collections parity or full green CI is claimed. The
+existing 24-observation catalog-query native replay remains unchanged and passes.

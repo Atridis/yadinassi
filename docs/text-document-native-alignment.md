@@ -107,7 +107,7 @@ this is not evidence for native transport or object identity contracts.
 The integration source, its adapters, historical source-only inverses, historical
 fixtures, transport caps and workflows remain byte-identical to the measurement
 revision. The runtime provenance inventory grows **62 → 63** because of the new
-`yadinassi/text_documents.py`; its hash changes and must be rechecked in fresh CI.
+`yadinassi/streams/text_documents.py`; its hash changes and must be rechecked in fresh CI.
 The current finite transport proof leaves only 7 bytes of worst-case async wire
 headroom (8185 of 8192) and 237 bytes of public-summary headroom (32531 of 32768).
 Oversize payloads still fail closed. Further runtime modules require a separate

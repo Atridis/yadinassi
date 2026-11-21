@@ -8,7 +8,7 @@ from integrational_tests.test_launcher import collect_scripts
 from yadinassi import Interpreter
 from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse, parse_expression
-from yadinassi.values import BSLObject, HostFunction
+from yadinassi.types.values import BSLObject, HostFunction
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/values.bsl'
@@ -100,7 +100,7 @@ class XMLCheckpointTests(unittest.TestCase):
 
     def test_error_paths_do_not_hide_following_observations(self):
         output = []
-        vm = Interpreter(output=output.append)
+        vm = Interpreter(output=output.append, allow_extensions=True)
         vm.register_function('HostOnly', lambda: object())
         vm.execute(helpers() + '''
 НаблюдатьXML("missing", "NoSuchFunction()");
@@ -146,7 +146,7 @@ class XMLCheckpointTests(unittest.TestCase):
         self.assertIn('+ 0.9999', probes['date.write.near-carry'])
 
     def test_date_helper_keeps_delta_in_addition_to_coarser_codec(self):
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         vm.execute(helpers())
         sample = vm.execute('Date(2024,2,29,12,34,56) + 0.1234')
         calls_seen = []
@@ -161,7 +161,7 @@ class XMLCheckpointTests(unittest.TestCase):
         self.assertEqual(calls_seen[0][1], 'synthetic')
 
     def test_roundtrip_helper_observes_type_equality_and_nested_codec(self):
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         vm.execute(helpers())
         sample = Decimal('12.3400')
         seen = []

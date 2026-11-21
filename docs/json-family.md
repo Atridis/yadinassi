@@ -60,7 +60,7 @@ extension is accepted, without rewriting commas inside strings.
 
 ## Deliberate remaining scope
 
-Search `# !todo` in `yadinassi/json_processing.py` for deferred work:
+Search `# !todo` in `yadinassi/formats/json/json_processing.py` for deferred work:
 advanced escaping/quote modes, other non-standard JSON/comments,
 reader CurrentLine/CurrentPosition, and exact malformed-input
 error diagnostics. XDTO serialization, external Stream objects and

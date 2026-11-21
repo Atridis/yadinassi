@@ -1,8 +1,8 @@
 """Authored grammar/limit tests; these are not native observation fixtures."""
 import unittest
 from unittest.mock import patch
-from yadinassi.regex_parser import Parser, Budget, RegexLimitError
-from yadinassi.regex_vm import Program
+from yadinassi.formats.regex.regex_parser import Parser, Budget, RegexLimitError
+from yadinassi.formats.regex.regex_vm import Program
 
 class RegexExtensionsParserTests(unittest.TestCase):
     def parse(self, pattern): return Parser(pattern,Budget()).parse()
@@ -36,4 +36,4 @@ class RegexExtensionsParserTests(unittest.TestCase):
         with self.assertRaises(RegexLimitError):self.parse('(?='*34+'a'+')'*34)
     def test_subprogram_code_uses_shared_limit(self):
         b=Budget();n,g=Parser('(?=(a|b|c))x',b).parse()
-        with patch('yadinassi.regex_parser.MAX_CODE',4),self.assertRaises(RegexLimitError):Program(n,g,b)
+        with patch('yadinassi.formats.regex.regex_parser.MAX_CODE',4),self.assertRaises(RegexLimitError):Program(n,g,b)

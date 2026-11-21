@@ -8,8 +8,8 @@ from pathlib import Path
 import unittest
 from unittest import mock
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508
-from yadinassi.value_trees import BSLValueTreeRowCollection
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
+from yadinassi.collections.value_trees import BSLValueTreeRowCollection
 from scripts.native_1c_tree_move_contract import validate_payload
 
 ROOT = Path(__file__).resolve().parents[1]

@@ -4,8 +4,8 @@ from decimal import Decimal
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.strings import starts_with, ends_with
-from yadinassi.values import BSLArray
+from yadinassi.text.strings import starts_with, ends_with
+from yadinassi.types.values import BSLArray
 
 
 class StringBoundaryTests(unittest.TestCase):

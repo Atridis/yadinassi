@@ -12,13 +12,13 @@ import re
 import unittest
 from unittest.mock import patch
 
-from yadinassi.serialization import value_from_string_internal as read
-from yadinassi.serialization import value_to_string_internal as write
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers
-from yadinassi.type_values import type_of
-from yadinassi.value_tables import BSLValueTable
-from yadinassi.values import BSLArray
+from yadinassi.formats.storage.serialization import value_from_string_internal as read
+from yadinassi.formats.storage.serialization import value_to_string_internal as write
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers
+from yadinassi.types.type_values import type_of
+from yadinassi.collections.value_tables import BSLValueTable
+from yadinassi.types.values import BSLArray
 
 
 OUTPUT = Path(__file__).resolve().parents[1] / 'tests/fixtures/native_windows/collections.out'
@@ -171,7 +171,7 @@ class ValueTableDefensiveCodecTests(unittest.TestCase):
             write(table)
         table = sample()
         stream = write(table)
-        with patch('yadinassi.serialization._MAX_NODES', 4):
+        with patch('yadinassi.formats.storage.serialization._MAX_NODES', 4):
             with self.assertRaisesRegex(ValueError, 'предел ресурсов'):
                 write(table)
             with self.assertRaisesRegex(ValueError, 'предел ресурсов'):

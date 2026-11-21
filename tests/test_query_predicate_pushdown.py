@@ -7,11 +7,11 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import test_catalog_queries as fixtures
-from yadinassi.catalog_backend import BackendError
-from yadinassi.queries import BSLQuery
-from yadinassi.relational_queries import _Plan
-from yadinassi.sqlite_catalog import _View
-from yadinassi.sqlite_catalog_layout import quote_identifier
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.query.queries import BSLQuery
+from yadinassi.db.query.relational_queries import _Plan
+from yadinassi.db.sqlite.sqlite_catalog import _View
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
 
 
 class InnerPredicatePushdownTests(unittest.TestCase):
@@ -96,7 +96,7 @@ class InnerPredicatePushdownTests(unittest.TestCase):
                 self.assertTrue(all(predicate is None for predicate, _ in scans))
 
     def test_unfiltered_join_still_obeys_intermediate_limit(self):
-        with patch('yadinassi.relational_queries.MAX_INTERMEDIATE_ROWS', 2):
+        with patch('yadinassi.db.query.relational_queries.MAX_INTERMEDIATE_ROWS', 2):
             with self.assertRaisesRegex(ValueError, 'intermediate'):
                 self.execute('SELECT TOP 1 P.Code AS A,Q.Code AS B FROM Catalog.Products AS P '
                              'JOIN Catalog.Products AS Q ON P.Text=Q.Text')
@@ -154,7 +154,7 @@ class DocumentPredicateBoundaryTests(unittest.TestCase):
     query=_Fixture.query
 
     def test_subsecond_date_is_not_truncated_in_single_or_join_pushdown(self):
-        from yadinassi.dates import BSLDate
+        from yadinassi.temporal.dates import BSLDate
         self.seed()
         base=self.vm.execute('Date(2026,11,1,12,30,5)')
         for source in ('Document.Orders AS D',

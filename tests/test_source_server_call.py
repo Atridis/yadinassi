@@ -1,8 +1,8 @@
 """Source common-module crossing uses the existing interpreter packet boundary."""
 import unittest
 from test_configuration_source_runtime import source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 from yadinassi.runtime import Interpreter
 
 
@@ -109,7 +109,7 @@ class SourceServerCallTests(unittest.TestCase):
         self.assertEqual(output,['rejected'])
 
     def test_server_no_client_access(self):
-        from yadinassi.configuration_source import import_source
+        from yadinassi.configuration.configuration_source import import_source
         config=configuration('Try ServerAPI.Answer(); Except Message("rejected"); EndTry;',
             'Function Answer() Export\nReturn ClientOnly.Answer();\nEndFunction')
         files={item.path:item.content for item in config.files}
@@ -137,7 +137,7 @@ class SourceServerCallTests(unittest.TestCase):
             app.module('serverapi',app.interpreter)
 
     def with_extra(self, config, name, body, **flags):
-        from yadinassi.configuration_source import import_source
+        from yadinassi.configuration.configuration_source import import_source
         files={item.path:item.content for item in config.files}
         extra=module(name,body,**flags)
         extra['CommonModules/'+name+'.xml']=extra['CommonModules/'+name+'.xml'].replace(
@@ -175,7 +175,7 @@ class SourceServerCallTests(unittest.TestCase):
 
     def test_session_environment_retained(self):
         from test_source_session_parameters import declaration
-        from yadinassi.configuration_source import import_source
+        from yadinassi.configuration.configuration_source import import_source
         config=configuration('Message(ServerAPI.Answer());',
             'Function Answer() Export\nReturn SessionParameters.State.Get("key");\nEndFunction')
         files={item.path:item.content for item in config.files}
