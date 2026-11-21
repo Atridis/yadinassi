@@ -117,3 +117,78 @@ def try_numeric(plan, view, budget):
         if number.copy_abs()>=Decimal((0,(1,),38-scale)):raise ValueError('Query aggregate Number range exceeded')
         values.append(number)
     return BSLQueryResult(plan.columns,(tuple(values),) if plan.query.limit else ())
+
+
+def try_ordered_select(plan, view, budget):
+    """Execute closed field-only ORDER BY + TOP in one typed provider read."""
+    from .relational_queries import _BoundField
+    q = plan.query
+    if (type(q) is not syntax.Select or not q.order or not 0 < q.limit < syntax.MAX_ROWS
+            or len(plan.sources) != 1 or q.family != 'catalog' or q.section is not None
+            or q.temporary or q.external or q.derived is not None or q.into is not None
+            or q.virtual_condition is not None or q.joins or plan.grouped or q.having is not None
+            or q.distinct or plan.memberships or plan.hierarchies):
+        return None
+    if any(type(field) is not _BoundField or field.source != 0
+           for field in (*plan.projections, *(field for field, _ in plan.orders))):
+        return None
+    select = getattr(view, 'ordered_catalog_values', None)
+    if select is None: return None
+    predicate = plan.storage_predicate(plan.predicate, 0, allow_or=True)
+    if plan.predicate is not None and predicate is None: return None
+    from uuid import UUID
+    from yadinassi.db.catalog.catalog_backend import CatalogKey, CatalogOrder, CatalogScanRequest, CatalogValuePage, CatalogValueRow
+    from .queries import BSLQueryResult, _logical, _section_value, _MAX_CELLS, _MAX_RESULT_TEXT
+
+    # All used fields are included so the provider validates selected sort and
+    # filter values too. Only the requested projection enters the BSL result.
+    fields = tuple(dict.fromkeys(column.field for column in plan.fields[0]))
+    ordered = {}
+    for field, descending in plan.orders:
+        ordered.setdefault(field.column.field, descending)
+    if len(fields) > 128 or len(ordered) > 16: return None
+    order = tuple(CatalogOrder(field, descending) for field, descending in ordered.items())
+    manager = plan.managers[0]; metadata = manager._catalogs._metadata
+    if plan.enum_scope is not None: plan.enum_scope.require_current()
+    elif plan.enum_binding is not None: plan.enum_binding._live()
+    if ((view.database_id,view.configuration_generation) != (metadata._database_id,metadata._generation)
+            or view.catalog_schema(manager._schema.identity) != manager._schema):
+        raise BackendError('schema_changed')
+    request = CatalogScanRequest(predicate,order,q.limit,string_comparison='casefold_v1')
+    page = select(manager._schema.identity, request, fields)
+    if plan.enum_scope is not None: plan.enum_scope.require_current()
+    elif plan.enum_binding is not None: plan.enum_binding._live()
+    if page is None: return None
+    if (type(page) is not CatalogValuePage or type(page.rows) is not tuple
+            or len(page.rows) > q.limit or page.continuation is not None):
+        raise BackendError('integrity')
+    ordinals = {field: i for i, field in enumerate(fields)}
+    positions = tuple(ordinals[column.field] for column in plan.columns)
+    rows, seen, text_units = [], set(), 0
+    for record in page.rows:
+        if type(record) is not CatalogValueRow or type(record.key) is not CatalogKey:
+            raise BackendError('integrity')
+        key = record.key
+        if (type(key.database_id) is not UUID or type(key.catalog_id) is not UUID or type(key.record_id) is not UUID
+                or key.database_id != view.database_id or key.catalog_id != manager._schema.identity
+                or not key.record_id.int or key.record_id in seen or type(record.values) is not tuple
+                or len(record.values) != len(fields)):
+            raise BackendError('integrity')
+        if 'ref' in ordinals:
+            ref = record.values[ordinals['ref']]
+            if (type(ref) is not CatalogKey or type(ref.database_id) is not UUID
+                    or type(ref.catalog_id) is not UUID or type(ref.record_id) is not UUID or ref != key):
+                raise BackendError('integrity')
+        seen.add(key.record_id)
+        row = tuple(_section_value(manager, column.custom, record.values[index])
+                    if column.custom is not None else _logical(manager, column, record.values[index])
+                    for column, index in zip(plan.columns,positions))
+        text_units += sum(len(value) for value in row if type(value) is str)
+        rows.append(row)
+        if len(rows)*len(plan.columns) > _MAX_CELLS or text_units > _MAX_RESULT_TEXT:
+            raise ValueError('Query result resource limit exceeded')
+    budget[0] += len(rows)*len(plan.columns)
+    budget[1] += text_units
+    if budget[0] > _MAX_CELLS or budget[1] > _MAX_RESULT_TEXT:
+        raise ValueError('Query input resource limit exceeded')
+    return BSLQueryResult(plan.columns,tuple(rows))

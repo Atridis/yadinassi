@@ -111,6 +111,9 @@ class DocumentView:
         # already used by enum/report packages; acquire no new connection.
         aggregate = self._view.aggregate_catalog
         return None if aggregate is None else aggregate(identity, request)
+    def ordered_catalog_values(self, identity, request, fields):
+        return self._view.ordered_catalog_values(identity, request, fields)
+
     def scan_catalog_section(self, identity, section_id, request):
         return self._view.scan_catalog_section(identity, section_id, request)
     def _register_reader(self):

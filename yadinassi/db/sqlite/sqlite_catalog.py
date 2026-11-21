@@ -2408,13 +2408,21 @@ class _View:
         return ','.join(columns)
 
     def _projection_row(self, catalog_id, schema, fields, row):
+        if type(row[0]) is not str or len(row[0]) > 36: raise BackendError('integrity')
         key = CatalogKey(self.database_id,catalog_id,UUID(row[0])); _uuid(key.record_id)
         values = []
         definitions = {field.identity: field for field in schema.fields}
         tags = {'string':'s', 'number':'n', 'datetime':'d'}
         for field, value in zip(fields,row[1:]):
             if type(field) is str:
-                values.append(key if field == 'ref' else bool(value) if field == 'deletion_mark' else value)
+                if field == 'ref':
+                    value = key
+                elif field == 'deletion_mark':
+                    if type(value) is not int or value not in (0,1): raise BackendError('integrity')
+                    value = bool(value)
+                elif field in ('code','description'):
+                    validate_string(value, schema.code_length if field == 'code' else schema.description_length)
+                values.append(value)
                 continue
             definition = definitions[field]
             if definition.kind == 'enum_ref':
@@ -2516,12 +2524,8 @@ class _View:
             raise BackendError('invalid_input')
         return self._scan_catalog(catalog_id, request, fields)
 
-    def _scan_catalog(self, catalog_id, request, fields):
-        self._require()
-        _close_document_scan(self)
-        if self._operation_id is not None: raise BackendError('unsupported')
-        schema = self.catalog_schema(catalog_id)
-        if type(request) is not CatalogScanRequest or type(request.page_size) is not int or not 1 <= request.page_size <= 1000 or type(request.order) is not tuple or len(request.order) > 16: raise BackendError('invalid_input')
+    def _validate_catalog_scan(self, schema, request, fields, max_rows):
+        if type(request) is not CatalogScanRequest or type(request.page_size) is not int or not 1 <= request.page_size <= max_rows or type(request.order) is not tuple or len(request.order) > 16: raise BackendError('invalid_input')
         if type(request.string_comparison) is not str or request.string_comparison not in ('codepoint','casefold_v1'): raise BackendError('unsupported')
         if request.predicate is not None: self._scan_predicate(schema,request.predicate,[0])
         if fields is not None:
@@ -2532,6 +2536,46 @@ class _View:
             if self._scan_field(schema,item.field)[0] == 'enum_ref': raise BackendError('unsupported')
             if item.field in seen: raise BackendError('invalid_input')
             seen.add(item.field)
+    @_boundary
+    def ordered_catalog_values(self, catalog_id, request, fields):
+        """One projected ordered page on an ordinary query-only read view."""
+        self._require()
+        if not self._query_language: return None
+        if self._backend._active is not self: raise BackendError('closed')
+        schema = self.catalog_schema(catalog_id)
+        if self._backend.storage_version == 1 or schema.hierarchy != 'none': return None
+        if (type(request) is not CatalogScanRequest or request.continuation is not None
+                or not request.order or type(fields) is not tuple or not 1 <= len(fields) <= 128):
+            raise BackendError('invalid_input')
+        try:
+            self._validate_catalog_scan(schema, request, fields, _MAX_ROWS)
+        except BackendError as error:
+            if error.code != 'unsupported': raise
+            return None
+        plan = self._scan_sql(schema,request)
+        if plan is None: return None
+        if self._scan_cursor is not None:
+            self._scan_cursor = None
+        _close_document_scan(self)
+        table, _, source, args = self._source(schema)
+        where = ' AND '.join(term for term in (source, plan[0]) if term != '1')
+        if where: where = ' WHERE ' + where
+        columns = self._projection_columns(schema,fields)
+        cursor = self._connection.execute(
+            'SELECT %s FROM %s%s ORDER BY %s LIMIT ?' % (columns,table,where,plan[2]),
+            args+plan[1]+(request.page_size,))
+        try: rows = tuple(self._projection_row(catalog_id,schema,fields,row) for row in cursor)
+        finally: cursor.close()
+        self._require()
+        if self._backend._active is not self: raise BackendError('closed')
+        return CatalogValuePage(rows,None)
+
+    def _scan_catalog(self, catalog_id, request, fields):
+        self._require()
+        _close_document_scan(self)
+        if self._operation_id is not None: raise BackendError('unsupported')
+        schema = self.catalog_schema(catalog_id)
+        self._validate_catalog_scan(schema, request, fields, 1000)
         binding = ('catalog',catalog_id,request.predicate,request.order,request.page_size,request.string_comparison,fields)
         table, columns, source_where, source_args = self._source(schema)
         plan = self._scan_sql(schema, request)

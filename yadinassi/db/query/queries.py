@@ -335,6 +335,10 @@ class BSLQuery(BSLObject):
         size = min(1000, query.limit)
         view = _transaction_query_view(manager)
         try:
+            if order and query.limit < syntax.MAX_ROWS:
+                from .query_pushdown import try_ordered_select
+                pushed = try_ordered_select(plan, view, [0, 0])
+                if pushed is not None: return pushed
             while len(rows) < query.limit:
                 request = CatalogScanRequest(predicate, order, size, continuation,
                                              string_comparison='casefold_v1')
