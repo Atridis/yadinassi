@@ -4,6 +4,7 @@ No arbitrary getattr, no backend access and no replacement for writer validation
 """
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from . import python_direct_movements as movements
+from .python_direct_plain_map import PlainFixedMap
 from yadinassi.db.registers.accumulation_posting_values import BSLAccumulationRow
 from yadinassi.db.catalog.catalogs import BSLCatalogs, BSLCatalogManager, BSLCatalogObject, BSLCatalogSelection
 from yadinassi.db.catalog.catalog_types import BSLCatalogReference
@@ -309,7 +310,7 @@ class CatalogBoundary:
             return _ValueListItemReference(value,name)
         if kind is PlainValueList and not self._verify_context:
             raise ValueError('Поле объекта не обнаружено: '+name)
-        if (kind is BSLQueryResultSelection
+        if (kind is BSLQueryResultSelection or kind is BSLFixedStructure
                 or kind is BSLNumberQualifiers and name.casefold() in
                     ('digits','разрядность','fractiondigits','разрядностьдробнойчасти')
                 or kind is BSLAccumulationRow and name.casefold() in ('linenumber','номерстроки')):
@@ -329,16 +330,20 @@ class CatalogBoundary:
         from yadinassi.types.values import Reference
         return _ForwardReference(Reference(read,write))
 
-    def _readonly_property_reference(self,value,name):
-        # Keep the current property live across forwarding. Methods are not
-        # readable output slots, including QuerySelection.Next without a column.
+    def _readonly_property_reference(self,value,name,*,indexed=False):
+        # Resolve only the already admitted read operation. Keep the value live
+        # across forwarding without permitting a write through receiver hooks.
         def read():
-            result=self.get_member(value,name)
+            result=(self.resolve_member(value,'__getitem__')(name) if indexed
+                    else self.get_member(value,name))
             if type(result) is HostFunction:
-                raise BoundaryViolation('method is not a host reference: '+name)
+                member='__getitem__' if indexed else name
+                raise BoundaryViolation('method is not a host reference: '+member)
             return result
         def write(new_value):
-            if _verify_collection(self,value):self._check_effect()
+            verify=self._verify_context if type(value) is PlainFixedMap else _verify_collection(self,value)
+            if verify:self._check_effect()
+            if indexed:raise ValueError('Элемент фиксированной коллекции недоступен для записи')
             raise ValueError('Свойство недоступно для записи: '+name)
         read()
         from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
@@ -346,6 +351,9 @@ class CatalogBoundary:
         return _ForwardReference(Reference(read,write))
 
     def reference_index(self,value,index):
+        kind=type(value)
+        if kind is BSLFixedArray or kind is BSLFixedStructure or kind is BSLFixedMap or kind is PlainFixedMap:
+            return self._readonly_property_reference(value,index,indexed=True)
         from . import python_direct_table_references as table_refs
         if table_refs.indexed(value):return table_refs.bind(self,value,index,index=True)
         return super().reference_index(value,index)
