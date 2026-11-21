@@ -62,6 +62,23 @@ class SourceTemporarySecurity(unittest.TestCase):
         self.assertEqual(other.temporary_storage._entries,{})
         self.assertEqual(app.interpreter.execution_context,'client')
 
+    def test_client_marker_retargeted_during_actual_cannot_write(self):
+        from yadinassi.configuration.configuration_source_runtime import SourceApplication
+        from test_source_server_call import configuration
+        other=self.app(); output=[]
+        def emit(value):
+            output.append(value)
+            app.interpreter.functions['puttotempstorage'].function.owner=other.temporary_storage
+        app=SourceApplication(configuration('',existing.BODY),output=emit)
+        self.addCleanup(app.close); app.start()
+        app.interpreter.execute('Function Touch() Message("arg"); Return 1; EndFunction')
+        with self.assertRaises(BoundaryViolation):
+            app.interpreter.execute('PutToTempStorage(Touch(),New UUID)')
+        self.assertEqual(output,['arg'])
+        self.assertEqual(app.temporary_storage._entries,{})
+        self.assertEqual(other.temporary_storage._entries,{})
+        self.assertEqual(app.interpreter.execution_context,'client')
+
     def test_inherited_store_override_is_rejected(self):
         app=self.app()
         callback=unittest.mock.Mock(side_effect=AssertionError('wrong-override'))
