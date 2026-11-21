@@ -2408,21 +2408,13 @@ class _View:
         return ','.join(columns)
 
     def _projection_row(self, catalog_id, schema, fields, row):
-        if type(row[0]) is not str or len(row[0]) > 36: raise BackendError('integrity')
         key = CatalogKey(self.database_id,catalog_id,UUID(row[0])); _uuid(key.record_id)
         values = []
         definitions = {field.identity: field for field in schema.fields}
         tags = {'string':'s', 'number':'n', 'datetime':'d'}
         for field, value in zip(fields,row[1:]):
             if type(field) is str:
-                if field == 'ref':
-                    value = key
-                elif field == 'deletion_mark':
-                    if type(value) is not int or value not in (0,1): raise BackendError('integrity')
-                    value = bool(value)
-                elif field in ('code','description'):
-                    validate_string(value, schema.code_length if field == 'code' else schema.description_length)
-                values.append(value)
+                values.append(key if field == 'ref' else bool(value) if field == 'deletion_mark' else value)
                 continue
             definition = definitions[field]
             if definition.kind == 'enum_ref':
@@ -2540,7 +2532,7 @@ class _View:
     def ordered_catalog_values(self, catalog_id, request, fields):
         """One projected ordered page on an ordinary query-only read view."""
         self._require()
-        if not self._query_language: return None
+        if not self._query_language or self._operation_id is not None: return None
         if self._backend._active is not self: raise BackendError('closed')
         schema = self.catalog_schema(catalog_id)
         if self._backend.storage_version == 1 or schema.hierarchy != 'none': return None
@@ -2561,14 +2553,25 @@ class _View:
         where = ' AND '.join(term for term in (source, plan[0]) if term != '1')
         if where: where = ' WHERE ' + where
         columns = self._projection_columns(schema,fields)
+        lengths = {'code':schema.code_length, 'description':schema.description_length}
+        texts = tuple((i,lengths[field]) for i,field in enumerate(fields,1) if field in lengths)
+        marked = fields.index('deletion_mark')+1 if 'deletion_mark' in fields else None
         cursor = self._connection.execute(
             'SELECT %s FROM %s%s ORDER BY %s LIMIT ?' % (columns,table,where,plan[2]),
             args+plan[1]+(request.page_size,))
-        try: rows = tuple(self._projection_row(catalog_id,schema,fields,row) for row in cursor)
+        rows = []
+        try:
+            for row in cursor:
+                if type(row[0]) is not str or len(row[0]) > 36: raise BackendError('integrity')
+                for i, length in texts:
+                    validate_string(row[i], length)
+                if marked is not None and (type(row[marked]) is not int or row[marked] not in (0,1)):
+                    raise BackendError('integrity')
+                rows.append(self._projection_row(catalog_id,schema,fields,row))
         finally: cursor.close()
         self._require()
         if self._backend._active is not self: raise BackendError('closed')
-        return CatalogValuePage(rows,None)
+        return CatalogValuePage(tuple(rows),None)
 
     def _scan_catalog(self, catalog_id, request, fields):
         self._require()

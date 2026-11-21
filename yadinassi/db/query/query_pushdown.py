@@ -119,7 +119,7 @@ def try_numeric(plan, view, budget):
     return BSLQueryResult(plan.columns,(tuple(values),) if plan.query.limit else ())
 
 
-def try_ordered_select(plan, view, budget):
+def try_ordered_select(plan, view, budget=None):
     """Execute closed field-only ORDER BY + TOP in one typed provider read."""
     from .relational_queries import _BoundField
     q = plan.query
@@ -165,6 +165,7 @@ def try_ordered_select(plan, view, budget):
     ordinals = {field: i for i, field in enumerate(fields)}
     positions = tuple(ordinals[column.field] for column in plan.columns)
     rows, seen, text_units = [], set(), 0
+    input_text = 0
     for record in page.rows:
         if type(record) is not CatalogValueRow or type(record.key) is not CatalogKey:
             raise BackendError('integrity')
@@ -180,6 +181,8 @@ def try_ordered_select(plan, view, budget):
                     or type(ref.catalog_id) is not UUID or type(ref.record_id) is not UUID or ref != key):
                 raise BackendError('integrity')
         seen.add(key.record_id)
+        if budget is not None:
+            input_text += sum(len(value) for value in record.values if type(value) is str)
         row = tuple(_section_value(manager, column.custom, record.values[index])
                     if column.custom is not None else _logical(manager, column, record.values[index])
                     for column, index in zip(plan.columns,positions))
@@ -187,8 +190,9 @@ def try_ordered_select(plan, view, budget):
         rows.append(row)
         if len(rows)*len(plan.columns) > _MAX_CELLS or text_units > _MAX_RESULT_TEXT:
             raise ValueError('Query result resource limit exceeded')
-    budget[0] += len(rows)*len(plan.columns)
-    budget[1] += text_units
-    if budget[0] > _MAX_CELLS or budget[1] > _MAX_RESULT_TEXT:
-        raise ValueError('Query input resource limit exceeded')
+    if budget is not None:
+        budget[0] += len(rows)*len(fields)
+        budget[1] += input_text
+        if budget[0] > _MAX_CELLS or budget[1] > _MAX_RESULT_TEXT:
+            raise ValueError('Query input resource limit exceeded')
     return BSLQueryResult(plan.columns,tuple(rows))

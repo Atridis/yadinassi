@@ -337,7 +337,7 @@ class BSLQuery(BSLObject):
         try:
             if order and query.limit < syntax.MAX_ROWS:
                 from .query_pushdown import try_ordered_select
-                pushed = try_ordered_select(plan, view, [0, 0])
+                pushed = try_ordered_select(plan, view)
                 if pushed is not None: return pushed
             while len(rows) < query.limit:
                 request = CatalogScanRequest(predicate, order, size, continuation,
