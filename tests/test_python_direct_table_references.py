@@ -191,6 +191,45 @@ class DirectTableReferenceTests(unittest.TestCase):
             self.assertEqual(vm.execute('R.A'),1)
             vm.execute('R.A=3;');self.assertEqual(vm.execute('R.A'),3)
 
+    def test_reference_checks_only_the_addressed_row(self):
+        from yadinassi.execution.direct import python_direct_plain_tables as tables
+        vm=Interpreter();self.addCleanup(vm.close)
+        vm.execute(SETUP+'For I=1 To 128 Do T.Add();EndDo;')
+        plan=vm.prepare('Procedure Change(X) X=X+1;EndProcedure Change(R.A);Change(R[0]);')
+        target=vm.variables['r']
+        with patch.object(tables,'row_check',wraps=tables.row_check) as check:
+            vm.execute_prepared(plan)
+        self.assertEqual(vm.execute('R.A'),3)
+        self.assertEqual(check.call_count,4)
+        self.assertTrue(all(call.args[0] is target for call in check.call_args_list))
+
+    def test_reference_does_not_admit_other_rows_or_remove_iteration_validation(self):
+        from yadinassi.execution.direct import python_direct_plain_tables as tables
+        vm=Interpreter();self.addCleanup(vm.close)
+        vm.execute(SETUP+'T.Add();')
+        table=vm.variables['t']
+        foreign=BSLValueTable();foreign.columns.add('A')
+        table.rows[1]=foreign.add()
+        vm.execute('Procedure Change(X) X=X+1;EndProcedure Change(R.A);')
+        self.assertEqual(vm.execute('R.A'),2)
+        with self.assertRaises(BoundaryViolation):
+            tables.validate(table)
+
+    def test_row_reference_observes_readonly_after_arguments(self):
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close)
+        vm.execute(SETUP+'Procedure Change(X,Y) X=Y;EndProcedure')
+        table=vm.variables['t']
+        def make_readonly():
+            table._bounded_slice_read=True
+            return Decimal(2)
+        vm.register_function('MakeReadonly',make_readonly)
+        for address in ('R.A','R[0]'):
+            table._bounded_slice_read=False
+            with self.subTest(address=address),self.assertRaises(BSLError):
+                vm.execute('Change('+address+',MakeReadonly());')
+            self.assertTrue(table._bounded_slice_read)
+            self.assertEqual(vm.variables['r'].get_member('A'),1)
+
     def test_existing_native_table_checkpoint_preserved(self):
         from scripts.smoke_test import table_command_checkpoint,TABLE_COMMAND_LABELS
         root=Path(__file__).resolve().parents[1]

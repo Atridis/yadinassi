@@ -52,12 +52,14 @@ def row_check(row,table,schema,keys,pure=False):
     return True
 
 
-def validate(value,pure=False):
+def validate(value,pure=False,*,row_only=False):
     hooks()
     kind=type(value)
     if kind is _TABLE:table=value
     elif any(kind is cls for cls in (_ROW,_COLUMN,_COLUMNS)):
-        table=dict.get(raw(value),'table')
+        fields=raw(value)
+        if any(type(k) is not str for k in fields):fail()
+        table=dict.get(fields,'table')
     else:fail()
     if type(table) is not _TABLE:fail()
     data=raw(table)
@@ -113,6 +115,11 @@ def validate(value,pure=False):
             kinds=raw(description).get('types')
             if type(kinds) is not tuple or len(kinds):return False
     if pure and any(v is not None and type(v) is not Decimal for v in schema._defaults):return False
+    if row_only and kind is _ROW:
+        # A field reference never traverses the table's row inventory.
+        # Check the addressed row even when it is detached; its public
+        # accessors enforce deletion and readonly behavior.
+        return row_check(value,table,schema,keys,pure)
     for row in rows:
         if not row_check(row,table,schema,keys,pure):return False
     if kind is _ROW and not any(row is value for row in rows):

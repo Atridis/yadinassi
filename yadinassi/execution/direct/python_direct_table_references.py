@@ -16,22 +16,16 @@ def indexed(value):return type(value) is _ROW
 
 def hooks(value):
     from .python_direct_plain_tables import validate
-    validate(value)
-
-
-def write_authority(value):
-    # This family stores values directly; qualifiers are metadata, not a
-    # hidden coercion engine. Keep exact owner/schema admission for writes.
-    from .python_direct_plain_tables import validate
-    validate(value)
+    validate(value,row_only=True)
 
 
 def bind(context,value,key,*,index=False):
     verify=getattr(context,'_verify_context',True) is not False
     if verify:context._check()
     hooks(value);root=owner(value)
-    def check():
-        if verify:context._check();hooks(value)
+    def check(*,write=False):
+        if verify:context._check()
+        if verify or write:hooks(value)
         if owner(value) is not root:raise BoundaryViolation('table reference owner changed')
     def read():
         check()
@@ -40,7 +34,7 @@ def bind(context,value,key,*,index=False):
                     else context.get_member(value,key))
         finally:check()
     def write(new):
-        check();write_authority(value)
+        check(write=True)
         try:
             if index:context.resolve_member(value,'__setitem__')(key,new)
             else:context.resolve_set_member(value,key)(new)
