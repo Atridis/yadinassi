@@ -122,6 +122,12 @@ class CatalogValuePage:
 
 
 @dataclass(frozen=True, slots=True)
+class _CatalogSectionChanges:
+    """Internal SQLite edit buffer intent: replace only explicitly dirty sections."""
+    sections: tuple[TabularSectionRows, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class CatalogDraft:
     key: CatalogKey
     code: str
@@ -130,7 +136,7 @@ class CatalogDraft:
     values: tuple
     # None preserves existing contents. An explicit tuple replaces all sections;
     # omitted sections, including all sections when (), become empty.
-    tabular_sections: tuple[TabularSectionRows, ...] | None = None
+    tabular_sections: tuple[TabularSectionRows, ...] | _CatalogSectionChanges | None = None
     auto_number: bool = False
     parent: CatalogKey | None = None
     is_folder: bool = False

@@ -51,6 +51,8 @@ class DirectCatalogPreparationTests(unittest.TestCase):
         with patch.object(backend,'_connect',side_effect=open_connection):
             self.card.write()
         self.assertEqual(self.card.get_member('Description'),'Updated')  # BeforeWrite trimmed.
+        owner_table=backend._layout.table_name(definition.identity)
+        self.assertTrue(any(sql.startswith('UPDATE') and owner_table in sql for sql in trace))
         self.assertFalse(any(sql.startswith(('DELETE','INSERT')) and table in sql for sql in trace))
         saved=ref.get_object(ref)
         self.assertEqual(tuple(row.identity for row in saved.get_member('Склады')._stored_rows().rows),row_ids)

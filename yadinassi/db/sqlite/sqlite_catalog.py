@@ -42,7 +42,8 @@ from yadinassi.db.catalog.catalog_backend import (BackendError, Capabilities, Ca
                               FieldSchema, Revision, CatalogComparison, CatalogPredicate,
                               CatalogOrder, CatalogScanRequest, CatalogPage, CatalogScalarRow,
                               CatalogValueRow, CatalogValuePage, TabularSectionSchema,
-                              TabularRow, TabularSectionRows, CatalogSectionRecord, CatalogSectionPage, CatalogWriteOutcome)
+                              TabularRow, TabularSectionRows, CatalogSectionRecord, CatalogSectionPage, CatalogWriteOutcome,
+                              _CatalogSectionChanges)
 
 _APPLICATION_ID = 0x59414449
 _MAX_ROWS = 10000
@@ -2830,6 +2831,8 @@ class _View:
     def _draft_sections(self, draft, schema):
         sections = draft.tabular_sections
         if sections is None: return None
+        sparse = type(sections) is _CatalogSectionChanges
+        if sparse: sections = sections.sections
         if type(sections) is not tuple or len(sections) > _MAX_SECTIONS: raise BackendError('invalid_input')
         if self._backend.storage_version not in (3, 4, 6, 7, 8, 9, 10) and sections: raise BackendError('unsupported')
         by_id = {s.identity: s for s in schema.tabular_sections}
@@ -2864,7 +2867,8 @@ class _View:
             supplied[section.section_id] = rows
         # Canonical order is UUID-based, independent of mutable metadata names
         # and caller ordering of sections. Row sequence remains significant.
-        result = [[str(identity), supplied.get(identity, [])] for identity in sorted(by_id, key=lambda x: x.hex)]
+        targets = supplied if sparse else by_id
+        result = [[str(identity), supplied.get(identity, [])] for identity in sorted(targets, key=lambda x: x.hex)]
         if len(_json(result)) > _MAX_ROW_BYTES: raise BackendError('invalid_input')
         return result
 
@@ -2872,11 +2876,13 @@ class _View:
         if sections is None or not schema.tabular_sections: return
         contents = dict(sections)
         for section in schema.tabular_sections:
+            identity = str(section.identity)
+            if identity not in contents: continue
             table, fields = self._section_source(schema, section)
             # Only explicit replacement removes section rows. The owner is
             # never deleted, including when its deletion mark is set.
             self._connection.execute('DELETE FROM %s WHERE owner_id=?' % table, (str(draft.key.record_id),))
-            for position, (row_id, encoded) in enumerate(contents[str(section.identity)], 1):
+            for position, (row_id, encoded) in enumerate(contents[identity], 1):
                 values = (str(draft.key.record_id), row_id, position) + encode_columns(encoded, section, enum_domain=self._catalog_domain)
                 columns = ['owner_id', 'row_id', 'row_number'] + fields
                 self._connection.execute('INSERT INTO %s (%s) VALUES(%s)' % (table, ','.join(columns), ','.join('?' for _ in values)), values)

@@ -8,6 +8,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from unittest.mock import patch
 from uuid import UUID, uuid4
 
 from test_sqlite_catalog_backend import configuration
@@ -135,6 +136,34 @@ class CatalogSectionTests(unittest.TestCase):
         card = self.read(draft.key)
         self.assertEqual(card.tabular_sections, self.expected(second, first))
         self.assertEqual(card.revision, revision)
+
+    def test_bsl_clear_replaces_dirty_section_only(self):
+        from yadinassi import Interpreter
+        from yadinassi.db.database_context import SQLiteDBContext
+
+        first = self.row()
+        note = TabularRow(uuid4(), ('keep unchanged',))
+        draft = self.draft(self.expected(first, notes=(note,)))
+        revision = self.create(draft)
+        db = SQLiteDBContext(self.path)
+        self.addCleanup(db.close)
+        vm = Interpreter(database_context=db)
+        self.addCleanup(vm.close)
+
+        trace = []
+        connect = db.backend._connect
+        def traced_connect(**kwargs):
+            connection = connect(**kwargs)
+            connection.set_trace_callback(trace.append)
+            return connection
+        with patch.object(db.backend, '_connect', side_effect=traced_connect):
+            vm.execute('A=Catalogs.Products.FindByCode("10").GetObject(); A.Lines.Clear(); A.Write();')
+        changes = [sql for sql in trace if sql.startswith(('DELETE', 'INSERT'))]
+        self.assertTrue(any(self.table(self.lines) in sql for sql in changes))
+        self.assertFalse(any(self.table(self.notes) in sql for sql in changes))
+        saved = self.read(draft.key)
+        self.assertNotEqual(saved.revision, revision)
+        self.assertEqual(saved.tabular_sections, self.expected(notes=(note,)))
 
     def test_explicit_empty_clears_all_rows_but_keeps_owner(self):
         draft = self.draft((self.section(self.row()),))
