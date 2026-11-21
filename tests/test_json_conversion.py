@@ -471,6 +471,41 @@ EndFunction
         self.vm.execute('WriteJSON(writer,False,,,,);')
         self.assertEqual(self.vm.execute('writer.Close()'), 'false')
 
+    def test_callback_free_global_omissions(self):
+        for name in ('ReadJSON', 'ПрочитатьJSON'):
+            with self.subTest(name=name):
+                self.reader('[null,false,2]')
+                self.assertEqual(self.vm.execute(f'{name}(reader,,,,,,,,)').items,
+                                 [None, False, D(2)])
+        for name in ('WriteJSON', 'ЗаписатьJSON'):
+            with self.subTest(name=name):
+                self.writer()
+                self.vm.execute(f'{name}(writer,False,,,,);')
+                self.assertEqual(self.vm.execute('writer.Close()'), 'false')
+
+    def test_required_json_hole_rejects_before_later_argument_effect(self):
+        self.vm.execute('Function Later() Export Count=Count+1; Return 1; EndFunction')
+        reader = self.reader('1')
+        self.writer()
+        for expression in ('ReadJSON(,Later())', 'WriteJSON(writer,,Later());'):
+            with self.subTest(expression=expression), self.assertRaises(BSLError):
+                self.vm.execute(expression)
+        self.assertEqual(self.vm.variables['count'], 0)
+        self.assertEqual(reader._position, -1)
+        self.vm.execute('WriteJSON(writer,1);')
+        self.assertEqual(self.vm.execute('writer.Close()'), '1')
+
+    def test_unsupported_json_callback_does_not_consume_or_write(self):
+        reader = self.reader('1')
+        self.writer()
+        for expression in ('ReadJSON(reader,,,,"Handler","Module")',
+                           'WriteJSON(writer,False,,"Handler","Module");'):
+            with self.subTest(expression=expression), self.assertRaisesRegex(BSLError, 'обработчик'):
+                self.vm.execute(expression)
+        self.assertEqual(reader._position, -1)
+        self.vm.execute('WriteJSON(writer,1);')
+        self.assertEqual(self.vm.execute('writer.Close()'), '1')
+
     def test_expanded_global_argument_limits_and_required_holes(self):
         self.reader('1')
         self.writer()

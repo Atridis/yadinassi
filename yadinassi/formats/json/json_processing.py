@@ -7,6 +7,7 @@ import os
 import stat
 
 from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
+from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 from yadinassi.execution.safe_mode import require_external_access
 from yadinassi.types.values import BSLObject, HostFunction, BSLArray, BSLFixedArray
 from yadinassi.collections.structures import BSLStructure, BSLFixedStructure
@@ -259,17 +260,23 @@ def _names(value, *, allow_string=False):
         return None
     if allow_string and type(value) is str:
         return frozenset((_text(value),))
-    if type(value) not in (BSLArray, BSLFixedArray):
+    if type(value) in (list, PlainArray):
+        length, items = list.__len__(value), list.__iter__(value)
+    elif type(value) in (BSLArray, BSLFixedArray):
+        items = value.items
+        length = len(items)
+    else:
         raise TypeError("JSON: ожидается массив имен свойств")
-    if len(value.items) > 100_000:
+    if length > 100_000:
         raise ValueError("JSON: превышен предел имен свойств Yadinassi")
-    return frozenset(_text(name) for name in value.items)
+    return frozenset(_text(name) for name in items)
 
 
 def _nesting(value):
     if value is None:
-        value = Decimal(500)
-    if type(value) is not Decimal or not value.is_finite() or value < 1 or value > 500 or value != value.to_integral_value():
+        value = 500
+    if (type(value) is not int and (type(value) is not Decimal or not value.is_finite()
+                                    or value != value.to_integral_value())) or not 1 <= value <= 500:
         raise ValueError("JSON: максимальная вложенность должна быть целым числом от 1 до 500")
     # The documented default is 500. The existing bounded parser has its own
     # smaller resource ceiling, which this option cannot relax.
@@ -334,8 +341,12 @@ def _without_callbacks(operation):
     raise TypeError("JSON: обработчик требует контекст интерпретатора")
 
 
-def read_json(reader, read_to_map=False, date_properties=None, date_format=None):
-    return _without_callbacks(read_json_events(reader, read_to_map, date_properties, date_format))
+def read_json(reader, read_to_map=False, date_properties=None, date_format=None,
+              handler=None, module=None, additional=None, reviver_properties=None, maximum_nesting=None):
+    if handler is not None or module is not None:
+        raise TypeError("JSON: обработчик требует контекст интерпретатора")
+    return _without_callbacks(read_json_events(reader, read_to_map, date_properties, date_format,
+                                              maximum_nesting=maximum_nesting))
 
 
 def _quote(value):
@@ -705,7 +716,9 @@ class BSLJSONWriter(BSLObject):
         return super().get_member(name)
 
 
-def write_json(writer, value, settings=None):
+def write_json(writer, value, settings=None, handler=None, module=None, additional=None):
+    if handler is not None or module is not None:
+        raise TypeError("JSON: обработчик требует контекст интерпретатора")
     if type(writer) is not BSLJSONWriter:
         raise TypeError("ЗаписатьJSON: ожидается ЗаписьJSON")
     writer._write_encoded(_encode(value, settings))

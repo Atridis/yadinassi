@@ -12,7 +12,7 @@ from yadinassi.streams.text_documents import BSLTextDocument
 from .source import python_direct_source_resources as text_resources
 from yadinassi.http.http_client import BSLHTTPConnection, BSLHTTPRequest
 from yadinassi.streams.binary_streams import BSLBinaryDataBuffer
-from yadinassi.formats.json.json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings
+from yadinassi.formats.json.json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings, read_json, write_json
 from yadinassi.types.values import HostFunction, BSLFixedArray, _DIRECT_TO_STRING_ABI
 from yadinassi.collections.structures import BSLFixedStructure
 from yadinassi.collections.maps import BSLFixedMap
@@ -288,6 +288,23 @@ class ServicesBoundary:
         function=self._services.get(key)
         if type(function) is not HostFunction:return bound
         implementation=function.function
+        if implementation is read_json or implementation is write_json:
+            returns_value=implementation is read_json
+            required,maximum=(1,9) if returns_value else (2,6)
+            def prepare_omissions(bound,positions,count):
+                from yadinassi.execution.codegen.experimental_naked_collections import _host_omission_error
+                if not required<=count<=maximum or any(not required<=i<count for i in positions):
+                    _host_omission_error()
+                def invoke(*values):
+                    if (function.function is not implementation or function.returns_value is not returns_value
+                            or type(function.reference_parameters) is not frozenset
+                            or function.reference_parameters):
+                        raise BoundaryViolation('canonical JSON service changed during argument evaluation')
+                    return bound(*values)
+                invoke.requires_reference=bound.requires_reference
+                return invoke,dict.fromkeys(positions,None)
+            bound.prepare_omissions=prepare_omissions
+            return bound
         if implementation is not binary_from_string and implementation is not find_files:
             return bound
 
