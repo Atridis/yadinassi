@@ -1,4 +1,4 @@
-"""Reject unproven exact Date keys without adding Date value-key semantics."""
+"""Opaque or hook-mutated Dates must not reach native map hashing."""
 import unittest
 from unittest.mock import patch
 
@@ -39,8 +39,11 @@ class MapDateBoundaryTests(unittest.TestCase):
 
     def test_exact_state_reads_bypass_mutated_class_hooks(self):
         unknown=BSLDate(0,True);known=BSLDate(1)
-        plain=PlainMap();plain['safe']=7
+        plain=PlainMap();plain['safe']=7;plain[known]=9
         fixed=PlainFixedMap(plain)
+        readers = (plain.get, fixed.get, fixed.get_index)
+        for get in readers:
+            self.assertEqual(get(BSLDate(1)), 9)
         def hostile(*args):raise AssertionError('host hook')
         with patch.object(BSLDate,'require_known',hostile),\
              patch.object(BSLDate,'__getattribute__',hostile),\
@@ -49,9 +52,12 @@ class MapDateBoundaryTests(unittest.TestCase):
              patch.object(BSLDate,'boundary',property(hostile)):
             with self.assertRaises(UnsupportedDateRange):_TypedMap.token(unknown)
             self.assertEqual(_TypedMap.token(known),(object,id(known)))
-            for get in (plain.get, fixed.get, fixed.get_index):
-                with self.assertRaises(UnsupportedDateRange):get(unknown)
-                with self.assertRaisesRegex(TypeError,'requires a scalar Python value'):get(known)
+            for get in readers:
+                with self.subTest(reader=get.__qualname__):
+                    with self.assertRaises(UnsupportedDateRange):get(unknown)
+                    with self.assertRaisesRegex(BoundaryViolation,'date key hooks changed'):get(known)
+        for get in readers:
+            self.assertEqual(get(BSLDate(1)), 9)
 
     def test_missing_or_hostile_exact_boundary_state_fails_closed(self):
         class Flag:
