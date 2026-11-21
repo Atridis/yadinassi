@@ -53,11 +53,16 @@ _DOCUMENT = ('number', 'date', 'deletionmark', 'posted', 'ref')
 _READONLY = frozenset(('ref', 'posted', 'linenumber', 'parent', 'rows'))
 
 
+def _is_database_endpoint(value):
+    kind = type(value)
+    return (kind is BSLCatalogObject or kind is BSLDocumentObject
+            or kind is BSLCatalogSectionRow or kind is BSLDocumentLine)
+
+
 def _is_extended_endpoint(value):
     """Dispatch only admitted non-structure families, without host type hooks."""
-    return any(type(value) is kind for kind in (
-        BSLValueTableRow, BSLValueTreeRow, BSLCatalogObject, BSLDocumentObject,
-        BSLCatalogSectionRow, BSLDocumentLine))
+    kind = type(value)
+    return kind is BSLValueTableRow or kind is BSLValueTreeRow or _is_database_endpoint(value)
 
 
 def _invalid(message):
@@ -373,9 +378,9 @@ def _section_endpoint(row, budget, target):
     return _Endpoint(row, tuple(fields), cls.get_member, cls.set_member)
 
 
-def _endpoint(value, budget, target=False, readable_rows=False, *, direct_rows=False):
+def _endpoint(value, budget, target=False, readable_rows=False, *, direct_structure=False):
     kind = type(value)
-    direct = direct_rows and kind is _DirectStructure
+    direct = direct_structure and kind is _DirectStructure
     if direct or kind is BSLStructure or kind is BSLFixedStructure:
         if direct:
             entries = dict.items(value)
@@ -443,7 +448,8 @@ def fill_property_values(target, source, properties=None, exclude=None):
     Linux ordinary-row INCLUDE checks presence/readonly lazily, right to left.
     Other endpoint/target combinations retain the original preflight policy.
     """
-    return _fill_property_values(target, source, properties, exclude, direct_rows=False)
+    return _fill_property_values(target, source, properties, exclude, direct_structure=False,
+                                 linux_rows=_ordinary_linux_transfer(target, source))
 
 
 def fill_structure_row(target, source, properties, exclude):
@@ -456,16 +462,21 @@ def fill_structure_row(target, source, properties, exclude):
         row_kind = None
     if row_kind is not BSLValueTableRow and row_kind is not BSLValueTreeRow:
         raise TypeError('ЗаполнитьЗначенияСвойств: неподдерживаемый тип объекта')
-    return _fill_property_values(target, source, properties, exclude, direct_rows=True)
+    return _fill_property_values(target, source, properties, exclude, direct_structure=True,
+                                 linux_rows=current_native_target() == LINUX_8_3_27_1508)
 
 
-def _fill_property_values(target, source, properties, exclude, *, direct_rows):
-    linux_rows = (current_native_target() == LINUX_8_3_27_1508 if direct_rows
-                  else _ordinary_linux_transfer(target, source))
+def _fill_admitted_database_properties(target, source, properties, exclude):
+    # The direct caller has admitted each live endpoint and its current owner.
+    return _fill_property_values(target, source, properties, exclude, direct_structure=True,
+                                 linux_rows=False)
+
+
+def _fill_property_values(target, source, properties, exclude, *, direct_structure, linux_rows):
     budget = _Budget()
     try:
-        destination = _endpoint(target, budget, True, direct_rows=direct_rows)
-        origin = _endpoint(source, budget, readable_rows=linux_rows, direct_rows=direct_rows)
+        destination = _endpoint(target, budget, True, direct_structure=direct_structure)
+        origin = _endpoint(source, budget, readable_rows=linux_rows, direct_structure=direct_structure)
     except (AttributeError, KeyError):
         _invalid('неполное внутреннее состояние объекта')
     if linux_rows:
@@ -510,7 +521,7 @@ def _fill_property_values(target, source, properties, exclude, *, direct_rows):
                     # !todo Measure multiple/mixed missing exclusions and other
                     # source kinds; do not extrapolate the partial-write rule.
                     mutable_source = (type(source) is BSLStructure
-                                      or (direct_rows and type(source) is _DirectStructure))
+                                      or (direct_structure and type(source) is _DirectStructure))
                     if not linux_rows or not mutable_source or deferred is not None:
                         _invalid('исключаемое свойство отсутствует в одном из объектов')
                     deferred = key

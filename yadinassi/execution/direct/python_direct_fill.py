@@ -1,4 +1,4 @@
-"""Direct FillPropertyValues for structures and mixed detached table/tree rows."""
+"""Direct FillPropertyValues for structures, detached rows and live database objects."""
 from yadinassi.collections.structures import _DIRECT_FILL_STRUCTURE_ABI
 from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure, structure_key
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
@@ -26,15 +26,34 @@ def _storage(value, role):
     return items
 
 
-def fill(target,source,properties=None,exclude=None):
-    # Preserve the already-registered canonical host contract when no direct
-    # storage participates. This is not a conversion or retry: direct storage
-    # never reaches database adapters or the runtime evaluator.
+def _fill_database(context, target, source, properties, exclude):
+    from yadinassi.collections.property_transfer import (
+        _fill_admitted_database_properties, _is_database_endpoint,
+    )
+    target_db = _is_database_endpoint(target)
+    source_db = _is_database_endpoint(source)
+    if not target_db and not source_db:
+        return False
+
+    from .python_direct_database import CatalogBoundary
+    if not isinstance(context, CatalogBoundary):
+        raise BoundaryViolation('unregistered or foreign database receiver')
+    if target_db:
+        context._catalog_owner(target)
+    if source_db and source is not target:
+        context._catalog_owner(source)
+    _fill_admitted_database_properties(target, source, properties, exclude)
+    return True
+
+
+def fill(target,source,properties=None,exclude=None,*,_context=None):
     target_direct = type(target) is _DirectStructure
     source_direct = type(source) is _DirectStructure
     if not target_direct and not source_direct:
         if not ((type(target) is _STRUCTURE or type(target) is _FIXED)
                 and (type(source) is _STRUCTURE or type(source) is _FIXED)):
+            if _fill_database(_context,target,source,properties,exclude):
+                return
             return _FILL(target,source,properties,exclude)
     elif target_direct != source_direct:
         other = source if target_direct else target
@@ -45,6 +64,8 @@ def fill(target,source,properties=None,exclude=None):
             if other_kind is BSLValueTableRow or other_kind is BSLValueTreeRow:
                 from yadinassi.collections.property_transfer import fill_structure_row
                 return fill_structure_row(target, source, properties, exclude)
+            if _fill_database(_context,target,source,properties,exclude):
+                return
     target_items=_storage(target,'приемник')
     source_items=_storage(source,'источник')
     return _COPY(target_items,source_items,properties,exclude,
@@ -63,7 +84,7 @@ def resolve_fill(context,function,*,name=None,require_value=False,allow_referenc
         context._before('call' if name is not None else 'call_value',name or function.name.casefold())
         try:
             if function.function is not _FILL:raise BoundaryViolation('fill implementation changed at policy boundary')
-            return fill(*args)
+            return fill(*args,_context=context)
         except PermissionError as error:raise BoundaryViolation(str(error)) from error
         finally:
             if context._verify_context:context._check()
