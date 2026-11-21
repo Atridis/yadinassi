@@ -132,6 +132,11 @@ def validate_main_demo_ddl(connection, config, domain):
     layout = s.load_layout(connection, config.catalogs)
     sections = s.load_section_layout(connection, config.catalogs, layout)
     expected = {ddl.split('(')[0].split()[-1]: ddl for ddl in _base_ddls()}
+    expected.update({ddl.split('(')[0].split()[-1]:ddl for ddl in
+                     s.document_data_ddls(config.documents,layout,enum_domain=domain)})
+    from .sqlite_accumulation_movements import accumulation_movement_ddls
+    expected.update({ddl.split('(')[0].split()[-1].strip('"'):ddl for ddl in
+                     accumulation_movement_ddls(config.registers,layout,enum_domain=domain)})
     expected.update({layout.table_name(c.identity): s.catalog_ddl(c, layout, enum_domain=domain)
                      for c in config.catalogs})
     expected.update({sections.table_name(c.identity, sec.identity): s.section_ddl(c, sec, layout, sections)

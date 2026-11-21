@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 from uuid import UUID
 
+from yadinassi.db.sqlite.sqlite_movement_layout import table_name as movement_table
 from yadinassi import Interpreter
 from yadinassi.db.query import query_parser as syntax
 from yadinassi.db.catalog.catalog_backend import BackendError
@@ -280,7 +281,8 @@ class DimensionConditionRuntimeTests(unittest.TestCase):
         self.seed();self.report()
         key=self.vm.execute('OtherProduct')._key
         with closing(sqlite3.connect(self.path)) as db,db:
-            db.execute('UPDATE accumulation_movement SET values_json=? WHERE record_id=?',('[]',str(key.record_id)))
+            table = movement_table('accumulation', self.context.backend.accumulation_configuration.registers[0])
+            db.execute('UPDATE '+table+' SET period=? WHERE record_id=?',('00000000000000',str(key.record_id)))
         with self.assertRaises((BackendError,ValueError)):self.report()
 
     def test_unselected_zero_group_does_not_expand_legacy_turnover_admission(self):

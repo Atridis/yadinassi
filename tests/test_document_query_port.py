@@ -23,13 +23,11 @@ class DocumentQueryPortTests(unittest.TestCase):
 
     def seed(self, count=3):
         """Clone one valid encoded card in a single bounded fixture transaction."""
+        from sqlite_document_physical_fixture import seed_document_headers
         obj = self.object()
+        obj.get_member('Lines').add().set_member('Flag',True)
         obj.write()
-        row = self.sql('SELECT document_id,record_id,revision,number,date,deletion_mark,values_json,sections_json FROM document_record')[0]
-        with closing(sqlite3.connect(self.path)) as connection, connection:
-            connection.executemany('INSERT INTO document_record VALUES(?,?,?,?,?,?,?,?)',
-                ((row[0], str(uuid4()), row[2], str(i).zfill(9), *row[4:])
-                 for i in range(2, count + 1)))
+        seed_document_headers(self.path,self.schema,count)
 
     def view(self):
         view = self.context.backend.begin_query_read()
@@ -238,7 +236,9 @@ class DocumentQueryPortTests(unittest.TestCase):
             numbers.extend(card.number for card in page.rows)
             if page.continuation is None: break
             self.assertIsInstance(view._view._document_scan_stream, sqlite3.Cursor)
-            self.assertEqual(len(view._view._document_scan_lookahead), 7)
+            lookahead = view._view._document_scan_lookahead
+            self.assertIs(type(lookahead),tuple)
+            self.assertEqual(lookahead[2],str(len(numbers)+1).zfill(9))
             self.assertEqual(len(view._view._scan_cursor), 2)
             request = replace(request, continuation=page.continuation)
         self.assertEqual(numbers, [str(i).zfill(9) for i in range(1, 6)])

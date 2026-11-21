@@ -18,6 +18,8 @@ from yadinassi.db.registers.periodic_information_registers import period
 from yadinassi.db.query.queries import BSLQuery
 from yadinassi.db.registers.register_backend import RegisterKey, RegisterDraft, RegisterScanRequest
 from test_information_registers import register_files
+from yadinassi.db.sqlite.sqlite_register_layout import register_table
+from yadinassi.db.sqlite.sqlite_typed_rows import attribute_column
 
 
 def periodic_files(periodicity='Day', catalogs=True):
@@ -173,7 +175,9 @@ class PeriodicRegisterTests(unittest.TestCase):
     def test_query_projection_does_not_hide_corrupt_history(self):
         self.seed()
         with closing(sqlite3.connect(self.path)) as c:
-            c.execute("UPDATE information_register_record SET values_json='[]' WHERE key_json=(SELECT MIN(key_json) FROM information_register_record)");c.commit()
+            c.execute('PRAGMA ignore_check_constraints=ON')  # Simulate damaged storage, not an admissible write.
+            table=register_table(self.schema);price=attribute_column(self.schema.resources[0])
+            c.execute(f"UPDATE {table} SET {price}=? WHERE rowid=(SELECT MIN(rowid) FROM {table})",(10**12,));c.commit()
         with self.assertRaises(BackendError):self.query('SELECT Price FROM InformationRegister.Prices.SliceLast(&At)',literal_date('20240103')).execute()
     def test_scalar_slice_rejects_fractional_boundary(self):
         with self.assertRaises(ValueError):self.manager.slice_last(BSLDate(1))

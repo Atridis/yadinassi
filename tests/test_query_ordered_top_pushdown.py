@@ -178,11 +178,16 @@ EndDo;
             expected = self.query(text)
         self.assertEqual(self.query(text),expected)
 
-    def test_tagged_fields_decline_without_touching_fast_provider(self):
+    def test_physical_custom_projection_uses_only_used_column(self):
         self.seed()
-        with patch.object(DocumentView,'ordered_document_values',side_effect=AssertionError('tagged JSON lowering')):
+        trace, traced = self.actual_trace()
+        with traced, patch.object(DocumentView,'_validate_query_source',side_effect=AssertionError('full source')):
             rows = self.query('SELECT TOP 2 D.Number, D.State FROM Document.Receipt AS D ORDER BY D.Number')
         self.assertEqual(tuple(number for number,_ in rows),('ignored','straße'))
+        self.assertEqual(len(trace),1,trace)
+        self.assertIn('LEFT JOIN "document_data_',trace[0])
+        self.assertEqual(trace[0].count('a."attr_'),1)
+        self.assertNotIn('json_',trace[0])
 
     def test_document_top_inside_transaction_sees_write_then_rollback(self):
         with patch.object(DocumentView,'_validate_query_source',autospec=True,

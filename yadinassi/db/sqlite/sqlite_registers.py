@@ -6,14 +6,16 @@ register revision prevents stale updates after a delete/reinsert cycle.
 import json
 from hashlib import sha256
 from uuid import UUID, uuid4
-from yadinassi.db.catalog.catalog_backend import BackendError, FieldSchema
+from yadinassi.db.catalog.catalog_backend import BackendError, FieldSchema, CatalogOrder
 from yadinassi.db.registers.register_backend import (InformationRegisterSchema, RegisterKey, RegisterRevision,
                                RegisterRecord, RegisterDraft, RegisterOutcome, RegisterScanRequest, RegisterPage,
                                RegisterSetDraft, RegisterSetOutcome)
 
+from .sqlite_typed_rows import encode_typed_columns, decode_typed_columns
+from .sqlite_register_layout import RegisterLayout
+
 REGISTER_DDL = (
     'CREATE TABLE information_register_schema(identity TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, definition TEXT NOT NULL)',
-    'CREATE TABLE information_register_record(register_id TEXT NOT NULL REFERENCES information_register_schema(identity), key_json TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), values_json TEXT NOT NULL, PRIMARY KEY(register_id,key_json))',
     'CREATE TABLE information_register_sequence(register_id TEXT PRIMARY KEY REFERENCES information_register_schema(identity), next_value INTEGER NOT NULL CHECK(next_value>0))',
 )
 MAX_ROW = 1024 * 1024
@@ -112,7 +114,7 @@ class RegisterView:
         self._view=view;self.database_id=view.database_id
         self.configuration_generation=view.configuration_generation
         self._schemas=view._backend._register_schemas
-        self._outcome=None;self._scan=None
+        self._outcome=None;self._scan=None;self._layouts={}
     @property
     def _connection(self): return self._view._connection
     def close(self):
@@ -124,7 +126,12 @@ class RegisterView:
         schema=next((s for s in self._schemas if s.identity==identity),None)
         if schema is None: raise BackendError('not_found')
         return schema
-    def _key(self,key):
+    def _layout(self,schema):
+        layout = self._layouts.get(schema.identity)
+        if layout is None:
+            layout = self._layouts[schema.identity] = RegisterLayout(schema)
+        return layout
+    def _key_columns(self,key):
         if type(key) is not RegisterKey or type(key.database_id) is not UUID or key.database_id!=self.database_id: raise BackendError('invalid_input')
         schema=self.register_schema(key.register_id)
         if type(key.dimensions) is not tuple or len(key.dimensions)!=len(schema.key_fields): raise BackendError('invalid_input')
@@ -134,45 +141,49 @@ class RegisterView:
         encoded=[_dimension(v,f,self.database_id) for f,v in zip(schema.key_fields,key.dimensions)]
         raw=_storage()._json(encoded)
         if len(raw)>MAX_ROW: raise BackendError('invalid_input')
+        return schema,raw,encode_typed_columns(encoded,self._layout(schema).dimensions)
+    def _key(self,key):
+        schema,raw,_=self._key_columns(key)
         return schema,raw
     def _preflight(self,schema):
-        args=(str(schema.identity),)
-        invalid=self._connection.execute("SELECT 1 FROM information_register_record WHERE register_id=? AND (typeof(key_json)!='text' OR typeof(values_json)!='text' OR typeof(revision)!='integer' OR revision<1 OR length(CAST(key_json AS BLOB))+length(CAST(values_json AS BLOB))>?) LIMIT 1",args+(MAX_ROW,)).fetchone()
-        count,size=self._connection.execute('SELECT COUNT(*),COALESCE(SUM(length(CAST(key_json AS BLOB))+length(CAST(values_json AS BLOB))+64),0) FROM information_register_record WHERE register_id=?',args).fetchone()
+        layout=self._layout(schema)
+        invalid=self._connection.execute(f"SELECT 1 FROM {layout.table} WHERE typeof(revision)!='integer' OR revision<1 OR ({layout.bytes})>? LIMIT 1",(MAX_ROW,)).fetchone()
+        count,size=self._connection.execute(f'SELECT COUNT(*),COALESCE(SUM({layout.bytes}+64),0) FROM {layout.table}').fetchone()
         if invalid: raise BackendError('integrity')
         if count>MAX_ROWS or size>MAX_TOTAL: raise BackendError('unsupported')
         return count
     def _record(self,schema,row):
-        raw,revision,values_raw=row
-        dimensions=json.loads(raw);values=json.loads(values_raw)
-        if (type(dimensions) is not list or len(dimensions)!=len(schema.key_fields)
-                or type(values) is not list or len(values)!=len(schema.resources)+len(schema.attributes)):
-            raise BackendError('integrity')
+        layout=self._layout(schema)
+        revision=row[0]
+        if type(revision) is not int or not 1<=revision<2**63: raise BackendError('integrity')
+        split=1+len(layout.keys)
+        keys,raw_values=row[1:split],row[split:]
+        dimensions=decode_typed_columns(keys,layout.dimensions)
+        values=decode_typed_columns(raw_values,layout.payload)
         s=_storage()
         key=RegisterKey(self.database_id,schema.identity,tuple(s._decode(v,f,self.database_id) for f,v in zip(schema.key_fields,dimensions)))
-        stored=tuple(s._decode(v,f,self.database_id) for f,v in zip((*schema.resources,*schema.attributes),values))
-        if self._key(key)[1]!=raw or s._json(values)!=values_raw: raise BackendError('integrity')
+        stored=tuple(s._decode(v,f,self.database_id) for f,v in zip(layout.payload.fields,values))
+        _,raw,canonical=self._key_columns(key)
+        if keys!=canonical or raw_values!=encode_typed_columns(values,layout.payload): raise BackendError('integrity')
         return RegisterRecord(key,RegisterRevision(self.database_id,self.configuration_generation,
             schema.identity,sha256(raw.encode()).hexdigest(),str(revision)),stored)
-    def read_record(self,key):
-        self._view._require();schema,raw=self._key(key);self._preflight(schema)
-        row=self._connection.execute('SELECT key_json,revision,values_json FROM information_register_record WHERE register_id=? AND key_json=?',(str(schema.identity),raw)).fetchone()
+    def _lookup(self,schema,keys):
+        layout=self._layout(schema)
+        row=self._connection.execute(f'SELECT {layout.columns} FROM {layout.table} WHERE {layout.where}',keys).fetchone()
         return None if row is None else self._record(schema,row)
+    def read_record(self,key):
+        self._view._require();schema,_,keys=self._key_columns(key);self._preflight(schema)
+        return self._lookup(schema,keys)
+    def _ordered_rows(self,schema):
+        layout=self._layout(schema)
+        return self._connection.execute(f'SELECT {layout.columns} FROM {layout.table} ORDER BY {layout.key_order}')
     def select_records(self,identity,filters=(),limit=1000):
         schema=self.register_schema(identity)
-        if type(filters) is not tuple or type(limit) is not int or not 1<=limit<=1000: raise BackendError('invalid_input')
-        admitted={f.identity:(i,f) for i,f in enumerate(schema.key_fields)};wanted={}
-        for pair in filters:
-            if type(pair) is not tuple or len(pair)!=2 or type(pair[0]) is not UUID or pair[0] not in admitted or pair[0] in wanted:
-                raise BackendError('invalid_input')
-            _,f=admitted[pair[0]]
-            if schema.periodic and f.identity==schema.period_field.identity:
-                from yadinassi.db.registers.periodic_information_registers import storage_period
-                if storage_period(pair[1],schema.periodicity)!=pair[1]: raise BackendError('invalid_input')
-            wanted[pair[0]]=_dimension(pair[1],f,self.database_id)
+        if type(limit) is not int or not 1<=limit<=1000: raise BackendError('invalid_input')
+        admitted,wanted=self._filter_values(schema,filters)
         self._preflight(schema);result=[]
-        # Validate the bounded entire source, even rows excluded by the filter.
-        for row in self._connection.execute('SELECT key_json,revision,values_json FROM information_register_record WHERE register_id=? ORDER BY key_json',(str(identity),)):
+        # Keep strict full-source validation on the general read port.
+        for row in self._ordered_rows(schema):
             record=self._record(schema,row)
             if all(_dimension(record.key.dimensions[admitted[k][0]],admitted[k][1],self.database_id)==v for k,v in wanted.items()):
                 if len(result)>=limit: raise BackendError('unsupported')
@@ -185,22 +196,56 @@ class RegisterView:
                 or not 1<=request.page_size<=1000
                 or (request.continuation is not None and type(request.continuation) is not str)):
             raise BackendError('invalid_input')
+        layout=self._layout(schema)
         if request.continuation is None:
             self._scan=None;self._preflight(schema)
             # Validate the full bounded source once before releasing the first page.
-            for row in self._connection.execute('SELECT key_json,revision,values_json FROM information_register_record WHERE register_id=? ORDER BY key_json',(str(identity),)):
-                self._record(schema,row)
-            after=''
+            for row in self._ordered_rows(schema): self._record(schema,row)
+            where,params='',()
         else:
             if self._scan is None or self._scan[:2]!=(request.continuation,identity): raise BackendError('invalid_input')
-            after=self._scan[2];self._scan=None
-        rows=tuple(self._connection.execute('SELECT key_json,revision,values_json FROM information_register_record WHERE register_id=? AND key_json>? ORDER BY key_json LIMIT ?',
-            (str(identity),after,request.page_size+1)))
+            where,params=layout.seek(self._scan[2]);self._scan=None
+        rows=tuple(self._connection.execute(f'SELECT {layout.columns} FROM {layout.table}{where} ORDER BY {layout.key_order} LIMIT ?',
+            params+(request.page_size+1,)))
         records=tuple(self._record(schema,row) for row in rows[:request.page_size])
         token=None
         if len(rows)>request.page_size:
-            token=uuid4().hex;self._scan=(token,identity,rows[request.page_size-1][0])
+            token=uuid4().hex;self._scan=(token,identity,rows[request.page_size-1][1:1+len(layout.keys)])
         return RegisterPage(records,token)
+
+    def ordered_register_records(self, identity, order, limit):
+        """Closed query-only TOP over physical columns, never the raw/tx port."""
+        self._view._require()
+        if not self._view._query_language or self._view._operation_id is not None:
+            return None
+        if self._view._backend._active is not self._view: raise BackendError('closed')
+        if (type(order) is not tuple or not 1<=len(order)<=16
+                or type(limit) is not int or not 1<=limit<MAX_ROWS):
+            raise BackendError('invalid_input')
+        schema=self.register_schema(identity);layout=self._layout(schema)
+        admitted={field.identity:(field,col) for field,col in zip(schema.fields,(*layout.keys,*layout.values))}
+        terms=[];seen=set()
+        for item in order:
+            if (type(item) is not CatalogOrder or type(item.field) is not UUID
+                    or type(item.descending) is not bool or item.field in seen or item.field not in admitted):
+                raise BackendError('invalid_input')
+            seen.add(item.field)
+            field,col=admitted[item.field]
+            if field.kind=='string': col+=' COLLATE yadinassi_casefold_v1'
+            elif field.kind=='catalog_ref':
+                # Empty reference precedes nonempty UUID, as in logical _key.
+                col=f"COALESCE({col},'00000000-0000-0000-0000-000000000000')"
+            elif field.kind not in ('number','datetime','boolean'): return None
+            terms.append(col+(' DESC' if item.descending else ' ASC'))
+        order_sql=','.join((*terms,layout.key_order))
+        self._scan=None
+        cursor=self._connection.execute(
+            f'SELECT {layout.columns} FROM {layout.table} ORDER BY {order_sql} LIMIT ?',(limit,))
+        try: rows=tuple(self._record(schema,row) for row in cursor)
+        finally: cursor.close()
+        self._view._require()
+        if self._view._backend._active is not self._view: raise BackendError('closed')
+        return RegisterPage(rows,None)
 
     def periodic_records(self, identity, filters=(), start=None, end=None, edge=None, limit=1000):
         schema=self.register_schema(identity)
@@ -237,7 +282,7 @@ class RegisterView:
     def _scope(self,schema,filters):
         admitted,wanted=self._filter_values(schema,filters)
         self._preflight(schema);result=[]
-        for row in self._connection.execute('SELECT key_json,revision,values_json FROM information_register_record WHERE register_id=? ORDER BY key_json',(str(schema.identity),)):
+        for row in self._ordered_rows(schema):
             record=self._record(schema,row)
             if all(_dimension(record.key.dimensions[admitted[k][0]],admitted[k][1],self.database_id)==v for k,v in wanted.items()):
                 result.append(record)
@@ -259,22 +304,24 @@ class RegisterView:
         admitted,wanted=self._filter_values(schema,draft.filters)
         # An unfiltered replacement must first observe the whole scope.
         if draft.replace and not wanted and draft.expected_snapshot is None: raise BackendError('invalid_input')
-        seen=set();rows=[]
+        seen=set();rows=[];physical=[]
         for record in draft.rows:
-            rs,raw,values,_=self._intent(record,None,False)
+            rs,raw,values,keys=self._intent(record,None,False)
             if rs.identity!=schema.identity or raw in seen: raise BackendError('invalid_input')
             seen.add(raw)
             if any(_dimension(record.key.dimensions[admitted[k][0]],admitted[k][1],self.database_id)!=v for k,v in wanted.items()): raise BackendError('invalid_input')
             rows.append((raw,values))
+            physical.append((keys,encode_typed_columns(values,self._layout(schema).payload)))
         intent=['register_set_v1',str(schema.identity),[[str(f.identity),wanted[f.identity]] for f in schema.key_fields if f.identity in wanted],rows,draft.replace,draft.expected_snapshot]
         raw=_storage()._json(intent)
         if len(raw)>MAX_TOTAL: raise BackendError('invalid_input')
-        return schema,rows,None
+        return schema,rows,physical
 
     def write_set(self,draft):
         self._view._require(True)
         if self._outcome is not None: raise BackendError('unsupported')
-        schema,rows,_=self._set_intent(draft)
+        schema,rows,physical=self._set_intent(draft)
+        layout=self._layout(schema)
         self._scan=None
         old,snapshot=self._scope(schema,draft.filters)
         if draft.expected_snapshot is not None and draft.expected_snapshot!=snapshot: raise BackendError('conflict')
@@ -282,12 +329,13 @@ class RegisterView:
         if not draft.replace and any(raw in old_keys for raw,_ in rows): raise BackendError('duplicate_identity')
         with self._view._atomic_record():
             if draft.replace:
-                self._connection.executemany('DELETE FROM information_register_record WHERE register_id=? AND key_json=?',((str(schema.identity),raw) for raw in old_keys))
+                self._connection.executemany(f'DELETE FROM {layout.table} WHERE {layout.where}',
+                    (self._key_columns(record.key)[2] for record in old))
             revision=self._connection.execute('SELECT next_value FROM information_register_sequence WHERE register_id=?',(str(schema.identity),)).fetchone()[0]
             if type(revision) is not int or not 1<=revision<2**63-len(rows)-1: raise BackendError('integrity')
             if old and revision<=max(int(r.revision.token) for r in old): raise BackendError('integrity')
-            for raw,values in rows:
-                self._connection.execute('INSERT INTO information_register_record VALUES(?,?,?,?)',(str(schema.identity),raw,revision,_storage()._json(values)));revision+=1
+            for keys,values in physical:
+                self._connection.execute(f'INSERT INTO {layout.table}({layout.columns}) VALUES({layout.insert_params})',(revision,*keys,*values));revision+=1
             self._connection.execute('UPDATE information_register_sequence SET next_value=? WHERE register_id=?',(revision,str(schema.identity)))
             self._preflight(schema)
             result_rows,result_snapshot=self._scope(schema,draft.filters)
@@ -296,7 +344,7 @@ class RegisterView:
 
     def _intent(self,draft,expected,deleted):
         if type(draft) is not RegisterDraft or type(deleted) is not bool: raise BackendError('invalid_input')
-        schema,raw=self._key(draft.key)
+        schema,raw,keys=self._key_columns(draft.key)
         fields=(*schema.resources,*schema.attributes)
         if type(draft.values) is not tuple or len(draft.values)!=len(fields): raise BackendError('invalid_input')
         values=[_storage()._encode(v,f,self.database_id) for f,v in zip(fields,draft.values)]
@@ -311,27 +359,31 @@ class RegisterView:
         intent=['register_write_v1',str(schema.identity),raw,values,None if expected is None else expected.token,deleted]
         encoded=_storage()._json(intent)
         if len(encoded)>MAX_ROW: raise BackendError('invalid_input')
-        return schema,raw,values,None
+        return schema,raw,values,keys
     def write(self,draft,expected=None): self._write(draft,expected,False)
     def delete(self,draft,expected): self._write(draft,expected,True)
     def _write(self,draft,expected,deleted):
         self._view._require(True)
         if self._outcome is not None: raise BackendError('unsupported')
-        schema,raw,values,_=self._intent(draft,expected,deleted)
+        schema,raw,values,keys=self._intent(draft,expected,deleted)
+        layout=self._layout(schema)
         self._scan=None
-        old=self.read_record(draft.key)
+        count=self._preflight(schema)
+        old=self._lookup(schema,keys)
         if expected is None:
             if old is not None: raise BackendError('duplicate_identity')
-            if self._preflight(schema)>=MAX_ROWS: raise BackendError('unsupported')
+            if count>=MAX_ROWS: raise BackendError('unsupported')
         elif old is None or old.revision!=expected: raise BackendError('conflict')
         with self._view._atomic_record():
             revision=self._connection.execute('SELECT next_value FROM information_register_sequence WHERE register_id=?',(str(schema.identity),)).fetchone()[0]
             if type(revision) is not int or not 1<=revision<2**63-1: raise BackendError('integrity')
             if old is not None and revision<=int(old.revision.token): raise BackendError('integrity')
             self._connection.execute('UPDATE information_register_sequence SET next_value=? WHERE register_id=?',(revision+1,str(schema.identity)))
-            if deleted: self._connection.execute('DELETE FROM information_register_record WHERE register_id=? AND key_json=?',(str(schema.identity),raw))
-            elif old is None: self._connection.execute('INSERT INTO information_register_record VALUES(?,?,?,?)',(str(schema.identity),raw,revision,_storage()._json(values)))
-            else: self._connection.execute('UPDATE information_register_record SET revision=?,values_json=? WHERE register_id=? AND key_json=?',(revision,_storage()._json(values),str(schema.identity),raw))
+            if deleted: self._connection.execute(f'DELETE FROM {layout.table} WHERE {layout.where}',keys)
+            else:
+                stored=encode_typed_columns(values,layout.payload)
+                if old is None: self._connection.execute(f'INSERT INTO {layout.table}({layout.columns}) VALUES({layout.insert_params})',(revision,*keys,*stored))
+                else: self._connection.execute(f'UPDATE {layout.table} SET revision=?,{layout.set_values} WHERE {layout.where}',(revision,*stored,*keys))
             self._preflight(schema)
             outcome=RegisterOutcome(RegisterRevision(self.database_id,self.configuration_generation,schema.identity,sha256(raw.encode()).hexdigest(),str(revision)),deleted)
         self._outcome=outcome
@@ -358,5 +410,5 @@ class RegisterView:
 # Apply the same narrow error translation as the owning catalog application.
 # Installed by sqlite_catalog after its boundary helper has been defined.
 def install_boundaries(boundary):
-    for name in ('registers','register_schema','read_record','select_records','scan_register','periodic_records','read_set','write_set','write','delete','commit'):
+    for name in ('registers','register_schema','read_record','select_records','scan_register','ordered_register_records','periodic_records','read_set','write_set','write','delete','commit'):
         setattr(RegisterView,name,boundary(getattr(RegisterView,name)))

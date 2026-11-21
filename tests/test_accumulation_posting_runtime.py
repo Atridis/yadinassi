@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from yadinassi.db.sqlite.sqlite_movement_layout import table_name as movement_table
 from yadinassi import Interpreter, BSLRuntimeError
 from yadinassi.db.registers.accumulation_movements import AccumulationDirection, AccumulationReplacement
 from yadinassi.db.catalog.catalog_backend import BackendError
@@ -172,7 +173,7 @@ class AccumulationPostingRuntimeTests(unittest.TestCase):
         obj = self.new()
         self.post()
         with closing(sqlite3.connect(self.path)) as connection:
-            connection.execute('UPDATE accumulation_movement SET active=0')
+            connection.execute('UPDATE '+movement_table('accumulation', self.config.registers[0])+' SET active=0')
             connection.commit()
         with self.assertRaises(BackendError): self.rows(obj)
         with self.assertRaises(BackendError): SQLiteDBContext(self.path)
@@ -278,7 +279,7 @@ EndProcedure''')
             transaction = current(self.backend)
             transaction.commit()
         with closing(sqlite3.connect(self.path)) as connection:
-            connection.execute("UPDATE accumulation_movement SET values_json='[]'")
+            connection.execute("UPDATE "+movement_table('accumulation', self.config.registers[0])+" SET period='00000000000000'")
             connection.commit()
         with self.assertRaises(BackendError): self.rows(obj)
 

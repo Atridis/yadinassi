@@ -111,3 +111,41 @@ def load_register(manager, columns, view, budget, *, source=None, parameters=Non
         if not page.rows: raise BackendError('integrity')
         continuation = page.continuation
         cursors.add(continuation)
+
+
+
+def try_ordered_register(plan, view, budget=None):
+    """Materialize a bounded native ORDER/TOP page from the exact register port."""
+    from yadinassi.db.catalog.catalog_backend import CatalogOrder
+    from yadinassi.db.registers.information_registers import BSLInformationRegisterManager
+    from .queries import BSLQueryResult, _MAX_CELLS, _MAX_RESULT_TEXT
+    if plan.predicate is not None:
+        return None
+    manager = plan.managers[0]
+    provider = getattr(view,'ordered_register_records',None)
+    if provider is None or type(manager) is not BSLInformationRegisterManager:
+        return None
+    orders = {}
+    for field, descending in plan.orders:
+        orders.setdefault(field.column.field, descending)
+    if not 1<=len(orders)<=16:
+        return None
+    manager._check_view(view)
+    page = provider(manager._schema.identity, tuple(CatalogOrder(field, descending)
+                    for field, descending in orders.items()), plan.query.limit)
+    if page is None:
+        return None
+    manager._check_view(view)
+    if (type(page) is not RegisterPage or type(page.rows) is not tuple
+            or len(page.rows)>plan.query.limit or page.continuation is not None):
+        raise BackendError('integrity')
+    if budget is None: budget = [0, 0]
+    rows, seen, digests, text = [], set(), set(), 0
+    for record in page.rows:
+        values = _record_values(manager,record,view,seen,digests,budget)
+        row = tuple(values[column.field] for column in plan.columns)
+        text += sum(len(value) for value in row if type(value) is str)
+        rows.append(row)
+        if len(rows)*len(plan.columns)>_MAX_CELLS or text>_MAX_RESULT_TEXT:
+            raise ValueError('Query result resource limit exceeded')
+    return BSLQueryResult(plan.columns,tuple(rows))

@@ -160,18 +160,41 @@ from contextlib import closing
 from yadinassi.configuration.configuration_import import read_configuration_directory
 from yadinassi.configuration.configuration_posting_application import import_posting_application, PROFILE
 from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_document_layout import data_table,section_table
+from yadinassi.db.sqlite.sqlite_movement_layout import references as recorder_movement_columns
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier as quote
+from yadinassi.db.sqlite.sqlite_typed_rows import attribute_column,decode_typed_columns
 root=Path(sys.argv[2]); source=Path(sys.argv[3]); database=root/'documents.sqlite'
+def fields(schema):
+ return ','.join(quote(attribute_column(field)) for field in schema.fields)
 try:
+ config=import_posting_application(read_configuration_directory(source),posting_runtime=PROFILE)
  if sys.argv[1]=='create':
-  config=import_posting_application(read_configuration_directory(source),posting_runtime=PROFILE)
   SQLiteCatalogBackend.create_posting(database,config).close()
   result={'created':True}
  else:
   with closing(sqlite3.connect(database.as_uri()+'?mode=ro',uri=True)) as db:
    db.execute('PRAGMA query_only=ON')
-   result={'documents':db.execute('SELECT number,revision,date,values_json,sections_json FROM document_record ORDER BY number').fetchall(),
-    'posted':db.execute('SELECT r.number,COALESCE(p.posted,0) FROM document_record r LEFT JOIN document_posting_state p USING(document_id,record_id) ORDER BY number').fetchall(),
-    'movements':db.execute('SELECT r.number,m.line_number,m.active,m.values_json FROM recorder_movement m JOIN document_record r USING(document_id,record_id) ORDER BY r.number,m.line_number').fetchall()}
+   documents=[]; movements=[]
+   for schema in config.documents:
+    heads=db.execute('SELECT number,revision,date,record_id FROM document_record WHERE document_id=? ORDER BY number',(str(schema.identity),))
+    for number,revision,date,record_id in heads:
+     key=(str(schema.identity),record_id)
+     values=decode_typed_columns(db.execute('SELECT '+fields(schema)+' FROM '+quote(data_table(schema))+
+      ' WHERE document_id=? AND record_id=?',key).fetchone(),schema) if schema.fields else []
+     sections=[]
+     for section in schema.tabular_sections:
+      raw=db.execute('SELECT row_id,'+fields(section)+' FROM '+quote(section_table(schema,section))+
+       ' WHERE document_id=? AND record_id=? ORDER BY row_number',key)
+      sections.append((str(section.identity),[(r[0],decode_typed_columns(r[1:],section)) for r in raw]))
+     documents.append((number,revision,date,json.dumps(values),json.dumps(sections)))
+   for schema in config.registers:
+    table,columns=recorder_movement_columns('recorder',schema)
+    rows=db.execute('SELECT r.number,m.line_number,m.active,'+','.join('m.'+x for x in columns)+
+     ' FROM '+table+' m JOIN document_record r USING(document_id,record_id) ORDER BY r.number,m.line_number')
+    movements.extend((*r[:3],json.dumps(decode_typed_columns(r[3:],schema))) for r in rows)
+   result={'documents':sorted(documents),'movements':sorted(movements),
+    'posted':db.execute('SELECT r.number,COALESCE(p.posted,0) FROM document_record r LEFT JOIN document_posting_state p USING(document_id,record_id) ORDER BY number').fetchall()}
  print(json.dumps(result))
 except Exception:
  print('{"error":"owned_posting_fixture_failed"}',file=sys.stderr);sys.exit(1)

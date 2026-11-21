@@ -14,7 +14,7 @@ from yadinassi.db.registers.accumulation_movements import (
 from yadinassi.db.catalog.catalog_backend import BackendError, FieldSchema
 from yadinassi.db.document.document_backend import DocumentKey
 from yadinassi.db.sqlite.sqlite_accumulation_movements import (
-    ACCUMULATION_DDL, AccumulationMovementPort, _json, schema_data,
+    ACCUMULATION_DDL, AccumulationMovementPort, _json, schema_data, accumulation_movement_ddls,
 )
 
 
@@ -30,7 +30,9 @@ class AccumulationStorageTests(unittest.TestCase):
             (FieldSchema(uuid4(), 'Item', 'string', (8,)),),
             (FieldSchema(uuid4(), 'Quantity', 'number', (10, 2, 'Any')),),
             (FieldSchema(uuid4(), 'Verified', 'boolean'),))
-        for ddl in ACCUMULATION_DDL:
+        from yadinassi.db.sqlite.sqlite_movement_layout import references
+        self.table, self.columns = references('accumulation', self.schema)
+        for ddl in (*ACCUMULATION_DDL,*accumulation_movement_ddls((self.schema,),None)):
             self.c.execute(ddl)
         self.c.execute('INSERT INTO document_schema VALUES(?)', (str(self.doc),))
         self.c.execute('INSERT INTO accumulation_register_schema VALUES(?,?)',
@@ -61,7 +63,7 @@ class AccumulationStorageTests(unittest.TestCase):
         actual = self.port.read(self.reg, self.key)
         self.assertEqual(actual.rows, rows)
         self.assertIs(type(actual.rows[0].direction), AccumulationDirection)
-        self.assertEqual(actual.rows[1].resources[0].as_tuple(), Decimal('-0.00').as_tuple())
+        self.assertEqual(actual.rows[1].resources[0].as_tuple(), Decimal('0.00').as_tuple())
         self.assertEqual(actual.snapshot, outcome.snapshot)
         self.assertEqual(outcome.row_count, 2)
 
@@ -72,12 +74,13 @@ class AccumulationStorageTests(unittest.TestCase):
         self.port.replace(self.request(other, rows))
         self.assertEqual(self.port.read(self.reg, self.key).rows, rows)
         self.assertEqual(self.port.read(self.reg, other).rows, rows)
-        self.assertEqual(self.c.execute('SELECT COUNT(*) FROM accumulation_movement').fetchone(), (4,))
+        self.assertEqual(self.c.execute('SELECT COUNT(*) FROM ' + self.table).fetchone(), (4,))
 
     def test_corrupt_movements_rejected_after_write(self):
         request = self.request()
         self.port.replace(request)
-        self.c.execute("UPDATE accumulation_movement SET values_json='[]'")
+        self.c.execute('PRAGMA ignore_check_constraints=ON')
+        self.c.execute('UPDATE ' + self.table + ' SET ' + self.columns[1] + '=?', ('wrong',))
         with self.assertRaises(BackendError):
             self.port.read(self.reg, self.key)
 
@@ -170,18 +173,59 @@ class AccumulationStorageTests(unittest.TestCase):
         with self.assertRaises(BackendError):
             self.port.read(self.reg, self.key)
 
-    def test_corrupt_scalar_shape_tags_or_noncanonical_json_is_rejected(self):
+    def test_corrupt_physical_scalar_or_payload_size_is_rejected(self):
         self.port.replace(self.request())
-        for raw in ('[]', '[[["s","A"]],[["n","7.250"]],[["b",false]]]',
-                    '[[["s","A"]],[["n",7.25]],[["b",false]]]',
-                    '[[["s","A"]],[["n","NaN"]],[["b",false]]]',
-                    '[[["s","A"]],[["n","7.25"]],[["b",0]]]',
-                    ' [[["s","A"]],[["n","7.25"]],[["b",false]]]'):
-            with self.subTest(raw=raw):
-                self.c.execute('UPDATE accumulation_movement SET values_json=?', (raw,))
+        self.c.execute('PRAGMA ignore_check_constraints=ON')
+        for column, failed, original in (
+                (self.columns[0], 'too long string', 'A'),
+                (self.columns[1], 'NaN', 725),
+                (self.columns[1], 7.25, 725),
+                (self.columns[1], b'wrong', 725),
+                (self.columns[2], 2, 0),
+                ('payload_bytes', 0, None)):
+            if original is None:
+                original = self.c.execute('SELECT ' + column + ' FROM ' + self.table).fetchone()[0]
+            with self.subTest(column=column, failed=failed):
+                sql = 'UPDATE ' + self.table + ' SET ' + column + '=?'
+                self.c.execute(sql, (failed,))
                 with self.assertRaises(BackendError) as caught:
                     self.port.read(self.reg, self.key)
                 self.assertEqual(caught.exception.code, 'integrity')
+                self.c.execute(sql, (original,))
+
+    def test_sql_sees_physical_scalar_columns(self):
+        from yadinassi.db.sqlite.sqlite_movement_layout import references
+        self.port.replace(self.request())
+        text, number, boolean = self.columns
+        sql = f'SELECT typeof({text}),typeof({number}),{number},typeof({boolean}) FROM {self.table}'
+        self.assertEqual(self.c.execute(sql).fetchone(), ('text','integer',725,'integer'))
+        wide = replace(self.schema, identity=uuid4(), name='Wide',
+                       resources=(replace(self.schema.resources[0], identity=uuid4(),
+                                          qualifiers=(38, 2, 'Any')),))
+        for ddl in accumulation_movement_ddls((wide,), None):
+            self.c.execute(ddl)
+        self.c.execute('INSERT INTO accumulation_register_schema VALUES(?,?)',
+                       (str(wide.identity), _json(schema_data(wide))))
+        self.c.execute('INSERT INTO accumulation_register_document VALUES(?,?)',
+                       (str(wide.identity), str(self.doc)))
+        port = AccumulationMovementPort(self.c, self.db, 1, (wide,))
+        values = (Decimal('-99999999999999999999999999999999999.97'),
+                  Decimal('99999999999999999999999999999999999.98'))
+        rows = tuple(replace(self.row, line_number=i, resources=(value,))
+                     for i, value in enumerate(reversed(values), 1))
+        old = port.read(wide.identity, self.key)
+        outcome = port.replace(AccumulationReplacement(wide.identity, self.key, rows, old.snapshot))
+        actual = port.read(wide.identity, self.key)
+        self.assertEqual(actual.rows, rows)
+        self.assertEqual(actual.snapshot, outcome.snapshot)
+        table, (_, weight, _) = references('accumulation', wide)
+        sql = f'SELECT typeof({weight}),line_number FROM {table} ORDER BY {weight}'
+        self.assertEqual(self.c.execute(sql).fetchall(), [('blob',2),('blob',1)])
+        from yadinassi.db.registers.accumulation_movements import _sum_resource_vectors
+        with localcontext() as ambient:
+            ambient.prec = 2
+            self.assertEqual(_sum_resource_vectors(wide, tuple(r.resources for r in actual.rows), (1,1)),
+                             (Decimal('0.01'),))
 
     def test_corrupt_period_direction_active_or_line_is_rejected(self):
         request = self.request()
@@ -191,10 +235,10 @@ class AccumulationStorageTests(unittest.TestCase):
                                           ('direction', 'Receipt', 'receipt'),
                                           ('active', 2, 1), ('line_number', 2, 1)):
             with self.subTest(column=column):
-                self.c.execute('UPDATE accumulation_movement SET ' + column + '=?', (corrupt,))
+                self.c.execute('UPDATE ' + self.table + ' SET ' + column + '=?', (corrupt,))
                 with self.assertRaises(BackendError):
                     self.port.read(self.reg, self.key)
-                self.c.execute('UPDATE accumulation_movement SET ' + column + '=?', (original,))
+                self.c.execute('UPDATE ' + self.table + ' SET ' + column + '=?', (original,))
 
     def test_orphaned_recorder_is_not_hidden_on_read_or_scan(self):
         self.port.replace(self.request())
@@ -256,5 +300,5 @@ class AccumulationStorageTests(unittest.TestCase):
         self.c.execute("INSERT INTO recorder_movement VALUES('unchanged')")
         self.port.replace(self.request())
         self.assertEqual(self.c.execute('SELECT * FROM recorder_movement').fetchall(), [('unchanged',)])
-        columns = {row[1] for row in self.c.execute('PRAGMA table_info(accumulation_movement)')}
+        columns = {row[1] for row in self.c.execute('PRAGMA table_info(' + self.table + ')')}
         self.assertNotIn('dimension_key', columns)

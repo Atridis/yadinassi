@@ -15,6 +15,8 @@ from yadinassi.configuration.configuration_xml import import_configuration
 from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.db.registers.register_backend import RegisterDraft, RegisterKey, RegisterScanRequest, RegisterSetDraft
 from yadinassi.db.sqlite.sqlite_registers import RegisterView
+from yadinassi.db.sqlite.sqlite_register_layout import register_table
+from yadinassi.db.sqlite.sqlite_typed_rows import attribute_column
 from sqlite_catalog_fixture import configuration_files
 
 
@@ -64,6 +66,7 @@ class InformationRegisterTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.path=Path(self.temp.name)/'app.sqlite'
         self.imported=import_configuration(register_files());self.schema=self.imported.information_registers[0]
+        self.table=register_table(self.schema)
         self.context=SQLiteDBContext.create(self.path,self.imported)
         self.lines=[];self.vm=Interpreter(database_context=self.context,output=self.lines.append)
     def tearDown(self): self.context.close();self.temp.cleanup()
@@ -94,7 +97,7 @@ class InformationRegisterTests(unittest.TestCase):
         self.seed()
         with self.assertRaises(BSLRuntimeError): self.execute('R.Item="B";')
         self.execute('R.Clear();R.Item="B";R.Region="North";R.Write();')
-        self.assertEqual(len(self.sql('SELECT * FROM information_register_record')),2)
+        self.assertEqual(len(self.sql(f'SELECT * FROM {self.table}')),2)
     def test_stale_revision_and_delete_reinsert_aba(self):
         self.seed();v=self.context.backend.begin_register_read()
         try:old=v.read_record(self.key())
@@ -109,24 +112,24 @@ class InformationRegisterTests(unittest.TestCase):
         self.assertEqual(self.execute('S=InformationRegisters.Prices.CreateRecordSet();S.Filter.Region.Set("North");X=S.Add();X.Item="C";X.Price=44;S.Write();S.Read();Message(S.Count());Message(S.Get(0).Item);Message(TypeOf(S)=Type("InformationRegisterRecordSet.Prices"));'),['1','C','Да'])
         self.assertEqual(self.execute('For Each X In S Do Message(X.Item); EndDo;'),['C'])
         with self.assertRaises(BSLRuntimeError):self.execute('S[0]=Undefined;')
-        self.assertEqual(len(self.sql('SELECT * FROM information_register_record')),2)
+        self.assertEqual(len(self.sql(f'SELECT * FROM {self.table}')),2)
     def test_recordset_empty_replace_deletes_scope(self):
         self.seed();self.execute('S=InformationRegisters.Prices.CreateRecordSet();S.Filter.Region.Set("North");S.Write();')
-        self.assertEqual(self.sql('SELECT * FROM information_register_record'),[])
+        self.assertEqual(self.sql(f'SELECT * FROM {self.table}'),[])
     def test_unfiltered_replace_requires_read(self):
         self.seed();self.execute('S=InformationRegisters.Prices.CreateRecordSet();')
         with self.assertRaises(BSLRuntimeError):self.execute('S.Write();')
         self.execute('S.Read();S.Clear();S.Write();')
-        self.assertEqual(self.sql('SELECT * FROM information_register_record'),[])
+        self.assertEqual(self.sql(f'SELECT * FROM {self.table}'),[])
     def test_recordset_append_and_duplicate_atomic(self):
         self.seed();self.execute('S=InformationRegisters.Prices.CreateRecordSet();X=S.Add();X.Item="B";X.Region="South";X.Price=7;S.Write(False);')
         self.execute('S.Clear();X=S.Add();X.Item="C";X.Region="South";X=S.Add();X.Item="A";X.Region="North";')
         with self.assertRaises(BSLRuntimeError):self.execute('S.Write(False);')
-        self.assertEqual(len(self.sql('SELECT * FROM information_register_record')),2)
+        self.assertEqual(len(self.sql(f'SELECT * FROM {self.table}')),2)
     def test_recordset_scope_mismatch_rolls_back(self):
         self.seed();self.execute('S=InformationRegisters.Prices.CreateRecordSet();S.Filter.Region.Set("North");X=S.Add();X.Item="B";X.Region="South";')
         with self.assertRaises(BSLRuntimeError):self.execute('S.Write();')
-        self.assertEqual(len(self.sql('SELECT * FROM information_register_record')),1)
+        self.assertEqual(len(self.sql(f'SELECT * FROM {self.table}')),1)
     def test_recordset_read_stale_conflict(self):
         self.seed();self.execute('S=InformationRegisters.Prices.CreateRecordSet();S.Filter.Region.Set("North");S.Read();R.Price=66;R.Write();')
         with self.assertRaises(BSLRuntimeError):self.execute('S.Write();')
@@ -159,7 +162,7 @@ class InformationRegisterTests(unittest.TestCase):
         with self.assertRaises(BSLRuntimeError):self.execute('R.Price=4;')
         with self.assertRaises(BSLRuntimeError):self.execute('R.Write();')
         self.assertEqual(self.execute('R.Read();Message(R.Selected());Message(R.Price);'),['Да','3'])
-        self.assertEqual(len(self.sql('SELECT * FROM information_register_record')),1)
+        self.assertEqual(len(self.sql(f'SELECT * FROM {self.table}')),1)
     def test_uncertain_set_freezes_until_fresh_read(self):
         self.execute('S=InformationRegisters.Prices.CreateRecordSet();S.Filter.Region.Set("North");X=S.Add();X.Item="A";X.Price=5;')
         original=RegisterView._confirm_commit
@@ -172,7 +175,7 @@ class InformationRegisterTests(unittest.TestCase):
     def test_recordset_duplicate_dimension_keys_are_rejected(self):
         self.execute('S=InformationRegisters.Prices.CreateRecordSet();S.Filter.Region.Set("North");X=S.Add();X.Item="A";X=S.Add();X.Item="A";')
         with self.assertRaises(BSLRuntimeError):self.execute('S.Write();')
-        self.assertEqual(self.sql('SELECT * FROM information_register_record'),[])
+        self.assertEqual(self.sql(f'SELECT * FROM {self.table}'),[])
     def test_dimension_types_and_scalar_qualifiers(self):
         self.execute('R=InformationRegisters.Prices.CreateRecordManager();')
         for code in ('R.Item=1;','R.Price="bad";','R.Enabled=1;'):
@@ -204,8 +207,46 @@ class InformationRegisterTests(unittest.TestCase):
             finally:tx.close()
         finally:context.close()
 
+    def test_number_storage_is_native_integer_and_not_a_json_payload(self):
+        self.seed()
+        price=attribute_column(self.schema.resources[0])
+        item=attribute_column(self.schema.dimensions[0])
+        self.assertEqual(self.sql(f'SELECT {item},{price},typeof({price}) FROM {self.table}'), [('A',1250,'integer')])
+        self.assertFalse(self.sql("SELECT name FROM sqlite_master WHERE name='information_register_record'"))
+
+    def test_old_json_row_layout_is_refused_without_rewrite(self):
+        self.context.close()
+        self.sql(f'DROP TABLE {self.table}')
+        self.sql('CREATE TABLE information_register_record(register_id TEXT, key_json TEXT, values_json TEXT)')
+        self.sql('INSERT INTO information_register_record VALUES(?,?,?)',('retired','[]','[]'))
+        before=self.path.read_bytes()
+        with self.assertRaises(BackendError): SQLiteDBContext(self.path)
+        self.assertEqual(self.path.read_bytes(),before)
+
+    def test_wide_number_uses_sortable_strict_binary_storage(self):
+        wide=replace(self.schema.resources[0],qualifiers=(38,2,'Any'))
+        schema=replace(self.schema,resources=(wide,))
+        path=Path(self.temp.name)/'wide.sqlite'
+        configuration=replace(self.imported,information_registers=(schema,))
+        with closing(SQLiteDBContext.create(path,configuration)) as db:
+            number=Decimal('987654321098765432109876543210987654.32')
+            for name,value in (('a-negative',number.copy_negate()),('b-zero',Decimal(0)),('c-positive',number)):
+                key=RegisterKey(db.backend.database_id,schema.identity,(name,'North'))
+                with closing(db.backend.begin_register_write(uuid4())) as tx:
+                    tx.write(RegisterDraft(key,(value,True)));tx.commit()
+            price=attribute_column(wide);table=register_table(schema)
+            with closing(sqlite3.connect(path)) as sql:
+                result=sql.execute(f'SELECT typeof({price}),length({price}) FROM {table}').fetchall()
+                self.assertEqual(result,[('blob',16)]*3)
+            with closing(Interpreter(database_context=db)) as vm:
+                result=vm.execute('Q=New Query("SELECT TOP 2 Price FROM InformationRegister.Prices ORDER BY Price");Q.Execute()')
+                self.assertEqual(result._rows,((number.copy_negate(),),(Decimal('0.00'),)))
+
     def test_corrupt_unselected_record_is_detected(self):
-        self.seed();self.sql("UPDATE information_register_record SET values_json='[]'")
+        self.seed(); column=attribute_column(self.schema.resources[0])
+        with closing(sqlite3.connect(self.path)) as connection, connection:
+            connection.execute('PRAGMA ignore_check_constraints=ON')  # Damaged data, not an accepted write.
+            connection.execute(f'UPDATE {self.table} SET {column}=?',(10**12,))
         with self.assertRaises(BSLRuntimeError): self.execute('S=InformationRegisters.Prices.Select(New Structure("Region","absent"));')
     def test_native_dynamic_codecs_remain_closed(self):
         self.execute('R=InformationRegisters.Prices.CreateRecordManager();')

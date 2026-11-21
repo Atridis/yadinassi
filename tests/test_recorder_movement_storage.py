@@ -6,7 +6,7 @@ from uuid import UUID,uuid4
 from yadinassi.db.catalog.catalog_backend import BackendError,FieldSchema
 from yadinassi.db.document.document_backend import DocumentKey
 from yadinassi.db.document.document_movements import RecorderRegisterSchema,RecorderReplacement,RecorderMovementRow
-from yadinassi.db.sqlite.sqlite_recorder_movements import RecorderMovementPort,RECORDER_DDL,schema_data,_json
+from yadinassi.db.sqlite.sqlite_recorder_movements import RecorderMovementPort,RECORDER_DDL,schema_data,_json,recorder_movement_ddls
 
 class RecorderStorageTests(unittest.TestCase):
     def setUp(self):
@@ -16,7 +16,9 @@ class RecorderStorageTests(unittest.TestCase):
         self.c.execute('CREATE TABLE document_record(document_id TEXT,record_id TEXT,PRIMARY KEY(document_id,record_id))')
         self.db=uuid4();self.doc=uuid4();self.reg=uuid4()
         self.schema=RecorderRegisterSchema(self.reg,(self.doc,),(FieldSchema(uuid4(),'Amount','number',(10,0,'Any')),))
-        for ddl in RECORDER_DDL:self.c.execute(ddl)
+        from yadinassi.db.sqlite.sqlite_movement_layout import references
+        self.table, self.columns = references('recorder', self.schema)
+        for ddl in (*RECORDER_DDL,*recorder_movement_ddls((self.schema,))):self.c.execute(ddl)
         self.c.execute('INSERT INTO document_schema VALUES(?)',(str(self.doc),))
         self.c.execute('INSERT INTO recorder_register_schema VALUES(?,?)',(str(self.reg),_json(schema_data(self.schema,self.db))))
         self.c.execute('INSERT INTO recorder_register_document VALUES(?,?)',(str(self.reg),str(self.doc)))
@@ -58,7 +60,8 @@ class RecorderStorageTests(unittest.TestCase):
         with self.assertRaises(BackendError):self.port.read(self.reg,self.key)
     def test_corrupt_scalar_never_hidden_by_partition_read(self):
         self.port.replace(self.request())
-        self.c.execute("UPDATE recorder_movement SET values_json='[]'")
+        self.c.execute('PRAGMA ignore_check_constraints=ON')
+        self.c.execute('UPDATE ' + self.table + ' SET ' + self.columns[0] + '=?', ('bad',))
         with self.assertRaises(BackendError):self.port.read(self.reg,self.key)
 
 class RecorderJournalTests(RecorderStorageTests):
@@ -158,14 +161,30 @@ class RecorderJournalTests(RecorderStorageTests):
         tx=UnitOfWork(self.View(uuid4()))
         with self.assertRaises(BackendError):tx.stage(TransactionRequest('document_set_posted',PostedIntent(self.key,1,True)))
         self.assertEqual(tx.requests,())
+    def test_catalog_reference_dimension_is_not_part_of_this_recorder_profile(self):
+        from dataclasses import replace
+        schema=replace(self.schema,name='Rows',dimension_count=1,
+                       fields=(FieldSchema(uuid4(),'Warehouse','catalog_ref',(),uuid4()),))
+        # Refuse the schema before any movement exists: neither empty nor live
+        # CatalogRefs can enter a recorder partition in the scalar profile.
+        with self.assertRaises(BackendError) as error:
+            RecorderMovementPort(self.c,self.db,1,(schema,))
+        self.assertEqual(error.exception.code,'unsupported')
+
     def test_dimension_collision_between_recorders_rolls_back_only_new_partition(self):
         from dataclasses import replace
         schema=replace(self.schema,name='Rows',dimension_count=1)
+        self.c.execute('DROP TABLE ' + self.table)
+        for ddl in recorder_movement_ddls((schema,)):self.c.execute(ddl)
         self.c.execute('UPDATE recorder_register_schema SET definition=?',(_json(schema_data(schema,self.db)),))
         self.port=RecorderMovementPort(self.c,self.db,1,(schema,))
         other=DocumentKey(self.db,self.doc,uuid4());self.c.execute('INSERT INTO document_record VALUES(?,?)',(str(self.doc),str(other.record_id)))
-        self.port.replace(self.request())
-        with self.assertRaises(sqlite3.IntegrityError):self.port.replace(self.request(other))
-        self.assertEqual(len(self.port.read(self.reg,self.key).rows),1);self.assertEqual(self.port.read(self.reg,other).rows,())
+        initial=(RecorderMovementRow(1,True,(Decimal('-0'),)),)
+        self.port.replace(self.request(rows=initial))
+        same=(RecorderMovementRow(1,True,(Decimal('0'),)),)
+        with self.assertRaises(sqlite3.IntegrityError):self.port.replace(self.request(other,same))
+        first=self.port.read(self.reg,self.key).rows
+        self.assertEqual(len(first),1);self.assertFalse(first[0].values[0].is_signed())
+        self.assertEqual(self.port.read(self.reg,other).rows,())
         unique=(RecorderMovementRow(1,True,(Decimal(8),)),)
         self.port.replace(self.request(other,unique));self.assertEqual(self.port.read(self.reg,other).rows,unique)

@@ -6,7 +6,7 @@ import sqlite3
 from uuid import UUID,uuid4
 from yadinassi.db.catalog.catalog_backend import BackendError
 from yadinassi.configuration.configuration_posting_application import canonical_runtime as canonical, import_variant
-from .sqlite_recorder_movements import RECORDER_DDL,RecorderMovementPort,schema_data
+from .sqlite_recorder_movements import RECORDER_DDL,RecorderMovementPort,schema_data,recorder_movement_ddls
 from .sqlite_document_posting_state import POSTED_DDL,read_posted
 
 MARKER_DDL='CREATE TABLE posting_profile(singleton INTEGER PRIMARY KEY CHECK(singleton=1),profile TEXT NOT NULL,source_digest TEXT NOT NULL)'
@@ -45,7 +45,7 @@ def admit(connection,database_id,documents,*,validate_rows=False,_prepared=None)
         port._require(schema.identity,DocumentKey(database_id,schema.recorder_documents[0],UUID(int=1)))
     if validate_rows:
         from .sqlite_recorder_movements import validate_database_budget as recorder_budget
-        recorder_budget(connection)
+        recorder_budget(connection,config.registers)
         if connection.execute('PRAGMA foreign_key_check').fetchone():raise BackendError('integrity')
         for reg,doc,record in connection.execute('SELECT register_id,document_id,record_id FROM recorder_partition'):
             port.read(UUID(reg),DocumentKey(database_id,UUID(doc),UUID(record)))
@@ -78,9 +78,11 @@ def create(cls,path,configuration):
         connection.execute('INSERT INTO database_info VALUES(1,?,1,?,?,1,?)',(str(database_id),str(config.identity),config.name,'[]'))
         layout=s.build_layout((),reserved_names=tuple(d.split('(')[0].split()[-1] for d in (*s.DOCUMENT_DDL,*DDL)))
         s.save_layout(connection,layout);s.save_section_layout(connection,s.build_section_layout((),layout))
+        for ddl in s.document_data_ddls(config.documents,layout): connection.execute(ddl)
         for document in config.documents:
             connection.execute('INSERT INTO document_schema VALUES(?,?,?)',(str(document.identity),document.name,s._json(s.document_schema_data(document))))
             if document.numbering=='decimal_v1':connection.execute('INSERT INTO document_sequence VALUES(?,1)',(str(document.identity),))
+        for ddl in recorder_movement_ddls(config.registers):connection.execute(ddl)
         for schema in config.registers:
             connection.execute('INSERT INTO recorder_register_schema VALUES(?,?)',(str(schema.identity),s._json(schema_data(schema,database_id))))
             connection.executemany('INSERT INTO recorder_register_document VALUES(?,?)',[(str(schema.identity),str(doc)) for doc in schema.recorder_documents])

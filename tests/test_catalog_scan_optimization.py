@@ -220,7 +220,10 @@ class ScanOptimizationTests(unittest.TestCase):
         self.seed(2)
         column = quote_identifier(self.backend._layout.field_name(
             self.product.identity, self.product.fields[1].identity))
-        self.sql('UPDATE ' + self.owner_table() + ' SET ' + column + "='NaN' WHERE code='0001'")
+        # Inject a type-correct coefficient outside Number(12, 2) into a
+        # filtered row; read admission must still fail if physical CHECK was bypassed.
+        self.sql('UPDATE ' + self.owner_table() + ' SET ' + column + "=? WHERE code='0001'",
+                 (10**12,), corrupt=True)
         view = self.view()
         request = CatalogScanRequest(CatalogComparison('code', 'eq', '0000'))
         with self.assertRaises(BackendError):

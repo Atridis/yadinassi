@@ -10,6 +10,7 @@ import unittest
 from test_native_async_fixture import historical_source_bytes
 from unittest.mock import patch
 
+from yadinassi.db.sqlite.sqlite_movement_layout import table_name as movement_table
 from yadinassi import Interpreter, BSLRuntimeError
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.db.query import query_parser as syntax
@@ -73,7 +74,8 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
             self.assertEqual(vm.variables['result']._rows, ((Decimal(5),),))
             self.assertIs(context.backend._read_handle.connection, connection)
             self.assertIsNone(context.backend._active)
-            self.assertTrue(any('FROM accumulation_movement' in sql for sql in statements))
+            table = movement_table('accumulation', context.backend.accumulation_configuration.registers[0])
+            self.assertTrue(any(f'FROM "{table}"' in sql for sql in statements))
             self.assertFalse(any(sql.startswith(('BEGIN', 'ROLLBACK')) for sql in statements))
         finally:
             connection.set_trace_callback(None)

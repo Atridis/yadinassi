@@ -150,7 +150,10 @@ def section_ddl(catalog_schema, section_schema, catalog_layout, section_layout):
             columns.append(f'{name} TEXT REFERENCES {target}(record_id) DEFERRABLE INITIALLY DEFERRED')
         elif field.kind == 'boolean':
             columns.append(f'{name} INTEGER NOT NULL CHECK({name} IN(0,1))')
-        elif field.kind in ('string', 'number', 'datetime'):
+        elif field.kind == 'number':
+            from .sqlite_typed_rows import number_definition
+            columns.append(f'{name} {number_definition(name, field)}')
+        elif field.kind in ('string', 'datetime'):
             columns.append(f'{name} TEXT NOT NULL')
         else:
             raise BackendError('unsupported')

@@ -13,7 +13,8 @@ from uuid import UUID, uuid4
 
 from yadinassi.db.catalog.catalog_backend import BackendError, CatalogSchema, FieldSchema, CatalogKey
 from yadinassi.db.sqlite.sqlite_catalog import _APPLICATION_ID, _json, _schema_data, SQLiteCatalogBackend
-from yadinassi.db.sqlite.sqlite_catalog_layout import load_layout, decode_columns, quote_identifier
+from yadinassi.db.sqlite.sqlite_catalog_layout import load_layout, quote_identifier
+from yadinassi.db.sqlite.sqlite_typed_rows import decode_typed_columns
 from yadinassi.db.sqlite.sqlite_catalog_migration import _V1_DDL, prepare_v1, migrate_v1, resolve_migration
 import yadinassi.db.sqlite.sqlite_catalog_migration as migration
 
@@ -66,9 +67,22 @@ class MigrationTests(unittest.TestCase):
             layout = load_layout(db, (self.sa, self.sb))
             row = db.execute(f'SELECT * FROM {quote_identifier(layout.table_name(self.a))} WHERE record_id=?', (str(self.ra),)).fetchone()
             self.assertEqual(row[:5], (str(self.ra),7,'1','Описание',0))
-            self.assertEqual(decode_columns(row[5:], self.sa), self.va)
+            self.assertEqual(row[6], 12340)
+            self.assertIs(type(row[6]), int)
+            self.assertEqual(decode_typed_columns(row[5:], self.sa), self.va)
             self.assertEqual(db.execute('SELECT database_uuid,generation FROM database_info').fetchone(), (str(self.database_id),3))
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
+
+    def test_explicit_fixture_migration_canonicalizes_signed_numeric_zero(self):
+        self.va[1] = ['n', '-0.00']
+        self.execute('UPDATE catalog_record SET values_json=? WHERE catalog_id=?',
+                     (_json(self.va), str(self.a)))
+        migrate_v1(self.path, prepare_v1(self.path, maintenance=True), maintenance=True)
+        with closing(sqlite3.connect(self.path)) as db:
+            layout = load_layout(db, (self.sa, self.sb))
+            table = quote_identifier(layout.table_name(self.a))
+            amount = quote_identifier(layout.field_name(self.a,self.sa.fields[1].identity))
+            self.assertEqual(db.execute(f'SELECT typeof({amount}),{amount} FROM {table}').fetchone(),('integer',0))
 
     def _legacy_supplementary_refuses_without_data_loss(self, column):
         from dataclasses import replace

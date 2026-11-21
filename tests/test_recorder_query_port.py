@@ -1,6 +1,7 @@
 """The query port validates the complete bounded source before projection."""
 import unittest
 from uuid import uuid4
+from yadinassi.db.sqlite.sqlite_movement_layout import table_name as movement_table
 from yadinassi.db.catalog.catalog_backend import BackendError
 import test_recorder_movement_storage as fixtures
 
@@ -22,7 +23,8 @@ class RecorderQueryPortTests(unittest.TestCase):
         with self.assertRaises(BackendError):f.port.scan(f.reg)
     def test_nonprojected_corrupt_cell_refused(self):
         f=self.f;f.port.replace(f.request())
-        f.c.execute("UPDATE recorder_movement SET values_json='[]'")
+        f.c.execute('PRAGMA ignore_check_constraints=ON')
+        f.c.execute('UPDATE '+movement_table('recorder', f.schema)+' SET active=2')
         with self.assertRaises(BackendError):f.port.scan(f.reg)
     def test_source_after_close_refused(self):
         f=self.f;f.c.execute('ROLLBACK')

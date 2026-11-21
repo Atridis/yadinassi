@@ -1,4 +1,4 @@
-"""SQL REAL computation is explicit; persisted Decimal bytes stay unchanged."""
+"""Exact SQLite aggregate results over scaled numeric storage."""
 from contextlib import closing
 from decimal import Decimal
 import sqlite3
@@ -23,8 +23,10 @@ class NumericAggregateTests(unittest.TestCase):
         manager=self.vm._catalogs.get_index('Products');schema=manager._schema
         field=next(f for f in schema.fields if f.name=='Amount')
         return schema,field,quote_identifier(self.context.backend._layout.table_name(schema.identity)),quote_identifier(self.context.backend._layout.field_name(schema.identity,field.identity))
-    def sql(self,statement,args=()):
-        with closing(sqlite3.connect(self.context.path)) as c,c:return c.execute(statement,args).fetchall()
+    def sql(self,statement,args=(), *, corrupt=False):
+        with closing(sqlite3.connect(self.context.path)) as c,c:
+            if corrupt: c.execute('PRAGMA ignore_check_constraints=ON')
+            return c.execute(statement,args).fetchall()
     def test_combined_projection_no_materialization_matches_exact_simple_values(self):
         with patch.object(query_pushdown,'try_numeric',return_value=None):expected=self.query()
         with patch.object(_Plan,'load',side_effect=AssertionError('materialization')):actual=self.query()
@@ -41,7 +43,7 @@ class NumericAggregateTests(unittest.TestCase):
     def test_precision_contract_and_scale_independent_of_ambient_context(self):
         from decimal import localcontext
         _,_,table,column=self.physical()
-        self.sql('UPDATE '+table+' SET '+column+'=?',('0.10',))
+        self.sql('UPDATE '+table+' SET '+column+'=?',(10,))
         with localcontext() as ctx:
             ctx.prec=2;result=self.query()
         self.assertEqual(result._rows,((Decimal('0.30'),Decimal('0.1000000000'),Decimal(3)),))
@@ -71,37 +73,40 @@ class NumericAggregateTests(unittest.TestCase):
             with self.subTest(text=text),patch.object(_View,'aggregate_catalog',side_effect=AssertionError('unexpected physical plan')):self.query(text)
     def test_budget_and_provider_shape_checks(self):
         with patch.object(queries,'_MAX_CELLS',2),self.assertRaises(ValueError):self.query()
-        for result in (CatalogNumericAggregateResult(True,(1,2,3)),CatalogNumericAggregateResult(3,(None,2,3)),CatalogNumericAggregateResult(3,(1,2,True))):
+        for result in (CatalogNumericAggregateResult(True,(1,2,3)),CatalogNumericAggregateResult(3,(None,2,3)),CatalogNumericAggregateResult(3,(Decimal(1),Decimal(2),True)),
+                       CatalogNumericAggregateResult(3,(1.0,Decimal(2),3))):
             with patch.object(_View,'aggregate_catalog',return_value=result),self.assertRaises(BackendError):self.query()
     def test_optional_capability_declines_without_changing_results(self):
         expected=self.query()._rows
         with patch.object(_View,'aggregate_catalog',None):self.assertEqual(self.query()._rows,expected)
         with patch.object(_View,'aggregate_catalog',return_value=None):self.assertEqual(self.query()._rows,expected)
     def test_nonfinite_and_out_of_range_numeric_results_fail_explicitly(self):
-        for raw in (float('inf'),float('nan'),1e38):
-            with self.subTest(raw=raw),patch.object(_View,'aggregate_catalog',return_value=CatalogNumericAggregateResult(3,(raw,20.0,3))):
+        for raw in (Decimal('Infinity'),Decimal('NaN'),Decimal('1e38')):
+            with self.subTest(raw=raw),patch.object(_View,'aggregate_catalog',return_value=CatalogNumericAggregateResult(3,(raw,Decimal(20),3))):
                 with self.assertRaisesRegex(ValueError,'range exceeded'):self.query()
-    def test_statement_is_readonly_real_aggregate_after_validation(self):
+    def test_statement_is_readonly_exact_aggregate_after_validation(self):
         schema,field,_,_=self.physical();view=self.context.backend.begin_read();sql=[]
         view._connection.set_trace_callback(sql.append)
         try:
             result=view.aggregate_catalog(schema.identity,CatalogNumericAggregateRequest((('sum',field.identity),('avg',field.identity))))
-            self.assertEqual(result.values,(60.0,20.0))
-            self.assertTrue(any('SUM(CAST(' in statement and 'AVG(CAST(' in statement for statement in sql))
+            self.assertEqual(tuple(map(type,result.values)),(Decimal,Decimal))
+            self.assertEqual(result.values,(Decimal(60),Decimal(20)))
+            self.assertEqual(sum('yadinassi_sum_coefficients_v1(' in statement for statement in sql),1)
+            self.assertFalse(any(' AS REAL' in statement for statement in sql))
             self.assertTrue(any('COUNT(DISTINCT' in statement for statement in sql))
             with self.assertRaises(sqlite3.OperationalError):view._connection.execute('DELETE FROM database_info')
         finally:view.close()
 
-    def test_numeric_corruption_cold_and_warm_never_reaches_cast(self):
+    def test_numeric_corruption_cold_and_warm_never_reaches_aggregate(self):
         _,_,table,column=self.physical()
         for warm in (False,True):
-            for value in ('not-decimal','NaN',None):
-                self.sql('UPDATE '+table+' SET '+column+'=?',('10.00',))
+            for value in ('not-decimal', 'NaN', None, 10**12):
+                self.sql('UPDATE '+table+' SET '+column+'=?',(1000,))
                 if warm:self.query()
                 if value is None:
                     with self.assertRaises(sqlite3.IntegrityError):self.sql('UPDATE '+table+' SET '+column+'=?',(value,))
                     continue
-                self.sql('UPDATE '+table+' SET '+column+'=?',(value,))
+                self.sql('UPDATE '+table+' SET '+column+'=?',(value,),corrupt=True)
                 with self.subTest(warm=warm,value=value),self.assertRaises(BackendError):self.query()
     def test_repeated_fields_charge_input_once_and_result_width_separately(self):
         text='SELECT SUM(Amount) AS S, AVG(Amount) AS A, SUM(Amount) AS T FROM Catalog.Products'

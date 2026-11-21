@@ -27,6 +27,8 @@ from yadinassi.db.catalog.catalog_backend import ConfigurationSourceIdentity, Ca
 from .sqlite_registers import (REGISTER_DDL, schema_data as register_schema_data,
     load_schemas as load_register_schemas, validate_configuration as validate_register_configuration, RegisterView, install_boundaries)
 from .sqlite_documents import DOCUMENT_DDL, schema_data as document_schema_data, load_schemas as load_document_schemas, DocumentView
+from .sqlite_document_layout import document_data_ddls
+from .sqlite_register_layout import register_table, register_data_ddls, register_index_ddls
 from . import sqlite_hierarchy as hierarchy_storage
 from .sqlite_hierarchy import HIERARCHY_DDL
 from . import sqlite_transaction_profile as transaction_profile
@@ -34,7 +36,8 @@ from .sqlite_query_indexes import register_query_collations
 from .sqlite_read_handles import ReadHandle, reserve_owner, lifecycle
 from yadinassi.db.catalog.catalog_qualifiers import normalize_field, normalize_string, validate_string, bound_number
 from .sqlite_catalog_layout import (REGISTRY_DDL, MIGRATION_MARKER_DDL, build_layout, save_layout, load_layout, quote_identifier,
-                                    catalog_ddl, index_ddls, encode_columns, decode_columns)
+                                    catalog_ddl, index_ddls)
+from .sqlite_typed_rows import encode_typed_columns, decode_typed_columns, decode_number, number_storage
 from .sqlite_catalog_sections import (SECTION_REGISTRY_DDL, build_section_layout, save_section_layout,
                                       load_section_layout, section_ddl)
 from yadinassi.db.catalog.catalog_backend import (BackendError, Capabilities, CatalogCard, CatalogDraft,
@@ -584,9 +587,12 @@ class SQLiteCatalogBackend:
             if self.storage_version in (4, 6, 7, 8, 9, 10):
                 expected['catalog_sequence'] = _SEQUENCE_DDL
             if self.storage_version in (7, 8, 9, 10):
-                expected.update({ddl.split('(')[0].split()[-1]: ddl for ddl in DOCUMENT_DDL})
+                expected.update({ddl.split('(')[0].split()[-1]: ddl
+                                 for ddl in (*DOCUMENT_DDL,*document_data_ddls(
+                                     self._document_schemas,self._layout,enum_domain=self._enum_domain))})
             if self.storage_version in (8, 9, 10):
-                expected.update({ddl.split('(')[0].split()[-1]: ddl for ddl in REGISTER_DDL})
+                expected.update({ddl.split('(')[0].split()[-1].strip('"'): ddl
+                                 for ddl in (*REGISTER_DDL,*register_data_ddls(self._register_schemas,self._layout))})
             if self.storage_version == 10:
                 expected.update({ddl.split('(')[0].split()[-1]: ddl for ddl in HIERARCHY_DDL})
             if self.format_version in (11, 12):
@@ -611,14 +617,15 @@ class SQLiteCatalogBackend:
             objects, schema_bytes = connection.execute("SELECT COUNT(*),COALESCE(SUM(length(CAST(name AS BLOB))+length(CAST(COALESCE(sql,'') AS BLOB))),0) FROM sqlite_master").fetchone()
             if objects > 4096 or schema_bytes > 64 * 1024 * 1024: raise BackendError('unsupported')
             actual = {name: sql for name,sql in connection.execute("SELECT name,sql FROM sqlite_master WHERE type='table' AND lower(substr(name,1,7)) != 'sqlite_'")}
-            if actual != expected or connection.execute("SELECT 1 FROM sqlite_master WHERE type IN ('trigger','view') LIMIT 1").fetchone():
+            if connection.execute("SELECT 1 FROM sqlite_master WHERE type IN ('trigger','view') LIMIT 1").fetchone():
                 raise BackendError('unsupported')
-            expected_indexes = transaction_profile.profile_index_ddls(self.storage_version,self._schemas,self._layout) if self.format_version in (11, 12, 13, 14, 15, 16) else ()
-            from .sqlite_query_indexes import read_index_bundle_ddls, admit_query_indexes
-            self._query_indexes = (admit_query_indexes(connection, expected_indexes,
-                read_index_bundle_ddls(self.storage_version,self._schemas,self._layout,
-                                       format_version=self.format_version))
-                if self.storage_version >= 2 else False)
+            movement_profile = self.format_version in (13,14,15,16)
+            if movement_profile:
+                # Reject old/shared-JSON or altered base tables before any
+                # movement row admission touches the deterministic child names.
+                if any(actual.get(name)!=ddl for name,ddl in expected.items()):
+                    raise BackendError('unsupported')
+            elif actual != expected: raise BackendError('unsupported')
             if self.format_version in (11, 12): transaction_profile.validate_marker(connection)
             if self.storage_version == 10:
                 if connection.execute('SELECT COUNT(*) FROM catalog_hierarchy').fetchone()[0] > _MAX_ROWS * len(schemas): raise BackendError('unsupported')
@@ -661,6 +668,30 @@ class SQLiteCatalogBackend:
                 self.accumulation_configuration = admit(connection, self.database_id, self._schemas,
                     self._document_schemas, validate_rows=True, _prepared=self._prepared_source)
                 self._accumulation_schemas = self.accumulation_configuration.registers
+            structural_indexes = register_index_ddls(self._register_schemas)
+            if movement_profile:
+                # Dynamic tables are declared only by the authenticated
+                # profile, never by introspecting unknown physical tables.
+                if self.format_version == 13:
+                    from .sqlite_recorder_movements import recorder_movement_ddls
+                    declarations = recorder_movement_ddls(self._recorder_schemas)
+                else:
+                    from .sqlite_accumulation_movements import accumulation_movement_ddls
+                    declarations = accumulation_movement_ddls(self._accumulation_schemas,self._layout,
+                                                               enum_domain=self._enum_domain)
+                for ddl in declarations:
+                    if ddl.startswith('CREATE TABLE '):
+                        expected[ddl.split('(')[0].split()[-1].strip('"')] = ddl
+                    else: structural_indexes += (ddl,)
+                if actual != expected: raise BackendError('unsupported')
+            if self.format_version in (11,12,13,14,15,16):
+                structural_indexes += transaction_profile.profile_index_ddls(self.storage_version,self._schemas,self._layout)
+            self._storage_indexes = structural_indexes
+            from .sqlite_query_indexes import read_index_bundle_ddls, admit_query_indexes
+            self._query_indexes = (admit_query_indexes(connection, structural_indexes,
+                read_index_bundle_ddls(self.storage_version,self._schemas,self._layout,
+                                       format_version=self.format_version))
+                if self.storage_version >= 2 else False)
             self._catalog_runtime_data = None
             if self.format_version == 16:
                 from .sqlite_catalog_runtime_data import CatalogRuntimeData
@@ -836,7 +867,9 @@ class SQLiteCatalogBackend:
             reserved_names = tuple(ddl.split('(')[0].split()[-1] for ddl in SECTION_REGISTRY_DDL) if storage_version in (3, 4, 6, 7, 8, 9, 10) else ()
             if storage_version in (4, 6, 7, 8, 9, 10): reserved_names += ('catalog_sequence',)
             if storage_version in (7, 8, 9, 10): reserved_names += tuple(ddl.split('(')[0].split()[-1] for ddl in DOCUMENT_DDL)
-            if storage_version in (8, 9, 10): reserved_names += tuple(ddl.split('(')[0].split()[-1] for ddl in REGISTER_DDL)
+            if storage_version in (8, 9, 10):
+                reserved_names += (*tuple(ddl.split('(')[0].split()[-1] for ddl in REGISTER_DDL),
+                                   *(register_table(schema) for schema in registers))
             if storage_version == 10: reserved_names += ('catalog_hierarchy',)
             layout = build_layout(schemas, reserved_names=reserved_names)
             save_layout(connection, layout)
@@ -849,6 +882,9 @@ class SQLiteCatalogBackend:
                 for schema in schemas:
                     for section in schema.tabular_sections:
                         connection.execute(section_ddl(schema, section, layout, sections_layout))
+            for statement in (*document_data_ddls(documents,layout),*register_data_ddls(registers,layout),
+                              *register_index_ddls(registers)):
+                connection.execute(statement)
             if query_indexes:
                 from .sqlite_query_indexes import read_index_bundle_ddls, check_index_bundle_budget
                 bundle=read_index_bundle_ddls(storage_version,schemas,layout,format_version=storage_version)
@@ -2083,7 +2119,7 @@ class _View:
             if type(row[5]) is not str or len(row[5]) > _MAX_ROW_BYTES: raise BackendError('integrity')
             encoded = json.loads(row[5])
         else:
-            encoded = decode_columns(row[5:], schema, enum_domain=self._catalog_domain)
+            encoded = decode_typed_columns(row[5:], schema, enum_domain=self._catalog_domain)
         if type(encoded) is not list: raise BackendError('integrity')
         if len(encoded) != len(schema.fields): raise BackendError('integrity')
         if type(row[1]) is not int or not 1 <= row[1] < 2**63 or type(row[2]) is not str or len(row[2]) > schema.code_length or type(row[3]) is not str or len(row[3]) > schema.description_length or type(row[4]) is not int or row[4] not in (0,1): raise BackendError('integrity')
@@ -2125,7 +2161,8 @@ class _View:
                        "typeof(row_number)!='integer'", 'row_number<1', 'row_number>%d' % _MAX_SECTION_ROWS]
             lengths = ['36', '16']
             for field, column in zip(section.fields, columns):
-                expected = 'integer' if field.kind == 'boolean' else 'text'
+                expected = (number_storage(field).lower() if field.kind == 'number'
+                            else 'integer' if field.kind == 'boolean' else 'text')
                 nullable = field.kind == 'catalog_ref'
                 invalid.append(f'({column} IS NOT NULL AND typeof({column})!=\'{expected}\')' if nullable else f'typeof({column})!=\'{expected}\'')
                 limit = field.qualifiers[0] * 4 if field.kind == 'string' else (36 if nullable else 64)
@@ -2149,7 +2186,7 @@ class _View:
             for position, row in enumerate(rows, 1):
                 identity = UUID(row[0]); _uuid(identity)
                 if str(identity) != row[0] or row[1] != position: raise BackendError('integrity')
-                encoded = decode_columns(row[2:], section, enum_domain=self._catalog_domain)
+                encoded = decode_typed_columns(row[2:], section, enum_domain=self._catalog_domain)
                 values.append(TabularRow(identity, tuple(_decode(v, f, self.database_id, enum_domain=self._catalog_domain) for v, f in zip(encoded, section.fields))))
             result.append(TabularSectionRows(section.identity, tuple(values)))
         return tuple(result)
@@ -2276,8 +2313,9 @@ class _View:
         # Legacy index iteration can determine stable order for UUID aliases;
         # retain that complete historical path instead of mixing SQL sort rules.
         if self._backend.storage_version == 1 or schema.hierarchy != 'none': return None
-        # Python-defined comparisons preserve the existing versioned semantics;
-        # SQLite never coerces Decimal to float or substitutes ASCII NOCASE.
+        # Native comparison for scaled INTEGER/BLOB; versioned collations for
+        # UUID and optional Unicode casefold, never SQLite float or ASCII NOCASE.
+        from .sqlite_catalog_numbers import comparison
 
         def field_sql(field):
             kind, _ = self._scan_field(schema, field)
@@ -2291,7 +2329,7 @@ class _View:
                 # two-valued and compare the zero UUID just like Python.
                 column = "COALESCE(%s,'00000000-0000-0000-0000-000000000000')" % column
                 collation = 'yadinassi_uuid_v1'
-            elif kind == 'number': collation = 'yadinassi_decimal_v1'
+            elif kind == 'number': return column
             elif kind == 'string' and request.string_comparison == 'casefold_v1':
                 collation = 'yadinassi_casefold_v1'
             else: collation = 'BINARY'
@@ -2308,7 +2346,9 @@ class _View:
             if column is None: return None
             value = predicate.value
             if type(value) is CatalogKey: value = str(value.record_id)
-            elif type(value) is decimal.Decimal: value = str(value)
+            elif type(value) is decimal.Decimal:
+                definition = next(item for item in schema.fields if item.identity == predicate.field)
+                return comparison(column, definition, predicate.operator, value)
             elif type(value) is datetime.datetime:
                 value = '%04d%02d%02d%02d%02d%02d' % (value.year,value.month,value.day,value.hour,value.minute,value.second)
             elif type(value) is bool: value = int(value)
@@ -2351,7 +2391,8 @@ class _View:
                                "typeof(row_number)!='integer'", 'row_number<1', 'row_number>%d' % _MAX_SECTION_ROWS]
                     lengths = ['36', '16']
                     for field, column in zip(section.fields, columns):
-                        expected = 'integer' if field.kind == 'boolean' else 'text'
+                        expected = (number_storage(field).lower() if field.kind == 'number'
+                                    else 'integer' if field.kind == 'boolean' else 'text')
                         nullable = field.kind == 'catalog_ref'
                         invalid.append(f"({column} IS NOT NULL AND typeof({column})!='{expected}')" if nullable else f"typeof({column})!='{expected}'")
                         limit = field.qualifiers[0] * 4 if field.kind == 'string' else (36 if nullable else 64)
@@ -2381,7 +2422,7 @@ class _View:
                 if str(identity) != raw_id or number != position: raise BackendError('integrity')
                 counts[owner] = position
                 values = tuple(_decode(v, f, self.database_id, enum_domain=self._backend._enum_domain) for v, f in
-                               zip(decode_columns(row[3:], section, enum_domain=self._backend._enum_domain), section.fields))
+                               zip(decode_typed_columns(row[3:], section, enum_domain=self._backend._enum_domain), section.fields))
                 if materialize: rows_by_owner[owner].append(TabularRow(identity, values))
             if expected_counts is not None and counts != expected_counts: raise BackendError('integrity')
             if materialize:
@@ -2411,7 +2452,7 @@ class _View:
         key = CatalogKey(self.database_id,catalog_id,UUID(row[0])); _uuid(key.record_id)
         values = []
         definitions = {field.identity: field for field in schema.fields}
-        tags = {'string':'s', 'number':'n', 'datetime':'d'}
+        tags = {'string':'s', 'datetime':'d'}
         for field, value in zip(fields,row[1:]):
             if type(field) is str:
                 values.append(key if field == 'ref' else bool(value) if field == 'deletion_mark' else value)
@@ -2424,15 +2465,19 @@ class _View:
             elif definition.kind == 'boolean':
                 if type(value) is not int or value not in (0,1): raise BackendError('integrity')
                 encoded = ['b',bool(value)]
+            elif definition.kind == 'number':
+                values.append(decode_number(value, definition))
+                continue
             else: encoded = [tags[definition.kind],value]
             values.append(_decode(encoded,definition,self.database_id, enum_domain=self._backend._enum_domain))
         return CatalogValueRow(key,tuple(values))
 
     def _aggregate_numeric_catalog(self, catalog_id, request):
         from yadinassi.db.catalog.catalog_backend import CatalogAggregateRequest, CatalogNumericAggregateResult
+        from .sqlite_catalog_numbers import aggregate_result
         operations=request.operations
         if type(operations) is not tuple or not 1<=len(operations)<=64:raise BackendError('invalid_input')
-        schema=self.catalog_schema(catalog_id);expressions=[]
+        schema=self.catalog_schema(catalog_id);expressions=[];fields=[]
         if (self._operation_id is not None or not self._cache_validation_allowed()
                 or self._backend.storage_version<2 or schema.hierarchy!='none'):return None
         for item in operations:
@@ -2440,14 +2485,14 @@ class _View:
             operation,identity=item
             if type(operation) is not str:raise BackendError('invalid_input')
             if operation=='count' and identity is None:
-                expressions.append('COUNT(*)');continue
+                expressions.append('COUNT(*)');fields.append(None);continue
             if operation not in ('sum','avg') or type(identity) is not UUID:raise BackendError('invalid_input')
             field=next((f for f in schema.fields if f.identity==identity),None)
             if field is None or field.kind!='number':raise BackendError('invalid_input')
             column=quote_identifier(self._backend._layout.field_name(schema.identity,identity))
-            expressions.append(('SUM' if operation=='sum' else 'AVG')+'(CAST('+column+' AS REAL))')
-        # Reuse complete scalar admission and normalized UUID uniqueness proof.
-        # A cache is only valid on this exact readonly pinned view/epoch.
+            expressions.append('yadinassi_sum_coefficients_v1('+column+')');fields.append(field)
+        # Reuse the existing readonly view's scalar and normalized UUID
+        # uniqueness proof. Do not share validation across query-language views.
         proof=self.aggregate_catalog(catalog_id,CatalogAggregateRequest(), _validate=True)
         if proof is None:return None
         table,_,where,args=self._source(schema)
@@ -2455,7 +2500,9 @@ class _View:
         row=self._connection.execute('SELECT COUNT(*),'+','.join(expressions)+' FROM '+table+clause,args).fetchone()
         if type(row) is not tuple or len(row)!=len(expressions)+1 or type(row[0]) is not int or row[0]!=proof.count:
             raise BackendError('integrity')
-        return CatalogNumericAggregateResult(proof.count,row[1:])
+        values = tuple(raw if field is None else aggregate_result(raw, proof.count, operation, field)
+                       for (operation, _), field, raw in zip(operations, fields, row[1:]))
+        return CatalogNumericAggregateResult(proof.count,values)
 
     @_boundary
     def aggregate_catalog(self, catalog_id, request, *, _validate=False):
@@ -2672,7 +2719,8 @@ class _View:
                    'row_number>%d' % _MAX_SECTION_ROWS]
         lengths = ['36', '36', '16']
         for field, column in zip(section.fields, fields):
-            expected = 'integer' if field.kind == 'boolean' else 'text'
+            expected = (number_storage(field).lower() if field.kind == 'number'
+                            else 'integer' if field.kind == 'boolean' else 'text')
             nullable = field.kind == 'catalog_ref'
             invalid.append(f'({column} IS NOT NULL AND typeof({column})!=\'{expected}\')'
                            if nullable else f'typeof({column})!=\'{expected}\'')
@@ -2734,7 +2782,7 @@ class _View:
             if type(row[2]) is not int or row[2] != position:
                 raise BackendError('integrity')
             positions[owner_id] = position
-            encoded = decode_columns(row[3:], section, enum_domain=self._backend._enum_domain)
+            encoded = decode_typed_columns(row[3:], section, enum_domain=self._backend._enum_domain)
             values = tuple(_decode(value, field, self.database_id, enum_domain=self._backend._enum_domain)
                            for value, field in zip(encoded, section.fields))
             owner = CatalogKey(self.database_id, schema.identity, owner_id)
@@ -2907,7 +2955,7 @@ class _View:
                         raise BackendError('not_found')
                 encoded_row = [identity, values]
                 size += len(_json(encoded_row)) + 1
-                columns = encode_columns(values, definition, enum_domain=self._catalog_domain)
+                columns = encode_typed_columns(values, definition, enum_domain=self._catalog_domain)
                 stored_size += 52 + sum(len(value.encode('utf-8')) if type(value) is str else (1 if type(value) is int else 0) for value in columns)
                 if size > _MAX_ROW_BYTES or stored_size > _MAX_ROW_BYTES: raise BackendError('invalid_input')
                 rows.append(encoded_row)
@@ -2930,7 +2978,7 @@ class _View:
             # never deleted, including when its deletion mark is set.
             self._connection.execute('DELETE FROM %s WHERE owner_id=?' % table, (str(draft.key.record_id),))
             for position, (row_id, encoded) in enumerate(contents[identity], 1):
-                values = (str(draft.key.record_id), row_id, position) + encode_columns(encoded, section, enum_domain=self._catalog_domain)
+                values = (str(draft.key.record_id), row_id, position) + encode_typed_columns(encoded, section, enum_domain=self._catalog_domain)
                 columns = ['owner_id', 'row_id', 'row_number'] + fields
                 self._connection.execute('INSERT INTO %s (%s) VALUES(%s)' % (table, ','.join(columns), ','.join('?' for _ in values)), values)
 
@@ -3000,7 +3048,7 @@ class _View:
                 if self._backend.storage_version == 1:
                     self._connection.execute('INSERT INTO catalog_record VALUES(?,?,1,?,?,?,?)',(str(draft.key.catalog_id),str(draft.key.record_id),draft.code,draft.description,int(draft.deletion_mark),values))
                 else:
-                    vals = (str(draft.key.record_id),1,draft.code,draft.description,int(draft.deletion_mark))+encode_columns(json.loads(values),schema, enum_domain=self._catalog_domain)
+                    vals = (str(draft.key.record_id),1,draft.code,draft.description,int(draft.deletion_mark))+encode_typed_columns(json.loads(values),schema, enum_domain=self._catalog_domain)
                     self._connection.execute('INSERT INTO %s (%s) VALUES(%s)' % (table,columns,','.join('?' for _ in vals)),vals)
             except sqlite3.IntegrityError:
                 raise BackendError('duplicate_identity' if self._reference_exists(draft.key) else 'duplicate_code') from None
@@ -3040,7 +3088,7 @@ class _View:
             return ('UPDATE catalog_record SET revision=revision+1,code=?,description=?,deletion_mark=?,values_json=? WHERE catalog_id=? AND record_id=? AND revision=?',
                     base+(values,str(draft.key.catalog_id),record_id,revision))
         sets = ['revision=revision+1','code=?','description=?','deletion_mark=?'] + [quote_identifier(self._catalog_layout.field_name(schema.identity, f.identity))+'=?' for f in schema.fields]
-        parameters = base+encode_columns(json.loads(values),schema, enum_domain=self._catalog_domain)+args+(record_id,revision)
+        parameters = base+encode_typed_columns(json.loads(values),schema, enum_domain=self._catalog_domain)+args+(record_id,revision)
         sql = 'UPDATE %s SET %s WHERE %s AND record_id=? AND revision=?' % (table,','.join(sets),where)
         if require_unique:
             # Normally the admitted PK makes this an indexed point lookup.
@@ -3141,7 +3189,7 @@ class _View:
             raise
 
 # The document port shares the same closed storage error boundary.
-for _document_method in ('_validate_query_source','documents','document_schema','read_document','read_document_values','select_documents','scan_documents','scan_document_values','ordered_document_values','find_document_number','registers','register_schema','scan_register','periodic_records','create','update','commit'):
+for _document_method in ('_validate_query_source','documents','document_schema','read_document','read_document_values','select_documents','scan_documents','scan_document_values','ordered_document_values','find_document_number','registers','register_schema','scan_register','ordered_register_records','periodic_records','create','update','commit'):
     setattr(DocumentView, _document_method, _boundary(getattr(DocumentView, _document_method)))
 
 install_boundaries(_boundary)

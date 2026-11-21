@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from uuid import uuid4
 
+from yadinassi.db.sqlite.sqlite_movement_layout import table_name as movement_table
 from yadinassi.db.registers.accumulation_movements import (AccumulationDirection, AccumulationMovementRow,
     AccumulationReplacement)
 from yadinassi.db.catalog.catalog_backend import BackendError
@@ -65,7 +66,7 @@ class AccumulationProfileTests(unittest.TestCase):
         self.assertIn('accumulation_profile',names)
         self.assertFalse(names.intersection({'unit_of_work_receipt','document_commit_receipt',
                                              'document_posting_receipt','accumulation_movement_receipt'}))
-        for name in ('posting_profile','recorder_movement','transaction_profile','transaction_migration'):
+        for name in ('posting_profile','recorder_movement','accumulation_movement','transaction_profile','transaction_migration'):
             self.assertNotIn(name,names)
     def test_source_bytes_are_retained(self):
         self.create();self.assertEqual(dict(self.sql('SELECT path,content FROM configuration_file')),dict(self.config.files))
@@ -107,7 +108,7 @@ class AccumulationProfileTests(unittest.TestCase):
     def test_rollback_removes_all_ports(self):
         b=self.create();operation,unit,draft,request=self.stage(b);unit.rollback()
         self.assertIsNone(b.read_document_posted(draft.key));self.assertEqual(b.read_accumulation(request.register_id,draft.key).rows,())
-        for table in ('document_record','document_posting_state','accumulation_movement'):
+        for table in ('document_record','document_posting_state',movement_table('accumulation', self.config.registers[0])):
             self.assertEqual(self.sql('SELECT COUNT(*) FROM '+table),[(0,)])
     def test_repeated_replacement_returns_distinct_staged_outcomes(self):
         b=self.create();operation,unit,draft,first=self.stage(b)
@@ -117,7 +118,7 @@ class AccumulationProfileTests(unittest.TestCase):
         self.assertEqual(b.read_accumulation(first.register_id,draft.key).rows,second.rows)
     def test_current_movement_payload_corruption_is_rejected_after_commit(self):
         b=self.create();operation,unit,draft,first=self.stage(b);unit.commit()
-        self.sql("UPDATE accumulation_movement SET values_json='[]'")
+        self.sql("UPDATE "+movement_table('accumulation', self.config.registers[0])+" SET period='00000000000000'")
         with self.assertRaises(BackendError):b.read_accumulation(first.register_id,draft.key)
     def test_posted_change_requires_same_root_document_mutation(self):
         b=self.create();operation,unit,draft,first=self.stage(b);unit.commit()
@@ -213,7 +214,7 @@ class AccumulationProfileTests(unittest.TestCase):
         key=str(draft.key.record_id);upper=key.upper()
         self.assertNotEqual(key,upper)
         with closing(sqlite3.connect(self.path)) as c:
-            for table in ('document_record','document_posting_state','accumulation_partition','accumulation_movement'):
+            for table in ('document_record','document_posting_state','accumulation_partition',movement_table('accumulation', self.config.registers[0])):
                 c.execute('UPDATE '+table+' SET record_id=? WHERE record_id=?',(upper,key))
             c.commit();self.assertIsNone(c.execute('PRAGMA foreign_key_check').fetchone())
         with self.assertRaises(BackendError):SQLiteCatalogBackend(self.path)

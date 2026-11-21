@@ -62,7 +62,7 @@ def try_count(plan,view,budget):
 
 
 def try_numeric(plan, view, budget):
-    """SQL REAL arithmetic is an explicit computation contract, not storage."""
+    """Use the provider's exact numeric results for the closed aggregate shape."""
     from .relational_queries import _BoundAggregate, _BoundField
     from yadinassi.db.catalog.catalog_backend import CatalogNumericAggregateRequest, CatalogNumericAggregateResult
     from .queries import BSLQueryResult, _MAX_CELLS, _MAX_RESULT_TEXT
@@ -109,8 +109,8 @@ def try_numeric(plan, view, budget):
         if result.count==0:
             if raw is not None:raise BackendError('integrity')
             values.append(NULL);continue
-        if type(raw) not in (float,int):raise BackendError('integrity')
-        number=Decimal(str(raw));scale=plan.describe(expression).qualifiers[1]
+        if type(raw) is not Decimal:raise BackendError('integrity')
+        number=raw;scale=plan.describe(expression).qualifiers[1]
         if not number.is_finite() or number.copy_abs()>=Decimal((0,(1,),38-scale)):
             raise ValueError('Query aggregate Number range exceeded')
         number=context.quantize(number,Decimal((0,(1,),-scale)))
@@ -124,7 +124,7 @@ def try_ordered_select(plan, view, budget=None):
     from .relational_queries import _BoundField
     q = plan.query
     if (type(q) is not syntax.Select or not q.order or not 0 < q.limit < syntax.MAX_ROWS
-            or len(plan.sources) != 1 or q.family not in ('catalog','document') or q.section is not None
+            or len(plan.sources) != 1 or q.family not in ('catalog','document','information_register') or q.section is not None
             or q.temporary or q.external or q.derived is not None or q.into is not None
             or q.virtual_condition is not None or q.joins or plan.grouped or q.having is not None
             or q.distinct or plan.memberships or plan.hierarchies):
@@ -132,6 +132,9 @@ def try_ordered_select(plan, view, budget=None):
     if any(type(field) is not _BoundField or field.source != 0
            for field in (*plan.projections, *(field for field, _ in plan.orders))):
         return None
+    if q.family == 'information_register':
+        from .register_queries import try_ordered_register
+        return try_ordered_register(plan,view,budget)
     document = q.family == 'document'
     select = getattr(view, 'ordered_document_values' if document else 'ordered_catalog_values', None)
     if select is None: return None
@@ -142,7 +145,6 @@ def try_ordered_select(plan, view, budget=None):
     if document:
         from yadinassi.db.document.document_backend import DocumentKey, DocumentValuePage, DocumentValueRow
         from .document_queries import _ordered_header_value
-        if any(type(c.field) is not str for c in plan.fields[0]): return None
         predicates = plan.document_storage_predicate(plan.predicate, 0)
         if predicates is None: return None
         predicate = CatalogPredicate('and', predicates) if predicates else None
@@ -203,7 +205,8 @@ def try_ordered_select(plan, view, budget=None):
         seen.add(key.record_id)
         if budget is not None:
             input_text += sum(len(value) for value in record.values if type(value) is str)
-        row = (tuple(_ordered_header_value(manager, column.field, record.values[index])
+        row = (tuple(_section_value(manager,column.custom,record.values[index]) if column.custom is not None
+                     else _ordered_header_value(manager,column.field,record.values[index])
                      for column, index in zip(plan.columns,positions)) if document else
                tuple(_section_value(manager, column.custom, record.values[index])
                      if column.custom is not None else _logical(manager, column, record.values[index])

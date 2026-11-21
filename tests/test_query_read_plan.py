@@ -120,7 +120,8 @@ class DocumentProjectionTests(DocumentReadPlanTests):
 
     def test_hidden_corruption_prevents_first_projected_page(self):
         self.seed(3)
-        self.sql('UPDATE document_record SET sections_json=? WHERE number=?', ('[]', '000000003'))
+        from sqlite_document_physical_fixture import corrupt_part_order
+        corrupt_part_order(self.sql,self.schema,'000000003')
         view = self.view()
         with self.assertRaises(BackendError):
             view.scan_document_values(self.schema.identity, DocumentScanRequest(1), ('number',))

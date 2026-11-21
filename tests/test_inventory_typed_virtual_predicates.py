@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from yadinassi.db.sqlite.sqlite_movement_layout import table_name as movement_table
 from yadinassi import Interpreter
 from yadinassi.db.query import query_parser as syntax
 from yadinassi.db.catalog.catalog_backend import BackendError
@@ -208,7 +209,8 @@ class TypedVirtualRuntimeTests(unittest.TestCase):
     def test_unselected_raw_edit_is_detected_after_warm_read(self):
         self.report('Unit=&U');key=self.vm.execute('Second')._key
         with closing(sqlite3.connect(self.path)) as db,db:
-            db.execute('UPDATE accumulation_movement SET values_json=? WHERE record_id=?',('[]',str(key.record_id)))
+            table = movement_table('accumulation', self.context.backend.accumulation_configuration.registers[0])
+            db.execute('UPDATE '+table+' SET period=? WHERE record_id=?',('00000000000000',str(key.record_id)))
         with self.assertRaises((BackendError,ValueError)):self.report('Unit=&U')
 
     def test_bare_membership_refused_and_typed_package_composes(self):

@@ -164,7 +164,9 @@ D.Write();O=D.Ref.GetObject();Message(O.Lines.Count());O.Lines.Clear();O.Write()
 
     def test_section_and_owner_changes_roll_back_together(self):
         obj = self.object(); obj.get_member('Lines').add().set_member('Flag',True); obj.write()
-        before = self.sql('SELECT revision,values_json,sections_json FROM document_record')
+        from sqlite_document_physical_fixture import table_snapshot
+        with closing(sqlite3.connect(self.path)) as connection:
+            before = table_snapshot(connection,self.schema)
         obj.set_member('Text','uncommitted');obj.get_member('Lines').clear()
         tx = self.context.backend.begin_document_write(uuid4())
         try:
@@ -178,10 +180,11 @@ D.Write();O=D.Ref.GetObject();Message(O.Lines.Count());O.Lines.Clear();O.Write()
             with patch.object(tx,'_preflight',side_effect=fail_after_write):
                 with self.assertRaisesRegex(BackendError, 'storage_error'): tx.update(replace(self.draft(),key=obj._key,number=obj.get_member('Number'),values=('uncommitted',Decimal(0),False,datetime(1,1,1),obj._manager._stored(self.schema.fields[-1],obj.get_member('Category'))),tabular_sections=(),auto_number=False),obj._revision)
             # Verify rollback at the operation's savepoint before ending this writer.
-            current = tx._connection.execute('SELECT revision,values_json,sections_json FROM document_record').fetchall()
+            current = table_snapshot(tx._connection,self.schema)
             self.assertEqual(current,before)
         finally: tx.rollback()
-        self.assertEqual(self.sql('SELECT revision,values_json,sections_json FROM document_record'),before)
+        with closing(sqlite3.connect(self.path)) as connection:
+            self.assertEqual(table_snapshot(connection,self.schema),before)
         tx = self.context.backend.begin_document_write(uuid4())
         try:
             card = tx.read_document(obj._key)
@@ -308,12 +311,24 @@ D.Write();O=D.Ref.GetObject();Message(O.Lines.Count());O.Lines.Clear();O.Write()
         with self.assertRaises(BackendError): SQLiteCatalogBackend(self.path)
 
     def test_invalid_persisted_scalar_and_sections_never_coerced(self):
-        obj = self.object(); obj.write()
-        original = self.sql('SELECT values_json,sections_json FROM document_record')[0]
-        for assignment in ("values_json='[]'","sections_json='[]'","date='20260230000000'","number=''", "values_json='[null]'"):
-            self.sql('UPDATE document_record SET '+assignment)
+        from yadinassi.db.sqlite.sqlite_document_layout import data_table, section_table
+        from yadinassi.db.sqlite.sqlite_typed_rows import attribute_column
+        obj = self.object(); obj.get_member('Lines').add(); obj.write()
+        data = data_table(self.schema); text = attribute_column(self.schema.fields[0])
+        part = section_table(self.schema,self.schema.tabular_sections[0])
+        cases = (
+            (f'UPDATE "{data}" SET "{text}"=?', (b'not text',),
+             f'UPDATE "{data}" SET "{text}"=?', ('',)),
+            (f'UPDATE "{part}" SET row_number=2',(), f'UPDATE "{part}" SET row_number=1',()),
+            ("UPDATE document_record SET date='20260230000000'",(),
+             "UPDATE document_record SET date='20261109123005'",()),
+            ("UPDATE document_record SET number=''",(),
+             "UPDATE document_record SET number='000000001'",()),
+        )
+        for corrupt,args,restore,original in cases:
+            self.sql(corrupt,args)
             with self.assertRaises(BackendError): obj._manager._read(obj._key.record_id)
-            self.sql('UPDATE document_record SET values_json=?,sections_json=?,date=?,number=?',(*original,'20261109123005','000000001'))
+            self.sql(restore,original)
 
     def test_reference_existence_and_foreign_database_rejected(self):
         draft = self.draft();tx = self.context.backend.begin_document_write(uuid4())

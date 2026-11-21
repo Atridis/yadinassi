@@ -7,7 +7,7 @@ from uuid import UUID,uuid4
 from yadinassi.db.catalog.catalog_backend import BackendError
 from yadinassi.configuration.configuration_accumulation import (AccumulationConfiguration, canonical,
     import_accumulation_configuration, PROFILE)
-from .sqlite_accumulation_movements import ACCUMULATION_DDL,AccumulationMovementPort,schema_data
+from .sqlite_accumulation_movements import ACCUMULATION_DDL,AccumulationMovementPort,schema_data,accumulation_movement_ddls
 from .sqlite_document_posting_state import POSTED_DDL,read_posted
 
 MARKER_DDL='CREATE TABLE accumulation_profile(singleton INTEGER PRIMARY KEY CHECK(singleton=1),profile TEXT NOT NULL,source_digest TEXT NOT NULL)'
@@ -95,7 +95,7 @@ def admit(connection,database_id,documents,*,validate_rows=False,_prepared=None)
         stored_documents,_=_storage().load_document_schemas(connection,())
         if stored_documents!=config.documents:raise BackendError('integrity')
         from .sqlite_accumulation_movements import validate_database_budget as accumulation_budget
-        accumulation_budget(connection)
+        accumulation_budget(connection,config.registers)
         if connection.execute('PRAGMA foreign_key_check').fetchone():raise BackendError('integrity')
         for reg,doc,record in connection.execute('SELECT register_id,document_id,record_id FROM accumulation_partition'):
             port.read(_stored_uuid(reg),DocumentKey(database_id,_stored_uuid(doc),_stored_uuid(record)))
@@ -129,9 +129,11 @@ def create(cls,path,configuration):
         connection.execute('INSERT INTO database_info VALUES(1,?,1,?,?,1,?)',(str(database_id),str(config.identity),config.name,'[]'))
         layout=s.build_layout((),reserved_names=tuple(d.split('(')[0].split()[-1] for d in (*s.DOCUMENT_DDL,*DDL)))
         s.save_layout(connection,layout);s.save_section_layout(connection,s.build_section_layout((),layout))
+        for ddl in s.document_data_ddls(config.documents,layout): connection.execute(ddl)
         for document in config.documents:
             connection.execute('INSERT INTO document_schema VALUES(?,?,?)',(str(document.identity),document.name,s._json(s.document_schema_data(document))))
             if document.numbering=='decimal_v1':connection.execute('INSERT INTO document_sequence VALUES(?,1)',(str(document.identity),))
+        for ddl in accumulation_movement_ddls(config.registers,layout):connection.execute(ddl)
         for schema in config.registers:
             connection.execute('INSERT INTO accumulation_register_schema VALUES(?,?)',(str(schema.identity),s._json(schema_data(schema))))
             connection.executemany('INSERT INTO accumulation_register_document VALUES(?,?)',[(str(schema.identity),str(doc)) for doc in schema.recorder_documents])

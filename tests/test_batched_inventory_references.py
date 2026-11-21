@@ -2,7 +2,6 @@
 from contextlib import closing
 from dataclasses import replace
 from decimal import Decimal
-import json
 import sqlite3
 import unittest
 from uuid import uuid4
@@ -88,23 +87,27 @@ class InventoryReferenceBatchTests(unittest.TestCase):
             for writing, code in ((True,'not_found'),(False,'integrity')):
                 with self.assertRaisesRegex(BackendError,code): port._references(bad,writing=writing)
 
-    def test_missing_reference_precedes_later_malformed_section(self):
+    def test_missing_reference_and_malformed_section_fail_closed(self):
         key = self.document(16)
         with closing(self.backend.begin_document_write(uuid4())) as view:
-            raw = view._connection.execute('SELECT values_json,sections_json FROM document_record').fetchone()
-            values = json.loads(raw[0]); values[0][2] = str(uuid4())
-            view._connection.execute('UPDATE document_record SET values_json=?,sections_json=?',
-                                    (json.dumps(values),'{}'))
+            from yadinassi.db.sqlite.sqlite_document_layout import data_table, section_table
+            from yadinassi.db.sqlite.sqlite_typed_rows import attribute_column
+            schema = view.document_schema(key.document_id)
+            view._connection.execute(
+                f'UPDATE "{data_table(schema)}" SET "{attribute_column(schema.fields[0])}"=?',
+                (str(uuid4()),))
+            view._connection.execute(
+                f'UPDATE "{section_table(schema,schema.tabular_sections[0])}" SET row_number=row_number+100')
             with self.assertRaisesRegex(BackendError,'integrity'): view.read_document(key)
 
-    def test_selection_limit_precedes_later_deep_json_corruption(self):
+    def test_selection_limit_precedes_later_malformed_physical_part(self):
         self.seed()
         self.vm.execute('For I=1 To 3 Do D=Documents.Receipt.CreateDocument(); '
-            'D.Number=String(I); D.Date=Date(2024,1,1); D.Warehouse=W.Ref; D.Write(); EndDo;')
+            'D.Number=String(I); D.Date=Date(2024,1,1); D.Warehouse=W.Ref; L=D.Lines.Add(); L.Product=P.Ref; D.Write(); EndDo;')
         schema = next(s for s in self.config.documents if s.name == 'Receipt')
         with closing(self.backend.begin_document_write(uuid4())) as view:
-            view._connection.execute("UPDATE document_record SET sections_json=? WHERE number='3'",
-                                     ('[' * 20000 + '0' + ']' * 20000,))
+            from sqlite_document_physical_fixture import corrupt_part_order
+            corrupt_part_order(view._connection.execute,schema,'3')
             with self.assertRaisesRegex(BackendError, 'unsupported'):
                 view.select_documents(schema.identity,DocumentSelection(limit=1))
             with self.assertRaisesRegex(BackendError, 'integrity'):

@@ -8,7 +8,7 @@ from yadinassi.db.catalog.catalog_backend import BackendError
 from yadinassi.configuration.configuration_inventory_enums import (InventoryEnumConfiguration, canonical,
     import_inventory_enum_configuration, PROFILE)
 from yadinassi.db.metadata.enum_storage_values import EnumValueDomain
-from .sqlite_accumulation_movements import ACCUMULATION_DDL,AccumulationMovementPort,schema_data
+from .sqlite_accumulation_movements import ACCUMULATION_DDL,AccumulationMovementPort,schema_data,accumulation_movement_ddls
 from .sqlite_document_posting_state import POSTED_DDL,read_posted
 
 MARKER_DDL='CREATE TABLE inventory_profile(singleton INTEGER PRIMARY KEY CHECK(singleton=1),profile TEXT NOT NULL,source_digest TEXT NOT NULL)'
@@ -81,6 +81,10 @@ def _validate_ddl(connection, config, domain):
     statements=(*statements,*s.REGISTRY_DDL,s.MIGRATION_MARKER_DDL,
                 *s.SECTION_REGISTRY_DDL,*s.DOCUMENT_DDL,s._SEQUENCE_DDL,*DDL)
     expected={ddl.split('(')[0].split()[-1]:ddl for ddl in statements}
+    expected.update({ddl.split('(')[0].split()[-1]:ddl for ddl in
+                     s.document_data_ddls(config.documents,layout,enum_domain=domain)})
+    expected.update({ddl.split('(')[0].split()[-1].strip('"'):ddl
+                     for ddl in accumulation_movement_ddls(config.registers,layout,enum_domain=domain)})
     expected.update({layout.table_name(c.identity):s.catalog_ddl(c,layout,enum_domain=domain)
                      for c in config.catalogs})
     if connection.execute("SELECT 1 FROM sqlite_master WHERE length(CAST(name AS BLOB))>1024 OR length(CAST(COALESCE(sql,'') AS BLOB))>262144 LIMIT 1").fetchone():raise BackendError('unsupported')
@@ -194,7 +198,7 @@ def _admit_source(connection,database_id,catalogs,documents,source,*,validate_ro
         stored_documents,_=_storage().load_document_schemas(connection,catalogs,enum_domain=domain)
         if stored_documents!=config.documents:raise BackendError('integrity')
         from .sqlite_accumulation_movements import validate_database_budget as accumulation_budget
-        accumulation_budget(connection)
+        accumulation_budget(connection,config.registers)
         if connection.execute('PRAGMA foreign_key_check').fetchone():raise BackendError('integrity')
         for reg,doc,record in connection.execute('SELECT register_id,document_id,record_id FROM accumulation_partition'):
             port.read(_stored_uuid(reg),DocumentKey(database_id,_stored_uuid(doc),_stored_uuid(record)))
@@ -263,9 +267,11 @@ def _create(cls,path,config):
                 connection.execute(s.catalog_ddl(catalog,layout,enum_domain=domain))
         for catalog in config.catalogs:
             if catalog.numbering=='decimal_v1':connection.execute('INSERT INTO catalog_sequence VALUES(?,1)',(str(catalog.identity),))
+        for ddl in s.document_data_ddls(config.documents,layout,enum_domain=domain): connection.execute(ddl)
         for document in config.documents:
             connection.execute('INSERT INTO document_schema VALUES(?,?,?)',(str(document.identity),document.name,s._json(s.document_schema_data(document,enum_domain=domain))))
             if document.numbering=='decimal_v1':connection.execute('INSERT INTO document_sequence VALUES(?,1)',(str(document.identity),))
+        for ddl in accumulation_movement_ddls(config.registers,layout,enum_domain=domain):connection.execute(ddl)
         for schema in config.registers:
             connection.execute('INSERT INTO accumulation_register_schema VALUES(?,?)',(str(schema.identity),s._json(schema_data(schema,enum_domain=domain))))
             connection.executemany('INSERT INTO accumulation_register_document VALUES(?,?)',[(str(schema.identity),str(doc)) for doc in schema.recorder_documents])

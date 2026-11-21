@@ -345,13 +345,16 @@ class BackendQualifierTests(unittest.TestCase):
         self.assertEqual([r.identity for r in self.read(draft.key).tabular_sections[0].rows],
                          [second.identity, first.identity])
 
-    def test_signed_zero_persists_in_declared_numeric_field(self):
+    def test_signed_zero_has_the_single_physical_numeric_zero(self):
         draft = replace(self.draft(sections=False), code='123', description='abc',
                         values=('old', Decimal('-0.00'), Decimal('1.23000')))
         self.create(draft)
         value = self.read(draft.key).values[1]
-        self.assertTrue(value.is_zero())
-        self.assertTrue(value.is_signed())
+        self.assertEqual(value.as_tuple(), Decimal('0.00').as_tuple())
+        table = quote_identifier(self.backend._layout.table_name(self.schema.identity))
+        field = quote_identifier(self.backend._layout.field_name(self.schema.identity, self.schema.fields[1].identity))
+        with _sqlite_mutation(self.path) as connection:
+            self.assertEqual(connection.execute(f'SELECT typeof({field}),{field} FROM {table}').fetchone(),('integer',0))
 
     def test_bad_late_row_does_not_mutate_owner_and_prior_change_can_commit(self):
         prior = self.draft('old'); operation = uuid4(); tx = self.backend.begin_write(operation)
@@ -496,8 +499,9 @@ class BackendQualifierTests(unittest.TestCase):
         draft = self.draft(); self.create(draft)
         table = quote_identifier(self.backend._layout.table_name(self.schema.identity))
         field = quote_identifier(self.backend._layout.field_name(self.schema.identity, self.schema.fields[1].identity))
-        for column, bad, good in [('code', '😀😀', '123'), (field, '1.234', '1.25')]:
+        for column, bad, good in [('code', '😀😀', '123'), (field, 10**self.schema.fields[1].qualifiers[0], 125)]:
             with _sqlite_mutation(self.path) as connection:
+                connection.execute('PRAGMA ignore_check_constraints=ON')
                 connection.execute('UPDATE %s SET %s=?' % (table, column), (bad,))
             with self.assertRaisesRegex(BackendError, 'integrity'): self.read(draft.key)
             with _sqlite_mutation(self.path) as connection:

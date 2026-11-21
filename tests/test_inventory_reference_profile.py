@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from uuid import UUID
 
+from yadinassi.db.sqlite.sqlite_movement_layout import table_name as movement_table
 from yadinassi import Interpreter, BSLRuntimeError
 from yadinassi.db.registers.accumulation_movements import validate_schema
 from yadinassi.db.catalog.catalog_backend import BackendError
@@ -182,7 +183,12 @@ EndProcedure
                 self.assertTrue(all(section_ids == (lines_id,) for section_ids in normalized))
                 writes = [sql for sql in trace if sql.startswith('UPDATE document_record SET')]
                 self.assertEqual(len(writes), 1)
-                self.assertIn('sections_json', writes[0])
+                from yadinassi.db.sqlite.sqlite_document_layout import section_table
+                schema = document._manager._schema
+                sections_by_name = {section.name:section for section in schema.tabular_sections}
+                changes = [sql for sql in trace if sql.startswith(('DELETE','INSERT','UPDATE'))]
+                self.assertTrue(any(section_table(schema,sections_by_name['Lines']) in sql for sql in changes))
+                self.assertFalse(any(section_table(schema,sections_by_name['Notes']) in sql for sql in changes))
                 self.assertEqual(vm.variables['d'].get_member('Lines').count(), 0)
                 self.assertEqual(vm.variables['d'].get_member('Notes')._stored_rows(), notes_before)
 
@@ -253,7 +259,7 @@ EndProcedure
             'D.Write(DocumentWriteMode.Posting); RollbackTransaction();')
         obj=self.vm.execute('D')
         self.assertEqual(self.rows(obj),())
-        for table in ('document_record','accumulation_movement','accumulation_partition'):
+        for table in ('document_record',movement_table('accumulation', self.config.registers[0]),'accumulation_partition'):
             self.assertEqual(self.sql('SELECT COUNT(*) FROM '+table),[(0,)])
     def test_no_migration_admission(self):
         from yadinassi.db.sqlite.sqlite_migration_plan import prepare

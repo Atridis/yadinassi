@@ -1,5 +1,4 @@
 """Closed query-order index specifications; creation is explicit maintenance or fresh creation only."""
-from decimal import Decimal
 from uuid import UUID
 
 from yadinassi.db.catalog.catalog_backend import BackendError, CatalogSchema
@@ -8,9 +7,10 @@ from .sqlite_catalog_layout import quote_identifier
 
 def register_query_collations(connection):
     """Install versioned comparators on readers, writers and migration handles."""
+    from .sqlite_catalog_numbers import register_aggregates
+    register_aggregates(connection)
     def compare(a, b): return (a > b) - (a < b)
     connection.create_collation('yadinassi_casefold_v1', lambda a, b: compare(a.casefold(), b.casefold()))
-    connection.create_collation('yadinassi_decimal_v1', lambda a, b: compare(Decimal(a), Decimal(b)))
     connection.create_collation('yadinassi_uuid_v1', lambda a, b: compare(UUID(a).int, UUID(b).int))
 
 
@@ -39,7 +39,7 @@ def _index_name(ddl):
     import re
     if type(ddl) is not str:
         raise BackendError('invalid_input')
-    match = re.match(r'^CREATE INDEX (?:"([A-Za-z0-9_]+)"|([A-Za-z0-9_]+)) ON ', ddl)
+    match = re.match(r'^CREATE (?:UNIQUE )?INDEX (?:"([A-Za-z0-9_]+)"|([A-Za-z0-9_]+)) ON ', ddl)
     if match is None:
         raise BackendError('invalid_input')
     return match.group(1) or match.group(2)

@@ -90,8 +90,9 @@ class CatalogSectionTests(unittest.TestCase):
         self.backend.close()
         self.backend = SQLiteCatalogBackend(self.path)
 
-    def sql(self, sql, args=()):
+    def sql(self, sql, args=(), *, corrupt=False):
         with closing(sqlite3.connect(self.path)) as connection, connection:
+            if corrupt: connection.execute('PRAGMA ignore_check_constraints=ON')
             return connection.execute(sql, args).fetchall()
 
     def table(self, section=None):
@@ -421,7 +422,7 @@ class CatalogSectionTests(unittest.TestCase):
         field = self.lines.fields[1]
         column = quote_identifier(self.backend._section_layout.field_name(
             self.product.identity, self.lines.identity, field.identity))
-        self.sql('UPDATE ' + self.table() + ' SET ' + column + '=?', ('NaN',))
+        self.sql('UPDATE ' + self.table() + ' SET ' + column + '=?', (10**12,), corrupt=True)
         with self.assertRaises(BackendError):
             self.read(draft.key)
 

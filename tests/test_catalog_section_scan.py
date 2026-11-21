@@ -177,14 +177,14 @@ class CatalogSectionScanTests(unittest.TestCase):
         assignments = (
             ('row_id', 'not-a-uuid'), ('row_id', str(uuid4()).upper()),
             ('row_id', str(UUID(int=0))), ('row_number', 9),
-            (self.field(1), 'NaN'), (self.field(1), '1.001'),
+            (self.field(1), 'NaN'), (self.field(1), 10**12),
             (self.field(3), 'not-a-date'), (self.field(4), str(uuid4())),
         )
         for column, value in assignments:
             previous = self.sql('SELECT '+column+' FROM '+self.table()+' WHERE owner_id=? AND row_number=2',
                                 (str(bad.key.record_id),))[0][0]
             self.sql('UPDATE '+self.table()+' SET '+column+'=? WHERE owner_id=? AND row_number=2',
-                     (value, str(bad.key.record_id)))
+                     (value, str(bad.key.record_id)), corrupt=True)
             view = self.backend.begin_read()
             try:
                 with self.subTest(column=column, value=value), self.assertRaises(BackendError):

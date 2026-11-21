@@ -6,13 +6,15 @@ owned transaction. This port never commits, closes or creates that transaction.
 """
 from dataclasses import dataclass
 from hashlib import sha256
-import json
 import sqlite3
 from uuid import UUID
 from yadinassi.db.catalog.catalog_backend import BackendError
 from yadinassi.db.document.document_backend import DocumentKey
 from yadinassi.db.document.document_movements import (RecorderMovementRow, RecorderReplacement,
     RecorderRegisterSchema, validate_replacement, mutation_identity)
+
+from . import sqlite_movement_layout as movement
+from .sqlite_typed_rows import encode_typed_columns, decode_typed_columns
 
 MAX_BYTES=16*1024*1024
 MAX_ROW_BYTES=1024*1024
@@ -23,17 +25,21 @@ RECORDER_DDL=(
     'CREATE TABLE recorder_register_schema(register_id TEXT PRIMARY KEY, definition TEXT NOT NULL)',
     'CREATE TABLE recorder_register_document(register_id TEXT NOT NULL REFERENCES recorder_register_schema(register_id), document_id TEXT NOT NULL REFERENCES document_schema(identity), PRIMARY KEY(register_id,document_id))',
     'CREATE TABLE recorder_partition(register_id TEXT NOT NULL, document_id TEXT NOT NULL, record_id TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), PRIMARY KEY(register_id,document_id,record_id), FOREIGN KEY(register_id,document_id) REFERENCES recorder_register_document(register_id,document_id), FOREIGN KEY(document_id,record_id) REFERENCES document_record(document_id,record_id))',
-    'CREATE TABLE recorder_movement(register_id TEXT NOT NULL, document_id TEXT NOT NULL, record_id TEXT NOT NULL, line_number INTEGER NOT NULL CHECK(line_number>0), active INTEGER NOT NULL CHECK(active IN(0,1)), values_json TEXT NOT NULL, dimension_key TEXT, UNIQUE(register_id,dimension_key), PRIMARY KEY(register_id,document_id,record_id,line_number), FOREIGN KEY(register_id,document_id,record_id) REFERENCES recorder_partition(register_id,document_id,record_id))',
 )
 
 
+def recorder_movement_ddls(schemas):
+    return movement.data_ddls('recorder', schemas)
 
-def validate_database_budget(connection):
+
+def validate_database_budget(connection, schemas):
     """Same aggregate bounds for writer savepoints and fresh admission."""
-    rows,size=connection.execute('SELECT COUNT(*),COALESCE(SUM(length(CAST(values_json AS BLOB))),0) FROM recorder_movement').fetchone()
-    partitions=connection.execute('SELECT COUNT(*) FROM recorder_partition').fetchone()[0]
-    if rows>MAX_DATABASE_ROWS or size>MAX_DATABASE_BYTES or partitions>MAX_DATABASE_PARTITIONS:
-        raise BackendError('unsupported')
+    movement.database_budget(connection, 'recorder', schemas, max_rows=MAX_DATABASE_ROWS,
+                             max_bytes=MAX_DATABASE_BYTES, max_partitions=MAX_DATABASE_PARTITIONS)
+
+
+def _canonical_rows(rows):
+    return [list(row[:-1]) for row in rows]
 
 
 def _storage():
@@ -101,43 +107,50 @@ class RecorderMovementPort:
         if allowed!=tuple(sorted(str(v) for v in schema.recorder_documents)):raise BackendError('integrity')
         return schema
 
-    def _encoded(self,schema,rows):
-        result=[];size=0
+    def _encoded(self, schema, rows):
+        result = []
+        size = 0
         for row in rows:
-            data=[_storage()._encode(v,f,self.database_id) for v,f in zip(row.values,schema.fields)]
-            raw=_json(data);n=len(raw.encode());size+=n
-            if n>MAX_ROW_BYTES or size>MAX_BYTES:raise BackendError('unsupported')
-            result.append([row.line_number,row.active,raw])
+            data = [_storage()._encode(movement.canonical_number(value, field), field, self.database_id)
+                    for value, field in zip(row.values, schema.fields)]
+            raw = _json(data)
+            n = len(raw.encode())
+            size += n
+            if n > MAX_ROW_BYTES or size > MAX_BYTES:
+                raise BackendError('unsupported')
+            result.append([row.line_number, row.active, raw, encode_typed_columns(data, schema)])
         return result
 
-    def _dimension_key(self,schema,row):
-        # Zero dimensions exists only in unactivated primitive fixtures. The
-        # explicit source profile always has dimensions and requires this key.
-        if not schema.dimension_count:return None
+    def _dimension_key(self, schema, row):
         from .sqlite_registers import _dimension
-        return _json([_dimension(v,f,self.database_id) for v,f in zip(row.values[:schema.dimension_count],schema.fields[:schema.dimension_count])])
+        return tuple(tuple(_dimension(value, field, self.database_id))
+                     for value, field in zip(row.values[:schema.dimension_count],
+                                             schema.fields[:schema.dimension_count]))
 
     def _snapshot(self,schema,recorder,revision,rows):
         return _hash(['recorder_partition_v1',str(self.database_id),self.generation,
-            self.definitions[schema.identity],str(recorder.document_id),str(recorder.record_id),revision,rows])
+            self.definitions[schema.identity],str(recorder.document_id),str(recorder.record_id),revision,_canonical_rows(rows)])
 
     def _decoded_partition(self, schema, recorder, revision, source):
         """Shared logical decoder; no declaration lookups or transaction changes."""
         if type(revision) is not int or not 0 <= revision < 2**63:
             raise BackendError('integrity')
         rows=[]
-        for line,active,raw,dimension_key in source:
-            if type(line) is not int or line!=len(rows)+1 or type(active) is not int or active not in (0,1) or type(raw) is not str or len(raw.encode())>MAX_ROW_BYTES:raise BackendError('integrity')
-            if len(rows) >= MAX_DATABASE_ROWS: raise BackendError('unsupported')
+        for line, active, byte_count, *physical in source:
+            if (type(line) is not int or line != len(rows)+1 or type(active) is not int
+                    or active not in (0,1) or type(byte_count) is not int or not 0 <= byte_count <= MAX_ROW_BYTES):
+                raise BackendError('integrity')
+            if len(rows) >= MAX_DATABASE_ROWS:
+                raise BackendError('unsupported')
             try:
-                data=json.loads(raw)
-                if type(data) is not list or len(data)!=len(schema.fields):raise BackendError('integrity')
-                values=tuple(_storage()._decode(v,f,self.database_id) for v,f in zip(data,schema.fields))
-                if _json(data)!=raw:raise BackendError('integrity')
-                item=RecorderMovementRow(line,bool(active),values)
-                if dimension_key!=self._dimension_key(schema,item):raise BackendError('integrity')
-                rows.append(item)
-            except (ValueError,TypeError):raise BackendError('integrity') from None
+                data = decode_typed_columns(physical, schema)
+                if len(_json(data).encode()) != byte_count:
+                    raise BackendError('integrity')
+                values = tuple(_storage()._decode(value, field, self.database_id)
+                               for value, field in zip(data, schema.fields))
+                rows.append(RecorderMovementRow(line, bool(active), values))
+            except (ValueError,TypeError):
+                raise BackendError('integrity') from None
         if revision == 0 and rows: raise BackendError('integrity')
         rows=tuple(rows)
         validate_replacement(schema,RecorderReplacement(schema.identity,recorder,rows,'0'*64),self.database_id)
@@ -154,9 +167,10 @@ class RecorderMovementPort:
         args = (str(register_id),)
         count = self.connection.execute('SELECT COUNT(*) FROM recorder_partition WHERE register_id=?',args).fetchone()[0]
         if count > MAX_DATABASE_PARTITIONS: raise BackendError('unsupported')
-        rows,size,largest=self.connection.execute('SELECT COUNT(*),COALESCE(SUM(length(CAST(values_json AS BLOB))),0),COALESCE(MAX(length(CAST(values_json AS BLOB))),0) FROM recorder_movement WHERE register_id=?',args).fetchone()
-        if rows>MAX_DATABASE_ROWS or size>MAX_BYTES:raise BackendError('unsupported')
-        if largest>MAX_ROW_BYTES:raise BackendError('integrity')
+        table, columns = movement.references('recorder', schema)
+        movement.scoped_budget(self.connection, table, columns, ' WHERE register_id=?', args,
+                               max_rows=MAX_DATABASE_ROWS, max_bytes=MAX_BYTES, max_row_bytes=MAX_ROW_BYTES,
+                                       oversize_code='integrity')
         if self.connection.execute('PRAGMA foreign_key_check').fetchone():raise BackendError('integrity')
         # Cursor acquisition is nested so even a failure opening the second
         # stream cannot retain the first cursor on the borrowed connection.
@@ -164,10 +178,9 @@ class RecorderMovementPort:
         with closing(self.connection.execute(
                 'SELECT document_id,record_id,revision FROM recorder_partition '
                 'WHERE register_id=? ORDER BY document_id,record_id', args)) as metadata:
-            with closing(self.connection.execute(
-                    'SELECT document_id,record_id,line_number,active,values_json,dimension_key '
-                    'FROM recorder_movement WHERE register_id=? '
-                    'ORDER BY document_id,record_id,line_number', args)) as movements:
+            projection = ','.join(('document_id','record_id','line_number','active','payload_bytes',*columns))
+            with closing(self.connection.execute('SELECT ' + projection + ' FROM ' + table
+                    + ' WHERE register_id=? ORDER BY document_id,record_id,line_number', args)) as movements:
                 for doc,record,revision,raw_rows in ordered_partitions(
                         metadata,movements,max_partitions=MAX_DATABASE_PARTITIONS,max_rows=MAX_DATABASE_ROWS):
                     key=recorder_key(self.database_id,doc,record)
@@ -186,10 +199,14 @@ class RecorderMovementPort:
         revision_row=self.connection.execute('SELECT revision FROM recorder_partition WHERE register_id=? AND document_id=? AND record_id=?',key).fetchone()
         revision=0 if revision_row is None else revision_row[0]
         if type(revision) is not int or not 0<=revision<2**63:raise BackendError('integrity')
-        count,total=self.connection.execute('SELECT COUNT(*),COALESCE(SUM(length(CAST(values_json AS BLOB))),0) FROM recorder_movement WHERE register_id=? AND document_id=? AND record_id=?',key).fetchone()
-        if count>10000 or total>MAX_BYTES:raise BackendError('unsupported')
-        if revision==0 and count:raise BackendError('integrity')
-        with closing(self.connection.execute('SELECT line_number,active,values_json,dimension_key FROM recorder_movement WHERE register_id=? AND document_id=? AND record_id=? ORDER BY line_number',key)) as source:
+        table, columns = movement.references('recorder', schema)
+        where = ' WHERE register_id=? AND document_id=? AND record_id=?'
+        count = movement.scoped_budget(self.connection, table, columns, where, key, max_rows=10000,
+                                       max_bytes=MAX_BYTES, max_row_bytes=MAX_ROW_BYTES,
+                                       oversize_code='integrity')
+        if revision == 0 and count: raise BackendError('integrity')
+        projection = ','.join(('line_number','active','payload_bytes',*columns))
+        with closing(self.connection.execute('SELECT ' + projection + ' FROM ' + table + where + ' ORDER BY line_number',key)) as source:
             return self._decoded_partition(schema,recorder,revision,source)
 
     def _prepare_replacement(self,request):
@@ -197,7 +214,7 @@ class RecorderMovementPort:
         schema=self._require(request.register_id,request.recorder)
         validate_replacement(schema,request,self.database_id);rows=self._encoded(schema,request.rows)
         intent=['recorder_replace_v1',str(self.database_id),self.generation,self.definitions[schema.identity],
-            str(request.recorder.document_id),str(request.recorder.record_id),request.expected_snapshot,rows]
+            str(request.recorder.document_id),str(request.recorder.record_id),request.expected_snapshot,_canonical_rows(rows)]
         size=len(_json(intent).encode())
         if size>MAX_BYTES:raise BackendError('unsupported')
         return schema,rows,size
@@ -215,12 +232,16 @@ class RecorderMovementPort:
         snapshot=self._snapshot(schema,request.recorder,revision,rows)
         result=RecorderOutcome(request.register_id,request.recorder,revision,snapshot,len(rows))
         key=(str(request.register_id),str(request.recorder.document_id),str(request.recorder.record_id))
+        table, columns = movement.references('recorder', schema)
         self.connection.execute('SAVEPOINT recorder_replace')
         try:
-            self.connection.execute('DELETE FROM recorder_movement WHERE register_id=? AND document_id=? AND record_id=?',key)
+            self.connection.execute('DELETE FROM ' + table + ' WHERE register_id=? AND document_id=? AND record_id=?', key)
             self.connection.execute('INSERT INTO recorder_partition VALUES(?,?,?,?) ON CONFLICT(register_id,document_id,record_id) DO UPDATE SET revision=excluded.revision',(*key,revision))
-            self.connection.executemany('INSERT INTO recorder_movement VALUES(?,?,?,?,?,?,?)',[(*key,line,int(active),raw,self._dimension_key(schema,row)) for (line,active,raw),row in zip(rows,request.rows)])
-            validate_database_budget(self.connection)
+            names = ','.join(('register_id','document_id','record_id','line_number','active','payload_bytes',*columns))
+            marks = ','.join('?' for _ in range(6 + len(columns)))
+            self.connection.executemany('INSERT INTO ' + table + '(' + names + ') VALUES(' + marks + ')',
+                [(*key,line,int(active),len(raw.encode()),*values) for line,active,raw,values in rows])
+            validate_database_budget(self.connection, tuple(self.schemas.values()))
             self.connection.execute('RELEASE recorder_replace')
         except BaseException:
             self.connection.execute('ROLLBACK TO recorder_replace');self.connection.execute('RELEASE recorder_replace');raise

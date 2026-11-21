@@ -120,7 +120,8 @@ def apply(path, plan, *, maintenance=False):
     """One explicit v11-to-v12 update. Unknown commit outcomes require resolve."""
     from .sqlite_migration_plan import _open
     from .sqlite_catalog import _json, _schema_data, _encode, _View, _MAX_DATABASE_BYTES
-    from .sqlite_catalog_layout import quote_identifier as q, catalog_ddl, encode_columns
+    from .sqlite_catalog_layout import quote_identifier as q, catalog_ddl
+    from .sqlite_typed_rows import encode_typed_columns
     from .sqlite_query_indexes import (catalog_query_index_ddls, read_index_bundle_ddls,
                                        admit_query_indexes, _index_name, check_index_bundle_budget)
     from .sqlite_transaction_profile import profile_index_ddls
@@ -145,8 +146,10 @@ def apply(path, plan, *, maintenance=False):
         source=import_configuration(source_files,numbering_policy=numbering,module_runtime=plan.target.module_runtime)
         delta=additive_delta(source,plan.target)
         layout=Layout({UUID(c):n for c,n in plan.table_mapping},{(UUID(c),UUID(f)):n for c,f,n in plan.field_mapping})
+        from .sqlite_register_layout import register_index_ddls
+        register_indexes = register_index_ddls(source.information_registers)
         preserve_read_indexes = admit_query_indexes(db,
-            profile_index_ddls(plan.base_profile, source.catalogs, layout),
+            profile_index_ddls(plan.base_profile, source.catalogs, layout)+register_indexes,
             read_index_bundle_ddls(plan.base_profile, source.catalogs, layout, format_version=11))
         old_schemas={s.identity:s for s in source.catalogs}
         for ddl in DDL: db.execute(ddl)
@@ -168,7 +171,7 @@ def apply(path, plan, *, maintenance=False):
                 temporary=Layout({**layout._tables,schema.identity:temp},layout._fields)
                 db.execute(catalog_ddl(schema,temporary))
                 columns=['record_id','revision','code','description','deletion_mark']+[layout.field_name(old.identity,f.identity) for f in old.fields]
-                values=encode_columns([_encode(v,f,plan.database_id) for v,f in zip(addition.defaults,addition.appended)],
+                values=encode_typed_columns([_encode(v,f,plan.database_id) for v,f in zip(addition.defaults,addition.appended)],
                     CatalogSchema(schema.identity,schema.name,schema.code_length,schema.description_length,addition.appended))
                 select=','.join(q(c) for c in columns)+(','+','.join('?' for _ in values) if values else '')
                 db.execute('INSERT INTO '+q(temp)+' SELECT '+select+' FROM '+q(table),values)
@@ -189,7 +192,7 @@ def apply(path, plan, *, maintenance=False):
             for ddl in optional:
                 if db.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name=?", (_index_name(ddl),)).fetchone() is None:
                     db.execute(ddl)
-        if admit_query_indexes(db, profile_index_ddls(plan.base_profile, plan.target.catalogs, layout), optional) != preserve_read_indexes:
+        if admit_query_indexes(db, profile_index_ddls(plan.base_profile, plan.target.catalogs, layout)+register_indexes, optional) != preserve_read_indexes:
             raise BackendError('integrity')
         target_files={f.path:f.content for f in plan.target.files}
         db.execute('INSERT INTO configuration_update VALUES(1,?,?,?,?,?,?,?,?,?)',

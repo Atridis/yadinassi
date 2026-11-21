@@ -57,9 +57,7 @@ def _validate(plan):
 
 
 def _sets(backend):
-    from .sqlite_transaction_profile import profile_index_ddls
-    baseline = (profile_index_ddls(backend.storage_version, backend._schemas, backend._layout)
-                if backend.format_version in (11, 12, 13, 14, 15) else ())
+    baseline = backend._storage_indexes
     optional = read_index_bundle_ddls(backend.storage_version, backend._schemas,
                                      backend._layout, format_version=backend.format_version)
     return canonical_index_ddls(baseline), optional

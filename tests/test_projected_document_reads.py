@@ -10,6 +10,9 @@ import test_document_posting_query_runtime as posting
 from yadinassi.db.catalog.catalog_backend import BackendError
 from yadinassi.db.document.document_backend import DocumentScanRequest, DocumentSelection
 from yadinassi.db.sqlite.sqlite_documents import DocumentView
+from yadinassi.db.sqlite.sqlite_document_layout import data_table
+from yadinassi.db.sqlite.sqlite_typed_rows import attribute_column
+from sqlite_document_physical_fixture import corrupt_part_order, remove_attributes
 
 
 class ProjectedDocumentReadTests(unittest.TestCase):
@@ -60,14 +63,14 @@ class ProjectedDocumentReadTests(unittest.TestCase):
 
     def test_select_overflow_preserves_sorted_error_frontier(self):
         self.seed(3)
-        self.sql("UPDATE document_record SET values_json='[]' WHERE number='000000003'")
+        remove_attributes(self.sql,self.schema,'000000003')
         view=self.view()
         with self.assertRaisesRegex(BackendError,'unsupported'):
             view.select_documents(self.schema.identity,DocumentSelection(limit=1))
         with self.assertRaisesRegex(BackendError,'integrity'):
             view.select_documents(self.schema.identity,DocumentSelection(limit=3))
 
-    def test_repeated_standard_ref_field_reads_fetch_neither_json_payload(self):
+    def test_repeated_standard_ref_field_reads_fetch_no_attributes_or_parts(self):
         self.seed(3); manager=self.manager(); ref=manager.find_by_number('000000001')
         self.assertEqual(manager._read_member(ref,'Number'),'000000001')
         trace=[]; self.context.backend._read_handle.connection.set_trace_callback(trace.append)
@@ -75,9 +78,9 @@ class ProjectedDocumentReadTests(unittest.TestCase):
             for _ in range(10): self.assertEqual(manager._read_member(ref,'Number'),'000000001')
         reads=[sql for sql in trace if ' FROM document_record' in sql]
         self.assertEqual(len(reads),10)
-        self.assertTrue(all('values_json' not in sql and 'sections_json' not in sql for sql in reads))
+        self.assertTrue(all('document_data_' not in sql and 'document_part_' not in sql for sql in reads))
 
-    def test_custom_ref_field_reads_only_header_json_after_selected_row_proof(self):
+    def test_custom_ref_field_reads_only_requested_column_after_selected_row_proof(self):
         self.seed(2); manager=self.manager(); ref=manager.find_by_number('000000001')
         field=self.schema.fields[0]
         trace=[]; self.context.backend._read_handle.connection.set_trace_callback(trace.append)
@@ -85,23 +88,26 @@ class ProjectedDocumentReadTests(unittest.TestCase):
             manager._read_member(ref,field.name)
         reads=[sql for sql in trace if ' FROM document_record' in sql]
         self.assertEqual(len(reads),1)
-        self.assertIn('values_json',reads[0]); self.assertNotIn('sections_json',reads[0])
+        self.assertIn(attribute_column(field),reads[0]); self.assertNotIn('document_part_',reads[0])
+        self.assertEqual(reads[0].count('a."attr_'),1)
 
     def test_same_generation_selected_section_tamper_is_not_hidden_by_number_getter(self):
         self.seed(2); manager=self.manager(); ref=manager.find_by_number('000000001')
-        self.sql("UPDATE document_record SET sections_json='[]' WHERE number='000000001'")
+        corrupt_part_order(self.sql,self.schema,'000000001')
         with self.assertRaisesRegex(BackendError,'integrity'): manager._read_member(ref,'Number')
 
     def test_point_scope_does_not_silently_become_full_unrelated_semantic_validation(self):
         self.seed(2); manager=self.manager()
-        self.sql("UPDATE document_record SET values_json='[]' WHERE number='000000002'")
+        remove_attributes(self.sql,self.schema,'000000002')
         ref=manager.find_by_number('000000001')
         self.assertEqual(manager._read_member(ref,'Number'),'000000001')
         with self.assertRaisesRegex(BackendError,'integrity'): manager.find_by_number('000000002')
 
     def test_unrelated_source_coarse_budget_tamper_still_refuses_point_read(self):
         self.seed(2); manager=self.manager(); ref=manager.find_by_number('000000001')
-        self.sql('UPDATE document_record SET sections_json=? WHERE number=?',('x'*(1024*1024+1),'000000002'))
+        table=data_table(self.schema); attr=attribute_column(self.schema.fields[0])
+        self.sql(f'UPDATE "{table}" SET "{attr}"=? WHERE record_id=(SELECT record_id FROM document_record WHERE number=?)',
+                 ('x'*(1024*1024+1),'000000002'))
         with self.assertRaisesRegex(BackendError,'integrity'): manager._read_member(ref,'Number')
 
     def test_find_number_keeps_binary_exactness_and_no_warm_card_decode(self):

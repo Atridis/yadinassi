@@ -4,6 +4,7 @@ from unittest.mock import patch
 import sqlite3
 import unittest
 import test_main_demo_runtime as runtime_fixture
+from yadinassi.db.sqlite.sqlite_movement_layout import table_name as movement_table
 from yadinassi.db.document.document_posting_values import DocumentWriteMode
 from yadinassi.db.document.document_posting import _PostingInterpreter
 
@@ -21,8 +22,9 @@ class DirectPostingTests(unittest.TestCase):
         d.get_member('AdditionalProperties').insert('Mode',Decimal(mode))
         return d
     def counts(self):
+        movement = movement_table('accumulation', self.fixture.context.backend.accumulation_configuration.registers[0])
         with sqlite3.connect(self.fixture.path) as db:
-            return tuple(db.execute('SELECT count(*) FROM '+table).fetchone()[0] for table in ('document_record','document_posting_state','accumulation_movement'))
+            return tuple(db.execute('SELECT count(*) FROM '+table).fetchone()[0] for table in ('document_record','document_posting_state',movement))
     def test_original_receipt_no_vm_dispatch(self):
         d=self.document()
         with patch.object(_PostingInterpreter,'call_routine',side_effect=AssertionError('legacy dispatch')):

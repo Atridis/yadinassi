@@ -25,8 +25,8 @@ from .sqlite_catalog import (_APPLICATION_ID, _MAX_CONFIG_BYTES, _MAX_DATABASE_B
                              _MAX_FILES, _MAX_ROW_BYTES, _MAX_ROWS, _decode,
                              _private_parent, _schema)
 from .sqlite_catalog_layout import (REGISTRY_DDL, MIGRATION_MARKER_DDL, build_layout, save_layout, load_layout,
-                                    quote_identifier, catalog_ddl, decode_columns,
-                                    encode_columns, index_ddls)
+                                    quote_identifier, catalog_ddl, index_ddls)
+from .sqlite_typed_rows import encode_typed_columns, decode_typed_columns, number_storage
 
 # Frozen v1 contract, independent of the current backend's creation DDL.
 _V1_DDL = (
@@ -116,8 +116,9 @@ def _copy_records(db, database_id, schemas, layout):
             for value, field in zip(values, schema.fields):
                 try: _decode(value, field, database_id)
                 except BackendError: raise BackendError('integrity') from None
-            encoded = encode_columns(values, schema)
-            if decode_columns(encoded, schema) != values: raise BackendError('integrity')
+            encoded = encode_typed_columns(values, schema)
+            if encode_typed_columns(decode_typed_columns(encoded, schema), schema) != encoded:
+                raise BackendError('integrity')
             db.execute(f'INSERT INTO {table}({columns}) VALUES({placeholders})', (rid,revision,code,description,deletion,*encoded))
             read_count += 1
         if read_count != count or db.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0] != count: raise BackendError('integrity')
@@ -141,8 +142,12 @@ def _verify_records(db, schemas, layout):
             column = quote_identifier(layout.field_name(schema.identity, field.identity))
             if field.kind == 'boolean': malformed.append(f"typeof({column})!='integer'")
             elif field.kind == 'catalog_ref': malformed.append(f"({column} IS NOT NULL AND (typeof({column})!='text' OR length(CAST({column} AS BLOB))>36))")
+            elif field.kind == 'number':
+                storage = number_storage(field).lower()
+                malformed.append(f"typeof({column})!='{storage}'")
+                if storage == 'blob': malformed.append(f'length({column})!=16')
             else:
-                limit = field.qualifiers[0] * 4 if field.kind == 'string' else (41 if field.kind == 'number' else 14)
+                limit = field.qualifiers[0] * 4 if field.kind == 'string' else 14
                 malformed.append(f"(typeof({column})!='text' OR length(CAST({column} AS BLOB))>{limit})")
             sizes.append(f'COALESCE(length(CAST({column} AS BLOB)),0)')
         if sizes: malformed.append('(' + '+'.join(sizes) + f')>{_MAX_ROW_BYTES*4}')
@@ -152,7 +157,10 @@ def _verify_records(db, schemas, layout):
         target = db.execute(f'SELECT {columns} FROM {table} ORDER BY record_id')
         for old, new in zip_longest(source, target, fillvalue=missing):
             if old is missing or new is missing or old[:5] != new[:5]: raise BackendError('integrity')
-            if decode_columns(new[5:], schema) != json.loads(old[5]): raise BackendError('integrity')
+            # The source was already validated as canonical tagged values.
+            # Compare exact target cells, including the one integer zero.
+            if new[5:] != encode_typed_columns(json.loads(old[5]), schema):
+                raise BackendError('integrity')
 
 
 @dataclass(frozen=True)

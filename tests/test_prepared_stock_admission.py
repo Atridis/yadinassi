@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
+from yadinassi.db.sqlite.sqlite_movement_layout import table_name as movement_table
 from yadinassi.db.catalog.catalog_backend import BackendError
 from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from yadinassi.db.sqlite.sqlite_accumulation_movements import AccumulationMovementPort
@@ -317,13 +318,14 @@ class PreparedStockTransactionTests(unittest.TestCase):
 
     def test_committed_stock_and_external_payload_corruption_remain_live(self):
         obj = self.new(); self.post(); self.assertEqual(len(self.rows(obj)), 1)
+        table = movement_table('accumulation', self.config.registers[0])
         with closing(sqlite3.connect(self.path)) as db:
-            original = db.execute('SELECT values_json FROM accumulation_movement').fetchone()[0]
-            db.execute("UPDATE accumulation_movement SET values_json='[]'"); db.commit()
+            original = db.execute('SELECT period FROM '+table).fetchone()[0]
+            db.execute("UPDATE "+table+" SET period='00000000000000'"); db.commit()
         with patch('yadinassi.db.sqlite.sqlite_accumulation_profile.import_accumulation_configuration') as importer:
             with self.assertRaises(BackendError): self.rows(obj)
             with closing(sqlite3.connect(self.path)) as db:
-                db.execute('UPDATE accumulation_movement SET values_json=?', (original,)); db.commit()
+                db.execute('UPDATE '+table+' SET period=?', (original,)); db.commit()
             self.assertEqual(len(self.rows(obj)), 1)
             importer.assert_not_called()
 

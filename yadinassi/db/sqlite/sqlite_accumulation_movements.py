@@ -18,6 +18,9 @@ from yadinassi.db.registers.accumulation_movements import (
 from yadinassi.db.catalog.catalog_backend import BackendError, CatalogKey, CatalogSchema, FieldSchema
 from yadinassi.db.document.document_backend import DocumentKey
 
+from . import sqlite_movement_layout as movement
+from .sqlite_typed_rows import encode_typed_columns, decode_typed_columns
+
 MAX_BYTES = 16 * 1024 * 1024
 MAX_ROW_BYTES = 1024 * 1024
 MAX_SCHEMA_BYTES = 65536
@@ -30,7 +33,6 @@ ACCUMULATION_DDL = (
     'CREATE TABLE accumulation_register_schema(register_id TEXT PRIMARY KEY, definition TEXT NOT NULL)',
     'CREATE TABLE accumulation_register_document(register_id TEXT NOT NULL REFERENCES accumulation_register_schema(register_id), document_id TEXT NOT NULL REFERENCES document_schema(identity), PRIMARY KEY(register_id,document_id))',
     'CREATE TABLE accumulation_partition(register_id TEXT NOT NULL, document_id TEXT NOT NULL, record_id TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), PRIMARY KEY(register_id,document_id,record_id), FOREIGN KEY(register_id,document_id) REFERENCES accumulation_register_document(register_id,document_id), FOREIGN KEY(document_id,record_id) REFERENCES document_record(document_id,record_id))',
-    "CREATE TABLE accumulation_movement(register_id TEXT NOT NULL, document_id TEXT NOT NULL, record_id TEXT NOT NULL, line_number INTEGER NOT NULL CHECK(line_number>0), period TEXT NOT NULL CHECK(length(period)=14), active INTEGER NOT NULL CHECK(active IN(0,1)), direction TEXT NOT NULL CHECK(direction IN('receipt','expense')), values_json TEXT NOT NULL, PRIMARY KEY(register_id,document_id,record_id,line_number), FOREIGN KEY(register_id,document_id,record_id) REFERENCES accumulation_partition(register_id,document_id,record_id))",
 )
 
 
@@ -71,15 +73,24 @@ def schema_data(schema, *, enum_domain=None):
     return data
 
 
-def validate_database_budget(connection):
+def accumulation_movement_ddls(schemas, catalog_layout, *, enum_domain=None):
+    return movement.data_ddls('accumulation', schemas, catalog_layout, enum_domain=enum_domain)
+
+
+def validate_database_budget(connection, schemas):
     """Bound all accumulation partitions, including retained empty revisions."""
-    rows, size = connection.execute(
-        'SELECT COUNT(*),COALESCE(SUM(length(CAST(values_json AS BLOB))'
-        '+length(CAST(period AS BLOB))+length(CAST(direction AS BLOB))+64),0) '
-        'FROM accumulation_movement').fetchone()
-    partitions = connection.execute('SELECT COUNT(*) FROM accumulation_partition').fetchone()[0]
-    if rows > MAX_DATABASE_ROWS or size > MAX_DATABASE_BYTES or partitions > MAX_DATABASE_PARTITIONS:
-        raise BackendError('unsupported')
+    movement.database_budget(connection, 'accumulation', schemas, max_rows=MAX_DATABASE_ROWS,
+                             max_bytes=MAX_DATABASE_BYTES, max_partitions=MAX_DATABASE_PARTITIONS)
+
+
+def _grouped(schema, flat):
+    widths = (len(schema.dimensions), len(schema.resources))
+    left, right = widths[0], sum(widths)
+    return [flat[:left], flat[left:right], flat[right:]]
+
+
+def _canonical_rows(rows):
+    return [list(row[:-1]) for row in rows]
 
 
 def _initialize_headers(self, connection, database_id, generation, schemas, *, active_only=False, reference_catalogs=(), enum_domain=None):
@@ -175,23 +186,23 @@ class AccumulationMovementPort:
         result = []
         size = 0
         for row in rows:
-            data = [[_storage()._encode(value, field, self.database_id,enum_domain=self._enum_domain)
-                     for value, field in zip(values, fields)]
-                    for values, fields in ((row.dimensions, schema.dimensions),
-                                           (row.resources, schema.resources),
-                                           (row.attributes, schema.attributes))]
+            flat = [_storage()._encode(movement.canonical_number(value, field), field, self.database_id,
+                                       enum_domain=self._enum_domain)
+                    for value, field in zip(row.dimensions + row.resources + row.attributes, schema.fields)]
             period = _storage()._encode(row.period, _PERIOD_FIELD, self.database_id)[1]
-            raw = _json(data)
-            # Conservative row envelope matches database-wide accounting.
+            raw = _json(_grouped(schema, flat))
             row_size = len(raw.encode('utf-8')) + len(period) + len(row.direction.value) + 64
             size += row_size
             if row_size > MAX_ROW_BYTES or size > MAX_BYTES:
                 raise BackendError('unsupported')
-            result.append([row.line_number, period, row.active, row.direction.value, raw])
+            physical = encode_typed_columns(flat, schema, enum_domain=self._enum_domain)
+            result.append([row.line_number, period, row.active, row.direction.value, raw, physical])
         return result
 
+
     def _references(self, rows, *, writing):
-        # JSON payloads have no SQL foreign key. Never consult a different view
+        # Keep staged-write visibility and the existing logical error codes.
+        # Never consult a different view
         # or a memoized existence result: earlier staged catalog creates count.
         from .sqlite_catalog_layout import quote_identifier, reference_presence
         keys = tuple(value for row in rows for value in row.dimensions + row.attributes
@@ -205,7 +216,7 @@ class AccumulationMovementPort:
     def _snapshot(self, schema, recorder, revision, rows):
         return _hash(['accumulation_partition_v1', str(self.database_id), self.generation,
                       self.definitions[schema.identity], str(recorder.document_id),
-                      str(recorder.record_id), revision, rows])
+                      str(recorder.record_id), revision, _canonical_rows(rows)])
 
     def read(self, register_id, recorder):
         schema = self._require(register_id, recorder)
@@ -219,21 +230,16 @@ class AccumulationMovementPort:
         if revision and self.connection.execute(
                 'SELECT 1 FROM document_record WHERE document_id=? AND record_id=?', key[1:]).fetchone() is None:
             raise BackendError('integrity')
-        count, size, largest = self.connection.execute(
-            'SELECT COUNT(*),COALESCE(SUM(length(CAST(values_json AS BLOB))'
-            '+length(CAST(period AS BLOB))+length(CAST(direction AS BLOB))+64),0),'
-            'COALESCE(MAX(length(CAST(values_json AS BLOB))'
-            '+length(CAST(period AS BLOB))+length(CAST(direction AS BLOB))+64),0) '
-            'FROM accumulation_movement WHERE register_id=? AND document_id=? AND record_id=?',
-            key).fetchone()
-        if count > MAX_MOVEMENT_ROWS or size > MAX_BYTES or largest > MAX_ROW_BYTES:
-            raise BackendError('unsupported')
+        table, columns = movement.references('accumulation', schema)
+        where = ' WHERE register_id=? AND document_id=? AND record_id=?'
+        count = movement.scoped_budget(self.connection, table, (*columns, 'period', 'direction'), where, key, max_rows=MAX_MOVEMENT_ROWS,
+                                       max_bytes=MAX_BYTES, max_row_bytes=MAX_ROW_BYTES)
         if not revision and count:
             raise BackendError('integrity')
         from contextlib import closing
-        with closing(self.connection.execute(
-                'SELECT line_number,period,active,direction,values_json FROM accumulation_movement '
-                'WHERE register_id=? AND document_id=? AND record_id=? ORDER BY line_number', key)) as source:
+        projection = ','.join(('line_number','period','active','direction','payload_bytes',*columns))
+        with closing(self.connection.execute('SELECT ' + projection + ' FROM ' + table + where
+                                             + ' ORDER BY line_number', key)) as source:
             return self._decoded_partition(schema, recorder, revision, source)
 
     def _decoded_partition(self, schema, recorder, revision, source):
@@ -241,22 +247,20 @@ class AccumulationMovementPort:
         if type(revision) is not int or not 0 <= revision < 2**63:
             raise BackendError('integrity')
         rows = []
-        for line, period, active, direction, raw in source:
+        for line, period, active, direction, byte_count, *physical in source:
             if len(rows) >= MAX_MOVEMENT_ROWS: raise BackendError('unsupported')
             if (type(line) is not int or line != len(rows) + 1 or type(period) is not str
                     or len(period) != 14 or type(active) is not int or active not in (0, 1)
-                    or type(direction) is not str or type(raw) is not str):
+                    or type(direction) is not str or type(byte_count) is not int):
                 raise BackendError('integrity')
             try:
-                data = json.loads(raw)
-                if type(data) is not list or len(data) != 3 or _json(data) != raw:
+                flat = decode_typed_columns(physical, schema, enum_domain=self._enum_domain)
+                data = _grouped(schema, flat)
+                if len(_json(data).encode('utf-8')) + len(period) + len(direction) + 64 != byte_count:
                     raise BackendError('integrity')
-                groups = []
-                for values, fields in zip(data, (schema.dimensions, schema.resources, schema.attributes)):
-                    if type(values) is not list or len(values) != len(fields):
-                        raise BackendError('integrity')
-                    groups.append(tuple(_storage()._decode(value, field, self.database_id,enum_domain=self._enum_domain)
-                                        for value, field in zip(values, fields)))
+                groups = [tuple(_storage()._decode(value, field, self.database_id, enum_domain=self._enum_domain)
+                                for value, field in zip(values, fields))
+                          for values, fields in zip(data, (schema.dimensions, schema.resources, schema.attributes))]
                 date = _storage()._decode(['d', period], _PERIOD_FIELD, self.database_id,enum_domain=self._enum_domain)
                 rows.append(AccumulationMovementRow(line, date, bool(active),
                                                     AccumulationDirection(direction), *groups))
@@ -286,31 +290,26 @@ class AccumulationMovementPort:
         if schema is None:
             raise BackendError('unsupported')
         self._require(register_id, DocumentKey(self.database_id, schema.recorder_documents[0], UUID(int=1)), _query_view=_query_view)
-        validate_database_budget(self.connection)
+        validate_database_budget(self.connection, tuple(self.schemas.values()))
         args = (str(register_id),)
-        # Aggregate limits before fetching any payload, preserving the point
-        # port's per-partition (not per-register) configurable bounds.
-        oversized = self.connection.execute(
-            'SELECT 1 FROM accumulation_movement WHERE register_id=? '
+        table, columns = movement.references('accumulation', schema)
+        cost = movement.payload_cost((*columns, 'period', 'direction'))
+        if self.connection.execute(
+            'SELECT 1 FROM ' + table + ' WHERE register_id=? '
             'GROUP BY document_id,record_id HAVING COUNT(*)>? OR '
-            'SUM(length(CAST(values_json AS BLOB))+length(CAST(period AS BLOB))'
-            '+length(CAST(direction AS BLOB))+64)>? OR '
-            'MAX(length(CAST(values_json AS BLOB))+length(CAST(period AS BLOB))'
-            '+length(CAST(direction AS BLOB))+64)>? LIMIT 1',
-            (*args, MAX_MOVEMENT_ROWS, MAX_BYTES, MAX_ROW_BYTES)).fetchone()
-        if oversized:
+            f'SUM({cost})>? OR MAX({cost})>? LIMIT 1',
+            (*args, MAX_MOVEMENT_ROWS, MAX_BYTES, MAX_ROW_BYTES)).fetchone():
             raise BackendError('unsupported')
-        for table in ('accumulation_register_document', 'accumulation_partition', 'accumulation_movement'):
-            if self.connection.execute('PRAGMA foreign_key_check(' + table + ')').fetchone():
+        for relation in ('accumulation_register_document', 'accumulation_partition', table):
+            if self.connection.execute('PRAGMA foreign_key_check(' + relation + ')').fetchone():
                 raise BackendError('integrity')
         result = []
         with closing(self.connection.execute(
                 'SELECT document_id,record_id,revision FROM accumulation_partition WHERE register_id=? '
                 'ORDER BY document_id,record_id', args)) as metadata:
-            with closing(self.connection.execute(
-                    'SELECT document_id,record_id,line_number,period,active,direction,values_json '
-                    'FROM accumulation_movement WHERE register_id=? '
-                    'ORDER BY document_id,record_id,line_number', args)) as movements:
+            projection = ','.join(('document_id','record_id','line_number','period','active','direction','payload_bytes',*columns))
+            with closing(self.connection.execute('SELECT ' + projection + ' FROM ' + table
+                    + ' WHERE register_id=? ORDER BY document_id,record_id,line_number', args)) as movements:
                 for document,record,revision,raw_rows in ordered_partitions(
                         metadata,movements,max_partitions=MAX_DATABASE_PARTITIONS,max_rows=MAX_DATABASE_ROWS):
                     key = recorder_key(self.database_id,document,record)
@@ -330,7 +329,7 @@ class AccumulationMovementPort:
         rows = self._encoded(schema, request.rows)
         intent = ['accumulation_replace_v1', str(self.database_id), self.generation,
                   self.definitions[schema.identity], str(request.recorder.document_id),
-                  str(request.recorder.record_id), request.expected_snapshot, rows]
+                  str(request.recorder.record_id), request.expected_snapshot, _canonical_rows(rows)]
         size = len(_json(intent).encode('utf-8'))
         if size > MAX_BYTES:
             raise BackendError('unsupported')
@@ -351,18 +350,21 @@ class AccumulationMovementPort:
         snapshot = self._snapshot(schema, request.recorder, revision, rows)
         outcome = AccumulationOutcome(request.register_id, request.recorder, revision, snapshot, len(rows))
         key = (str(request.register_id), str(request.recorder.document_id), str(request.recorder.record_id))
+        table, columns = movement.references('accumulation', schema)
         self.connection.execute('SAVEPOINT accumulation_replace')
         try:
-            self.connection.execute(
-                'DELETE FROM accumulation_movement WHERE register_id=? AND document_id=? AND record_id=?', key)
+            self.connection.execute('DELETE FROM ' + table + ' WHERE register_id=? AND document_id=? AND record_id=?', key)
             self.connection.execute(
                 'INSERT INTO accumulation_partition VALUES(?,?,?,?) '
                 'ON CONFLICT(register_id,document_id,record_id) DO UPDATE SET revision=excluded.revision',
                 (*key, revision))
-            self.connection.executemany('INSERT INTO accumulation_movement VALUES(?,?,?,?,?,?,?,?)',
-                [(*key, line, period, int(active), direction, values)
-                 for line, period, active, direction, values in rows])
-            validate_database_budget(self.connection)
+            names = ','.join(('register_id','document_id','record_id','line_number','period','active','direction','payload_bytes',*columns))
+            marks = ','.join('?' for _ in range(8 + len(columns)))
+            self.connection.executemany('INSERT INTO ' + table + '(' + names + ') VALUES(' + marks + ')',
+                [(*key, line, period, int(active), direction,
+                  len(raw.encode('utf-8')) + len(period) + len(direction) + 64, *values)
+                 for line, period, active, direction, raw, values in rows])
+            validate_database_budget(self.connection, tuple(self.schemas.values()))
             self.connection.execute('RELEASE accumulation_replace')
         except BaseException:
             self.connection.execute('ROLLBACK TO accumulation_replace')

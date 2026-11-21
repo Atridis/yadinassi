@@ -25,7 +25,7 @@ class MainDemoInventoryScenarios(unittest.TestCase):
         self.vm.execute('D.Write(DocumentWriteMode.Posting);')
         self.assertEqual(len(self.reports().read('StockMovements').rows), 1)
 
-    def test_clean_document_update_preserves_blob_and_dirty_clear_rolls_back(self):
+    def test_clean_document_update_preserves_part_rows_and_dirty_clear_rolls_back(self):
         self.vm.execute(SEED + POST + 'D.Write(DocumentWriteMode.Posting);')
         document = self.vm.variables['d']
         original_rows = document.get_member('Lines')._stored_rows()
@@ -42,7 +42,8 @@ class MainDemoInventoryScenarios(unittest.TestCase):
             self.vm.execute('D=D.Ref.GetObject(); D.Number="r2"; D.Write();')
         updates = [sql for sql in trace if sql.startswith('UPDATE document_record SET')]
         self.assertEqual(len(updates), 1)
-        self.assertNotIn('sections_json', updates[0])
+        self.assertFalse(any('document_part_' in sql and sql.startswith(('DELETE','INSERT','UPDATE'))
+                             for sql in trace),trace)
         self.assertEqual(self.reports().read('StockMovements').rows, expected_movements)
         self.vm.execute('D=D.Ref.GetObject();')
         document = self.vm.variables['d']

@@ -178,7 +178,10 @@ def catalog_ddl(schema, layout, *, enum_domain=None):
             fields.append(f'{name} TEXT REFERENCES {target}(record_id) DEFERRABLE INITIALLY DEFERRED')
         elif field.kind == 'boolean':
             fields.append(f'{name} INTEGER NOT NULL CHECK({name} IN(0,1))')
-        elif field.kind in ('string', 'number', 'datetime'):
+        elif field.kind == 'number':
+            from .sqlite_typed_rows import number_definition
+            fields.append(f'{name} {number_definition(name, field)}')
+        elif field.kind in ('string', 'datetime'):
             fields.append(f'{name} TEXT NOT NULL')
         else: raise BackendError('unsupported')
     return f'CREATE TABLE {quote_identifier(layout.table_name(schema.identity))}(' + ', '.join(fields) + ')'
@@ -189,6 +192,7 @@ def index_ddls(schema, layout):
 
 
 def encode_columns(encoded_values, schema, *, enum_domain=None):
+    """Validate and unpack logical tagged fields before physical numeric encoding."""
     if type(encoded_values) not in (list, tuple) or len(encoded_values) != len(schema.fields):
         raise BackendError('integrity')
     result = []
@@ -223,6 +227,7 @@ def encode_columns(encoded_values, schema, *, enum_domain=None):
 
 
 def decode_columns(columns, schema, *, enum_domain=None):
+    """Rebuild logical tags after the physical codec has decoded numeric cells."""
     if len(columns) != len(schema.fields): raise BackendError('integrity')
     result = []
     tags = {'string': 's', 'number': 'n', 'datetime': 'd'}
