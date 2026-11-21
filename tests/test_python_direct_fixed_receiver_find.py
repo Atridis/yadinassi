@@ -89,6 +89,30 @@ class DirectFixedReceiverFindTests(unittest.TestCase):
             with self.subTest(operation=operation),self.assertRaises(BoundaryViolation):invoke(vm.variables['s'])
             self.assertEqual(seen,[(operation,'find')])
 
+    def test_named_find_binds_once_without_synthetic_capture(self):
+        from yadinassi.execution.direct import python_direct_fixed_find as fixed_find
+        vm=Interpreter();self.addCleanup(vm.close);vm.execute(SETUP)
+        plan=vm.prepare('R=F.Find(S);')
+        with patch.object(fixed_find,'_check',wraps=fixed_find._check) as admission:
+            with patch.object(fixed_find,'captured',side_effect=AssertionError('not a real capture')):
+                vm.execute_prepared(plan)
+        self.assertEqual(admission.call_count,4)  # bind, before/after policy, after comparison
+        self.assertEqual(vm.variables['r'],0)
+
+    def test_allowing_policy_cannot_invalidate_named_or_saved_receiver(self):
+        from yadinassi.execution.direct.python_direct_fixed_find import resolve
+        for operation in ('call_member','call_value'):
+            with self.subTest(operation=operation):
+                vm=Interpreter();self.addCleanup(vm.close);vm.execute(SETUP)
+                context=make_boundary(vm);context.start();fixed=vm.variables['f'];seen=[]
+                bound=(resolve(context,fixed,'Find') if operation=='call_member'
+                       else captured(context,fixed.get_method('Find')))
+                def policy(op,name):
+                    seen.append((op,name));fixed.items=[];return True
+                context.policy=policy
+                with self.assertRaises(BoundaryViolation):bound(vm.variables['s'])
+                self.assertEqual(seen,[(operation,'find')])
+
     def test_storage_and_class_overrides_reject_before_hooks(self):
         vm=Interpreter();vm.execute(SETUP);seen=[]
         def hostile(*args):seen.append('hook');raise AssertionError('hook')
