@@ -79,6 +79,24 @@ class DirectDatabaseTests(unittest.TestCase):
         with self.assertRaises(BoundaryViolation):other.execute('foreign.Number="bad";')
         self.assertEqual(self.vm.variables['d'].get_member('Number'),'')
 
+    def test_document_selection_denies_foreign_owner_and_subclasses(self):
+        from yadinassi.db.document.documents import BSLDocumentSelection
+        self.vm.execute('S=Документы.Receipt.Выбрать();'
+                        'Before=S.Номер; Missing=S.ПолучитьОбъект(); Ended=S.Следующий();')
+        self.assertIsNone(self.vm.variables['before'])
+        self.assertIsNone(self.vm.variables['missing'])
+        self.assertFalse(self.vm.variables['ended'])
+        selection=self.vm.variables['s']
+        other=self.interpreter()
+        other.variables['s']=selection
+        for source in ('S.Next();','X=S.Number;','X=S.GetObject();'):
+            with self.subTest(source=source),self.assertRaises(BoundaryViolation):
+                other.execute(source)
+        class Derived(BSLDocumentSelection): pass
+        self.vm.variables['s']=Derived(selection._manager,())
+        with self.assertRaises(BoundaryViolation):
+            self.vm.execute('S.Следующий();')
+
     def test_document_additional_properties_output_reference(self):
         self.vm.execute('D=Documents.Receipt.CreateDocument(); D.AdditionalProperties.Insert("Mode",2); Mode=0; Found=D.AdditionalProperties.Property("Mode",Mode);')
         self.assertTrue(self.vm.variables['found'])

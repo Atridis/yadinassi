@@ -14,7 +14,7 @@ from yadinassi.db.registers.information_registers import (
     BSLInformationRegisterSelection, BSLInformationRegisterRecordSet, BSLInformationRegisterRecord,
     _RegisterFilter, _RegisterFilterItem,
 )
-from yadinassi.db.document.documents import BSLDocuments, BSLDocumentManager, BSLDocumentObject
+from yadinassi.db.document.documents import BSLDocuments, BSLDocumentManager, BSLDocumentObject, BSLDocumentSelection
 from yadinassi.db.document.document_types import BSLDocumentReference
 from yadinassi.db.document.document_lines import BSLDocumentLines, BSLDocumentLine
 from yadinassi.db.metadata.enumerations import BSLEnumerations, BSLEnumManager
@@ -184,6 +184,10 @@ class CatalogBoundary:
         if kind is BSLDocuments: owner=value._catalogs
         elif kind is BSLDocumentManager: owner=value._catalogs
         elif kind is BSLDocumentObject: owner=value._manager._catalogs
+        elif kind is BSLDocumentSelection:
+            manager=value._manager
+            owner=(manager._catalogs if type(manager) is BSLDocumentManager
+                   and manager._documents is self.vm._documents else None)
         elif kind is BSLDocumentLines: owner=value._owner._manager._catalogs
         elif kind is BSLDocumentLine: owner=value._section._owner._manager._catalogs
         elif kind is BSLDocumentReference:
