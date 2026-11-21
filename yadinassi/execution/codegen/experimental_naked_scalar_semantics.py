@@ -8,7 +8,7 @@ from decimal import Decimal
 from yadinassi.text.strings import concatenate as _join
 from yadinassi.text.collation import _DIRECT_STRING_KEY_ABI as _string_key
 from yadinassi.temporal.dates import _DIRECT_EQUALITY_DATE_STATE, UnsupportedDateRange
-from yadinassi.types.values import NULL, to_string, _DIRECT_TYPE_PRESENTATIONS, _DIRECT_ARRAY_TYPE, _DIRECT_FIXED_ARRAY_TYPE, _DIRECT_FIXED_COLLECTION_TYPE, divide as _divide
+from yadinassi.types.values import BSLType, NULL, to_string, _DIRECT_TYPE_PRESENTATIONS, _DIRECT_ARRAY_TYPE, _DIRECT_FIXED_ARRAY_TYPE, _DIRECT_FIXED_COLLECTION_TYPE, divide as _divide
 from yadinassi.collections.structures import _DIRECT_FIXED_STRUCTURE_SNAPSHOT
 from yadinassi.collections.search_directions import BSLSearchDirection
 from yadinassi.numeric.round_modes import BSLRoundMode
@@ -24,14 +24,14 @@ class UnsupportedScalarSemantics(BoundaryViolation):
 
 _COLLECTION_TYPES = (list, dict, _NakedMap, _TypedMap, _DirectStructure)
 _SCALAR_TYPES = (bool, Decimal, str, type(None))
-_FIND_FIXED_TYPES = (_DIRECT_FIXED_ARRAY_TYPE, _DIRECT_FIXED_STRUCTURE_SNAPSHOT[0],
-                     _DIRECT_FIXED_MAP_SNAPSHOT[0], BSLSearchDirection, BSLRoundMode)
+_FIND_IDENTITY_TYPES = (_DIRECT_FIXED_ARRAY_TYPE, _DIRECT_FIXED_STRUCTURE_SNAPSHOT[0],
+                        _DIRECT_FIXED_MAP_SNAPSHOT[0], BSLSearchDirection, BSLRoundMode, BSLType)
 
 
 _SCALAR_TYPE_IDS=tuple(map(id,_SCALAR_TYPES))
 _COLLECTION_TYPE_IDS=tuple(map(id,_COLLECTION_TYPES))
 _SUPPORTED_TYPE_IDS=_SCALAR_TYPE_IDS+_COLLECTION_TYPE_IDS
-_FIND_IDENTITY_TYPE_IDS=_COLLECTION_TYPE_IDS+tuple(map(id,_FIND_FIXED_TYPES))
+_FIND_IDENTITY_TYPE_IDS=_COLLECTION_TYPE_IDS+tuple(map(id,_FIND_IDENTITY_TYPES))
 
 _TYPE_PRESENTATIONS = {id(member): (member, label, error)
                        for member, label, error in _DIRECT_TYPE_PRESENTATIONS}
@@ -61,7 +61,7 @@ def typed_find(array, value):
     if type(array) is not list:
         raise UnsupportedScalarSemantics('typed_find requires a native array')
     value_type = type(value)
-    # Fixed collection descendants are opaque identity values, as in values.equal.
+    # Fixed descendants and the admitted enum singletons use identity.
     # This grants no fields, methods, equality hooks or payload traversal.
     identity = id(value_type) in _FIND_IDENTITY_TYPE_IDS or _fixed_identity(value)
     if not identity:_supported(value)

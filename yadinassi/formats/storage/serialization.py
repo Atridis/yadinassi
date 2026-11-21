@@ -41,7 +41,7 @@ from yadinassi.execution.codegen.experimental_naked_collections import (
 from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure, structure_key
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 from yadinassi.execution.direct.python_direct_plain_map import PlainMap
-from yadinassi.types.values import BSLArray, BSLFixedArray, BSLType, NULL, equal
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLNull, BSLType, NULL, equal
 
 
 _MAX_NUMBER_DIGITS = 4096
@@ -249,7 +249,7 @@ def _pattern_entry(kind: BSLType, value: BSLTypeDescription) -> str:
     return entry + '}'
 
 
-_NATIVE_MAP_SERIALIZABLE_KEYS = (type(None), bool, str, int, Decimal)
+_NATIVE_MAP_SERIALIZABLE_KEYS = (type(None), bool, str, int, Decimal, BSLNull, BSLType)
 
 
 def _native_map_entries(value):

@@ -33,6 +33,25 @@ S=String(F);T=TypeOf(F);I=0;For Each Pair In F Do I=I+1;EndDo;'''
             with self.assertRaises((BSLError,BoundaryViolation)):vm.execute('F["K"]=9;')
             with self.assertRaises(BSLError):vm.execute('Missing=F["absent"];')
             with self.assertRaises(BSLError):vm.execute('F.Known=9;')
+    def test_null_and_type_keys_stay_distinct_through_fixed_copy_and_stream(self):
+        source = """M=New Map;
+            M.Insert(Null, "null"); M.Insert(Undefined, "undefined");
+            M.Insert(Type("Null"), "type"); M.Insert("Null", "string");
+            F=New FixedMap(M); R=New Map(F); M.Delete(Null);
+            S=ValueFromStringInternal(ValueToStringInternal(R));"""
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm=Interpreter()
+                self.addCleanup(vm.close)
+                if prepared: vm.execute_prepared(vm.prepare(source))
+                else: vm.execute(source)
+                self.assertIsNone(vm.execute('M.Get(Null)'))
+                for name in ('F', 'R', 'S'):
+                    self.assertEqual(vm.execute(f'{name}.Count()'), D(4))
+                    for key, expected in (('Null', 'null'), ('Undefined', 'undefined'),
+                                          ('Type("Null")', 'type'), ('"Null"', 'string')):
+                        self.assertEqual(vm.execute(f'{name}[{key}]'), expected)
+
     def test_legacy_typed_key_contract_unchanged(self):
         source=BSLMap();source.insert(True,'bool');source.insert(D(1),'number')
         fixed=construct(BSLFixedMap,(source,))
