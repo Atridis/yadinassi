@@ -518,6 +518,7 @@ class SQLiteCatalogBackend:
         self._active = None
         self._owner_lock = RLock()
         self._read_handle = None
+        self._read_admission_baseline = None
         from yadinassi.execution.prepared_source import PreparedSource
         self._prepared_source = PreparedSource()
         self._enum_domain = None
@@ -1744,13 +1745,24 @@ class SQLiteCatalogBackend:
                 if descriptor is None:
                     self._validate_transaction_admission(connection, _receipt_only=_receipt_only)
                     if handle is not None and self._read_admission_cache_allowed():
-                        from copy import deepcopy
-                        descriptor = deepcopy(self._read_admission_descriptor())
+                        current = self._read_admission_descriptor()
+                        descriptor = self._read_admission_baseline
+                        if descriptor is None:
+                            from copy import deepcopy
+                            descriptor = deepcopy(current)
+                        else:
+                            from yadinassi.configuration.configuration_inventory_enums import _same
+                            if not _same(descriptor, current):
+                                raise BackendError('schema_changed')
                 view = _View(self, connection, operation_id)
                 if handle is not None:
                     view._read_handle = handle
                     view._validated_sources = handle.pin() if proofs is None else proofs
                     handle._pending_admission = descriptor
+                    # Detached values, not authority: a new or changed SQL
+                    # epoch must still pass full admission before attaching them.
+                    if descriptor is not None:
+                        self._read_admission_baseline = descriptor
             except sqlite3.OperationalError:
                 raise BackendError('busy') from None
             self._active = view
@@ -1958,6 +1970,7 @@ class SQLiteCatalogBackend:
         finally:
             self._prepared_source.clear()
             self._enum_domain = None
+            self._read_admission_baseline = None
 
 
 class _View:

@@ -68,6 +68,25 @@ class AdmissionEpochTests(unittest.TestCase):
         self.backend.accumulation_configuration = replace(self.backend.accumulation_configuration, catalog_handlers=())
         with self.assertRaisesRegex(BackendError, 'schema_changed'): self.read()
 
+    def test_detached_descriptor_reused_without_transferring_sql_admission(self):
+        self.read()
+        descriptor = self.backend._read_handle.admission
+        self.assertIsNotNone(descriptor)
+        with patch.object(self.backend, '_validate_transaction_admission',
+                          wraps=self.backend._validate_transaction_admission) as validate:
+            for _ in range(2):
+                with closing(self.backend.begin_write(uuid4())):
+                    self.assertIsNone(self.backend._read_handle.admission)
+                self.read()
+                self.assertIs(self.backend._read_handle.admission, descriptor)
+            self.assertEqual(validate.call_count, 4)  # two writes and two cold reads
+
+            self.mutate("UPDATE configuration_file SET content=x'00' WHERE path='Configuration.xml'")
+            with self.assertRaises(BackendError):
+                self.read()
+            self.assertEqual(validate.call_count, 5)
+            self.assertIsNone(self.backend._read_handle)
+
     def test_after_rollback_commit_cannot_relabel_admission(self):
         original = ReadHandle.complete
         def complete(handle, proofs):
