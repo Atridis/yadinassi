@@ -48,11 +48,12 @@ def _hooks():
     for name,maximum in zip(('MAX_TEXT','MAX_DEPTH'),reader_module._DIRECT_SOURCE_JSON_LIMITS):
         value=vars(reader_module).get(name)
         if type(value) is not int or not 0<value<=maximum:raise BoundaryViolation('source JSON quota changed')
-    token,scalars,collections,encode_types,handler_types,skip,json,os,linesep=reader_module._DIRECT_SOURCE_JSON_CONSTANTS
+    token,scalars,collections,encode_types,handler_types,skip,json,os,linesep,fixed_storage=reader_module._DIRECT_SOURCE_JSON_CONSTANTS
     if (reader_module.T is not token or reader_module._JSON_SCALARS is not scalars
             or reader_module._JSON_COLLECTIONS is not collections or reader_module._JSON_TYPES is not encode_types
             or reader_module._JSON_HANDLER_TYPES is not handler_types or reader_module._SKIP_JSON_PROPERTY is not skip
-            or reader_module.json is not json or reader_module.os is not os or os.linesep is not linesep):
+            or reader_module.json is not json or reader_module.os is not os or os.linesep is not linesep
+            or reader_module._DIRECT_FIXED_MAP_STORAGE is not fixed_storage):
         raise BoundaryViolation('source JSON codec constants changed')
     for module,name,value in reader_module._DIRECT_SOURCE_JSON_STDLIB:
         if vars(module).get(name) is not value:raise BoundaryViolation('source JSON parser/encoder hook changed')

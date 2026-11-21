@@ -6,11 +6,12 @@ import os
 import json
 import random
 import unittest
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
 from yadinassi.execution.codegen.experimental_naked_structure import new_structure
+from yadinassi.execution.direct.python_direct_plain_map import PlainMap, PlainFixedMap
 from yadinassi.formats.json.json_processing import (
     BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings, BSLJSONLineBreak,
     BSLJSONValueType as T, read_json, write_json,
@@ -76,6 +77,39 @@ class JSONFamilyTests(unittest.TestCase):
             self.assertEqual(self.write(self.read(self.write(value), True)), self.write(value))
         mapping.insert(D(3), 'invalid')
         with self.assertRaises(TypeError): self.write(mapping)
+
+    def test_direct_fixed_map_writes_detached_snapshot_with_string_keys(self):
+        self.vm.execute('''M=New Map; M.Insert("Name", "ёж"); M.Insert("name", 7);
+            F=New FixedMap(M); M.Clear();
+            W=New JSONWriter; W.SetString(New JSONWriterSettings(JSONLineBreak.None));
+            WriteJSON(W,F); S=W.Close();''')
+        self.assertEqual(self.vm.variables['s'], '{"Name":"ёж","name":7}')
+        mapping = PlainMap()
+        mapping[D(0)] = 'not a string property'
+        writer = BSLJSONWriter()
+        writer.set_string()
+        with self.assertRaisesRegex(TypeError, 'ожидается Строка'):
+            write_json(writer, PlainFixedMap(mapping))
+        write_json(writer, D(3))
+        self.assertEqual(writer.close(), '3')
+
+    def test_direct_fixed_map_codec_uses_native_slots_not_foreign_mappings(self):
+        class ForeignMapping:
+            def __getitem__(self, key): raise AssertionError('getitem hook')
+            def __iter__(self): raise AssertionError('iterator hook')
+            def __len__(self): raise AssertionError('length hook')
+            def items(self): raise AssertionError('items hook')
+
+        mapping = PlainMap()
+        mapping['a'] = D(1)
+        fixed = PlainFixedMap(mapping)
+        fixed._items = MappingProxyType(ForeignMapping())
+        with patch.object(PlainFixedMap, '__iter__', ForeignMapping.__iter__), \
+             patch.object(PlainFixedMap, '__getattribute__', ForeignMapping.__getitem__):
+            self.assertEqual(self.write(fixed), '{"a":1}')
+        fixed._snapshot = MappingProxyType(ForeignMapping())
+        with self.assertRaisesRegex(TypeError, 'недопустимый снимок'):
+            self.write(fixed)
 
     def test_nested_document_roundtrips(self):
         rng = random.Random(20261031)

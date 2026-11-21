@@ -110,7 +110,8 @@ class SourceXDTOJSONTests(unittest.TestCase):
     def test_parser_and_encoder_hooks_before_effects(self):
         app=self.ready();vm=app.interpreter;effects=[]
         vm.functions['touch']=HostFunction('Touch',lambda:effects.append('arg') or '{}')
-        for module,name in ((codec.json,'loads'),(codec.json,'dumps'),(codec.json.scanner,'make_scanner'),(codec.json.encoder,'encode_basestring')):
+        for module,name in ((codec.json,'loads'),(codec.json,'dumps'),(codec.json.scanner,'make_scanner'),
+                            (codec.json.encoder,'encode_basestring'),(codec,'_DIRECT_FIXED_MAP_STORAGE')):
             with patch.object(module,name,lambda *a,**k:effects.append('hook')):
                 with self.subTest(name=name),self.assertRaises(basic.DENIED):vm.execute('R.SetString(Touch());')
         self.assertEqual(effects,[])

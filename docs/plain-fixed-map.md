@@ -17,10 +17,10 @@ collisions (e.g. True and Decimal(1)) remain those of PlainMap. Canonical BSLMap
 inputs still produce canonical BSLFixedMap with their existing typed-key rules.
 Legacy classes and their token-shaped storage are unchanged.
 
-Serializers/session parameters that consume the legacy `_items` shape are not
-silently given the new storage: its distinct exact type remains unsupported
-there. This patch does not widen those boundaries or reintroduce a legacy
-execution fallback.
+JSON writing reads the exact native dictionary retained by the FixedMap
+snapshot. It does not call the map's iterator or the mapping proxy's methods.
+JSON property names must still be strings. Other serializers and session
+parameters that require the canonical `_items` shape remain unchanged.
 
 Focused checks cover execute/prepared, shallow identity, source detachment,
 reverse copy, scalar-key rejection, legacy key rules, and immutable access.

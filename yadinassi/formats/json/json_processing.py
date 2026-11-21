@@ -8,7 +8,9 @@ import stat
 
 from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
-from yadinassi.execution.direct.python_direct_plain_map import PlainMap
+from yadinassi.execution.direct.python_direct_plain_map import (
+    PlainMap, PlainFixedMap, _DIRECT_FIXED_MAP_STORAGE,
+)
 from yadinassi.execution.safe_mode import require_external_access
 from yadinassi.types.values import BSLObject, HostFunction, BSLArray, BSLFixedArray
 from yadinassi.collections.structures import BSLStructure, BSLFixedStructure
@@ -355,7 +357,7 @@ def _quote(value):
 
 
 _SKIP_JSON_PROPERTY = object()
-_JSON_COLLECTIONS = (BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure, BSLMap, BSLFixedMap, _DirectStructure)
+_JSON_COLLECTIONS = (BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure, BSLMap, BSLFixedMap, _DirectStructure, PlainFixedMap)
 _JSON_SCALARS = (type(None), bool, str, Decimal, BSLDate)
 _JSON_TYPES = frozenset(map(id, (*_JSON_SCALARS, *_JSON_COLLECTIONS)))
 _JSON_HANDLER_TYPES = _JSON_TYPES.union(map(id, (PlainArray, PlainMap, list, int)))
@@ -425,12 +427,21 @@ def encode_json_events(value, settings=None, *, has_converter=False):
             # a live Python iterator or make it grow indefinitely.
             direct_structure = kind is _DirectStructure
             direct_map = kind is PlainMap
-            storage = (item if direct_structure or direct_map or kind is PlainArray or kind is list
-                       else item.items if array else item._items)
+            if kind is PlainFixedMap:
+                try:
+                    storage = _DIRECT_FIXED_MAP_STORAGE.__get__(item, PlainFixedMap)
+                except AttributeError:
+                    storage = None
+                if type(storage) is not dict:
+                    raise TypeError("JSON: недопустимый снимок фиксированного соответствия")
+                direct_map = True
+            else:
+                storage = (item if direct_structure or direct_map or kind is PlainArray or kind is list
+                           else item.items if array else item._items)
             if len(storage) > remaining:
                 raise ValueError("JSON: превышен предел числа значений Yadinassi")
             children = (list(dict.values(item)) if direct_structure else
-                        list(dict.items(item)) if direct_map else list(item))
+                        list(dict.items(storage)) if direct_map else list(item))
             for child in children:
                 if array:
                     key, source = None, child
@@ -751,7 +762,7 @@ _DIRECT_SOURCE_JSON_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
         for base in receiver.__mro__))
 _DIRECT_SOURCE_JSON_LIMITS=(MAX_TEXT,MAX_DEPTH)
 _DIRECT_SOURCE_JSON_CONSTANTS=(T,_JSON_SCALARS,_JSON_COLLECTIONS,_JSON_TYPES,_JSON_HANDLER_TYPES,
-                               _SKIP_JSON_PROPERTY,json,os,os.linesep)
+                               _SKIP_JSON_PROPERTY,json,os,os.linesep,_DIRECT_FIXED_MAP_STORAGE)
 _DIRECT_SOURCE_JSON_STDLIB=tuple((module,name,value) for module,names in
     ((json,('loads','dumps','JSONDecoder','JSONEncoder','JSONDecodeError','decoder','encoder','scanner')),
      (json.decoder,('JSONDecoder','JSONDecodeError','JSONObject','JSONArray','scanstring','scanner','WHITESPACE','WHITESPACE_STR','BACKSLASH','STRINGCHUNK')),

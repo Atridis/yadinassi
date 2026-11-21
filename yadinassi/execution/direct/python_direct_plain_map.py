@@ -93,14 +93,18 @@ from yadinassi.types.values import BSLFixedArray, HostFunction
 
 class PlainFixedMap:
     """Read-only shallow snapshot with the source's native Python key semantics."""
-    __slots__=('_items',)
+    __slots__=('_items','_snapshot')
 
     def __init__(self, source):
         if type(source) is not PlainMap:
             raise TypeError('FixedMap requires an exact PlainMap')
         # Exact PlainMap's supported mutation API already enforces scalar keys.
         # Raw host mutation of its private storage is not a new admission route.
-        self._items=MappingProxyType(dict.copy(source))
+        snapshot=dict.copy(source)
+        self._items=MappingProxyType(snapshot)
+        # A codec can read the exact underlying dict with its native slots,
+        # without running iteration on a host-provided mapping proxy.
+        self._snapshot=snapshot
 
     def get(self,key):
         if id(type(key)) not in _KEY_TYPE_IDS:_reject_key(key)
@@ -128,3 +132,6 @@ class PlainFixedMap:
         raise ValueError('Метод соответствия не найден: '+name)
 
     def __str__(self):return 'ФиксированноеСоответствие'
+
+
+_DIRECT_FIXED_MAP_STORAGE = vars(PlainFixedMap)['_snapshot']
