@@ -143,7 +143,7 @@ def admit(vm,program):
     from .python_direct_imports import preflight
     preflight(vm,program)
     _admit_bindings(vm,routines,constructors,calls)
-    return nodes,routines
+    return nodes,routines,calls
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,7 +242,7 @@ def execute_prepared(vm,prepared):
 
 def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
     if _prepared is None:
-        nodes,routines=admit(vm,program)
+        nodes,routines,calls=admit(vm,program)
         declared=frozenset(name.casefold() for node in program if type(node) is ast.Var and node.execution_context=='client' for name in node.names)
         returns_expression=bool(program and type(program[-1]) is ast.ExpressionStatement)
     else:
@@ -280,7 +280,12 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
     from .python_direct_routines import validate_calls
     prospective=dict(getattr(vm,'_direct_routine_modules',{}))
     if exports is not None:prospective.update({name:exports for name in exports.signatures})
-    calls=_prepared._calls if _prepared is not None else _source_facts(program)[3]
+    if _prepared is not None:
+        calls=_prepared._calls
+    elif source_text is None:
+        # An externally supplied AST does not have the parsed-text ownership
+        # contract. Preserve its late verification before effects.
+        calls=_source_facts(program)[3]
     initializers=tuple(getattr(vm,'_direct_server_initializers',()))
     if exports is not None and exports.initializer_plan is not None:initializers+= (exports,)
     validate_calls(vm,calls,registry=prospective,layout=frozenset(vm.module_names)|declared,initializers=initializers)

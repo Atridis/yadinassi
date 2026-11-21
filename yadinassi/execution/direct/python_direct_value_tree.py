@@ -113,6 +113,10 @@ def local(value):
 def check(boundary,value,*,graph=False):
     if getattr(boundary,'_verify_context',True) is not False:boundary._check()
     hooks()
+    return admitted_receiver(boundary,value,graph=graph)
+
+
+def admitted_receiver(boundary,value,*,graph=False):
     if not getattr(boundary,'_value_tree_active',False):raise BoundaryViolation('ValueTree activation expired')
     root=local(value);local(root)
     if not model._registry_owned(root._all_rows,root) or type(root.columns) is not _COLUMNS or type(root.rows) is not _ROWS:
@@ -220,7 +224,14 @@ class ValueTreeBoundary:
 
     def get_member(self,value,name):
         if not owns(value):return super().get_member(value,name)
-        root=check(self,value);columns(root)
+        root=check(self,value)
+        kind=type(value);key=name.casefold()
+        structural=(
+            kind is _TREE and key in ('rows','строки','columns','колонки')
+            or kind is _ROW and key in ('rows','строки','parent','родитель')
+            or kind is _ROWS and key in ('parent','родитель')
+        )
+        if not structural:columns(root)
         try:return value.get_member(name)
         finally:
             if getattr(self,'_verify_context',True) is not False:self._check()
@@ -284,13 +295,19 @@ class ValueTreeBoundary:
         elif name=='__setitem__':function=HostFunction(name,value.set_index,returns_value=False)
         else:function=value.get_method(name)
         self._validate_host_function(function,require_value)
+        key=name.casefold()
+        kind=type(value)
+        positional_child = (
+            kind is _ROWS and key in ('get','получить','__getitem__')
+            or kind is _COLUMNS and key in ('get','получить')
+        )
+        scalar_read=key in ('count','количество','owner','владелец','level','уровень')
+        local_call=(scalar_read or key in ('get','получить','__getitem__','__iter__')
+                    or kind is _ROWS and key in ('add','добавить','insert','вставить'))
         def invoke(*arguments):
-            if check(self,value) is not root or self._value_tree_epoch is not epoch:raise BoundaryViolation('ValueTree owner changed')
-            key=name.casefold()
-            local_call=key in ('count','количество','get','получить','__getitem__','__iter__','owner','владелец','level','уровень') or (type(value) is _ROWS and key in ('add','добавить','insert','вставить'))
-            if not local_call:
-                check(self,value,graph=True)
-            if key not in ('count','количество','owner','владелец','level','уровень'):columns(root)
+            if check(self,value,graph=not local_call) is not root or self._value_tree_epoch is not epoch:
+                raise BoundaryViolation('ValueTree owner changed')
+            if not scalar_read and not positional_child:columns(root)
             # Public operations validate wrong-collection arguments; preflight all
             # exact tree receivers first so host hooks cannot run inside them.
             for argument in arguments:
@@ -316,8 +333,13 @@ class ValueTreeBoundary:
                 if key in ('get','получить','__getitem__') and type(value) in (_ROWS,_COLUMNS):
                     expected=_ROW if type(value) is _ROWS else _COLUMN
                     if type(result) is not expected:raise BoundaryViolation('foreign ValueTree result')
-                if owns(result) and key not in ('copy','скопировать') and check(self,result) is not root:
-                    raise BoundaryViolation('foreign ValueTree result')
+                if owns(result) and key not in ('copy','скопировать'):
+                    # These exact scalar readers cannot call user code after
+                    # admission. Check the returned receiver's own provenance
+                    # without auditing all Python classes a second time.
+                    validate=(admitted_receiver if scalar_read or positional_child else check)
+                    if validate(self,result) is not root:
+                        raise BoundaryViolation('foreign ValueTree result')
                 return result
             finally:
                 if getattr(self,'_verify_context',True) is not False:self._check()

@@ -125,6 +125,30 @@ class _RowRegistry:
 def _registry_owned(registry,owner):
     return type(registry) is _RowRegistry and _registry_state(registry)[1]() is owner
 
+
+def _registry_owned_entries(registry, owner):
+    if type(registry) is not _RowRegistry:
+        return None
+    state = _registry_state(registry)
+    entries = state[2]
+    return entries if state[1]() is owner and type(entries) is dict else None
+
+
+def _registry_matches_graph(registry, owner, seen):
+    # The synchronous caller holds every traversed row alive. Admit the registry
+    # again after the graph walk, then consume only private exact id/weakref
+    # entries. No borrowed Python iterator is suspended between checks.
+    entries = _registry_owned_entries(registry, owner)
+    if entries is None or len(entries) != len(seen):
+        return False
+    for identity, reference in entries.items():
+        if type(identity) is not int or identity not in seen or type(reference) is not ref:
+            return False
+        row = reference()
+        if type(row) is not BSLValueTreeRow or id(row) != identity:
+            return False
+    return True
+
 _MAX_ROWS = 100_000
 _MAX_COLUMNS = 4096
 _MAX_CELLS = 1_000_000
@@ -1295,10 +1319,11 @@ class BSLValueTree(BSLObject):
                 or self.columns.table is not self or type(self.columns.items) is not list
                 or type(self.rows) is not BSLValueTreeRowCollection or self.rows.tree is not self
                 or self.rows.parent is not None or self.rows._columns_clear_forward is not False
-                or type(self.rows.items) is not list or not _registry_owned(self._all_rows,self)):
+                or type(self.rows.items) is not list
+                or (entries := _registry_owned_entries(self._all_rows,self)) is None):
             raise ValueError("Неверная структура очистки дерева")
         columns = self.columns.items
-        BSLValueTree._budget(len(self._all_rows), len(columns))
+        BSLValueTree._budget(len(entries), len(columns))
         budget = _SearchBudget()
         column_ids = set()
         for column in columns:
@@ -1330,9 +1355,7 @@ class BSLValueTree(BSLObject):
                 seen.add(id(row)); ordered.append(row)
                 BSLValueTree._budget(len(ordered), len(columns))
                 pending.append((row.rows, depth + 1))
-        if (len(ordered) != len(self._all_rows)
-                or any(type(row) is not BSLValueTreeRow or id(row) not in seen or value is not None
-                       for row, value in self._all_rows.items())):
+        if not _registry_matches_graph(self._all_rows, self, seen):
             raise ValueError("Неверный реестр очистки дерева")
         return ordered
 
@@ -1348,13 +1371,13 @@ class BSLValueTree(BSLObject):
         if (type(self) is not BSLValueTree
                 or type(self.columns) is not BSLValueTreeColumnCollection
                 or self.columns.table is not self or type(self.columns.items) is not list
-                or not _registry_owned(self._all_rows,self)
+                or (entries := _registry_owned_entries(self._all_rows,self)) is None
                 or type(self.rows) is not BSLValueTreeRowCollection
                 or self.rows.tree is not self or self.rows.parent is not None
                 or type(self.rows.items) is not list):
             raise ValueError("ДеревоЗначений: неверный источник копирования")
         columns = self.columns.items
-        BSLValueTree._budget(len(self._all_rows), len(columns))
+        BSLValueTree._budget(len(entries), len(columns))
         column_ids, names = set(), set()
         text_size = default_size = 0
         width_budget = _SearchBudget()
@@ -1409,9 +1432,7 @@ class BSLValueTree(BSLObject):
                 if depth >= _MAX_DEPTH:
                     raise ValueError("ДеревоЗначений: превышена глубина копирования Yadinassi")
                 pending.append((row.rows, iter(row.rows.items), depth + 1))
-        if (len(ordered) != len(self._all_rows)
-                or any(type(row) is not BSLValueTreeRow or id(row) not in seen or value is not None
-                       for row, value in self._all_rows.items())):
+        if not _registry_matches_graph(self._all_rows, self, seen):
             raise ValueError("ДеревоЗначений: неверный реестр строк копирования")
         result = BSLValueTree()
         new_columns = []
@@ -1467,7 +1488,8 @@ _DIRECT_TREE_SCHEMA_BINDINGS = tuple((vars(_direct_qualifiers), name, value)
 _ROW_REGISTRY_ABI = tuple((cls,cls.__mro__,tuple(vars(cls).items()))
     for cls in (_RowRegistry,BSLValueTreeRow,BSLObject))
 _ROW_REGISTRY_BINDINGS = tuple((name,globals()[name]) for name in
-    ('_registry_hooks','_registry_state','_registry_key','_registry_owned','_RowRegistry',
+    ('_registry_hooks','_registry_state','_registry_key','_registry_owned',
+     '_registry_owned_entries','_registry_matches_graph','_RowRegistry',
      '_ROW_REGISTRY_STATE','_DIRECT_TREE_ORIGINS','ref'))
 from enum import Enum as _DirectEnum
 _DIRECT_TREE_ENUM_ABI = tuple((cls,cls.__mro__,tuple(vars(cls).items())) for cls in
