@@ -473,6 +473,10 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None):
     # SQL and transaction operations keep their own checks; dynamic code is
     # deliberately stricter whenever a database is attached.
     context._verify_dynamic_context=context._verify_context or database is not None
+    if not context._verify_context and vm._family_owner is vm:
+        context._known_method_local=True
+        context._known_method_db=sqlite_attached
+
     context._restrict_python_extensions=not vm.allow_extensions
     context._direct_transaction_owner=_transaction_owner
     context._register_root=vm._information_registers if sqlite_attached else None

@@ -30,6 +30,10 @@ class HostMembers:
 
 class BoundaryContext:
     _verify_context = True
+    _known_methods_live = 0
+    _known_method_local = False
+    _known_method_db = False
+    _known_method_origin = None
 
     def __init__(self, *, services=None, members=(), loop_budget=None, policy=None):
         if loop_budget is not None and (type(loop_budget) is not int or loop_budget < 0):

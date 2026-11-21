@@ -462,3 +462,13 @@ class BSLQueryResultSelection(BSLObject):
         if name.casefold() in ('next', 'следующий'):
             return HostFunction(name, self.next)
         return super().get_member(name)
+
+
+# Capture exact public methods before any lazy compiler import or host
+# registration can replace the class protocol.
+_DIRECT_METHODS = tuple(
+    tuple((kind,name,method,method.__code__) for kind,names in group
+          for name in names for method in (getattr(kind,name),))
+    for group in (((BSLQuery,('execute','get_method')),),
+                  ((BSLQueryResult,('select','get_method')),
+                   (BSLQueryResultSelection,('next','get_method','__init__')))))
