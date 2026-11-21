@@ -339,6 +339,8 @@ class ConfigurationApplication:
                 for routine in program:
                     self._reuse_routines[id(routine)] = (routine, child, definition)
             if self._definitions[name].global_module:
+                if side == 'client' and not definition.server and not definition.server_call:
+                    child._direct_global_module = (name, definition)
                 for routine in program:
                     if routine.exported:
                         self._globals[routine.name.casefold(), side] = (routine, child)

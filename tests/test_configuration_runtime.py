@@ -10,6 +10,7 @@ from yadinassi.configuration.configuration_modules import MODULE_RUNTIME, compil
 from yadinassi.configuration.configuration_runtime import ConfigurationApplication
 from yadinassi.configuration.configuration_xml import import_configuration
 from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.types.errors import BSLError
 from yadinassi.runtime import Interpreter
 from configuration_runtime_fixture import CLIENT, SERVER, module_files
@@ -131,7 +132,9 @@ class ConfiguredCallsTests(unittest.TestCase):
         app, output = self.app([('GlobalTools', source, {'Global': 'true'})])
         app.execute('Message(Public());')
         self.assertEqual(output, ['7'])
-        with self.assertRaises(BSLError): app.execute('Helper();')
+        # The narrow direct command lane rejects unresolved bare calls before
+        # lowering. The private helper must remain unreachable from the command.
+        with self.assertRaises(PythonDirectUnsupported): app.execute('Helper();')
         with self.assertRaises(BSLError): app.execute('GlobalTools.Public();')
 
     def test_cross_module_repeated_nested_calls(self):

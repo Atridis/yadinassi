@@ -123,12 +123,13 @@ class ConfigurationBoundary(BoundaryContext):
         raise ValueError('common module names are read-only')
     def resolve_service(self,name,fallback=None,*,require_value=False,allow_references=False,argument_count=None):
         self._check()
+        key=name.casefold()
         if (self._command_scope is not None and self._command_scope.configuration.enumerations
-                and name.casefold() in enums.SERVICES):
+                and key in enums.SERVICES):
             if argument_count is not None and argument_count!=1:
                 raise TypeError('enumeration service argument count mismatch')
-            return self._enums().service(name.casefold(),require_value=require_value,allow_references=allow_references)
-        if name.casefold() in ('new:uuid','new:уникальныйидентификатор'):
+            return self._enums().service(key,require_value=require_value,allow_references=allow_references)
+        if key in ('new:uuid','new:уникальныйидентификатор'):
             from yadinassi.types.unique_identifiers import BSLUUID
             alias=name.split(':',1)[1].casefold()
             factory=self.owner.types.get(alias)
@@ -149,7 +150,10 @@ class ConfigurationBoundary(BoundaryContext):
                 # owner check; do not duplicate its finally check here.
                 return call(*args)
             return construct
-        function=self._services.get(name.casefold())
+        if (self._command_scope is not None and key not in ('message','сообщить')
+                and key in self.app._global_names):
+            return self._global_export(key, require_value, argument_count)
+        function=self._services.get(key)
         if type(function) is not HostFunction:
             raise BoundaryViolation('unsupported configuration service: '+name)
         self.app.check_host_service(function,self.owner)
@@ -164,6 +168,26 @@ class ConfigurationBoundary(BoundaryContext):
             return result
         if allow_references:invoke.requires_reference=call.requires_reference
         return invoke
+
+    def _global_export(self,name,require_value,argument_count):
+        from yadinassi.runtime import Interpreter
+        selected=self.app.resolve_global(name,self.owner)
+        if type(selected) is not tuple or len(selected)!=2 or type(selected[1]) is not Interpreter:
+            raise BoundaryViolation('invalid global common-module binding')
+        routine,target=selected
+        issued=getattr(target,'_direct_global_module',None)
+        if type(issued) is not tuple or len(issued)!=2 or type(issued[0]) is not str:
+            raise BoundaryViolation('client global common-module export required')
+        module_name,definition=issued
+        if definition is None:
+            raise BoundaryViolation('invalid global common-module definition')
+        self._command_scope.admit_module(module_name,target._self_module,global_definition=definition)
+        bound=self._bind_common(target._self_module,name,module_name,'client',global_binding=selected)
+        if require_value and not bound.returns_value:
+            raise TypeError('Процедура не возвращает значение: '+name)
+        if argument_count is not None:bound.check_argument_count(argument_count)
+        bound.requires_reference=lambda index:False
+        return bound
     def resolve_callable(self,value,*,require_value=False,allow_references=False,_extension_value=False):
         scope=self._command_scope
         if scope is None:
@@ -212,10 +236,18 @@ class ConfigurationBoundary(BoundaryContext):
             module_name,side=matches[0]
         if self.app.resolve_module(module_name,self.owner) is not value:
             raise BoundaryViolation('common module side changed')
+        return self._bind_common(value,name,module_name,side)
+
+    def _bind_common(self,value,name,module_name,side,*,global_binding=None):
         routine=value.routine(name);target=value.interpreter
         def admit():
             self._check();check_owner(self.app,target,allow_database=self._command_scope is not None)
-            if self.app.resolve_module(module_name,self.owner) is not value:
+            if global_binding is not None:
+                if (self.app.resolve_global(name,self.owner) is not global_binding
+                        or global_binding[0] is not routine or global_binding[1] is not target
+                        or value.routine(name) is not routine):
+                    raise BoundaryViolation('global common-module binding changed')
+            elif self.app.resolve_module(module_name,self.owner) is not value:
                 raise BoundaryViolation('common module binding changed')
             if self._command_scope is not None:self._command_scope.parameter_values(target,routine)
             self.app.check_call(routine,self.owner)
@@ -226,7 +258,7 @@ class ConfigurationBoundary(BoundaryContext):
                 raise BoundaryViolation('direct common-module async/dual calls are not connected')
         admit()
         reuse_entry=self.app._reuse_routines.get(id(routine))
-        reusable=(reuse_entry is not None and reuse_entry[0] is routine and routine.is_function)
+        reusable=(global_binding is None and reuse_entry is not None and reuse_entry[0] is routine and routine.is_function)
         def invoke_arguments(args,omitted=()):
             admit()
             scope=self._command_scope

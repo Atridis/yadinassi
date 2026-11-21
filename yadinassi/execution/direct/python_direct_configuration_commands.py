@@ -84,24 +84,28 @@ class _Scope:
         self.owner_records[id(owner)]=(owner,plan,plan.function,parameter_snapshot(plan))
         self.used_routines[id(owner)]={}
 
-    def admit_module(self,name,module):
+    def admit_module(self,name,module,*,global_definition=None):
         self.check(self.app,self.root)
         key=name.casefold()
         definition=self.app._definitions.get(key)
         prior=self.module_bindings.get(id(module))
         if definition is None:_deny()
-        if prior is None and not any(definition is entry for entry in self.definition_list):_deny()
+        global_export=global_definition is not None
+        if global_export:
+            if definition is not global_definition:_deny()
+        elif prior is None and not any(definition is entry for entry in self.definition_list):_deny()
         if prior is not None and (prior[0]!=(key,'client') or prior[1] is not module):_deny()
         if metadata.validate_definition(definition)[0].casefold()!=key:_deny()
         if (not definition.client or definition.server or definition.server_call
-                or definition.global_module or definition.return_values_reuse not in ('DontUse','DuringRequest','DuringSession')):_unsupported()
+                or definition.global_module is not global_export
+                or definition.return_values_reuse not in ('DontUse','DuringRequest','DuringSession')):_unsupported()
         if (type(module) is not _Module or self.app._modules.get((key,'client')) is not module
                 or type(module.interpreter) is not Interpreter or module.interpreter._self_module is not module):_deny()
         if not any(saved is module for _,saved in self.modules):
             self.modules+=(((key,'client'),module),)
-            self.definitions+=((key,definition),)
+            self.definitions+=((key,definition,global_export),)
             self._admit_owner(module.interpreter)
-        self.module_bindings[id(module)]=((key,'client'),module)
+        if not global_export:self.module_bindings[id(module)]=((key,'client'),module)
         self._check_state(self.app,module.interpreter)
 
     @staticmethod
@@ -167,10 +171,10 @@ class _Scope:
         if type(app._modules) is not dict or type(app._definitions) is not dict:_deny()
         for key,module in self.modules:
             if app._modules.get(key) is not module or module.interpreter._self_module is not module:_deny()
-        for name,definition in self.definitions:
+        for name,definition,global_export in self.definitions:
             if metadata.validate_definition(definition)[0].casefold()!=name:_deny()
             if (app._definitions.get(name) is not definition or not definition.client
-                    or definition.server or definition.server_call or definition.global_module
+                    or definition.server or definition.server_call or definition.global_module is not global_export
                     or definition.return_values_reuse not in ('DontUse','DuringRequest','DuringSession')):_deny()
         record=self.owner_records.get(id(owner))
         if record is None or record[0] is not owner:_deny()
@@ -316,7 +320,8 @@ def _validate_command(program,app):
                 referenced.add(callee.object.name.casefold())
             elif type(callee) is ast.Name:
                 key=callee.name.casefold()
-                if key not in ('message','сообщить') and not (enum_names and key in enums.SERVICES and len(node.arguments)==1):_unsupported()
+                if (key not in ('message','сообщить') and key not in app._global_names
+                        and not (enum_names and key in enums.SERVICES and len(node.arguments)==1)):_unsupported()
             else:_unsupported()
             for argument in node.arguments:
                 if type(argument) is ast.OmittedArgument and type(callee) is ast.Attribute:continue

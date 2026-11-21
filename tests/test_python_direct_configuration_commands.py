@@ -46,6 +46,35 @@ class DirectConfigurationCommandTests(unittest.TestCase):
                 with self.assertRaises((BoundaryViolation,BSLRuntimeError)):app.execute('Message("before");Tools.F(1);')
                 self.assertEqual(output,['before'])
 
+    def test_bare_global_client_export_reuses_selected_scalar_binding(self):
+        from yadinassi.execution.direct import python_direct_configuration_metadata as metadata
+        source=('Function Hidden(Val X) Return X+1;EndFunction '
+                'Function Public(Val X,Val N=2) Export Return Hidden(X)*N;EndFunction')
+        app=self.app([CLIENT,('GlobalTools',source,{'Global':'true'})])
+        validate=metadata.validate_definition
+        def selected(definition):
+            self.assertEqual(definition.name,'GlobalTools')
+            return validate(definition)
+        with patch.object(metadata,'validate_definition',side_effect=selected):
+            self.assertEqual(app.execute('pUbLiC(3)'),Decimal(8))
+        with self.assertRaises(PythonDirectUnsupported):app.execute('Hidden(1)')
+        with self.assertRaises(BSLRuntimeError):app.execute('GlobalTools.Public(1)')
+
+    def test_global_binding_is_checked_before_and_after_argument_effect(self):
+        source='Function Public(Val X) Export Message("body");Return X;EndFunction'
+        caller=('Tools','Function Effect() Export Message("arg");Return 1;EndFunction',{})
+        output=[]
+        server=self.app([caller,('Globals',source,{'Global':'true','Server':'true','ClientManagedApplication':'false'})],output.append)
+        with self.assertRaises(BSLRuntimeError):server.execute('Public(Tools.Effect())')
+        self.assertEqual(output,[])
+
+        def remove_binding(value):
+            output.append(value)
+            app._globals.pop(('public','client'))
+        app=self.app([caller,('Globals',source,{'Global':'true'})],remove_binding)
+        with self.assertRaises(BSLRuntimeError):app.execute('Public(Tools.Effect())')
+        self.assertEqual(output,['arg'])
+
     def test_scalar_arguments_results_and_command_shapes_fail_closed(self):
         for text in ('X=New Array();','Var X;','Execute "X=1";','Eval("1")','Tools=1;',
                      'Tools.Double(,);','X=Tools;','While True Do EndDo;'):
