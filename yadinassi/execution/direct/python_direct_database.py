@@ -4,6 +4,7 @@ No arbitrary getattr, no backend access and no replacement for writer validation
 """
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from . import python_direct_movements as movements
+from . import python_direct_zip_reader as zip_reader
 from .python_direct_plain_map import PlainFixedMap
 from yadinassi.db.registers.accumulation_posting_values import BSLAccumulationRow
 from yadinassi.db.catalog.catalogs import BSLCatalogs, BSLCatalogManager, BSLCatalogObject, BSLCatalogSelection
@@ -288,6 +289,7 @@ class CatalogBoundary:
         raise ValueError('catalog namespace is read-only')
 
     def get_member(self,value,name):
+        if id(type(value)) in zip_reader.TYPE_IDS:return zip_reader.get(self,value,name)
         if id(value) in ITERATION_ENUM_VALUE_IDS:
             if self._verify_context:self._check()
             raise ValueError('Поле объекта не обнаружено: '+name)
@@ -380,6 +382,8 @@ class CatalogBoundary:
         return self.resolve_member(value,name)
 
     def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
+        if id(type(value)) in zip_reader.TYPE_IDS:
+            return zip_reader.resolve(self,value,name,require_value=require_value,omitted=omitted)
         # A spelled member call must not reach the internal protocol names
         # emitted for indexing and For Each. These enum namespaces have no
         # methods; their scalar identities have no member protocol at all.
@@ -491,6 +495,7 @@ class CatalogBoundary:
         return invoke
 
     def resolve_member(self,value,name):
+        if id(type(value)) in zip_reader.TYPE_IDS:return zip_reader.resolve(self,value,name,syntax=True)
         if name in ('__iter__','__getitem__','__setitem__'):
             identity=id(value)
             if identity in ITERATION_ENUM_VALUE_IDS or (name!='__iter__' and identity in ITERABLE_IDS):

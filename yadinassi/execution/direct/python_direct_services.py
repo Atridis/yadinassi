@@ -9,6 +9,8 @@ from yadinassi.streams.file_io import (
     create_directory, copy_file, move_file, delete_files,
 )
 from yadinassi.streams.text_documents import BSLTextDocument
+from yadinassi.streams.zip_archives import BSLZipFileReader
+from . import python_direct_zip_reader as zip_reader
 from .source import python_direct_source_resources as text_resources
 from yadinassi.formats.storage.value_storage import BSLValueStorage
 from yadinassi.streams.data_compression import BSLDeflation
@@ -120,6 +122,7 @@ ORDINARY_CONSTRUCTORS = {
     'настройкисериализацииjson': BSLJSONSerializerSettings,
     'valuestorage': BSLValueStorage, 'хранилищезначения': BSLValueStorage,
     'deflation': BSLDeflation, 'сжатиеданных': BSLDeflation,
+    'zipfilereader': BSLZipFileReader, 'чтениеzipфайла': BSLZipFileReader,
 }
 OPTIONAL_STREAM_CONSTRUCTORS = frozenset(
     name for name,value in ORDINARY_CONSTRUCTORS.items() if value in _STREAM_CONSTRUCTOR_COUNTS)
@@ -436,6 +439,8 @@ class ServicesBoundary:
             raise ValueError('foreign or inactive source common template owner')
         if key.startswith('new:') and key[4:] in text_resources.CONSTRUCTOR_NAMES:
             return text_resources.resolve_constructor(self,key,**kwargs)
+        if key.startswith('new:') and key[4:] in zip_reader.NAMES:
+            return zip_reader.constructor(self,key[4:],self.vm.types.get(key[4:]),**kwargs)
         if key.startswith('new:') and key[4:] in ORDINARY_CONSTRUCTORS:
             if self._verify_context:self._check()
             expected=ORDINARY_CONSTRUCTORS[key[4:]]
