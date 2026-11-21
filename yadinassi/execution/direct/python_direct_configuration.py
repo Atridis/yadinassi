@@ -287,14 +287,21 @@ def install(app,owner,program,source_text=''):
         raise BoundaryViolation('direct configured async/dual routines are not connected')
     owned=_snapshot(program)
     sqlite_names=sqlite_constructors=()
-    if app._client_sqlite is not None:
+    session_owner=owner is app._session_owner
+    if app._client_sqlite is not None and not session_owner:
         from .python_direct_configuration_sqlite import NAMES, CONSTRUCTORS
         sqlite_names,sqlite_constructors=NAMES,CONSTRUCTORS
-    plan=compile_owned(owned,retain_generated=False,source_text=source_text,source_name=program[0].token.source if program else '<configuration>',
+    if session_owner:
+        from .python_direct_configuration_sessions import NAMES
+        external_names,constructors=NAMES,()
+    else:
         external_names=tuple(app._definitions)+sqlite_names+(enums.NAMES+('metadata','метаданные')
-            if app.configuration.enumerations else ()),constructors=('uuid','уникальныйидентификатор')+sqlite_constructors,
+            if app.configuration.enumerations else ())
+        constructors=('uuid','уникальныйидентификатор')+sqlite_constructors
+    plan=compile_owned(owned,retain_generated=False,source_text=source_text,source_name=program[0].token.source if program else '<configuration>',
+        external_names=external_names,constructors=constructors,
         exports=True,authority_checks=True,configuration_calls=True,
-        lean_configuration=app._cli_database is not None)
+        lean_configuration=app._cli_database is not None or (session_owner and not owner.allow_extensions))
     # Capture original declaration bindings when this exact plan is installed.
     # Never infer a default from later host-mutated declaration metadata.
     plan._configuration_parameters=tuple((node,tuple(
@@ -351,7 +358,9 @@ def invoke_reusable(app,caller,owner,routine,arguments):
 
 
 def invoke_routine(app,owner,routine,arguments):
-    check_owner(app,owner,allow_database=_COMMAND_SCOPE.get() is not None);app.check_call(routine,owner)
+    session_owner=owner is app._session_owner
+    check_owner(app,owner,allow_database=_COMMAND_SCOPE.get() is not None or
+                (session_owner and app._client_sqlite is not None));app.check_call(routine,owner)
     plan=getattr(owner,'_direct_configuration_plan',None)
     if plan is None:raise BoundaryViolation('unprepared direct configuration routine')
     registry=owner.server_routines if routine.execution_context=='server' else owner.routines
@@ -359,7 +368,10 @@ def invoke_routine(app,owner,routine,arguments):
         raise BoundaryViolation('direct configuration routine replaced')
     if len(arguments)!=len(routine.parameters):raise TypeError('configuration argument count mismatch')
     scope=_COMMAND_SCOPE.get()
-    if (scope is not None and app._client_sqlite is not None
+    if session_owner:
+        from .python_direct_configuration_sessions import SessionStartup
+        context=SessionStartup(app,owner,routine)
+    elif (scope is not None and app._client_sqlite is not None
             and owner is not app.interpreter and routine.execution_context=='client'):
         from .python_direct_configuration_commands import _Scope
         if type(scope) is not _Scope:raise BoundaryViolation('invalid command scope')

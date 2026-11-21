@@ -156,8 +156,11 @@ class ConfigurationApplication:
         self._program = compile_module(application_source, 'Ext/ManagedApplicationModule.bsl',
                                        'client', common=False)
         self._program_source = application_source.decode('utf-8-sig')
-        self._session_program,self._session_handler=compile_session_module(sources.get('Ext/SessionModule.bsl',b''))
+        session_source=sources.get('Ext/SessionModule.bsl',b'')
+        self._session_program,self._session_handler=compile_session_module(session_source)
+        self._session_source=session_source.decode('utf-8-sig')
         self._session_owner=None
+        self._session_binding=None
         from yadinassi.application.session_parameters import BSLSessionParameters
         self.session_parameters=BSLSessionParameters(self,configuration.session_parameters)
         from yadinassi.application.temporary_storage import ApplicationTemporaryStorage
@@ -345,13 +348,11 @@ class ConfigurationApplication:
                 owner = self._modules[name, 'server'].interpreter
                 self.server_endpoints[binding.endpoint] = (binding,
                     lambda values, routine=routine, owner=owner: self._invoke_remote(owner, routine, values))
-        if self.side != 'client' and (self._session_program or self.configuration.session_parameters):
+        if self.side != 'client' and self._session_handler is not None:
             child=root._activation_interpreter()
             child._logical_side='server'
             child._diagnostic_owner=root._diagnostic_owner
             child.user_messages=root.user_messages
-            child._inherit_host_bindings(root)
-            child.functions.update(self._host_services)
             child._handled_errors=root._handled_errors
             child._error_info_boundaries=root._error_info_boundaries
             child._execute_depth=root._execute_depth
@@ -360,7 +361,10 @@ class ConfigurationApplication:
             for routine in self._session_program:
                 self._common_routines[id(routine)]=routine
                 self._declared_routines[id(routine)]=routine
-            raise ValueError('direct session initialization is not connected')
+            from yadinassi.execution.direct.python_direct_configuration import install
+            self._session_owner=child
+            install(self,child,self._session_program,self._session_source)
+            self._session_binding=(child,self._session_handler,child._direct_configuration_plan)
         # Application exports are visible to the same logical client context.
         for key, routine in app_routines.items():
             if routine.exported:
@@ -570,11 +574,12 @@ class ConfigurationApplication:
         self.session_parameters._authorize(caller)
         if self._session_owner is None:
             raise ValueError('session initialization belongs to the server application')
-        raise ValueError('direct session initialization is not connected')
+        raise ValueError('direct lazy session initialization is not connected')
 
     def _start_session(self):
-        if self._session_owner is not None:
-            raise ValueError('direct session initialization is not connected')
+        if self._session_binding is not None:
+            from yadinassi.execution.direct.python_direct_configuration_sessions import start
+            start(self)
 
     def is_scalar_server_reuse(self, routine):
         entry = self._reuse_routines.get(id(routine))
