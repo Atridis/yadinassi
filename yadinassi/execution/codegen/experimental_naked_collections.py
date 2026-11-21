@@ -229,6 +229,25 @@ class _IndexRef(_Reference):
         if type(self.owner) is dict and self.key not in self.owner:raise ValueError('Свойство структуры не найдено: '+str(self.key))
         self.owner[self.index()]=value
 
+class _ValueListItemReference(_Reference):
+    __slots__=('item','field')
+
+    def __init__(self,item,name):
+        from yadinassi.collections.plain_value_list import _field
+        self.item=item
+        try:self.field=_field(name)
+        except AttributeError as exc:raise ValueError(str(exc)) from None
+        if self.field == 3:
+            raise ValueError('Свойство элемента списка недоступно для передачи по ссылке: '+name)
+
+    @property
+    def value(self):
+        return self.item[self.field]
+
+    @value.setter
+    def value(self,value):
+        self.item[self.field]=value
+
 class _AttributeRef(_Reference):
     __slots__=('owner','name')
     def __init__(self,owner,name):

@@ -37,6 +37,7 @@ from yadinassi.streams.data_hashing import BSLDataHashing
 from yadinassi.streams.data_io import BSLDataReader, BSLDataWriter, BSLReadDataResult
 from yadinassi.collections.maps import BSLMap, BSLFixedMap
 from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.collections.plain_value_list import PlainValueList, PlainValueListItem
 from yadinassi.formats.json.json_processing import (BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings,
     _DIRECT_SOURCE_JSON_CLASSES, _DIRECT_SOURCE_JSON_DICT, _DIRECT_JSON_READ)
 from .python_direct_names import NAMES as SYSTEM_NAMES, VALUE_IDS as SYSTEM_VALUE_IDS, ITERABLES
@@ -303,6 +304,11 @@ class CatalogBoundary:
         from . import python_direct_table_references as table_refs
         if table_refs.member(value):return table_refs.bind(self,value,name)
         kind=type(value)
+        if kind is PlainValueListItem and not self._verify_context:
+            from yadinassi.execution.codegen.experimental_naked_collections import _ValueListItemReference
+            return _ValueListItemReference(value,name)
+        if kind is PlainValueList and not self._verify_context:
+            raise ValueError('Поле объекта не обнаружено: '+name)
         if (kind is BSLQueryResultSelection
                 or kind is BSLNumberQualifiers and name.casefold() in
                     ('digits','разрядность','fractiondigits','разрядностьдробнойчасти')

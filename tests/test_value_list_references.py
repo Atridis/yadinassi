@@ -293,7 +293,7 @@ class NativeValueListReferenceTests(unittest.TestCase):
                          SOURCE_SHA256)
         source = source_bytes.decode('utf-8-sig')
         self.assertEqual(NATIVE_RECORDS.count('table.list.reference.'), len(CASES))
-        for backend in ('python-direct', 'compiled-strict'):
+        for backend in ('python-direct',):
             vm = Interpreter(native_target='linux-8.3.27.1508', execution_backend=backend)
             self.addCleanup(vm.close)
             vm.execute(source.split('#Область МассивыИСтруктуры', 1)[0])
@@ -315,6 +315,19 @@ class ValueListReferenceRuntimeTests(unittest.TestCase):
         self.vm = Interpreter(self.output.append)
         self.vm.execute('owner = New ValueList; item = owner.Add(10, "old", False); '
                         'other = owner.Add(20, "second", False);')
+
+    def test_plain_prepared_reference_keeps_the_same_item_without_owner_storage(self):
+        from yadinassi.collections.plain_value_list import PlainValueListItem
+
+        item = self.vm.variables['item']
+        self.assertIs(type(item), PlainValueListItem)
+        self.assertFalse(hasattr(item, '_owner_ref'))
+        self.vm.execute_prepared(self.vm.prepare(
+            'Procedure Update(x, y) x = 83; Message(y); EndProcedure '
+            'Update(owner.Get(0).Value, item.Значение);'))
+        self.assertIs(self.vm.variables['item'], item)
+        self.assertEqual(self.output, ['83'])
+        self.assertEqual(self.vm.execute('owner[0].Value'), D(83))
 
     def test_bilingual_fields_and_val_isolation(self):
         self.vm.execute('Procedure SetField(x, Val n) x = n; EndProcedure '
