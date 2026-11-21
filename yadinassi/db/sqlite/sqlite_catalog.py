@@ -1587,6 +1587,24 @@ class SQLiteCatalogBackend:
             return RegisterView(raw).resolve_set(operation_id, draft)
         finally: raw.close()
 
+    def _check_catalog_manifest(self, connection):
+        # Compare the same exact persisted triples in one bounded statement.
+        # Check SQL storage types/size before copying a field into Python;
+        # do not filter bad rows away or decode/reconstruct their definitions.
+        remaining = set(self._schema_snapshot)
+        rows = connection.execute(
+            "SELECT CASE WHEN typeof(identity)='text' AND length(CAST(identity AS BLOB))<=36 THEN identity END,"
+            "CASE WHEN typeof(name)='text' AND length(CAST(name AS BLOB))<=512 THEN name END,"
+            "CASE WHEN typeof(definition)='text' AND length(CAST(definition AS BLOB))<=262144 THEN definition END "
+            "FROM catalog_schema LIMIT ?", (len(self._schema_snapshot) + 1,))
+        try:
+            for row in rows:
+                if row not in remaining: raise BackendError('schema_changed')
+                remaining.remove(row)
+        finally:
+            rows.close()
+        if remaining: raise BackendError('schema_changed')
+
     def _validate_transaction_admission(self, connection, *, _receipt_only=False):
         if self.format_version != 16 and self._read_admission_cache_allowed():
             identity = connection.execute(
@@ -1597,21 +1615,22 @@ class SQLiteCatalogBackend:
             if tuple(connection.execute(
                     'SELECT type,name,tbl_name,sql FROM sqlite_schema ORDER BY type,name').fetchall()) != self._admission_ddl_snapshot:
                 raise BackendError('schema_changed')
-        if (connection.execute('PRAGMA user_version').fetchone()[0] != self.format_version or
-            connection.execute('PRAGMA schema_version').fetchone()[0] != self._sqlite_schema_version):
+        if self.format_version != 16 and (
+                connection.execute('PRAGMA user_version').fetchone()[0] != self.format_version or
+                connection.execute('PRAGMA schema_version').fetchone()[0] != self._sqlite_schema_version):
             raise BackendError('schema_changed')
         if self.format_version in (11, 12) and transaction_profile.base_version(connection) != self.storage_version: raise BackendError('schema_changed')
         if self.format_version == 16:
             from .sqlite_inventory_enum_profile import read_source
-            enum_source, validated_maps = read_source(connection, _prepared=self._prepared_source, _with_layout=True)
+            enum_source, validated_maps = read_source(
+                connection, _prepared=self._prepared_source, _with_layout=True,
+                _expected_versions=(self.format_version, self._sqlite_schema_version))
             config, domain, _ = enum_source
             if (config != self.accumulation_configuration or domain != self._enum_domain
                     or config.catalogs != self._schemas):
                 raise BackendError('schema_changed')
         if self.storage_version >= 2:
-            if connection.execute('SELECT COUNT(*) FROM catalog_schema').fetchone()[0] != len(self._schema_snapshot): raise BackendError('schema_changed')
-            for identity, name, definition in self._schema_snapshot:
-                if not connection.execute('SELECT 1 FROM catalog_schema WHERE identity=? AND name=? AND definition=?', (identity,name,definition)).fetchone(): raise BackendError('schema_changed')
+            self._check_catalog_manifest(connection)
             # Format16 source admission just validated these maps on this
             # same transaction and exact schemas. These freshly loaded map
             # objects are not retained; readonly format16 handles separately
@@ -1841,8 +1860,8 @@ class SQLiteCatalogBackend:
             def intents():
                 nonlocal invalid_outcome
                 for request, result in zip(requests, receipt[1]):
-                    draft, values = view._draft(request.draft)
-                    sections = view._draft_sections(draft)
+                    draft, values, schema = view._draft(request.draft)
+                    sections = view._draft_sections(draft, schema)
                     if request.expected_revision is None:
                         revision = 1
                     else:
@@ -1858,10 +1877,9 @@ class SQLiteCatalogBackend:
                     if type(result) is CatalogWriteOutcome:
                         if not draft.auto_number: invalid_outcome |= result.code != draft.code
                         else:
-                            schema = view.catalog_schema(draft.key.catalog_id)
                             invalid_outcome |= (len(result.code) != schema.code_length or not result.code.isascii()
                                 or not result.code.isdecimal() or int(result.code) == 0)
-                    yield _intent(draft, revision, values, sections, hierarchy=view.catalog_schema(draft.key.catalog_id).hierarchy != 'none')
+                    yield _intent(draft, revision, values, sections, hierarchy=schema.hierarchy != 'none')
 
             digest = _receipt_digest(intents(), receipt[1] if self.storage_version in (4, 6, 7, 8, 9, 10) else None)
             if digest != receipt[0]: raise BackendError('conflict')
@@ -2821,18 +2839,17 @@ class _View:
                 raise BackendError('not_found')
         encoded = _json(values)
         if len(encoded.encode('utf-8')) > _MAX_ROW_BYTES: raise BackendError('invalid_input')
-        return draft, encoded
+        return draft, encoded, schema
 
     def _reference_exists(self, key):
         schema = self.catalog_schema(key.catalog_id)
         table, _, where, args = self._source(schema)
         return self._connection.execute('SELECT 1 FROM %s WHERE %s AND record_id=?' % (table, where), args + (str(key.record_id),)).fetchone() is not None
 
-    def _draft_sections(self, draft):
+    def _draft_sections(self, draft, schema):
         sections = draft.tabular_sections
         if sections is None: return None
         if type(sections) is not tuple or len(sections) > _MAX_SECTIONS: raise BackendError('invalid_input')
-        schema = self.catalog_schema(draft.key.catalog_id)
         if self._backend.storage_version not in (3, 4, 6, 7, 8, 9, 10) and sections: raise BackendError('unsupported')
         by_id = {s.identity: s for s in schema.tabular_sections}
         supplied = {}; count = 0; size = 0; stored_size = 0
@@ -2933,9 +2950,8 @@ class _View:
 
     @_boundary
     def create(self,draft):
-        self._require(True, mutate=True); draft, values = self._draft(draft)
-        sections = self._draft_sections(draft); self._section_write_budget(sections)
-        schema = self.catalog_schema(draft.key.catalog_id)
+        self._require(True, mutate=True); draft, values, schema = self._draft(draft)
+        sections = self._draft_sections(draft, schema); self._section_write_budget(sections)
         table, columns, where, args = self._source(schema)
         clause = '' if where == '1' and not args else ' WHERE ' + where
         if self._connection.execute('SELECT COUNT(*) FROM %s%s' % (table,clause),args).fetchone()[0] >= _MAX_ROWS:
@@ -2955,20 +2971,19 @@ class _View:
                 raise BackendError('duplicate_identity' if self._reference_exists(draft.key) else 'duplicate_code') from None
             hierarchy_storage.store(self,schema,draft,creating=True)
             self._replace_sections(draft, schema, sections)
-            self._record_change(draft,1,values,sections,intent_draft=intent_draft)
+            self._record_change(draft,1,values,sections,schema=schema,intent_draft=intent_draft)
 
     @_boundary
     def update(self,draft,expected_revision):
-        self._require(True, mutate=True); draft, values = self._draft(draft)
+        self._require(True, mutate=True); draft, values, schema = self._draft(draft)
         if draft.auto_number: raise BackendError('invalid_input')
-        sections = self._draft_sections(draft); self._section_write_budget(sections)
+        sections = self._draft_sections(draft, schema); self._section_write_budget(sections)
         r = expected_revision
         if type(r) is not Revision or (r.database_id,r.configuration_generation,r.catalog_id,r.record_id)!=(self.database_id,self.configuration_generation,draft.key.catalog_id,draft.key.record_id) or type(r.token) is not str:
             raise BackendError('conflict')
         revision = _revision_number(r.token)
         with self._atomic_record():
             try:
-                schema = self.catalog_schema(draft.key.catalog_id)
                 hierarchy_storage.prepare(self,schema,draft,creating=False)
                 table, columns, where, args = self._source(schema)
                 if self._backend.storage_version == 1:
@@ -2981,14 +2996,14 @@ class _View:
             if cursor.rowcount != 1: raise BackendError('conflict')
             hierarchy_storage.store(self,schema,draft,creating=False)
             self._replace_sections(draft, schema, sections)
-            self._record_change(draft,revision+1,values,sections)
+            self._record_change(draft,revision+1,values,sections,schema=schema)
 
-    def _record_change(self,draft,revision,values,sections,*,intent_draft=None):
+    def _record_change(self,draft,revision,values,sections,*,schema,intent_draft=None):
         # Prepare every potentially allocating operation before replacing state.
         # A later RELEASE failure can restore the old references without slicing
         # or copying a possibly half-appended journal under memory pressure.
         changes = [*self._changes, Revision(self.database_id,self.configuration_generation,draft.key.catalog_id,draft.key.record_id,str(revision))]
-        intents = [*self._intents, _intent(intent_draft or draft,revision,values,sections,hierarchy=self.catalog_schema(draft.key.catalog_id).hierarchy != 'none')]
+        intents = [*self._intents, _intent(intent_draft or draft,revision,values,sections,hierarchy=schema.hierarchy != 'none')]
         outcomes = [*self._outcomes, CatalogWriteOutcome(changes[-1],draft.code)]
         size, rows = self._section_write_bytes, self._section_write_rows
         if sections is not None:

@@ -81,11 +81,11 @@ def _describe(view, request):
     if kind.endswith('_create') and expected is not None: raise BackendError('invalid_input')
     if kind.endswith('_update') and expected is None: raise BackendError('invalid_input')
     if kind.startswith('catalog_'):
-        draft,values = view._draft(draft); sections = view._draft_sections(draft)
+        draft,values,schema = view._draft(draft); sections = view._draft_sections(draft,schema)
         if expected is not None and (type(expected) is not Revision or (expected.database_id,expected.configuration_generation,expected.catalog_id,expected.record_id)!=(view.database_id,view.configuration_generation,draft.key.catalog_id,draft.key.record_id)): raise BackendError('conflict')
         revision = 1 if expected is None else _storage()._revision_number(expected.token)+1
         intent = _storage()._intent(draft,revision,values,sections,
-                     hierarchy=view.catalog_schema(draft.key.catalog_id).hierarchy != 'none')
+                     hierarchy=schema.hierarchy != 'none')
         identity = ('catalog',draft.key.catalog_id,draft.key.record_id)
         return _hash(intent), len(_json(intent).encode('utf-8')), identity
     if kind.startswith('document_'):

@@ -95,15 +95,21 @@ def _validate_ddl(connection, config, domain):
     return layout,sections
 
 
-def read_source(connection, *, _prepared=None, _with_layout=False):
+def read_source(connection, *, _prepared=None, _with_layout=False, _expected_versions=None):
     """Rehash current source before decoding typed schemas; no row authority.
 
     The internal output-only layout option returns maps validated by this call.
     They are ephemeral facts of this connection/transaction, not reusable grants.
     The ordinary source triple and prepared-source cache remain unchanged.
     """
-    if (connection.execute('PRAGMA application_id').fetchone()!=(_storage()._APPLICATION_ID,)
-            or connection.execute('PRAGMA user_version').fetchone()!=(16,)):
+    # Capture the three header values once for this same physical transaction.
+    # The transaction caller supplies only expected values, not a prior grant.
+    user_version, = connection.execute('PRAGMA user_version').fetchone()
+    schema_version, = connection.execute('PRAGMA schema_version').fetchone()
+    if _expected_versions is not None and (user_version, schema_version) != _expected_versions:
+        raise BackendError('schema_changed')
+    application_id, = connection.execute('PRAGMA application_id').fetchone()
+    if application_id != _storage()._APPLICATION_ID or user_version != 16:
         raise BackendError('integrity')
     if connection.execute('SELECT 1 FROM migration_marker LIMIT 1').fetchone():
         raise BackendError('integrity')
@@ -128,7 +134,7 @@ def read_source(connection, *, _prepared=None, _with_layout=False):
     if info is None:raise BackendError('integrity')
     database_id=_stored_uuid(info[0])
     key=('inventory-enum',database_id,
-        tuple(connection.execute('PRAGMA '+name).fetchone()[0] for name in ('application_id','user_version','schema_version')),
+        (application_id, user_version, schema_version),
         info,tuple(marker),tuple(sorted(entries)))
     config=_prepared.lookup(key) if _prepared is not None else None
     if config is None:

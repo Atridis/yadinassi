@@ -597,7 +597,7 @@ class CatalogSectionTests(unittest.TestCase):
         revision = self.create(draft, operation)
         view = self.backend.begin_read()
         try:
-            normalized, encoded_values = view._draft(draft)
+            normalized, encoded_values, _ = view._draft(draft)
             self.assertEqual(normalized, draft)
         finally:
             view.close()
@@ -773,8 +773,9 @@ class CatalogSectionTests(unittest.TestCase):
         legacy = self.draft(code='30')
         view = self.backend.begin_read()
         try:
-            first_size = len(_json(view._draft_sections(first)))
-            second_size = len(_json(view._draft_sections(excess)))
+            schema = view.catalog_schema(first.key.catalog_id)
+            first_size = len(_json(view._draft_sections(first, schema)))
+            second_size = len(_json(view._draft_sections(excess, schema)))
         finally:
             view.close()
         with patch('yadinassi.db.sqlite.sqlite_catalog._MAX_CONFIG_BYTES', first_size + second_size - 1):
