@@ -38,6 +38,21 @@ Function F(A,Val B) Return A*10+B;EndFunction
 X=1;R=F(X,Change(X));''')
         self.assertEqual((vm.variables['x'],vm.variables['r']),(9,92))
 
+    def test_late_read_preserves_unforwarded_writes(self):
+        vm=Interpreter();vm.execute('''Function Change(X,Y) X=9;Y=8;Return 2;EndFunction
+&AtServer
+Function F(Val A,Val B) Return A*10+B;EndFunction
+X=1;Y=3;R=F(X,Change(X,Y));''')
+        self.assertEqual((vm.variables['x'],vm.variables['y'],vm.variables['r']),(9,8,92))
+
+    def test_failure_during_arguments_keeps_partial_local_write(self):
+        output=[];vm=Interpreter(output.append)
+        vm.execute('''Function Change(X) X=9;Raise "argument";EndFunction
+&AtServer
+Procedure F(Val A,Val B) Message("server");EndProcedure
+X=1;Try F(X,Change(X));Except Message("caught");EndTry;''')
+        self.assertEqual((vm.variables['x'],output),(9,["caught"]))
+
     def test_forwarded_named_parameter_and_separate_server_modules(self):
         vm=Interpreter();vm.execute('&AtServer\nProcedure S(X) X=7;EndProcedure')
         vm.execute('&AtServer\nProcedure T(X) S(X);EndProcedure')

@@ -120,6 +120,9 @@ def _source_facts(program):
 
 
 def _admit_bindings(vm,routines,constructors,calls):
+    ports=getattr(vm,'_direct_invocation_ports',None)
+    if ports and not routines.isdisjoint(ports):
+        _reject('invocation name already bound')
     if not constructors and not calls:return
     from yadinassi.types.values import BSLArray
     from yadinassi.collections.maps import BSLMap
@@ -364,6 +367,12 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None):
         def resolve_service(self,name,*args,**kwargs):
             modules=getattr(vm,'_direct_routine_modules',None)
             key=name.casefold()
+            ports=getattr(vm,'_direct_invocation_ports',None)
+            entry=None if ports is None else ports.get(key)
+            if entry is not None:
+                from yadinassi.execution.invocation import resolve_direct_invocation
+                return resolve_direct_invocation(self,key,entry,require_value=kwargs.get('require_value',False),
+                    argument_count=kwargs.get('argument_count'))
             module=None if modules is None else modules.get(key)
             if module is not None:
                 if self._verify_context or (key in module.server_names and key not in module.dual_names):self._check()

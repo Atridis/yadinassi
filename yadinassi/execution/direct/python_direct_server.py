@@ -112,6 +112,9 @@ class ServerBoundary(ServicesBoundary,CatalogBoundary,BoundaryContext):
 
     def resolve_service(self,name,*args,**kwargs):
         if self._verify_context:self._check()
+        ports=getattr(self.vm,'_direct_invocation_ports',None)
+        if ports is not None and name.casefold() in ports:
+            raise ValueError('Удалённый вызов доступен только из логического клиента')
         from .python_direct_routines import resolve
         routine=resolve(self,name.casefold(),require_value=kwargs.get('require_value',False),
             allow_references=kwargs.get('allow_references',False),argument_count=kwargs.get('argument_count'))

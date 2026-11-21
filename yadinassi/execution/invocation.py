@@ -13,6 +13,7 @@ from yadinassi.syntax import ast
 from yadinassi.syntax.lexer import Token
 from yadinassi.syntax.parser import parse
 from .codegen.native_targets import target_context
+from .codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.ui.protocol import (UIError, MAX_COUNTER, bounded_text, decode_line,
                           decode_value, encode_line, encode_value)
 
@@ -85,7 +86,12 @@ class InvocationPort:
     def bind(self, interpreter, binding):
         if type(interpreter) is not Interpreter or type(binding) is not InvocationBinding:
             raise TypeError('plain Interpreter and InvocationBinding required')
-        self._bind(interpreter, binding)
+        key=binding.name.casefold()
+        ports=vars(interpreter).setdefault('_direct_invocation_ports',{})
+        if (key in ports or key in interpreter.routines or key in interpreter.server_routines
+                or key in interpreter.functions or key in getattr(interpreter,'_direct_routine_modules',{})):
+            raise ValueError('invocation name already bound')
+        ports[key]=(self,binding)
 
     def bind_form(self, session, binding):
         """Bind a scalar client call before a trusted local form session opens.
@@ -123,7 +129,7 @@ class InvocationPort:
         interpreter._invocation_bindings[key] = (routine,
             lambda values: self.invoke(binding, values, output=interpreter.output))
 
-    def invoke(self, binding, values, *, output=lambda message: None):
+    def invoke(self, binding, values, *, output=lambda message: None, _check_reply=None):
         if not self._gate.acquire(blocking=False): raise InvocationError('busy')
         exchange_started = False
         try:
@@ -140,7 +146,10 @@ class InvocationPort:
             self._counter = request_id
             try:
                 exchange_started = True
-                response = decode_line(self._exchange(raw))
+                raw_reply = self._exchange(raw)
+                if _check_reply is not None:
+                    _check_reply()
+                response = decode_line(raw_reply)
                 if (type(response) is not dict or response.get('protocol') != PROTOCOL
                         or type(response.get('id')) is not int or response['id'] != request_id
                         or response.get('status') not in ('ok', 'error')):
@@ -181,6 +190,50 @@ class InvocationPort:
             self._gate.release()
 
 
+def resolve_direct_invocation(context,key,entry,*,require_value=False,argument_count=None):
+    from yadinassi.types.values import Reference
+    from .direct.python_direct_server import _LateNamedValue
+    vm=context.vm
+    if vm.execution_context!='client' or getattr(context,'_server_side',False):
+        raise ValueError('Удалённый вызов доступен только из логического клиента')
+    if type(entry) is not tuple or len(entry)!=2:
+        raise BoundaryViolation('invalid invocation binding')
+    port,binding=entry
+    if type(port) is not InvocationPort or type(binding) is not InvocationBinding or binding.name.casefold()!=key:
+        raise BoundaryViolation('invalid invocation binding')
+    if require_value and not binding.is_function:
+        raise TypeError('Процедура не возвращает значение: '+binding.name)
+    if argument_count!=len(binding.parameters):
+        raise TypeError('Неверное количество аргументов: '+binding.name)
+    def check():
+        context._check_effect()
+        if (vm.execution_context!='client'
+                or getattr(vm,'_direct_invocation_ports',{}).get(key) is not entry):
+            raise BoundaryViolation('invocation binding changed')
+    def invoke(*arguments):
+        check()
+        values=[]
+        for argument in arguments:
+            if type(argument) is _LateNamedValue:
+                try:argument=argument.reference.get()
+                finally:check()
+            values.append(argument)
+        output=vm.output
+        def guarded_output(message):
+            check()
+            output(message)
+            check()
+        try:return port.invoke(binding,values,output=guarded_output,_check_reply=check)
+        finally:check()
+    def named(reference):
+        if type(reference) is not Reference:
+            raise TypeError('named invocation value requires a source reference')
+        return _LateNamedValue(reference)
+    invoke.requires_reference=lambda index:False
+    invoke.prepare_named_value=named
+    return invoke
+
+
 class InvocationServer:
     """Precompiled server-only module behind a bounded scalar request/reply port.
 
@@ -204,11 +257,16 @@ class InvocationServer:
         if type(self._interpreter) is not Interpreter:
             raise TypeError("plain interpreter factory required")
         self._interpreter.execute_program(program)
+        declarations = {routine.name.casefold():routine for routine in program}
+        self._direct_modules = self._interpreter._direct_routine_modules.copy()
         self._routines = {}
         bindings = []
         for endpoint, name in endpoints.items():
-            routine = self._interpreter.server_routines.get(_identifier(name).casefold())
-            if routine is None or any(not p.by_value or p.default is not None for p in routine.parameters):
+            key = _identifier(name).casefold()
+            routine = declarations.get(key)
+            module = self._direct_modules.get(key)
+            if (routine is None or module is None or key not in module.nocontext_names
+                    or any(not p.by_value or p.default is not None for p in routine.parameters)):
                 raise ValueError('endpoint requires explicit by-value parameters')
             binding = InvocationBinding(routine.name, endpoint,
                 tuple(p.name for p in routine.parameters), routine.is_function)
@@ -257,6 +315,41 @@ class InvocationServer:
             return encode_line({'protocol': PROTOCOL, 'id': request_id, 'status': 'error',
                                 'messages': [], 'reason': 'result_unavailable'})
 
+    def _invoke_endpoint(self, routine, values):
+        from yadinassi.runtime import _DIRECT_EXECUTION_SCOPE_ABI
+        from .direct.python_direct import make_boundary
+        from .direct.python_direct_server import ServerBoundary
+        from .execution_policy import compiled_ast_policy, execution_backend_policy
+
+        activation = self._interpreter._new_server_activation(module_context=False)
+        activation._direct_routine_modules = self._direct_modules.copy()
+        parent = make_boundary(activation)
+        parent._verify_context = True
+        context = ServerBoundary(parent, module_context=False)
+        with _DIRECT_EXECUTION_SCOPE_ABI(activation):
+            activation._context_stack.append('server')
+            activation._module_context_stack.append(False)
+            try:
+                context.enter()
+                try:
+                    with (target_context(activation.native_target),
+                          execution_backend_policy(activation.execution_backend),
+                          compiled_ast_policy(activation.compiled_ast_contract),
+                          localcontext() as decimal_context):
+                        decimal_context.prec = 38
+                        call = context.resolve_service(routine.name, require_value=routine.is_function,
+                                                       argument_count=len(values))
+                        return call(*values)
+                finally:
+                    try:
+                        context._check()
+                    finally:
+                        context.leave()
+            finally:
+                activation._module_context_stack.pop()
+                activation._context_stack.pop()
+                activation._scheduler.active_context.state.pop(activation._diagnostic_owner, None)
+
     def exchange(self, raw):
         if not self._gate.acquire(blocking=False):
             return encode_line({'protocol': PROTOCOL, 'id': None, 'status': 'error',
@@ -292,20 +385,10 @@ class InvocationServer:
                     return self._reply(request_id, value=result)
                 except Exception:
                     return self._reply(request_id, reason='server_error')
-            activation = self._interpreter._new_server_activation(module_context=False)
-            activation._context_stack.append('server')
-            activation._module_context_stack.append(False)
             try:
-                arguments = [ast.Literal(routine.token, value) for value in values]
-                with target_context(activation.native_target), localcontext():
-                    result = activation._scheduler.run_inline(activation.call_routine(
-                        routine, arguments, activation, require_value=routine.is_function))
+                result = self._invoke_endpoint(routine, values)
                 return self._reply(request_id, value=result)
-            except Exception:
+            except (Exception, BoundaryViolation):
                 return self._reply(request_id, reason='server_error')
-            finally:
-                activation._module_context_stack.pop()
-                activation._context_stack.pop()
-                activation._scheduler.active_context.state.pop(activation._diagnostic_owner, None)
         finally:
             self._gate.release()

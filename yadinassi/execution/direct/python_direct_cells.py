@@ -1,6 +1,7 @@
 """Exact one-element lists internally; reference adapters only at boundaries."""
 from yadinassi.execution.codegen.experimental_naked_collections import _Reference,_UNSET_REF
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from .python_direct_numbers import public_number
 
 
 def NativeCell(value=_UNSET_REF):return [value]
@@ -50,7 +51,8 @@ class CellReference(_Reference):
 
 def reference(cell):
     if type(cell) in (ReferenceCell,PlainReferenceCell):return CellReference(cell)
-    if type(cell) is not list or len(cell)!=1:raise TypeError('invalid internal cell')
+    if type(cell) is not PublishedModuleCell and (type(cell) is not list or len(cell)!=1):
+        raise TypeError('invalid internal cell')
     if cell[0] is _UNSET_REF:raise NameError('Uninitialized reference')
     return CellReference(cell)
 
@@ -81,3 +83,15 @@ def host_reference(getter,setter,name,storage,activation,context):
     def set(value):
         check();setter(value);check()
     return _host_name_reference(get,set,name)
+
+
+class PublishedModuleCell:
+    """A lexical module cell also visible to an enclosing external call."""
+    __slots__=('cell','state','key')
+    def __init__(self,cell,state,key):
+        self.cell,self.state,self.key=cell,state,key
+    def __getitem__(self,index):
+        return self.cell[index]
+    def __setitem__(self,index,value):
+        self.cell[index]=value
+        self.state[self.key]=public_number(value)
