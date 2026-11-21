@@ -52,7 +52,7 @@ class PlainTableRuntimeTests(unittest.TestCase):
         t.indexes.add('N')
         self.assertEqual(t.indexes.count(), 1)
         self.assertEqual(t._search.builds, 0)
-        with self.assertRaises(NotImplementedError):t.columns.move(0,1)
+        with self.assertRaises(IndexError):t.columns.move(0,1)
     def test_row_identity_comparison_never_compares_payloads(self):
         class Hostile:
             def __eq__(self,other):raise AssertionError('payload equality')

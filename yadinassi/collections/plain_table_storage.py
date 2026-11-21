@@ -295,6 +295,26 @@ class TableStorage:
         for row in self.rows:
             list.insert(row, position, default)
 
+    def move_column(self, old, new):
+        if type(old) is not int or type(new) is not int:
+            raise TypeError('storage column positions must be exact int')
+        self.validate()
+        schema = self.schema
+        width = len(schema._names)
+        if not (0 <= old < width and 0 <= new < width):
+            raise IndexError('column index out of range')
+        if old == new:
+            return
+        names, metadata, defaults = schema._names[:], schema._metadata[:], schema._defaults[:]
+        for items in (names, metadata, defaults):
+            items.insert(new, items.pop(old))
+        schema._publish(names, metadata, defaults)
+        for row in self.rows:
+            # Existing cells move with the column; neither equality nor
+            # assignment conversion belongs to this structural operation.
+            list.insert(row, new, list.pop(row, old))
+        self.epoch += 1
+
     def rename_column(self, old_name, new_name):
         schema = self.schema
         old = schema.resolve(old_name)

@@ -173,7 +173,50 @@ class BSLValueTableColumnCollection(BSLObject):
         self.table._search.declarations=declarations
         self.table._search.cache.clear()
         return column
-    def move(self,*args):raise NotImplementedError('column reordering is parked')
+    def move(self,column,offset):
+        table=self.table
+        if type(table) is not BSLValueTable:raise ValueError('foreign table')
+        _writable(table)
+        if type(offset) is int:distance=offset
+        elif type(offset) is Decimal and offset.is_finite():distance=offset.to_integral_value(rounding=ROUND_DOWN)
+        else:raise TypeError('column offset must be a finite number')
+        storage=table._storage
+        if (type(storage) is not TableStorage or storage.owner is not table
+                or storage.row_factory is not BSLValueTableRow or storage.rows is not table.rows
+                or type(storage.schema) is not Schema or table.columns is not self
+                or type(self._items) is not list or type(storage.schema._metadata) is not list
+                or len(self._items)!=len(storage.schema._metadata)):
+            raise ValueError('noncanonical column storage')
+        for existing,metadata in zip(self._items,storage.schema._metadata):
+            if (type(existing) is not BSLValueTableColumn or existing is not metadata
+                    or existing.table is not table or existing._deleted is not False):
+                raise ValueError('noncanonical column storage')
+        old=self._index_of(self.resolve(column))
+        size=len(self._items)
+        # Check distance before converting a potentially very large Decimal.
+        if not -old<=distance<size-old:raise IndexError('column index out of range')
+        new=old+int(distance)
+        if old==new:return
+        indexes,search=table.indexes,table._search
+        if (type(indexes) is not BSLCollectionIndexes or indexes.table is not table
+                or type(indexes.items) is not list or type(search) is not SearchIndexes
+                or type(search.cache) is not dict):
+            raise ValueError('noncanonical index declarations')
+        order=list(range(size))
+        order.insert(new,order.pop(old))
+        offsets=[0]*size
+        for position,previous in enumerate(order):offsets[previous]=position
+        shifted=[]
+        for signature in indexes.items:
+            if type(signature) is not tuple or any(type(i) is not int or not 0<=i<size for i in signature):
+                raise ValueError('noncanonical index declaration')
+            shifted.append(tuple(sorted(offsets[i] for i in signature)))
+        declarations=set(shifted)
+        storage.move_column(old,new)
+        self._items.insert(new,self._items.pop(old))
+        indexes.items[:]=shifted
+        search.declarations=declarations
+        search.cache.clear()
     def get_member(self,name):return self.get_index(name)
     def set_index(self,*args):raise ValueError('columns cannot be replaced')
     def get_method(self,name):return _method(self,name,(
