@@ -179,6 +179,8 @@ def _compile(owner,program,*,exports=False,layout=(),_extra_externals=(),_callab
 
 
 class SourceBoundary(ServicesBoundary,BoundaryContext):
+    _construct_fixed = staticmethod(fixed.construct_source)
+
     def __init__(self,owner,plan):
         # The boundary dispatches through the existing live registry. Do not
         # copy and normalize it just to discard that copy on the next line.

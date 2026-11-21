@@ -5,6 +5,7 @@ from yadinassi.collections.structures import BSLStructure, BSLFixedStructure, BS
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 from .python_direct_plain_map import PlainMap, PlainFixedMap
+from .python_direct_numbers import public_number
 
 FACTORIES=(BSLFixedArray,BSLFixedStructure,BSLFixedMap)
 
@@ -35,6 +36,21 @@ def construct(factory,arguments):
     if factory is BSLFixedArray and len(arguments)==1 and type(arguments[0]) in (list,BSLArray):
         return _freeze(arguments[0],set())
     return factory(*arguments)
+
+def construct_source(factory, arguments):
+    if factory is BSLFixedMap and len(arguments) == 1 and type(arguments[0]) is PlainMap:
+        # Source session/reuse already accepts the canonical fixed snapshot.
+        # Text/Undefined keys have the same identity in both map families.
+        # Keep native lookup on maps with numeric/boolean aliasing or
+        # other plain-only key types instead of silently retagging them.
+        view = BSLMap()
+        for key, value in dict.items(arguments[0]):
+            kind = type(key)
+            if kind is not str and key is not None:
+                return construct(factory, arguments)
+            view._items[(kind, key)] = key, public_number(value)
+        return BSLFixedMap(view)
+    return construct(factory, arguments)
 
 def _freeze(source,active):
     identity=id(source)
