@@ -1754,7 +1754,12 @@ class SQLiteCatalogBackend:
                             from yadinassi.configuration.configuration_inventory_enums import _same
                             if not _same(descriptor, current):
                                 raise BackendError('schema_changed')
-                view = _View(self, connection, operation_id)
+                # The pinned format-16 source admission proved this UUID and
+                # requires generation 1. A warm descriptor reuses that proof
+                # only on the unchanged read snapshot above. Other callers
+                # and formats still obtain the identity from their connection.
+                identity = (UUID(int=self.database_id.int), 1) if self.format_version == 16 else None
+                view = _View(self, connection, operation_id, admitted_identity=identity)
                 if handle is not None:
                     view._read_handle = handle
                     view._validated_sources = handle.pin() if proofs is None else proofs
@@ -1974,7 +1979,7 @@ class SQLiteCatalogBackend:
 
 
 class _View:
-    def __init__(self, backend, connection, operation_id, *, query_language=False):
+    def __init__(self, backend, connection, operation_id, *, query_language=False, admitted_identity=None):
         self._backend, self._connection, self._operation_id = backend, connection, operation_id
         self._query_language = query_language
         self._closed = False; self._poisoned = False; self._changes = []; self._intents = []
@@ -1990,13 +1995,28 @@ class _View:
             self.database_id = backend.database_id
             self.configuration_generation = backend.configuration_generation
             return
-        row = connection.execute('SELECT database_uuid,generation FROM database_info WHERE singleton=1').fetchone()
-        self.database_id, self.configuration_generation = UUID(row[0]), row[1]
-        if operation_id is not None and backend.format_version in (11, 12, 13, 14, 15, 16) and connection.execute('SELECT 1 FROM unit_of_work_receipt WHERE operation_id=?',(str(operation_id),)).fetchone(): raise BackendError('conflict')
-        if operation_id is not None and connection.execute('SELECT 1 FROM commit_receipt WHERE operation_id=?',(str(operation_id),)).fetchone() is not None:
-            raise BackendError('conflict')
-        if operation_id is not None and backend.storage_version in (7, 8, 9, 10) and connection.execute('SELECT 1 FROM document_commit_receipt WHERE operation_id=?', (str(operation_id),)).fetchone(): raise BackendError('conflict')
-        if operation_id is not None and backend.storage_version in (8, 9, 10) and connection.execute('SELECT 1 FROM information_register_receipt WHERE operation_id=?', (str(operation_id),)).fetchone(): raise BackendError('conflict')
+        if admitted_identity is None:
+            row = connection.execute('SELECT database_uuid,generation FROM database_info WHERE singleton=1').fetchone()
+            admitted_identity = UUID(row[0]), row[1]
+        self.database_id, self.configuration_generation = admitted_identity
+        if operation_id is not None:
+            operation = str(operation_id)
+            if backend.format_version == 16:
+                # The exact format-16 DDL has already been admitted, and
+                # BEGIN IMMEDIATE protects the three namespaces up to the write.
+                # EXISTS stops at the first indexed operation ID match.
+                if connection.execute(
+                        'SELECT EXISTS(SELECT 1 FROM unit_of_work_receipt WHERE operation_id=?1 '
+                        'UNION ALL SELECT 1 FROM commit_receipt WHERE operation_id=?1 '
+                        'UNION ALL SELECT 1 FROM document_commit_receipt WHERE operation_id=?1)',
+                        (operation,)).fetchone()[0]:
+                    raise BackendError('conflict')
+            else:
+                if backend.format_version in (11, 12, 13, 14, 15) and connection.execute('SELECT 1 FROM unit_of_work_receipt WHERE operation_id=?',(operation,)).fetchone(): raise BackendError('conflict')
+                if connection.execute('SELECT 1 FROM commit_receipt WHERE operation_id=?',(operation,)).fetchone() is not None:
+                    raise BackendError('conflict')
+                if backend.storage_version in (7, 8, 9, 10) and connection.execute('SELECT 1 FROM document_commit_receipt WHERE operation_id=?', (operation,)).fetchone(): raise BackendError('conflict')
+                if backend.storage_version in (8, 9, 10) and connection.execute('SELECT 1 FROM information_register_receipt WHERE operation_id=?', (operation,)).fetchone(): raise BackendError('conflict')
         if self.database_id != backend.database_id or self.configuration_generation != backend.configuration_generation:
             raise BackendError('schema_changed')
 

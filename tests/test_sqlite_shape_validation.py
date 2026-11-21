@@ -3,10 +3,11 @@ from contextlib import closing
 from dataclasses import replace
 import unittest
 from unittest.mock import patch
+from uuid import UUID
 
 import test_sqlite_transaction_source as fixture
 from yadinassi.db.sqlite import sqlite_main_demo_profile as profile
-from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.catalog.catalog_backend import BackendError, FieldSchema
 
 
 class ExistingShapeValidationTests(unittest.TestCase):
@@ -32,6 +33,33 @@ class ExistingShapeValidationTests(unittest.TestCase):
             with patch.object(profile._storage(), '_schema', return_value=None):
                 with self.assertRaises(BackendError):
                     profile.validate_main_demo_ddl(view._connection, self.backend.accumulation_configuration, self.backend._enum_domain)
+
+    def test_catalog_codec_serializes_only_once_per_catalog(self):
+        config, domain = self.backend.accumulation_configuration, self.backend._enum_domain
+        storage = profile._storage()
+        with patch.object(storage, '_json', wraps=storage._json) as encode, \
+             patch.object(storage, '_schema', wraps=storage._schema) as decode:
+            profile._validate_catalogs(config.catalogs, domain)
+        self.assertEqual(encode.call_count, len(config.catalogs))
+        self.assertEqual(decode.call_count, len(config.catalogs))
+
+    def test_overlong_serialization_rejects_before_decode(self):
+        catalog = self.backend.accumulation_configuration.catalogs[0]
+        fields = tuple(FieldSchema(UUID(int=i + 1), '😀' * 124 + f'{i:04d}', 'boolean', ())
+                       for i in range(64))
+        candidate = replace(catalog, fields=fields)
+        storage, domain = profile._storage(), self.backend._enum_domain
+        data = storage._schema_data(candidate, enforce_serialized_limit=False, enum_domain=domain)
+        self.assertGreater(len(storage._json(data)), 65536)
+        with patch.object(storage, '_schema', side_effect=AssertionError('decode over limit')):
+            with self.assertRaisesRegex(BackendError, '^invalid_input$'):
+                profile._validate_catalogs((candidate,), domain)
+
+    def test_catalog_serialized_aggregate_bound_is_retained(self):
+        config, domain = self.backend.accumulation_configuration, self.backend._enum_domain
+        with patch.object(profile._storage(), '_MAX_CONFIG_BYTES', 1):
+            with self.assertRaisesRegex(BackendError, '^unsupported$'):
+                profile._validate_catalogs(config.catalogs, domain)
 
     def test_forged_config_and_domain_still_reject(self):
         config = self.backend.accumulation_configuration

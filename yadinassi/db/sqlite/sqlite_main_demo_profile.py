@@ -41,7 +41,10 @@ def _validate_catalogs(catalogs, domain):
         raise BackendError('invalid_input')
     identities = set(); names = set(); total = 0; sections_count = 0
     for catalog in catalogs:
-        raw = s._json(s._schema_data(catalog, enum_domain=domain))
+        raw = s._json(s._schema_data(catalog, enforce_serialized_limit=False, enum_domain=domain))
+        # Apply the encoder's same character limit to the JSON we already need.
+        if len(raw) > 65536:
+            raise BackendError('invalid_input')
         total += len(raw.encode('utf-8'))
         if (s._schema(raw, allow_numbering=True, enum_domain=domain) != catalog
                 or catalog.hierarchy != 'none' or catalog.identity in identities
