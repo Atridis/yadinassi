@@ -15,7 +15,8 @@ except ImportError:
     _CDecimal = None
 
 from yadinassi.temporal.dates import BSLDate
-from yadinassi.streams.data_compression import compression_degree, compress_payload, expand_payload
+from yadinassi.streams import data_compression as _direct_compression
+from yadinassi.streams.data_compression import BSLDeflation, compression_degree, compress_payload, expand_payload
 from yadinassi.streams.file_io import BSLBinaryData
 from yadinassi.collections.maps import BSLFixedMap, BSLMap, _key as map_key
 from yadinassi.collections.structures import BSLFixedStructure, BSLStructure, _key as structure_key
@@ -23,6 +24,8 @@ from yadinassi.types.unique_identifiers import BSLUUID
 from yadinassi.collections.value_tables import BSLValueTable
 from .value_storage_table import TableSnapshotError, restore_table, take_table
 from yadinassi.types.values import BSLArray, BSLFixedArray, BSLObject, HostFunction, NULL
+from yadinassi.execution.direct.python_direct_plain_array import PlainArray as _PlainArray
+from yadinassi.execution.direct.python_direct_plain_map import PlainMap as _PlainMap
 
 # Local defensive budgets, not platform limits. Nodes count occurrences,
 # including scalars and map keys; text/binary/digit totals count occurrences.
@@ -68,6 +71,10 @@ class Snapshot:
     # The payload consists only of immutable builtin primitives and tuples.
     # This is a private, trusted in-process value, not an external format.
     _root: tuple = field(repr=False)
+
+
+def _native_map_key(kind):
+    return kind is str or kind is Decimal or kind is bool or kind is int or kind is type(None)
 
 
 class _Capture:
@@ -130,7 +137,8 @@ class _Capture:
                             or kind is BSLMap or kind is BSLFixedMap
                             or kind is BSLBinaryData or kind is BSLValueStorage
                             or kind is BSLValueTable
-                            or self.source_direct and (kind is list or kind is self.direct_structure or kind is self.direct_map))
+                            or self.source_direct and (kind is list or kind is _PlainArray or kind is _PlainMap
+                                                       or kind is self.direct_structure or kind is self.direct_map))
         if identity_bearing:
             self.remember(value, depth)
         try:
@@ -150,6 +158,10 @@ class _Capture:
             return ("null",)
         if kind is bool:
             return ("boolean", value)
+        if kind is int and self.source_direct:
+            if value.bit_length() > 4 * MAX_NUMBER_DIGITS:
+                raise SnapshotError("snapshot number budget exceeded")
+            value, kind = Decimal(value), Decimal
         if kind is Decimal:
             digits = _bounded_decimal(value)
             self.digits += digits
@@ -193,10 +205,21 @@ class _Capture:
             except TableSnapshotError:
                 raise SnapshotError("unsupported or invalid table snapshot") from None
         if self.source_direct:
-            if kind is list:
-                if len(value) > MAX_NODES - self.nodes:
+            if kind is list or kind is _PlainArray:
+                if list.__len__(value) > MAX_NODES - self.nodes:
                     raise SnapshotError("invalid or oversized array")
-                return ("array", tuple(self.take(item, depth + 1) for item in value))
+                return ("array", tuple(self.take(item, depth + 1) for item in list.__iter__(value)))
+            if kind is _PlainMap:
+                if dict.__len__(value) > (MAX_NODES - self.nodes) // 2:
+                    raise SnapshotError("invalid or oversized map")
+                entries = []
+                for key, item in dict.items(value):
+                    if not _native_map_key(type(key)):
+                        raise SnapshotError("invalid native map key")
+                    entries.append((self.take(key, depth + 1), self.take(item, depth + 1)))
+                # Preserve native Python numeric-key equivalence on Get. The
+                # existing map tag uses BSLMap's distinct typed-key equality.
+                return ("native_map", tuple(entries))
             if kind is self.direct_map:
                 if dict.__len__(value) > (MAX_NODES - self.nodes) // 2:
                     raise SnapshotError("invalid or oversized map")
@@ -349,10 +372,10 @@ class _Restore:
             # Validate the complete immutable child tree within this budget.
             self.take(node[1], depth + 1)
             return BSLValueStorage._from_snapshot(Snapshot(node[1]))
-        if (tag in ("array", "fixed_array", "structure", "fixed_structure", "map", "fixed_map")
+        if (tag in ("array", "fixed_array", "structure", "fixed_structure", "map", "fixed_map", "native_map")
                 and len(node) == 2 and type(node[1]) is tuple):
             body = node[1]
-            width = 2 if tag in ("map", "fixed_map") else 1
+            width = 2 if tag in ("map", "fixed_map", "native_map") else 1
             if len(body) > (MAX_NODES - budget.nodes) // width:
                 raise SnapshotError("snapshot node budget exceeded")
             if tag in ("array", "fixed_array"):
@@ -375,6 +398,18 @@ class _Restore:
                         raise SnapshotError("duplicate structure key")
                     result.insert(name, self.take(pair[1], depth + 1))
                 return result if tag == "structure" else BSLFixedStructure(result)
+            if tag == "native_map":
+                result = dict.__new__(_PlainMap)
+                for pair in body:
+                    if type(pair) is not tuple or len(pair) != 2:
+                        raise SnapshotError("invalid map snapshot")
+                    key = self.take(pair[0], depth + 1)
+                    if not _native_map_key(type(key)):
+                        raise SnapshotError("invalid native map key")
+                    if dict.__contains__(result, key):
+                        raise SnapshotError("duplicate map key")
+                    dict.__setitem__(result, key, self.take(pair[1], depth + 1))
+                return result
             result = BSLMap()
             for pair in body:
                 if type(pair) is not tuple or len(pair) != 2:
@@ -439,7 +474,7 @@ _DIRECT_VALUE_STORAGE_FIELDS=((BSLValueStorage,'_snapshot',vars(BSLValueStorage)
                               (BSLDate,'boundary',vars(BSLDate)['boundary']),
                               (BSLUUID,'text',vars(BSLUUID)['text']))
 _DIRECT_VALUE_STORAGE_FUNCTIONS=tuple((name,globals()[name]) for name in (
-    'capture','restore','_required_field','_bounded_decimal','compression_degree',
+    'capture','restore','_required_field','_bounded_decimal','_native_map_key','compression_degree',
     'compress_payload','expand_payload','map_key','structure_key','take_table','restore_table'))
 
 _DIRECT_VALUE_STORAGE_CLASSES=tuple((name,globals()[name]) for name in ('_Capture','_Restore','BSLValueStorage','Snapshot','BSLDate','BSLUUID'))
@@ -456,9 +491,9 @@ _DIRECT_VALUE_STORAGE_DYNAMIC_FIELDS=(
 from . import value_storage_table as _direct_table_snapshot
 _DIRECT_VALUE_STORAGE_RECEIVER_BINDINGS=tuple(
     (module,name,value)
-    for module in (sys.modules[__name__],_direct_table_snapshot)
+    for module in (sys.modules[__name__],_direct_table_snapshot,_direct_compression)
     for name,value in tuple(vars(module).items())
-    if (name.startswith('BSL') or (module is _direct_table_snapshot and name in ('Schema','TableStorage','SearchIndexes'))) and isinstance(value,type)
+    if (name.startswith('BSL') or name in ('_PlainArray','_PlainMap') or (module is _direct_table_snapshot and name in ('Schema','TableStorage','SearchIndexes'))) and isinstance(value,type)
 )
 _DIRECT_VALUE_STORAGE_RECEIVER_CLASSES=tuple(
     (cls,tuple(vars(cls).items()),cls.__mro__)

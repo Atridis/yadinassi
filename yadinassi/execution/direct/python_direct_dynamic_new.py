@@ -29,9 +29,9 @@ def construct(context,target,parameters=None):
         name=next((name for member,name in _DIRECT_DYNAMIC_TYPE_NAMES if target is member),None)
         if name is None:raise TypeError('Новый: ожидается имя типа или значение Тип')
     key=name.casefold()
-    from .python_direct_services import CONSTRUCTORS
+    from .python_direct_services import ORDINARY_CONSTRUCTORS
     from .python_direct_value_tree import CONSTRUCTOR_NAMES as TREE_NAMES
-    if key not in _NATIVE and key not in CONSTRUCTORS and key not in TREE_NAMES and key not in ('uuid','уникальныйидентификатор'):
+    if key not in _NATIVE and key not in ORDINARY_CONSTRUCTORS and key not in TREE_NAMES and key not in ('uuid','уникальныйидентификатор'):
         raise ValueError('Тип не определен или не имеет direct конструктора: '+name)
     # No arbitrary iterable expansion, deep copying, or BSLFixedArray expansion.
     if type(parameters) is BSLArray:

@@ -58,9 +58,14 @@ class DirectSourceValueStorage(unittest.TestCase):
         with self.assertRaises(Exception):vm.execute('S=New ValueStorage(Touch(),Touch());')
         self.assertEqual(effects,[])
 
-    def test_standalone_constructor_remains_unavailable(self):
+    def test_plain_value_storage_is_separate_from_source_scalar_get(self):
         vm=Interpreter();self.addCleanup(vm.close)
-        with self.assertRaises((Exception,BoundaryViolation)):vm.execute('S=New ValueStorage(1);')
+        self.assertEqual(vm.execute('S=New ValueStorage(1); S.Get();'),1)
+        self.assertEqual(vm.execute('S=New ValueStorage(New Structure("Value",2)); S.Get().Value;'),2)
+        owner=self.app().interpreter
+        owner.execute('S=New ValueStorage(New Structure("Value",2));')
+        with self.assertRaisesRegex(BSLError,'scalar snapshots only'):
+            owner.execute('S.Get();')
 
     def test_source_form_scalar_storage(self):
         import test_source_forms as forms

@@ -1742,9 +1742,9 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     emitter.link_imports=bool(imported) and emitter.standalone_script and (
         vm._family_owner.__dict__.get('_standalone_script') is True)
     if _require_last_expression:emitter.require_last_expression=program[-1]
-    from yadinassi.execution.direct.python_direct_services import CONSTRUCTORS
+    from yadinassi.execution.direct.python_direct_services import ORDINARY_CONSTRUCTORS
     from yadinassi.execution.direct.python_direct_value_tree import CONSTRUCTOR_NAMES as TREE_NAMES
-    emitter.constructor_names=frozenset(CONSTRUCTORS)|frozenset(TREE_NAMES)|{'uuid','уникальныйидентификатор'}
+    emitter.constructor_names=frozenset(ORDINARY_CONSTRUCTORS)|frozenset(TREE_NAMES)|{'uuid','уникальныйидентификатор'}
     from yadinassi.execution.direct.python_direct_database import NAMES as DATABASE_NAMES
     emitter.external_names=set(NAMES)
     if _profile is None and vm.database_context is not None:

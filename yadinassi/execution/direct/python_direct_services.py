@@ -10,6 +10,8 @@ from yadinassi.streams.file_io import (
 )
 from yadinassi.streams.text_documents import BSLTextDocument
 from .source import python_direct_source_resources as text_resources
+from yadinassi.formats.storage.value_storage import BSLValueStorage
+from yadinassi.streams.data_compression import BSLDeflation
 from yadinassi.http.http_client import BSLHTTPConnection, BSLHTTPRequest
 from yadinassi.streams.binary_streams import BSLBinaryDataBuffer
 from yadinassi.formats.json.json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings, read_json, write_json
@@ -87,6 +89,14 @@ CONSTRUCTORS = {
         (('resultofsearchbyregularexpression','результатпоискапорегулярномувыражению'),None),
         (('resultofsearchbyregularexpressiongroup','группарезультатапоискапорегулярномувыражению'),None),
     ) for alias in aliases
+}
+
+# Source/NoContext/Forms consume CONSTRUCTORS plus their own declarations.
+# They do not inherit the optional compression or unrestricted Get contract.
+ORDINARY_CONSTRUCTORS = {
+    **CONSTRUCTORS,
+    'valuestorage': BSLValueStorage, 'хранилищезначения': BSLValueStorage,
+    'deflation': BSLDeflation, 'сжатиеданных': BSLDeflation,
 }
 
 def _string_callable(context,function,*,name=None,require_value=False,allow_references=False,**unused):
@@ -170,6 +180,11 @@ class ServicesBoundary:
         return super().resolve_member(value,name)
 
     def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
+        if type(value) is BSLValueStorage:
+            from yadinassi.runtime import Interpreter
+            if type(self.vm) is Interpreter:
+                from .python_direct_value_storage import resolve_get
+                return resolve_get(self,value,name,omitted=omitted)
         if type(value) is user_messages.BSLUserMessage:return user_messages.resolve(self,value,name,require_value=require_value,omitted=omitted)
         if type(value) is fixed.PlainFixedMap:
             if omitted:raise TypeError('FixedMap method argument omission is unsupported')
@@ -360,9 +375,9 @@ class ServicesBoundary:
             raise ValueError('foreign or inactive source common template owner')
         if key.startswith('new:') and key[4:] in text_resources.CONSTRUCTOR_NAMES:
             return text_resources.resolve_constructor(self,key,**kwargs)
-        if key.startswith('new:') and key[4:] in CONSTRUCTORS:
+        if key.startswith('new:') and key[4:] in ORDINARY_CONSTRUCTORS:
             if self._verify_context:self._check()
-            expected=CONSTRUCTORS[key[4:]]
+            expected=ORDINARY_CONSTRUCTORS[key[4:]]
             if expected is None:
                 raise ValueError('Тип не определен: '+name[4:])
             factory=self.vm.types.get(key[4:])
@@ -376,6 +391,12 @@ class ServicesBoundary:
                 raise ValueError('Тип не определен: '+name[4:])
             if type(factory) is not HostFunction or factory.function is not expected:
                 raise BoundaryViolation('direct constructor requires canonical registration: '+key[4:])
+            if expected is BSLValueStorage or expected is BSLDeflation:
+                from yadinassi.runtime import Interpreter
+                if type(self.vm) is not Interpreter:
+                    raise BoundaryViolation('direct ValueStorage/Deflation requires an ordinary interpreter')
+                from .python_direct_value_storage import constructor
+                return constructor(self,key[4:],factory,**kwargs)
             bound=super().resolve_callable(factory)
             if expected in (BSLDOMBuilder,BSLDOMWriter,BSLDOMDocument,BSLDOMNamespaceResolver,BSLXMLReader,BSLXMLWriter,BSLXMLReaderSettings,BSLXMLWriterSettings,BSLHTTPConnection,BSLHTTPRequest,BSLFile,BSLBinaryData,BSLBinaryDataBuffer,BSLValueList,BSLValueTable,BSLTypeDescription,BSLNumberQualifiers,BSLStringQualifiers,BSLDateQualifiers,BSLBinaryDataQualifiers):
                 original=bound

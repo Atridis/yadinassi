@@ -57,11 +57,11 @@ def _evaluate(value,context,parent,bindings,visible,profile):
         from yadinassi.syntax.ast import ExpressionStatement
         from .python_direct import _source_facts,_admit_bindings,_contract,REPAIRS
         from yadinassi.execution.codegen.experimental_direct_ast import compile_module, compile_owned
-        from .python_direct_services import CONSTRUCTORS
+        from .python_direct_services import ORDINARY_CONSTRUCTORS
         from .python_direct_names import NAMES
         from .python_direct_database import NAMES as DB_NAMES
         from .python_direct_execute import FragmentScope
-        constructor_names=('uuid','уникальныйидентификатор',*CONSTRUCTORS)+(('query','запрос') if vm.database_context is not None else ())
+        constructor_names=('uuid','уникальныйидентификатор',*ORDINARY_CONSTRUCTORS)+(('query','запрос') if vm.database_context is not None else ())
         external_names=tuple(NAMES)+(DB_NAMES if vm.database_context is not None else ())
         if profile is not None:constructor_names,external_names=profile
         else:

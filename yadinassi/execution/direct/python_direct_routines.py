@@ -52,11 +52,11 @@ def prepare(vm, program, plan, *, retain_generated=True):
     if server_names or initializer_body or any(type(n) is ast.Routine and n.is_dual for n in declarations):
         from yadinassi.execution.codegen.experimental_direct_ast import compile_owned as compile_server
         from .python_direct import REPAIRS
-        from .python_direct_services import CONSTRUCTORS
+        from .python_direct_services import ORDINARY_CONSTRUCTORS
         from .python_direct_names import NAMES
         from yadinassi.db.database_context import SQLiteDBContext
         external_names=tuple(NAMES)
-        base_constructors=tuple(CONSTRUCTORS)+('uuid','уникальныйидентификатор')
+        base_constructors=tuple(ORDINARY_CONSTRUCTORS)+('uuid','уникальныйидентификатор')
         # Recognize Query even without a database; its factory checks at use.
         constructor_names=base_constructors+('query','запрос')
         if type(vm.database_context) is SQLiteDBContext:
