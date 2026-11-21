@@ -162,7 +162,7 @@ def builtin_binding(value, entry):
 
 
 class ServicesBoundary:
-    _construct_fixed = staticmethod(fixed.construct)
+    _source_fixed_constructor = None
 
     def _check_extension_binding(self, key):
         if not getattr(self,'_restrict_python_extensions',False):
@@ -475,6 +475,7 @@ class ServicesBoundary:
                 bound=guarded
             if expected in fixed.FACTORIES:
                 factory_name=factory.name.casefold()
+                source_constructor=self._source_fixed_constructor
                 def fixed_constructor(*values):
                     if self._verify_context:self._check()
                     if factory.function is not expected:
@@ -482,7 +483,8 @@ class ServicesBoundary:
                     self._before('call_value',factory_name)
                     if factory.function is not expected:
                         raise BoundaryViolation('canonical fixed constructor changed at policy boundary')
-                    try:return self._construct_fixed(expected,values)
+                    constructor=fixed.construct if source_constructor is None else source_constructor
+                    try:return constructor(expected,values)
                     except PermissionError as error:raise BoundaryViolation(str(error)) from error
                     finally:
                         if self._verify_context:self._check()
