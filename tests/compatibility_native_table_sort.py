@@ -118,6 +118,8 @@ def render_bsl_orders(results):
              'Только точный порядок считается диагностикой. Статус, все строки и ссылка на исходную строку проверяются в Light.',
              'Ключи показаны в кавычках, чтобы были видны пробелы.', '']
     for dataset, order, keys, actual, native in results:
+        if actual == native:
+            continue
         lines.append(f'- **{dataset}; `{order}`**')
         for label, ids in (('yadinassi', actual), ('1С', native)):
             sequence = ', '.join(repr(keys[int(identifier) - 1]) for identifier in ids)
@@ -128,7 +130,7 @@ def render_bsl_orders(results):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--summary-output', type=Path,
-                        help='Write the first 10 historical examples and all four BSL probes for CI Summary')
+                        help='Write up to 10 historical examples and any differing BSL probes for CI Summary')
     args = parser.parse_args()
     results = list(historic_cases())  # Validate all 96 even when displaying ten.
     bsl_orders = render_bsl_orders(list(bsl_order_cases()))

@@ -157,6 +157,19 @@ def probe_table(size, insertion):
 
 
 class NativeTargetSortTests(unittest.TestCase):
+    def test_bsl_report_lists_only_different_row_orders(self):
+        from tests.compatibility_native_table_sort import render_bsl_orders
+
+        matched = ('exact-match', 'Key', ['A', 'A'], [1, 2], [1, 2])
+        different = ('changed-ids', 'Key', ['A', 'A'], [2, 1], [1, 2])
+        report = render_bsl_orders([matched, different])
+        self.assertIn('Проверено: 2/4. Расхождений: 1.', report)
+        self.assertNotIn('exact-match', report)
+        self.assertIn('changed-ids', report)  # Equal displayed keys, different rows.
+        report = render_bsl_orders([matched])
+        self.assertIn('Проверено: 1/4. Расхождений: 0.', report)
+        self.assertNotIn('exact-match', report)
+
     def test_fixture_covers_all_96_exact_native_records(self):
         expected_cases = set(product(range(15, 19), INSERTIONS, ORDERS))
         self.assertEqual(set(NATIVE_ORDERS), expected_cases)
