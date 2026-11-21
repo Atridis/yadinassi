@@ -57,12 +57,28 @@ class CatalogRuntimeDataTests(unittest.TestCase):
         if self.backend._read_handle is not None:
             self.backend._read_handle.connection.set_trace_callback(statements.append)
         with patch.object(sqlite3, 'connect', observe):
-            # Use both handles first, outside the measured statements.
-            self.vm.execute('O=Ref.GetObject();O.Write();')
-            statements.clear()
-            self.vm.execute('O=Ref.GetObject();O.Description="Standalone";O.Write();D=Ref.Description;')
-        self.assertEqual(self.vm.variables['d'], 'Standalone')
-        self.assertEqual([sql.split()[0] for sql in statements], ['SELECT', 'UPDATE', 'SELECT'])
+            self.vm.execute('C=Catalogs.ВидыНоменклатуры.CreateItem();C.Write();Other=C.Ref;')
+            for reference in ('Ref', 'Other'):
+                with self.subTest(reference=reference):
+                    # Warm both handles outside recorded SQL.
+                    self.vm.execute(f'O={reference}.GetObject();O.Write();')
+                    statements.clear()
+                    self.vm.execute(f'O={reference}.GetObject();O.Description="Standalone";'
+                                    f'O.Write();D={reference}.Description;')
+                    self.assertEqual(self.vm.variables['d'], 'Standalone')
+                    self.assertEqual([sql.split()[0] for sql in statements],
+                                     ['SELECT', 'UPDATE', 'SELECT'])
+
+    def test_explicit_transaction_keeps_catalog_stage_and_rollback(self):
+        from yadinassi.db.sqlite import sqlite_single_statement
+
+        self.vm.execute('O=Ref.GetObject();')
+        before = self.snapshot()
+        with patch.object(sqlite_single_statement, 'execute_write',
+                          side_effect=AssertionError('standalone writer in explicit transaction')):
+            self.vm.execute('BeginTransaction();O.Description="Staged";O.Write();RollbackTransaction();')
+        self.assertEqual(self.snapshot(), before)
+        self.assertIsNone(self.backend._active)
 
     def test_implicit_update_with_unknown_ack_requires_fresh_object(self):
         from yadinassi.db.sqlite import sqlite_single_statement
