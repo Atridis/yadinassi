@@ -192,17 +192,32 @@ def _snapshot(value):
     from yadinassi.syntax.lexer import Token
     from yadinassi.temporal.dates import BSLDate
     from yadinassi.types.values import NULL
-    kind=type(value)
-    if value is NULL or any(kind is cls for cls in (str,int,float,bool,Decimal,type(None),BSLDate)):
-        return value
-    if kind is list:return [_snapshot(item) for item in value]
-    if kind is tuple:return tuple(_snapshot(item) for item in value)
-    node_types=tuple(cls for cls in vars(ast).values() if isinstance(cls,type) and issubclass(cls,ast.Node))
-    if kind is Token or any(kind is cls for cls in node_types):
-        if kind is ast.Literal and not (value.value is NULL or any(type(value.value) is cls for cls in (str,int,float,bool,Decimal,type(None),BSLDate))):
-            _reject('prepared AST literals require immutable parser values')
-        return kind(**{field.name:_snapshot(getattr(value,field.name)) for field in fields(value)})
-    _reject('prepared AST contains unsupported host payloads')
+
+    # Capture the current syntax vocabulary once per copy. Retain actual classes
+    # as values, but check IDs so unadmitted types cannot run metaclass hooks.
+    base = ast.Node
+    literal = ast.Literal
+    nodes = {id(cls): cls for cls in vars(ast).values()
+             if isinstance(cls, type) and issubclass(cls, base)}
+    nodes[id(Token)] = Token
+    scalars = {id(cls): cls for cls in (str, int, float, bool, Decimal, type(None), BSLDate)}
+
+    def copy_node(item):
+        kind = type(item)
+        identity = id(kind)
+        if item is NULL or identity in scalars:
+            return item
+        if kind is list:
+            return [copy_node(part) for part in item]
+        if kind is tuple:
+            return tuple(copy_node(part) for part in item)
+        if identity in nodes:
+            if kind is literal and not (item.value is NULL or id(type(item.value)) in scalars):
+                _reject('prepared AST literals require immutable parser values')
+            return kind(**{field.name: copy_node(getattr(item, field.name)) for field in fields(item)})
+        _reject('prepared AST contains unsupported host payloads')
+
+    return copy_node(value)
 
 
 def prepare_module(vm,program,*,source_text=None,source_name=None):

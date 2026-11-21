@@ -1,7 +1,7 @@
 import unittest
 from decimal import Decimal
 from unittest.mock import patch
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, dataclass
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
@@ -26,6 +26,39 @@ class PreparedDirectTests(unittest.TestCase):
             def __deepcopy__(self,memo):raise AssertionError('host hook')
         nodes=parse('x=1;');nodes[0].value.value=Host()
         with self.assertRaisesRegex(PythonDirectUnsupported,'immutable parser'):Interpreter().prepare_program(nodes)
+
+    def test_snapshot_looks_up_exact_syntax_vocabulary_once_per_copy(self):
+        from yadinassi.execution.direct import python_direct as direct
+        from yadinassi.syntax import ast
+        from yadinassi.syntax.lexer import Token
+
+        class GuardedType(type):
+            def __hash__(self): raise AssertionError('host type hash')
+            def __eq__(self, other): raise AssertionError('host type equality')
+
+        @dataclass
+        class ExtensionNode(ast.Node, metaclass=GuardedType):
+            child: ast.Node
+
+        token = Token('NAME', 'n', 1, 1, 'test')
+        node = ExtensionNode(token, ast.Name(token, 'n'))
+        inventory_reads = []
+        def observe(owner):
+            inventory_reads.append(owner)
+            return vars(owner)
+
+        with patch.object(direct, 'vars', observe, create=True):
+            with self.assertRaisesRegex(PythonDirectUnsupported, 'unsupported host payloads'):
+                direct._snapshot([node])
+            with patch.object(ast, 'ExtensionNode', ExtensionNode, create=True):
+                copied = direct._snapshot([node, [node]])[0]
+                self.assertIs(type(copied), ExtensionNode)
+                self.assertIsNot(copied, node)
+                self.assertIsNot(copied.child, node.child)
+                self.assertIsNot(copied.token, token)
+            with self.assertRaisesRegex(PythonDirectUnsupported, 'unsupported host payloads'):
+                direct._snapshot([node])
+        self.assertEqual(inventory_reads, [ast, ast, ast])
 
     def test_cross_vm_current_registry(self):
         a=Interpreter(allow_extensions=True);b=Interpreter(allow_extensions=True);a.register_function('Read',lambda:1);b.register_function('Read',lambda:9)

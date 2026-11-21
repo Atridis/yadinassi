@@ -160,6 +160,16 @@ class BenchmarkDiagnosticTests(unittest.TestCase):
         self.assertEqual(set(case['statuses']), {'python'})
         with self.assertRaises(ValueError): bench.diagnose('form.event', 2, 'prepared')
 
+    def test_form_open_keeps_two_detached_copies_and_two_side_compilations(self):
+        case = bench.diagnose('form.open', 8, 'default')
+        self.assertEqual(case['operations_per_capture'], 1)
+        self.assertEqual(case['layers']['bsl']['result'], '1')
+        counts = case['layers']['bsl']['counters']
+        self.assertEqual(counts['prepared_ast_snapshot'], 2)
+        self.assertEqual(counts['direct_ast_compile'], 2)
+        self.assertEqual(counts['builtin_compile'], 2)
+        self.assertEqual(counts['sqlite_execute'], 0)
+
     def test_invalid_diagnostic_inputs_fail_before_any_fixture(self):
         with patch.object(bench.extended, 'make_case', side_effect=AssertionError('fixture touched')):
             for n in (True, 0, -1, 65, 2.0):
