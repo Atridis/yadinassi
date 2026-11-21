@@ -46,6 +46,44 @@ class CatalogRuntimeDataTests(unittest.TestCase):
             self.assertEqual(self.vm.execute('Ref.GetObject().Description'), 'Updated')
         self.assertEqual(self.snapshot(), ((before[0] + 1, 'Updated'), receipts))
 
+    def test_warm_scalar_points_and_revision_update_are_single_statements(self):
+        statements = []
+        connect = sqlite3.connect
+        def observe(*args, **kwargs):
+            connection = connect(*args, **kwargs)
+            connection.set_trace_callback(statements.append)
+            return connection
+
+        if self.backend._read_handle is not None:
+            self.backend._read_handle.connection.set_trace_callback(statements.append)
+        with patch.object(sqlite3, 'connect', observe):
+            # Use both handles first, outside the measured statements.
+            self.vm.execute('O=Ref.GetObject();O.Write();')
+            statements.clear()
+            self.vm.execute('O=Ref.GetObject();O.Description="Standalone";O.Write();D=Ref.Description;')
+        self.assertEqual(self.vm.variables['d'], 'Standalone')
+        self.assertEqual([sql.split()[0] for sql in statements], ['SELECT', 'UPDATE', 'SELECT'])
+
+    def test_implicit_update_with_unknown_ack_requires_fresh_object(self):
+        from yadinassi.db.sqlite import sqlite_single_statement
+
+        self.vm.execute('O=Ref.GetObject();')
+        before = self.snapshot()[0][0]
+        execute_write = sqlite_single_statement.execute_write
+        def lose_ack(*args):
+            self.assertEqual(execute_write(*args), 1)
+            raise sqlite3.OperationalError('acknowledgement lost')
+
+        with patch.object(sqlite_single_statement, 'execute_write', lose_ack):
+            with self.assertRaisesRegex(BSLError, 'uncertain_commit'):
+                self.vm.execute('O.Description="Persisted";O.Write();')
+        with self.assertRaisesRegex(BSLError, 'uncertain_commit'):
+            self.vm.execute('O.Description="Retry";O.Write();')
+        self.assertEqual(self.snapshot()[0], (before + 1, 'Persisted'))
+        self.assertIsNone(self.backend._active)
+        self.vm.execute('O=Ref.GetObject();O.Description="Fresh";O.Write();')
+        self.assertEqual(self.snapshot()[0], (before + 2, 'Fresh'))
+
     def test_two_catalogs_read_create_update_and_select_without_metadata_sql(self):
         # Both managers are part of the already opened data descriptor, with
         # distinct physical maps. SQL below records actual application work.

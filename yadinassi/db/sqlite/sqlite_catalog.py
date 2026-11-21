@@ -211,6 +211,12 @@ def _revision_number(token):
     return result
 
 
+def _single_catalog_scalar_schema(schema):
+    return (type(schema) is CatalogSchema and schema.hierarchy == 'none'
+            and not schema.tabular_sections
+            and all(field.kind != 'catalog_ref' for field in schema.fields))
+
+
 def _private_parent(path):
     try:
         parent = _host_directory(os.path.dirname(path))
@@ -1667,6 +1673,83 @@ class SQLiteCatalogBackend:
                 raise BackendError('unsupported')
         return self._begin(operation_id, _catalog_data=True)
 
+    def _catalog_scalar_codec(self, schema, key, generation, operation_id=None):
+        # This is a detached codec over the already opened descriptor, not a
+        # transaction or admitted view. Its selected schema has no sections,
+        # hierarchy, or fields requiring a second database operation.
+        data = self._catalog_runtime_data
+        if self.format_version != 16 or data is None or not _single_catalog_scalar_schema(schema):
+            raise BackendError('unsupported')
+        admitted = data.catalog(schema.identity)
+        if admitted != schema or data.identity != (key.database_id, generation):
+            raise BackendError('schema_changed')
+        if operation_id is not None and (self.read_only or not data.allows_write(self, schema.identity)):
+            raise BackendError('unsupported')
+        codec = _View(self, None, operation_id, admitted_identity=data.identity, catalog_data=data)
+        codec._key(key)
+        if key.catalog_id != schema.identity:
+            raise BackendError('invalid_input')
+        return codec, admitted
+
+    @_boundary
+    def _read_catalog_scalar(self, schema, key, generation):
+        from .sqlite_single_statement import fetch_all, run
+
+        codec, schema = self._catalog_scalar_codec(schema, key, generation)
+        table, columns, _, _ = codec._source(schema)
+        sql = 'SELECT %s FROM %s WHERE record_id=? LIMIT 2' % (columns, table)
+        def read(connection):
+            rows = fetch_all(connection, sql, (str(key.record_id),))
+            if len(rows) > 1:
+                raise BackendError('integrity')
+            result = None if not rows else codec._card(key.catalog_id, rows[0], schema=schema, sections=())
+            self._check_file()
+            return result
+        return run(self, read)
+
+    @_boundary
+    def _update_catalog_scalar(self, draft, expected, schema, generation, operation_id,
+                               *, pending, accept):
+        from .sqlite_catalog_runtime_data import authorize_write
+        from .sqlite_single_statement import execute_write, run
+
+        _uuid(operation_id)
+        codec, schema = self._catalog_scalar_codec(schema, draft.key, generation, operation_id)
+        draft, values, schema = codec._draft(draft)
+        if draft.auto_number or draft.tabular_sections is not None:
+            raise BackendError('invalid_input')
+        revision = codec._expected_revision(draft, expected)
+        sql, parameters = codec._catalog_update_statement(draft, values, schema, revision,
+                                                          require_unique=True)
+        outcome = CatalogWriteOutcome(
+            Revision(codec.database_id, generation, schema.identity, draft.key.record_id, str(revision+1)),
+            draft.code)
+
+        def update(connection):
+            pending(True)
+            try:
+                count = execute_write(connection, sql, parameters)
+            except sqlite3.IntegrityError:
+                pending(False)  # Statement rolled back; a conflict can be corrected.
+                raise BackendError('duplicate_code') from None
+            except BaseException as error:
+                if _interruption(error):
+                    raise
+                raise BackendError('uncertain_commit') from None
+            if count == 0:
+                pending(False)
+                raise BackendError('conflict')
+            if count != 1:
+                raise BackendError('uncertain_commit')
+            try:
+                self._check_file()
+            except BackendError:
+                raise BackendError('uncertain_commit') from None
+            # Confirm the object before connection cleanup, which can still
+            # report an independent failure without making this write unknown.
+            accept(outcome, draft)
+        run(self, update, write=True, authorizer=authorize_write)
+
     @lifecycle
     def _begin(self, operation_id, *, _catalog_data=False):
         if self._closed: raise BackendError('closed')
@@ -2864,25 +2947,42 @@ class _View:
         self._require(True, mutate=True); draft, values, schema = self._draft(draft)
         if draft.auto_number: raise BackendError('invalid_input')
         sections = self._draft_sections(draft, schema); self._section_write_budget(sections)
-        r = expected_revision
-        if type(r) is not Revision or (r.database_id,r.configuration_generation,r.catalog_id,r.record_id)!=(self.database_id,self.configuration_generation,draft.key.catalog_id,draft.key.record_id) or type(r.token) is not str:
-            raise BackendError('conflict')
-        revision = _revision_number(r.token)
+        revision = self._expected_revision(draft, expected_revision)
         with self._atomic_record():
             try:
                 hierarchy_storage.prepare(self,schema,draft,creating=False)
-                table, columns, where, args = self._source(schema)
-                if self._backend.storage_version == 1:
-                    cursor = self._connection.execute('UPDATE catalog_record SET revision=revision+1,code=?,description=?,deletion_mark=?,values_json=? WHERE catalog_id=? AND record_id=? AND revision=?',(draft.code,draft.description,int(draft.deletion_mark),values,str(draft.key.catalog_id),str(draft.key.record_id),revision))
-                else:
-                    sets = ['revision=revision+1','code=?','description=?','deletion_mark=?'] + [quote_identifier(self._catalog_layout.field_name(schema.identity, f.identity))+'=?' for f in schema.fields]
-                    vals = (draft.code,draft.description,int(draft.deletion_mark))+encode_columns(json.loads(values),schema, enum_domain=self._catalog_domain)+args+(str(draft.key.record_id),revision)
-                    cursor = self._connection.execute('UPDATE %s SET %s WHERE %s AND record_id=? AND revision=?' % (table,','.join(sets),where), vals)
+                sql, parameters = self._catalog_update_statement(draft, values, schema, revision)
+                cursor = self._connection.execute(sql, parameters)
             except sqlite3.IntegrityError: raise BackendError('duplicate_code') from None
             if cursor.rowcount != 1: raise BackendError('conflict')
             hierarchy_storage.store(self,schema,draft,creating=False)
             self._replace_sections(draft, schema, sections)
             self._record_change(draft,revision+1,sections)
+
+    def _expected_revision(self, draft, revision):
+        if (type(revision) is not Revision
+                or (revision.database_id,revision.configuration_generation,revision.catalog_id,revision.record_id) !=
+                   (self.database_id,self.configuration_generation,draft.key.catalog_id,draft.key.record_id)):
+            raise BackendError('conflict')
+        return _revision_number(revision.token)
+
+    def _catalog_update_statement(self, draft, values, schema, revision, *, require_unique=False):
+        table, _, where, args = self._source(schema)
+        base = (draft.code,draft.description,int(draft.deletion_mark))
+        record_id = str(draft.key.record_id)
+        if self._backend.storage_version == 1:
+            return ('UPDATE catalog_record SET revision=revision+1,code=?,description=?,deletion_mark=?,values_json=? WHERE catalog_id=? AND record_id=? AND revision=?',
+                    base+(values,str(draft.key.catalog_id),record_id,revision))
+        sets = ['revision=revision+1','code=?','description=?','deletion_mark=?'] + [quote_identifier(self._catalog_layout.field_name(schema.identity, f.identity))+'=?' for f in schema.fields]
+        parameters = base+encode_columns(json.loads(values),schema, enum_domain=self._catalog_domain)+args+(record_id,revision)
+        sql = 'UPDATE %s SET %s WHERE %s AND record_id=? AND revision=?' % (table,','.join(sets),where)
+        if require_unique:
+            # Normally the admitted PK makes this an indexed point lookup.
+            # Guard cardinality inside the statement: an implicit UPDATE has
+            # already committed by the time the caller sees its rowcount.
+            sql += ' AND NOT EXISTS (SELECT 1 FROM %s WHERE record_id=? LIMIT 1 OFFSET 1)' % table
+            parameters += (record_id,)
+        return sql, parameters
 
     def _record_change(self,draft,revision,sections):
         # Prepare every potentially allocating operation before replacing state.

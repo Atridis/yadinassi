@@ -78,10 +78,11 @@ class BSLCatalogManager(BSLObject):
             return backend
         return None
 
-    def _view(self):
+    def _view(self, *, data_backend=_OMITTED):
         from yadinassi.db.database_transactions import forbid_transfer
         forbid_transfer(self._backend)
-        data_backend = self._runtime_data_backend()
+        if data_backend is _OMITTED:
+            data_backend = self._runtime_data_backend()
         view = (self._backend.begin_read() if data_backend is None
                 else data_backend._begin_catalog_data(self._schema.identity))
         try:
@@ -158,16 +159,35 @@ class BSLCatalogManager(BSLObject):
         values.update((f.name.casefold(),self._logical(f,v)) for f,v in zip(self._schema.fields,card.values))
         return values
     def _read(self,record):
-        view=self._view()
-        try:return view.read_catalog(self._key(record))
+        from yadinassi.db.database_transactions import forbid_transfer
+        from yadinassi.db.sqlite.sqlite_catalog import _single_catalog_scalar_schema
+        key = self._key(record)
+        data_backend = self._runtime_data_backend()
+        if data_backend is not None and _single_catalog_scalar_schema(self._schema):
+            forbid_transfer(data_backend)
+            return data_backend._read_catalog_scalar(self._schema, key, self._catalogs._metadata._generation)
+        view=self._view(data_backend=data_backend)
+        try:return view.read_catalog(key)
         finally:view.close()
     def _read_member(self,ref,name):
-        from yadinassi.db.sqlite.sqlite_catalog import _View
+        from yadinassi.db.sqlite.sqlite_catalog import _View, _single_catalog_scalar_schema
         from yadinassi.configuration.demos.inventory_enum_runtime import read_snapshot
         key = _ALIASES.get(name.casefold(),name.casefold()) if type(name) is str else None
         standard = {'code':'code','description':'description','deletionmark':'deletion_mark','ref':'ref'}
-        definition = next((field for field in self._schema.fields if field.name.casefold()==key),None)
-        view = self._view()
+        index, definition = next(((i, field) for i, field in enumerate(self._schema.fields)
+                                  if field.name.casefold()==key), (None, None))
+        data_backend = self._runtime_data_backend()
+        if (data_backend is not None and _single_catalog_scalar_schema(self._schema)
+                and (key in standard or definition is not None and definition.kind != 'enum_ref')):
+            from yadinassi.db.database_transactions import forbid_transfer
+            forbid_transfer(data_backend)
+            card = data_backend._read_catalog_scalar(self._schema, self._key(ref.reference_uuid),
+                                                     self._catalogs._metadata._generation)
+            if card is None: return _field(self._defaults(ref),name)
+            if definition is not None: return self._logical(definition,card.values[index])
+            if key == 'ref': return self._ref(card.key.record_id)
+            return getattr(card,standard[key])
+        view = self._view(data_backend=data_backend)
         try:
             if (type(view) is _View and view._operation_id is None
                     and self._catalogs._metadata._root is not None
@@ -381,6 +401,17 @@ class BSLCatalogObject(BSLObject):
                 from yadinassi.execution.direct.python_direct_catalog_preparation import prepared_validator as prepare_validator
                 prepared_validator=prepare_validator(m,preparation[0])
         data_backend = m._runtime_data_backend() if preparation is None else None
+        if data_backend is not None and expected is not None and outcomes:
+            from yadinassi.db.sqlite.sqlite_catalog import _single_catalog_scalar_schema
+            if _single_catalog_scalar_schema(m._schema):
+                from yadinassi.db.database_transactions import forbid_transfer
+                forbid_transfer(data_backend)
+                def pending(value): self._uncertain_write = value
+                def accept(outcome, validated): self._accept_outcome(outcome, draft=validated)
+                data_backend._update_catalog_scalar(
+                    draft, expected, m._schema, m._catalogs._metadata._generation,
+                    operation, pending=pending, accept=accept)
+                return ()
         tx = (m._backend.begin_write(operation) if data_backend is None else
               data_backend._begin_catalog_data(m._schema.identity, operation))
         committing=False
