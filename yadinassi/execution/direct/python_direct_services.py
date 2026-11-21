@@ -408,6 +408,15 @@ class ServicesBoundary:
         from yadinassi.application.temporary_storage import SourceTemporaryCall
         from yadinassi.configuration.common_templates import SourceTemplateCall
         function=self._services.get(key)
+        if key in ('readjson','прочитатьjson','writejson','записатьjson'):
+            count=kwargs.get('argument_count')
+            if count is not None and type(function) is HostFunction:
+                implementation=function.function
+                if ((implementation is read_json and 5<=count<=9)
+                        or (implementation is write_json and 4<=count<=6)):
+                    from .python_direct_json_handlers import bind
+                    original=super().resolve_service(name,*args,**kwargs)
+                    return bind(self,key,function,original,implementation)
         if (type(function) is user_messages.HostFunction and type(function.function) is user_messages.MethodType
                 and type(function.function.__self__) is user_messages.BSLUserMessage):
             return user_messages.captured(self,function,operation='call',**kwargs)

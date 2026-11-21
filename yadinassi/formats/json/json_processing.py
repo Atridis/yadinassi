@@ -8,6 +8,7 @@ import stat
 
 from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
+from yadinassi.execution.direct.python_direct_plain_map import PlainMap
 from yadinassi.execution.safe_mode import require_external_access
 from yadinassi.types.values import BSLObject, HostFunction, BSLArray, BSLFixedArray
 from yadinassi.collections.structures import BSLStructure, BSLFixedStructure
@@ -356,6 +357,8 @@ def _quote(value):
 _SKIP_JSON_PROPERTY = object()
 _JSON_COLLECTIONS = (BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure, BSLMap, BSLFixedMap, _DirectStructure)
 _JSON_SCALARS = (type(None), bool, str, Decimal, BSLDate)
+_JSON_TYPES = frozenset(map(id, (*_JSON_SCALARS, *_JSON_COLLECTIONS)))
+_JSON_HANDLER_TYPES = _JSON_TYPES.union(map(id, (PlainArray, PlainMap, list, int)))
 
 
 def encode_json_events(value, settings=None, *, has_converter=False):
@@ -370,6 +373,7 @@ def encode_json_events(value, settings=None, *, has_converter=False):
     # Capture scalar options once, independently of handler mutations.
     date_format, date_variant = settings.date_serialization_format, settings.date_writing_variant
     seen, remaining, size = set(), 100_000, 0
+    admitted = _JSON_HANDLER_TYPES if has_converter else _JSON_TYPES
 
     def account(text):
         nonlocal size
@@ -384,7 +388,7 @@ def encode_json_events(value, settings=None, *, has_converter=False):
         if depth > MAX_DEPTH or remaining < 0:
             raise ValueError("JSON: превышен предел глубины или числа значений Yadinassi")
         kind = type(item)
-        if kind not in (*_JSON_SCALARS, *_JSON_COLLECTIONS):
+        if id(kind) not in admitted:
             if not has_converter or not may_convert:
                 raise TypeError("ЗаписатьJSON: тип значения пока не поддерживается")
             item, cancel = yield JSONCallbackRequest(name, item)
@@ -401,6 +405,10 @@ def encode_json_events(value, settings=None, *, has_converter=False):
         if kind is bool: return account("true" if item else "false")
         if kind is str: return account(_quote(item))
         if kind is BSLDate: return account(_quote(write_json_date(item, date_format, date_variant)))
+        if kind is int:
+            if item.bit_length() > 4 * 4096:
+                raise ValueError("JSON: превышен предел числа Yadinassi")
+            item, kind = Decimal(item), Decimal
         if kind is Decimal:
             if not item.is_finite():
                 raise ValueError("JSON: ожидается конечное число")
@@ -411,19 +419,22 @@ def encode_json_events(value, settings=None, *, has_converter=False):
             raise ValueError("JSON: циклическая коллекция")
         seen.add(id(item))
         try:
-            array = kind in (BSLArray, BSLFixedArray)
+            array = kind in (BSLArray, BSLFixedArray, PlainArray, list)
             entries = []
             # Snapshot this container, not the graph: callbacks cannot invalidate
             # a live Python iterator or make it grow indefinitely.
             direct_structure = kind is _DirectStructure
-            storage = item if direct_structure else (item.items if array else item._items)
+            direct_map = kind is PlainMap
+            storage = (item if direct_structure or direct_map or kind is PlainArray or kind is list
+                       else item.items if array else item._items)
             if len(storage) > remaining:
                 raise ValueError("JSON: превышен предел числа значений Yadinassi")
-            children = list(dict.values(item)) if direct_structure else list(item)
+            children = (list(dict.values(item)) if direct_structure else
+                        list(dict.items(item)) if direct_map else list(item))
             for child in children:
                 if array:
                     key, source = None, child
-                elif direct_structure:
+                elif direct_structure or direct_map:
                     key, source = child
                     key = _text(key)
                 else:
@@ -739,7 +750,8 @@ _DIRECT_SOURCE_JSON_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
          _Pairs,BSLMap,BSLArray,_source_json_structures.BSLKeyAndValue)
         for base in receiver.__mro__))
 _DIRECT_SOURCE_JSON_LIMITS=(MAX_TEXT,MAX_DEPTH)
-_DIRECT_SOURCE_JSON_CONSTANTS=(T,_JSON_SCALARS,_JSON_COLLECTIONS,_SKIP_JSON_PROPERTY,json,os,os.linesep)
+_DIRECT_SOURCE_JSON_CONSTANTS=(T,_JSON_SCALARS,_JSON_COLLECTIONS,_JSON_TYPES,_JSON_HANDLER_TYPES,
+                               _SKIP_JSON_PROPERTY,json,os,os.linesep)
 _DIRECT_SOURCE_JSON_STDLIB=tuple((module,name,value) for module,names in
     ((json,('loads','dumps','JSONDecoder','JSONEncoder','JSONDecodeError','decoder','encoder','scanner')),
      (json.decoder,('JSONDecoder','JSONDecodeError','JSONObject','JSONArray','scanstring','scanner','WHITESPACE','WHITESPACE_STR','BACKSLASH','STRINGCHUNK')),

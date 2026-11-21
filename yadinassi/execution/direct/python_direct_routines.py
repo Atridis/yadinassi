@@ -25,6 +25,7 @@ class RoutineModule:
     nocontext_names: frozenset = frozenset()
     dual_plan: object = None
     dual_names: frozenset = frozenset()
+    local_function_exports: frozenset = frozenset()
 
 
 def prepare(vm, program, plan, *, retain_generated=True):
@@ -84,9 +85,13 @@ def prepare(vm, program, plan, *, retain_generated=True):
         _,_,initializer_constructors,initializer_calls=_source_facts(initializer_body)
         initializer_plan=compile_server(initializer_body,retain_generated=retain_generated,source_text=plan.source_text,source_name=plan.source_name,
             module_names=tuple(server_layout),external_names=tuple(NAMES),constructors=base_constructors,current_module=True)
+    local_function_exports=frozenset(node.name.casefold() for node in declarations
+        if type(node) is ast.Routine and node.exported and node.is_function
+        and not node.is_async and not node.is_dual and node.execution_context=='client'
+        and node.module_context)
     return RoutineModule(exports,signatures,_contract(vm),frozenset(vm.module_names)|declared,
                          constructors,calls-names,server_plan,server_names,server_layout,
-                         initializer_plan,initializer_constructors,initializer_calls,nocontext_plan,nocontext_names,dual_plan,dual_names)
+                         initializer_plan,initializer_constructors,initializer_calls,nocontext_plan,nocontext_names,dual_plan,dual_names,local_function_exports)
 
 
 def validate_calls(vm, calls, seen=None, *, registry=None, layout=None, initializers=None):

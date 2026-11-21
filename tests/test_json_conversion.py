@@ -164,7 +164,7 @@ class JSONConversionTests(unittest.TestCase):
                 self.writer()
                 self.vm.execute(f'{write}(writer,id,,"cONVERT",{module},);')
                 self.assertEqual(json.loads(self.vm.execute('writer.Close()')), UUID_TEXT)
-        self.assertEqual(self.vm.variables['seen'].items, [None, None])
+        self.assertEqual(list(self.vm.variables['seen']), [None, None])
 
     def test_converter_receives_property_names_and_unnamed_array_elements(self):
         self.writer()
@@ -173,7 +173,7 @@ class JSONConversionTests(unittest.TestCase):
                         'WriteJSON(writer,value,,"Convert",ThisObject);')
         self.assertEqual(json.loads(self.vm.execute('writer.Close()')),
                          {'first': UUID_TEXT, 'items': [UUID_TEXT, {'nested': UUID_TEXT}], 'last': 7})
-        self.assertEqual(self.vm.variables['seen'].items, ['first', None, 'nested'])
+        self.assertEqual(list(self.vm.variables['seen']), ['first', None, 'nested'])
 
     def test_converter_is_not_called_for_supported_values(self):
         self.reader('[null,false,true,1.25,"text",{},[]]')
@@ -194,10 +194,41 @@ class JSONConversionTests(unittest.TestCase):
             self.writer()
             self.vm.execute('WriteJSON(writer,id,,"Convert",ThisObject,extra); writer.Close();')
         self.assertEqual(self.vm.variables['count'], D(2))
-        self.assertEqual(len(self.vm.variables['extra'].items), 2)
-        for item in self.vm.variables['extra'].items:
+        self.assertEqual(len(self.vm.variables['extra']), 2)
+        for item in self.vm.variables['extra']:
             self.assertIs(item, self.vm.variables['id'])
         self.assertIsNone(self.vm.locals)
+
+    def test_prepared_named_converter_cannot_commit_after_owner_close(self):
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+
+        effects = []
+        def output(message):
+            effects.append(message)
+            vm.close()
+
+        vm = Interpreter(output)
+        self.addCleanup(vm.close)
+        vm.execute('Function Convert(P,V,E,C) Export Message("called"); Return "x"; EndFunction '
+                   'W=New JSONWriter; W.SetString();')
+        writer = vm.variables['w']
+        plan = vm.prepare(f'WriteJSON(W, New UUID("{UUID_TEXT}"),, "Convert", ThisObject);')
+        with self.assertRaises(BoundaryViolation):
+            vm.execute_prepared(plan)
+        self.assertEqual(effects, ['called'])
+        self.assertEqual(writer._parts, [])
+
+    def test_named_json_cannot_resolve_a_python_registry_function(self):
+        vm = Interpreter(allow_extensions=True)
+        self.addCleanup(vm.close)
+        calls = []
+        vm.register_function('HostCallback', lambda *arguments: calls.append(arguments))
+        reader = BSLJSONReader()
+        reader.set_string('1')
+        vm.variables['reader'] = reader
+        with self.assertRaisesRegex(BSLError, 'обработчик'):
+            vm.execute('ReadJSON(Reader,,,,"HostCallback",ThisObject)')
+        self.assertEqual((calls, reader._position), ([], -1))
 
     def test_stored_module_receiver_works_for_write_and_read(self):
         self.vm.execute('module=ThisObject; box=New Structure("Module",module);')
@@ -337,9 +368,8 @@ Function Hidden(P,V,E) Count=Count+1; Return V; EndFunction
 Function Short(P,V) Export Count=Count+1; Return V; EndFunction
 Function Long(P,V,E,Required) Export Count=Count+1; Return V; EndFunction
 Procedure Proc(P,V,E) Export Count=Count+1; EndProcedure
-Async Function AsyncHandler(P,V,E) Export Count=Count+1; Return V; EndFunction
 ''')
-        for name in ('Hidden', 'Short', 'Long', 'Proc', 'AsyncHandler', 'Missing'):
+        for name in ('Hidden', 'Short', 'Long', 'Proc', 'Missing'):
             with self.subTest(name=name):
                 reader = self.reader('1')
                 with self.assertRaises(BSLError):
@@ -352,9 +382,8 @@ Async Function AsyncHandler(P,V,E) Export Count=Count+1; Return V; EndFunction
         self.vm.execute('''
 Function Short(P,V,E) Export Count=Count+1; Return V; EndFunction
 Procedure Proc(P,V,E,C) Export Count=Count+1; EndProcedure
-Async Function AsyncHandler(P,V,E,C) Export Count=Count+1; Return V; EndFunction
 ''')
-        for name in ('Short', 'Proc', 'AsyncHandler', 'Missing'):
+        for name in ('Short', 'Proc', 'Missing'):
             with self.subTest(name=name):
                 self.writer()
                 with self.assertRaises(BSLError):
@@ -362,6 +391,19 @@ Async Function AsyncHandler(P,V,E,C) Export Count=Count+1; Return V; EndFunction
                 self.vm.execute('WriteJSON(writer,1);')
                 self.assertEqual(self.vm.execute('writer.Close()'), '1')
         self.assertEqual(self.vm.variables['count'], D(0))
+
+    def test_async_handler_declaration_is_rejected_without_consuming(self):
+        from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+
+        reader = self.reader('1')
+        self.writer()
+        for parameters in ('P,V,E', 'P,V,E,C'):
+            with self.subTest(parameters=parameters), self.assertRaisesRegex(
+                    PythonDirectUnsupported, 'async source routines'):
+                self.vm.execute(f'Async Function H({parameters}) Export Return V; EndFunction')
+        self.assertEqual(reader._position, -1)
+        self.vm.execute('WriteJSON(writer,1);')
+        self.assertEqual(self.vm.execute('writer.Close()'), '1')
 
     def test_handler_name_and_module_validation_never_evaluates_strings(self):
         for name, module in (('1', 'ThisObject'), ('""', 'ThisObject'),
@@ -411,9 +453,9 @@ Function NoContext(R,M) Return ReadJSON(R,,,,"Revive",M); EndFunction
     def test_read_reviver_postorder_includes_root_and_unnamed_array_elements(self):
         self.reader('{"first":[1,{"leaf":2}],"last":3}')
         self.vm.execute('extra=New Array; value=ReadJSON(reader,,,,"Revive",ThisObject,extra);')
-        self.assertEqual(self.vm.variables['seen'].items,
+        self.assertEqual(list(self.vm.variables['seen']),
                          [None, 'leaf', None, 'first', 'last', None])
-        extra = self.vm.variables['extra'].items
+        extra = list(self.vm.variables['extra'])
         self.assertEqual(extra[0], D(1))
         self.assertEqual(extra[1], D(2))
         self.assertIs(extra[-1], self.vm.variables['value'])
@@ -474,7 +516,7 @@ EndFunction
         self.vm.execute('value=ReadJSON(reader,,dates,,"Revive",ThisObject,,names);')
         self.assertEqual(self.vm.execute('value.first'), ISO_TEXT)
         self.assertIs(self.vm.execute('TypeOf(value.second)'), BSLType.DATE)
-        self.assertEqual(self.vm.variables['seen'].items, ['first'])
+        self.assertEqual(list(self.vm.variables['seen']), ['first'])
 
     def test_optional_holes_defaults_and_bilingual_nine_argument_read(self):
         for expression in ('ReadJSON(reader,,,,,,,,)',
