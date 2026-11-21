@@ -27,6 +27,7 @@ from yadinassi.types.values import HostFunction, BSLArray, BSLFixedArray
 from decimal import Decimal
 from .python_direct_xml_ownership import reject_source_owned as _reject_source_xml
 from yadinassi.formats.xml.dom_io import BSLDOMBuilder, BSLDOMWriter
+from yadinassi.formats.xml.xml_processing import XML_STRING_PROCESSING, delete_disallowed_xml_characters
 from yadinassi.formats.xml.dom_nodes import _NODE_CLASSES, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap
 from yadinassi.formats.xml.dom_xpath import BSLDOMNamespaceResolver, BSLDOMXPathResult
 from yadinassi.formats.xml.xml_io import BSLXMLReader, BSLXMLReaderSettings, BSLXMLNamespaceContext
@@ -168,6 +169,9 @@ def _check_register_owner(boundary, value):
         raise BoundaryViolation('information register receiver type changed')
 
 
+_XML_CLEANUP_NAMES=('deletedisallowedxmlcharacters','удалитьнедопустимыесимволыxml')
+
+
 class CatalogBoundary:
     _register_root = None
 
@@ -266,8 +270,11 @@ class CatalogBoundary:
         return super().resolve_service(name,*args,**kwargs)
 
     def external_get(self,name):
+        if name in SYSTEM_NAMES:
+            value=SYSTEM_NAMES[name]
+            if value is not XML_STRING_PROCESSING or self._verify_context:self._check_effect()
+            return value
         self._check_effect()
-        if name in SYSTEM_NAMES:return SYSTEM_NAMES[name]
         if name in ('metadata','метаданные'):return self.vm._metadata
         if name in ('catalogs','справочники'):return self.vm._catalogs
         if name in ('documents','документы'):return self.vm._documents
@@ -495,6 +502,10 @@ class CatalogBoundary:
         return invoke
 
     def resolve_member(self,value,name):
+        if value is XML_STRING_PROCESSING:
+            if name.casefold() not in _XML_CLEANUP_NAMES:
+                raise ValueError('Метод объекта не обнаружен: '+name)
+            return self.resolve_callable(HostFunction(name,delete_disallowed_xml_characters))
         if id(type(value)) in zip_reader.TYPE_IDS:return zip_reader.resolve(self,value,name,syntax=True)
         if name in ('__iter__','__getitem__','__setitem__'):
             identity=id(value)

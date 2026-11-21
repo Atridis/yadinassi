@@ -1,6 +1,7 @@
 """Finite immutable system namespaces for the direct backend."""
 from types import MappingProxyType
 from yadinassi.formats.xml.dom_nodes import DOM_NODE_TYPES
+from yadinassi.formats.xml.xml_processing import XML_STRING_PROCESSING
 from yadinassi.formats.xml.xml_io import XML_NODE_TYPES, XML_SPACES, XML_VALIDATION_TYPES
 
 from yadinassi.http.http_client import BYTE_ORDER_MARK_USE
@@ -16,12 +17,15 @@ from yadinassi.types.error_info import ERROR_CATEGORIES
 from yadinassi.formats.json.json_dates import JSON_DATE_FORMATS, JSON_DATE_WRITING_VARIANTS
 from yadinassi.formats.json.json_processing import JSON_LINE_BREAKS, JSON_VALUE_TYPES
 
+XML_CLEANUP_ALIASES = ("xmlstringprocessing", "обработкастрокиxml")
+
 NAMES = MappingProxyType({
     alias: value
     for aliases, value in (
         (("domnodetype", "типузлаdom"), DOM_NODE_TYPES),
         (("xmlnodetype", "типузлаxml"), XML_NODE_TYPES),
         (("xmlspace", "пробельныесимволыxml"), XML_SPACES),
+        (XML_CLEANUP_ALIASES, XML_STRING_PROCESSING),
         (("xmlvalidationtype", "типпроверкиxml"), XML_VALIDATION_TYPES),
         (("chars", "символы"), CHARS),
         (("byteordermarkuse", "использованиеbyteordermark"), BYTE_ORDER_MARK_USE),

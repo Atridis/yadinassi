@@ -33,7 +33,7 @@ from yadinassi.collections.plain_value_list import PlainValueList, PlainValueLis
 from yadinassi.execution.direct.python_direct_execute import execute_fragment, local_binding, local_exists
 from yadinassi.execution.direct.python_direct_eval import bind_eval
 from yadinassi.execution.direct.python_direct import REPAIRS,PythonDirectUnsupported
-from yadinassi.execution.direct.python_direct_names import NAMES
+from yadinassi.execution.direct.python_direct_names import NAMES, XML_CLEANUP_ALIASES
 from yadinassi.types.errors import BSLRuntimeError
 from dataclasses import fields, replace
 
@@ -1873,7 +1873,13 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     emitter.native_cells=bool(emitter.routines) and _profile is None and not imported and vm.database_context is None
     emitter.routine_symbols={key:emitter.temp() for key in emitter.routines}
     emitter.module_globals={name.casefold() for node in program if type(node) is bsl.Var for name in node.names}|{name.casefold() for name in module_names}
-    if emitter.external_names & (emitter.module_globals|emitter.routines.keys()):
+    collisions=emitter.external_names & (emitter.module_globals|emitter.routines.keys())
+    if _profile is None and collisions:
+        # Do not reserve a previously legal explicit module declaration.
+        shadowed=collisions.intersection(XML_CLEANUP_ALIASES)
+        emitter.external_names.difference_update(shadowed)
+        collisions.difference_update(shadowed)
+    if collisions:
         from yadinassi.execution.direct.python_direct import _reject as reject_contract
         reject_contract('external names collide with module declarations')
     conditional_shadow_names=emitter.module_globals|emitter.external_names|{'thisobject','этотобъект'}

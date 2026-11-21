@@ -124,6 +124,7 @@ ORDINARY_CONSTRUCTORS = {
     'valuestorage': BSLValueStorage, 'хранилищезначения': BSLValueStorage,
     'deflation': BSLDeflation, 'сжатиеданных': BSLDeflation,
     'zipfilereader': BSLZipFileReader, 'чтениеzipфайла': BSLZipFileReader,
+    'xmlstringprocessingmanager': None, 'менеджеробработкистрокиxml': None,
 }
 OPTIONAL_STREAM_CONSTRUCTORS = frozenset(
     name for name,value in ORDINARY_CONSTRUCTORS.items() if value in _STREAM_CONSTRUCTOR_COUNTS)
