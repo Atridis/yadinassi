@@ -71,20 +71,38 @@ def binding(scope, descriptor):
 def prepare_tables(tables, scope):
     """Reissue descriptors even for unused/empty columns before any statement."""
     from .query_packages import _Table
+    from .queries import _Column
     from yadinassi.types.values import NULL
     result = {}
     for name, table in tables.items():
+        if type(table) is not _Table or type(table.rows) is not tuple or type(table.columns) is not tuple:
+            raise BackendError('invalid_input')
         columns = []
+        width = len(table.columns)
         for index, column in enumerate(table.columns):
+            if type(column) is not _Column or type(column.kind) is not str:
+                raise BackendError('invalid_input')
             if column.kind == 'enum_ref':
                 domain = column.reference_binding
                 if type(domain) is not _EnumBinding:
                     raise BackendError('invalid_input')
                 descriptor = domain.descriptor(scope)
-                for row in table.rows:
-                    if row[index] is not NULL:
-                        domain.value(row[index])
-                        scope.value_descriptor(row[index])
+                if table.rows:
+                    # The lexical descriptor check just proved this exact
+                    # domain and its namespace. Keep the canonical refs alive
+                    # during an exact tuple walk with no host callbacks.
+                    refs = domain.storage._entry(domain.enum_id)[7]
+                    identities = frozenset(map(id, refs))
+                    for row in table.rows:
+                        if type(row) is not tuple or len(row) != width:
+                            raise BackendError('invalid_input')
+                        value = row[index]
+                        if value is NULL:
+                            continue
+                        if type(value) is not BSLEnumReference:
+                            raise TypeError('Enum report requires exact owned value; defaults/casts remain closed')
+                        if id(value) not in identities:
+                            raise BackendError('invalid_input')
                 column = replace(column, enum_descriptor=descriptor)
             columns.append(column)
         result[name] = _Table(tuple(columns), table.rows)

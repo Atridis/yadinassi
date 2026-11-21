@@ -3,6 +3,7 @@ from contextlib import closing
 from dataclasses import replace
 from decimal import Decimal
 import sqlite3
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -45,6 +46,50 @@ class EnumTableTests(unittest.TestCase):
             r = self.q('SELECT Unit FROM Saved', manager=m).execute()
             self.assertIsNone(r._columns[0].enum_descriptor)
             self.assertEqual(len(r.unload().rows), 3)
+
+    def test_enum_preparation_proves_namespace_once_per_column_not_per_row(self):
+        from yadinassi.db.metadata.enum_storage_binding import EnumStorageBinding
+        from yadinassi.db.query.query_enum_tables import prepare_tables
+
+        def count(copies):
+            source = ' UNION ALL '.join(['SELECT Unit FROM Catalog.Products'] * copies)
+            table = self.q(source).execute().unload()
+            query = self.q('SELECT Unit FROM &Input', table)
+            code = EnumStorageBinding._require_namespace.__code__
+            preparation = prepare_tables.__code__
+            visits = 0
+            def trace(frame, event, arg):
+                nonlocal visits
+                if event == 'call' and frame.f_code is code:
+                    parent = frame.f_back
+                    while parent is not None:
+                        if parent.f_code is preparation:
+                            visits += 1
+                            break
+                        parent = parent.f_back
+            previous = sys.getprofile()
+            sys.setprofile(trace)
+            try:
+                rows = query.execute()._rows
+            finally:
+                sys.setprofile(previous)
+            self.assertEqual(len(rows), 3 * copies)
+            self.assertTrue(all(any(row[0] is value for value in values) for row in rows))
+            return visits
+
+        values = (self.piece, self.empty, self.vm.execute('Enums.Units.Pack'))
+        small = count(1)
+        self.assertGreater(small, 0)
+        self.assertEqual(count(8), small)
+
+    def test_temp_rows_reject_impostor_before_unused_column_drifts_out_of_scope(self):
+        manager = BSLTempTablesManager()
+        self.q('SELECT Unit INTO Saved FROM Catalog.Products', manager=manager).execute()
+        saved = manager._tables['saved']
+        manager._tables['saved'] = replace(saved, rows=((replace(self.piece),),) + saved.rows[1:])
+        with self.assertRaises(BackendError):
+            self.q('SELECT 1 AS N FROM Saved', manager=manager).execute()
+        self.assertIsNone(self.context.backend._active)
 
     def test_unload_no_scope_or_lease_and_no_io(self):
         r = self.q('SELECT Unit FROM Catalog.Products').execute()
