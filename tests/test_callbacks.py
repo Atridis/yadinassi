@@ -185,7 +185,7 @@ c=New CallbackDescription(N(),M(),E());
 Function One(Result) Export Return Result; EndFunction
 Function Three(Result, Extra, Tail=3) Export Return Result+Extra+Tail; EndFunction
 ''')
-        with self.assertRaisesRegex(BSLError, 'ожидает 1 аргументов'):
+        with self.assertRaisesRegex(BSLError, 'Неверное количество аргументов: one'):
             self.vm.execute('RunCallback(Describe("One"),1)')
         self.assertEqual(self.vm.execute('RunCallback(Describe("Three",2),1)'), Decimal(6))
 
@@ -219,13 +219,14 @@ Function Wrapper(Result, Extra) Export Return RunCallback(Extra,Result); EndFunc
                 self.vm.execute(expression)
 
     def test_wrong_module_and_name_types_and_unimported_strings(self):
-        for expression in ('New CallbackDescription(1,ThisObject)',
-                           'New CallbackDescription("Echo",1)',
-                           'New CallbackDescription("Echo",New Structure)',
-                           'New CallbackDescription("Echo","not.imported")',
-                           'New CallbackDescription(,,,,,1)'):
+        for expression in ('New CallbackDescription(1,ThisObject)', 'New CallbackDescription(,,,,,1)'):
             with self.subTest(expression=expression), self.assertRaises(BSLError):
                 self.vm.execute(expression)
+        for target in ('1', 'New Structure', '"not.imported"'):
+            with self.subTest(target=target):
+                self.vm.execute(f'D=New CallbackDescription("Echo",{target});')
+                with self.assertRaisesRegex(BSLError, 'текущего модуля'):
+                    self.vm.execute('RunCallback(D,1)')
 
     def test_complex_error_handler_is_rejected_not_silently_ignored(self):
         for tail in ('"Broken"', '"Broken",ThisObject', 'Undefined,ThisObject'):
@@ -257,8 +258,10 @@ Function Wrapper(Result, Extra) Export Return RunCallback(Extra,Result); EndFunc
         try:
             other.execute(SOURCE)
             self.vm.variables['foreign']=other._self_module
+            self.vm.execute('d=New CallbackDescription("Sum",foreign,1);')
+            self.assertIs(self.vm.execute('d.Module'), other._self_module)
             with self.assertRaisesRegex(BSLError, 'другого интерпретатора'):
-                self.vm.execute('New CallbackDescription("Sum",foreign,1)')
+                self.vm.execute('RunCallback(d,2)')
             self.vm.variables['foreign']=other.execute('Describe("Sum",1)')
             with self.assertRaisesRegex(BSLError, 'другого интерпретатора'):
                 self.vm.execute('RunCallback(foreign,2)')
@@ -273,7 +276,7 @@ Function Server(Val R,Val E) Export Return 8; EndFunction
 &AtClientAtServerNoContext
 Function NoContext(Val D) Return RunCallback(D,1); EndFunction
 ''')
-        with self.assertRaisesRegex(BSLError, 'на клиенте'):
+        with self.assertRaisesRegex(BSLError, 'подпрограмма через объект модуля'):
             self.vm.execute('RunCallback(Describe("Server"),1)')
         with self.assertRaisesRegex(BSLError, 'без контекста'):
             self.vm.execute('NoContext(Describe("Echo"))')
@@ -299,8 +302,10 @@ Function Receive(Val D) Return 1; EndFunction
             def __getattr__(self,name):
                 raise AssertionError('Python reflection must not happen')
         self.vm.variables['trap']=Trap()
-        with self.assertRaises(BSLError):
-            self.vm.execute('New CallbackDescription("anything",trap)')
+        self.vm.execute('d=New CallbackDescription("anything",trap);')
+        self.assertIs(self.vm.execute('d.Module'), self.vm.variables['trap'])
+        with self.assertRaisesRegex(BSLError, 'текущего модуля'):
+            self.vm.execute('RunCallback(d,1)')
 
     def test_eval_execute_and_bound_function_value_use_same_dispatch(self):
         self.vm.execute('c=Describe("Sum",4); dispatch=RunCallback; '

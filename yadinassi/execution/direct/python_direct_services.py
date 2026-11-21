@@ -40,7 +40,7 @@ from yadinassi.types.type_values import _DIRECT_TYPE_OF_ABI
 from yadinassi.formats.storage.serialization import _DIRECT_VALUE_TO_STRING_ABI, _direct_value_to_string_internal
 from yadinassi.runtime import _eval_marker
 from . import python_direct_user_messages as user_messages
-from yadinassi.application.callbacks import callback_description_marker
+from yadinassi.application.callbacks import callback_description_marker, run_callback_marker
 from yadinassi.application.direct_callbacks import CallbackDescription as _CallbackDescription, construct as _new_callback, read as _callback_read
 
 _FILE_EFFECTS = frozenset(map(id, (
@@ -408,6 +408,10 @@ class ServicesBoundary:
         from yadinassi.application.temporary_storage import SourceTemporaryCall
         from yadinassi.configuration.common_templates import SourceTemplateCall
         function=self._services.get(key)
+        if (key in ('runcallback','выполнитьобработкуоповещения')
+                and type(function) is HostFunction and function.function is run_callback_marker):
+            from .python_direct_callback import bind
+            return bind(self,key,function,argument_count=kwargs.get('argument_count'))
         if key in ('readjson','прочитатьjson','writejson','записатьjson'):
             count=kwargs.get('argument_count')
             if count is not None and type(function) is HostFunction:

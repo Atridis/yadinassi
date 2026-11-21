@@ -132,7 +132,7 @@ TransferSelf()''')
 Function N() Return {expression}; EndFunction
 N()''')
 
-    def test_passive_callback_keeps_value_but_callback_dispatch_and_private_members_stay_denied(self):
+    def test_passive_callback_keeps_value_and_dispatches_only_public_handlers(self):
         vm = self.vm()
         vm.execute('''Var Count;
 Function Handler(Val V, Val Extra) Export Count=Count+1;Return V;EndFunction
@@ -140,10 +140,12 @@ Function Hidden() Count=Count+1;Return Count;EndFunction
 Count=0; D=New CallbackDescription("Handler",ThisObject);''')
         self.assertIs(vm.execute('D.Module'), vm._self_module)
         self.assertTrue(vm.execute('(D.Модуль=ЭтотОбъект)'))
-        for script in ('ThisObject.Hidden()', 'ThisObject.interpreter', 'RunCallback(D,3)'):
+        for script in ('ThisObject.Hidden()', 'ThisObject.interpreter', 'RunCallback(New CallbackDescription("Hidden",ThisObject),3)'):
             with self.subTest(script=script), self.assertRaises((BSLError,BoundaryViolation)):
                 vm.execute(script)
         self.assertEqual(vm.variables['count'], 0)
+        self.assertEqual(vm.execute('RunCallback(D,3)'), 3)
+        self.assertEqual(vm.variables['count'], 1)
 
 
 if __name__ == '__main__':

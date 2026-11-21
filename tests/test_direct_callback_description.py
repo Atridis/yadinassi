@@ -36,6 +36,44 @@ Kind=TypeOf(C);Text=String(C);'''
         vm.execute('C=New CallbackDescription("Handler",Target,7);')
         self.assertIs(vm.variables['c'].module,opaque)
         with self.assertRaises(BSLError):vm.execute('RunCallback(C,1);')
+    def test_prepared_dispatch_accepts_only_ready_current_module(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('Var Seen; Procedure Store(V,E) Export Seen=V+E; EndProcedure '
+                   'Function Add(V,E,Tail=3) Export Return V+E+Tail; EndFunction '
+                   'Proc=New CallbackDescription("Store",ThisObject,5); '
+                   'Fun=New CallbackDescription("Add",ThisObject,2); Seen=0;')
+        call = vm.prepare('P=RunCallback(Proc,7); F=ВыполнитьОбработкуОповещения(Fun,4);')
+        vm.execute_prepared(call)
+        self.assertEqual((vm.variables['seen'], vm.variables['p'], vm.variables['f']), (12, None, 9))
+
+    def test_eval_and_execute_call_same_module_without_service_capture(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('Function Add(V,E) Export Return V+E; EndFunction '
+                   'D=New CallbackDescription("Add",ThisObject,5); A=0;')
+        self.assertEqual(vm.execute('Eval("RunCallback(D,3)")'), 8)
+        vm.execute('Execute("A=RunCallback(D,4);");')
+        self.assertEqual(vm.variables['a'], 9)
+
+    def test_argument_closing_owner_blocks_prepared_dispatch(self):
+        events = []
+        def output(message):
+            events.append(message)
+            vm.close()
+
+        vm = Interpreter(output)
+        self.addCleanup(vm.close)
+        vm.execute('Var Seen; Seen=0; '
+                   'Procedure Store(V,E) Export Seen=1; EndProcedure '
+                   'Function Value() Message("close"); Return 2; EndFunction '
+                   'D=New CallbackDescription("Store",ThisObject);')
+        call = vm.prepare('RunCallback(D,Value());')
+        with self.assertRaises(BoundaryViolation):
+            vm.execute_prepared(call)
+        self.assertEqual(events, ['close'])
+        self.assertEqual(vm.variables['seen'], 0)
+
     def test_readonly_and_private_attributes_closed(self):
         vm=Interpreter();vm.execute('C=New CallbackDescription("P");')
         for expr in ('C.ProcedureName="Other"','C.__class__','C.procedure_name','C.ProcedureName()'):
