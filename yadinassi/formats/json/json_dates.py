@@ -85,6 +85,9 @@ class BSLJSONSerializerSettings(BSLObject):
             return getattr(self, member[0])
         return super().get_member(name)
 
+    def get_method(self, name):
+        raise TypeError('НастройкиСериализацииJSON: методы не поддерживаются')
+
     def set_member(self, name, value):
         member = self._property(name)
         if member is None:

@@ -110,6 +110,23 @@ class JSONConversionTests(unittest.TestCase):
             self.assertIs(self.vm.execute('TypeOf(ВариантЗаписиДатыJSON.ЛокальнаяДата)'),
                           BSLType.JSON_DATE_WRITING_VARIANT)
 
+    def test_callback_free_date_serialization_uses_bilingual_settings(self):
+        with patch.dict(os.environ, {'YADINASSI_TIMEZONE': 'UTC'}):
+            for constructor, write, format_option, variant_option, expected in (
+                    ('JSONSerializerSettings', 'WriteJSON', 'JSONDateFormat.ISO',
+                     'JSONDateWritingVariant.LocalDate', ISO_TEXT),
+                    ('НастройкиСериализацииJSON', 'ЗаписатьJSON', 'ФорматДатыJSON.JavaScript',
+                     'ВариантЗаписиДатыJSON.УниверсальнаяДата', 'new Date(1704164645000)'),
+                    ('JSONSerializerSettings', 'WriteJSON', 'JSONDateFormat.Microsoft',
+                     'JSONDateWritingVariant.UniversalDate', '/Date(1704164645000)/')):
+                with self.subTest(format=format_option):
+                    self.writer()
+                    self.vm.execute(f's=New {constructor}; '
+                                    f's.DateSerializationFormat={format_option}; '
+                                    f's.DateWritingVariant={variant_option}; '
+                                    f'{write}(writer,Date(2024,1,2,3,4,5),s);')
+                    self.assertEqual(json.loads(self.vm.execute('writer.Close()')), expected)
+
     def test_serializer_settings_format_dates_without_converter(self):
         with patch.dict(os.environ, {'YADINASSI_TIMEZONE': 'UTC'}):
             for format_name, expected in (('ISO', ISO_TEXT),

@@ -13,6 +13,7 @@ from yadinassi.collections.sort_directions import SORT_DIRECTIONS
 from yadinassi.numeric.round_modes import ROUND_MODES
 from yadinassi.types.type_qualifiers import ALLOWED_SIGNS, ALLOWED_LENGTHS, DATE_FRACTIONS
 from yadinassi.types.error_info import ERROR_CATEGORIES
+from yadinassi.formats.json.json_dates import JSON_DATE_FORMATS, JSON_DATE_WRITING_VARIANTS
 from yadinassi.formats.json.json_processing import JSON_LINE_BREAKS, JSON_VALUE_TYPES
 
 NAMES = MappingProxyType({
@@ -39,6 +40,8 @@ NAMES = MappingProxyType({
         (("errorcategory", "категорияошибки"), ERROR_CATEGORIES),
         (("jsonlinebreak", "переносстрокjson"), JSON_LINE_BREAKS),
         (("jsonvaluetype", "типзначенияjson"), JSON_VALUE_TYPES),
+        (("jsondateformat", "форматдатыjson"), JSON_DATE_FORMATS),
+        (("jsondatewritingvariant", "вариантзаписидатыjson"), JSON_DATE_WRITING_VARIANTS),
     )
     for alias in aliases
 })

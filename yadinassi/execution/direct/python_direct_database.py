@@ -39,6 +39,7 @@ from yadinassi.streams.data_io import BSLDataReader, BSLDataWriter, BSLReadDataR
 from yadinassi.collections.maps import BSLMap, BSLFixedMap
 from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
 from yadinassi.collections.plain_value_list import PlainValueList, PlainValueListItem
+from yadinassi.formats.json.json_dates import BSLJSONSerializerSettings
 from yadinassi.formats.json.json_processing import (BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings,
     _DIRECT_SOURCE_JSON_CLASSES, _DIRECT_SOURCE_JSON_DICT, _DIRECT_JSON_READ)
 from .python_direct_names import NAMES as SYSTEM_NAMES, VALUE_IDS as SYSTEM_VALUE_IDS, ITERABLES
@@ -58,7 +59,7 @@ NAMES=('metadata','метаданные','catalogs','справочники','do
 # Canonical detached receivers only; child rows/items and database owners still
 # traverse live ownership validation. Public protocols retain resource guards.
 _DOM_LISTS=(BSLDOMNodeList,BSLDOMElementList,BSLDOMAttributeMap)
-_DETACHED_TYPES=(*_NODE_CLASSES,*_DOM_LISTS,BSLDOMBuilder,BSLDOMWriter,BSLDOMNamespaceResolver,BSLDOMXPathResult,BSLXMLReader, BSLXMLReaderSettings, BSLXMLNamespaceContext, BSLXMLWriter, BSLXMLWriterSettings, BSLValueList, BSLValueTable, BSLTypeDescription, BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers, BSLQueryResult, BSLQueryResultSelection, BSLStructure, BSLFixedStructure, BSLKeyAndValue, BSLArray, BSLFixedArray, BSLFixedMap, BSLRegexResult, BSLRegexGroup, BSLFile, BSLBinaryData, BSLTextReader, BSLTextWriter, BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream, BSLStream, BSLDataHashing, BSLDataReader, BSLDataWriter, BSLReadDataResult, BSLMap, BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings)
+_DETACHED_TYPES=(*_NODE_CLASSES,*_DOM_LISTS,BSLDOMBuilder,BSLDOMWriter,BSLDOMNamespaceResolver,BSLDOMXPathResult,BSLXMLReader, BSLXMLReaderSettings, BSLXMLNamespaceContext, BSLXMLWriter, BSLXMLWriterSettings, BSLValueList, BSLValueTable, BSLTypeDescription, BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers, BSLQueryResult, BSLQueryResultSelection, BSLStructure, BSLFixedStructure, BSLKeyAndValue, BSLArray, BSLFixedArray, BSLFixedMap, BSLRegexResult, BSLRegexGroup, BSLFile, BSLBinaryData, BSLTextReader, BSLTextWriter, BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream, BSLStream, BSLDataHashing, BSLDataReader, BSLDataWriter, BSLReadDataResult, BSLMap, BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings, BSLJSONSerializerSettings)
 _DETACHED_TYPE_IDS=frozenset(map(id,_DETACHED_TYPES))
 _PURE_COLLECTION_TYPE_IDS=frozenset(map(id,(
     BSLValueTable, BSLValueTableRow, BSLValueTableColumn, BSLValueTableColumnCollection,
