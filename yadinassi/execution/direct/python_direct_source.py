@@ -164,6 +164,7 @@ def _compile(owner,program,*,exports=False,layout=(),_extra_externals=(),_callab
     plan._source_scalar_reuse=getattr(owner,'_direct_source_scalar_reuse',False)
     plan._source_layout=frozenset(layout)
     plan._source_routines=tuple((n,_signature(n)) for n in program if type(n) is ast.Routine)
+    plan._source_signatures={id(node):signature for node,signature in plan._source_routines}
     # Crossing defaults are snapshotted at compilation, not first invocation.
     # Nonliteral defaults retain their ordinary same-side behavior but cannot
     # acquire authority through the bounded all-Val crossing adapter.
@@ -467,10 +468,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         bound=xdto_json.guard_global_callable(self,guard_target,bound)
         return self._guard_references(bound) if kwargs.get("allow_references") else bound
     def _routine(self,owner,routine,*,require_value=False,allow_references=False,argument_count=None,qualified=False,**unused):
-        check_owner(owner);_preflight(owner,routine)
-        if (routine.execution_context!=self.side or owner._logical_side!=self.side
-                or routine.is_async or routine.is_dual or not routine.module_context):
-            raise ValueError('direct source crossing/async/NoContext routine is not integrated')
+        check_owner(owner)
         if type(self.app._reuse_routines) is not dict or type(self.app._direct_source_reuse_entries) is not dict:
             raise BoundaryViolation('source reusable registry changed')
         entry=self.app._reuse_routines.get(id(routine))
@@ -478,6 +476,18 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
                 or entry is not None and (type(entry) is not tuple or len(entry)!=5 or entry[0] is not routine)):
             raise BoundaryViolation('source reusable entry changed')
         scalar_reuse=entry is not None and entry[4] is True
+        direct = self._local_scalars() and not owner.allow_extensions and entry is None
+        if direct:
+            # The selected declaration controls arity, return shape and
+            # by-reference argument lowering. Admit it before arguments. The
+            # rest of the plan is only needed before the actual invocation,
+            # after arguments have had a chance to enter a host boundary.
+            _selected_routine(owner,routine)
+        else:
+            _preflight(owner,routine)
+        if (routine.execution_context!=self.side or owner._logical_side!=self.side
+                or routine.is_async or routine.is_dual or not routine.module_context):
+            raise ValueError('direct source crossing/async/NoContext routine is not integrated')
         keys=instance_keys(self.app,owner)
         def provenance():
             from .source.python_direct_source_server import check_activation
@@ -501,7 +511,6 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         if argument_count is not None and not minimum<=argument_count<=len(routine.parameters):
             raise TypeError('Неверное количество аргументов: '+routine.name)
         refs=frozenset(i for i,p in enumerate(routine.parameters) if not p.by_value)
-        direct = self._local_scalars() and not owner.allow_extensions and entry is None
         bound_name = routine.name.casefold()
         def call(*values):
             # Argument evaluation may install a policy or leave this scope.
@@ -510,8 +519,6 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
                 self._before('call_value', bound_name)
             check=self._check_local_dispatch if direct else self._check
             check();check_owner(owner);provenance();plan=_preflight(owner,routine)
-            if (owner.server_routines if self.side=='server' else owner.routines).get(routine.name.casefold()) is not routine:
-                raise BoundaryViolation('source routine binding changed')
             values=tuple(_ForwardReference(v) if i in refs and type(v) is Reference else v for i,v in enumerate(values))
             try:
                 if scalar_reuse:
@@ -736,7 +743,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
 def _run(owner,plan,callback=None,*,same_side_admitted=False):
     from yadinassi.execution.codegen.native_targets import target_context
     from yadinassi.execution.execution_policy import execution_backend_policy
-    check_owner(owner)
+    if not same_side_admitted:
+        check_owner(owner)
     context=SourceBoundary(owner,plan)
     parent = _SOURCE_FRAME.get()
     if (parent is not None and parent._active
@@ -817,11 +825,26 @@ def execute(owner,program):
     return result
 
 
-def _preflight(owner,routine):
-    _signature(routine)
+def _routine_plan(owner,routine):
+    if type(routine) is not ast.Routine or type(routine.name) is not str:
+        raise BoundaryViolation('source routine signature is not canonical')
     binding=getattr(owner,'_direct_source_plans',{}).get(routine.name.casefold())
     if binding is None or binding[0] is not routine:raise BoundaryViolation('unprepared source routine')
-    plan=binding[1]
+    return binding[1]
+
+
+def _selected_routine(owner,routine):
+    plan=_routine_plan(owner,routine)
+    signature=plan._source_signatures.get(id(routine))
+    if signature is None or not _signature_matches(routine,signature):
+        raise BoundaryViolation('source declaration binding changed')
+    registry=owner.server_routines if signature[1]=='server' else owner.routines
+    if registry.get(signature[0].casefold()) is not routine:
+        raise BoundaryViolation('source declaration binding changed')
+
+
+def _preflight(owner,routine):
+    plan=_routine_plan(owner,routine)
     _check_plan(owner,plan)
     from .python_direct import _admit_bindings
     _admit_bindings(owner,frozenset(),plan._source_constructors,frozenset())

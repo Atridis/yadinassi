@@ -1,4 +1,4 @@
-"""Same-side adapters keep bind and after-argument admission, not both twice."""
+"""Same-side adapters admit just the selected signature before arguments."""
 import unittest
 from unittest.mock import patch
 
@@ -33,7 +33,7 @@ class SourceRoutineChecks(unittest.TestCase):
             b'Procedure OnStart() Message(Helpers.Increment(7)); EndProcedure',
             common_module(b'Function Increment(Val X) Export Return X+1; EndFunction'),
         )
-        self.assertEqual(self.run_counted(config), 2)
+        self.assertEqual(self.run_counted(config), 1)
 
     def test_server_common_module_reuses_current_admission(self):
         config = server_fixtures.configuration(
@@ -44,7 +44,7 @@ class SourceRoutineChecks(unittest.TestCase):
             config, 'Internal', 'Function Increment(Val X) Export Return X+1; EndFunction',
             server_call=False,
         )
-        self.assertEqual(self.run_counted(config), 2)
+        self.assertEqual(self.run_counted(config), 1)
 
 
     def test_three_server_modules_keep_live_aliases_and_client_boundary(self):
