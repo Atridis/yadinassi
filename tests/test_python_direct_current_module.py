@@ -84,6 +84,39 @@ ThisObject=3;Return Eval("ThisObject")+ЭтотОбъект; EndFunction Local(4
         self.assertEqual(vm.execute('Var ThisObject;ThisObject=4;ThisObject'), 4)
         self.assertIs(vm.execute('ЭтотОбъект'), vm._self_module)
 
+    def test_foreign_and_forged_module_values_are_not_public_receivers(self):
+        own, foreign = self.vm(), self.vm()
+        foreign.execute('Var Field Export; Field=41; Function Read() Export Return Field; EndFunction')
+        own.execute('Var Field Export; Field=17;')
+        forged = _Module(own)
+        forged.ready = True
+        for value in (foreign._self_module, forged):
+            own.variables['receiver'] = value
+            for source in ('Receiver.Field', 'Receiver.Field=42;', 'Receiver.Read()'):
+                with self.subTest(source=source), self.assertRaises(BoundaryViolation):
+                    own.execute(source)
+        self.assertEqual(own.execute('Field'),17)
+        self.assertEqual(foreign.execute('Field'),41)
+
+    def test_module_member_semantic_failure_and_post_argument_lifecycle_differ(self):
+        vm = Interpreter(allow_extensions=True)
+        self.addCleanup(vm.close)
+        vm.execute('Var Field Export; Field=17; Procedure Write(Val NewValue) Export Field=NewValue; EndProcedure')
+        self.assertEqual(vm.execute('Try ThisObject.Private=42; Except Caught=True; EndTry; Caught'),True)
+        def close():
+            vm.close()
+            return 42
+        vm.register_function('CloseOwner',close)
+        with self.assertRaises(BoundaryViolation):
+            vm.execute('Try ThisObject.Write(CloseOwner()); Except Escaped=True; EndTry;')
+        self.assertNotIn('escaped',vm.variables)
+        self.assertEqual(vm.variables['field'],17)
+
+    def test_declared_receiver_name_shadows_module_methods_as_well(self):
+        vm = self.vm()
+        self.assertEqual(vm.execute('Var ThisObject; ThisObject=New Array; ThisObject.Add(1); ThisObject.Count()'),1)
+        self.assertIs(vm.execute('ЭтотОбъект'),vm._self_module)
+
     def test_contextual_server_read_is_not_a_cross_side_value_grant(self):
         vm = self.vm()
         self.assertTrue(vm.execute('''&AtServer
@@ -99,14 +132,15 @@ TransferSelf()''')
 Function N() Return {expression}; EndFunction
 N()''')
 
-    def test_passive_callback_keeps_value_but_dispatch_and_private_members_stay_denied(self):
+    def test_passive_callback_keeps_value_but_callback_dispatch_and_private_members_stay_denied(self):
         vm = self.vm()
         vm.execute('''Var Count;
 Function Handler(Val V, Val Extra) Export Count=Count+1;Return V;EndFunction
+Function Hidden() Count=Count+1;Return Count;EndFunction
 Count=0; D=New CallbackDescription("Handler",ThisObject);''')
         self.assertIs(vm.execute('D.Module'), vm._self_module)
         self.assertTrue(vm.execute('(D.Модуль=ЭтотОбъект)'))
-        for script in ('ThisObject.Handler(3,4)', 'ThisObject.interpreter', 'RunCallback(D,3)'):
+        for script in ('ThisObject.Hidden()', 'ThisObject.interpreter', 'RunCallback(D,3)'):
             with self.subTest(script=script), self.assertRaises((BSLError,BoundaryViolation)):
                 vm.execute(script)
         self.assertEqual(vm.variables['count'], 0)

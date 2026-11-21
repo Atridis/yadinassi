@@ -49,6 +49,9 @@ class BoundaryContext:
     def current_module(self):
         raise ValueError("Объект модуля недоступен в подпрограмме без контекста")
 
+    def resolve_public_module_call(self, value, name, *, require_value, argument_count):
+        raise ValueError('Метод объекта не обнаружен: '+name)
+
     def external_get(self, name):
         """Explicit product namespace seam; ordinary contexts grant none."""
         self._check()

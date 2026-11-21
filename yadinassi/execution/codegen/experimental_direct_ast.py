@@ -508,6 +508,14 @@ class Emitter:
         pair=self.node(py.Tuple,t,elts=[step,value],ctx=py.Load())
         reached=self.node(py.Subscript,t,value=pair,slice=self.const(1,t),ctx=py.Load())
         return self.invoke(self.attribute(self.name('_context',t),'preparation_value',t),[reached],t)
+    def implicit_module_receiver(self,node):
+        while type(node) is bsl.Group:node=node.expression
+        if not self.current_module or type(node) is not bsl.Name:return False
+        key=node.name.casefold()
+        return (key in ('thisobject','этотобъект') and not self.external_name(key)
+                and key not in self.module_globals
+                and (self.scope is None or key not in self.scope['local_declarations']))
+
     def member_call(self,receiver,name,require_value,omitted,count,t):
         method='resolve_configuration_member_call' if self.configuration_calls else 'resolve_member_call'
         keywords=[self.node(py.keyword,t,arg='require_value',value=self.const(require_value,t)),self.node(py.keyword,t,arg='omitted',value=self.const(omitted,t))]
@@ -735,6 +743,13 @@ class Emitter:
             return self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
         if k is bsl.Conditional:
             return self.node(py.IfExp,t,test=self.truth(node.condition,t),body=self.expr(node.when_true),orelse=self.expr(node.when_false))
+        if k is bsl.Call and type(node.callee) is bsl.Attribute and self.implicit_module_receiver(node.callee.object):
+            callee=node.callee
+            bound=self.invoke(self.attribute(self.name('_context',t),'resolve_public_module_call',t),
+                [self.expr(callee.object),self.const(callee.name,t)],t,
+                [self.node(py.keyword,t,arg='require_value',value=self.const(require_value,t)),
+                 self.node(py.keyword,t,arg='argument_count',value=self.const(len(node.arguments),t))])
+            return self.dynamic_call(bound,node)
         if k is bsl.Call and type(node.callee) is bsl.Attribute and any(type(arg) is bsl.OmittedArgument for arg in node.arguments):
             callee=node.callee;root=callee.object
             while type(root) in (bsl.Group,bsl.Attribute):root=root.expression if type(root) is bsl.Group else root.object
@@ -931,6 +946,9 @@ class Emitter:
                 else:
                     plain=arg
                     while type(plain) is bsl.Group:plain=plain.expression
+                    if self.implicit_module_receiver(plain):
+                        arguments.append(self.call('_NativeCell' if self.native_cells else '_Cell',[self.expr(arg)],node.callee.token))
+                        continue
                     if self.native_cells:
                         if type(plain) is bsl.Name:
                             key=plain.name.casefold()
@@ -1141,6 +1159,11 @@ class Emitter:
                 requires=requires_reference(index)
                 args.append(self.access_argument(plain,requires,t));continue
             value=self.expr(arg)
+            if self.implicit_module_receiver(plain):
+                # Read-only implicit self binds as a disposable byref actual,
+                # never as a writable name in the public module dictionary.
+                args.append(value)
+                continue
             if type(plain) is bsl.Name:
                 self.check_name(plain.name)
                 def reference():
@@ -1786,9 +1809,11 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
                 if type(callee) is bsl.Name and callee.name.casefold() in emitter.routines:
                     signature=emitter.routines[callee.name.casefold()]
                     actuals=[arg for parameter,arg in zip(signature.parameters,value.arguments) if not parameter.by_value]
-                elif type(callee) is bsl.Attribute and _ALIASES.get(callee.name.casefold(),callee.name.casefold())=='property':
+                elif (type(callee) is bsl.Attribute and not emitter.implicit_module_receiver(callee.object)
+                      and _ALIASES.get(callee.name.casefold(),callee.name.casefold())=='property'):
                     actuals=value.arguments[1:2]
-                elif type(callee) is not bsl.Attribute or emitter.source_scopes or emitter.host_bindings:
+                elif (type(callee) is not bsl.Attribute or emitter.source_scopes or emitter.host_bindings
+                      or emitter.implicit_module_receiver(callee.object)):
                     for arg in value.arguments:
                         while type(arg) is bsl.Group:arg=arg.expression
                         if type(arg) is bsl.Name and arg.name.casefold() not in globals_|emitter.scope['externals']:lexical.add(arg.name.casefold())

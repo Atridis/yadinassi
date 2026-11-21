@@ -20,14 +20,18 @@ _MAX_MODULES=256
 _MAX_DEPTH=64
 
 
+def _receiver_hooks(classes):
+    for cls,items,mro in classes:
+        current=vars(cls)
+        if cls.__mro__ is not mro or len(current)!=len(items) or any(current.get(k) is not v for k,v in items):
+            raise BoundaryViolation('import receiver class hooks changed')
+
+
 def _hooks(vm):
     if type(vm) is not Interpreter:raise BoundaryViolation('foreign import interpreter')
     if type(vm.imports) is not dict or type(vm._module_cache) is not dict or type(vm._loading) is not list:
         raise BoundaryViolation('custom import storage is not supported')
-    for cls,items,mro in _CLASS_ABI:
-        current=vars(cls)
-        if cls.__mro__ is not mro or len(current)!=len(items) or any(current.get(k) is not v for k,v in items):
-            raise BoundaryViolation('import receiver class hooks changed')
+    _receiver_hooks(_CLASS_ABI)
     for name,expected in _LOADER_ABI:
         if name in vars(vm) or vars(Interpreter).get(name) is not expected:
             raise BoundaryViolation('import loader hooks changed')
@@ -282,6 +286,88 @@ class ImportBoundary:
         if value is None:raise ValueError('Импортированное имя не найдено: '+'.'.join(path))
         return value
 
+    def _public_module(self,value):
+        # This lane resolves only actual module values. Unrelated members do
+        # not acquire a new context check, and no Python member is looked up.
+        self._check_effect()
+        if not self._imports_active:raise BoundaryViolation('module activation ended')
+        _receiver_hooks(_CLASS_ABI[:1])
+        child=value.interpreter
+        if (type(child) is not Interpreter or child._self_module is not value
+                or child._family_owner is not self.vm._family_owner):
+            raise BoundaryViolation('foreign module receiver')
+        if child is not self.vm:
+            self._check_import_activation()
+            if not owned_child(child):raise BoundaryViolation('unavailable imported module receiver')
+        if type(child.variables) is not dict or type(value.ready) is not bool:
+            raise BoundaryViolation('module storage or readiness changed')
+        return child
+
+    def _public_field(self,value,name):
+        child=self._public_module(value)
+        key=name.casefold()
+        public=_PUBLIC.get(child)
+        if (not value.ready or key.startswith('_') or public is None or key not in public[1]
+                or key not in child.variables):
+            raise ValueError('Поле объекта не обнаружено: '+name)
+        return child.variables,key
+
+    def get_member(self,value,name):
+        if type(value) is not _Module:return super().get_member(value,name)
+        state,key=self._public_field(value,name)
+        return state[key]
+
+    def resolve_set_member(self,value,name):
+        if type(value) is not _Module:return super().resolve_set_member(value,name)
+        state,key=self._public_field(value,name)
+        def write(new_value):
+            live,_=self._public_field(value,name)
+            if live is not state:raise BoundaryViolation('module field storage changed')
+            state[key]=new_value
+        return write
+
+    def reference_member(self,value,name):
+        if type(value) is not _Module:return super().reference_member(value,name)
+        state,key=self._public_field(value,name)
+        def read():
+            live,_=self._public_field(value,name)
+            if live is not state:raise BoundaryViolation('module field storage changed')
+            return state[key]
+        def write(new_value):
+            live,_=self._public_field(value,name)
+            if live is not state:raise BoundaryViolation('module field storage changed')
+            state[key]=new_value
+        return Reference(read,write)
+
+    def resolve_member(self,value,name):
+        if type(value) is _Module:
+            self._public_module(value)
+            raise ValueError('Метод объекта не обнаружен: '+name)
+        return super().resolve_member(value,name)
+
+    def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
+        if type(value) is not _Module:
+            return super().resolve_member_call(value,name,require_value=require_value,omitted=omitted)
+        if omitted:
+            self._public_module(value)
+            raise ValueError('Не поддерживаются пропущенные аргументы метода объекта модуля')
+        return self.resolve_public_module_call(value,name,require_value=require_value,argument_count=None)
+
+    def resolve_public_module_call(self,value,name,*,require_value,argument_count):
+        if type(value) is not _Module:
+            # A local declaration or an embedding-provided value can shadow
+            # the name. Preserve its ordinary member lane, not a module grant.
+            call=self.resolve_member_call(value,name,require_value=require_value)
+            def ordinary(*actuals):return call(*actuals)
+            ordinary.requires_reference=lambda index:False
+            return ordinary
+        child=self._public_module(value)
+        key=name.casefold()
+        if not value.ready or key.startswith('_'):
+            raise ValueError('Метод объекта не обнаружен: '+name)
+        return self._resolve_public_call(value,key,require_value=require_value,
+                                         argument_count=argument_count,path=None)
+
     def import_get(self,path):
         if len(path)<2:raise ValueError('Пространство импорта не является значением')
         owner=self._import_target(path[:-1])
@@ -347,39 +433,62 @@ class ImportBoundary:
         if len(path)<2:raise ValueError('Пространство импорта не является функцией')
         owner=self._import_target(path[:-1])
         if type(owner) is not _Module:raise ValueError('Импортированное имя не является модулем')
-        child=owner.interpreter;name=path[-1]
-        public=_PUBLIC[child][0].get(name)
+        return self._resolve_public_call(owner,path[-1],require_value=require_value,
+                                         argument_count=argument_count,path=path[:-1])
+
+    def _resolve_public_call(self,owner,name,*,require_value,argument_count,path):
+        child=owner.interpreter
+        exports=_PUBLIC.get(child)
+        public=None if exports is None else exports[0].get(name)
         if public is None:raise ValueError('Метод объекта не обнаружен: '+name)
         from .python_direct import _admit_vm
-        from .python_direct_routines import validate_calls
-        _admit_vm(child,_transaction_owner=getattr(self,'_direct_transaction_owner',None));validate_calls(child,(name,))
-        module=child._direct_routine_modules[name]
-        if name in module.dual_names:raise ValueError('Двухконтекстная подпрограмма через объект модуля пока не поддерживается')
+        from .python_direct_routines import validate_calls, resolve
+        local=path is None and child is self.vm
+        if not local:_admit_vm(child,_transaction_owner=getattr(self,'_direct_transaction_owner',None))
+        validate_calls(child,(name,))
+        module=child._direct_routine_modules.get(name)
+        if id(module)!=public[0] or module.signatures.get(name) is not public[1]:
+            raise BoundaryViolation('module routine declaration changed')
+        if name in module.dual_names or (path is None and name in module.server_names):
+            raise ValueError('Двухконтекстная подпрограмма через объект модуля пока не поддерживается')
         returns_value,minimum,maximum,references=public[1]
         if require_value and not returns_value:raise TypeError('Процедура не возвращает значение: '+name)
-        if not minimum<=argument_count<=maximum:raise TypeError('Неверное количество аргументов: '+name)
+        if argument_count is not None and not minimum<=argument_count<=maximum:
+            raise TypeError('Неверное количество аргументов: '+name)
+        if argument_count is None and references:
+            raise ValueError('Ожидается явный вызов метода модуля с параметрами без Знач')
         epoch=self._imports_epoch
         used=False
         def validate():
-            if self._verify_context:self._check()
-            check_live(child)
-            if (self._imports_epoch is not epoch or self._import_target(path[:-1]) is not owner
-                    or _PUBLIC[child][0].get(name)!=public):
-                raise BoundaryViolation('imported routine binding changed')
+            if path is None:
+                if self._public_module(owner) is not child or not owner.ready:
+                    raise BoundaryViolation('module routine receiver changed')
+            else:
+                if self._verify_context:self._check()
+                check_live(child)
+                if self._import_target(path) is not owner:raise BoundaryViolation('import binding changed')
+            current=_PUBLIC.get(child)
+            if (self._imports_epoch is not epoch or current is None or current[0].get(name) is not public
+                    or child._direct_routine_modules.get(name) is not module):
+                raise BoundaryViolation('module routine binding changed')
         def invoke(*args):
             nonlocal used
-            validate();_admit_vm(child,_transaction_owner=getattr(self,'_direct_transaction_owner',None));validate_calls(child,(name,))
-            if used:raise BoundaryViolation('import call already consumed')
+            validate()
+            if not minimum<=len(args)<=maximum:raise TypeError('Неверное количество аргументов: '+name)
+            if used:raise BoundaryViolation('module call already consumed')
             used=True
+            if local:
+                function=resolve(self,name,require_value=require_value,allow_references=True,argument_count=len(args))
+                try:return function(*args)
+                finally:validate()
+            _admit_vm(child,_transaction_owner=getattr(self,'_direct_transaction_owner',None));validate_calls(child,(name,))
             from .python_direct import make_boundary
-            from .python_direct_routines import resolve
             context=make_boundary(child,_parent_check=validate,_transaction_owner=getattr(self,'_direct_transaction_owner',None))
             if (not self._verify_context and not child.allow_extensions
                     and self.policy is None and child.database_context is None
                     and child._family_owner is self.vm._family_owner
                     and name not in module.server_names):
-                # Entry/exit below pin this import's parent lease; effectful
-                # operations still revalidate it through _check_effect.
+                # Entry/exit pin the parent lease; effects revalidate it.
                 context._verify_context=False
                 context._verify_dynamic_context=False
             context._handled_errors=self._handled_errors
@@ -392,7 +501,7 @@ class ImportBoundary:
             try:
                 context.enter()
                 try:
-                    function=resolve(context,name,require_value=require_value,allow_references=True,argument_count=argument_count)
+                    function=resolve(context,name,require_value=require_value,allow_references=True,argument_count=len(args))
                     return function(*args)
                 finally:
                     try:validate()
