@@ -17,6 +17,7 @@ from yadinassi.db.database_transactions import current, execution, begin, rollba
 from yadinassi.configuration.configuration_posting import import_posting_configuration, PROFILE
 from yadinassi.db.document.document_posting import PostingLimitError
 from yadinassi.db.document.document_posting_values import DocumentWriteMode
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from test_configuration_posting import wrap
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -154,11 +155,21 @@ class PostingRuntimeTests(unittest.TestCase):
         self.assertEqual(self.sql('SELECT count(*) FROM document_record'),[(0,)])
 
     def test_parent_host_commit_registration_is_not_inherited(self):
-        self.make('Procedure Posting(Cancel,Mode) HostCommit(); EndProcedure')
+        self.make('Procedure Posting(Cancel,Mode) Message("entered"); HostCommit(); '
+                  'Message("after"); EndProcedure')
         self.vm.register_function('HostCommit',self.vm._commit_transaction)
-        self.new(3)
-        with self.assertRaises(BSLRuntimeError):self.post()
+        self.vm.variables['previous']=previous=self.new(2)
+        obj=self.new(3)
+        with self.assertRaisesRegex(BoundaryViolation,r'^unregistered host service: hostcommit$'):
+            self.vm.execute('BeginTransaction();Previous.Write();'
+                            'Try O.Write(DocumentWriteMode.Posting); Except Message("caught"); EndTry;')
+        self.assertEqual(self.lines,['entered'])
+        self.assertTrue(previous.is_new());self.assertTrue(obj.is_new())
+        self.assertFalse(obj.get_member('Posted'))
+        self.assertIsNone(self.backend._active)
         self.assertEqual(self.sql('SELECT count(*) FROM document_record'),[(0,)])
+        self.assertEqual(self.sql('SELECT count(*) FROM recorder_partition'),[(0,)])
+        self.vm.execute('BeginTransaction();RollbackTransaction();')
 
     def test_parent_bound_commit_callback_keeps_handler_origin_denied(self):
         self.make('Procedure Posting(Cancel,Mode) Message("attempt"); EndProcedure')
@@ -169,17 +180,28 @@ class PostingRuntimeTests(unittest.TestCase):
         self.vm.execute('BeginTransaction();RollbackTransaction();')
 
     def test_captured_handler_control_cannot_gain_later_parent_authority(self):
-        self.make('''Procedure Posting(Cancel,Mode)
-AdditionalProperties.Insert("Commit",CommitTransaction);
-AdditionalProperties.Insert("Rollback",RollbackTransaction);
-EndProcedure''')
-        self.new(3);self.post()
-        self.vm.execute('''BeginTransaction();
-Try O.AdditionalProperties.Commit(); Except CommitBlocked=True; EndTry;
-Try O.AdditionalProperties.Rollback(); Except RollbackBlocked=True; EndTry;
-RollbackTransaction();''')
-        self.assertTrue(self.vm.execute('CommitBlocked'))
-        self.assertTrue(self.vm.execute('RollbackBlocked'))
+        for member,service in (('Commit','CommitTransaction'),('Rollback','RollbackTransaction')):
+            with self.subTest(service=service):
+                self.make('Procedure Posting(Cancel,Mode) '
+                          'AdditionalProperties.Insert("Trace","entered");'
+                          f'AdditionalProperties.Insert("{member}",{service}); EndProcedure')
+                obj=self.new(3)
+                with self.assertRaisesRegex(BSLRuntimeError,
+                                            f'Переменная или функция не определена: {service}$'):
+                    self.post()
+                self.assertEqual(self.trace(obj),'entered')
+                self.assertFalse(obj.get_member('AdditionalProperties').property(member))
+                self.assertTrue(obj.is_new());self.assertFalse(obj.get_member('Posted'))
+                self.assertIsNone(self.backend._active)
+                self.assertEqual(self.sql('SELECT count(*) FROM document_record'),[(0,)])
+                self.vm.execute('BeginTransaction();O.Write();Blocked=False;'
+                                f'Try O.AdditionalProperties.{member}(); Except Blocked=True; EndTry;'
+                                'StillActive=TransactionActive();RollbackTransaction();')
+                self.assertTrue(self.vm.execute('Blocked And StillActive'))
+                self.assertTrue(obj.is_new());self.assertFalse(obj.get_member('Posted'))
+                self.assertIsNone(self.backend._active)
+                self.assertEqual(self.sql('SELECT count(*) FROM document_record'),[(0,)])
+                self.assertEqual(self.sql('SELECT count(*) FROM recorder_partition'),[(0,)])
 
     def test_caught_forbidden_control_does_not_change_owner(self):
         self.make('Procedure Posting(Cancel,Mode) Try CommitTransaction(); Except EndTry; EndProcedure')
