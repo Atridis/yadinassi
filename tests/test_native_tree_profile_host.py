@@ -86,6 +86,22 @@ class TreeHostTests(unittest.TestCase):
             with self.subTest(raw=raw[:40]), self.assertRaises(HOST.TreeError):
                 HOST.validate_envelope(raw, '1' * 32, {}, {}, lambda *a, **k: None)
 
+    def test_only_fill_values_gets_its_own_bounded_comparison_deadline(self):
+        self.assertEqual(HOST.FULL.CASE_SECONDS, 10)
+        for profile, options in (('tree-v1', {'seconds': 20}), ('tree-sort-v1', {})):
+            spec = HOST.PROFILES.select(profile)
+            source = (ROOT / spec.source).read_text(encoding='utf-8').encode('utf-8')
+            runner = mock.Mock(side_effect=HOST.FULL.FullError('interpreter_timeout'))
+            with self.subTest(profile=profile), tempfile.TemporaryDirectory() as directory:
+                checkout = Path(directory)
+                with mock.patch.object(HOST, 'selected_contract'), \
+                     mock.patch.object(HOST.FULL, 'read_regular', return_value=source):
+                    with self.assertRaisesRegex(HOST.FULL.FullError, '^interpreter_timeout$'):
+                        HOST.compare_output(checkout, checkout, b'native', {spec.source: spec.source_sha256},
+                                            runner=runner, profile=profile)
+                runner.assert_called_once()
+                self.assertEqual(runner.call_args.kwargs, options)
+
     def test_nonce_is_not_coerced(self):
         for nonce in (None, 1, 'x' * 32, '1' * 31):
             with self.assertRaises(HOST.TreeError):

@@ -27,6 +27,8 @@ SOURCE_SHA256 = '58d466f3a9a181891fd97e205d115f0ce32b620f8fa8df3d56f4516405a65c9
 MAX_OUTPUT = 8192
 MAX_TRANSPORT = 65536
 MESSAGE_COUNT = 34
+# The full FillValues replay runs close to the generic 10-second budget.
+TREE_COMPARISON_SECONDS = 20
 
 
 def sibling(name):
@@ -379,10 +381,11 @@ def compare_output(root, private, native, input_hashes, *, runner=FULL.bounded_c
     source = root / spec.source
     raw = FULL.read_regular(source, FULL.MAX_FILE, nonempty=True)
     require(FULL.digest(raw) == spec.source_sha256 == input_hashes[spec.source], 'tree_source_changed')
+    limits = {'seconds': TREE_COMPARISON_SECONDS} if profile == PROFILE else {}
     with tempfile.TemporaryDirectory(prefix='tree-cache-', dir=private) as cache:
         code, actual, stderr = runner([sys.executable, '-I', '-B', '-X', 'pycache_prefix=' + cache,
                                       '-c', (sibling('native_1c_json_family_replay').execution_script(FULL.EXECUTE_SCRIPT)
-                                             if profile == 'json-family-v1' else FULL.EXECUTE_SCRIPT), str(root), str(source), FULL.LINUX_TARGET], root)
+                                             if profile == 'json-family-v1' else FULL.EXECUTE_SCRIPT), str(root), str(source), FULL.LINUX_TARGET], root, **limits)
     valid = False
     if code == 0 and not stderr:
         try:
