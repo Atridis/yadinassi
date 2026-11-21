@@ -145,19 +145,67 @@ class EnumNumericAggregateTests(unittest.TestCase):
         with patch.object(_Plan,'load',side_effect=AssertionError('materialization')):
             for _ in range(2):self.assertEqual(self.query()._rows,((Decimal('12.50'),Decimal('12.5'),Decimal(1)),))
         self.assertFalse(any(k[0]=='catalog-count-unique-v1' for k in self.context.backend._read_handle.proofs))
-    def test_post_provider_enum_generation_and_mapping_revocation(self):
-        original=_View.aggregate_catalog;scope=self.vm._metadata._enum_storage_scope
-        for mapping in (False,True):
-            old=scope.generation;managers=scope.namespace._managers;key=next(iter(managers));manager=managers[key]
-            def revoke(view,*args,**kwargs):
-                result=original(view,*args,**kwargs)
-                if isinstance(args[1],CatalogNumericAggregateRequest):
-                    if mapping:managers.pop(key)
-                    else:scope.generation=-1
+    def test_numeric_pushdown_rejects_revoked_lexical_owner_before_and_after_provider(self):
+        scope = self.vm._metadata._enum_storage_scope
+        generation = scope.generation
+        try:
+            scope.generation = -1
+            with patch.object(_View, 'aggregate_catalog') as provider:
+                with self.assertRaises(BackendError): self.query()
+                provider.assert_not_called()
+        finally:
+            scope.generation = generation
+        self.assertIsNone(self.context.backend._active)
+
+        original = _View.aggregate_catalog
+        calls = []
+        def revoke(view, identity, request, **kwargs):
+            result = original(view, identity, request, **kwargs)
+            if type(request) is not CatalogNumericAggregateRequest:
                 return result
-            try:
-                with patch.object(_View,'aggregate_catalog',revoke),self.assertRaises(BackendError):self.query()
-            finally:scope.generation=old;managers[key]=manager
-            self.assertIsNone(self.context.backend._active)
+            calls.append(result)
+            scope.generation = -1
+            return result
+        try:
+            with patch.object(_View, 'aggregate_catalog', revoke), self.assertRaises(BackendError):
+                self.query()
+        finally:
+            scope.generation = generation
+        self.assertEqual(len(calls), 1)
+        self.assertIsNone(self.context.backend._active)
+
+    def test_post_provider_mapping_revocation_only_checks_admitted_enum_dependency(self):
+        original = _View.aggregate_catalog
+        scope = self.vm._metadata._enum_storage_scope
+        managers = scope.namespace._managers
+        manager = managers['units']
+        piece = self.vm.execute('Enums.Units.Piece')
+        expected = ((Decimal('12.50'), Decimal('12.5'), Decimal(1)),)
+        for uses_enum in (False, True):
+            with self.subTest(uses_enum=uses_enum):
+                q = BSLQuery(self.vm._catalogs, NumericAggregateTests.text)
+                if uses_enum:
+                    # Even an unused SQL parameter is an admitted enum value
+                    # at the query boundary; it must retain live authorization.
+                    q.set_parameter('ValidateUnit', piece)
+                calls = []
+                def revoke(view, identity, request, **kwargs):
+                    result = original(view, identity, request, **kwargs)
+                    if type(request) is not CatalogNumericAggregateRequest:
+                        return result
+                    calls.append(result)
+                    managers.pop('units')
+                    return result
+                try:
+                    with patch.object(_View, 'aggregate_catalog', revoke):
+                        if uses_enum:
+                            with self.assertRaises(BackendError): q.execute()
+                        else:
+                            self.assertEqual(q.execute()._rows, expected)
+                finally:
+                    managers['units'] = manager
+                self.assertEqual(len(calls), 1)
+                self.assertIsNone(self.context.backend._active)
+                self.assertEqual(q.execute()._rows, expected)
 
 if __name__=='__main__':unittest.main()

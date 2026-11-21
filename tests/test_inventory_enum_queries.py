@@ -157,7 +157,8 @@ class InventoryEnumQueryTests(unittest.TestCase):
         self.assertEqual(self.query('SELECT QuantityBalance FROM '
             'AccumulationRegister.Stock.Balance(&EndAt,Unit=&U)',
             U=self.piece,EndAt=end)._rows,((Decimal(5),),))
-        values=self.vm.execute('New Array');values.items.append(self.piece)
+        self.vm.variables['unitfortest'] = self.piece
+        values = self.vm.execute('A=New Array; A.Add(UnitForTest); A;')
         self.assertEqual(self.query('SELECT Unit FROM Catalog.Products WHERE Unit IN (&Units)',Units=values)._rows,
                          ((self.piece,),))
         with self.assertRaises(ValueError):
