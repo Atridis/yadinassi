@@ -137,3 +137,60 @@ class OrderedTopGenericTests(unittest.TestCase):
             rows = vm.execute('Q=New Query("SELECT TOP 2 P.Code AS C FROM Catalog.Products AS P '
                               'ORDER BY P.Category, C"); Q.Execute()')._rows
             self.assertEqual(rows,(('3',),('4',)))
+
+
+class OrderedTopDocumentTests(unittest.TestCase):
+    setUp = main.MainDemoRuntimeTests.setUp
+    query = OrderedTopMainDemoTests.query
+    actual_trace = OrderedTopMainDemoTests.actual_trace
+
+    def seed(self):
+        source = '''
+For N=1 To 5 Do
+ D=Documents.Receipt.CreateDocument();
+ If N=1 Then D.Number="Straße"; D.Date=Date(2024,1,2);
+ ElsIf N=2 Then D.Number="STRASSE"; D.Date=Date(2024,1,2);
+ ElsIf N=3 Then D.Number="straße"; D.Date=Date(2024,1,1);
+ ElsIf N=4 Then D.Number="Я"; D.Date=Date(2024,1,2);
+ Else D.Number="ignored"; D.Date=Date(2024,1,1); D.DeletionMark=True;
+ EndIf;
+ D.Write();
+EndDo;
+'''
+        self.vm.execute(source)
+
+    def test_number_date_and_ref_same_as_residual_with_stable_ties(self):
+        self.seed()
+        text = ('SELECT TOP 4 D.Ref AS R, D.Number AS N, D.Date FROM Document.Receipt AS D '
+                'WHERE D.DeletionMark = FALSE ORDER BY N DESC, D.Date ASC')
+        with patch.object(DocumentView,'ordered_document_values',return_value=None) as decline:
+            expected = self.query(text)
+        decline.assert_called_once()
+        self.assertEqual(tuple(row[1] for row in expected),('Я','straße','STRASSE','Straße'))
+        trace, traced = self.actual_trace()
+        with traced, patch.object(DocumentView,'_validate_query_source',side_effect=AssertionError('full source')):
+            self.assertEqual(self.query(text),expected)
+        self.assertEqual(len(trace),1,trace)
+        self.assertIn('ORDER BY r.number COLLATE yadinassi_casefold_v1 DESC,r.date COLLATE BINARY ASC',trace[0])
+        self.assertTrue(trace[0].endswith('LIMIT 4'),trace)
+        text = ('SELECT TOP 3 D.Ref AS R, D.Number FROM Document.Receipt AS D ORDER BY R DESC')
+        with patch.object(DocumentView,'ordered_document_values',return_value=None):
+            expected = self.query(text)
+        self.assertEqual(self.query(text),expected)
+
+    def test_tagged_fields_decline_without_touching_fast_provider(self):
+        self.seed()
+        with patch.object(DocumentView,'ordered_document_values',side_effect=AssertionError('tagged JSON lowering')):
+            rows = self.query('SELECT TOP 2 D.Number, D.State FROM Document.Receipt AS D ORDER BY D.Number')
+        self.assertEqual(tuple(number for number,_ in rows),('ignored','straße'))
+
+    def test_document_top_inside_transaction_sees_write_then_rollback(self):
+        with patch.object(DocumentView,'_validate_query_source',autospec=True,
+                          side_effect=DocumentView._validate_query_source) as validate:
+            self.vm.execute('BeginTransaction(); D=Documents.Receipt.CreateDocument(); D.Number="pending"; '
+                            'D.Date=Date(2024,1,1); D.Write(); '
+                            'Q=New Query("SELECT TOP 1 Number FROM Document.Receipt ORDER BY Date"); '
+                            'R=Q.Execute(); RollbackTransaction();')
+        self.assertEqual(self.vm.variables['r']._rows,(('pending',),))
+        self.assertTrue(validate.called)
+        self.assertEqual(self.query('SELECT TOP 1 Number FROM Document.Receipt ORDER BY Date'),())

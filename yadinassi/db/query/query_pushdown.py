@@ -124,7 +124,7 @@ def try_ordered_select(plan, view, budget=None):
     from .relational_queries import _BoundField
     q = plan.query
     if (type(q) is not syntax.Select or not q.order or not 0 < q.limit < syntax.MAX_ROWS
-            or len(plan.sources) != 1 or q.family != 'catalog' or q.section is not None
+            or len(plan.sources) != 1 or q.family not in ('catalog','document') or q.section is not None
             or q.temporary or q.external or q.derived is not None or q.into is not None
             or q.virtual_condition is not None or q.joins or plan.grouped or q.having is not None
             or q.distinct or plan.memberships or plan.hierarchies):
@@ -132,12 +132,25 @@ def try_ordered_select(plan, view, budget=None):
     if any(type(field) is not _BoundField or field.source != 0
            for field in (*plan.projections, *(field for field, _ in plan.orders))):
         return None
-    select = getattr(view, 'ordered_catalog_values', None)
+    document = q.family == 'document'
+    select = getattr(view, 'ordered_document_values' if document else 'ordered_catalog_values', None)
     if select is None: return None
-    predicate = plan.storage_predicate(plan.predicate, 0, allow_or=True)
-    if plan.predicate is not None and predicate is None: return None
     from uuid import UUID
-    from yadinassi.db.catalog.catalog_backend import CatalogKey, CatalogOrder, CatalogScanRequest, CatalogValuePage, CatalogValueRow
+    from yadinassi.db.catalog.catalog_backend import (
+        CatalogKey, CatalogOrder, CatalogPredicate, CatalogScanRequest, CatalogValuePage, CatalogValueRow,
+    )
+    if document:
+        from yadinassi.db.document.document_backend import DocumentKey, DocumentValuePage, DocumentValueRow
+        from .document_queries import _ordered_header_value
+        if any(type(c.field) is not str for c in plan.fields[0]): return None
+        predicates = plan.document_storage_predicate(plan.predicate, 0)
+        if predicates is None: return None
+        predicate = CatalogPredicate('and', predicates) if predicates else None
+        page_type, row_type, key_type = DocumentValuePage, DocumentValueRow, DocumentKey
+    else:
+        predicate = plan.storage_predicate(plan.predicate, 0, allow_or=True)
+        if plan.predicate is not None and predicate is None: return None
+        page_type, row_type, key_type = CatalogValuePage, CatalogValueRow, CatalogKey
     from .queries import BSLQueryResult, _logical, _section_value, _MAX_CELLS, _MAX_RESULT_TEXT
 
     # All used fields are included so the provider validates selected sort and
@@ -148,18 +161,22 @@ def try_ordered_select(plan, view, budget=None):
         ordered.setdefault(field.column.field, descending)
     if len(fields) > 128 or len(ordered) > 16: return None
     order = tuple(CatalogOrder(field, descending) for field, descending in ordered.items())
-    manager = plan.managers[0]; metadata = manager._catalogs._metadata
+    manager = plan.managers[0]
     if plan.enum_scope is not None: plan.enum_scope.require_current()
     elif plan.enum_binding is not None: plan.enum_binding._live()
-    if ((view.database_id,view.configuration_generation) != (metadata._database_id,metadata._generation)
-            or view.catalog_schema(manager._schema.identity) != manager._schema):
-        raise BackendError('schema_changed')
+    if document:
+        manager._check_view(view)
+    else:
+        metadata = manager._catalogs._metadata
+        if ((view.database_id,view.configuration_generation) != (metadata._database_id,metadata._generation)
+                or view.catalog_schema(manager._schema.identity) != manager._schema):
+            raise BackendError('schema_changed')
     request = CatalogScanRequest(predicate,order,q.limit,string_comparison='casefold_v1')
     page = select(manager._schema.identity, request, fields)
     if plan.enum_scope is not None: plan.enum_scope.require_current()
     elif plan.enum_binding is not None: plan.enum_binding._live()
     if page is None: return None
-    if (type(page) is not CatalogValuePage or type(page.rows) is not tuple
+    if (type(page) is not page_type or type(page.rows) is not tuple
             or len(page.rows) > q.limit or page.continuation is not None):
         raise BackendError('integrity')
     ordinals = {field: i for i, field in enumerate(fields)}
@@ -167,25 +184,30 @@ def try_ordered_select(plan, view, budget=None):
     rows, seen, text_units = [], set(), 0
     input_text = 0
     for record in page.rows:
-        if type(record) is not CatalogValueRow or type(record.key) is not CatalogKey:
+        if type(record) is not row_type or type(record.key) is not key_type:
             raise BackendError('integrity')
         key = record.key
-        if (type(key.database_id) is not UUID or type(key.catalog_id) is not UUID or type(key.record_id) is not UUID
-                or key.database_id != view.database_id or key.catalog_id != manager._schema.identity
+        identity = key.document_id if document else key.catalog_id
+        if (type(key.database_id) is not UUID or type(identity) is not UUID or type(key.record_id) is not UUID
+                or key.database_id != view.database_id or identity != manager._schema.identity
+                or (document and (type(record.line_number) is not int or record.line_number != 0))
                 or not key.record_id.int or key.record_id in seen or type(record.values) is not tuple
                 or len(record.values) != len(fields)):
             raise BackendError('integrity')
         if 'ref' in ordinals:
             ref = record.values[ordinals['ref']]
-            if (type(ref) is not CatalogKey or type(ref.database_id) is not UUID
-                    or type(ref.catalog_id) is not UUID or type(ref.record_id) is not UUID or ref != key):
+            if (type(ref) is not key_type or type(ref.database_id) is not UUID
+                    or type(ref.document_id if document else ref.catalog_id) is not UUID
+                    or type(ref.record_id) is not UUID or ref != key):
                 raise BackendError('integrity')
         seen.add(key.record_id)
         if budget is not None:
             input_text += sum(len(value) for value in record.values if type(value) is str)
-        row = tuple(_section_value(manager, column.custom, record.values[index])
-                    if column.custom is not None else _logical(manager, column, record.values[index])
-                    for column, index in zip(plan.columns,positions))
+        row = (tuple(_ordered_header_value(manager, column.field, record.values[index])
+                     for column, index in zip(plan.columns,positions)) if document else
+               tuple(_section_value(manager, column.custom, record.values[index])
+                     if column.custom is not None else _logical(manager, column, record.values[index])
+                     for column, index in zip(plan.columns,positions)))
         text_units += sum(len(value) for value in row if type(value) is str)
         rows.append(row)
         if len(rows)*len(plan.columns) > _MAX_CELLS or text_units > _MAX_RESULT_TEXT:

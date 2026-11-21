@@ -481,23 +481,7 @@ class DocumentView:
             self._view._validated_sources[key] = result
         return result
 
-    def scan_document_values(self, identity, request, fields, section_id=None, predicate=()):
-        """Closed SQLite projection port, never a partial DocumentCard.
-
-        The first pass validates ALL fields/sections, including excluded data.
-        Subsequent materialization reads only the requested header or section.
-        """
-        from yadinassi.db.document.document_backend import DocumentValueRow, DocumentValuePage
-        self._view._require()
-        if self._view._operation_id is not None: raise BackendError('unsupported')
-        schema = self.document_schema(identity)
-        section = None
-        if section_id is not None:
-            section = next((s for s in schema.tabular_sections if s.identity == section_id), None)
-            if section is None: raise BackendError('invalid_input')
-        definitions = self._projection_fields(schema,fields,section)
-        if type(request) is not DocumentScanRequest or type(request.page_size) is not int or not 1 <= request.page_size <= 1000:
-            raise BackendError('invalid_input')
+    def _document_where(self, schema, predicate):
         from yadinassi.db.catalog.catalog_backend import CatalogComparison
         from datetime import datetime
         if type(predicate) is not tuple or len(predicate) > 128: raise BackendError('invalid_input')
@@ -518,6 +502,74 @@ class DocumentView:
             else: raise BackendError('invalid_input')
             where.append(column + ' ' + {'eq':'=','ne':'!=','lt':'<','le':'<=','gt':'>','ge':'>='}[term.operator] + ' ?')
             args.append(value)
+        return where,args
+
+    def ordered_document_values(self, identity, request, fields):
+        """One bounded query-language page over native header columns only."""
+        from yadinassi.db.catalog.catalog_backend import CatalogOrder, CatalogPredicate, CatalogScanRequest
+        from yadinassi.db.document.document_backend import DocumentValuePage
+        view=self._view
+        view._require()
+        if not view._query_language or view._operation_id is not None: return None
+        if view._backend._active is not view: raise BackendError('closed')
+        schema = self.document_schema(identity)
+        fields_sql = {'ref':'r.record_id COLLATE BINARY',
+                      'number':'r.number COLLATE yadinassi_casefold_v1',
+                      'date':'r.date COLLATE BINARY','deletion_mark':'r.deletion_mark'}
+        if (type(request) is not CatalogScanRequest or type(request.page_size) is not int
+                or not 1 <= request.page_size <= 10000 or request.continuation is not None
+                or type(request.order) is not tuple or not 1 <= len(request.order) <= 16
+                or type(request.string_comparison) is not str or request.string_comparison != 'casefold_v1'
+                or type(fields) is not tuple or any(type(field) is not str for field in fields)):
+            raise BackendError('invalid_input')
+        self._projection_fields(schema,fields)
+        order = []
+        for item in request.order:
+            if type(item) is not CatalogOrder or type(item.field) is not str or type(item.descending) is not bool:
+                raise BackendError('invalid_input')
+            if item.field not in fields_sql: return None
+            order.append(fields_sql[item.field] + (' DESC' if item.descending else ' ASC'))
+        # The residual stable sort loads documents in this exact source order.
+        order.extend(('r.date ASC','r.number COLLATE BINARY ASC','r.record_id ASC'))
+        predicate = request.predicate
+        if predicate is None:
+            terms = ()
+        elif type(predicate) is CatalogPredicate and type(predicate.kind) is str and predicate.kind == 'and':
+            terms = predicate.terms
+        else:
+            return None
+        where,args = self._document_where(schema,terms)
+        _storage()._close_document_scan(view)
+        view._scan_cursor = None
+        sql = self._projection_sql(fields,where=' AND '.join(('r.document_id=?',*where)))
+        cursor = self._connection.execute(sql+' ORDER BY '+','.join(order)+' LIMIT ?',
+                                          (str(identity),*args,request.page_size))
+        try:
+            rows = tuple(self._project_header(schema,fields,row) for row in cursor)
+        finally:
+            cursor.close()
+        view._require()
+        if view._backend._active is not view: raise BackendError('closed')
+        return DocumentValuePage(rows,None)
+
+    def scan_document_values(self, identity, request, fields, section_id=None, predicate=()):
+        """Closed SQLite projection port, never a partial DocumentCard.
+
+        The first pass validates ALL fields/sections, including excluded data.
+        Subsequent materialization reads only the requested header or section.
+        """
+        from yadinassi.db.document.document_backend import DocumentValueRow, DocumentValuePage
+        self._view._require()
+        if self._view._operation_id is not None: raise BackendError('unsupported')
+        schema = self.document_schema(identity)
+        section = None
+        if section_id is not None:
+            section = next((s for s in schema.tabular_sections if s.identity == section_id), None)
+            if section is None: raise BackendError('invalid_input')
+        definitions = self._projection_fields(schema,fields,section)
+        if type(request) is not DocumentScanRequest or type(request.page_size) is not int or not 1 <= request.page_size <= 1000:
+            raise BackendError('invalid_input')
+        where, args = self._document_where(schema,predicate)
         binding = ('document-values', identity, request.page_size, fields, section_id, predicate)
         if request.continuation is not None:
             cursor = self._view._scan_cursor

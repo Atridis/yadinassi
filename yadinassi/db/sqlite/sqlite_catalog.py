@@ -3141,7 +3141,7 @@ class _View:
             raise
 
 # The document port shares the same closed storage error boundary.
-for _document_method in ('_validate_query_source','documents','document_schema','read_document','read_document_values','select_documents','scan_documents','scan_document_values','find_document_number','registers','register_schema','scan_register','periodic_records','create','update','commit'):
+for _document_method in ('_validate_query_source','documents','document_schema','read_document','read_document_values','select_documents','scan_documents','scan_document_values','ordered_document_values','find_document_number','registers','register_schema','scan_register','periodic_records','create','update','commit'):
     setattr(DocumentView, _document_method, _boundary(getattr(DocumentView, _document_method)))
 
 install_boundaries(_boundary)

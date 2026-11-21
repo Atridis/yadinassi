@@ -163,6 +163,22 @@ def _load_sqlite_values(manager, section, columns, view, budget, predicate=()):
         if len(cursors) > syntax.MAX_ROWS: raise BackendError('integrity')
 
 
+def _ordered_header_value(manager, field, value):
+    if field == 'ref': return manager._ref(value.record_id)
+    if field == 'date':
+        if type(value) is not datetime or value.tzinfo is not None or value.microsecond:
+            raise BackendError('integrity')
+        return _date_from_datetime(value)
+    if field == 'number':
+        try: validate_string(value, manager._schema.number_length)
+        except (TypeError, ValueError): raise BackendError('integrity') from None
+        if not value: raise BackendError('integrity')
+    elif field in ('posted','deletion_mark'):
+        if type(value) is not bool: raise BackendError('integrity')
+    else: raise BackendError('integrity')
+    return value
+
+
 def _owned_projection_view(view):
     from yadinassi.db.sqlite.sqlite_documents import DocumentView
     return type(view) is DocumentView and view._view._operation_id is None
