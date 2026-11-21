@@ -32,6 +32,29 @@ class DirectCatalogPreparationTests(unittest.TestCase):
         ref=self.card.get_member('Ссылка');saved=ref.get_object(ref)
         self.assertEqual(saved.get_member('Наименование'),'Кабель');self.assertEqual(saved.get_member('Склады').count(),1)
 
+    def test_scalar_update_runs_handler_without_replacing_loaded_sections(self):
+        self.card.write()
+        backend=self.db.backend
+        definition=self.card._manager._schema
+        table=backend._section_layout.table_name(definition.identity,definition.tabular_sections[0].identity)
+        connect=backend._connect
+        trace=[]
+        def open_connection(**kwargs):
+            connection=connect(**kwargs)
+            connection.set_trace_callback(trace.append)
+            return connection
+        before=self.card._write_draft()
+        ref=self.card.get_member('Ref')
+        row_ids=tuple(row.identity for row in self.card.get_member('Склады')._stored_rows().rows)
+        self.assertIsNone(before.tabular_sections)
+        self.card.set_member('Description','  Updated  ')
+        with patch.object(backend,'_connect',side_effect=open_connection):
+            self.card.write()
+        self.assertEqual(self.card.get_member('Description'),'Updated')  # BeforeWrite trimmed.
+        self.assertFalse(any(sql.startswith(('DELETE','INSERT')) and table in sql for sql in trace))
+        saved=ref.get_object(ref)
+        self.assertEqual(tuple(row.identity for row in saved.get_member('Склады')._stored_rows().rows),row_ids)
+
     def test_denied_original_write_keeps_database_empty_and_messages(self):
         self.card.set_member('Наименование',' x ')
         self.card.set_member('ВидНоменклатуры',self.cats.get_member('ВидыНоменклатуры').empty_ref())

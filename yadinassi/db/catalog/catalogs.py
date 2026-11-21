@@ -348,10 +348,9 @@ class BSLCatalogObject(BSLObject):
         self._write()
         return None
 
-    def _write_draft(self, *, complete_sections=False):
+    def _write_draft(self):
         m=self._manager
-        sections=(tuple(section._stored_rows() for section in self._sections.values())
-                  if complete_sections else self._section_draft())
+        sections=self._section_draft()
         return CatalogDraft(self._key,self._values['code'],self._values['description'],self._values['deletionmark'],
                             tuple(m._stored(f,self._values[f.name.casefold()]) for f in m._schema.fields),sections,
                             auto_number=self.is_new() and m._schema.numbering=='decimal_v1' and self._values['code']=='',
@@ -382,7 +381,7 @@ class BSLCatalogObject(BSLObject):
             if preparation is not None and preparation[0] != selected_source:
                 raise BackendError('schema_changed')
             preparation = (selected_source, preparation[1] if preparation is not None else False)
-        draft=self._write_draft(complete_sections=preparation is not None)
+        draft=self._write_draft()
         expected=self._revision
         operation=self._operation_id
         from yadinassi.db.database_transactions import current
@@ -423,7 +422,9 @@ class BSLCatalogObject(BSLObject):
                 cancel,messages=_prepare_catalog_object(preparation[0],self,
                     cancel=preparation[1],write_view=tx,prepared=prepared_validator)
                 if cancel:raise CatalogWriteRefused(messages)
-                draft=self._write_draft(complete_sections=True)
+                # BeforeWrite can inspect every loaded row without editing
+                # it. Only actual buffer mutations require section writes.
+                draft=self._write_draft()
             if expected is None:tx.create(draft)
             else:tx.update(draft,expected)
             # A failed COMMIT response cannot be retried on this edit

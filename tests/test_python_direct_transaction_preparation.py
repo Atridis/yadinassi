@@ -70,6 +70,23 @@ class DirectTransactionPreparationTests(unittest.TestCase):
             self.assertEqual(saved.get_member('Склады').count(),2 if commit else 1)
             self.assertEqual(int(saved._revision.token),int(revision.token)+(1 if commit else 0))
 
+    def test_clean_sections_stay_out_of_post_handler_transaction_intent(self):
+        self.card.write()
+        ref=self.card.get_member('Ref')
+        before=ref.get_object(ref)
+        self.card.set_member('Description','  Held update  ')
+        with self.activation():
+            tx.begin(self.db.backend)
+            self.card.write()
+            request,=tx.current(self.db.backend).unit.requests
+            self.assertEqual(request.draft.description,'Held update')
+            self.assertIsNone(request.draft.tabular_sections)
+            tx.rollback(self.db.backend)
+        self.clean()
+        saved=ref.get_object(ref)
+        self.assertEqual(saved._revision,before._revision)
+        self.assertEqual(saved.get_member('Склады')._stored_rows(),before.get_member('Склады')._stored_rows())
+
     def test_read_sees_prior_stage_and_cancel_preserves_it_when_caught(self):
         with self.activation():
             tx.begin(self.db.backend)

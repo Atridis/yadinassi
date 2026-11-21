@@ -86,7 +86,7 @@ def stage_selected_source(receiver,preparation,selected_source):
             scope.check()
             if cancel:raise CatalogWriteRefused(messages)
             if policy(backend,scope.schema.identity)!=selected_source:raise BackendError('schema_changed')
-            draft=receiver._write_draft(complete_sections=True)
+            draft=receiver._write_draft()
             scope.check()
         finally:
             try:
