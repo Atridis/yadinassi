@@ -640,8 +640,14 @@ class Emitter:
             left=self.expr(node.left);right=self.expr(node.right)
             left_kind=self.scalar_kinds.get(id(node.left))
             right_kind=self.scalar_kinds.get(id(node.right))
-            if id(node) in self.scalar_kinds and op=='+' and left_kind=='string':
-                return self.call('_concatenate',[left,right],t)
+            if op=='+':
+                left_value=node.left
+                while type(left_value) is bsl.Group:left_value=left_value.expression
+                if (left_kind=='string'
+                        or (type(left_value) is bsl.Literal and type(left_value.value) is str)):
+                    # BSL converts a non-string RHS when the left operand is a string.
+                    # No runtime type dispatch is needed for a known string.
+                    return self.call('_concatenate',[left,right],t)
             if id(node) in self.scalar_kinds and left_kind==right_kind:
                 if op=='+' and left_kind=='number':
                     return self.node(py.BinOp,t,left=left,op=py.Add(),right=right)

@@ -35,7 +35,6 @@ class DirectScalarPrefixTests(TestCase):
         return vm
 
     def test_literal_sum_in_all_three_source_shapes(self):
-        expected = '_constants[0] + _constants[1] + _constants[2] + _constants[3]'
         for text in ('1+2+3+5', 'R=1+2+3+5;', 'R=1+2+3+5;Host();'):
             with self.subTest(text=text):
                 vm = self.vm(allow_extensions=True)
@@ -43,7 +42,10 @@ class DirectScalarPrefixTests(TestCase):
                 vm.register_function('Host', lambda: observed.append(vm.variables['r']))
                 prepared = vm.prepare(text)
                 code = prepared._plan.generated_source
-                self.assertIn(expected, code)
+                tree = ast.parse(code)
+                adds = [node for node in ast.walk(tree)
+                        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add)]
+                self.assertEqual(len(adds), 3)
                 self.assertNotIn('_native_add', code)
                 self.assertNotIn('_concatenate', code)
                 result = vm.execute_prepared(prepared)
@@ -100,3 +102,26 @@ class DirectScalarPrefixTests(TestCase):
         vm.register_function('Host', lambda: vm.variables.update(r=True, v=1))
         vm.execute('R=1+2+3+5;Host();T=(R=V);')
         self.assertIs(vm.variables['t'], False)
+
+    def test_string_prefix_uses_bsl_concat_with_unknown_or_native_int_rhs(self):
+        vm = self.vm()
+        vm.variables['external'] = Decimal('1234.5')
+        source = 'R=("value=")+external; I=1000+234; T="value="+I;'
+        prepared = vm.prepare(source)
+        code = prepared._plan.generated_source
+        self.assertEqual(code.count('_concatenate('), 2)
+        self.assertNotIn('_native_add(', code)
+        vm.execute_prepared(prepared)
+        self.assertEqual(vm.variables['r'], 'value=1\u00a0234,5')
+        self.assertEqual(vm.variables['t'], 'value=1\u00a0234')
+
+    def test_native_int_concat_keeps_numeric_loop_direct(self):
+        vm = self.vm()
+        prepared = vm.prepare('N=0;For I=1 To 100 Do N=N+I;EndDo;R="total="+N;')
+        tree = ast.parse(prepared._plan.generated_source)
+        loop = next(n for n in ast.walk(tree) if isinstance(n, ast.For))
+        self.assertIn('range(1,', ast.unparse(loop))
+        for helper in ('_context.', '_native_add(', '_concatenate('):
+            self.assertNotIn(helper, ast.unparse(loop))
+        vm.execute_prepared(prepared)
+        self.assertEqual(vm.variables['r'], 'total=5\u00a0050')
