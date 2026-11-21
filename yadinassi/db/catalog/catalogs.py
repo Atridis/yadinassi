@@ -66,10 +66,24 @@ class BSLCatalogManager(BSLObject):
             setattr(self,attr,BSLCatalogType(self._schema.identity,self._schema.name,catalogs._metadata,family))
     @property
     def _backend(self):return self._catalogs._context.backend
-    def _view(self):
+    def _runtime_data_backend(self):
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+        from yadinassi.execution.direct.python_direct_transactions import _Owner, _ROOT_OWNER
+        backend = self._backend
+        owner = _ROOT_OWNER.get()
+        if (type(backend) is SQLiteCatalogBackend and backend.format_version == 16
+                and type(owner) is _Owner and owner.token is None
+                and owner.catalogs is self._catalogs and owner.catalog_metadata is self._catalogs._metadata):
+            owner.check(backend)
+            return backend
+        return None
+
+    def _view(self, *, catalog_data=False):
         from yadinassi.db.database_transactions import forbid_transfer
         forbid_transfer(self._backend)
-        view=self._backend.begin_read()
+        data_backend = self._runtime_data_backend() if catalog_data else None
+        view = (self._backend.begin_read() if data_backend is None
+                else data_backend._begin_catalog_data(self._schema.identity))
         try:
             if (view.database_id!=self._catalogs._metadata._database_id
                     or view.configuration_generation!=self._catalogs._metadata._generation
@@ -144,7 +158,7 @@ class BSLCatalogManager(BSLObject):
         values.update((f.name.casefold(),self._logical(f,v)) for f,v in zip(self._schema.fields,card.values))
         return values
     def _read(self,record):
-        view=self._view()
+        view=self._view(catalog_data=True)
         try:return view.read_catalog(self._key(record))
         finally:view.close()
     def _read_member(self,ref,name):
@@ -382,7 +396,9 @@ class BSLCatalogObject(BSLObject):
             if current_backend() == 'python-direct':
                 from yadinassi.execution.direct.python_direct_catalog_preparation import prepared_validator as prepare_validator
                 prepared_validator=prepare_validator(m,preparation[0])
-        tx=m._backend.begin_write(operation)
+        data_backend = m._runtime_data_backend() if preparation is None and not retry else None
+        tx = (m._backend.begin_write(operation) if data_backend is None else
+              data_backend._begin_catalog_data(m._schema.identity, operation))
         committing=False
         messages=()
         try:

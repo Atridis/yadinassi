@@ -662,6 +662,10 @@ class SQLiteCatalogBackend:
                 self.accumulation_configuration = admit(connection, self.database_id, self._schemas,
                     self._document_schemas, validate_rows=True, _prepared=self._prepared_source)
                 self._accumulation_schemas = self.accumulation_configuration.registers
+            self._catalog_runtime_data = None
+            if self.format_version == 16:
+                from .sqlite_catalog_runtime_data import CatalogRuntimeData
+                self._catalog_runtime_data = CatalogRuntimeData(self, connection, _APPLICATION_ID)
             self._sqlite_schema_version = connection.execute('PRAGMA schema_version').fetchone()[0]
             # The generic epoch descriptor must also notice DDL changes whose
             # writer deliberately restored schema_version to its old value.
@@ -1700,8 +1704,19 @@ class SQLiteCatalogBackend:
                 None if not hasattr(self, '_section_layout') else tuple(self._section_layout._fields.items()),
                 self._admission_ddl_snapshot)
 
+    @_boundary
+    def _begin_catalog_data(self, catalog_id, operation_id=None):
+        _uuid(catalog_id)
+        if self.format_version != 16 or self._catalog_runtime_data is None:
+            raise BackendError('unsupported')
+        if operation_id is not None:
+            _uuid(operation_id)
+            if self.read_only or not self._catalog_runtime_data.allows_write(self, catalog_id):
+                raise BackendError('unsupported')
+        return self._begin(operation_id, _catalog_data=True)
+
     @lifecycle
-    def _begin(self, operation_id, *, _receipt_only=False):
+    def _begin(self, operation_id, *, _receipt_only=False, _catalog_data=False):
         if _receipt_only and operation_id is not None: raise BackendError('unsupported')
         if self._closed: raise BackendError('closed')
         if self.storage_version == 5 or not self.activated: raise BackendError('unsupported')
@@ -1730,7 +1745,8 @@ class SQLiteCatalogBackend:
                 connection.execute('BEGIN IMMEDIATE' if operation_id is not None else 'BEGIN')
                 proofs = None
                 descriptor = None
-                if handle is not None and self._read_admission_cache_allowed():
+                catalog_data = self._catalog_runtime_data if _catalog_data else None
+                if handle is not None and catalog_data is None and self._read_admission_cache_allowed():
                     # BEGIN alone does not pin a snapshot. Reading sqlite_schema
                     # takes a real shared read lock before sampling data_version.
                     connection.execute('SELECT rootpage FROM sqlite_schema LIMIT 1').fetchone()
@@ -1742,7 +1758,11 @@ class SQLiteCatalogBackend:
                         if not _same(handle.admission, self._read_admission_descriptor()):
                             raise BackendError('schema_changed')
                         descriptor = handle.admission
-                if descriptor is None:
+                if catalog_data is not None:
+                    catalog_data.check(connection)
+                    if handle is not None and connection.execute('PRAGMA journal_mode').fetchone() != ('delete',):
+                        raise BackendError('unsupported')
+                elif descriptor is None:
                     self._validate_transaction_admission(connection, _receipt_only=_receipt_only)
                     if handle is not None and self._read_admission_cache_allowed():
                         current = self._read_admission_descriptor()
@@ -1754,14 +1774,15 @@ class SQLiteCatalogBackend:
                             from yadinassi.configuration.configuration_inventory_enums import _same
                             if not _same(descriptor, current):
                                 raise BackendError('schema_changed')
-                # The pinned format-16 source admission proved this UUID and
-                # requires generation 1. A warm descriptor reuses that proof
-                # only on the unchanged read snapshot above. Other callers
-                # and formats still obtain the identity from their connection.
+                # The format-16 snapshot proved this UUID and generation 1.
+                # The runtime data lane checks identity directly; only the raw
+                # lane may reuse a warmed full admission on its pinned epoch.
                 identity = (UUID(int=self.database_id.int), 1) if self.format_version == 16 else None
-                view = _View(self, connection, operation_id, admitted_identity=identity)
+                view = _View(self, connection, operation_id, admitted_identity=identity,
+                             catalog_data=catalog_data)
                 if handle is not None:
                     view._read_handle = handle
+                if handle is not None and catalog_data is None:
                     view._validated_sources = handle.pin() if proofs is None else proofs
                     handle._pending_admission = descriptor
                     # Detached values, not authority: a new or changed SQL
@@ -1979,9 +2000,12 @@ class SQLiteCatalogBackend:
 
 
 class _View:
-    def __init__(self, backend, connection, operation_id, *, query_language=False, admitted_identity=None):
+    def __init__(self, backend, connection, operation_id, *, query_language=False,
+                 admitted_identity=None, catalog_data=None):
         self._backend, self._connection, self._operation_id = backend, connection, operation_id
         self._query_language = query_language
+        self._catalog_data = catalog_data
+        self._catalog_data_schemas = None if catalog_data is None else {}
         self._closed = False; self._poisoned = False; self._changes = []; self._intents = []
         self._scan_cursor = None
         self._validated_sources = {}
@@ -2019,6 +2043,21 @@ class _View:
                 if backend.storage_version in (8, 9, 10) and connection.execute('SELECT 1 FROM information_register_receipt WHERE operation_id=?', (operation,)).fetchone(): raise BackendError('conflict')
         if self.database_id != backend.database_id or self.configuration_generation != backend.configuration_generation:
             raise BackendError('schema_changed')
+
+    @property
+    def _catalog_layout(self):
+        data = self._catalog_data
+        return self._backend._layout if data is None else data.layout
+
+    @property
+    def _catalog_sections(self):
+        data = self._catalog_data
+        return self._backend._section_layout if data is None else data.sections
+
+    @property
+    def _catalog_domain(self):
+        data = self._catalog_data
+        return self._backend._enum_domain if data is None else data.domain
 
     def _require(self, write=False, mutate=False):
         if self._closed or self._poisoned: raise BackendError('closed')
@@ -2097,6 +2136,12 @@ class _View:
     @_boundary
     def catalog_schema(self, catalog_id):
         self._require(); _uuid(catalog_id)
+        if self._catalog_data is not None:
+            schemas = self._catalog_data_schemas
+            schema = schemas.get(catalog_id)
+            if schema is None:
+                schema = schemas[catalog_id] = self._catalog_data.catalog(self._connection, catalog_id)
+            return schema
         if self._query_language:
             for schema in self._backend._schemas:
                 if schema.identity == catalog_id:
@@ -2134,7 +2179,7 @@ class _View:
             if type(row[5]) is not str or len(row[5]) > _MAX_ROW_BYTES: raise BackendError('integrity')
             encoded = json.loads(row[5])
         else:
-            encoded = decode_columns(row[5:], schema, enum_domain=self._backend._enum_domain)
+            encoded = decode_columns(row[5:], schema, enum_domain=self._catalog_domain)
         if type(encoded) is not list: raise BackendError('integrity')
         if len(encoded) != len(schema.fields): raise BackendError('integrity')
         if type(row[1]) is not int or not 1 <= row[1] < 2**63 or type(row[2]) is not str or len(row[2]) > schema.code_length or type(row[3]) is not str or len(row[3]) > schema.description_length or type(row[4]) is not int or row[4] not in (0,1): raise BackendError('integrity')
@@ -2148,7 +2193,7 @@ class _View:
         revision = Revision(self.database_id,self.configuration_generation,catalog_id,key.record_id,str(row[1]))
         parent, is_folder = hierarchy_storage.values(self,schema,key.record_id)
         return CatalogScalarRow(key,revision,row[2],row[3],bool(row[4]),
-                                tuple(_decode(v,f,self.database_id, enum_domain=self._backend._enum_domain) for v,f in zip(encoded,schema.fields)), parent, is_folder)
+                                tuple(_decode(v,f,self.database_id, enum_domain=self._catalog_domain) for v,f in zip(encoded,schema.fields)), parent, is_folder)
 
     def _card(self, catalog_id, row, section_budget=None, *, schema, sections=_UNLOADED):
         scalar = self._scalar(catalog_id, row, schema=schema)
@@ -2158,7 +2203,7 @@ class _View:
                            scalar.deletion_mark, scalar.values, sections, scalar.parent, scalar.is_folder)
 
     def _section_source(self, schema, section):
-        layout = self._backend._section_layout
+        layout = self._catalog_sections
         table = quote_identifier(layout.table_name(schema.identity, section.identity))
         fields = [quote_identifier(layout.field_name(schema.identity, section.identity, f.identity)) for f in section.fields]
         return table, fields
@@ -2200,16 +2245,16 @@ class _View:
             for position, row in enumerate(rows, 1):
                 identity = UUID(row[0]); _uuid(identity)
                 if str(identity) != row[0] or row[1] != position: raise BackendError('integrity')
-                encoded = decode_columns(row[2:], section, enum_domain=self._backend._enum_domain)
-                values.append(TabularRow(identity, tuple(_decode(v, f, self.database_id, enum_domain=self._backend._enum_domain) for v, f in zip(encoded, section.fields))))
+                encoded = decode_columns(row[2:], section, enum_domain=self._catalog_domain)
+                values.append(TabularRow(identity, tuple(_decode(v, f, self.database_id, enum_domain=self._catalog_domain) for v, f in zip(encoded, section.fields))))
             result.append(TabularSectionRows(section.identity, tuple(values)))
         return tuple(result)
 
     def _source(self, schema):
         if self._backend.storage_version == 1:
             return ('catalog_record', 'record_id,revision,code,description,deletion_mark,values_json', 'catalog_id=?', (str(schema.identity),))
-        fields = ','.join(quote_identifier(self._backend._layout.field_name(schema.identity, f.identity)) for f in schema.fields)
-        return (quote_identifier(self._backend._layout.table_name(schema.identity)), 'record_id,revision,code,description,deletion_mark' + (',' + fields if fields else ''), '1', ())
+        fields = ','.join(quote_identifier(self._catalog_layout.field_name(schema.identity, f.identity)) for f in schema.fields)
+        return (quote_identifier(self._catalog_layout.table_name(schema.identity)), 'record_id,revision,code,description,deletion_mark' + (',' + fields if fields else ''), '1', ())
 
     @_boundary
     def select_catalog(self, catalog_id, request=CatalogSelection()):
@@ -2866,7 +2911,7 @@ class _View:
                             description=normalize_string(draft.description,schema.description_length),
                             values=tuple(normalize_field(v,f) for v,f in zip(draft.values,schema.fields)))
         except (ValueError, TypeError): raise BackendError('invalid_input') from None
-        values = [_encode(v,f,self.database_id, enum_domain=self._backend._enum_domain) for v,f in zip(draft.values,schema.fields)]
+        values = [_encode(v,f,self.database_id, enum_domain=self._catalog_domain) for v,f in zip(draft.values,schema.fields)]
         for value in draft.values:
             if type(value) is CatalogKey and value.record_id.int and not self._reference_exists(value):
                 raise BackendError('not_found')
@@ -2902,14 +2947,14 @@ class _View:
                     raise BackendError('invalid_input')
                 seen.add(identity)
                 try:
-                    values = [_encode(normalize_field(v, f), f, self.database_id, enum_domain=self._backend._enum_domain) for v, f in zip(row.values, definition.fields)]
+                    values = [_encode(normalize_field(v, f), f, self.database_id, enum_domain=self._catalog_domain) for v, f in zip(row.values, definition.fields)]
                 except (ValueError, TypeError): raise BackendError('invalid_input') from None
                 for value in row.values:
                     if type(value) is CatalogKey and value.record_id.int and not self._reference_exists(value):
                         raise BackendError('not_found')
                 encoded_row = [identity, values]
                 size += len(_json(encoded_row)) + 1
-                columns = encode_columns(values, definition, enum_domain=self._backend._enum_domain)
+                columns = encode_columns(values, definition, enum_domain=self._catalog_domain)
                 stored_size += 52 + sum(len(value.encode('utf-8')) if type(value) is str else (1 if type(value) is int else 0) for value in columns)
                 if size > _MAX_ROW_BYTES or stored_size > _MAX_ROW_BYTES: raise BackendError('invalid_input')
                 rows.append(encoded_row)
@@ -2929,7 +2974,7 @@ class _View:
             # never deleted, including when its deletion mark is set.
             self._connection.execute('DELETE FROM %s WHERE owner_id=?' % table, (str(draft.key.record_id),))
             for position, (row_id, encoded) in enumerate(contents[str(section.identity)], 1):
-                values = (str(draft.key.record_id), row_id, position) + encode_columns(encoded, section, enum_domain=self._backend._enum_domain)
+                values = (str(draft.key.record_id), row_id, position) + encode_columns(encoded, section, enum_domain=self._catalog_domain)
                 columns = ['owner_id', 'row_id', 'row_number'] + fields
                 self._connection.execute('INSERT INTO %s (%s) VALUES(%s)' % (table, ','.join(columns), ','.join('?' for _ in values)), values)
 
@@ -2965,7 +3010,9 @@ class _View:
                 raise BackendError('unsupported')
 
     def _allocate_code(self, schema, table):
-        self._backend._check_sequences(self._connection, self._backend._schemas)
+        schemas = (self._backend._schemas if self._catalog_data is None
+                   else self._catalog_data.schemas.values())
+        self._backend._check_sequences(self._connection, schemas)
         candidate = self._connection.execute('SELECT next_value FROM catalog_sequence WHERE catalog_id=?',
             (str(schema.identity),)).fetchone()[0]
         ceiling = 10 ** schema.code_length
@@ -2998,7 +3045,7 @@ class _View:
                 if self._backend.storage_version == 1:
                     self._connection.execute('INSERT INTO catalog_record VALUES(?,?,1,?,?,?,?)',(str(draft.key.catalog_id),str(draft.key.record_id),draft.code,draft.description,int(draft.deletion_mark),values))
                 else:
-                    vals = (str(draft.key.record_id),1,draft.code,draft.description,int(draft.deletion_mark))+encode_columns(json.loads(values),schema, enum_domain=self._backend._enum_domain)
+                    vals = (str(draft.key.record_id),1,draft.code,draft.description,int(draft.deletion_mark))+encode_columns(json.loads(values),schema, enum_domain=self._catalog_domain)
                     self._connection.execute('INSERT INTO %s (%s) VALUES(%s)' % (table,columns,','.join('?' for _ in vals)),vals)
             except sqlite3.IntegrityError:
                 raise BackendError('duplicate_identity' if self._reference_exists(draft.key) else 'duplicate_code') from None
@@ -3022,8 +3069,8 @@ class _View:
                 if self._backend.storage_version == 1:
                     cursor = self._connection.execute('UPDATE catalog_record SET revision=revision+1,code=?,description=?,deletion_mark=?,values_json=? WHERE catalog_id=? AND record_id=? AND revision=?',(draft.code,draft.description,int(draft.deletion_mark),values,str(draft.key.catalog_id),str(draft.key.record_id),revision))
                 else:
-                    sets = ['revision=revision+1','code=?','description=?','deletion_mark=?'] + [quote_identifier(self._backend._layout.field_name(schema.identity, f.identity))+'=?' for f in schema.fields]
-                    vals = (draft.code,draft.description,int(draft.deletion_mark))+encode_columns(json.loads(values),schema, enum_domain=self._backend._enum_domain)+args+(str(draft.key.record_id),revision)
+                    sets = ['revision=revision+1','code=?','description=?','deletion_mark=?'] + [quote_identifier(self._catalog_layout.field_name(schema.identity, f.identity))+'=?' for f in schema.fields]
+                    vals = (draft.code,draft.description,int(draft.deletion_mark))+encode_columns(json.loads(values),schema, enum_domain=self._catalog_domain)+args+(str(draft.key.record_id),revision)
                     cursor = self._connection.execute('UPDATE %s SET %s WHERE %s AND record_id=? AND revision=?' % (table,','.join(sets),where), vals)
             except sqlite3.IntegrityError: raise BackendError('duplicate_code') from None
             if cursor.rowcount != 1: raise BackendError('conflict')
@@ -3107,7 +3154,8 @@ class _View:
                 _close_owned_connection(self)
                 return
             self._connection.execute('ROLLBACK')
-            handle.complete(self._validated_sources)
+            if self._catalog_data is None:
+                handle.complete(self._validated_sources)
             self._validated_sources.clear()
             self._connection = None
             self._read_handle = None
