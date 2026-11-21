@@ -202,6 +202,43 @@ class DirectValueTreeTests(unittest.TestCase):
         for source in ('T.Columns.Get(0)','For Each C In T.Columns Do EndDo;'):
             with self.subTest(source=source),self.assertRaises(BoundaryViolation):vm.execute(source)
 
+    def test_iteration_admits_abi_once_per_resume_and_rechecks_next_resume(self):
+        import sys
+        from yadinassi.execution.direct.python_direct import make_boundary
+        from yadinassi.execution.direct import python_direct_value_tree as bridge
+
+        vm=self.vm();tree,first=self.setup_tree(vm)
+        second=tree.rows.add()
+        context=make_boundary(vm);context.enter()
+        try:
+            iterator=context.resolve_member(tree.rows,'__iter__')()
+            checks=[]
+            code=bridge.hooks.__code__
+            saved=sys.getprofile()
+            def profile(frame,event,_argument):
+                if event=='call' and frame.f_code is code:checks.append(1)
+            sys.setprofile(profile)
+            try:
+                self.assertIs(next(iterator),first)
+                self.assertIs(next(iterator),second)
+                with self.assertRaises(StopIteration):next(iterator)
+            finally:sys.setprofile(saved)
+            self.assertEqual(len(checks),2)
+
+            iterator=context.resolve_member(tree.rows,'__iter__')()
+            self.assertIs(next(iterator),first)
+            with patch.object(trees.BSLValueTreeRow,'level',lambda self:0):
+                with self.assertRaises(BoundaryViolation):next(iterator)
+        finally:context.leave()
+
+    def test_iteration_still_rejects_canonical_child_from_other_tree(self):
+        vm=self.vm();tree,_=self.setup_tree(vm)
+        other=trees.BSLValueTree()
+        other.columns.add('Name')
+        tree.rows.items[0]=other.rows.add()
+        with self.assertRaises(BoundaryViolation):
+            vm.execute('For Each R In T.Rows Do EndDo;')
+
     def test_registry_rejects_hostile_keys_without_hash_eq_or_repr(self):
         vm=self.vm();tree,row=self.setup_tree(vm);events=[]
         class Foreign:

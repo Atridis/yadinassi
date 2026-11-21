@@ -326,7 +326,10 @@ class ValueTreeBoundary:
                             check(self,value)
                             expected=_ROW if type(value) is _ROWS else _COLUMN if type(value) is _COLUMNS else None
                             if expected is not None and type(item) is not expected:raise BoundaryViolation('foreign ValueTree iteration item')
-                            if owns(item) and check(self,item) is not root:raise BoundaryViolation('foreign ValueTree iteration item')
+                            # This resume already admitted the model ABI; only
+                            # the item's distinct birth links remain to check.
+                            if owns(item) and admitted_receiver(self,item) is not root:
+                                raise BoundaryViolation('foreign ValueTree iteration item')
                             yield item
                         if getattr(self,'_verify_context',True) is not False:self._check()
                     return iterator()
