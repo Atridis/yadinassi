@@ -9,7 +9,17 @@ existing reviewed migration plan. `BeginTransaction()` never upgrades a file.
 synchronous execution. Writes of catalog objects, non-posting documents,
 independent register record managers and record sets stage into the same owned
 SQLite transaction. The host journal's operation and byte budgets still apply.
-Standalone `Write()` retains its existing behavior.
+Standalone operations do not start a BSL transaction. When an admitted
+operation needs just one SQLite statement, SQLite supplies the implicit
+transaction. Multi-statement operations still use explicit SQLite transactions
+to prevent partial records. The statement path does not borrow or commit a
+caller-owned transaction.
+
+An open SQLite application owns the admitted physical layout and connection
+settings. Close it before changing the schema, configuration, journal mode or
+page size outside the runtime, then reopen. The benchmark's warm SQL count
+includes every executed statement in the operation; one-time connection setup
+and persisted-result verification are outside the measured loop.
 
 A staged object remains new, and keeps its old revision/number/reference state,
 until the entire batch commits. User field and section edits remain in memory
