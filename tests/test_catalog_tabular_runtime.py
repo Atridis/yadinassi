@@ -1,5 +1,5 @@
 """Owned SQLite catalog section runtime; these are not native 1C parity tests."""
-from dataclasses import FrozenInstanceError, replace
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 import sys
@@ -194,44 +194,33 @@ For I=1 To 999 Do O.Lines.Add(); EndDo; O.Notes.Add();''')
         self.assertEqual(self.execute('''O.Lines.Delete(0); O.Notes.Add();
 Message(O.Lines.Count()); Message(O.Notes.Count());'''), ['998', '2'])
 
-    def test_uncertain_commit_freezes_nested_intent_and_resolves_without_recommit(self):
-        obj, section, row = self.new_row()
+    def test_uncertain_commit_freezes_buffer_and_preserves_committed_sections(self):
+        obj, _, row = self.new_row()
         row.set_member('Text', 'original')
         self.vm.execute('N=O.Notes.Add(); N.Text="note";')
         commit = _View.commit
 
-        def lose_response(tx):
-            commit(tx)
+        def lose_response(tx, **kwargs):
+            commit(tx, **kwargs)
             raise BackendError('uncertain_commit')
 
         with patch.object(_View, 'commit', lose_response), self.assertRaises(BackendError):
             obj.write()
         self.assertTrue(obj.is_new())
         self.assertTrue(obj.get_member('Ref').is_empty())
-        pending = obj._pending_write
-        self.assertIsNotNone(pending)
-        draft = pending[0]
-        self.assertIsInstance(draft.tabular_sections, tuple)
-        self.assertTrue(all(isinstance(part.rows, tuple) for part in draft.tabular_sections))
-        stored_row = draft.tabular_sections[0].rows[0]
-        self.assertIsInstance(stored_row.values, tuple)
-        with self.assertRaises((FrozenInstanceError, AttributeError)):
-            stored_row.values = ()
         for code in ('R.Text="changed";', 'O.Lines.Add();', 'O.Lines.Delete(0);',
                      'O.Lines.Clear();', 'O.Notes.Add();', 'N.Text="changed";',
                      'O.Description="changed";'):
             with self.subTest(code=code), self.assertRaisesRegex(BSLRuntimeError, 'uncertain_commit'):
                 self.vm.execute(code)
-        self.assertEqual(obj._pending_write, pending)
-        with patch.object(_View, 'commit', side_effect=AssertionError('must not recommit')):
+        with patch.object(_View, 'commit', side_effect=AssertionError('must not recommit')), self.assertRaisesRegex(BackendError, 'uncertain_commit'):
             obj.write()
-        self.assertFalse(obj.is_new())
+        self.assertTrue(obj.is_new())
         self.assertEqual(self.execute('''P=Catalogs.Products.FindByCode("10").GetObject();
 Message(P.Lines.Count()); Message(P.Lines[0].Text); Message(P.Notes.Count()); Message(P.Notes[0].Text);'''),
                          ['1', 'original', '1', 'note'])
-        row.set_member('Text', 'next')
-        obj.write()
-        self.assertEqual(self.vm.execute('O.Ref.GetObject().Lines[0].Text'), 'next')
+        self.vm.execute('P.Lines[0].Text="next"; P.Write();')
+        self.assertEqual(self.vm.execute('P.Ref.GetObject().Lines[0].Text'), 'next')
 
     def test_direct_reference_and_selection_parts_require_getobject(self):
         self.vm.execute('''O=Catalogs.Products.CreateItem(); O.Code="10"; O.Lines.Add(); O.Write();

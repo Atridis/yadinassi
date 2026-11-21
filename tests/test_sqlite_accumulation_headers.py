@@ -23,7 +23,7 @@ class AccumulationHeaderTests(unittest.TestCase):
 
     def test_header_admission_returns_none_and_never_operates_on_rows(self):
         with closing(self.backend.begin_read()) as view, ExitStack() as stack:
-            for method in ('read', 'scan', 'describe', 'replace', 'resolve', '_references', '_encoded'):
+            for method in ('read', 'scan', 'describe', 'replace', '_references', '_encoded'):
                 stack.enter_context(patch.object(movements.AccumulationMovementPort, method,
                     side_effect=AssertionError('row/reference operation '+method)))
             stack.enter_context(patch.object(storage, 'load_layout', side_effect=AssertionError('redundant layout')))
@@ -76,7 +76,7 @@ class AccumulationHeaderTests(unittest.TestCase):
             request = AccumulationReplacement(schema.identity, recorder, (), '0' * 64)
             before = view._connection.total_changes
             with patch.object(movements.AccumulationMovementPort, '_references', side_effect=BackendError('not_found')) as refs:
-                with self.assertRaises(BackendError): port.replace(uuid4(), request)
+                with self.assertRaises(BackendError): port.replace(request)
                 refs.assert_called_once_with((), writing=True)
             self.assertEqual(view._connection.total_changes, before)
 
