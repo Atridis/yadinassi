@@ -56,6 +56,47 @@ class DirectDatabaseTests(unittest.TestCase):
         self.assertFalse(self.vm.variables['again'])
         self.assertEqual(self.vm.variables['last'],0)
 
+    def test_query_select_and_named_next_keep_ordinary_sql_and_return_values(self):
+        vm=self.vm
+        source='Q=New Query("SELECT COUNT(*) AS N FROM Catalog.Склады"); S=Q.Execute().Select(); B=S.Next(); R=S.N;'
+        from yadinassi.execution.direct.python_direct_database import CatalogBoundary
+        from yadinassi.syntax.parser import parse
+        from decimal import Decimal
+        generic=CatalogBoundary.resolve_member
+        visits=[]
+        def observe(context,value,name):
+            visits.append(name.casefold())
+            return generic(context,value,name)
+        for route in ('default','prepared'):
+            program=parse(source)
+            run=(lambda:vm.execute_program(program)) if route=='default' else (
+                lambda plan=vm.prepare_program(program):vm.execute_prepared(plan))
+            with patch.object(CatalogBoundary,'resolve_member',observe):
+                run()
+            self.assertEqual(vm.variables['r'],Decimal(0))
+            self.assertIs(vm.variables['b'],True)
+        self.assertFalse(set(visits) & {'execute','select','next'})
+
+    def test_prepared_query_uses_rebound_method_protocol_via_original_fallback(self):
+        from yadinassi.db.query.queries import BSLQueryResultSelection
+        from yadinassi.syntax.parser import parse
+        from yadinassi.types.values import HostFunction
+        vm=self.vm
+        plan=vm.prepare_program(parse('Q=New Query("SELECT COUNT(*) AS N FROM Catalog.Склады"); B=Q.Execute().Select().Next();'))
+        original=BSLQueryResultSelection.get_method
+        calls=[]
+        def changed(value,name):
+            if name.casefold()=='next':
+                calls.append(name)
+                return HostFunction(name,lambda:False)
+            return original(value,name)
+        with patch.object(BSLQueryResultSelection,'get_method',changed):
+            vm.execute_prepared(plan)
+        self.assertEqual(calls,['Next'])
+        self.assertIs(vm.variables['b'],False)
+        vm.execute_prepared(plan)
+        self.assertIs(vm.variables['b'],True)
+
     def test_foreign_query_and_query_private_fields_rejected(self):
         self.vm.execute('Q=New Query("SELECT COUNT(*) AS N FROM Catalog.Номенклатура");')
         other=Interpreter(database_context=self.context);self.addCleanup(other.close)
