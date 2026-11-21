@@ -15,7 +15,7 @@ from yadinassi.types.type_descriptions import BSLTypeDescription, _query_nullabl
 from yadinassi.types.type_qualifiers import (BSLAllowedLength, BSLAllowedSign, BSLBinaryDataQualifiers,
                               BSLDateFractions, BSLDateQualifiers, BSLNumberQualifiers,
                               BSLStringQualifiers)
-from yadinassi.collections.value_tables import (BSLCollectionIndex, BSLCollectionIndexes, BSLValueTable,
+from yadinassi.collections.value_tables import (BSLCollectionIndexes, BSLValueTable,
                            BSLValueTableColumn, BSLValueTableColumnCollection,
                            BSLValueTableRow, _index_key_units, _index_token,
                            _MAX_INDEX_UNITS)
@@ -192,7 +192,7 @@ def _index_bounds(count, positions, rows):
         raise TableSnapshotError('table index budget exceeded')
 
 
-def _take_indexes(table, indexes, column_positions, row_count, reserve):
+def _take_indexes(indexes, column_count, row_count, reserve):
     _index_bounds(len(indexes), 0, row_count)
     definitions, seen, positions = [], set(), 0
     reserve(len(indexes))
@@ -203,7 +203,7 @@ def _take_indexes(table, indexes, column_positions, row_count, reserve):
         _index_bounds(len(indexes), positions, row_count)
         reserve(len(definition))
         for position in definition:
-            _integer(position, len(column_positions)-1)
+            _integer(position, column_count - 1)
         if tuple(sorted(set(definition))) != definition or definition in seen:
             raise TableSnapshotError('duplicate or noncanonical index definition')
         seen.add(definition)
@@ -264,7 +264,16 @@ def _cell_matches(description, value):
         return False
 
 
-def take_table(table, *, encode, charge_text, reserve):
+def _charge_fixed_default(description, charge):
+    if (charge is not None and description._query_scalar is None
+            and description.types == (BSLType.STRING,)
+            and description.string_qualifiers.allowed_length is BSLAllowedLength.FIXED):
+        # A fixed-width empty value is materialized from compact metadata.
+        # Charge its expansion before allocating it, across nested tables too.
+        charge(int(description.string_qualifiers.length))
+
+
+def take_table(table, *, encode, charge_text, reserve, charge_default_text=None):
     """Capture through one parent traversal and its shared budgets/cycle guard.
 
     encode validates/captures each cell at parent depth+1; reserve and
@@ -331,12 +340,13 @@ def take_table(table, *, encode, charge_text, reserve):
             payload, description = _take_description(column.value_type)
             charge_text(column.name)
             charge_text(title)
+            _charge_fixed_default(description, charge_default_text)
             plain = plain and payload == _EMPTY_DESCRIPTION and title == '' and width == 0
             schema.append((column.name, payload, title, width))
             descriptions.append(description)
         if not plain:
             reserve(sum(_schema_extra(column[1]) for column in schema))
-        definitions = _take_indexes(table, indexes.items, column_positions, len(rows), reserve)
+        definitions = _take_indexes(indexes.items, len(col_items), len(rows), reserve)
         search = _field(table, '_search')
         if type(search) is not SearchIndexes or type(search.declarations) is not set:
             raise TableSnapshotError('invalid direct index declarations')
@@ -387,13 +397,12 @@ def take_table(table, *, encode, charge_text, reserve):
         raise TableSnapshotError('incomplete table state') from None
 
 
-def restore_table(node, *, decode, charge_text, reserve):
+def restore_table(node, *, decode, charge_text, reserve, charge_default_text=None):
     """Validate framing/schema before allocation and return only a complete graph.
 
     Plain three-field snapshots remain valid. Extended four-field snapshots
-    carry column schemas and index positions. Rows are built untyped, validated
-    without coercion, then given their reconstructed descriptors, just as query
-    Unload publishes nullable metadata only after filling its scalar rows.
+    carry column schemas and index positions. Install typed metadata and its
+    defaults once, then materialize already validated cells without coercion.
     """
     if (type(node) is not tuple or len(node) not in (3, 4) or type(node[0]) is not str
             or node[0] != 'value_table'):
@@ -420,6 +429,7 @@ def restore_table(node, *, decode, charge_text, reserve):
         seen.add(folded)
         charge_text(name)
         charge_text(title)
+        _charge_fixed_default(description, charge_default_text)
         schema.append((name, description, title, width))
     definitions = node[3] if extended else ()
     _restore_indexes(definitions, len(columns), len(rows), reserve)
@@ -427,21 +437,21 @@ def restore_table(node, *, decode, charge_text, reserve):
         if type(row) is not tuple or len(row) != len(columns):
             raise TableSnapshotError('invalid table row snapshot')
     table = BSLValueTable()
-    for name, _, title, width in schema:
-        table.columns.add(name, None, title, Decimal(width))
+    for name, description, title, width in schema:
+        column = BSLValueTableColumn(table, name, description, title, Decimal(width))
+        table.columns._append_materialized(column)
     for cells in rows:
-        # Build validated snapshot rows before installing their descriptors.
         row = table._storage.add()
         for position, (cell, column) in enumerate(zip(cells, schema)):
             value = decode(cell)
             if not _cell_matches(column[1], value):
                 raise TableSnapshotError('cell does not match scalar schema')
-            row.set(Decimal(position), value)
-    for column, (_, description, _, _) in zip(table.columns.items, schema):
-        table.columns._restore_materialized_type(column, description)
+            # Rows are private until restore returns; avoid typed setters and
+            # preserve the snapshot's exact scalar representation.
+            list.__setitem__(row, position, value)
     try:
         for definition in definitions:
-            table.indexes.add(','.join(schema[position][0] for position in definition))
+            table.indexes.items.append(table._search.declare(definition))
     except (TypeError, ValueError, ArithmeticError):
         raise TableSnapshotError('table index cannot be rebuilt within runtime limits') from None
     return table

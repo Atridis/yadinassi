@@ -12,6 +12,7 @@ from yadinassi.temporal.dates import BSLDate, MAX_TICKS
 from yadinassi.text.sort_keys import text_sort_key
 from yadinassi.types.values import NULL
 
+_SCALAR_TYPES = (type(None), str, bool, int, Decimal, type(NULL))
 _SORT_DATE_TICKS = vars(BSLDate)["ticks"]
 _SORT_DATE_BOUNDARY = vars(BSLDate)["boundary"]
 
@@ -132,9 +133,8 @@ def validate_row(row, schema, owner, *, active=True, row_type=RowStorage):
 def scalar_equal(left, right):
     """Exact scalar comparison only; never call arbitrary payload equality."""
     left_kind, right_kind = type(left), type(right)
-    scalar_types = (type(None), str, bool, int, Decimal)
-    if (not any(left_kind is kind for kind in scalar_types)
-            or not any(right_kind is kind for kind in scalar_types)):
+    if (not any(left_kind is kind for kind in _SCALAR_TYPES)
+            or not any(right_kind is kind for kind in _SCALAR_TYPES)):
         raise NotImplementedError('comparison of opaque values is not supported')
     if left_kind is not right_kind and not (
             left_kind in (int, Decimal) and right_kind in (int, Decimal)):
@@ -398,6 +398,6 @@ _DIRECT_FUNCTIONS=tuple((fn,fn.__code__,fn.__defaults__,tuple((fn.__kwdefaults__
     for fn in [*globals().values(),*(fn for cls,_,fields in _DIRECT_CLASSES for _,v in fields
         for fn in ((v.fget,v.fset,v.fdel) if type(v) is property else (v,)) if fn is not None)]
     if type(fn) is type(lambda:None))
-_DIRECT_BINDINGS=tuple((name,value) for name,value in tuple(globals().items()) if callable(value))
+_DIRECT_BINDINGS=tuple((name,value) for name,value in tuple(globals().items()) if callable(value) or name=='_SCALAR_TYPES')
 
 _DIRECT_NAMES=frozenset((*globals(), "_DIRECT_NAMES"))

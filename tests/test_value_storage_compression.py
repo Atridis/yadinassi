@@ -215,7 +215,9 @@ class ValueStorageCompressionTests(unittest.TestCase):
         self.assertEqual(first.rows[0].get(D(0)), 'large' * 1000)
         self.assertEqual(first.columns.items[0].title, 'Label')
         self.assertEqual(first.columns.items[0].width, D(24))
-        self.assertIs(first.indexes.items[0].table, first)
+        self.assertIs(first.indexes.table, first)
+        self.assertEqual(first.indexes.items, [(0,)])
+        self.assertEqual(first._search.cache, {})
         first.rows[0].set(D(0), 'new')
         self.assertEqual(second.rows[0].get(D(0)), 'large' * 1000)
 
@@ -228,5 +230,7 @@ class ValueStorageCompressionTests(unittest.TestCase):
         for before, after in zip(source.columns.items, result.columns.items):
             self.assertEqual(after.value_type.types, before.value_type.types)
             self.assertIsNotNone(after.value_type._query_scalar)
-        self.assertIs(result.indexes.items[0].table, result)
+        self.assertIs(result.indexes.table, result)
+        self.assertEqual(result.indexes.items, [(0, 1)])
+        self.assertEqual(result._search.cache, {})
         with self.assertRaises(ValueError): result.add()

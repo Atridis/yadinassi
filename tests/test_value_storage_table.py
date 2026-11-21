@@ -1,5 +1,6 @@
 """Local table snapshot policy tests; only case17 is native evidence."""
 from decimal import Decimal
+from types import MappingProxyType
 import unittest
 from unittest import mock
 
@@ -91,14 +92,18 @@ class TableSnapshotDraftTests(unittest.TestCase):
         self.assertIsNot(first, second)
         self.assertIsNot(first.columns.items[0], source.columns.items[0])
 
-    def test_fresh_rows_columns_and_cell_dict_keys(self):
+    def test_fresh_rows_columns_and_readonly_cell_view(self):
         source = make_table(); result = MiniCodec.restore(MiniCodec().take(source))
         row = result.rows[0]; col = result.columns.items[0]
         self.assertIs(result.columns.table, result)
         self.assertIs(result.indexes.table, result)
         self.assertIs(row.table, result)
+        self.assertIs(type(row.cells), MappingProxyType)
         self.assertEqual(tuple(row.cells), (col,))
         self.assertNotIn(source.columns.items[0], row.cells)
+        with self.assertRaises(TypeError):
+            row.cells[col] = D(2)
+        self.assertEqual(row.get(0), D(1))
 
     def test_multiple_rows_columns_are_local_policy(self):
         source = make_table(('a','b'), ((D(1),'z'), (D(2),'y')))
@@ -109,7 +114,7 @@ class TableSnapshotDraftTests(unittest.TestCase):
 
     def test_empty_table_local_policy(self):
         result = MiniCodec.restore(MiniCodec().take(make_table((), ())))
-        self.assertEqual((result.columns.items, result.rows, result.indexes.items), ([],[],[]))
+        self.assertEqual((result.columns.items, result.rows, result.indexes.items), ((),[],[]))
 
     def test_nested_array_restored_independently(self):
         a = BSLArray(); a.items.append(D(1)); source = make_table(rows=((a,),))
@@ -140,8 +145,9 @@ class TableSnapshotDraftTests(unittest.TestCase):
     def test_indexed_table_definitions_restore_locally(self):
         table = make_table(); table.indexes.add('x')
         result = MiniCodec.restore(MiniCodec().take(table))
-        self.assertEqual(tuple(result.indexes.items[0]), ('x',))
-        self.assertIs(result.indexes.items[0].table, result)
+        self.assertEqual(result.indexes.items, [(0,)])
+        self.assertEqual(result._search.declarations, {(0,)})
+        self.assertEqual(result._search.cache, {})
         self.assertEqual(table.rows[0].get(D(0)), D(1))
 
     def test_typed_and_nondefault_column_metadata_restore_locally(self):
@@ -178,7 +184,7 @@ class TableSnapshotDraftTests(unittest.TestCase):
         for change in ('owner','duplicate','deleted'):
             table = make_table(); col = table.columns.items[0]
             if change == 'owner': col.table = make_table()
-            elif change == 'duplicate': table.columns.items.append(col)
+            elif change == 'duplicate': table.columns._items.append(col)
             else: col._deleted = True
             with self.subTest(change=change), self.assertRaises(table_hook.TableSnapshotError): MiniCodec().take(table)
 
@@ -191,28 +197,28 @@ class TableSnapshotDraftTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(table_hook.TableSnapshotError): MiniCodec().take(table)
 
     def test_bad_or_partial_cells_rejected(self):
-        for change in ('missing','foreign','nondict'):
+        for change in ('missing','foreign','wrong_schema'):
             table = make_table(); row = table.rows[0]
-            if change == 'missing': row.cells.clear()
-            elif change == 'foreign':
-                value = row.cells.pop(table.columns.items[0]); row.cells[make_table().columns.items[0]] = value
-            else: row.cells = []
+            if change == 'missing': list.clear(row)
+            elif change == 'foreign': row._owner = make_table()
+            else: row.schema = []
             with self.subTest(change=change), self.assertRaises(table_hook.TableSnapshotError): MiniCodec().take(table)
 
-    def test_hostile_subclass_key_rejected_without_eq(self):
+    def test_hostile_subclass_column_rejected_without_eq(self):
         class HostileColumn(BSLValueTableColumn):
-            def __hash__(self): return 1
+            def __hash__(self): raise AssertionError('must not hash')
             def __eq__(self, other): raise AssertionError('must not compare')
-        table = make_table(); col = table.columns.items[0]; row = table.rows[0]
-        row.cells = {HostileColumn(table,'x',col.value_type,'',D(0)): D(1)}
+        table = make_table(); col = table.columns.items[0]
+        column = HostileColumn(table,'x',col.value_type,'',D(0))
+        table.columns._items[0] = table._storage.schema._metadata[0] = column
         with self.assertRaises(table_hook.TableSnapshotError): MiniCodec().take(table)
 
     def test_invalid_names_and_slice_rejected(self):
         for change in ('empty','invalid','duplicate','slice'):
             table = make_table(('a','b'), ((D(1),D(2)),))
-            if change == 'empty': table.columns.items[0].name = ''
-            elif change == 'invalid': table.columns.items[0].name = 'not valid'
-            elif change == 'duplicate': table.columns.items[1].name = 'A'
+            if change == 'empty': table.columns.items[0]._name = ''
+            elif change == 'invalid': table.columns.items[0]._name = 'not valid'
+            elif change == 'duplicate': table.columns.items[1]._name = 'A'
             else: table._bounded_slice_read = True
             with self.subTest(change=change), self.assertRaises(table_hook.TableSnapshotError): MiniCodec().take(table)
 
@@ -362,8 +368,8 @@ class RealTableBoundaryTests(unittest.TestCase):
     def test_missing_table_fields_are_catchable_in_bsl(self):
         fixtures=[]
         table = make_table(); del table.columns; fixtures.append(table)
-        table = make_table(); del table.columns.items[0].name; fixtures.append(table)
-        table = make_table(); del table.rows[0].cells; fixtures.append(table)
+        table = make_table(); del table.columns.items[0]._name; fixtures.append(table)
+        table = make_table(); del table.rows[0].schema; fixtures.append(table)
         table = make_table(); del table.indexes.table; fixtures.append(table)
         vm=Interpreter()
         for value in fixtures:

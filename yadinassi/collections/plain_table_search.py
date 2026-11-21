@@ -3,11 +3,14 @@ from decimal import Decimal
 from types import MappingProxyType
 from dataclasses import dataclass
 
+from yadinassi.types.values import NULL
+
 _UNSUPPORTED = object()
+_SCALAR_TYPES = (type(None), str, bool, int, Decimal, type(NULL))
 
 def token(value, typed):
     kind = type(value)
-    if not any(kind is allowed for allowed in (type(None), str, bool, int, Decimal)):
+    if not any(kind is allowed for allowed in _SCALAR_TYPES):
         return _UNSUPPORTED
     if kind is Decimal and not value.is_finite():
         return _UNSUPPORTED
@@ -90,5 +93,5 @@ class SearchIndexes:
 _DIRECT_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items())) for cls in (SearchIndexes,_Entry))
 _DIRECT_FUNCTIONS=tuple((fn,fn.__code__,fn.__defaults__,tuple((fn.__kwdefaults__ or {}).items()))
     for fn in [token,_positions,*vars(SearchIndexes).values()] if type(fn) is type(token))
-_DIRECT_BINDINGS=tuple((name,value) for name,value in tuple(globals().items()) if callable(value) or name=='_UNSUPPORTED')
+_DIRECT_BINDINGS=tuple((name,value) for name,value in tuple(globals().items()) if callable(value) or name in ('_UNSUPPORTED', '_SCALAR_TYPES'))
 _DIRECT_NAMES=frozenset((*globals(), '_DIRECT_NAMES'))

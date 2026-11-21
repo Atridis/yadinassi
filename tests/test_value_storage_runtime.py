@@ -111,7 +111,7 @@ class ValueStorageRuntimeTests(unittest.TestCase):
         vm.execute('X = New ValueStorage(New ValueTable);')
         table = vm.variables['x'].get()
         self.assertIs(type(table), BSLValueTable)
-        self.assertEqual((table.columns.items, table.rows, table.indexes.items), ([], [], []))
+        self.assertEqual((table.columns.items, table.rows, table.indexes.items), ((), [], []))
         with self.assertRaises(SnapshotError):
             BSLValueStorage(1)
 

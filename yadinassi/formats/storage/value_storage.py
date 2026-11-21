@@ -114,6 +114,12 @@ class _Capture:
             raise SnapshotError("snapshot text budget exceeded")
         return text
 
+    def charge_default_text(self, units):
+        # Typed table padding is ASCII generated from validated metadata.
+        if units > MAX_TEXT_UNITS - self.text_units:
+            raise SnapshotError("snapshot text budget exceeded")
+        self.text_units += units
+
     def remember(self, value, depth):
         identity = id(value)
         if identity in self.active:
@@ -201,7 +207,8 @@ class _Capture:
         if kind is BSLValueTable:
             try:
                 return take_table(value, encode=lambda item: self.take(item, depth + 1),
-                                  charge_text=self.charge_text, reserve=self.reserve)
+                                  charge_text=self.charge_text, reserve=self.reserve,
+                                  charge_default_text=self.charge_default_text)
             except TableSnapshotError:
                 raise SnapshotError("unsupported or invalid table snapshot") from None
         if self.source_direct:
@@ -365,7 +372,8 @@ class _Restore:
         if tag == "value_table":
             try:
                 return restore_table(node, decode=lambda item: self.take(item, depth + 1),
-                                     charge_text=budget.charge_text, reserve=budget.reserve)
+                                     charge_text=budget.charge_text, reserve=budget.reserve,
+                                     charge_default_text=budget.charge_default_text)
             except TableSnapshotError:
                 raise SnapshotError("unsupported or invalid table snapshot") from None
         if tag == "storage" and len(node) == 2:
@@ -462,7 +470,7 @@ class BSLValueStorage(BSLObject):
 _DIRECT_VALUE_STORAGE_ABI=tuple((cls,name,getattr(cls,name)) for cls,names in (
     (BSLValueStorage,('__new__','__init__','__getattribute__','__setattr__','get','get_method')),
     (Snapshot,('__new__','__init__','__getattribute__','__setattr__')),
-    (_Capture,('__new__','__getattribute__','__setattr__','__init__','take','_take','reserve','charge_text','remember','compressed','charge_compressed')),
+    (_Capture,('__new__','__getattribute__','__setattr__','__init__','take','_take','reserve','charge_text','charge_default_text','remember','compressed','charge_compressed')),
     (_Restore,('__new__','__getattribute__','__setattr__','__init__','take')),
     (BSLDate,('__new__','__init__','__post_init__','__getattribute__','__setattr__','__eq__','__hash__','require_known')),
     (BSLUUID,('__new__','__init__','__getattribute__','__setattr__','__eq__','__hash__')),
