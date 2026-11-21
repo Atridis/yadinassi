@@ -5,6 +5,7 @@ native statement-result parity. A package borrows one read-only connection,
 or the existing transaction when present. No table rows escape as mutable buffers.
 """
 from yadinassi.db.database_transactions import open_query_read as _open_query_read, query_view as _transaction_query_view
+from yadinassi.db.catalog.catalog_backend import BackendError
 
 from dataclasses import dataclass
 from decimal import Decimal
@@ -71,10 +72,56 @@ class BSLTempTablesManager(BSLObject):
             self._lock.release()
 
 
-def execute_package(statements, catalogs, parameters, manager=None, documents=None, information_registers=None, *, _enum_scope=None, _owned_view=None, _source_scope=None):
+def _package_sources(statements, validate_node=None):
+    """Collect all source requirements in the same pre-order as binding."""
+    families, external = set(), {}
+    for node in syntax.walk_nodes(statements):
+        if validate_node is not None:
+            validate_node(node)
+        if type(node) is syntax.Select:
+            families.add(node.family)
+            if node.external:
+                external[node.catalog.casefold()] = None
+            for join in node.joins:
+                source = join.source
+                families.add(source.family)
+                if source.external:
+                    external[source.catalog.casefold()] = None
+    return families, tuple(external)
+
+
+def execute_owned_package(owner, statements, catalogs, parameters, manager, documents,
+                          information_registers):
+    """Execute one logical package under the configuration's owned read lease."""
+    from yadinassi.configuration.demos.inventory_enum_runtime import read_snapshot
+    from .query_enum_reporting import _EnumReportScope
+    from .query_enum_tables import _preflight_parameters, validate_profile_node
+    if type(statements) is not tuple or not statements:
+        raise BackendError('invalid_input')
+    sources = _package_sources(statements, validate_profile_node)
+    parameters = _preflight_parameters(owner, catalogs, parameters)
+    view, scope = _open_query_read(owner.backend), None
+    try:
+        with read_snapshot(owner.metadata, view):
+            if (view.database_id != view._view.database_id
+                    or view.configuration_generation != view._view.configuration_generation):
+                raise BackendError('schema_changed')
+            scope = _EnumReportScope(catalogs, owner=owner, view=view)
+            return execute_package(statements, catalogs, parameters, manager, documents,
+                                   information_registers, _enum_scope=scope, _owned_view=view,
+                                   _sources=sources)
+    finally:
+        try:
+            if not view._view._closed:
+                view.close()
+        finally:
+            if scope is not None: scope._retired = True
+
+
+def execute_package(statements, catalogs, parameters, manager=None, documents=None, information_registers=None, *, _enum_scope=None, _owned_view=None, _source_scope=None, _sources=None):
     from .queries import BSLQueryResult, _Column
     from .relational_queries import _Plan, snapshot_parameters
-    from .query_sources import _UnionPlan, snapshot_sources
+    from .query_sources import _UnionPlan, _snapshot_named_sources
     if _source_scope is not None:
         from .source_query_references import SourcePackageScope
         if type(_source_scope) is not SourcePackageScope or _enum_scope is not None or _owned_view is not None:
@@ -91,26 +138,24 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
         raise TypeError('A borrowed package view requires an enum report scope')
     parameters = (_enum_scope.validate_frozen_parameters(parameters) if _enum_scope is not None
                   else snapshot_parameters(parameters))
-    if manager is None: manager = BSLTempTablesManager()
-    if type(manager) is not BSLTempTablesManager:
-        raise TypeError('Query package requires TempTablesManager')
-    if not manager._lock.acquire(blocking=False):
-        raise ValueError('Temporary table manager is busy')
+    if manager is not None:
+        if type(manager) is not BSLTempTablesManager:
+            raise TypeError('Query package requires TempTablesManager')
+        if not manager._lock.acquire(blocking=False):
+            raise ValueError('Temporary table manager is busy')
     view = _owned_view
     try:
-        from .document_queries import needs_documents
-        from .register_queries import needs_registers
-        from .accumulation_queries import needs_accumulation
-        documents_needed = needs_documents(statements)
-        registers_needed = needs_registers(statements)
-        accumulation_needed = needs_accumulation(statements)
+        families, external_names = (_package_sources(statements) if _sources is None else _sources)
+        documents_needed = 'document' in families
+        registers_needed = 'information_register' in families
+        accumulation_needed = 'accumulation_register' in families
         composite = documents_needed or registers_needed or accumulation_needed
         # Prime required metadata from the open SQLite backend, not another
         # read transaction. Other backend protocols retain their own readers.
         if documents_needed or accumulation_needed:
             if documents is None:
                 raise ValueError('Document query sources require document context')
-            documents._metadata._snapshot(query_language=True)
+            if _enum_scope is None: documents._metadata._snapshot(query_language=True)
         if registers_needed:
             from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
             from yadinassi.configuration.configuration_posting import PostingConfiguration
@@ -123,25 +168,26 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
                 if information_registers is None:
                     raise ValueError('Information-register query sources require register context')
                 information_registers._metadata._snapshot(query_language=True)
-        if composite: catalogs._metadata._snapshot(query_language=True)
-        if manager._closed:
-            raise ValueError('Temporary table manager is closed')
-        source_owner = getattr(manager, '_source_owner', None)
-        if source_owner is not None:
-            from weakref import ReferenceType
-            if type(source_owner) is not ReferenceType:
-                raise TypeError('Invalid source temporary manager owner')
-            if _source_scope is None:
-                raise ValueError('Source temporary manager requires a source-owned snapshot')
-            if source_owner() is not _source_scope.ownerapp():
-                raise TypeError('Source temporary manager belongs to another application')
+        if composite and _enum_scope is None: catalogs._metadata._snapshot(query_language=True)
         owner = catalogs._metadata
-        if manager._owner is not None and manager._owner is not owner:
-            raise ValueError('Temporary table manager belongs to another metadata snapshot')
-        external = (snapshot_sources(statements, parameters, catalogs, documents) if _source_scope is None
+        if manager is not None:
+            if manager._closed:
+                raise ValueError('Temporary table manager is closed')
+            source_owner = getattr(manager, '_source_owner', None)
+            if source_owner is not None:
+                from weakref import ReferenceType
+                if type(source_owner) is not ReferenceType:
+                    raise TypeError('Invalid source temporary manager owner')
+                if _source_scope is None:
+                    raise ValueError('Source temporary manager requires a source-owned snapshot')
+                if source_owner() is not _source_scope.ownerapp():
+                    raise TypeError('Source temporary manager belongs to another application')
+            if manager._owner is not None and manager._owner is not owner:
+                raise ValueError('Temporary table manager belongs to another metadata snapshot')
+        external = (_snapshot_named_sources(external_names, parameters, catalogs, documents) if _source_scope is None
                     else _source_scope.external_tables(statements, parameters, catalogs, documents))
-        tables = dict(manager._tables)
-        if _enum_scope is not None:
+        tables = {} if manager is None else dict(manager._tables)
+        if _enum_scope is not None and (external or tables):
             from .query_enum_tables import prepare_tables
             external = prepare_tables(external, _enum_scope)
             tables = prepare_tables(tables, _enum_scope)
@@ -213,13 +259,14 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
             closing.close()
         if _source_scope is not None:
             _source_scope.require_context(statements, catalogs)
-        if _source_scope is not None:
-            manager._source_owner = _source_scope.ownerapp
-        manager._tables = tables
-        manager._owner = owner
+        if manager is not None:
+            if _source_scope is not None:
+                manager._source_owner = _source_scope.ownerapp
+            manager._tables = tables
+            manager._owner = owner
         return result
     finally:
         try:
             if view is not None: view.close()
         finally:
-            manager._lock.release()
+            if manager is not None: manager._lock.release()

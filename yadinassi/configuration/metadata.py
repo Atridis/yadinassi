@@ -573,15 +573,10 @@ def is_metadata_object(value):
         BSLCommonModuleMetadata,BSLAttributeMetadata,BSLTabularSectionMetadata,StandardAttributeDescription))
 
 
-def _prepare_enum_query_metadata(root, view):
-    """Atomically prime cold catalog/document caches from one exact owned view.
-
-    This internal enum-report path never refreshes a mismatching existing cache
-    and never changes ordinary lazy _snapshot admission or reader ownership.
-    """
+def _prepare_query_family(root, view, family):
+    """Validate/prime one requested metadata family on an exact owned view."""
     from .demos.inventory_enum_runtime import _EnumScope
     from yadinassi.db.sqlite.sqlite_documents import DocumentView
-    from yadinassi.db.sqlite.sqlite_catalog import _View
     if type(root) is not BSLMetadata or type(view) is not DocumentView:
         raise BackendError('unsupported')
     scope = root._enum_storage_scope
@@ -594,41 +589,47 @@ def _prepare_enum_query_metadata(root, view):
     identity = view.database_id, view.configuration_generation
     if root._identity is not None and root._identity != identity:
         raise BackendError('schema_changed')
-    staged = []
-    for collection, expected, item_type, entries in (
-            (root._catalogs, BSLCatalogMetadataCollection, BSLCatalogMetadata, view._view.catalogs),
-            (root._documents, BSLDocumentMetadataCollection, BSLDocumentMetadata, view.documents)):
-        if type(collection) is not expected or collection._context is not scope.context or collection._root is not root:
-            raise BackendError('invalid_input')
-        items = {}
-        for entry in entries():
-            key = entry.name.casefold()
-            if key in items:
-                raise BackendError('integrity')
+    if family == 'catalog':
+        collection, expected, item_type, entries = (
+            root._catalogs, BSLCatalogMetadataCollection, BSLCatalogMetadata, view._view.catalogs)
+    elif family == 'document':
+        collection, expected, item_type, entries = (
+            root._documents, BSLDocumentMetadataCollection, BSLDocumentMetadata, view.documents)
+    else:
+        raise BackendError('unsupported')
+    if type(collection) is not expected or collection._context is not scope.context or collection._root is not root:
+        raise BackendError('invalid_input')
+    entries = entries()
+    existing = collection._items
+    if existing is not None and ((collection._database_id, collection._generation) != identity
+                                  or type(existing) is not dict or len(existing) != len(entries)):
+        raise BackendError('schema_changed')
+    items, seen = {}, set()
+    for entry in entries:
+        key = entry.name.casefold()
+        if key in seen:
+            raise BackendError('integrity')
+        seen.add(key)
+        if existing is None:
             item = item_type(entry.name, str(entry.identity))
             item._schema, item._root = entry, root
             items[key] = item
-        if collection._items is not None:
-            if ((collection._database_id, collection._generation) != identity
-                    or type(collection._items) is not dict or collection._items.keys() != items.keys()
-                    or any(type(collection._items[k]) is not item_type
-                           or type(collection._items[k]._schema) is not type(v._schema)
-                           or collection._items[k]._schema != v._schema
-                           or collection._items[k]._root is not root
-                           or type(collection._items[k]._name) is not str or collection._items[k]._name != v._name
-                           or type(collection._items[k]._metadata_uuid) is not str
-                           or collection._items[k]._metadata_uuid != v._metadata_uuid for k, v in items.items())):
-                raise BackendError('schema_changed')
         else:
-            staged.append((collection, items))
-    # No cache is visible before every family has been completely validated.
-    root._accept_snapshot(*identity)
-    for collection, items in staged:
+            item = existing.get(key)
+            if (type(item) is not item_type or type(item._schema) is not type(entry)
+                    or item._schema != entry or item._root is not root
+                    or type(item._name) is not str or item._name != entry.name
+                    or type(item._metadata_uuid) is not str or item._metadata_uuid != str(entry.identity)):
+                raise BackendError('schema_changed')
+    # Publish only after completing this family's validation.
+    if root._identity is None:
+        root._accept_snapshot(*identity)
+    if existing is None:
         collection._database_id, collection._generation = identity
         collection._items = items
         if collection in _LIVE_METADATA_ORIGINS:
-            for key,item in items.items():_live_issue(item,collection,('item',key))
-            _live_refresh(collection,('_items','_database_id','_generation'))
+            for key, item in items.items(): _live_issue(item, collection, ('item', key))
+            _live_refresh(collection, ('_items', '_database_id', '_generation'))
 
 # Definition-time ABI for the direct live movement ownership traversal.
 _DIRECT_MOVEMENT_PARENT_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))

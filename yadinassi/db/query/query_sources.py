@@ -158,14 +158,22 @@ def _snapshot(value, budget, catalogs=None, documents=None):
 
 def snapshot_sources(statements, parameters, catalogs=None, documents=None):
     """Capture each referenced parameter once, before any statement/database read."""
-    result, budget = {}, [0, 0]
+    names = {}
     for arm in syntax.selects(statements):
-        names = ([arm.catalog] if arm.external else []) + [j.source.catalog for j in arm.joins if j.source.external]
-        for name in names:
-            key = name.casefold()
-            if key in result: continue
-            if key not in parameters: raise ValueError('External query parameter is not set')
-            result[key] = _snapshot(parameters[key], budget, catalogs, documents)
+        if arm.external:
+            names[arm.catalog.casefold()] = None
+        for join in arm.joins:
+            if join.source.external:
+                names[join.source.catalog.casefold()] = None
+    return _snapshot_named_sources(names, parameters, catalogs, documents)
+
+
+def _snapshot_named_sources(names, parameters, catalogs, documents):
+    result, budget = {}, [0, 0]
+    for key in names:
+        if key not in parameters:
+            raise ValueError('External query parameter is not set')
+        result[key] = _snapshot(parameters[key], budget, catalogs, documents)
     return result
 
 

@@ -1,5 +1,4 @@
 """Durable enum report domains, never Execute-local descriptors or read leases."""
-from yadinassi.db.database_transactions import open_query_read as _open_query_read
 from dataclasses import dataclass, replace
 from uuid import UUID
 
@@ -113,43 +112,19 @@ def detach_columns(columns):
     return tuple(replace(c, enum_descriptor=None) if c.kind == 'enum_ref' else c for c in columns)
 
 
-def execute_report(statements, catalogs, parameters, manager, documents, information_registers):
-    """One lexical lease, including cold metadata and external-only reports."""
+def validate_profile_node(node):
+    """Check the profile's intentional grammar restrictions, not metadata."""
     from . import query_parser as syntax
-    from yadinassi.configuration.demos.inventory_enum_runtime import query_owner, read_snapshot
-    from yadinassi.configuration.metadata import _prepare_enum_query_metadata
-    from .query_enum_reporting import _EnumReportScope
-    from .query_packages import execute_package
-    if type(statements) is not tuple or not statements:
-        raise BackendError('invalid_input')
-    for node in syntax.walk_nodes(statements):
-        if type(node) in (syntax.Select, syntax.Source) and node.family == 'information_register':
-            raise ValueError('Information-register sources remain outside the exact enum profile')
-        if type(node) in (syntax.Select, syntax.Source) and node.virtual_condition is not None:
-            _preflight_virtual_condition(node.virtual_condition)
-        if type(node) is syntax.Hierarchy:
-            raise ValueError('Enum report hierarchy queries remain outside this profile')
-        if (type(node) is syntax.Predicate and node.kind == 'not'
-                and (type(node.terms) is not tuple or len(node.terms) != 1
-                     or type(node.terms[0]) is not syntax.Membership)):
-            raise ValueError('Enum report NOT remains limited to membership')
-    owner = query_owner(catalogs)
-    if owner is None:
-        raise BackendError('unsupported')
-    parameters = _preflight_parameters(owner, catalogs, parameters)
-    view, scope = _open_query_read(owner.backend), None
-    try:
-        with read_snapshot(owner.metadata, view):
-            _prepare_enum_query_metadata(owner.metadata, view)
-            scope = _EnumReportScope(catalogs)
-            return execute_package(statements, catalogs, parameters, manager, documents,
-                                   information_registers, _enum_scope=scope, _owned_view=view)
-    finally:
-        try:
-            if not view._view._closed:
-                view.close()
-        finally:
-            if scope is not None: scope._retired = True
+    if type(node) in (syntax.Select, syntax.Source) and node.family == 'information_register':
+        raise ValueError('Information-register sources remain outside the exact enum profile')
+    if type(node) in (syntax.Select, syntax.Source) and node.virtual_condition is not None:
+        _preflight_virtual_condition(node.virtual_condition)
+    if type(node) is syntax.Hierarchy:
+        raise ValueError('Enum report hierarchy queries remain outside this profile')
+    if (type(node) is syntax.Predicate and node.kind == 'not'
+            and (type(node.terms) is not tuple or len(node.terms) != 1
+                 or type(node.terms[0]) is not syntax.Membership)):
+        raise ValueError('Enum report NOT remains limited to membership')
 
 
 def _preflight_parameters(owner, catalogs, parameters):
@@ -165,15 +140,17 @@ def _preflight_parameters(owner, catalogs, parameters):
     from yadinassi.db.metadata.enumerations import BSLEnumerations, BSLEnumManager
     from types import MethodType
     frozen = snapshot_parameters(parameters)
-    namespace = owner.namespace
-    if type(namespace) is not BSLEnumerations or type(namespace._managers) is not dict:
-        raise BackendError('invalid_input')
+    namespace = None
     for value in frozen.values():
         members = value.values if type(value) is _ParameterList else (value,)
         if type(value) is _ParameterList and len(members) > 256:
             raise ValueError('Enum report parameter member limit exceeded')
         for member in members:
             if type(member) is BSLEnumReference:
+                if namespace is None:
+                    namespace = owner.namespace
+                    if type(namespace) is not BSLEnumerations or type(namespace._managers) is not dict:
+                        raise BackendError('invalid_input')
                 if type(member.value_type) is not BSLEnumType or member.value_type.snapshot is not namespace.metadata:
                     raise BackendError('invalid_input')
                 found = False

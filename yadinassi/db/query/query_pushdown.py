@@ -32,7 +32,9 @@ def try_count(plan,view,budget):
     if not count_eligible(plan):return None
     aggregate=getattr(view,'aggregate_catalog',None)
     if aggregate is None:return None
-    if plan.enum_binding is not None:
+    if plan.enum_scope is not None:
+        plan.enum_scope.require_current()
+    elif plan.enum_binding is not None:
         from yadinassi.db.metadata.enum_storage_binding import EnumStorageBinding
         if type(plan.enum_binding) is not EnumStorageBinding:raise BackendError('unsupported')
         # execute() already holds the lexical read_snapshot witness. Validate
@@ -43,7 +45,8 @@ def try_count(plan,view,budget):
             or view.catalog_schema(manager._schema.identity)!=manager._schema):
         raise BackendError('schema_changed')
     result=aggregate(manager._schema.identity,CatalogAggregateRequest())
-    if plan.enum_binding is not None:plan.enum_binding._live()
+    if plan.enum_scope is not None: plan.enum_scope.require_current()
+    elif plan.enum_binding is not None: plan.enum_binding._live()
     if result is None:return None
     if type(result) is not CatalogAggregateResult or type(result.count) is not int or result.count<0:
         raise BackendError('integrity')
@@ -78,7 +81,9 @@ def try_numeric(plan, view, budget):
     if not any(op!='count' for op,_ in operations):return None
     aggregate=getattr(view,'aggregate_catalog',None)
     if aggregate is None:return None
-    if plan.enum_binding is not None:
+    if plan.enum_scope is not None:
+        plan.enum_scope.require_current()
+    elif plan.enum_binding is not None:
         from yadinassi.db.metadata.enum_storage_binding import EnumStorageBinding
         if type(plan.enum_binding) is not EnumStorageBinding:raise BackendError('unsupported')
         plan.enum_binding._live()
@@ -86,7 +91,8 @@ def try_numeric(plan, view, budget):
     if ((view.database_id,view.configuration_generation)!=(metadata._database_id,metadata._generation)
             or view.catalog_schema(manager._schema.identity)!=manager._schema):raise BackendError('schema_changed')
     result=aggregate(manager._schema.identity,CatalogNumericAggregateRequest(tuple(operations)))
-    if plan.enum_binding is not None:plan.enum_binding._live()
+    if plan.enum_scope is not None: plan.enum_scope.require_current()
+    elif plan.enum_binding is not None: plan.enum_binding._live()
     if result is None:return None
     if (type(result) is not CatalogNumericAggregateResult or type(result.count) is not int or result.count<0
             or type(result.values) is not tuple or len(result.values)!=len(operations)):raise BackendError('integrity')

@@ -279,9 +279,10 @@ class BSLQuery(BSLObject):
 
     def execute_batch(self):
         from yadinassi.configuration.demos.inventory_enum_runtime import query_owner
-        if query_owner(self._catalogs) is not None:
-            from .query_enum_tables import execute_report
-            return execute_report(syntax.parse_package(self._text), self._catalogs, dict(self._parameters),
+        owner = query_owner(self._catalogs)
+        if owner is not None:
+            from .query_packages import execute_owned_package
+            return execute_owned_package(owner, syntax.parse_package(self._text), self._catalogs, dict(self._parameters),
                                   self._temp_tables_manager, self._documents, self._information_registers)
         from .query_packages import execute_package
         return execute_package(syntax.parse_package(self._text), self._catalogs,
@@ -291,9 +292,10 @@ class BSLQuery(BSLObject):
         statements = syntax.parse_package(self._text)
         query = statements[0]
         from yadinassi.configuration.demos.inventory_enum_runtime import query_owner
-        if query_owner(self._catalogs) is not None:
-            from .query_enum_tables import execute_report
-            return execute_report(statements, self._catalogs, dict(self._parameters),
+        owner = query_owner(self._catalogs)
+        if owner is not None:
+            from .query_packages import execute_owned_package
+            return execute_owned_package(owner, statements, self._catalogs, dict(self._parameters),
                                   self._temp_tables_manager, self._documents,
                                   self._information_registers).items[-1]
         if (len(statements) != 1 or type(query) is not syntax.Select or query.into is not None

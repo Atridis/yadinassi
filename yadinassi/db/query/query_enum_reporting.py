@@ -49,22 +49,48 @@ class _EnumReportScope:
     live owner check. No configuration/source validation is replaced by this
     registry and no durable generation proof is exported with result rows.
     """
-    __slots__ = ('catalogs', 'binding', '_descriptors', '_retired', 'condition_budget')
+    __slots__ = ('catalogs', '_binding', '_descriptors', '_retired',
+                 'condition_budget', '_owner', '_view', '_families')
 
-    def __init__(self, catalogs):
-        from yadinassi.configuration.demos.inventory_enum_runtime import query_binding
-        binding = query_binding(catalogs)
-        if type(binding) is not EnumStorageBinding:
-            raise BackendError('unsupported')
-        self.catalogs, self.binding = catalogs, binding
+    def __init__(self, catalogs, *, owner=None, view=None):
+        self.catalogs, self._binding = catalogs, None
+        self._owner, self._view = owner, view
+        self._families = set()
         self._descriptors = {}
         self._retired = False
         self.condition_budget = [0, 0]
 
+    @property
+    def binding(self):
+        if self._retired:
+            raise BackendError('closed')
+        if self._binding is None:
+            from yadinassi.configuration.demos.inventory_enum_runtime import query_binding
+            binding = query_binding(self.catalogs)
+            if type(binding) is not EnumStorageBinding:
+                raise BackendError('unsupported')
+            self._binding = binding
+        return self._binding
+
     def require_current(self):
         if self._retired:
             raise BackendError('closed')
-        EnumStorageBinding._live(self.binding)
+        if self._binding is not None or self._owner is None:
+            EnumStorageBinding._live(self.binding)
+        else:
+            self.require_view()
+
+    def require_view(self):
+        if self._retired:
+            raise BackendError('closed')
+        self._owner._require_owner()
+        self._owner._require_snapshot(self._view._view)
+
+    def prepare_family(self, family):
+        if self._owner is not None and family not in self._families:
+            from yadinassi.configuration.metadata import _prepare_query_family
+            _prepare_query_family(self._owner.metadata, self._view, family)
+            self._families.add(family)
 
     def descriptor(self, enum_id):
         self.require_current()

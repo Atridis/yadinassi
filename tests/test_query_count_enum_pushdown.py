@@ -65,6 +65,16 @@ class EnumCountPushdownTests(unittest.TestCase):
                 self.assertTrue(all(not any(word in stmt.upper() for word in forbidden)
                                     for stmt in statements),statements)
 
+    def test_managerless_package_temps_are_local_without_manager_allocation(self):
+        from yadinassi.db.query.query_packages import BSLTempTablesManager
+        query = BSLQuery(self.vm._catalogs,
+            'SELECT Description AS N INTO Saved FROM Catalog.Номенклатура; SELECT N FROM Saved')
+        with patch.object(BSLTempTablesManager, '__init__', side_effect=AssertionError('unneeded manager')):
+            self.assertEqual(query.execute()._rows, (('Кабель',),))
+            self.assertEqual(query.execute()._rows, (('Кабель',),))
+            with self.assertRaisesRegex(ValueError, 'Unknown temporary'):
+                BSLQuery(self.vm._catalogs, 'SELECT N FROM Saved').execute()
+
     def test_count_does_not_scan_unprojected_reference(self):
         self.query().execute()
         column=quote_identifier(self.backend._layout.field_name(self.schema.identity,self.schema.fields[0].identity))
@@ -79,17 +89,29 @@ class EnumCountPushdownTests(unittest.TestCase):
         self.mutate("UPDATE configuration_file SET content=?,sha256=? WHERE path='Configuration.xml'",(raw,sha256(raw).hexdigest()))
         self.assertEqual(self.query().execute()._rows,((Decimal(1),),))
         with self.assertRaises(BackendError):self.backend.begin_read()
-    def test_enum_owner_revocation_and_mapping_changes_reject_before_provider(self):
-        self.query().execute();scope=self.vm._metadata._enum_storage_scope
-        with patch.object(_View,'aggregate_catalog',side_effect=AssertionError('must reject first')):
-            old=scope.generation;scope.generation=-1
+    def test_owner_revocation_rejects_before_provider_even_without_enum_use(self):
+        self.query().execute()
+        scope = self.vm._metadata._enum_storage_scope
+        with patch.object(_View, 'aggregate_catalog', side_effect=AssertionError('must reject first')):
+            old = scope.generation
+            scope.generation = -1
             try:
-                with self.assertRaises(BackendError):self.query().execute()
-            finally:scope.generation=old
-            managers=scope.namespace._managers;key=next(iter(managers));value=managers.pop(key)
-            try:
-                with self.assertRaises(BackendError):self.query().execute()
-            finally:managers[key]=value
+                with self.assertRaises(BackendError): self.query().execute()
+            finally:
+                scope.generation = old
+
+    def test_scalar_and_count_do_not_bind_unused_enum_namespace(self):
+        from yadinassi.db.metadata.enum_storage_binding import EnumStorageBinding
+        from yadinassi.db.sqlite.sqlite_documents import DocumentView
+        statements = (
+            ('SELECT COUNT(*) AS N FROM Catalog.Номенклатура', ((Decimal(1),),)),
+            ('SELECT Description AS N FROM Catalog.Номенклатура', (('Кабель',),)),
+        )
+        with patch.object(EnumStorageBinding, '_require_namespace', side_effect=AssertionError('unused enum')), \
+                patch.object(DocumentView, 'documents', side_effect=AssertionError('unused documents')):
+            for text, rows in statements:
+                self.assertEqual(BSLQuery(self.vm._catalogs, text).execute()._rows, rows)
+
     def test_foreign_unused_enum_parameter_still_rejects(self):
         other=Interpreter(database_context=self.context);self.addCleanup(other.close)
         foreign=other.execute('Enums.Units.Piece')
@@ -144,6 +166,27 @@ class EnumFieldCountTests(unittest.TestCase):
     def setUp(self):
         from test_inventory_enum_relational_reporting import EnumRelationalGuardTests
         EnumRelationalGuardTests.setUp(self)
+    def test_enum_schema_dependency_is_bound_on_selection_not_catalog_presence(self):
+        from yadinassi.db.metadata.enum_storage_binding import EnumStorageBinding
+        backend = self.context.backend
+        schema = next(s for s in backend._schemas if s.name == 'Products')
+        field = next(f for f in schema.fields if f.kind == 'enum_ref')
+        scope = self.vm._metadata._enum_storage_scope
+        managers = scope.namespace._managers
+        code = next(iter(managers))
+        removed = managers.pop(code)
+        try:
+            with patch.object(EnumStorageBinding, '_require_namespace', side_effect=AssertionError('unused enum')):
+                count = BSLQuery(self.vm._catalogs, 'SELECT COUNT(*) AS N FROM Catalog.Products')
+                self.assertEqual(count.execute()._rows, ((Decimal(3),),))
+                q = BSLQuery(self.vm._catalogs, 'SELECT Code FROM Catalog.Products ORDER BY Code')
+                self.assertEqual(len(q.execute()._rows), 3)
+            query = BSLQuery(self.vm._catalogs, f'SELECT {field.name} FROM Catalog.Products WHERE Code="absent"')
+            with patch.object(_View, 'scan_catalog_values', side_effect=AssertionError('must reject first')):
+                with self.assertRaises(BackendError): query.execute()
+        finally:
+            managers[code] = removed
+
     def test_count_does_not_read_unused_enum_field(self):
         query=lambda:BSLQuery(self.vm._catalogs,'SELECT COUNT(*) AS N FROM Catalog.Products').execute()
         with patch.object(_Plan,'load',side_effect=AssertionError('materialization')):

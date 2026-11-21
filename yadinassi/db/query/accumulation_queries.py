@@ -65,7 +65,7 @@ class AccumulationQueryManager:
         return self._documents_by_id[self._schema.recorder_documents[0]]._logical(field, value)
 
 
-def manager(documents, source, parameters, *, condition_budget=None):
+def manager(documents, source, parameters, *, condition_budget=None, enum_scope=None):
     from yadinassi.configuration.configuration_accumulation import AccumulationConfiguration
     from yadinassi.configuration.configuration_accumulation_references import InventoryConfiguration
     from yadinassi.configuration.configuration_inventory_application import InventoryApplicationConfiguration
@@ -87,7 +87,14 @@ def manager(documents, source, parameters, *, condition_budget=None):
         raise ValueError('Unknown accumulation-register source')
     _boundaries(source, parameters)  # Validate before opening a read lease.
     from .accumulation_query_conditions import bind_condition
-    result = AccumulationQueryManager(documents, matches[0])
+    schema = matches[0]
+    if enum_scope is not None:
+        # Recorder managers are used for logical row decoding; the loader
+        # validates every stored field even when it is not projected.
+        enum_scope.prepare_family('document')
+        if any(field.kind == 'catalog_ref' for field in schema.fields):
+            enum_scope.prepare_family('catalog')
+    result = AccumulationQueryManager(documents, schema)
     result.condition = bind_condition(result, source, parameters,
         typed=type(config) in (InventoryEnumConfiguration, InventoryEnumApplicationConfiguration, MainDemoConfiguration), budget=condition_budget)
     return result

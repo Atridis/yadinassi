@@ -35,6 +35,28 @@ class InventoryEnumQueryTests(unittest.TestCase):
     def seed_document(self):
         self.vm.execute('W=Catalogs.Warehouses.CreateItem();W.Code="W";W.Write(); D=Documents.Receipt.CreateDocument();D.Number="R";D.Date=Date(2024,2,10);D.Warehouse=W.Ref;D.State=Enums.States.Approved;L=D.Lines.Add();L.Product=P.Ref;L.Unit=Enums.Units.Piece;L.Quantity=5;L.Amount=10;L=D.Lines.Add();L.Product=P.Ref;L.Unit=Enums.Units.Pack;L.Quantity=4;L.Amount=8;D.Write(DocumentWriteMode.Posting);')
 
+    def test_cold_scalar_document_and_accumulation_load_only_required_families(self):
+        from yadinassi.db.sqlite.sqlite_catalog import _View
+        self.seed_document()
+        with closing(Interpreter(database_context=self.context)) as other:
+            with mock.patch.object(_View, 'catalogs', side_effect=AssertionError('unused catalog metadata')):
+                rows = other.execute('Q=New Query("SELECT Number FROM Document.Receipt");Q.Execute();')
+                self.assertEqual(rows._rows, (('R',),))
+            self.assertIsNone(other._catalogs._metadata._items)
+        with closing(Interpreter(database_context=self.context)) as other:
+            backend = self.context.backend
+            with mock.patch.object(backend, 'begin_read', side_effect=AssertionError('nested read')):
+                rows = other.execute('Q=New Query("SELECT Number FROM Document.Receipt WHERE Warehouse=Warehouse");Q.Execute();')
+                self.assertEqual(rows._rows, (('R',),))
+            self.assertIsNotNone(other._catalogs._metadata._items)
+        with closing(Interpreter(database_context=self.context)) as other:
+            backend = self.context.backend
+            with mock.patch.object(backend, 'begin_read', side_effect=AssertionError('nested read')):
+                rows = other.execute('Q=New Query("SELECT Quantity FROM AccumulationRegister.Stock ORDER BY Quantity");Q.Execute();')
+                self.assertEqual(rows._rows, ((Decimal(4),), (Decimal(5),)))
+            self.assertIsNotNone(other._documents._metadata._items)
+            self.assertIsNotNone(other._catalogs._metadata._items)
+
     def test_catalog_projection_uses_owned_canonical_objects(self):
         rows=self.query('SELECT Unit FROM Catalog.Products ORDER BY Code')._rows
         self.assertIs(rows[0][0],self.empty);self.assertIs(rows[2][0],self.piece)

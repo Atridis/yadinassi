@@ -132,8 +132,6 @@ class BSLDocumentManager(BSLObject):
         self._documents,self._metadata = documents,metadata
         self._catalogs = documents._catalogs
         self._schema = metadata._schema
-        # Initialize catalog metadata in the same runtime snapshot for reference fields.
-        self._catalogs._metadata._snapshot()
         for attr,family in (('_value_type','ref'),('_manager_type','manager'),('_selection_type','selection'),('_object_type','object')):
             setattr(self,attr,BSLDocumentType(self._schema.identity,self._schema.name,documents._metadata,family))
     @property

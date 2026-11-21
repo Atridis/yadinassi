@@ -136,9 +136,10 @@ class _Plan:
         self.information_registers = information_registers
         from yadinassi.configuration.demos.inventory_enum_runtime import query_binding
         self.enum_scope = enum_scope
-        self.enum_binding=query_binding(catalogs)
+        self.enum_binding = query_binding(catalogs) if enum_scope is None else None
         for value in parameters.values():
             if type(value) is BSLEnumReference:
+                if enum_scope is not None: self.enum_binding = enum_scope.binding
                 if self.enum_binding is None:raise ValueError('Enum parameters require the explicit inventory enum profile')
                 self.enum_binding.owned_key(value)
         self._descriptors = {}
@@ -177,13 +178,14 @@ class _Plan:
                 self.sections.append(None)
                 continue
             if source.family == 'document':
+                if enum_scope is not None: enum_scope.prepare_family('document')
                 if documents is None: raise ValueError('Document query sources require document context')
                 documents._metadata._snapshot(query_language=True)
                 manager = documents.get_index(source.catalog)
             elif source.family == 'accumulation_register':
                 from .accumulation_queries import manager as accumulation_manager
                 manager = accumulation_manager(documents, source, self.parameters,
-                    condition_budget=condition_budget)
+                    condition_budget=condition_budget, enum_scope=enum_scope)
             elif source.family == 'information_register':
                 from .recorder_queries import manager as recorder_manager
                 manager = recorder_manager(documents, source.catalog)
@@ -193,6 +195,7 @@ class _Plan:
                     information_registers._metadata._snapshot(query_language=True)
                     manager = information_registers.get_index(source.catalog)
             else:
+                if enum_scope is not None: enum_scope.prepare_family('catalog')
                 catalogs._metadata._snapshot(query_language=True)
                 manager = catalogs.get_index(source.catalog)
             self.managers.append(manager)
@@ -254,6 +257,7 @@ class _Plan:
             if column.kind in ('catalog_ref', 'document_ref', 'enum_ref'):
                 column = replace(column, reference_identity=self.reference_identity(expression))
             if column.kind in ('catalog_ref', 'document_ref'):
+                if enum_scope is not None: enum_scope.prepare_family(column.kind.removesuffix('_ref'))
                 from .query_reference_tables import bind_column
                 column = bind_column(column, catalogs, documents)
             if column.kind == 'enum_ref' and self.enum_scope is not None:
@@ -284,6 +288,7 @@ class _Plan:
     def resolve_field(self, index, expression):
         column=self._resolve_field(index,expression)
         if column.kind=='enum_ref':
+            if self.enum_scope is not None: self.enum_binding = self.enum_scope.binding
             source=self.sources[index]
             if self.enum_binding is None:
                 raise ValueError('Enum query source is outside this profile')
@@ -298,6 +303,8 @@ class _Plan:
                               if self.enum_scope is not None else None)
             column=replace(column,reference_identity=(typ.snapshot,typ.metadata_uuid),
                            enum_descriptor=descriptor)
+        if self.enum_scope is not None and column.kind in ('catalog_ref', 'document_ref'):
+            self.enum_scope.prepare_family(column.kind.removesuffix('_ref'))
         return column
 
     def _resolve_field(self, index, expression):
@@ -366,6 +373,7 @@ class _Plan:
         for i, source in enumerate(self.sources[:source_limit]):
             if len(expression.parts) == 2 and expression.parts[0].casefold() != source.alias.casefold(): continue
             try: column = self.resolve_field(i, expression)
+            except BackendError: raise
             except ValueError: continue
             matches.append(_BoundField(i, column))
         if len(matches) != 1: raise ValueError('Unknown or ambiguous query field')
@@ -972,8 +980,13 @@ class _Plan:
             self._budget = budget
             from contextlib import nullcontext
             from yadinassi.configuration.demos.inventory_enum_runtime import read_snapshot
+            owns_witness = self.enum_scope is not None and view is self.enum_scope._view
+            if owns_witness:
+                # Revalidate the lexical owner before each plan, including
+                # scalar plans with no enum binding. Do not enter a new lease.
+                self.enum_scope.require_view()
             witness=(read_snapshot(self.catalogs._metadata._root,view)
-                     if self.enum_binding is not None else nullcontext())
+                     if self.enum_binding is not None and not owns_witness else nullcontext())
             with witness:
                 self.prepare_memberships(view, budget)
                 self.prepare_hierarchies(view, budget)

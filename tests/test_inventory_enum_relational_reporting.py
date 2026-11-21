@@ -188,9 +188,9 @@ class EnumRelationalGuardTests(unittest.TestCase):
 
     def test_array_snapshot_once_even_if_mutated_when_read_opens(self):
         values=array(self.piece); original=self.context.backend.begin_query_read
-        def open_view():
+        def open_view(**kwargs):
             values.items[:]=[self.pack]
-            return original()
+            return original(**kwargs)
         with patch.object(self.context.backend,'begin_query_read',side_effect=open_view):
             rows=self.query('SELECT Code FROM Catalog.Products WHERE Unit IN (&V)',V=values)._rows
         self.assertEqual(rows,(('P',),))
@@ -229,8 +229,8 @@ class EnumRelationalGuardTests(unittest.TestCase):
         scope=_EnumReportScope(self.catalogs)
         manager=scope.binding._namespace._managers['units'];old=manager._values
         original=self.context.backend.begin_query_read
-        def open_view():
-            view=original();manager._values=tuple(list(old));return view
+        def open_view(**kwargs):
+            view=original(**kwargs);manager._values=tuple(list(old));return view
         try:
             with patch.object(self.context.backend,'begin_query_read',side_effect=open_view):
                 with self.assertRaises(BackendError):
@@ -265,8 +265,8 @@ class EnumRelationalGuardTests(unittest.TestCase):
         plan=_Plan(query_parser.parse_package('SELECT Unit FROM Catalog.Products')[0],
                    self.catalogs,{},enum_scope=scope)
         original=self.context.backend.begin_query_read;opened=[]
-        def open_view():
-            view=original();opened.append(view);return view
+        def open_view(**kwargs):
+            view=original(**kwargs);opened.append(view);return view
         try:
             with patch.object(self.context.backend,'begin_query_read',side_effect=open_view), \
                  patch.object(DocumentView,'close',side_effect=BackendError('integrity')):

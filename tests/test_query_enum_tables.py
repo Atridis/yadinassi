@@ -215,11 +215,18 @@ class EnumTableTests(unittest.TestCase):
         with patch.object(_View, 'scan_catalog_values', side_effect=AssertionError('scan')):
             with self.assertRaises(BackendError): self.q('SELECT Unit FROM Catalog.Products').execute()
 
-    def test_cold_metadata_failure_leaves_no_partial_cache(self):
+    def test_catalog_enum_projection_does_not_prepare_unused_documents(self):
+        other = Interpreter(database_context=self.context); self.addCleanup(other.close)
+        with patch.object(DocumentView, 'documents', side_effect=AssertionError('unused documents')):
+            self.assertEqual(len(self.q('SELECT Unit FROM Catalog.Products', vm=other).execute()._rows), 3)
+        self.assertIsNotNone(other._catalogs._metadata._items)
+        self.assertIsNone(other._documents._metadata._items)
+
+    def test_cold_requested_document_failure_leaves_its_cache_unpublished(self):
         other = Interpreter(database_context=self.context); self.addCleanup(other.close)
         with patch.object(DocumentView, 'documents', side_effect=ValueError('metadata failure')):
             with self.assertRaisesRegex(ValueError, 'metadata failure'):
-                self.q('SELECT Unit FROM Catalog.Products', vm=other).execute()
+                self.q('SELECT Number FROM Document.Missing', vm=other).execute()
         self.assertIsNone(other._catalogs._metadata._items)
         self.assertIsNone(other._documents._metadata._items)
 
