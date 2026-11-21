@@ -7,7 +7,7 @@ from decimal import Decimal
 import json
 from uuid import UUID, uuid4
 
-from yadinassi.db.catalog.catalog_backend import BackendError, CatalogSchema, FieldSchema, CatalogKey, TabularRow, TabularSectionRows
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogSchema, FieldSchema, CatalogKey, TabularRow, TabularSectionRows, _TabularSectionChanges
 from yadinassi.db.catalog.catalog_qualifiers import normalize_field, normalize_string, validate_string
 from yadinassi.db.document.document_backend import (DocumentSchema, DocumentKey, DocumentRevision, DocumentCard,
                                DocumentDraft, DocumentWriteOutcome, DocumentSelection,
@@ -254,7 +254,7 @@ class DocumentView:
             self._require_references(decoded, False, presence)
         return decoded
 
-    def _sections(self, schema, contents, *, writing=False, presence=None):
+    def _sections(self, schema, contents, *, writing=False, presence=None, sparse=False):
         if type(contents) is not (tuple if writing else list) or len(contents) > 16: raise BackendError('invalid_input' if writing else 'integrity')
         if presence is None and (writing or self._view._backend.format_version in (15, 16)):
             presence = self._presence(self._section_candidates(schema, contents, writing=writing))
@@ -291,7 +291,7 @@ class DocumentView:
                 result.append(encoded)
             supplied[identity] = result
         if not writing and set(supplied) != set(definitions): raise BackendError('integrity')
-        return ([[str(identity),supplied.get(identity,[])] for identity in sorted(definitions,key=str)] if writing else
+        return ([[str(identity),supplied.get(identity,[])] for identity in sorted(supplied if sparse else definitions,key=str)] if writing else
                 tuple(TabularSectionRows(section.identity,tuple(supplied[section.identity])) for section in schema.tabular_sections))
 
     def _posted_value(self, key):
@@ -355,11 +355,14 @@ class DocumentView:
         if self._view._cache_validation_allowed():
             self._view._validated_sources[proof_key] = ()
 
-    def read_document(self, key):
-        schema = self._key(key); self._preflight(schema)
-        row = self._connection.execute(self._record_sql(
+    def _load_record(self, schema, key):
+        return self._connection.execute(self._record_sql(
             where='r.document_id=? AND r.record_id=?'),
             (str(schema.identity),str(key.record_id))).fetchone()
+
+    def read_document(self, key):
+        schema = self._key(key); self._preflight(schema)
+        row = self._load_record(schema,key)
         card = None if row is None else self._card(schema,row)
         if self._view._cache_validation_allowed():
             self._view._validated_sources[self._record_proof_key(schema, key)] = ()
@@ -628,25 +631,41 @@ class DocumentView:
             if type(expected) is not DocumentRevision or (expected.database_id,expected.configuration_generation,expected.document_id,expected.record_id) != (self.database_id,self.configuration_generation,schema.identity,draft.key.record_id): raise BackendError('conflict')
             _storage()._revision_number(expected.token)
         values = self._values(schema.fields,draft.values,writing=True)
-        sections = None if draft.tabular_sections is None else self._sections(schema,draft.tabular_sections,writing=True)
+        contents = draft.tabular_sections
+        sparse = type(contents) is _TabularSectionChanges
+        if sparse:
+            if expected is None or self._view._backend.format_version not in (15, 16):
+                raise BackendError('invalid_input')
+            contents = contents.sections
+            if type(contents) is not tuple: raise BackendError('invalid_input')
+        sections = None if contents is None else self._sections(schema,contents,writing=True,sparse=sparse)
         date = _storage()._encode(draft.date,_DATE_FIELD,self.database_id)[1]
         intent = ['document_write_v1',str(schema.identity),str(draft.key.record_id),number,date,draft.deletion_mark,values,sections,draft.auto_number,None if expected is None else expected.token]
-        encoded = _storage()._json(intent).encode('utf-8')
-        if len(encoded) > _MAX_ROW: raise BackendError('invalid_input')
-        return schema,intent,None
+        dump = _storage()._json
+        if sparse:
+            intent[7] = None
+            envelope = len(dump(intent))-4  # replace JSON null with the exact section payload
+            intent[7] = sections
+            size = envelope+len(dump(sections))
+        else:
+            envelope = None
+            size = len(dump(intent))
+        if size > _MAX_ROW: raise BackendError('invalid_input')
+        return schema,intent,(size,envelope)
 
     def create(self, draft): self._write(draft,None)
     def update(self, draft, expected):
         if expected is None: raise BackendError('invalid_input')
         self._write(draft,expected)
 
-    def _write(self, draft, expected):
+    def _write(self, draft, expected, *, max_intent=None):
         self._view._require(True)
         if self._outcome is not None: raise BackendError('unsupported')
-        schema,intent,_ = self._intent(draft,expected)
+        schema,intent,(intent_size,envelope) = self._intent(draft,expected)
         _,document,record,number,date,mark,values,sections,auto,_ = intent
         count = self._preflight(schema)
-        old = self.read_document(draft.key)
+        row = self._load_record(schema,draft.key)
+        old = None if row is None else self._card(schema,row)
         if expected is None:
             if old is not None: raise BackendError('duplicate_identity')
             if count >= 10000: raise BackendError('unsupported')
@@ -663,19 +682,42 @@ class DocumentView:
                 else: raise BackendError('number_exhausted')
                 self._connection.execute('UPDATE document_sequence SET next_value=? WHERE document_id=?',(next_value,document))
             if self._connection.execute('SELECT 1 FROM document_record WHERE document_id=? AND number=? AND record_id!=?',(document,number,record)).fetchone(): raise BackendError('duplicate_number')
-            if sections is None:
-                sections = self._sections(schema,() if old is None else old.tabular_sections,writing=True)
-            args = (revision,number,date,int(mark),_storage()._json(values),_storage()._json(sections),document,record)
-            if len(args[4])+len(args[5]) > _MAX_ROW: raise BackendError('invalid_input')
-            if old is None:
-                self._connection.execute('INSERT INTO document_record(revision,number,date,deletion_mark,values_json,sections_json,document_id,record_id) VALUES(?,?,?,?,?,?,?,?)',args)
+            scalars = (revision,number,date,int(mark),_storage()._json(values))
+            sparse = envelope is not None
+            if sparse and not sections:
+                # The selected old row has already passed full decode and
+                # reference admission on this writer. Leave its exact blob alone.
+                payload = row[6]
+                size = len(payload) if payload.isascii() else len(payload.encode('utf-8'))
+                intent_size = envelope+size
+                if intent_size > _MAX_ROW: raise BackendError('invalid_input')
+                if max_intent is not None and intent_size > max_intent: raise BackendError('unsupported')
+                self._connection.execute('UPDATE document_record SET revision=?,number=?,date=?,deletion_mark=?,values_json=? WHERE document_id=? AND record_id=?',scalars+(document,record))
             else:
-                self._connection.execute('UPDATE document_record SET revision=?,number=?,date=?,deletion_mark=?,values_json=?,sections_json=? WHERE document_id=? AND record_id=?',args)
+                if sparse and len(sections) != len(schema.tabular_sections):
+                    merged = dict(json.loads(row[6]))
+                    merged.update(sections)
+                    if sum(len(rows) for rows in merged.values()) > 1000: raise BackendError('unsupported')
+                    sections = sorted(merged.items())
+                elif sections is None:
+                    sections = self._sections(schema,() if old is None else old.tabular_sections,writing=True)
+                encoded = _storage()._json(sections)
+                if sparse:
+                    intent_size = envelope+len(encoded)
+                    if intent_size > _MAX_ROW: raise BackendError('invalid_input')
+                    if max_intent is not None and intent_size > max_intent: raise BackendError('unsupported')
+                elif len(scalars[-1])+len(encoded) > _MAX_ROW: raise BackendError('invalid_input')
+                args = scalars+(encoded,document,record)
+                if old is None:
+                    self._connection.execute('INSERT INTO document_record(revision,number,date,deletion_mark,values_json,sections_json,document_id,record_id) VALUES(?,?,?,?,?,?,?,?)',args)
+                else:
+                    self._connection.execute('UPDATE document_record SET revision=?,number=?,date=?,deletion_mark=?,values_json=?,sections_json=? WHERE document_id=? AND record_id=?',args)
             self._preflight(schema)
             # Allocate the result while rollback still covers this row
             # and its sequence. After RELEASE install only existing references.
             outcome = DocumentWriteOutcome(DocumentRevision(self.database_id,self.configuration_generation,schema.identity,draft.key.record_id,str(revision)),number)
         self._outcome = outcome
+        return intent_size
 
     def _confirm_commit(self):
         self._view._require(True)

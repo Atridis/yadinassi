@@ -9,8 +9,8 @@ from uuid import UUID, uuid4
 from yadinassi.temporal.dates import BSLDate, _date_from_datetime, _parts, TICKS_PER_SECOND
 from .catalog_types import BSLCatalogReference, BSLCatalogType
 from .catalog_backend import CatalogKey, CatalogDraft, CatalogSelection, CatalogScanRequest, CatalogComparison, Revision, BackendError, CatalogValuePage, CatalogValueRow, CatalogWriteOutcome
-from .catalog_sections import BSLCatalogSection, _MAX_ROWS as _MAX_SECTION_ROWS, _MAX_BUFFER_BYTES
-from .catalog_backend import TabularSectionRows, _CatalogSectionChanges
+from .catalog_sections import BSLCatalogSection, _MAX_ROWS as _MAX_SECTION_ROWS, _MAX_BUFFER_BYTES, _changed_sections
+from .catalog_backend import TabularSectionRows
 from .catalog_qualifiers import normalize_field, normalize_string, validate_string
 from yadinassi.types.unique_identifiers import BSLUUID
 from yadinassi.types.values import BSLObject, HostFunction
@@ -304,12 +304,12 @@ class BSLCatalogObject(BSLObject):
     def _section_row_count(self):return sum(len(section._rows) for section in self._sections.values())
     def _section_buffer_bytes(self):return sum(section._bytes for section in self._sections.values())
     def _section_draft(self):
-        changed=tuple(section for section in self._sections.values() if section._dirty)
-        if not changed:return None
+        sections=self._sections.values()
+        if not any(section._dirty for section in sections):return None
         from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
         if not self.is_new() and type(self._manager._backend) is SQLiteCatalogBackend:
-            return _CatalogSectionChanges(tuple(section._stored_rows() for section in changed))
-        return tuple(section._stored_rows() for section in self._sections.values())
+            return _changed_sections(sections)
+        return tuple(section._stored_rows() for section in sections)
     def is_new(self):return self._revision is None
     def set_new_object_ref(self,ref):
         if self._uncertain_write or self._pending_write is not None:raise BackendError('uncertain_commit')

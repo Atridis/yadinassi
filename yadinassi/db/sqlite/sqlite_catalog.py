@@ -43,7 +43,7 @@ from yadinassi.db.catalog.catalog_backend import (BackendError, Capabilities, Ca
                               CatalogOrder, CatalogScanRequest, CatalogPage, CatalogScalarRow,
                               CatalogValueRow, CatalogValuePage, TabularSectionSchema,
                               TabularRow, TabularSectionRows, CatalogSectionRecord, CatalogSectionPage, CatalogWriteOutcome,
-                              _CatalogSectionChanges)
+                              _TabularSectionChanges)
 
 _APPLICATION_ID = 0x59414449
 _MAX_ROWS = 10000
@@ -2831,7 +2831,7 @@ class _View:
     def _draft_sections(self, draft, schema):
         sections = draft.tabular_sections
         if sections is None: return None
-        sparse = type(sections) is _CatalogSectionChanges
+        sparse = type(sections) is _TabularSectionChanges
         if sparse: sections = sections.sections
         if type(sections) is not tuple or len(sections) > _MAX_SECTIONS: raise BackendError('invalid_input')
         if self._backend.storage_version not in (3, 4, 6, 7, 8, 9, 10) and sections: raise BackendError('unsupported')

@@ -9,7 +9,8 @@ from typing import Protocol
 from uuid import UUID
 
 from yadinassi.db.catalog.catalog_backend import (FieldSchema, TabularSectionSchema, TabularSectionRows,
-                              CatalogSchema, CatalogScanRequest, CatalogValuePage, CatalogSectionPage)
+                              CatalogSchema, CatalogScanRequest, CatalogValuePage, CatalogSectionPage,
+                              _TabularSectionChanges)
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,7 +59,7 @@ class DocumentDraft:
     deletion_mark: bool
     values: tuple
     # None preserves sections on updates; a tuple replaces all sections.
-    tabular_sections: tuple[TabularSectionRows, ...] | None = None
+    tabular_sections: tuple[TabularSectionRows, ...] | _TabularSectionChanges | None = None
     auto_number: bool = False
 
 

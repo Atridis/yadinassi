@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 from yadinassi.db.catalog.catalog_backend import BackendError, TabularSectionRows
 from yadinassi.db.catalog.catalogs import BSLCatalogManager
 from yadinassi.db.catalog.catalog_qualifiers import normalize_string, validate_string
-from yadinassi.db.catalog.catalog_sections import _MAX_ROWS, _MAX_BUFFER_BYTES
+from yadinassi.db.catalog.catalog_sections import _MAX_ROWS, _MAX_BUFFER_BYTES, _changed_sections
 from yadinassi.temporal.dates import BSLDate, _date_from_datetime, _parts, TICKS_PER_SECOND
 from .document_backend import DocumentKey, DocumentDraft, DocumentSelection, DocumentWriteOutcome, DocumentRevision
 from .document_types import BSLDocumentReference, BSLDocumentType
@@ -241,6 +241,7 @@ class BSLDocumentObject(BSLObject):
         if card is not None and (len(contents) != len(card.tabular_sections) or set(contents) != {s.identity for s in manager._schema.tabular_sections}): raise BackendError('integrity')
         self._sections = {s.name.casefold():BSLDocumentLines(self,s,() if card is None else contents[s.identity].rows) for s in manager._schema.tabular_sections}
         if self._section_row_count() > _MAX_ROWS or self._section_buffer_bytes() > _MAX_BUFFER_BYTES: raise BackendError('unsupported')
+        self._full_section_image = False
     def _section_row_count(self): return sum(len(s._rows) for s in self._sections.values())
     def _section_buffer_bytes(self): return sum(s._bytes for s in self._sections.values())
     def is_new(self): return self._revision is None
@@ -266,11 +267,20 @@ class BSLDocumentObject(BSLObject):
         for section in self._sections.values(): section._dirty = False
         self._pending_write = None
         self._posting_previous = None
-    def _draft(self):
+        self._full_section_image = False
+    def _draft(self, *, changes=False):
         m = self._manager
+        sections = self._sections.values()
+        if changes and not self.is_new() and not self._full_section_image:
+            from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+            # These layouts already validate the stored section references
+            # on the writer's current row read before merging any changes.
+            changes = type(m._backend) is SQLiteCatalogBackend and m._backend.format_version in (15, 16)
+        else:
+            changes = False
         return DocumentDraft(self._key,self._values['number'],_date(self._values['date']),self._values['deletionmark'],
             tuple(m._stored(f,self._values[f.name.casefold()]) for f in m._schema.fields),
-            tuple(s._stored_rows() for s in self._sections.values()),
+            _changed_sections(sections) if changes else tuple(s._stored_rows() for s in sections),
             self.is_new() and m._schema.numbering == 'decimal_v1' and self._values['number'] == '')
     def _rollback_pending(self):
         if self._posting_previous is not None:
@@ -286,7 +296,7 @@ class BSLDocumentObject(BSLObject):
         transaction = current(m._backend)
         if self._pending_write is not None: raise BackendError('uncertain_commit')
         if not m._writable(): raise BackendError('unsupported')
-        draft = self._draft()
+        draft = self._draft(changes=True)
         expected,operation = self._revision,self._operation_id
         if transaction is not None:
             transaction.stage(self, 'document_create' if expected is None else 'document_update',

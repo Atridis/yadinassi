@@ -105,6 +105,19 @@ class InventoryApplicationTests(unittest.TestCase):
         self.assertEqual(card.tabular_sections[0].rows[0].values[1],Decimal(10))
         self.assertEqual(self.app.posting_states[sid]['state'],'saved')
 
+    def test_complete_form_image_clears_last_persisted_line(self):
+        sid = self.prepare()
+        self.event(sid, control='WriteButton')
+        before = self.cards()[0]
+        self.assertEqual(len(before.tabular_sections[0].rows), 1)
+        table = next(i for i in self.app.sessions[sid][0]._snapshot()['items'] if i['kind'] == 'table')
+        self.event(sid, 'select', control='LinesTable', row=table['rows'][0]['id'])
+        self.event(sid, control='DeleteLineButton')
+        self.event(sid, control='WriteButton')
+        after = self.cards()[0]
+        self.assertNotEqual(after.revision, before.revision)
+        self.assertEqual(after.tabular_sections[0].rows, ())
+
     def test_post_then_undo_reuses_typed_document_image(self):
         sid=self.prepare();self.event(sid,control='PostButton');self.assertTrue(self.cards()[0].posted)
         self.event(sid,control='UndoPostingButton');self.assertFalse(self.cards()[0].posted)

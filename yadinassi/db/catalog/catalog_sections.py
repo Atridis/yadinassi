@@ -6,7 +6,7 @@ Only the owning CatalogObject.Write persists these detached buffers.
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from .catalog_backend import BackendError, TabularRow, TabularSectionRows
+from .catalog_backend import BackendError, TabularRow, TabularSectionRows, _TabularSectionChanges
 from .catalog_types import BSLCatalogReference
 from yadinassi.temporal.dates import BSLDate
 from yadinassi.types.values import BSLObject, HostFunction
@@ -43,6 +43,10 @@ def _units(value):
     # Size accounting only, after the owning manager validated its field grant.
     if type(value) is BSLEnumReference: return 36
     raise TypeError('unsupported tabular field value')
+
+
+def _changed_sections(sections):
+    return _TabularSectionChanges(tuple(section._stored_rows() for section in sections if section._dirty))
 
 
 class BSLCatalogSectionRow(BSLObject):

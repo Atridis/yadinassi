@@ -170,7 +170,7 @@ class PostingRuntime:
                     vm.invoke(events['before'],values)
                     if mode is DocumentWriteMode.UNDO_POSTING: vm.invoke(events['undo'],values)
                     posted = old_posted if mode is DocumentWriteMode.WRITE else mode is DocumentWriteMode.POSTING
-                    draft = document._draft(); expected = document._revision
+                    draft = document._draft(changes=True); expected = document._revision
                     document._posting_previous = old_posted
                     transaction.stage(document,'document_create' if expected is None else 'document_update',
                                       draft,expected,(draft,expected,document._operation_id))

@@ -149,6 +149,8 @@ class RootPostingOperations:
         document._sections = {s.name.casefold(): BSLDocumentLines(document, s, rows.rows)
             for s, rows in zip(schema.tabular_sections, draft.tabular_sections)}
         if document._draft() != draft: raise BackendError('invalid_input')
+        # Host DTO is a complete replacement, even when a supplied section is empty.
+        document._full_section_image = True
         return document
 
     def execute(self, operation_id, draft, expected, *, form, command):

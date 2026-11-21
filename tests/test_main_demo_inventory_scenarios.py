@@ -10,6 +10,7 @@ L.Product=Карточка.Ссылка;L.Quantity=5;L.Amount=10;L.Unit=Enums.Un
 
 # Reuse setup without inheriting the other class's test methods.
 import unittest
+from unittest.mock import patch
 class MainDemoInventoryScenarios(unittest.TestCase):
     setUp = runtime_fixture.MainDemoRuntimeTests.setUp
 
@@ -23,6 +24,70 @@ class MainDemoInventoryScenarios(unittest.TestCase):
         self.assertEqual(self.reports().read('StockMovements').rows, ())
         self.vm.execute('D.Write(DocumentWriteMode.Posting);')
         self.assertEqual(len(self.reports().read('StockMovements').rows), 1)
+
+    def test_clean_document_update_preserves_blob_and_dirty_clear_rolls_back(self):
+        self.vm.execute(SEED + POST + 'D.Write(DocumentWriteMode.Posting);')
+        document = self.vm.variables['d']
+        original_rows = document.get_member('Lines')._stored_rows()
+        original_revision = document._revision
+        expected_movements = self.reports().read('StockMovements').rows
+        backend = self.context.backend
+        connect = backend._connect
+        trace = []
+        def traced_connect(**kwargs):
+            connection = connect(**kwargs)
+            connection.set_trace_callback(trace.append)
+            return connection
+        with patch.object(backend, '_connect', side_effect=traced_connect):
+            self.vm.execute('D=D.Ref.GetObject(); D.Number="r2"; D.Write();')
+        updates = [sql for sql in trace if sql.startswith('UPDATE document_record SET')]
+        self.assertEqual(len(updates), 1)
+        self.assertNotIn('sections_json', updates[0])
+        self.assertEqual(self.reports().read('StockMovements').rows, expected_movements)
+        self.vm.execute('D=D.Ref.GetObject();')
+        document = self.vm.variables['d']
+        self.assertNotEqual(document._revision, original_revision)
+        self.assertTrue(document.get_member('Posted'))
+        self.assertEqual(document.get_member('Lines')._stored_rows(), original_rows)
+        self.vm.execute('BeginTransaction(); D.Lines.Clear(); D.Write(); RollbackTransaction();')
+        self.vm.execute('Saved=D.Ref.GetObject();')
+        self.assertEqual(self.vm.variables['saved'].get_member('Lines')._stored_rows(), original_rows)
+        self.vm.execute('D.Write(); D=D.Ref.GetObject();')
+        self.assertEqual(self.vm.variables['d'].get_member('Lines').count(), 0)
+        self.assertTrue(self.vm.variables['d'].get_member('Posted'))
+
+    def test_clean_document_write_charges_full_intent_before_mutation(self):
+        from contextlib import closing
+        from uuid import uuid4
+        from yadinassi.db.catalog.catalog_backend import BackendError
+        from yadinassi.db.sqlite.sqlite_documents import DocumentView
+        from yadinassi.db.transaction_backend import TransactionRequest
+
+        self.vm.execute(SEED + POST + 'D.Write(); D=D.Ref.GetObject();')
+        document = self.vm.variables['d']
+        document.set_member('Number', 'r2')
+        expected = document._revision
+        backend = self.context.backend
+        full = document._draft()
+        partial = document._draft(changes=True)
+        with closing(backend.begin_unit_of_work(uuid4())) as unit:
+            view = DocumentView(unit._view)
+            full_size = view._intent(full, expected)[2][0]
+            self.assertLess(view._intent(partial, expected)[2][0], full_size)
+            request = TransactionRequest('document_update', partial, expected)
+            with patch('yadinassi.db.sqlite.sqlite_transactions.MAX_BYTES', full_size-1):
+                with self.assertRaisesRegex(BackendError, 'unsupported'):
+                    unit.stage(request)
+            with patch('yadinassi.db.sqlite.sqlite_documents._MAX_ROW', full_size-1):
+                with self.assertRaisesRegex(BackendError, 'invalid_input'):
+                    unit.stage(request)
+            self.assertEqual(unit.read_document(document._key).number, 'r1')
+            self.assertEqual(unit.requests, ())
+            with patch('yadinassi.db.sqlite.sqlite_transactions.MAX_BYTES', full_size):
+                unit.stage(request)
+            self.assertEqual(unit._bytes, full_size)
+            self.assertEqual(unit.read_document(document._key).number, 'r2')
+            unit.rollback()
 
     def test_undo_posting_reopen_and_repost_preserves_enum_values(self):
         self.vm.execute(SEED + POST + 'D.Write(DocumentWriteMode.Posting);D.Write(DocumentWriteMode.UndoPosting);')

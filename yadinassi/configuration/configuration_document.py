@@ -226,6 +226,8 @@ class DocumentObjectSession:
                 added = target.add()
                 if row.identity is not None: added._identity = row.identity
                 for name, value in fields.items(): added.set_member(name, value)
+        # This copied form image replaces even explicitly empty sections.
+        candidate._full_section_image = True
         return candidate
 
     def _result(self):

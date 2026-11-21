@@ -1,6 +1,6 @@
 """Host-owned ordered multi-port staging with one durable commit boundary."""
 from contextlib import contextmanager
-from yadinassi.db.catalog.catalog_backend import BackendError, Revision
+from yadinassi.db.catalog.catalog_backend import BackendError, Revision, _TabularSectionChanges
 from yadinassi.db.document.document_backend import DocumentRevision, DocumentWriteOutcome
 from yadinassi.db.transaction_backend import TransactionRequest, StagedTicket, TransactionOutcome
 from .sqlite_documents import DocumentView
@@ -85,8 +85,8 @@ def _describe(view, request):
         return len(_json(intent).encode('utf-8')), identity
     if kind.startswith('document_'):
         port = DocumentView(view)
-        _,intent,_ = port._intent(draft,expected)
-        return len(_json(intent).encode('utf-8')),('document',draft.key.document_id,draft.key.record_id)
+        _,_,(size,_) = port._intent(draft,expected)
+        return size,('document',draft.key.document_id,draft.key.record_id)
     port = RegisterView(view)
     if kind == 'register_set':
         if expected is not None: raise BackendError('invalid_input')
@@ -155,7 +155,10 @@ class UnitOfWork:
                 result = stage_posted(view._connection,view.database_id,draft)
             elif kind.startswith('document_'):
                 port = DocumentView(view)
-                if expected is None: port.create(draft)
+                if type(draft.tabular_sections) is _TabularSectionChanges:
+                    size = port._write(draft,expected,max_intent=MAX_BYTES-self._bytes)
+                    total = self._bytes + size
+                elif expected is None: port.create(draft)
                 else: port.update(draft,expected)
                 result = port._outcome
             elif kind=='recorder_replace':

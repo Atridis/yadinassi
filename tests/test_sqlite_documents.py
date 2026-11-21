@@ -168,13 +168,18 @@ D.Write();O=D.Ref.GetObject();Message(O.Lines.Count());O.Lines.Clear();O.Write()
         obj.set_member('Text','uncommitted');obj.get_member('Lines').clear()
         tx = self.context.backend.begin_document_write(uuid4())
         try:
-            original = tx._preflight; calls = [0]
+            original = tx._preflight
             def fail_after_write(schema):
-                calls[0] += 1
-                if calls[0] == 3: raise BackendError('storage_error')
+                revision, = tx._connection.execute(
+                    'SELECT revision FROM document_record WHERE document_id=? AND record_id=?',
+                    (str(obj._key.document_id),str(obj._key.record_id))).fetchone()
+                if revision != int(obj._revision.token): raise BackendError('storage_error')
                 return original(schema)
             with patch.object(tx,'_preflight',side_effect=fail_after_write):
-                with self.assertRaises(BackendError): tx.update(replace(self.draft(),key=obj._key,number=obj.get_member('Number'),values=('uncommitted',Decimal(0),False,datetime(1,1,1),obj._manager._stored(self.schema.fields[-1],obj.get_member('Category'))),tabular_sections=(),auto_number=False),obj._revision)
+                with self.assertRaisesRegex(BackendError, 'storage_error'): tx.update(replace(self.draft(),key=obj._key,number=obj.get_member('Number'),values=('uncommitted',Decimal(0),False,datetime(1,1,1),obj._manager._stored(self.schema.fields[-1],obj.get_member('Category'))),tabular_sections=(),auto_number=False),obj._revision)
+            # Verify rollback at the operation's savepoint before ending this writer.
+            current = tx._connection.execute('SELECT revision,values_json,sections_json FROM document_record').fetchall()
+            self.assertEqual(current,before)
         finally: tx.rollback()
         self.assertEqual(self.sql('SELECT revision,values_json,sections_json FROM document_record'),before)
         tx = self.context.backend.begin_document_write(uuid4())
