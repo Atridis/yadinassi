@@ -109,3 +109,24 @@ Empty=New Structure(New FixedStructure);E=Empty.Count();'''
         ''')
         result=subprocess.run([sys.executable]+(['-O'] if not __debug__ else [])+['-c',script],text=True,capture_output=True)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
+    def test_foreach_on_exact_boxed_structure_and_map(self):
+        from yadinassi.collections.maps import BSLMap
+        from yadinassi.collections.structures import BSLStructure
+
+        vm = self.vm(allow_extensions=True)
+        mapping = BSLMap()
+        mapping.insert("Key", Decimal(7))
+        vm.variables.update(structure=BSLStructure("Key", Decimal(3)), mapping=mapping)
+        source = """
+            Total=0; Names="";
+            For Each Entry In Structure Do
+                Total=Total+Entry.Value; Names=Names+Entry.Key;
+            EndDo;
+            For Each Entry In Mapping Do
+                Total=Total+Entry.Value; Names=Names+Entry.Key;
+            EndDo;
+        """
+        vm.execute_prepared(vm.prepare(source))
+        self.assertEqual(vm.variables["total"], Decimal(10))
+        self.assertEqual(vm.variables["names"], "KeyKey")

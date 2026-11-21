@@ -518,7 +518,7 @@ class CatalogBoundary:
         elif name=='__setitem__':
             function=value.set if type(value) in (BSLArray, BSLFixedArray, BSLMap, BSLFixedMap, BSLFixedStructure) else lambda index,new:value.set_index(index,new)
         elif name=='__iter__':
-            if type(value) not in (BSLArray, BSLFixedArray, BSLFixedStructure, BSLFixedMap, BSLValueList, BSLCollectionIndex, BSLCollectionIndexes, BSLInformationRegisterRecordSet, BSLCatalogSection, BSLDocumentLines, BSLBinaryDataBuffer) and id(value) not in ITERABLE_IDS and not any(type(value) is kind for kind in _DOM_LISTS):
+            if type(value) not in (BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure, BSLMap, BSLFixedMap, BSLValueList, BSLCollectionIndex, BSLCollectionIndexes, BSLInformationRegisterRecordSet, BSLCatalogSection, BSLDocumentLines, BSLBinaryDataBuffer) and id(value) not in ITERABLE_IDS and not any(type(value) is kind for kind in _DOM_LISTS):
                 raise BoundaryViolation('direct database iterator not connected')
             function=lambda:iter(value)
         else:
