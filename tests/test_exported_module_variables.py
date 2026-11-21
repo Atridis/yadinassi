@@ -204,6 +204,23 @@ class ExportedModuleVariableTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('ThisObject.List[0].Value'), Decimal(23))
         self.assertTrue(self.vm.execute('ThisObject.List[0].Check'))
 
+    def test_plain_value_list_holes_preserve_defaults_not_explicit_undefined(self):
+        self.initialize('Var Items Export; Items=New ValueList;')
+        self.vm.execute('''
+            Added=ThisObject.Items.Add(23, , True, );
+            Inserted=ThisObject.Items.Вставить(0, , Undefined, , );
+        ''')
+        self.assertEqual(self.vm.execute('Added.Presentation'), '')
+        self.assertTrue(self.vm.execute('Added.Check'))
+        self.assertIsNone(self.vm.execute('Added.Picture'))
+        self.assertIsNone(self.vm.execute('Inserted.Value'))
+        self.assertIsNone(self.vm.execute('Inserted.Presentation'))
+        self.assertFalse(self.vm.execute('Inserted.Check'))
+        self.vm.execute('Function Touch() Raise "must not evaluate"; EndFunction')
+        with self.assertRaisesRegex(BSLError,'обязательного аргумента'):
+            self.vm.execute('ThisObject.Items.Insert(, Touch());')
+        self.assertEqual(self.vm.execute('ThisObject.Items.Count()'),2)
+
     def test_private_unknown_and_python_attributes_remain_closed_for_reads_writes_and_calls(self):
         self.initialize()
         for member in ('Private', 'Missing', 'interpreter', 'variables', 'routines',
@@ -320,6 +337,43 @@ class ImportedExportedVariableTests(unittest.TestCase):
                      'Package.Side.Private', 'Package.Unknown.Value', 'Package.Side.Items.__dict__'):
             with self.subTest(code=code), self.assertRaises(BSLError):
                 self.vm.execute(code)
+
+    def test_imported_data_chain_binds_the_receiver_before_argument_effects(self):
+        self.write('Package/Collections.bsl', '''
+Var Box Export; L=New Array; Box=New Structure("Items",L);
+Function Replace(Val V) Export Box.Items=New Array; Return V; EndFunction
+''')
+        self.execute('// #Import Package\nSaved=Package.Collections.Box.Items; '
+                     'Package.Collections.Box.Items.Add(Package.Collections.Replace(7));')
+        self.assertEqual(self.vm.execute('Saved[0]'),7)
+        self.assertEqual(self.vm.execute('Package.Collections.Box.Items.Count()'),0)
+        self.vm.execute('Package.Collections.Box.Items = Saved;')
+        self.assertEqual(self.vm.execute('Package.Collections.Box.Items.Count()'),1)
+
+    def test_imported_nested_property_reference_stays_on_one_receiver(self):
+        self.write('Side.bsl', MODULE+'''
+Var Box Export; Box=New Structure("Field",1);
+Function Rebind() Export Box=New Structure("Field",2); Return Undefined; EndFunction
+''')
+        self.execute('// #Import Side.bsl\nSaved=Side.Box; '
+                     'Procedure Put(Field, Val Marker) Field=41; EndProcedure '
+                     'Put(Side.Box.Field, Side.Rebind());')
+        self.assertEqual(self.vm.execute('Saved.Field'),41)
+        self.assertEqual(self.vm.execute('Side.Box.Field'),2)
+        self.vm.execute('Side.Box.Field=17;')
+        self.assertEqual(self.vm.execute('Side.Box.Field'),17)
+
+    def test_private_imported_chains_and_unrelated_omissions_fail_before_actuals(self):
+        self.write('Side.bsl', MODULE+'Var PrivateItems; PrivateItems=New Array;')
+        self.execute('// #Import Side.bsl\nFunction Touch() Raise "must not evaluate"; EndFunction')
+        for code,error in (
+                ('Side.PrivateItems.Add(Touch());','Поле объекта'),
+                ('Side.Items.append(Touch());','Метод объекта'),
+                ('Side.Items.Add(, Touch());','количество аргументов'),
+                ('Side.Defaults(, Touch());','omitted imported routine')):
+            with self.subTest(code=code),self.assertRaisesRegex(BSLError,error):
+                self.vm.execute(code)
+        self.assertEqual(self.vm.execute('Side.Items.Count()'),1)
 
     def test_imported_table_and_list_optional_arguments_use_real_field_storage(self):
         self.write('Package/Collections.bsl', '''

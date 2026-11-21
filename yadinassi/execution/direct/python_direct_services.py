@@ -200,6 +200,16 @@ class ServicesBoundary:
         return super().resolve_member(value,name)
 
     def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
+        if omitted and type(value) is PlainValueList:
+            from .python_direct_import_collections import bind_optional_list
+            if not self._verify_context:return bind_optional_list(value,name.casefold(),omitted)
+            self._check_effect()
+            function=bind_optional_list(value,name.casefold(),omitted)
+            def invoke(*arguments):
+                self._check_effect()
+                try:return function(*arguments)
+                finally:self._check_effect()
+            return invoke
         if type(value) is BSLValueStorage:
             from yadinassi.runtime import Interpreter
             if type(self.vm) is Interpreter:

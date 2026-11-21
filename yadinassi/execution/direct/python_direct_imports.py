@@ -368,26 +368,114 @@ class ImportBoundary:
         return self._resolve_public_call(value,key,require_value=require_value,
                                          argument_count=argument_count,path=None)
 
-    def import_get(self,path):
-        if len(path)<2:raise ValueError('Пространство импорта не является значением')
-        owner=self._import_target(path[:-1])
-        if type(owner) is not _Module:raise ValueError('Пространство импорта не является значением')
+    def _split_import(self,path):
+        """Locate the module without treating its exported data as namespaces."""
+        self._check_import_activation()
+        if type(path) is not tuple or not path or any(type(key) is not str for key in path):
+            raise BoundaryViolation('invalid import path')
+        value=self.vm.imports.get(path[0])
+        index=1
+        while type(value) is _Namespace and index<len(path):
+            value=value.members.get(path[index])
+            index+=1
+        if value is None:raise ValueError('Импортированное имя не найдено: '+'.'.join(path[:index]))
+        if type(value) is not _Module or index==len(path):
+            raise ValueError('Пространство импорта не является значением')
+        return value,path[:index],path[index:]
+
+    def _import_field(self,owner,key):
         child=owner.interpreter
-        if path[-1] not in _PUBLIC[child][1]:raise ValueError('Поле объекта не обнаружено: '+path[-1])
-        return child.variables[path[-1]]
+        if type(child.variables) is not dict:raise BoundaryViolation('imported module storage changed')
+        if key not in _PUBLIC[child][1] or key not in child.variables:
+            raise ValueError('Поле объекта не обнаружено: '+key)
+        return child.variables[key]
+
+    def _import_data_receiver(self,owner,names):
+        value=self._import_field(owner,names[0])
+        for key in names[1:]:
+            value=self._import_data_get(value,key)
+        return value
+
+    def _import_data_get(self,value,name):
+        from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure,structure_get
+        from yadinassi.collections.plain_value_list import PlainValueList,PlainValueListItem,_field
+        if type(value) is _DirectStructure:return structure_get(value,name)
+        if name.startswith('_') or type(value) is list or type(value) is PlainValueList:
+            raise ValueError('Поле объекта не обнаружено: '+name)
+        if type(value) is PlainValueListItem:return list.__getitem__(value,_field(name))
+        return self.get_member(value,name)
+
+    def _import_data_check(self,owner,prefix):
+        # A bound member retains its already evaluated data receiver. Recheck
+        # just this namespace path, not every import or stored data entry.
+        epoch=self._imports_epoch
+        child=owner.interpreter
+        def check():
+            self._check_effect()
+            _receiver_hooks(_CLASS_ABI)
+            if (not self._imports_active or self._imports_epoch is not epoch
+                    or owner.ready is not True or owner.interpreter is not child or child._self_module is not owner
+                    or child._family_released or child._family_owner is not self.vm._family_owner
+                    or child._family_generation!=self.vm._family_generation or type(self.vm.imports) is not dict):
+                raise BoundaryViolation('imported data owner changed')
+            value=self.vm.imports.get(prefix[0])
+            for key in prefix[1:]:
+                if type(value) is not _Namespace or type(value.members) is not dict:
+                    raise BoundaryViolation('imported data namespace changed')
+                value=value.members.get(key)
+            if value is not owner:raise BoundaryViolation('imported data binding changed')
+        return check
+
+    def import_get(self,path):
+        owner,_,names=self._split_import(path)
+        return self._import_data_receiver(owner,names)
+
+    def _import_data_setter(self,value,name):
+        from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure,structure_set_known
+        from yadinassi.collections.plain_value_list import PlainValueListItem,_field
+        if type(value) is _DirectStructure:return lambda item:structure_set_known(value,name,name,item)
+        if name.startswith('_'):raise ValueError('Поле объекта не обнаружено: '+name)
+        if type(value) is PlainValueListItem:
+            field=_field(name)
+            return lambda item:list.__setitem__(value,field,item)
+        return self.resolve_set_member(value,name)
+
+    def _import_slot(self,path,*,for_reference=False):
+        owner,prefix,names=self._split_import(path)
+        check=self._import_data_check(owner,prefix)
+        name=names[-1]
+        if len(names)==1:
+            child=owner.interpreter
+            self._import_field(owner,name)
+            state=child.variables
+            def read():
+                check()
+                if child.variables is not state:raise BoundaryViolation('imported field storage changed')
+                return self._import_field(owner,name)
+            def write(value):
+                read()
+                state[name]=value
+            return read,write
+        receiver=self._import_data_receiver(owner,names[:-1])
+        writer=None if for_reference else self._import_data_setter(receiver,name)
+        def read():
+            check()
+            return self._import_data_get(receiver,name)
+        def write(value):
+            check()
+            try:
+                setter=self._import_data_setter(receiver,name) if writer is None else writer
+                return setter(value)
+            finally:check()
+        return read,write
 
     def resolve_import_write(self,path):
-        self.import_get(path)
-        owner=self._import_target(path[:-1]);child=owner.interpreter
-        def write(value):
-            self.import_get(path)
-            if self._import_target(path[:-1]) is not owner:raise BoundaryViolation('import binding changed')
-            child.variables[path[-1]]=value
-        return write
+        return self._import_slot(path)[1]
 
     def import_reference(self,path):
-        self.import_get(path)
-        return Reference(lambda:self.import_get(path),self.resolve_import_write(path))
+        read,write=self._import_slot(path,for_reference=True)
+        read()
+        return Reference(read,write)
 
     def link_import_call(self,path,*,require_value,argument_count):
         """Bind a context-free export for this generated standalone activation."""
@@ -397,9 +485,9 @@ class ImportBoundary:
                 or getattr(self,'module_context',True) is False):
             return None
         if len(path)<2:return None
-        owner=self._import_target(path[:-1])
-        if type(owner) is not _Module:return None
-        child=owner.interpreter;name=path[-1]
+        owner,_,names=self._split_import(path)
+        if len(names)!=1:return None
+        child=owner.interpreter;name=names[0]
         public=_PUBLIC[child][0].get(name)
         if public is None:return None
         module=child._direct_routine_modules[name]
@@ -429,12 +517,32 @@ class ImportBoundary:
                 raise converted from None
         return linked
 
-    def resolve_import_call(self,path,*,require_value,argument_count):
-        if len(path)<2:raise ValueError('Пространство импорта не является функцией')
-        owner=self._import_target(path[:-1])
-        if type(owner) is not _Module:raise ValueError('Импортированное имя не является модулем')
-        return self._resolve_public_call(owner,path[-1],require_value=require_value,
-                                         argument_count=argument_count,path=path[:-1])
+    def resolve_import_call(self,path,*,require_value,argument_count,omitted=()):
+        owner,prefix,names=self._split_import(path)
+        if len(names)==1:
+            if omitted:raise TypeError('omitted imported routine argument is unsupported')
+            return self._resolve_public_call(owner,names[0],require_value=require_value,
+                                             argument_count=argument_count,path=prefix)
+        receiver=self._import_data_receiver(owner,names[:-1])
+        name=names[-1]
+        if name.startswith('_'):raise ValueError('Метод объекта не обнаружен: '+name)
+        from .python_direct_import_collections import bind
+        function=bind(receiver,name,argument_count,omitted,require_value)
+        if function is None:
+            from .python_direct_database import _CALL_TABLE,_CALL_COLUMNS,_CALL_ROW
+            if not any(type(receiver) is cls for cls in (_CALL_TABLE,_CALL_COLUMNS,_CALL_ROW)):
+                raise ValueError('Метод объекта не обнаружен: '+name)
+            function=self.resolve_member_call(receiver,name,require_value=require_value,omitted=omitted)
+        check=self._import_data_check(owner,prefix)
+        def invoke(*values):
+            check()
+            try:return function(*values)
+            finally:check()
+        invoke.requires_reference=lambda index:False
+        if omitted:
+            # Existing bounded collection resolvers own their per-slot defaults.
+            invoke.prepare_omissions=lambda bound,positions,count:(bound,dict.fromkeys(positions,None))
+        return invoke
 
     def _resolve_public_call(self,owner,name,*,require_value,argument_count,path):
         child=owner.interpreter

@@ -203,5 +203,7 @@ class PlainValueList(list):
         list.sort(self, key=lambda item: list.__getitem__(item, field), reverse=descending)
 
 
+_DIRECT_PLAIN_METHODS = (PlainValueList.add, PlainValueList.insert, PlainValueList.get, PlainValueList.count)
+
 BSLValueList = PlainValueList
 BSLValueListItem = PlainValueListItem
