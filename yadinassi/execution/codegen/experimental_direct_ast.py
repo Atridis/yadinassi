@@ -47,47 +47,75 @@ def _nonconstructible_date(name,source,line,column):
     raise BSLRuntimeError('Тип не определен: '+name,source,line,column)
 
 
-def _goto_lists(nodes):
-    """Validate the deliberately narrow direct Goto contract before emission.
+class _GotoTransfer(BaseException):
+    """Private control flow; never a catchable BSL error."""
 
-    Even unreachable jumps must obey it. The parser already validates label
-    scope; this additional restriction excludes all cross-list transfers.
-    """
+    __slots__ = ('target',)
+
+    def __init__(self, target):
+        self.target = target
+
+
+def _goto_lists(nodes):
+    """Assign a stable identity to each label in an outward target list."""
     from yadinassi.syntax.parser import validate_labels
     validate_labels(nodes)  # execute_program also accepts caller-owned mutable ASTs.
-    pending=[nodes];found=False
-    while pending:
-        body=pending.pop()
-        labels={node.name.casefold() for node in body if type(node) is bsl.Label}
-        for node in body:
-            kind=type(node)
-            if kind is bsl.Goto:
-                found=True
-                if node.name.casefold() not in labels:
-                    _reject('Goto across statement lists is not supported yet')
-            elif kind is bsl.If:
-                pending.extend(branch for _,branch in node.branches)
-                pending.append(node.otherwise)
-            elif kind is bsl.Try:pending.extend((node.body,node.handler))
-            elif kind in (bsl.For,bsl.ForEach,bsl.While,bsl.Routine):pending.append(node.body)
-    return found
+    destinations={}; transfers={}; affected_routines=set(); seen=set(); next_target=0
+
+    def scope(root,routine=None):
+        nonlocal next_target
+        labels={}; jumps=[]; lists={}; pending=[root]
+        while pending:
+            body=pending.pop(); key=id(body)
+            lists[key]=[]
+            for node in body:
+                kind=type(node)
+                if kind in (bsl.Label,bsl.Goto):
+                    # execute_program can supply a host AST with a node reused
+                    # under another lexical owner. Never let its ID rebind a jump.
+                    identity=id(node)
+                    if identity in seen:_reject('Goto and Label require distinct AST nodes')
+                    seen.add(identity)
+                if kind is bsl.Label:
+                    labels[node.name.casefold()]=key
+                    lists[key].append(node)
+                elif kind is bsl.Goto:jumps.append((node,key))
+                elif kind is bsl.If:pending.extend([node.otherwise,*(branch for _,branch in node.branches)])
+                elif kind is bsl.Try:pending.extend((node.handler,node.body))
+                elif kind in (bsl.For,bsl.ForEach,bsl.While):pending.append(node.body)
+                elif kind in (bsl.Routine,bsl.ServerInitializer):scope(node.body,node)
+        outward={labels[node.name.casefold()] for node,src in jumps if labels[node.name.casefold()]!=src}
+        if outward and routine is not None:affected_routines.add(id(routine))
+        numbers={}
+        for key,body_labels in lists.items():
+            if key not in outward:continue
+            for label in body_labels:
+                numbers[label.name.casefold()]=next_target
+                destinations[id(label)]=next_target
+                next_target+=1
+        for node,_ in jumps:
+            name=node.name.casefold()
+            if name in numbers:transfers[id(node)]=numbers[name]
+
+    scope(nodes)
+    return destinations,transfers,affected_routines
 
 
 def _goto_order(nodes):
-    """Same-list unconditional edges form a prefix and at most one cycle.
-
-    Resolve these edges at compile time, not in an instruction dispatcher.
-    """
+    """Same-list unconditional edges form a prefix and at most one cycle."""
     labels={node.name.casefold():index for index,node in enumerate(nodes) if type(node) is bsl.Label}
-    seen={};order=[];index=0
+    seen={};order=[];index=0;outward=None
     while index<len(nodes) and index not in seen:
         seen[index]=len(order);order.append(index)
         node=nodes[index]
-        index=labels[node.name.casefold()] if type(node) is bsl.Goto else index+1
+        if type(node) is bsl.Goto:
+            index=labels.get(node.name.casefold(),len(nodes))
+            if index==len(nodes):outward=node
+        else:index+=1
     split=seen.get(index,len(order))
-    return ([nodes[i] for i in order[:split] if type(nodes[i]) not in (bsl.Goto,bsl.Label)],
-            [nodes[i] for i in order[split:] if type(nodes[i]) not in (bsl.Goto,bsl.Label)],
-            index<len(nodes))
+    def statements(indices):
+        return [nodes[i] for i in indices if nodes[i] is outward or type(nodes[i]) not in (bsl.Goto,bsl.Label)]
+    return statements(order[:split]),statements(order[split:]),index<len(nodes)
 
 
 def _goto_cycle_check(nodes):
@@ -206,6 +234,7 @@ class Emitter:
     def __init__(self,filename):
         self.filename=filename;self.constants=[];self.serial=0
         self.has_goto=False;self.goto_last_expression=None
+        self.goto_destinations={};self.goto_transfers={};self.goto_dispatch=[]
         self.http_body_receiver=False
         self.local_field_facts={};self.integer_lane=False;self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.module_boundaries=0;self.range_indices={};self.external_actuals=0
         self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.current_module=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
@@ -1216,7 +1245,55 @@ class Emitter:
         if kind=='number':
             return self.node(py.Compare,token,left=self.expr(node),ops=[py.NotEq()],comparators=[self.const(0,token)])
         return self.call('_truth',[self.expr(node)],token)
+    def goto_signal(self,target,t):
+        return self.node(py.Raise,t,exc=self.call('_GotoTransfer',[self.const(target,t)],t),cause=self.const(None,t))
+    def loop_transfer(self,continuing,t):
+        if not self.loop_increments:_reject(('Continue' if continuing else 'Break')+' outside a loop')
+        if self.goto_dispatch and self.goto_dispatch[-1][0]==len(self.loop_increments):
+            code=-3 if continuing else -2
+            self.goto_dispatch[-1][1].add(code)
+            return [self.goto_signal(code,t)]
+        if continuing:
+            increment=self.loop_increments[-1]
+            return ([self.increment(*increment)] if increment else [])+[self.node(py.Continue,t)]
+        return [self.node(py.Break,t)]
+    def goto_sequence(self,nodes):
+        """Emit a restart loop only for a list with outward jumps into its labels."""
+        t=nodes[0].token; pc=self.temp(); caught=self.temp()
+        segments=[(-1,[])]
+        for node in nodes:
+            number=self.goto_destinations.get(id(node))
+            if number is None:segments[-1][1].append(node)
+            else:segments.append((number,[]))
+        def assign(value,token):
+            return self.node(py.Assign,token,targets=[self.name(pc,token,True)],value=value)
+        def at(value):
+            return self.node(py.Compare,t,left=self.name(pc,t),ops=[py.Eq()],comparators=[self.const(value,t)])
+        loop_controls=set();self.goto_dispatch.append((len(self.loop_increments),loop_controls))
+        try:
+            arms=[]
+            for i,(number,body) in enumerate(segments):
+                following=segments[i+1][0] if i+1<len(segments) else -4
+                pattern=self.node(py.MatchValue,t,value=self.const(number,t))
+                arms.append(self.node(py.match_case,t,pattern=pattern,guard=None,
+                    body=[assign(self.const(following,t),t),*(stmt for node in body for stmt in self.statement(node))]))
+        finally:self.goto_dispatch.pop()
+        target=self.attribute(self.name(caught,t),'target',t)
+        allowed=tuple(number for number,_ in segments[1:])+tuple(sorted(loop_controls))
+        valid=self.node(py.Compare,t,left=target,ops=[py.In()],comparators=[self.const(allowed,t)])
+        on_jump=self.node(py.If,t,test=valid,body=[assign(target,t)],orelse=[self.node(py.Raise,t,exc=None,cause=None)])
+        catch=self.node(py.ExceptHandler,t,type=self.name('_GotoTransfer',t),name=caught,body=[on_jump])
+        dispatch=self.node(py.Match,t,subject=self.name(pc,t),cases=arms)
+        attempt=self.node(py.Try,t,body=[dispatch],handlers=[catch],orelse=[],finalbody=[])
+        live=self.node(py.Compare,t,left=self.name(pc,t),ops=[py.GtE()],comparators=[self.const(-1,t)])
+        loop=self.checkpoint_loop(self.node(py.While,t,test=live,body=[attempt],orelse=[]),t)
+        result=[assign(self.const(-1,t),t),loop]
+        for code in sorted(loop_controls):
+            result.append(self.node(py.If,t,test=at(code),body=self.loop_transfer(code==-3,t),orelse=[]))
+        return result
     def sequence(self,nodes):
+        if self.goto_destinations and any(id(node) in self.goto_destinations for node in nodes):
+            return self.goto_sequence(nodes)
         if self.has_goto and any(type(node) is bsl.Goto for node in nodes):
             prefix,cycle,cyclic=_goto_order(nodes)
             result=[]
@@ -1364,6 +1441,7 @@ class Emitter:
     def _statement(self,node):
         self.visits+=1;t=node.token;k=type(node)
         if k is bsl.Label:return []
+        if k is bsl.Goto:return [self.goto_signal(self.goto_transfers[id(node)],t)]
         if k is bsl.Execute:
             call=self.call('_execute_fragment',[self.expr(node.expression),*self.fragment_arguments(t)],t)
             if self.static_module_names:call=self.module_boundary(call,t)
@@ -1608,13 +1686,8 @@ class Emitter:
             condition=self.truth(node.condition,t)
             body=self.loop_body(node.body,None)
             return [self.node(py.While,t,test=condition,body=body or [self.node(py.Pass,t)],orelse=[])]
-        if k is bsl.Break:
-            if not self.loop_increments:_reject('Break outside a loop')
-            return [self.node(py.Break,t)]
-        if k is bsl.Continue:
-            if not self.loop_increments:_reject('Continue outside a loop')
-            increment=self.loop_increments[-1] if self.loop_increments else None
-            return ([self.increment(*increment)] if increment else [])+[self.node(py.Continue,t)]
+        if k is bsl.Break:return self.loop_transfer(False,t)
+        if k is bsl.Continue:return self.loop_transfer(True,t)
         if k is bsl.Try:
             paths=[]
             def error_path(nodes):
@@ -1720,7 +1793,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
              (_profile is not None or (type(node) is not bsl.ServerInitializer and
               (type(node) not in (bsl.Var,bsl.Routine) or (node.execution_context=='client' and not getattr(node,'is_dual',False)))))]
     count,has_goto,has_label=_bounds(program)
-    if has_goto or has_label:_goto_lists(program)
+    destinations,transfers,flow_routines=_goto_lists(program) if has_goto or has_label else ({},{},set())
     if not program:
         from yadinassi.syntax.lexer import Token
         token=nodes[0].token if nodes else Token('EOF','',1,1,source_name or '<строка>','')
@@ -1739,6 +1812,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             pure_bindings=candidate
             emitter.pure_builtins={name:'_pure_'+name for name in candidate.services}
     emitter.has_goto=has_goto
+    emitter.goto_destinations=destinations;emitter.goto_transfers=transfers
     emitter.current_module=_profile is None or _current_module
     emitter.owned_constructors=_profile is not None;emitter.configuration_calls=_configuration_calls;emitter.host_bindings=_host_bindings;emitter.catalog_bounds=_catalog_bounds;emitter.source_scopes=_source_scopes;emitter.authority=_authority;emitter.scalar_routines=_scalar_routines
     emitter.callable_externals=frozenset(_callable_externals);emitter.shadowable=frozenset(_shadowable)
@@ -1796,6 +1870,8 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
                 declarations.update(name.casefold() for name in stmt.names)
             elif kind not in (bsl.Return,bsl.ExpressionStatement,bsl.Break,bsl.Continue,bsl.Raise,bsl.Execute,bsl.Label,bsl.Goto):_reject('routine control flow outside research subset')
         parameters={parameter.name.casefold() for parameter in routine.parameters}
+        if id(routine) in flow_routines and (declarations or (assigned|parameters)&emitter.routines.keys()):
+            _reject('outward Goto with routine Var or routine-name shadowing is not supported yet')
         globals_=emitter.module_globals-declarations-parameters
         slots={parameter.name.casefold():emitter.temp() for parameter in routine.parameters}
         emitter.scope={'globals':globals_,'externals':emitter.external_names-parameters-declarations,'local_declarations':parameters|{name.casefold() for stmt in routine.body if type(stmt) is bsl.Var for name in stmt.names},'bindings':assigned|declarations|parameters,'initialized':set(parameters),'slots':slots,'boxed':{parameter.name.casefold() for parameter in routine.parameters if not parameter.by_value}}
@@ -2080,6 +2156,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     from yadinassi.execution.direct.python_direct_numbers import divide, remainder, sign, public_number
     from yadinassi.collections.plain_table_storage import RowStorage
     namespace=dict(_raw_table_value=RowStorage.get_value,_raw_table_positional=_vt.BSLValueTableRow._positional_value,_dynamic_remainder=remainder,_dynamic_divide=divide,_dynamic_sign=sign,_dynamic_public_number=public_number,_plain_array_loop=_plain_array_loop,_plain_append_receiver=_plain_append_receiver,_list_append=list.append,_native_host_reference=_native_host_reference,_native_cell_reference=_native_cell_reference,_native_fragment_binding=_native_fragment_binding,_NativeCell=_NativeCell,_PublishedModuleCell=_PublishedModuleCell,_adapt_native_cell=_adapt_native_cell,_PrivateTable=_vt.BSLValueTable,_PrivateValueList=PlainValueList,_PlainValueList=PlainValueList,_PlainValueListItem=PlainValueListItem,_module_primitive_type_ids=frozenset(id(kind) for kind in (list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure)),_module_data_types=data_types,_module_data_type_ids=frozenset(id(kind) for kind in data_types),_native_dict_get=dict.get,_native_dict_setitem=dict.__setitem__,_PlainArray=_PlainArray,_Decimal=Decimal,_PlainMap=PlainMap,_plain_map=plain_map,_execute_fragment=execute_fragment,_fragment_binding=_fragment_binding,_bind_eval=bind_eval,_raise_arity_error=raise_arity_error,_host_omission_error=_host_omission_error,_host_omission_values=_host_omission_values,_dynamic_construct=dynamic_construct,_invalid_native_arity=_invalid_native_arity,_typed_find=scalar.typed_find,_list_delete=_list_delete,_native_ubound=_native_ubound,_readonly=readonly,_array_set_checked=_array_set_checked,_bounded_insert=bounded_insert,_structure_insert=structure_insert,_array_constructor_bounds=bounded_array,_new_structure=new_structure,_structure_from_schema=structure_from_schema,_host_name_reference=_host_name_reference,_Cell=_Cell,_ForwardReference=_ForwardReference,_as_ref=_as_ref,_bound_ref=_bound_ref,_UNSET_REF=_UNSET_REF,_OMITTED_REF=_OMITTED_REF,_argument_count_error=_argument_count_error,_routine_value_error=_routine_value_error,_procedure_value_error=_procedure_value_error,_identity_reference=_identity_reference,_IndexRef=_IndexRef,_AttributeRef=_AttributeRef,_SlotReference=live_state._SlotReference,_source_reference=source_reference,_canonical_reference=_canonical_reference,_structure_property=structure_property,_native_method_missing=_native_method_missing,_native_count=_native_count,_MapEntry=_MapEntry,_array_member=_array_member,_native_property_missing=_native_property_missing,_structure_get_known=structure_get_known,_structure_set_known=structure_set_known,_native_property_write_missing=_native_property_write_missing,_checked_array_index=_checked_array_index,_checked_literal_array_index=_checked_literal_array_index,_partial=partial,_native_getitem=_NATIVE_GETITEM,_list_get=_list_get,_TypedMap=_TypedMap,_NakedMap=_NakedMap,_DirectStructure=_DirectStructure,_host_reference=host_reference,_UNSET=UNSET,_missing=missing,_native_add=_NATIVE_ADD,_concatenate=scalar.concatenate,_divide=scalar.decimal_divide,_sign=scalar.decimal_sign,_order=scalar.uca_order,_truth=scalar.truth,_equal=equal,_not_equal=not_equal,_MISSING=_MISSING,_handled_error=handled_error,_reraise_handled=reraise_handled,_raise_error=raise_error,_presentation=scalar.presentation,_BSLRuntimeError=BSLRuntimeError)
+    if destinations:namespace['_GotoTransfer']=_GotoTransfer
     namespace['_nonconstructible_date'] = _nonconstructible_date
     if emitter.http_body_receiver:
         from yadinassi.http.http_client import BSLHTTPRequest

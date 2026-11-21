@@ -1,4 +1,4 @@
-"""Narrow same-list Goto lowering; no interpreter or runtime label dispatcher."""
+"""Lexical Goto lowering with no interpreter or runtime label table."""
 import ast
 from contextlib import closing
 import unittest
@@ -69,12 +69,65 @@ class DirectGotoTests(unittest.TestCase):
             with self.assertRaises(BSLError):vm.execute('n=0; ~again: n=n+1; Message(n); If n=3 Then Raise "stop"; EndIf; Goto ~again;')
             self.assertEqual(vm.variables['n'],3);self.assertEqual(output,['1','2','3'])
 
-    def test_complex_transfers_rejected_before_effects(self):
-        for body in ['If True Then Goto ~outer; EndIf; ~outer:',
-                     'Goto ~done; If False Then Goto ~done; EndIf; ~done:',
-                     'While True Do ~again: Break; Goto ~again; EndDo;',
+    def test_outward_dispatch_keeps_the_real_loop_and_handler_controls(self):
+        code='''
+        s=0;
+        For i=1 To 5 Do
+            Try
+                While True Do Goto ~in_loop; EndDo;
+            Except Raise "jump was caught"; EndTry;
+            s=1000;
+            ~in_loop:
+            If i=2 Then Continue; EndIf;
+            If i=4 Then Break; EndIf;
+            s=s+i;
+        EndDo;
+        '''
+        _,state,_,source=self.run_code(code)
+        self.assertEqual((state['s'],state['i']),(4,4))
+        self.assertIn('_GotoTransfer',source)
+        self.assertNotIn('_visit',source)
+        self.assertNotIn('_context._check',source)
+        self.assertNotIn('_context.checkpoint',source)
+
+    def test_outward_dispatch_works_in_the_source_audit_lane(self):
+        from yadinassi.execution.codegen.experimental_direct_ast import compile_module_whole_source
+        with patch('yadinassi.execution.direct.python_direct._compile',compile_module_whole_source):
+            result,state,_,_=self.run_code('n=0; ~again: n=n+1; If n<3 Then Goto ~again; EndIf; n;')
+        self.assertEqual((result,state['n']),(3,3))
+
+    def test_outward_dispatch_only_repeats_the_target_segment(self):
+        code=('Function F() prefix=1; n=0; ~again: n=n+1; '
+              'If n<2000 Then Goto ~again; EndIf; Return prefix+n; EndFunction r=F();')
+        self.assertEqual(self.run_code(code)[1]['r'],2001)
+
+    def test_nested_dispatch_preserves_continue_target(self):
+        code=('s=0; For i=1 To 3 Do If False Then Goto ~outer; EndIf; '
+              'If True Then If True Then Goto ~inner; EndIf; ~inner: Continue; EndIf; '
+              '~outer: s=100; EndDo;')
+        self.assertEqual({k:v for k,v in self.run_code(code)[1].items() if k in ('s','i')},
+                         {'s':0,'i':4})
+
+    def test_same_list_chain_with_outward_jump_keeps_skip_semantics(self):
+        _,state,out,_=self.run_code('x=0; If True Then Goto ~local; x=78; '
+                                   '~local: Goto ~done; x=99; EndIf; '
+                                   'x=10; ~done: x=x+1; Message(x);')
+        self.assertEqual((state['x'],out),(1,['1']))
+
+    def test_inactive_list_targets_still_fail_before_effects(self):
+        for body in ('Goto ~inside; If False Then ~inside: EndIf;',
+                     'If True Then Goto ~sibling; Else ~sibling: EndIf;'):
+            output=[]
+            with self.subTest(body=body),closing(Interpreter(output=output.append)) as vm:
+                with self.assertRaisesRegex(BSLError,'Переход внутрь другого блока'):
+                    vm.execute('Message("bad"); '+body)
+                self.assertEqual(output,[])
+
+    def test_remaining_complex_transfers_rejected_before_effects(self):
+        for body in ['While True Do ~again: Break; Goto ~again; EndDo;',
                      'While True Do ~again: Continue; Goto ~again; EndDo;',
-                     'Function F() ~again: Var x; Goto ~again; EndFunction']:
+                     'Function F() ~again: Var x; Goto ~again; EndFunction',
+                     'Function F() If True Then Goto ~out; EndIf; Var n; ~out: Return n; EndFunction']:
             with self.subTest(body=body):
                 output=[]
                 with closing(Interpreter(output=output.append)) as vm:
@@ -86,6 +139,18 @@ class DirectGotoTests(unittest.TestCase):
         program[1].name='Missing';output=[]
         with closing(Interpreter(output=output.append)) as vm:
             with self.assertRaisesRegex(BSLError,'Метка не определена'):vm.execute_program(program)
+        self.assertEqual(output,[])
+
+    def test_aliased_host_ast_jump_cannot_cross_routine_ownership(self):
+        program=parse('Procedure P() If True Then Goto ~out; EndIf; ~out: EndProcedure '
+                      'Procedure Q() If True Then Goto ~out; EndIf; ~out: EndProcedure '
+                      'Message("before"); P();')
+        first=program[0].body[0].branches[0][1]
+        program[1].body[0].branches[0][1][0]=first[0]
+        output=[]
+        with closing(Interpreter(output=output.append)) as vm:
+            with self.assertRaisesRegex(PythonDirectUnsupported,'distinct AST nodes'):
+                vm.execute_program(program)
         self.assertEqual(output,[])
 
     def test_self_jump_compiles_without_recursion(self):
@@ -105,7 +170,8 @@ class DirectGotoTests(unittest.TestCase):
     def test_ordinary_program_has_no_extra_loop(self):
         with patch('yadinassi.execution.codegen.experimental_direct_ast._goto_lists',side_effect=AssertionError('unexpected Goto preflight')):
             source=self.run_code('x=1; x=x+2;')[3]
-        self.assertFalse(any(isinstance(n,ast.While) for n in ast.walk(ast.parse(source))))
+        self.assertFalse(any(isinstance(n,(ast.While,ast.Match)) for n in ast.walk(ast.parse(source))))
+        self.assertNotIn('_GotoTransfer',source)
 
 
 if __name__=='__main__':unittest.main()
