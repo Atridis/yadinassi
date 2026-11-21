@@ -1,4 +1,4 @@
-"""Atomic catalog batches and typed outcomes without persistent receipts."""
+"""Atomic catalog batches and typed outcomes."""
 from contextlib import closing
 from dataclasses import replace
 from decimal import Decimal
@@ -12,7 +12,7 @@ from unittest.mock import patch
 from uuid import UUID, uuid4
 
 from yadinassi.db.catalog.catalog_backend import (
-    BackendError, Capabilities, CatalogDraft, CatalogKey, CatalogSchema,
+    BackendError, CatalogDraft, CatalogKey, CatalogSchema,
     CatalogWriteRequest, FieldSchema,
     TabularRow, TabularSectionRows, TabularSectionSchema,
 )
@@ -86,25 +86,12 @@ class CatalogBatchCommitTests(unittest.TestCase):
         with closing(backend.begin_read()) as reader:
             return tuple(reader.read_catalog(request.draft.key) for request in requests)
 
-    def test_capabilities_and_obsolete_apis_explicitly_disable_receipts(self):
-        self.assertFalse(Capabilities().catalog_batch_receipts)
-        backend, schema, _ = self.backend()
-        request, = (CatalogWriteRequest(self.draft(backend, schema)),)
-        operation = uuid4()
-        for readonly in (False, True):
-            with closing(SQLiteCatalogBackend(backend.path, read_only=readonly)) as view:
-                self.assertFalse(view.capabilities().catalog_batch_receipts)
-                if readonly:
-                    self.assertFalse(view.capabilities().catalog_create)
-                with patch.object(view, '_connect', side_effect=AssertionError('receipt I/O')):
-                    for method, args in (
-                            (view.resolve_write, (operation, request.draft)),
-                            (view.resolve_write_outcome, (operation, request.draft)),
-                            (view.resolve_writes, (operation, (request,))),
-                            (view.resolve_write_outcomes, (operation, (request,))),
-                            (view.committed_operation, (operation,))):
-                        with self.assertRaisesRegex(BackendError, 'unsupported'):
-                            method(*args)
+    def test_readonly_batch_backend_cannot_open_writer(self):
+        backend, _, _ = self.backend()
+        with closing(SQLiteCatalogBackend(backend.path, read_only=True)) as reader:
+            self.assertFalse(reader.capabilities().catalog_create)
+            with self.assertRaisesRegex(BackendError, '^unsupported$'):
+                reader.begin_write(uuid4())
 
     def test_ordered_commit_outcomes_across_v1_v2_v3_v4(self):
         for version in (1, 2, 3, 4):
@@ -164,8 +151,6 @@ class CatalogBatchCommitTests(unittest.TestCase):
                     backend.close()
                     with closing(SQLiteCatalogBackend(backend.path)) as reopened:
                         with patch.object(_View, 'commit', side_effect=AssertionError('replay')):
-                            with self.assertRaisesRegex(BackendError, 'unsupported'):
-                                reopened.resolve_writes(operation, requests)
                             cards = self.read_cards(reopened, requests)
                         if when == 'before':
                             self.assertEqual(cards, (None, None))
@@ -173,8 +158,9 @@ class CatalogBatchCommitTests(unittest.TestCase):
                             self.assertEqual([card.revision.token for card in cards], ['1', '1'])
                             if version == 4:
                                 self.assertEqual([card.code for card in cards], ['00000001', '00000002'])
-                        with closing(sqlite3.connect(backend.path)) as db:
-                            self.assertEqual(db.execute('SELECT COUNT(*) FROM commit_receipt').fetchone(), (0,))
+                            if version >= 3:
+                                self.assertEqual(tuple(card.tabular_sections for card in cards),
+                                                 tuple(request.draft.tabular_sections for request in requests))
 
     def test_stale_batch_member_does_not_overwrite_and_remaining_batch_is_atomic(self):
         backend, schema, _ = self.backend()
@@ -225,21 +211,18 @@ class CatalogBatchCommitTests(unittest.TestCase):
         with closing(SQLiteCatalogBackend.create_demo_directories(path, files)) as backend:
             schema = next(s for s in backend._schemas if s.name == 'Склады')
             requests = self.pair(backend, schema, auto=True)
-            operation, expected = self.save(backend, requests, outcomes=True)
+            self.save(backend, requests, outcomes=True)
             source = 'Catalogs/Номенклатура/Ext/ObjectModule.bsl'
             content = files[source] + b'\n'
             with closing(sqlite3.connect(path)) as db, db:
                 db.execute('UPDATE configuration_file SET content=?,sha256=? WHERE path=?',
                            (content, hashlib.sha256(content).hexdigest(), source))
-            with self.assertRaisesRegex(BackendError, 'unsupported'):
-                backend.resolve_write_outcomes(operation, requests)
             with self.assertRaisesRegex(BackendError, 'schema_changed'):
                 backend.begin_write(uuid4())
 
-    def test_inert_archive_has_no_receipt_capability(self):
+    def test_inert_archive_cannot_open_writer(self):
         from sqlite_catalog_fixture import configuration_files
         path = Path(self.temp.name) / 'inert.sqlite'
         with closing(SQLiteCatalogBackend.create_inert(path, configuration_files())) as backend:
-            self.assertFalse(backend.capabilities().catalog_batch_receipts)
-            with self.assertRaisesRegex(BackendError, 'unsupported'): backend.resolve_writes(uuid4(), ())
-            with self.assertRaisesRegex(BackendError, 'unsupported'): backend.resolve_write_outcomes(uuid4(), ())
+            with self.assertRaisesRegex(BackendError, '^unsupported$'):
+                backend.begin_write(uuid4())

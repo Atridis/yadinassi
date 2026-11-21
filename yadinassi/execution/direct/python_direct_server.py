@@ -68,6 +68,7 @@ class ServerBoundary(ServicesBoundary,CatalogBoundary,BoundaryContext):
         self._eval_depth=getattr(parent,"_eval_depth",None)
         if self.vm.execution_context==side:self._handled_errors=parent._handled_errors
         self.database=self.vm.database_context
+        self._register_root=getattr(parent,'_register_root',None)
         self._routine_exports={};self.state={}
         self.module_context=module_context
     def _check_role(self):

@@ -4,6 +4,7 @@ No renderer value, form callback or core inventory profile supplies root
 transaction authority. Catalog references in an immutable intent carry database,
 metadata and record identity, never a label or a browser capability.
 """
+from copy import deepcopy
 from dataclasses import fields
 from threading import Lock
 from uuid import UUID
@@ -22,6 +23,7 @@ from yadinassi.configuration.configuration_inventory_enum_application import (
     InventoryEnumApplicationConfiguration, PROFILE as ENUM_PROFILE, canonical as enum_canonical)
 from yadinassi.configuration.configuration_main_demo import (MainDemoConfiguration, PROFILE as MAIN_DEMO_PROFILE,
     canonical as main_demo_canonical)
+from yadinassi.configuration.configuration_inventory_enums import _same
 from yadinassi.db.metadata.enum_storage_values import EnumKey
 
 
@@ -32,7 +34,7 @@ def canonical(configuration):
             else scalar_canonical(configuration))
 
 
-def _source_configuration(backend):
+def _source_configuration(backend, *, _admitted=None):
     """Read-only source check, not a root-execution grant for a form VM."""
     from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
     if (type(backend) is not SQLiteCatalogBackend
@@ -45,7 +47,15 @@ def _source_configuration(backend):
         raise BackendError('unsupported')
     if backend._closed:
         raise BackendError('closed')
-    configuration = canonical(backend.accumulation_configuration)
+    if _admitted is None:
+        configuration = canonical(backend.accumulation_configuration)
+    else:
+        # A read-only scoped caller cannot create a validation FormSession.
+        # Compare its independently admitted config and recheck exact disk
+        # bytes, instead of reparsing handlers under the caller's authority.
+        if not _same(_admitted, backend.accumulation_configuration):
+            raise BackendError('schema_changed')
+        configuration = _admitted
     if backend.export_configuration() != dict(configuration.files):
         raise BackendError('schema_changed')
     return configuration
@@ -96,6 +106,7 @@ class InventoryRootOperations(RootPostingOperations):
         self._active_operation = None
         self._closed = False
         self._verify()
+        self._read_source_witness = deepcopy(self.configuration)
         from yadinassi.runtime import Interpreter
         self._interpreter = Interpreter(database_context=context, output=lambda value: None)
         self._interpreter._documents.posting_runtime()
@@ -106,8 +117,9 @@ class InventoryRootOperations(RootPostingOperations):
         if require_root:
             require_inventory_host_root(self.backend)
         self.context.require_active(tabular_sections=True)
-        configuration = _source_configuration(self.backend)
-        if configuration != self.configuration:
+        configuration = _source_configuration(self.backend,
+            _admitted=None if require_root else self._read_source_witness)
+        if not _same(configuration, self.configuration):
             raise BackendError('schema_changed')
         view = self.backend.begin_document_read()
         try:

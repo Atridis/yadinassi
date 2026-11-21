@@ -59,7 +59,6 @@ class SQLiteSectionCreateUncertainTests(unittest.TestCase):
     def reset_path(self, name):
         self.path = Path(self.temp.name) / (name + '.sqlite')
         self.saved_card = None
-        self.saved_receipt = None
         self.after_write = None
         self.writer_calls = 0
 
@@ -81,7 +80,7 @@ class SQLiteSectionCreateUncertainTests(unittest.TestCase):
 
     def write_concurrently(self):
         # Runs only after the creator's real COMMIT (or physical close). A
-        # separate backend writes valid owners, typed rows and its own receipt.
+        # separate backend writes valid owners and typed rows.
         self.writer_calls += 1
         backend = SQLiteCatalogBackend(self.path)
         try:
@@ -104,7 +103,7 @@ class SQLiteSectionCreateUncertainTests(unittest.TestCase):
             try:
                 tx.create(CatalogDraft(category_key, 'C', 'category', False, ()))
                 tx.create(CatalogDraft(self.product_key, 'P', 'product', False, owner_values, submitted))
-                tx.commit()
+                self.saved_revisions = tx.commit()
             finally: tx.close()
             view = backend.begin_read()
             try:
@@ -112,8 +111,7 @@ class SQLiteSectionCreateUncertainTests(unittest.TestCase):
                 self.saved_category = view.read_catalog(category_key)
                 self.assertEqual(self.saved_card.tabular_sections, self.expected_sections)
             finally: view.close()
-            self.saved_receipt = backend.committed_operation(self.operation)
-            self.assertEqual(len(self.saved_receipt[1]), 2)
+            self.assertEqual(self.saved_revisions, (self.saved_category.revision, self.saved_card.revision))
         finally: backend.close()
         self.after_write = self.path.read_bytes()
         self.created_inode = self.path.stat().st_ino
@@ -133,7 +131,6 @@ class SQLiteSectionCreateUncertainTests(unittest.TestCase):
                     self.assertEqual(view.read_catalog(self.product_key).tabular_sections, self.expected_sections)
                     self.assertEqual(view.read_catalog(self.saved_category.key), self.saved_category)
                 finally: view.close()
-                self.assertEqual(backend.committed_operation(self.operation), self.saved_receipt)
         finally: backend.close()
         if self.after_write is not None:
             self.assertEqual(self.path.read_bytes(), self.after_write)
@@ -172,7 +169,7 @@ class SQLiteSectionCreateUncertainTests(unittest.TestCase):
                 self.assertEqual(self.writer_calls, 1)
                 self.assert_complete_v3()
 
-    def test_v3_failed_reopen_keeps_concurrent_owner_sections_and_receipt(self):
+    def test_v3_failed_reopen_keeps_concurrent_owner_sections(self):
         real_init = SQLiteCatalogBackend.__init__
         def initialize(backend, *args, **kwargs):
             if self.saved_card is not None: raise BackendError('integrity')

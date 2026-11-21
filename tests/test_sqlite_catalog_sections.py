@@ -246,36 +246,7 @@ class CatalogSectionTests(unittest.TestCase):
                              for sql in statements))
         self.assertIsNotNone(self.read(draft.key))
 
-    def test_receipt_binds_row_identity_values_order_and_section_identity(self):
-        first, second = self.row(), self.row('second')
-        draft = self.draft((self.section(first, second),))
-        operation = uuid4()
-        revision = self.create(draft, operation)
-        self.assertEqual(self.backend.resolve_write(operation, draft), revision)
-        alternatives = (
-            (self.section(second, first),),
-            (self.section(replace(first, identity=uuid4()), second),),
-            (self.section(replace(first, values=self.values('changed')), second),),
-            (TabularSectionRows(self.notes.identity, ()),),
-            (), None,
-        )
-        for sections in alternatives:
-            with self.subTest(sections=sections):
-                with self.assertRaises(BackendError):
-                    self.backend.resolve_write(operation, replace(draft, tabular_sections=sections))
-
-    def test_receipt_distinguishes_none_from_explicit_empty(self):
-        for sections in (None, ()):
-            with self.subTest(sections=sections):
-                draft = self.draft(sections, code='none' if sections is None else 'empty')
-                operation = uuid4()
-                revision = self.create(draft, operation)
-                self.assertEqual(self.backend.resolve_write(operation, draft), revision)
-                with self.assertRaisesRegex(BackendError, 'conflict'):
-                    self.backend.resolve_write(operation,
-                        replace(draft, tabular_sections=() if sections is None else None))
-
-    def test_uncertain_commit_after_actual_commit_resolves_on_reopen(self):
+    def test_uncertain_commit_after_actual_commit_reads_rows_on_reopen(self):
         draft = self.draft((self.section(self.row()),))
         operation = uuid4()
         tx = self.backend.begin_write(operation)
@@ -289,10 +260,9 @@ class CatalogSectionTests(unittest.TestCase):
         with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
             tx.commit()
         self.reopen()
-        revision = self.backend.resolve_write(operation, draft)
-        self.assertIsNotNone(revision)
         card = self.read(draft.key)
-        self.assertEqual(card.revision, revision)
+        self.assertEqual(card.revision.token, '1')
+        self.assertEqual(card.revision.record_id, draft.key.record_id)
         self.assertEqual(card.tabular_sections, self.expected(*draft.tabular_sections[0].rows))
         self.assertEqual(self.sql('SELECT COUNT(*) FROM ' + self.table()), [(1,)])
 
@@ -562,19 +532,25 @@ class CatalogSectionTests(unittest.TestCase):
             draft = self.draft((self.section(self.row(text=code)),), code=code)
             self.create(draft)
             expected.append(self.read(draft.key))
-        view = self.backend.begin_read()
-        self.addCleanup(view.close)
-        queries = []
-        view._connection.set_trace_callback(queries.append)
-        for read in (lambda: view.select_catalog(self.product.identity),
-                     lambda: view.scan_catalog(self.product.identity, CatalogScanRequest(
-                         order=(CatalogOrder('code'),))).cards):
-            queries.clear()
-            self.assertEqual(read(), tuple(expected))
-            self.assertEqual(sum(query.startswith('SELECT definition FROM catalog_schema')
-                                 for query in queries), 1)
+        with closing(self.backend.begin_read()) as view:
+            queries = []
+            view._connection.set_trace_callback(queries.append)
+            for read in (lambda: view.select_catalog(self.product.identity),
+                         lambda: view.scan_catalog(self.product.identity, CatalogScanRequest(
+                             order=(CatalogOrder('code'),))).cards):
+                queries.clear()
+                self.assertEqual(read(), tuple(expected))
+                self.assertFalse(any('FROM catalog_schema' in query for query in queries))
 
-    def test_commit_failure_before_actual_commit_has_no_receipt_or_rows(self):
+        # A changed SQLite epoch must not reuse the prior view's admitted schema.
+        renamed = replace(self.product, name='RenamedProducts')
+        self.sql('UPDATE catalog_schema SET name=?, definition=? WHERE identity=?',
+                 (renamed.name, _json(_schema_data(renamed)), str(renamed.identity)))
+        with self.assertRaisesRegex(BackendError, '^schema_changed$'):
+            self.backend.begin_read()
+        self.assertIsNone(self.backend._active)
+
+    def test_commit_failure_before_actual_commit_leaves_no_rows(self):
         operation = uuid4()
         draft = self.draft((self.section(self.row()),))
         tx = self.backend.begin_write(operation)
@@ -587,25 +563,8 @@ class CatalogSectionTests(unittest.TestCase):
         with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
             tx.commit()
         self.reopen()
-        self.assertIsNone(self.backend.resolve_write(operation, draft))
         self.assertIsNone(self.read(draft.key))
         self.assertEqual(self.sql('SELECT COUNT(*) FROM ' + self.table()), [(0,)])
-
-    def test_legacy_none_hash_is_unchanged_in_v3(self):
-        draft = self.draft()
-        operation = uuid4()
-        revision = self.create(draft, operation)
-        view = self.backend.begin_read()
-        try:
-            normalized, encoded_values, _ = view._draft(draft)
-            self.assertEqual(normalized, draft)
-        finally:
-            view.close()
-        old_intent = [[str(draft.key.catalog_id), str(draft.key.record_id),
-                       draft.code, draft.description, draft.deletion_mark, encoded_values, 1]]
-        old_hash = hashlib.sha256(_json(old_intent).encode('utf-8')).hexdigest()
-        self.assertEqual(self.backend.committed_operation(operation)[0], old_hash)
-        self.assertEqual(self.backend.resolve_write(operation, draft), revision)
 
     def test_owner_registry_names_are_reserved_for_v3_creation(self):
         path = Path(self.directory.name) / 'reserved.sqlite'
@@ -618,15 +577,14 @@ class CatalogSectionTests(unittest.TestCase):
             backend.close()
 
     def test_section_order_is_canonical_but_row_order_is_not(self):
-        row = self.row()
+        first, second = self.row(), self.row('second')
         note = TabularRow(uuid4(), ('note',))
-        draft = self.draft(self.expected(row, notes=(note,)))
-        operation = uuid4()
-        revision = self.create(draft, operation)
-        self.assertEqual(self.backend.resolve_write(operation,
-            replace(draft, tabular_sections=tuple(reversed(draft.tabular_sections)))), revision)
-
-
+        expected = self.expected(second, first, notes=(note,))
+        draft = self.draft(tuple(reversed(expected)))
+        revision = self.create(draft)
+        card = self.read(draft.key)
+        self.assertEqual(card.revision, revision)
+        self.assertEqual(card.tabular_sections, expected)
 
     def test_rollback_to_failure_closes_and_rolls_back_entire_transaction(self):
         draft = self.draft((self.section(self.row()),))
@@ -660,7 +618,6 @@ class CatalogSectionTests(unittest.TestCase):
             tx.commit()
         self.assertEqual(self.read(draft.key), before)
         self.assertIsNone(self.read(staged.key))
-        self.assertIsNone(self.backend.committed_operation(operation))
 
     def test_repeated_release_failure_closes_and_rolls_back_transaction(self):
         draft = self.draft((self.section(self.row()),))
@@ -686,7 +643,6 @@ class CatalogSectionTests(unittest.TestCase):
         self.assertIsNone(self.backend._active)
         self.assertEqual(self.read(draft.key), before)
         self.assertIsNone(self.read(staged.key))
-        self.assertIsNone(self.backend.committed_operation(operation))
 
     def test_one_release_failure_preserves_prior_writes_after_savepoint_rollback(self):
         draft = self.draft((self.section(self.row()),))
@@ -740,7 +696,6 @@ class CatalogSectionTests(unittest.TestCase):
         self.assertIsNone(self.backend._active)
         self.assertEqual(self.read(draft.key), before)
         self.assertIsNone(self.read(staged.key))
-        self.assertIsNone(self.backend.committed_operation(operation))
 
     def test_transaction_row_budget_is_shared_between_owners(self):
         from unittest.mock import patch
@@ -880,7 +835,7 @@ class CatalogSectionTests(unittest.TestCase):
 
 
 class LegacySectionCompatibilityTests(unittest.TestCase):
-    def test_v2_without_sections_keeps_format_and_legacy_receipt_hash(self):
+    def test_v2_without_sections_keeps_format_and_reads_committed_revision(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'legacy.sqlite'
             config = configuration()
@@ -892,13 +847,10 @@ class LegacySectionCompatibilityTests(unittest.TestCase):
                 tx = backend.begin_write(operation)
                 tx.create(draft)
                 revision = tx.commit()[0]
-                expected = hashlib.sha256(_json([[str(schema.identity), str(draft.key.record_id),
-                    draft.code, draft.description, False, _json([]), 1]]).encode('utf-8')).hexdigest()
                 with closing(sqlite3.connect(path)) as connection:
                     self.assertEqual(connection.execute('PRAGMA user_version').fetchone()[0], 2)
-                    self.assertEqual(connection.execute('SELECT request_hash FROM commit_receipt WHERE operation_id=?',
-                                                       (str(operation),)).fetchone()[0], expected)
-                self.assertEqual(backend.resolve_write(operation, draft), revision)
+                with closing(backend.begin_read()) as view:
+                    self.assertEqual(view.read_catalog(draft.key).revision, revision)
                 self.assertFalse(backend.capabilities().catalog_tabular_sections)
                 self.assertEqual(backend.inspect_section_storage_mapping(), ())
                 tx = backend.begin_write(uuid4())

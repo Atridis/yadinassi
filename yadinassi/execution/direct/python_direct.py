@@ -462,6 +462,7 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None):
     context._verify_dynamic_context=context._verify_context or database is not None
     context._restrict_python_extensions=not vm.allow_extensions
     context._direct_transaction_owner=_transaction_owner
+    context._register_root=vm._information_registers if sqlite_attached else None
     context._import_check_required=bool(vm.imports)
     context._routine_exports={}
     # Preserve live registry updates at subsequent host boundaries, not a copy.

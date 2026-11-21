@@ -18,34 +18,40 @@ class GlobalMovementBudgetTests(unittest.TestCase):
         f.c.execute('INSERT INTO document_record VALUES(?,?)',(str(f.doc),str(key.record_id)))
         return key
     def reject_second(self,limit,value,empty=False):
-        f=self.f;first=f.request(rows=() if empty else None);op=uuid4();out=f.port.replace(op,first)
-        key=self.other();second=f.request(key,rows=() if empty else None);second_op=uuid4()
+        f=self.f
+        first=f.request(rows=() if empty else None)
+        out=f.port.replace(first)
+        first_partition=f.port.read(f.reg,f.key)
+        self.assertEqual((first_partition.revision,first_partition.snapshot,first_partition.rows),
+                         (out.revision,out.snapshot,first.rows))
+        key=self.other();second=f.request(key,rows=() if empty else None)
         before=f.port.read(f.reg,key)
         with patch.object(movements,limit,value):
-            with self.assertRaises(BackendError):f.port.replace(second_op,second)
+            with self.assertRaises(BackendError) as caught:
+                f.port.replace(second)
+            self.assertEqual(caught.exception.code,'unsupported')
             movements.validate_database_budget(f.c)
         self.assertEqual(f.port.read(f.reg,key),before)
-        self.assertIsNone(f.port.resolve(second_op,second))
-        self.assertEqual(f.port.resolve(op,first),out)
+        self.assertEqual(f.port.read(f.reg,f.key),first_partition)
         self.assertEqual(f.c.execute('SELECT COUNT(*) FROM recorder_partition').fetchone()[0],1)
-    def test_aggregate_row_limit_rolls_back_child_and_receipt(self):
+    def test_aggregate_row_limit_rolls_back_rejected_partition(self):
         self.reject_second('MAX_DATABASE_ROWS',1)
-    def test_aggregate_byte_limit_rolls_back_child_and_receipt(self):
+    def test_aggregate_byte_limit_rolls_back_rejected_partition(self):
         f=self.f;raw=f.port._encoded(f.schema,f.request().rows)[0][2]
         self.reject_second('MAX_DATABASE_BYTES',len(raw.encode()))
     def test_empty_partitions_cannot_exceed_limit(self):
         self.reject_second('MAX_DATABASE_PARTITIONS',1,True)
     def test_existing_partition_replacement_at_limit_allowed(self):
-        f=self.f;f.port.replace(uuid4(),f.request())
+        f=self.f;f.port.replace(f.request())
         with patch.object(movements,'MAX_DATABASE_ROWS',1),patch.object(movements,'MAX_DATABASE_PARTITIONS',1):
-            f.port.replace(uuid4(),f.request())
+            f.port.replace(f.request())
             movements.validate_database_budget(f.c)
     def test_budget_failure_does_not_poison_owner_transaction(self):
         self.reject_second('MAX_DATABASE_ROWS',1)
-        f=self.f;f.port.replace(uuid4(),f.request(rows=()))
+        f=self.f;f.port.replace(f.request(rows=()))
         self.assertTrue(f.c.in_transaction)
     def test_aggregate_validator_matches_writer_limit(self):
-        f=self.f;f.port.replace(uuid4(),f.request())
+        f=self.f;f.port.replace(f.request())
         with patch.object(movements,'MAX_DATABASE_ROWS',0):
             with self.assertRaises(BackendError):movements.validate_database_budget(f.c)
 

@@ -9,7 +9,7 @@ class RecorderQueryPortTests(unittest.TestCase):
         fixture=fixtures.RecorderStorageTests();fixture.setUp()
         self.addCleanup(fixture.doCleanups);self.f=fixture
     def test_scan_reads_staged_partition(self):
-        f=self.f;req=f.request();f.port.replace(uuid4(),req)
+        f=self.f;req=f.request();f.port.replace(req)
         result=f.port.scan(f.reg)
         self.assertEqual(len(result),1);self.assertEqual(result[0][0],f.key)
         self.assertEqual(result[0][1].rows,req.rows)
@@ -21,7 +21,7 @@ class RecorderQueryPortTests(unittest.TestCase):
         f=self.f;f.c.execute("UPDATE recorder_register_schema SET definition='{}'")
         with self.assertRaises(BackendError):f.port.scan(f.reg)
     def test_nonprojected_corrupt_cell_refused(self):
-        f=self.f;f.port.replace(uuid4(),f.request())
+        f=self.f;f.port.replace(f.request())
         f.c.execute("UPDATE recorder_movement SET values_json='[]'")
         with self.assertRaises(BackendError):f.port.scan(f.reg)
     def test_source_after_close_refused(self):

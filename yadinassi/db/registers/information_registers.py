@@ -130,12 +130,24 @@ class BSLInformationRegisterManager(BSLObject):
             for f,v in zip(self._schema.fields,record.key.dimensions + record.values)}
     def _filter(self, value, *, complete=False):
         if value is None and not complete: return ()
-        if type(value) is not BSLStructure: raise TypeError('dimension filter requires Structure')
+        from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
+        if type(value) is BSLStructure and type(value._items) is dict:
+            items = value._items
+        elif type(value) is _DirectStructure:
+            items = value
+        else:
+            raise TypeError('dimension filter requires Structure')
         fields = {f.name.casefold():f for f in self._schema.dimensions}
-        if any(k not in fields for k in value._items): raise ValueError('filter accepts dimensions only')
-        if complete and set(value._items) != set(fields): raise ValueError('complete dimension key required')
-        return tuple((f.identity,self._stored(f,self._assigned(f,value.get(f.name))))
-            for f in self._schema.dimensions if f.name.casefold() in value._items)
+        for key, pair in dict.items(items):
+            if type(key) is not str or key not in fields:
+                raise ValueError('filter accepts dimensions only')
+            if (type(pair) is not tuple or len(pair) != 2 or type(pair[0]) is not str
+                    or pair[0].casefold() != key):
+                raise ValueError('invalid dimension filter')
+        if complete and len(items) != len(fields):
+            raise ValueError('complete dimension key required')
+        return tuple((f.identity,self._stored(f,self._assigned(f,dict.__getitem__(items,key)[1])))
+            for key,f in fields.items() if dict.__contains__(items,key))
     def create_record_set(self): return BSLInformationRegisterRecordSet(self)
     def create_record_manager(self):
         return BSLInformationRegisterRecordManager(self)
@@ -354,7 +366,9 @@ class _RegisterFilterItem(BSLObject):
 
 
 class _RegisterFilter(BSLObject):
-    def __init__(self,owner): self._items={f.name.casefold():_RegisterFilterItem(owner,f) for f in owner._manager._schema.key_fields}
+    def __init__(self,owner):
+        self._owner=owner
+        self._items={f.name.casefold():_RegisterFilterItem(owner,f) for f in owner._manager._schema.key_fields}
     def get_member(self,name):
         if name.casefold() not in self._items: raise ValueError('register dimension not found')
         return self._items[name.casefold()]

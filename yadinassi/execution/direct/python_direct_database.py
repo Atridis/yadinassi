@@ -7,7 +7,13 @@ from . import python_direct_movements as movements
 from yadinassi.db.registers.accumulation_posting_values import BSLAccumulationRow
 from yadinassi.db.catalog.catalogs import BSLCatalogs, BSLCatalogManager, BSLCatalogObject, BSLCatalogSelection
 from yadinassi.db.catalog.catalog_types import BSLCatalogReference
+from yadinassi.db.catalog.catalog_backend import FieldSchema
 from yadinassi.db.catalog.catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
+from yadinassi.db.registers.information_registers import (
+    BSLInformationRegisters, BSLInformationRegisterManager, BSLInformationRegisterRecordManager,
+    BSLInformationRegisterSelection, BSLInformationRegisterRecordSet, BSLInformationRegisterRecord,
+    _RegisterFilter, _RegisterFilterItem,
+)
 from yadinassi.db.document.documents import BSLDocuments, BSLDocumentManager, BSLDocumentObject
 from yadinassi.db.document.document_types import BSLDocumentReference
 from yadinassi.db.document.document_lines import BSLDocumentLines, BSLDocumentLine
@@ -32,7 +38,8 @@ from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
 from yadinassi.formats.json.json_processing import (BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings,
     _DIRECT_SOURCE_JSON_CLASSES, _DIRECT_SOURCE_JSON_DICT, _DIRECT_JSON_READ)
 from .python_direct_names import NAMES as SYSTEM_NAMES, VALUE_IDS as SYSTEM_VALUE_IDS, ITERABLES
-from yadinassi.configuration.metadata import BSLMetadata, BSLCatalogMetadataCollection, BSLCatalogMetadata
+from yadinassi.configuration.metadata import (BSLMetadata, BSLCatalogMetadataCollection, BSLCatalogMetadata,
+    BSLInformationRegisterMetadata, BSLInformationRegisterMetadataCollection)
 from yadinassi.db.query.queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
 from yadinassi.collections.value_tables import (BSLValueTable, BSLValueTableRow, BSLCollectionIndex, BSLCollectionIndexes,
                            BSLValueTableColumn, BSLValueTableColumnCollection, _DIRECT_ITERATION_TYPES)
@@ -41,7 +48,7 @@ from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.types.type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
                               BSLDateQualifiers, BSLBinaryDataQualifiers)
 
-NAMES=('metadata','метаданные','catalogs','справочники','documents','документы','enums','перечисления','documentwritemode','режимзаписидокумента','accumulationrecordtype','виддвижениянакопления')
+NAMES=('metadata','метаданные','catalogs','справочники','documents','документы','informationregisters','регистрысведений','enums','перечисления','documentwritemode','режимзаписидокумента','accumulationrecordtype','виддвижениянакопления')
 
 # Canonical detached receivers only; child rows/items and database owners still
 # traverse live ownership validation. Public protocols retain resource guards.
@@ -89,7 +96,73 @@ def _bind_json_read(boundary,value):
 def _verify_collection(boundary,value):
     return id(type(value)) not in _PURE_COLLECTION_TYPE_IDS or getattr(boundary,'_verify_context',True) is not False
 
+_REGISTER_TYPES = frozenset(map(id, (
+    BSLInformationRegisters, BSLInformationRegisterManager, BSLInformationRegisterRecordManager,
+    BSLInformationRegisterSelection, BSLInformationRegisterRecordSet, BSLInformationRegisterRecord,
+    _RegisterFilter, _RegisterFilterItem,
+)))
+
+
+def _check_register_owner(boundary, value):
+    from yadinassi.db.database_context import SQLiteDBContext, require_database_context
+    from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+    vm = boundary.vm
+    db = vm.database_context
+    if db is None:
+        require_database_context()
+    root = boundary._register_root
+    if (type(db) is not SQLiteDBContext or type(db.backend) is not SQLiteCatalogBackend
+            or db.backend._closed is not False or type(root) is not BSLInformationRegisters
+            or root is not vm._information_registers or root._context is not db
+            or type(root._metadata) is not BSLInformationRegisterMetadataCollection
+            or root._metadata is not vm._metadata._information_registers
+            or root._catalogs is not vm._catalogs or root._documents is not vm._documents
+            or type(root._managers) is not dict):
+        raise BoundaryViolation('foreign or closed information register database')
+    kind = type(value)
+    if kind is BSLInformationRegisters:
+        if value is root:
+            return
+        raise BoundaryViolation('foreign information register namespace')
+    if kind is BSLInformationRegisterManager:
+        manager = value
+    elif kind in (BSLInformationRegisterRecordManager, BSLInformationRegisterSelection,
+                  BSLInformationRegisterRecordSet):
+        manager = value._manager
+    else:
+        owner = value._owner
+        if type(owner) is not BSLInformationRegisterRecordSet:
+            raise BoundaryViolation('foreign information register record set')
+        if kind is _RegisterFilter and owner._filter is not value:
+            raise BoundaryViolation('foreign information register filter')
+        if (kind is _RegisterFilterItem
+                and (type(owner._filter) is not _RegisterFilter or type(owner._filter._items) is not dict
+                     or type(value._field) is not FieldSchema or type(value._field.name) is not str
+                     or owner._filter._items.get(value._field.name.casefold()) is not value)):
+            raise BoundaryViolation('foreign information register filter item')
+        manager = owner._manager
+    if type(manager) is not BSLInformationRegisterManager or manager._registers is not root:
+        raise BoundaryViolation('foreign information register manager')
+    item = manager._metadata
+    if (type(item) is not BSLInformationRegisterMetadata or type(item._name) is not str
+            or manager._catalogs is not root._catalogs or item._root is not vm._metadata
+            or root._managers.get(item._name.casefold()) is not manager
+            or type(root._metadata._items) is not dict
+            or root._metadata._items.get(item._name.casefold()) is not item
+            or item._schema is not manager._schema):
+        raise BoundaryViolation('foreign information register metadata')
+    # A detached buffer cannot be reassigned to a different register by
+    # changing its manager link; it retains the exact type issued at creation.
+    if ((kind is BSLInformationRegisterRecordManager and value._record_type is not manager._record_type)
+            or (kind is BSLInformationRegisterSelection and value._selection_type is not manager._selection_type)
+            or (kind is BSLInformationRegisterRecordSet and value._set_type is not manager._set_type)
+            or (kind is BSLInformationRegisterRecord and value._row_type is not manager._row_type)):
+        raise BoundaryViolation('information register receiver type changed')
+
+
 class CatalogBoundary:
+    _register_root = None
+
     def _catalog_owner(self, value, *, verify=True):
         if verify:
             if getattr(self,'_verify_context',True):self._check()
@@ -101,6 +174,9 @@ class CatalogBoundary:
         if id(value) in SYSTEM_VALUE_IDS:return
         root=self.vm._catalogs
         kind=type(value)
+        if id(kind) in _REGISTER_TYPES:
+            _check_register_owner(self, value)
+            return
         if kind is BSLXMLReader or kind is BSLXMLWriter:_reject_source_xml(value)
         if id(kind) in _DETACHED_TYPE_IDS:return
         if value is DOCUMENT_WRITE_MODES:return
@@ -179,6 +255,10 @@ class CatalogBoundary:
         if name in ('metadata','метаданные'):return self.vm._metadata
         if name in ('catalogs','справочники'):return self.vm._catalogs
         if name in ('documents','документы'):return self.vm._documents
+        if name in ('informationregisters','регистрысведений'):
+            root = self.vm._information_registers
+            _check_register_owner(self, root)
+            return root
         if name in ('enums','перечисления'):
             if self.vm._metadata._enumerations is None:raise ValueError('enumerations require an active configuration application')
             return self.vm._metadata._enumerations
@@ -375,7 +455,7 @@ class CatalogBoundary:
         elif name=='__setitem__':
             function=value.set if type(value) in (BSLArray, BSLFixedArray, BSLMap, BSLFixedMap, BSLFixedStructure) else lambda index,new:value.set_index(index,new)
         elif name=='__iter__':
-            if type(value) not in (BSLArray, BSLFixedArray, BSLFixedStructure, BSLFixedMap, BSLValueList, BSLCollectionIndex, BSLCollectionIndexes) and not any(value is item for item in ITERABLES) and not any(type(value) is kind for kind in _DOM_LISTS):
+            if type(value) not in (BSLArray, BSLFixedArray, BSLFixedStructure, BSLFixedMap, BSLValueList, BSLCollectionIndex, BSLCollectionIndexes, BSLInformationRegisterRecordSet) and not any(value is item for item in ITERABLES) and not any(type(value) is kind for kind in _DOM_LISTS):
                 raise BoundaryViolation('direct database iterator not connected')
             function=lambda:iter(value)
         else:

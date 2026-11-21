@@ -3,7 +3,9 @@ from contextlib import closing
 from dataclasses import replace
 from datetime import datetime
 from decimal import Decimal
+from hashlib import sha256
 from pathlib import Path
+import sqlite3
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -138,6 +140,38 @@ class InventoryHostTests(unittest.TestCase):
             self.host.verify_source()
             with self.assertRaises(BackendError):self.execute()
         self.assertIsNone(self.host._active_operation)
+
+    def test_readonly_child_checks_current_source_without_form_activation(self):
+        from yadinassi.db.database_transactions import _execution
+        with admission(False),execution(self.backend):
+            owner = _execution.get()
+            with (
+                patch('yadinassi.configuration.demos.inventory_host_operations.canonical',
+                      side_effect=AssertionError('validation form')),
+                patch.object(self.backend,'begin_unit_of_work',side_effect=AssertionError('writer')),
+            ):
+                self.host.verify_source()
+                self.assertIs(_execution.get(),owner)
+        with closing(sqlite3.connect(self.path)) as db,db:
+            raw = self.files['Configuration.xml'] + b'\n'
+            db.execute("UPDATE configuration_file SET content=?,sha256=? WHERE path='Configuration.xml'",
+                       (raw,sha256(raw).hexdigest()))
+        with admission(False),execution(self.backend):
+            with self.assertRaisesRegex(BackendError,'schema_changed'):
+                self.host.verify_source()
+        self.assertIsNone(self.backend._active)
+
+    def test_readonly_child_rejects_matching_mutation_of_both_live_configurations(self):
+        configs = (self.backend.accumulation_configuration,self.host.configuration)
+        originals = tuple(config.commands for config in configs)
+        try:
+            for config in configs:object.__setattr__(config,'commands',())
+            with admission(False),execution(self.backend):
+                with self.assertRaisesRegex(BackendError,'schema_changed'):
+                    self.host.verify_source()
+        finally:
+            for config,commands in zip(configs,originals):object.__setattr__(config,'commands',commands)
+        self.assertIsNone(self.backend._active)
 
     def test_no_lookup_after_reopening_host(self):
         self.assertTrue(self.execute().accepted)

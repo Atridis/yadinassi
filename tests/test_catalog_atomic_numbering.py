@@ -1,7 +1,6 @@
 """Owned decimal_v1 storage tests, not evidence of native 1C numbering parity."""
 from contextlib import closing
 from dataclasses import replace
-import json
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -91,7 +90,6 @@ class CatalogAtomicNumberingTests(unittest.TestCase):
         self.assertEqual(tx.read_catalog(draft.key).code, '01')
         tx.rollback()
         self.assertIsNone(self.read(draft.key))
-        self.assertIsNone(self.backend.committed_operation(operation))
         self.assertEqual(self.counter(), 1)
         self.assertEqual(self.save(draft).code, '01')
         self.assertEqual(self.read(draft.key).tabular_sections, draft.tabular_sections)
@@ -162,44 +160,38 @@ class CatalogAtomicNumberingTests(unittest.TestCase):
             finally: tx.close()
         finally: backend.close()
 
-    def test_uncertain_before_commit_reuses_number_only_after_absent_receipt(self):
-        draft, operation = self.draft(sections=self.sections()), uuid4()
-        tx = self.backend.begin_write(operation)
+    def test_unknown_before_commit_restores_counter_for_independent_new_record(self):
+        draft = self.draft(sections=self.sections())
+        tx = self.backend.begin_write(uuid4())
         tx.create(draft)
         tx._connection = FaultConnection(tx._connection, commit_fault='before')
-        with self.assertRaisesRegex(BackendError, 'uncertain_commit'): tx.commit_outcomes()
-        self.assertIsNone(self.backend.resolve_write_outcome(operation, draft))
+        with self.assertRaisesRegex(BackendError, '^uncertain_commit$'): tx.commit_outcomes()
         self.assertIsNone(self.read(draft.key))
         self.assertEqual(self.counter(), 1)
-        outcome = self.save(draft, operation)
-        self.assertEqual(outcome.code, '01')
-        self.assertEqual(self.backend.resolve_write_outcome(operation, draft), outcome)
+        other = self.draft(sections=self.sections())
+        self.assertEqual(self.save(other).code, '01')
+        self.assertIsNone(self.read(draft.key))
+        self.assertEqual(self.read(other.key).tabular_sections, other.tabular_sections)
 
-    def test_lost_commit_response_resolves_original_code_even_after_later_edit(self):
-        draft, operation = self.draft(sections=self.sections()), uuid4()
-        tx = self.backend.begin_write(operation)
+    def test_lost_commit_response_requires_reading_current_code_and_sections(self):
+        draft = self.draft(sections=self.sections())
+        tx = self.backend.begin_write(uuid4())
         tx.create(draft)
         tx._connection = FaultConnection(tx._connection, commit_fault='after')
-        with self.assertRaisesRegex(BackendError, 'uncertain_commit'): tx.commit_outcomes()
+        with self.assertRaisesRegex(BackendError, '^uncertain_commit$'): tx.commit_outcomes()
         self.backend.close()
         self.backend = SQLiteCatalogBackend(self.path)
-        outcome = self.backend.resolve_write_outcome(operation, draft)
-        self.assertEqual(outcome.code, '01')
-        self.assertEqual(self.read(draft.key).tabular_sections, draft.tabular_sections)
-        self.assertEqual(self.backend.resolve_write(operation, draft), outcome.revision)
-        with self.assertRaisesRegex(BackendError, 'conflict'): self.backend.begin_write(operation)
+        card = self.read(draft.key)
+        self.assertEqual((card.code, card.revision.token), ('01', '1'))
+        self.assertEqual(card.tabular_sections, draft.tabular_sections)
         edited = replace(draft, code='88', auto_number=False, description='later')
-        tx = self.backend.begin_write(uuid4())
-        try:
-            tx.update(edited, outcome.revision)
+        with closing(self.backend.begin_write(uuid4())) as tx:
+            tx.update(edited, card.revision)
             self.assertEqual(tx.commit_outcomes()[0].code, '88')
-        finally: tx.close()
-        self.assertEqual(self.backend.resolve_write_outcome(operation, draft), outcome)
+        current = self.read(draft.key)
+        self.assertEqual((current.code, current.description, current.revision.token), ('88', 'later', '2'))
+        self.assertEqual(current.tabular_sections, draft.tabular_sections)
         self.assertEqual(self.counter(), 2)
-        for forged in (replace(draft, auto_number=False, code='01'), replace(draft, description='changed'),
-                       replace(draft, tabular_sections=())):
-            with self.subTest(forged=forged), self.assertRaisesRegex(BackendError, 'conflict'):
-                self.backend.resolve_write_outcome(operation, forged)
 
     def test_invalid_auto_intents_and_identifiers_fail_without_allocation(self):
         draft = self.draft()
@@ -236,32 +228,13 @@ class CatalogAtomicNumberingTests(unittest.TestCase):
                                    [(str(s.identity),) for s in (self.product, self.category)])
         self.assertEqual(self.save(self.draft()).code, '01')
 
-    def test_corrupt_receipt_codes_and_shapes_are_not_accepted(self):
-        draft, operation = self.draft(), uuid4()
-        self.save(draft, operation)
-        with closing(sqlite3.connect(self.path)) as db, db:
-            raw = db.execute('SELECT revisions_json FROM commit_receipt WHERE operation_id=?', (str(operation),)).fetchone()[0]
-        entries = json.loads(raw)
-        variants = [json.dumps([entries[0][:3]])]
-        for code in ('', '00', '1', 'ab', '１２', '001', '02', None):
-            variants.append(json.dumps([entries[0][:3] + [code]]))
-        for encoded in variants:
-            with self.subTest(receipt=encoded):
-                with closing(sqlite3.connect(self.path)) as db, db:
-                    db.execute('UPDATE commit_receipt SET revisions_json=? WHERE operation_id=?', (encoded, str(operation)))
-                with self.assertRaises(BackendError): self.backend.resolve_write_outcome(operation, draft)
-        with closing(sqlite3.connect(self.path)) as db, db:
-            db.execute('UPDATE commit_receipt SET revisions_json=? WHERE operation_id=?', (raw, str(operation)))
-        self.assertEqual(self.backend.resolve_write_outcome(operation, draft).code, '01')
-
     def test_legacy_revision_api_still_works_in_v4_and_v2_remains_explicit(self):
         draft, operation = self.draft(), uuid4()
         tx = self.backend.begin_write(operation)
         tx.create(draft)
         revisions = tx.commit()
         self.assertIs(type(revisions[0]), Revision)
-        self.assertEqual(self.backend.committed_operation(operation)[1], revisions)
-        self.assertEqual(self.backend.resolve_write(operation, draft), revisions[0])
+        self.assertEqual(self.read(draft.key).revision, revisions[0])
         config = replace(self.config, catalogs=(self.explicit,))
         legacy = SQLiteCatalogBackend.create(Path(self.temp.name) / 'legacy.sqlite', config)
         try:
