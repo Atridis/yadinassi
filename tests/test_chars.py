@@ -7,9 +7,12 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from scripts.native_historical_replay import without_fixed_string_probes, without_uuid_probes
 from yadinassi import Interpreter
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
+from yadinassi.syntax.parser import parse
 from yadinassi.text.chars import CHARS
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.formats.storage.serialization import value_from_string_internal, value_to_string_internal
@@ -83,6 +86,36 @@ class CharsTests(unittest.TestCase):
                        '"prefix=" + Chars', 'XMLString(Chars)'):
             with self.subTest(source=source), self.assertRaises(BSLRuntimeError):
                 self.vm.execute(source)
+
+    def test_direct_namespace_rejections_are_catchable_without_calling_arguments(self):
+        code = """
+            Var Called;
+            Function Argument()
+                Called = True;
+                Return "not evaluated";
+            EndFunction
+            Called = False;
+            Try Chars.LF(Argument()); Except Member = True; EndTry;
+            Try Символы(Argument()); Except ValueCall = True; EndTry;
+            Try For Each Item In Chars Do EndDo; Except Iteration = True; EndTry;
+            Try Eval("Chars.LF()"); Except Fragment = True; EndTry;
+            Try S = "prefix" + Chars; Except NoPresentation = True; EndTry;
+            LF = Chars["LF"];
+        """
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                with patch.object(BoundaryContext, '_check', side_effect=AssertionError('unexpected Light check')):
+                    if prepared:
+                        vm.execute_prepared(vm.prepare_program(parse(code)))
+                    else:
+                        vm.execute(code)
+                self.assertFalse(vm.variables['called'])
+                self.assertNotIn('s', vm.variables)
+                for name in ('member', 'valuecall', 'iteration', 'fragment', 'nopresentation'):
+                    self.assertIs(vm.variables[name], True)
+                self.assertEqual(vm.variables['lf'], '\n')
 
     def test_member_internal_and_xml_scalar_roundtrips(self):
         # Scalar XML conversion is not an XML document character-validity test.

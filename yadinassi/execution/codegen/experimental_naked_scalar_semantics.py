@@ -6,6 +6,7 @@ host callbacks require an explicit boundary rather than accidental str/equality.
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray as _PlainArray
 from decimal import Decimal
 from yadinassi.text.strings import concatenate as _join
+from yadinassi.text.chars import CHARS
 from yadinassi.text.collation import _DIRECT_STRING_KEY_ABI as _string_key
 from yadinassi.temporal.dates import _DIRECT_EQUALITY_DATE_STATE, UnsupportedDateRange
 from yadinassi.types.values import BSLType, NULL, to_string, _DIRECT_TYPE_PRESENTATIONS, _DIRECT_ARRAY_TYPE, _DIRECT_FIXED_ARRAY_TYPE, _DIRECT_FIXED_COLLECTION_TYPE, divide as _divide
@@ -35,6 +36,9 @@ _FIND_IDENTITY_TYPE_IDS=_COLLECTION_TYPE_IDS+tuple(map(id,_FIND_IDENTITY_TYPES))
 
 _TYPE_PRESENTATIONS = {id(member): (member, label, error)
                        for member, label, error in _DIRECT_TYPE_PRESENTATIONS}
+# An admitted non-stringable singleton, not a generic call to host __str__.
+_TYPE_PRESENTATIONS[id(CHARS)] = (
+    CHARS, None, 'Строковое представление пространства Символы пока не поддерживается')
 
 _TYPE_MRO = vars(type)['__mro__']
 

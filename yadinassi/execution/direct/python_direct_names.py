@@ -19,6 +19,7 @@ from yadinassi.types.error_info import ERROR_CATEGORIES
 from yadinassi.formats.json.json_dates import JSON_DATE_FORMATS, JSON_DATE_WRITING_VARIANTS
 from yadinassi.formats.json.json_processing import JSON_LINE_BREAKS, JSON_VALUE_TYPES
 
+CHARS_ALIASES = ("chars", "символы")
 XML_CLEANUP_ALIASES = ("xmlstringprocessing", "обработкастрокиxml")
 
 NAMES = MappingProxyType({
@@ -29,7 +30,7 @@ NAMES = MappingProxyType({
         (("xmlspace", "пробельныесимволыxml"), XML_SPACES),
         (XML_CLEANUP_ALIASES, XML_STRING_PROCESSING),
         (("xmlvalidationtype", "типпроверкиxml"), XML_VALIDATION_TYPES),
-        (("chars", "символы"), CHARS),
+        (CHARS_ALIASES, CHARS),
         (("byteordermarkuse", "использованиеbyteordermark"), BYTE_ORDER_MARK_USE),
         (("positioninstream", "позициявпотоке"), POSITIONS_IN_STREAM),
         (("textencoding", "кодировкатекста"), TEXT_ENCODINGS),
@@ -64,3 +65,4 @@ OPAQUE_ENUM_VALUES = (*BSLSearchDirection, *BSLSortDirection, *BSLRoundMode, *BS
                       *BSLAllowedSign, *BSLAllowedLength, *BSLDateFractions)
 OPAQUE_ENUM_IDS = frozenset(map(id, OPAQUE_ENUM_VALUES))
 FIELD_ONLY_NAMESPACE_IDS = frozenset(map(id, (ALLOWED_SIGNS, ALLOWED_LENGTHS, DATE_FRACTIONS)))
+METHODLESS_NAMESPACE_IDS = ITERABLE_IDS | FIELD_ONLY_NAMESPACE_IDS | frozenset((id(CHARS),))

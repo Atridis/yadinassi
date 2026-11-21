@@ -28,6 +28,7 @@ from decimal import Decimal
 from .python_direct_xml_ownership import reject_source_owned as _reject_source_xml
 from yadinassi.formats.xml.dom_io import BSLDOMBuilder, BSLDOMWriter
 from yadinassi.formats.xml.xml_processing import XML_STRING_PROCESSING, delete_disallowed_xml_characters
+from yadinassi.text.chars import CHARS
 from yadinassi.formats.xml.dom_nodes import _NODE_CLASSES, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap
 from yadinassi.formats.xml.dom_xpath import BSLDOMNamespaceResolver, BSLDOMXPathResult
 from yadinassi.formats.xml.xml_io import BSLXMLReader, BSLXMLReaderSettings, BSLXMLNamespaceContext
@@ -45,7 +46,7 @@ from yadinassi.formats.json.json_dates import BSLJSONSerializerSettings
 from yadinassi.formats.json.json_processing import (BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings,
     _DIRECT_SOURCE_JSON_CLASSES, _DIRECT_SOURCE_JSON_DICT, _DIRECT_JSON_READ)
 from .python_direct_names import (NAMES as SYSTEM_NAMES, VALUE_IDS as SYSTEM_VALUE_IDS,
-    ITERABLE_IDS, OPAQUE_ENUM_IDS, FIELD_ONLY_NAMESPACE_IDS)
+    ITERABLE_IDS, OPAQUE_ENUM_IDS, FIELD_ONLY_NAMESPACE_IDS, METHODLESS_NAMESPACE_IDS)
 from yadinassi.configuration.metadata import (BSLMetadata, BSLCatalogMetadataCollection, BSLCatalogMetadata,
     BSLInformationRegisterMetadata, BSLInformationRegisterMetadataCollection)
 from yadinassi.db.query.queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
@@ -398,10 +399,10 @@ class CatalogBoundary:
         if id(type(value)) in zip_reader.TYPE_IDS:
             return zip_reader.resolve(self,value,name,require_value=require_value,omitted=omitted)
         # A spelled member call must not reach the internal protocol names
-        # emitted for indexing and For Each. These enum namespaces have no
-        # methods; their scalar identities have no member protocol at all.
+        # emitted for indexing and For Each. These namespaces have no
+        # methods; individual enum members have no member protocol at all.
         identity=id(value)
-        if (identity in ITERABLE_IDS or identity in OPAQUE_ENUM_IDS or identity in FIELD_ONLY_NAMESPACE_IDS
+        if (identity in METHODLESS_NAMESPACE_IDS or identity in OPAQUE_ENUM_IDS
                 or id(type(value)) in _QUALIFIER_TYPE_IDS):
             if self._verify_context:self._check()
             raise ValueError('Метод объекта не обнаружен: '+name)
@@ -518,7 +519,8 @@ class CatalogBoundary:
             identity=id(value)
             if (identity in OPAQUE_ENUM_IDS or identity in FIELD_ONLY_NAMESPACE_IDS
                     or id(type(value)) in _QUALIFIER_TYPE_IDS
-                    or (name!='__iter__' and identity in ITERABLE_IDS)):
+                    or (name!='__iter__' and identity in ITERABLE_IDS)
+                    or (name=='__iter__' and value is CHARS)):
                 if self._verify_context:self._check()
                 if name=='__iter__':raise ValueError('Для Каждого ожидает массив или коллекцию')
                 raise ValueError('Индексирование для этого типа не поддерживается')

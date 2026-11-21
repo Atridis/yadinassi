@@ -33,7 +33,7 @@ from yadinassi.collections.plain_value_list import PlainValueList, PlainValueLis
 from yadinassi.execution.direct.python_direct_execute import execute_fragment, local_binding, local_exists
 from yadinassi.execution.direct.python_direct_eval import bind_eval
 from yadinassi.execution.direct.python_direct import REPAIRS,PythonDirectUnsupported
-from yadinassi.execution.direct.python_direct_names import NAMES, XML_CLEANUP_ALIASES
+from yadinassi.execution.direct.python_direct_names import NAMES, CHARS_ALIASES, XML_CLEANUP_ALIASES
 from yadinassi.types.errors import BSLRuntimeError
 from dataclasses import fields, replace
 
@@ -1037,7 +1037,13 @@ class Emitter:
                     args.append(value)
                 return self.call(self.pure_builtins[name],args,node.callee.token)
             external_call=self.external_name(name) and name in self.callable_externals
-            if self.external_name(name) and not external_call:_reject('external namespace names are not callable: '+node.callee.name)
+            if self.external_name(name) and not external_call:
+                # Chars is a known non-callable value. Its measured error is
+                # catchable and occurs before any actual argument is evaluated.
+                if name in CHARS_ALIASES and not self.owned_constructors:
+                    return self.call('_invalid_native_arity',
+                                     [self.const('Значение не является функцией',t)],node.callee.token)
+                _reject('external namespace names are not callable: '+node.callee.name)
             if external_call:fallback=self.name('_MISSING',t)
             elif self.scope is not None and name not in self.scope['globals']:
                 # Presence is dynamic after conditional assignment. Preserve the
