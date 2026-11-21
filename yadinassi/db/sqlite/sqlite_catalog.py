@@ -509,6 +509,7 @@ class SQLiteCatalogBackend:
         self._active = None
         self._owner_lock = RLock()
         self._read_handle = None
+        self._single_statement_writer = None
         self._read_admission_baseline = None
         from yadinassi.execution.prepared_source import PreparedSource
         self._prepared_source = PreparedSource()
@@ -711,13 +712,13 @@ class SQLiteCatalogBackend:
             return identity
         except OSError: raise BackendError('storage_error') from None
 
-    def _connect(self, *, _owner=None, _read_handle=False):
+    def _connect(self, *, _owner=None, _read_handle=False, _single_statement=False):
         self._check_file()
         connection = None
         try:
             readonly = self.read_only or _read_handle
             connection = sqlite3.connect(Path(self.path).as_uri() + ('?mode=ro' if readonly else '?mode=rw'), uri=True, isolation_level=None, detect_types=0, timeout=0.2,
-                                         check_same_thread=not _read_handle)
+                                         check_same_thread=not (_read_handle or _single_statement))
             if _owner is not None: _owner._connection=connection
             register_query_collations(connection)
             if readonly: connection.execute('PRAGMA query_only=ON')
@@ -1815,6 +1816,8 @@ class SQLiteCatalogBackend:
             if self._active is not None:
                 _close_owned_connection(self._active)
             self._close_idle_read_handle()
+            from .sqlite_single_statement import close_writer
+            close_writer(self)
             self._closed = True
         finally:
             self._prepared_source.clear()
