@@ -16,6 +16,7 @@ from yadinassi.formats.storage.serialization import value_to_string_internal as 
 from yadinassi.types.type_values import type_of
 from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.collections.value_lists import BSLValueList
+from yadinassi.collections.plain_value_list import PlainValueList
 from yadinassi.types.values import BSLArray, BSLType, NULL, equal
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -235,6 +236,49 @@ class ValueListCodecBoundaryTests(unittest.TestCase):
                 values.value_type = BSLTypeDescription('Number')
             with self.subTest(change=change), self.assertRaises(ValueError):
                 write(values)
+
+    def test_plain_list_matches_native_history_and_captured_codec(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.variables['encode'] = vm.functions['valuetostringinternal']
+        vm.execute_prepared(vm.prepare('''values = New ValueList;
+            values.Add(10, "first", True); values.Add(20, "second"); values.Delete(0);
+            values.Insert(0, 30, "third", True);
+            direct = ValueToStringInternal(values); captured = encode(values);
+            copy = ValueFromStringInternal(captured);'''))
+        expected = self.native('history').get('Write')
+        self.assertEqual(vm.variables['direct'], expected)
+        self.assertEqual(vm.variables['captured'], expected)
+        self.assertEqual(vm.execute('copy.Get(0).GetID()'), D(2))
+        self.assertEqual(vm.execute('copy.Get(1).GetID()'), D(1))
+        self.assertIs(vm.execute('copy.Get(0).Check'), True)
+
+    def test_plain_list_refuses_foreign_shape_metadata_and_cycles(self):
+        class Opaque:
+            def __getattribute__(self, name):
+                raise AssertionError(name)
+            def __bool__(self):
+                raise AssertionError('truth')
+            def __hash__(self):
+                raise AssertionError('hash')
+
+        encode = serialization._direct_value_to_string_internal
+        for change in ('shape', 'item', 'counter', 'id', 'duplicate', 'picture', 'check', 'presentation', 'cycle'):
+            with self.subTest(change=change):
+                values = PlainValueList()
+                first = values.add(1)
+                last = values.add(2)
+                if change == 'shape': first.append(3)
+                elif change == 'item': list.append(values, Opaque())
+                elif change == 'counter': values._next_id = Opaque()
+                elif change == 'id': first._id = Opaque()
+                elif change == 'duplicate': last._id = first._id
+                elif change == 'picture': first[3] = Opaque()
+                elif change == 'check': first[2] = Opaque()
+                elif change == 'presentation': first[1] = Opaque()
+                else: first[0] = values
+                with self.assertRaises(ValueError):
+                    encode(values)
 
     def test_bsl_errors_are_catchable_and_do_not_mutate_assignment(self):
         output = []

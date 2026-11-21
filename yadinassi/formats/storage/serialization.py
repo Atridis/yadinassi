@@ -27,6 +27,7 @@ from yadinassi.collections.plain_table_search import SearchIndexes
 from yadinassi.collections.value_tables import (BSLValueTable, BSLValueTableRow, BSLValueTableColumn,
                            BSLValueTableColumnCollection, BSLCollectionIndexes)
 from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.collections.plain_value_list import PlainValueList, PlainValueListItem
 from yadinassi.types.type_values import type_of
 from yadinassi.db.catalog.catalog_types import BSLCatalogReference, BSLCatalogType
 from yadinassi.db.metadata.enum_types import BSLEnumReference, BSLEnumType
@@ -56,6 +57,9 @@ _MAX_NODES = 10000
 _MAX_TOKENS_PER_NODE = 32
 FORMAT_ERROR = "Ошибка преобразования: Ошибка формата потока"
 # These are implementation resource budgets, not inferred native limits.
+_PLAIN_LIST_NEXT_ID = vars(PlainValueList)['_next_id']
+_PLAIN_LIST_ITEM_ID = vars(PlainValueListItem)['_id']
+
 _TYPE_IDS = {
     # Authenticated Linux PR112 run40240060498, records433..435.
     BSLType.UUID: "fc01b5df-97fe-449b-83d4-218a090e681e",
@@ -321,6 +325,8 @@ class _Writer:
         elif value_type is _DirectStructure:
             kind, direct_items = BSLType.STRUCTURE, _native_structure_entries(value)
             entry_count = dict.__len__(value)
+        elif self.direct and value_type is PlainValueList:
+            kind = BSLType.VALUE_LIST
         elif self.direct and value_type is _TypedMap:
             kind, direct_items = BSLType.MAP, dict.values(value)
         elif self.direct and value_type is _DIRECT_MAP_ENTRY_TYPE:
@@ -393,7 +399,10 @@ class _Writer:
             try:
                 self.emit('{"#",' + _TYPE_IDS[kind] + ',\n')
                 if kind is BSLType.VALUE_LIST:
-                    self.value_list(value, depth)
+                    if self.direct and value_type is PlainValueList:
+                        self.plain_value_list(value, depth)
+                    else:
+                        self.value_list(value, depth)
                 elif kind is BSLType.VALUE_LIST_ITEM:
                     self.value_list_item(value, depth)
                 elif kind is BSLType.VALUE_TABLE:
@@ -446,8 +455,45 @@ class _Writer:
             seen.add(item._id)
         if len(value._by_id) != count:
             raise ValueError("ЗначениеВСтрокуВнутр: недопустимые идентификаторы списка значений")
+        self.list_entries(value.items, count, depth, self.value_list_item)
+        self.emit(',\n{"Pattern"},0,' + str(value._next_id - 1) + '}')
+
+    def plain_value_list(self, value, depth):
+        # Native lists have the default ValueType/Picture only and no owner
+        # weakref or ID dictionary. Validate their actual fixed-position items.
+        try:
+            next_id = _PLAIN_LIST_NEXT_ID.__get__(value, PlainValueList)
+        except AttributeError:
+            next_id = None
+        if type(next_id) is not int or not 0 <= next_id <= 2 ** 32:
+            raise ValueError("ЗначениеВСтрокуВнутр: недопустимое состояние списка значений")
+        count = list.__len__(value)
+        self.nodes += count
+        if self.nodes > _MAX_NODES:
+            raise _resource("ЗначениеВСтрокуВнутр")
+        seen = set()
+
+        def write_item(item, item_depth):
+            if type(item) is not PlainValueListItem or list.__len__(item) != 4:
+                raise ValueError("ЗначениеВСтрокуВнутр: недопустимый элемент списка значений")
+            try:
+                identifier = _PLAIN_LIST_ITEM_ID.__get__(item, PlainValueListItem)
+            except AttributeError:
+                identifier = None
+            payload, presentation, check, picture = list.__iter__(item)
+            if (type(identifier) is not int or not 0 <= identifier < next_id
+                    or identifier in seen or type(presentation) is not str
+                    or type(check) is not bool or picture is not None):
+                raise ValueError("ЗначениеВСтрокуВнутр: недопустимый элемент списка значений")
+            seen.add(identifier)
+            self.list_item_fields(presentation, check, payload, identifier, item_depth)
+
+        self.list_entries(list.__iter__(value), count, depth, write_item)
+        self.emit(',\n{"Pattern"},0,' + str(next_id - 1) + '}')
+
+    def list_entries(self, items, count, depth, write_item):
         self.emit('{6,' + _LIST_ENTRY_ID + ',0,0,\n{' + str(count))
-        for item in value.items:
+        for item in items:
             # Item identity participates in cycles even though list entries do
             # not carry the standalone item type wrapper.
             identity = id(item)
@@ -456,12 +502,11 @@ class _Writer:
             self.active.add(identity)
             try:
                 self.emit(',\n{' + _LIST_ENTRY_ID + ',\n')
-                self.value_list_item(item, depth + 1)
+                write_item(item, depth + 1)
                 self.emit('\n}')
             finally:
                 self.active.remove(identity)
         self.emit('\n}' if count else '}')
-        self.emit(',\n{"Pattern"},0,' + str(value._next_id - 1) + '}')
 
     def value_list_item(self, item, depth):
         if (type(item.presentation) is not str or type(item.check) is not bool
@@ -473,10 +518,13 @@ class _Writer:
             owner = item._owner_ref()
             identifier = (item._id if not item._detached and owner is not None
                           and owner._by_id.get(item._id) is item else -1)
+        self.list_item_fields(item.presentation, item.check, item.value, identifier, depth)
+
+    def list_item_fields(self, presentation, check, value, identifier, depth):
         self.emit('{')
-        self.string(item.presentation)
-        self.emit(',' + ('1' if item.check else '0') + ',\n')
-        self.value(item.value, depth + 1)
+        self.string(presentation)
+        self.emit(',' + ('1' if check else '0') + ',\n')
+        self.value(value, depth + 1)
         self.emit(',\n' + _LIST_PICTURE + ',' + str(identifier) + ',0,""}')
 
     def table(self, table, depth):

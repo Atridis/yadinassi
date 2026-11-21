@@ -284,8 +284,8 @@ class ServicesBoundary:
                 try:
                     if value.function is not _DIRECT_VALUE_TO_STRING_ABI:
                         raise BoundaryViolation('serialization implementation changed during argument evaluation')
-                    # Preserve captured service behavior outside the new pair slice.
-                    if type(argument) is _CanonicalMapEntry:
+                    # Only native representations with a finite captured codec.
+                    if type(argument) is _CanonicalMapEntry or type(argument) is PlainValueList:
                         return _direct_value_to_string_internal(argument)
                     return _DIRECT_VALUE_TO_STRING_ABI(argument)
                 except PermissionError as error:raise BoundaryViolation(str(error)) from error
