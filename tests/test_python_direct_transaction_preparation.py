@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch
 from contextvars import copy_context
 from contextlib import contextmanager
+from yadinassi import BSLRuntimeError
 from yadinassi.db import database_transactions as tx
 from yadinassi.db.catalog.catalog_backend import BackendError
 from yadinassi.db.catalog.catalog_object_preparation import CatalogWriteRefused
@@ -135,15 +136,21 @@ class DirectTransactionPreparationTests(unittest.TestCase):
     def test_uncertain_commit_does_not_rerun_handler(self):
         original=prep._prepare_catalog_object
         for fault in ('before','after'):
+            card=self.card._manager.create_item()
+            card.set_member('Наименование','  Кабель  ')
+            card.set_member('ВидНоменклатуры',self.kind.get_member('Ссылка'))
+            card.get_member('Склады').add().set_member('Склад',self.warehouse.get_member('Ссылка'))
             with patch.object(prep,'_prepare_catalog_object',wraps=original) as handler:
-                with self.assertRaises(BackendError):
+                with self.assertRaisesRegex(BackendError,'^uncertain_commit$'):
                     with self.activation():
-                        tx.begin(self.db.backend);self.card.write()
+                        tx.begin(self.db.backend);card.write()
                         view=tx.current(self.db.backend).unit._view
                         view._connection=FaultConnection(view._connection,commit_fault=fault)
                         tx.commit(self.db.backend)
                 self.assertEqual(handler.call_count,1)
-            self.clean();self.assertEqual(self.card.is_new(),fault=='before')
+            self.clean();self.assertTrue(card.is_new())
+            self.assertIsNotNone(card._pending_write)
+            self.assertEqual(len(card._manager.select()._rows),int(fault=='after'))
     def test_rebinding_pinned_owner_parts_fails_before_stage(self):
         original=prep._prepare_catalog_object
         for mode in ('manager','unit','metadata','connection'):
@@ -230,25 +237,29 @@ class DirectTransactionPreparationTests(unittest.TestCase):
         self.clean();self.assertTrue(self.card.is_new())
         self.vm.execute('BeginTransaction();P.Write();CommitTransaction();R=P.Ref.GetObject().Description;')
         self.assertEqual(self.vm.variables['r'],'Кабель');self.clean()
-    def test_later_root_resolution_retains_frozen_draft_without_handler(self):
+    def test_later_root_only_rereads_database_without_handler(self):
         original=prep._prepare_catalog_object;backend=self.db.backend
         self.vm.variables['p']=self.card
         def inject():
             view=tx.current(backend).unit._view
             view._connection=FaultConnection(view._connection,commit_fault='after')
         self.vm.register_function('Inject',inject)
-        with patch.object(prep,'_prepare_catalog_object',wraps=original) as handler:
-            with patch.object(backend,'resolve_unit_of_work',side_effect=BackendError('uncertain_commit')):
-                with self.assertRaises(Exception):
-                    self.vm.execute('BeginTransaction();P.Write();Inject();CommitTransaction();')
+        with patch.object(prep,'_prepare_catalog_object',wraps=original) as handler, \
+             patch.object(backend,'resolve_unit_of_work',
+                          side_effect=AssertionError('durable lookup')) as resolve:
+            with self.assertRaises((BackendError, BSLRuntimeError)):
+                self.vm.execute('BeginTransaction();P.Write();Inject();CommitTransaction();')
             self.assertEqual(handler.call_count,1)
-        owner=tx._registered(backend)
-        self.assertEqual(owner.unit.requests[0].draft.description,'Кабель')
+            resolve.assert_not_called()
+        self.clean()
+        self.assertEqual(self.card._pending_write[0].description,'Кабель')
         with self.assertRaises(BackendError):self.card.set_member('Description','different')
         with patch.object(prep,'_prepare_catalog_object',side_effect=AssertionError('handler replay')):
-            self.vm.execute('CommitTransaction();')
-        self.clean();self.assertFalse(self.card.is_new())
-        ref=self.card.get_member('Ref');self.assertEqual(ref.get_object(ref).get_member('Description'),'Кабель')
+            with self.assertRaises(BSLRuntimeError):
+                self.vm.execute('CommitTransaction();')
+            ref=self.card._manager._ref(self.card._key.record_id)
+            self.assertEqual(ref.get_object(ref).get_member('Description'),'Кабель')
+        self.clean();self.assertTrue(self.card.is_new())
     def test_ingress_copied_context_and_foreign_thread_preserve_original_journal(self):
         from threading import Thread
         backend=self.db.backend

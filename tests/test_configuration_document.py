@@ -82,23 +82,41 @@ class ConfigurationDocumentTests(unittest.TestCase):
         self.assertEqual(dict(result.image.values)['Number'], '000000001')
         self.assertEqual(len(result.image.sections[0][1]), 2)
 
-    def test_uncertain_commit_resolves_original_header_and_lines(self):
+    def test_uncertain_commit_cannot_replay_and_can_reopen_fresh(self):
         backend = self.context.backend
         original = backend.begin_document_write
         class LostReply:
             def __init__(self, tx): self.tx = tx
             def __getattr__(self, name): return getattr(self.tx, name)
-            def commit(self): self.tx.commit(); raise OSError('lost acknowledgement')
-        with patch.object(backend, 'begin_document_write', side_effect=lambda op: LostReply(original(op))):
+            def _confirm_commit(self): self.tx._confirm_commit(); raise OSError('lost acknowledgement')
+        with patch.object(backend, 'begin_document_write',
+                          side_effect=lambda op, **kwargs: LostReply(original(op, **kwargs))):
             uncertain = self.owned.save(self.image())
         self.assertEqual(uncertain.state, 'uncertain')
-        with self.assertRaises(BackendError): self.owned.require_discardable()
-        with patch.object(backend, 'begin_document_write') as begin:
+        self.owned.require_discardable()
+        with patch.object(backend, 'begin_document_write') as begin, \
+             patch.object(backend, 'resolve_document_write', create=True) as resolve:
             result = self.owned.save(self.image(number='wrong', flags=()))
             begin.assert_not_called()
+            resolve.assert_not_called()
+        self.assertEqual(result, uncertain)
+        reopened = DocumentObjectSession(self.context, self.schema, self.files,
+                                         self.owned.object._key)
+        self.assertEqual(dict(reopened.image().values)['Number'], '000000001')
+        self.assertEqual(len(reopened.image().sections[0][1]), 2)
+
+    def test_confirmed_commit_with_cleanup_error_refreshes_without_new_write(self):
+        from yadinassi.db.sqlite.sqlite_documents import DocumentView
+        close = DocumentView.close
+        def fail_closed(view):
+            close(view)
+            if view._view._committed:
+                raise BackendError('storage_error')
+        with patch.object(DocumentView, 'close', fail_closed):
+            result = self.owned.save(self.image())
         self.assertEqual(result.state, 'saved')
         self.assertEqual(dict(result.image.values)['Number'], '000000001')
-        self.assertEqual(len(result.image.sections[0][1]), 2)
+        self.assertEqual(len(result.listing), 1)
 
     def test_source_mismatch_does_not_activate_document_editor(self):
         changed = dict(self.files); changed['Configuration.xml'] += b'\n'

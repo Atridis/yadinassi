@@ -14,11 +14,11 @@
     "../form/src/app.mjs": "e6f3366ccb0b6700acf18d35300e3bc1d73ce21764067ee360cf1e25a025ae96",
     "src/reports.mjs": "f0b38c4a24f0f5c05f2760c922fb585edd6751f588642566ccd3ff50b6b187ed",
     "src/inputs.mjs": "148477775055311dd8176ad4a28d5a38acd56fa4d9bac0230328111f8bad8086",
-    "src/client.mjs": "1366f378057e48fd71d6d99c0ba29d831d51480841cafb1daeac74c68253ed07",
-    "src/app.mjs": "cc427022d3285631acf3ec20e56f9d6ebd8eb0defdca906d597afb5e0a34c254"
+    "src/client.mjs": "8106a1c50641de9a6cab113891b1110d5107494f40499e278ccf7bcede0c727f",
+    "src/app.mjs": "c52dfa8d3584c00652ab30b1e334d7fc9b9e6f3a4c5924e61a4e4fab4eee5d12"
   },
   "outputs": {
-    "app.js": "ea1fda8bc9f76273f37aad41d8257e120db4e197feff263b2689ba9e62ded160",
+    "app.js": "1137c8e7457f20dec481862e700cc829c3f19b546370bb365c20848267766e89",
     "index.html": "80e9bb6ea04266d416de30ed9c141ebe1a2576b5f39e0a4bcb5935593f07c79d",
     "style.css": "867369e89d0e736db8175a1f2e5886150bf9bd18c772aa2467e14c9497397aaa",
     "LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2"

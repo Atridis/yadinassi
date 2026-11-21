@@ -40,11 +40,9 @@ class Format16TransactionBeginProofTests(unittest.TestCase):
                     self.backend._read_handle.connection.set_trace_callback(None)
                 self.assertEqual(sum('FROM database_info' in sql for sql in trace), expected)
                 probes = [sql for sql in trace if '_receipt WHERE operation_id=' in sql]
-                self.assertEqual(len(probes), int(writer))
+                self.assertFalse(probes, probes)
                 if writer:
                     self.assertIn('BEGIN IMMEDIATE', trace)
-                    for table in ('unit_of_work_receipt', 'commit_receipt', 'document_commit_receipt'):
-                        self.assertIn('FROM ' + table + ' WHERE operation_id=', probes[0])
 
     def test_external_identity_edit_invalidates_read_proof_and_denies_write(self):
         for field, changed, original, error in (
@@ -73,24 +71,17 @@ class Format16TransactionBeginProofTests(unittest.TestCase):
         self.assertIsNone(self.backend._active)
         with closing(self.backend.begin_read()): pass
 
-    def test_each_external_receipt_namespace_denies_repeated_operation(self):
+    def test_catalog_transaction_does_not_consult_old_receipts(self):
         for table in ('unit_of_work_receipt', 'commit_receipt', 'document_commit_receipt'):
             with self.subTest(table=table):
                 operation = uuid4()
-                # First observe absence. An externally committed receipt for
-                # the same ID must be seen by the next writer acquisition.
-                with closing(self.backend.begin_write(operation)): pass
                 tail = (str(uuid4()), str(uuid4()), 1, '1') if table == 'document_commit_receipt' else ('[]',)
                 args = (str(operation), '0' * 64, *tail)
                 marks = ','.join('?' for _ in args)
                 self.mutate(f'INSERT INTO {table} VALUES({marks})', args)
-                for begin in (self.backend.begin_write, self.backend.begin_document_write,
-                              self.backend.begin_unit_of_work):
-                    with self.assertRaisesRegex(BackendError, 'conflict'):
-                        begin(operation)
-                    self.assertIsNone(self.backend._active)
+                with closing(self.backend.begin_write(operation)) as writer:
+                    self.assertEqual(writer.commit(), ())
+                self.assertIsNone(self.backend._active)
                 with closing(sqlite3.connect(self.path)) as peer:
                     self.assertEqual(peer.execute(f'SELECT * FROM {table} WHERE operation_id=?',
                                                  (str(operation),)).fetchone(), args)
-                self.mutate(f'DELETE FROM {table} WHERE operation_id=?', (str(operation),))
-                with closing(self.backend.begin_write(operation)): pass

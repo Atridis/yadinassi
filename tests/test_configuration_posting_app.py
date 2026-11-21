@@ -1,4 +1,4 @@
-"""Explicit posting host application, typed replicas and receipt-only recovery."""
+"""Explicit posting host application, typed replicas and no write replay."""
 from pathlib import Path
 import tempfile
 import unittest
@@ -95,33 +95,51 @@ class PostingApplicationTests(unittest.TestCase):
         with patch.object(owned, '_refresh', side_effect=ValueError('projection fault')):
             state = self.event(sid, control='PostButton')['state']['posting'][0]
         self.assertIsNone(state['posted'])
-        response = self.rpc('recoverPosting',session=sid,receipt=state['receipt'])
+        response = self.rpc('refreshPosting',session=sid)
         self.assertTrue(response['state']['posting'][0]['posted'])
         item = client.form.items._values['noteinput']
         self.assertEqual((item.visible,item.enabled,item.read_only),(False,False,True))
 
-    def test_receipt_allocation_failure_does_not_lock_form(self):
+    def test_operation_id_allocation_failure_does_not_lock_form(self):
         sid = self.open(); owned = self.broker.objects[sid]
-        for function in ('uuid4','token_hex'):
-            with patch('yadinassi.configuration.configuration_posting_document.'+function,side_effect=MemoryError):
-                with self.assertRaises(MemoryError): owned.execute('Post',owned.image())
-            self.assertFalse(owned._saving); self.assertFalse(owned.pending_commit)
-            self.assertIsNone(owned.receipt_token)
+        with patch('yadinassi.configuration.configuration_posting_document.uuid4', side_effect=MemoryError):
+            with self.assertRaises(MemoryError): owned.execute('Post', owned.image())
+        self.assertFalse(owned._saving); self.assertFalse(owned.pending_commit)
         self.assertEqual(self.read(),((),[]))
 
-    def test_retained_cleanup_recovery_does_not_dispatch_or_replay(self):
-        from yadinassi.db.sqlite.sqlite_transactions import UnitOfWork
-        sid = self.open(); owned = self.broker.objects[sid]
-        with patch('yadinassi.db.document.document_posting.PostingRuntime.write',side_effect=ValueError('handler fault')), \
-                patch.object(UnitOfWork,'rollback',side_effect=RuntimeError('cleanup fault')):
-            state = self.event(sid,control='PostButton')['state']['posting'][0]
-        self.assertTrue(owned.pending_commit); self.assertIsNone(state['posted'])
-        server = self.broker.sessions[sid][0]
-        with patch.object(server,'exchange',side_effect=AssertionError('no BSL dispatch')), \
-                patch('yadinassi.db.document.document_posting.PostingRuntime.write',side_effect=AssertionError('no replay')):
-            response = self.rpc('recoverPosting',session=sid,receipt=state['receipt'])
-        self.assertEqual(response['state']['posting'][0]['state'],'rejected')
-        self.assertFalse(owned.pending_commit); self.assertEqual(self.read(),((),[]))
+    def test_unknown_discard_does_not_dispatch_or_replay_and_reopen_is_only_a_read(self):
+        from types import SimpleNamespace
+        sid = self.open(); owned = self.broker.objects[sid]; server = self.broker.sessions[sid][0]
+        execute = owned.operations.execute
+        def lose_outcome(*args, **kwargs):
+            self.assertEqual(execute(*args, **kwargs).state, 'committed')
+            return SimpleNamespace(state='uncertain', accepted=False)
+        with patch.object(owned.operations, 'execute', side_effect=lose_outcome):
+            state = self.event(sid, control='PostButton')['state']['posting'][0]
+        self.assertEqual((state['state'], state['error'], state['posted']), ('uncertain', 'outcome_unknown', None))
+        self.assertTrue(owned.pending_commit)
+        self.assertNotIn('receipt', state)
+        saved_revision = self.read()[0][0].revision
+        with patch.object(server, 'exchange', side_effect=AssertionError('no BSL dispatch')), \
+             patch.object(owned.operations, 'execute', side_effect=AssertionError('no replay')), \
+             patch.object(owned, '_refresh', side_effect=AssertionError('no attribution from record read')):
+            with self.assertRaisesRegex(ValueError, 'known commit'):
+                self.rpc('refreshPosting', session=sid)
+            controller = self.app.sessions[sid][0]
+            blocked = self.rpc('form', session=sid, request={
+                'jsonrpc':'2.0', 'id':1, 'method':'form.event',
+                'params':{'event':'command','revision':controller.session.revision,'control':'PostButton'}})
+            self.assertEqual(blocked['error'], 'save_recovery_required')
+            discarded = self.rpc('discardPosting', session=sid)
+        self.assertIsNone(discarded['form'])
+        self.assertEqual(discarded['state']['posting'], [])
+        self.assertNotIn(sid, self.broker.sessions)
+        self.assertEqual(self.read()[0][0].revision, saved_revision)
+        record = self.rpc('catalog', entry=1)['state']['catalog']['rows'][0]['key']
+        other = self.open('after-discard', record)
+        self.assertTrue(self.broker.objects[other].object.get_member('Posted'))
+        self.assertEqual(self.broker.objects[other].save_state, 'unchanged')
+        self.assertEqual(self.read()[0][0].revision, saved_revision)
 
     def test_posted_bsl_assignment_is_denied_on_both_sides(self):
         sid = self.open(); slot = dict(self.broker.definitions[1].object_fields)['Posted']
@@ -201,27 +219,47 @@ class PostingApplicationTests(unittest.TestCase):
         self.assertEqual(state['state'],'committed');self.assertTrue(owned.pending_refresh)
         self.assertTrue(self.read()[0][0].posted)
         with patch.object(owned.operations.backend,'begin_unit_of_work',side_effect=AssertionError('no replay')):
-            recovered = self.rpc('recoverPosting',session=sid,receipt=state['receipt'])
+            recovered = self.rpc('refreshPosting',session=sid)
         self.assertEqual(recovered['state']['posting'][0]['state'],'saved')
         self.assertFalse(owned.pending_refresh)
 
-    def test_receipt_is_opaque_and_never_exposes_uuid(self):
-        sid = self.open();result = self.event(sid,control='WriteButton')
+    def test_known_commit_uses_normal_read_even_without_a_receipt_acceptance_flag(self):
+        from types import SimpleNamespace
+        sid = self.open(); owned = self.broker.objects[sid]
+        execute = owned.operations.execute
+        def known_commit(*args, **kwargs):
+            self.assertEqual(execute(*args, **kwargs).state, 'committed')
+            return SimpleNamespace(state='committed', accepted=False)
+        with patch.object(owned.operations, 'execute', side_effect=known_commit):
+            state = self.event(sid, control='PostButton')['state']['posting'][0]
+        self.assertEqual(state, {'session':sid, 'state':'saved', 'error':None, 'posted':True})
+        self.assertFalse(owned.pending_commit)
+        self.assertFalse(owned.pending_refresh)
+
+    def test_result_never_exposes_business_operation_id_or_key(self):
+        from uuid import uuid4
+        sid = self.open()
+        identifier = uuid4()
+        with patch('yadinassi.configuration.configuration_posting_document.uuid4', return_value=identifier):
+            result = self.event(sid, control='WriteButton')
         owned = self.broker.objects[sid]
         text = repr(result)
-        self.assertNotIn(str(owned._operation_id),text)
-        self.assertNotIn(str(owned.object._key.record_id),text)
-        self.assertNotIn(str(owned.object._key.database_id),text)
-        self.assertEqual(len(result['state']['posting'][0]['receipt']),32)
+        self.assertNotIn(str(identifier), text)
+        self.assertNotIn(str(owned.object._key.record_id), text)
+        self.assertNotIn(str(owned.object._key.database_id), text)
+        self.assertNotIn('receipt', result['state']['posting'][0])
 
-    def test_receipt_cannot_cross_sibling_sessions(self):
-        one,two = self.open(),self.open('two')
-        state = self.event(one,control='WriteButton')['state']['posting'][0]
-        with self.assertRaises(ValueError):self.rpc('recoverPosting',session=two,receipt=state['receipt'])
-
-    def test_unknown_receipt_cannot_request_restart_recovery(self):
-        sid = self.open()
-        with self.assertRaises(ValueError):self.rpc('recoverPosting',session=sid,receipt='0'*32)
+    def test_posting_recovery_actions_require_matching_state_and_owner(self):
+        one, two = self.open(), self.open('two')
+        owned = self.broker.objects[one]
+        with patch.object(owned, '_refresh', side_effect=ValueError('projection fault')):
+            self.event(one, control='WriteButton')
+        with self.assertRaisesRegex(ValueError, 'known commit'):
+            self.rpc('refreshPosting', session=two)
+        with self.assertRaisesRegex(ValueError, 'unknown posting draft'):
+            self.rpc('discardPosting', session=one)
+        self.assertIn(one, self.app.sessions)
+        self.rpc('refreshPosting', session=one)
 
     def test_posted_control_is_authoritative_readonly(self):
         sid = self.open()

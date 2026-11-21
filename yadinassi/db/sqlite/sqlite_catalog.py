@@ -42,8 +42,7 @@ from yadinassi.db.catalog.catalog_backend import (BackendError, Capabilities, Ca
                               FieldSchema, Revision, CatalogComparison, CatalogPredicate,
                               CatalogOrder, CatalogScanRequest, CatalogPage, CatalogScalarRow,
                               CatalogValueRow, CatalogValuePage, TabularSectionSchema,
-                              TabularRow, TabularSectionRows, CatalogSectionRecord, CatalogSectionPage, CatalogWriteOutcome,
-                              CatalogWriteRequest)
+                              TabularRow, TabularSectionRows, CatalogSectionRecord, CatalogSectionPage, CatalogWriteOutcome)
 
 _APPLICATION_ID = 0x59414449
 _MAX_ROWS = 10000
@@ -192,6 +191,16 @@ def _boundary(function):
                 raise BackendError('integrity') from None
             raise
     return call
+
+
+def _commit_without_receipt(connection):
+    """Return only after SQLite confirmed COMMIT; cleanup is a separate step."""
+    try:
+        connection.execute('COMMIT')
+    except BaseException as error:
+        if _interruption(error):
+            raise
+        raise BackendError('uncertain_commit') from None
 
 
 def _revision_number(token):
@@ -390,29 +399,12 @@ def _all_fields(schema):
 def _intent(draft, revision, values, sections, *, hierarchy=False):
     result = [str(draft.key.catalog_id), str(draft.key.record_id), draft.code,
               draft.description, draft.deletion_mark, values, revision]
-    # Legacy drafts MUST retain their exact historical receipt hash. Explicit
-    # replacement is a distinct intent, including an explicitly empty tuple.
+    # Distinguish an explicit replacement, including an explicitly empty tuple,
+    # when accounting for the complete request to a unit of work.
     if sections is not None: result.append(['tabular_sections_v1', sections])
     if draft.auto_number: result.append(['auto_number_v1', 'decimal_v1'])
     if hierarchy: result.append(['hierarchy_v1',None if draft.parent is None else str(draft.parent.record_id),draft.is_folder])
     return result
-
-
-def _receipt_digest(intents, outcomes=None):
-    # Stream canonical intents: resolving a bounded batch must not retain a
-    # second copy of every scalar/section payload. Preserve historical hashes.
-    digest = hashlib.sha256()
-    digest.update(b'[' if outcomes is None else b'["write_outcomes_v1",[')
-    for index, intent in enumerate(intents):
-        if index: digest.update(b',')
-        digest.update(_json(intent).encode('utf-8'))
-    digest.update(b']')
-    if outcomes is not None:
-        entries = [[str(o.revision.catalog_id),str(o.revision.record_id),o.revision.token,o.code] for o in outcomes]
-        digest.update(b',')
-        digest.update(_json(entries).encode('utf-8'))
-        digest.update(b']')
-    return digest.hexdigest()
 
 
 def _encode(value, field, database_id, *, enum_domain=None):
@@ -1220,17 +1212,6 @@ class SQLiteCatalogBackend:
         try: return self._demo_form_catalog_ids
         finally: view.close()
 
-    def _demo_receipt_identity(self, connection):
-        # Historical receipt acceptance does not execute source or authorize a
-        # new write. Its original DB/configuration/generation and schema remain
-        # mandatory even if archived source bytes were subsequently damaged.
-        if connection.execute('PRAGMA application_id').fetchone()[0] != _APPLICATION_ID: raise BackendError('schema_changed')
-        if connection.execute("SELECT 1 FROM database_info WHERE typeof(database_uuid)!='text' OR length(CAST(database_uuid AS BLOB))!=36 OR typeof(configuration_uuid)!='text' OR length(CAST(configuration_uuid AS BLOB))!=36 OR typeof(generation)!='integer' OR typeof(name)!='text' OR length(CAST(name AS BLOB))>512 OR typeof(activation_issues)!='text' OR length(CAST(activation_issues AS BLOB))>1024 LIMIT 1").fetchone(): raise BackendError('integrity')
-        rows = connection.execute('SELECT database_uuid,configuration_uuid,generation,name,activated,activation_issues FROM database_info LIMIT 2').fetchall()
-        if (len(rows) != 1 or rows[0] != (str(self.database_id), str(self._demo_configuration_id),
-                self.configuration_generation, self._demo_configuration_name, 1, _json(list(self.activation_issues)))):
-            raise BackendError('schema_changed')
-
     def _demo_source_snapshot(self, connection, *, admitting=False):
         from yadinassi.configuration.configuration_xml import _demo_configuration
         if self.storage_version != 6: raise BackendError('unsupported')
@@ -1415,7 +1396,6 @@ class SQLiteCatalogBackend:
                             catalog_tabular_sections=active and (self.storage_version in (3, 4, 7, 8, 9, 10)
                                 or (self.storage_version == 6 and self._demo_profile() in (DEMO_PRODUCTS_PROFILE, CATALOG_FORMS_PROFILE, APPLICATION_PROFILE))),
                             catalog_write_outcomes=active and self.storage_version in (4, 6, 7, 8, 9, 10),
-                            catalog_batch_receipts=active,
                             document_read=active and self.storage_version in (7, 8, 9, 10),
                             document_create=active and self.storage_version in (7, 8, 9, 10) and not self.read_only,
                             document_update=active and self.storage_version in (7, 8, 9, 10) and not self.read_only,
@@ -1475,9 +1455,7 @@ class SQLiteCatalogBackend:
 
     @_boundary
     def resolve_unit_of_work(self, operation_id, requests):
-        from .sqlite_transactions import resolve
-        if self.format_version not in (11, 12, 13, 14, 15, 16): raise BackendError('unsupported')
-        return resolve(self, operation_id, requests)
+        raise BackendError('unsupported')
 
     @_boundary
     def begin_query_read(self, *, query_language=False):
@@ -1542,14 +1520,7 @@ class SQLiteCatalogBackend:
 
     @_boundary
     def resolve_document_write(self, operation_id, draft, expected_revision=None):
-        if self.storage_version not in (7, 8, 9, 10): raise BackendError('unsupported')
-        raw = self._begin(None)
-        try:
-            from .sqlite_configuration_history import bind
-            bind(raw, 'document', operation_id)
-            view = DocumentView(raw)
-            return view.resolve(operation_id, draft, expected_revision)
-        finally: raw.close()
+        raise BackendError('unsupported')
 
     @_boundary
     def begin_register_read(self):
@@ -1576,21 +1547,11 @@ class SQLiteCatalogBackend:
 
     @_boundary
     def resolve_register_write(self, operation_id, draft, expected=None, deleted=False):
-        raw = self._begin(None)
-        try:
-            from .sqlite_configuration_history import bind
-            bind(raw, 'register', operation_id)
-            return RegisterView(raw).resolve(operation_id,draft,expected,deleted)
-        finally: raw.close()
+        raise BackendError('unsupported')
 
     @_boundary
     def resolve_register_set(self, operation_id, draft):
-        raw = self._begin(None)
-        try:
-            from .sqlite_configuration_history import bind
-            bind(raw, 'register', operation_id)
-            return RegisterView(raw).resolve_set(operation_id, draft)
-        finally: raw.close()
+        raise BackendError('unsupported')
 
     def _check_catalog_manifest(self, connection):
         # Compare the same exact persisted triples in one bounded statement.
@@ -1610,7 +1571,7 @@ class SQLiteCatalogBackend:
             rows.close()
         if remaining: raise BackendError('schema_changed')
 
-    def _validate_transaction_admission(self, connection, *, _receipt_only=False):
+    def _validate_transaction_admission(self, connection):
         if self.format_version != 16 and self._read_admission_cache_allowed():
             identity = connection.execute(
                 'SELECT database_uuid,generation,activated,activation_issues FROM database_info WHERE singleton=1').fetchone()
@@ -1659,8 +1620,7 @@ class SQLiteCatalogBackend:
         elif _source_profile_for_issues(self.activation_issues) in (BUSINESS_PROFILE, REFERENCE_PROFILE):
             self._business_source_snapshot(connection)
         if self.storage_version == 6:
-            if _receipt_only: self._demo_receipt_identity(connection)
-            else: self._demo_source_snapshot(connection)
+            self._demo_source_snapshot(connection)
         if self.format_version == 13:
             from .sqlite_posting_profile import admit
             if admit(connection, self.database_id, self._document_schemas,
@@ -1716,8 +1676,7 @@ class SQLiteCatalogBackend:
         return self._begin(operation_id, _catalog_data=True)
 
     @lifecycle
-    def _begin(self, operation_id, *, _receipt_only=False, _catalog_data=False):
-        if _receipt_only and operation_id is not None: raise BackendError('unsupported')
+    def _begin(self, operation_id, *, _catalog_data=False):
         if self._closed: raise BackendError('closed')
         if self.storage_version == 5 or not self.activated: raise BackendError('unsupported')
         if self._active is not None: raise BackendError('busy')
@@ -1763,7 +1722,7 @@ class SQLiteCatalogBackend:
                     if handle is not None and connection.execute('PRAGMA journal_mode').fetchone() != ('delete',):
                         raise BackendError('unsupported')
                 elif descriptor is None:
-                    self._validate_transaction_admission(connection, _receipt_only=_receipt_only)
+                    self._validate_transaction_admission(connection)
                     if handle is not None and self._read_admission_cache_allowed():
                         current = self._read_admission_descriptor()
                         descriptor = self._read_admission_baseline
@@ -1855,126 +1814,27 @@ class SQLiteCatalogBackend:
             return result
         finally: connection.close()
 
+    # Persistent receipts are no longer consulted by this backend. These entry
+    # points deliberately reject old automatic-recovery calls without SQL.
     @_boundary
     def resolve_write(self, operation_id, draft, expected_revision=None):
-        if self.storage_version == 5: raise BackendError('unsupported')
-        result = self._resolve_write_result(operation_id, draft, expected_revision)
-        return result.revision if type(result) is CatalogWriteOutcome else result
+        raise BackendError('unsupported')
 
     @_boundary
     def resolve_write_outcome(self, operation_id, draft, expected_revision=None):
-        if self.storage_version not in (4, 6, 7, 8, 9, 10): raise BackendError('unsupported')
-        return self._resolve_write_result(operation_id, draft, expected_revision)
-
-    def _resolve_write_result(self, operation_id, draft, expected_revision):
-        results = self._resolve_write_results(operation_id, (CatalogWriteRequest(draft, expected_revision),))
-        return None if results is None else results[0]
+        raise BackendError('unsupported')
 
     @_boundary
     def resolve_writes(self, operation_id, requests):
-        """Read the exact ordered transaction receipt; never replay writes."""
-        if self.storage_version == 5: raise BackendError('unsupported')
-        results = self._resolve_write_results(operation_id, requests)
-        return None if results is None else tuple(
-            result.revision if type(result) is CatalogWriteOutcome else result for result in results)
+        raise BackendError('unsupported')
 
     @_boundary
     def resolve_write_outcomes(self, operation_id, requests):
-        if self.storage_version not in (4, 6, 7, 8, 9, 10): raise BackendError('unsupported')
-        return self._resolve_write_results(operation_id, requests)
-
-    def _resolve_write_results(self, operation_id, requests):
-        if (type(requests) is not tuple or len(requests) > _MAX_ROWS
-                or any(type(request) is not CatalogWriteRequest for request in requests)):
-            raise BackendError('invalid_input')
-        receipt = self._committed_results(operation_id)
-        if receipt is None: return None
-        if len(requests) != len(receipt[1]): raise BackendError('conflict')
-        view = self._begin(None, _receipt_only=self.storage_version == 6)
-        try:
-            from .sqlite_configuration_history import bind
-            bind(view, 'catalog', operation_id)
-            invalid_outcome = False
-            def intents():
-                nonlocal invalid_outcome
-                for request, result in zip(requests, receipt[1]):
-                    draft, values, schema = view._draft(request.draft)
-                    sections = view._draft_sections(draft, schema)
-                    if request.expected_revision is None:
-                        revision = 1
-                    else:
-                        if draft.auto_number: raise BackendError('invalid_input')
-                        r = request.expected_revision
-                        if type(r) is not Revision or (r.database_id,r.configuration_generation,r.catalog_id,r.record_id) != (self.database_id,view.configuration_generation,draft.key.catalog_id,draft.key.record_id) or type(r.token) is not str:
-                            raise BackendError('conflict')
-                        revision = _revision_number(r.token) + 1
-                    expected = Revision(self.database_id, view.configuration_generation,
-                        draft.key.catalog_id, draft.key.record_id, str(revision))
-                    actual = result.revision if type(result) is CatalogWriteOutcome else result
-                    invalid_outcome |= actual != expected
-                    if type(result) is CatalogWriteOutcome:
-                        if not draft.auto_number: invalid_outcome |= result.code != draft.code
-                        else:
-                            invalid_outcome |= (len(result.code) != schema.code_length or not result.code.isascii()
-                                or not result.code.isdecimal() or int(result.code) == 0)
-                    yield _intent(draft, revision, values, sections, hierarchy=schema.hierarchy != 'none')
-
-            digest = _receipt_digest(intents(), receipt[1] if self.storage_version in (4, 6, 7, 8, 9, 10) else None)
-            if digest != receipt[0]: raise BackendError('conflict')
-            if invalid_outcome: raise BackendError('integrity')
-            return receipt[1]
-        finally: view.close()
+        raise BackendError('unsupported')
 
     @_boundary
     def committed_operation(self, operation_id):
-        if self.storage_version == 5: raise BackendError('unsupported')
-        receipt = self._committed_results(operation_id)
-        if receipt is None: return None
-        return receipt[0], tuple(r.revision if type(r) is CatalogWriteOutcome else r for r in receipt[1])
-
-    def _committed_results(self, operation_id):
-        if self.storage_version == 5: raise BackendError('unsupported')
-        _uuid(operation_id)
-        if self._closed: raise BackendError('closed')
-        view = self._begin(None, _receipt_only=True) if self.storage_version == 6 else None
-        connection = view._connection if view is not None else self._connect()
-        try:
-            if view is None: connection.execute('BEGIN')
-            if connection.execute("SELECT 1 FROM commit_receipt WHERE operation_id=? AND (typeof(request_hash)!='text' OR length(request_hash)!=64 OR typeof(revisions_json)!='text' OR length(revisions_json)>?)", (str(operation_id),_MAX_ROW_BYTES)).fetchone():
-                raise BackendError('integrity')
-            row = connection.execute('SELECT request_hash,revisions_json FROM commit_receipt WHERE operation_id=?', (str(operation_id),)).fetchone()
-            if row is None: return None
-            if (type(row[0]) is not str or len(row[0]) != 64 or any(c not in '0123456789abcdef' for c in row[0])
-                    or type(row[1]) is not str or len(row[1]) > _MAX_ROW_BYTES): raise BackendError('integrity')
-            entries = json.loads(row[1])
-            if type(entries) is not list or len(entries) > _MAX_ROWS: raise BackendError('integrity')
-            epoch = self.configuration_generation
-            if self.format_version == 12:
-                from .sqlite_configuration_history import generation
-                epoch = generation(connection, 'catalog', operation_id, epoch)
-            results = []
-            for entry in entries:
-                if type(entry) is not list or len(entry) != (4 if self.storage_version in (4, 6, 7, 8, 9, 10) else 3) or any(type(v) is not str for v in entry):
-                    raise BackendError('integrity')
-                c, r, token = entry[:3]
-                if len(c) != 36 or len(r) != 36: raise BackendError('integrity')
-                catalog, record = UUID(c), UUID(r)
-                if not catalog.int or not record.int or str(catalog) != c or str(record) != r:
-                    raise BackendError('integrity')
-                if (not 1 <= len(token) <= 19 or not token.isascii() or not token.isdecimal()
-                        or token.startswith('0') or not 1 <= int(token) < 2**63): raise BackendError('integrity')
-                revision = Revision(self.database_id,epoch,catalog,record,token)
-                if self.storage_version in (4, 6, 7, 8, 9, 10):
-                    schema = next((s for s in self._schemas if s.identity == catalog), None)
-                    if schema is None: raise BackendError('integrity')
-                    try: validate_string(entry[3], schema.code_length)
-                    except (TypeError, ValueError): raise BackendError('integrity') from None
-                    results.append(CatalogWriteOutcome(revision,entry[3]))
-                else: results.append(revision)
-            return (row[0], tuple(results))
-        finally:
-            if view is not None: view.close()
-            else: connection.close()
+        raise BackendError('unsupported')
 
     @lifecycle
     def _close_idle_read_handle(self):
@@ -2005,8 +1865,9 @@ class _View:
         self._backend, self._connection, self._operation_id = backend, connection, operation_id
         self._query_language = query_language
         self._catalog_data = catalog_data
+        self._committed = False
         self._catalog_data_schemas = None if catalog_data is None else {}
-        self._closed = False; self._poisoned = False; self._changes = []; self._intents = []
+        self._closed = False; self._poisoned = False; self._changes = []
         self._scan_cursor = None
         self._validated_sources = {}
         self._read_handle = None
@@ -2023,24 +1884,6 @@ class _View:
             row = connection.execute('SELECT database_uuid,generation FROM database_info WHERE singleton=1').fetchone()
             admitted_identity = UUID(row[0]), row[1]
         self.database_id, self.configuration_generation = admitted_identity
-        if operation_id is not None:
-            operation = str(operation_id)
-            if backend.format_version == 16:
-                # The exact format-16 DDL has already been admitted, and
-                # BEGIN IMMEDIATE protects the three namespaces up to the write.
-                # EXISTS stops at the first indexed operation ID match.
-                if connection.execute(
-                        'SELECT EXISTS(SELECT 1 FROM unit_of_work_receipt WHERE operation_id=?1 '
-                        'UNION ALL SELECT 1 FROM commit_receipt WHERE operation_id=?1 '
-                        'UNION ALL SELECT 1 FROM document_commit_receipt WHERE operation_id=?1)',
-                        (operation,)).fetchone()[0]:
-                    raise BackendError('conflict')
-            else:
-                if backend.format_version in (11, 12, 13, 14, 15) and connection.execute('SELECT 1 FROM unit_of_work_receipt WHERE operation_id=?',(operation,)).fetchone(): raise BackendError('conflict')
-                if connection.execute('SELECT 1 FROM commit_receipt WHERE operation_id=?',(operation,)).fetchone() is not None:
-                    raise BackendError('conflict')
-                if backend.storage_version in (7, 8, 9, 10) and connection.execute('SELECT 1 FROM document_commit_receipt WHERE operation_id=?', (operation,)).fetchone(): raise BackendError('conflict')
-                if backend.storage_version in (8, 9, 10) and connection.execute('SELECT 1 FROM information_register_receipt WHERE operation_id=?', (operation,)).fetchone(): raise BackendError('conflict')
         if self.database_id != backend.database_id or self.configuration_generation != backend.configuration_generation:
             raise BackendError('schema_changed')
 
@@ -2060,7 +1903,7 @@ class _View:
         return self._backend._enum_domain if data is None else data.domain
 
     def _require(self, write=False, mutate=False):
-        if self._closed or self._poisoned: raise BackendError('closed')
+        if self._closed or self._poisoned or self._committed: raise BackendError('closed')
         if write and self._operation_id is None: raise BackendError('unsupported')
         if mutate and len(self._changes) >= _MAX_ROWS: raise BackendError('unsupported')
 
@@ -2981,9 +2824,9 @@ class _View:
     @contextmanager
     def _atomic_record(self):
         # A caller may catch a failed write and still commit previous writes.
-        # SQL and its receipt bookkeeping are one atomic operation. Journal
+        # SQL and its typed outcome bookkeeping are one atomic operation. Journal
         # updates replace lists rather than mutating these saved references.
-        before = (self._changes, self._intents, self._section_write_bytes, self._section_write_rows, self._outcomes)
+        before = (self._changes, self._section_write_bytes, self._section_write_rows, self._outcomes)
         self._connection.execute('SAVEPOINT catalog_record_write')
         try:
             yield
@@ -2992,7 +2835,7 @@ class _View:
             # An interrupted/failed restoration can never leave commit enabled.
             self._poisoned = True
             hierarchy_storage.clear(self)
-            self._changes, self._intents, self._section_write_bytes, self._section_write_rows, self._outcomes = before
+            self._changes, self._section_write_bytes, self._section_write_rows, self._outcomes = before
             try:
                 self._connection.execute('ROLLBACK TO catalog_record_write')
                 self._connection.execute('RELEASE catalog_record_write')
@@ -3038,7 +2881,6 @@ class _View:
             raise BackendError('unsupported')
         with self._atomic_record():
             hierarchy_storage.prepare(self,schema,draft,creating=True)
-            intent_draft = draft
             if draft.auto_number:
                 draft = replace(draft, code=self._allocate_code(schema, table))
             try:
@@ -3051,7 +2893,7 @@ class _View:
                 raise BackendError('duplicate_identity' if self._reference_exists(draft.key) else 'duplicate_code') from None
             hierarchy_storage.store(self,schema,draft,creating=True)
             self._replace_sections(draft, schema, sections)
-            self._record_change(draft,1,values,sections,schema=schema,intent_draft=intent_draft)
+            self._record_change(draft,1,sections)
 
     @_boundary
     def update(self,draft,expected_revision):
@@ -3076,50 +2918,47 @@ class _View:
             if cursor.rowcount != 1: raise BackendError('conflict')
             hierarchy_storage.store(self,schema,draft,creating=False)
             self._replace_sections(draft, schema, sections)
-            self._record_change(draft,revision+1,values,sections,schema=schema)
+            self._record_change(draft,revision+1,sections)
 
-    def _record_change(self,draft,revision,values,sections,*,schema,intent_draft=None):
+    def _record_change(self,draft,revision,sections):
         # Prepare every potentially allocating operation before replacing state.
         # A later RELEASE failure can restore the old references without slicing
         # or copying a possibly half-appended journal under memory pressure.
         changes = [*self._changes, Revision(self.database_id,self.configuration_generation,draft.key.catalog_id,draft.key.record_id,str(revision))]
-        intents = [*self._intents, _intent(intent_draft or draft,revision,values,sections,hierarchy=schema.hierarchy != 'none')]
         outcomes = [*self._outcomes, CatalogWriteOutcome(changes[-1],draft.code)]
         size, rows = self._section_write_bytes, self._section_write_rows
         if sections is not None:
             size += len(_json(sections))
             rows += sum(len(part) for _, part in sections)
-        self._changes, self._intents, self._outcomes = changes, intents, outcomes
+        self._changes, self._outcomes = changes, outcomes
         self._section_write_bytes, self._section_write_rows = size, rows
 
     @_boundary
-    def commit_outcomes(self):
+    def commit_outcomes(self, *, _close=True):
         if self._backend.storage_version not in (4, 6, 7, 8, 9, 10): raise BackendError('unsupported')
         outcomes = tuple(self._outcomes)
-        self.commit()
+        if _close:
+            self.commit()
+        else:
+            self.commit(_close=False)
         return outcomes
 
     @_boundary
-    def commit(self):
+    def commit(self, *, _close=True):
         self._require(True)
         revisions = tuple(self._changes)
-        digest = _receipt_digest(self._intents, self._outcomes if self._backend.storage_version in (4, 6, 7, 8, 9, 10) else None)
-        entries = [[str(r.catalog_id),str(r.record_id),r.token] for r in revisions]
-        if self._backend.storage_version in (4, 6, 7, 8, 9, 10):
-            entries = [entry + [outcome.code] for entry,outcome in zip(entries,self._outcomes)]
-        encoded = _json(entries)
-        if len(encoded) > _MAX_ROW_BYTES: raise BackendError('unsupported')
         try:
-            self._connection.execute('INSERT INTO commit_receipt VALUES(?,?,?)',(str(self._operation_id),digest,encoded))
-            self._connection.execute('COMMIT')
-            self.close()
+            _commit_without_receipt(self._connection)
         except BaseException as error:
-            # Caller must resolve persistent receipt after reopening, never blindly replay.
-            try: self.close()
-            except BaseException as cleanup_error:
-                if _interruption(cleanup_error) and not _interruption(error): raise
-            if _interruption(error): raise
-            raise BackendError('uncertain_commit') from None
+            self._poisoned = True
+            if _close:
+                try: self.close()
+                except BaseException as cleanup_error:
+                    if _interruption(cleanup_error) and not _interruption(error): raise
+            raise
+        self._committed = True
+        if _close:
+            self.close()
         return revisions
 
     def rollback(self): self.close()
@@ -3172,7 +3011,7 @@ class _View:
             raise
 
 # The document port shares the same closed storage error boundary.
-for _document_method in ('_validate_query_source','documents','document_schema','read_document','read_document_values','select_documents','scan_documents','scan_document_values','find_document_number','registers','register_schema','scan_register','periodic_records','create','update','commit','resolve'):
+for _document_method in ('_validate_query_source','documents','document_schema','read_document','read_document_values','select_documents','scan_documents','scan_document_values','find_document_number','registers','register_schema','scan_register','periodic_records','create','update','commit'):
     setattr(DocumentView, _document_method, _boundary(getattr(DocumentView, _document_method)))
 
 install_boundaries(_boundary)

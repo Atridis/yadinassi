@@ -10,7 +10,7 @@ from yadinassi.temporal.dates import BSLDate, _date_from_datetime, _parts, TICKS
 from .catalog_types import BSLCatalogReference, BSLCatalogType
 from .catalog_backend import CatalogKey, CatalogDraft, CatalogSelection, CatalogScanRequest, CatalogComparison, Revision, BackendError, CatalogValuePage, CatalogValueRow, CatalogWriteOutcome
 from .catalog_sections import BSLCatalogSection, _MAX_ROWS as _MAX_SECTION_ROWS, _MAX_BUFFER_BYTES
-from .catalog_backend import CatalogCard, TabularSectionRows
+from .catalog_backend import TabularSectionRows
 from .catalog_qualifiers import normalize_field, normalize_string, validate_string
 from yadinassi.types.unique_identifiers import BSLUUID
 from yadinassi.types.values import BSLObject, HostFunction
@@ -264,7 +264,7 @@ class BSLCatalogObject(BSLObject):
         self._values=manager._defaults(manager.empty_ref()) if card is None else manager._fields(card)
         self._operation_id=uuid4()
         self._pending_write=None
-        self._pending_preparation=None
+        self._uncertain_write=False
         self._sections={}
         if card is not None and (type(card.tabular_sections) is not tuple
                 or any(type(s) is not TabularSectionRows for s in card.tabular_sections)):
@@ -288,7 +288,7 @@ class BSLCatalogObject(BSLObject):
         return tuple(section._stored_rows() for section in self._sections.values())
     def is_new(self):return self._revision is None
     def set_new_object_ref(self,ref):
-        if self._pending_write is not None:raise BackendError('uncertain_commit')
+        if self._uncertain_write or self._pending_write is not None:raise BackendError('uncertain_commit')
         if not self.is_new():raise ValueError('object already persisted')
         if type(ref) is not BSLCatalogReference or ref.value_type!=self._manager._value_type or ref.is_empty():raise TypeError('new nonempty same-catalog reference required')
         self._key=self._manager._key(ref.reference_uuid)
@@ -307,12 +307,14 @@ class BSLCatalogObject(BSLObject):
         # Keep the exact intent locked until every section has accepted it.
         for section in self._sections.values():section._dirty=False
         self._pending_write=None
-        self._pending_preparation=None
+        self._uncertain_write=False
 
-    def _accept_outcome(self,outcome):
-        if type(outcome) is not CatalogWriteOutcome or self._pending_write is None:
+    def _accept_outcome(self,outcome,*,draft=None):
+        if type(outcome) is not CatalogWriteOutcome:
             raise BackendError('uncertain_commit')
-        draft=self._pending_write[0]
+        if draft is None:
+            if self._pending_write is None:raise BackendError('uncertain_commit')
+            draft=self._pending_write[0]
         try:validate_string(outcome.code,self._manager._schema.code_length)
         except (TypeError,ValueError):raise BackendError('uncertain_commit') from None
         if draft.auto_number:
@@ -338,49 +340,31 @@ class BSLCatalogObject(BSLObject):
 
     def _write(self, *, preparation=None):
         """Shared host writer. Preparation is never an exposed BSL argument."""
+        if self._uncertain_write:
+            raise BackendError('uncertain_commit')
         m=self._manager
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+        sqlite_backend = type(m._backend) is SQLiteCatalogBackend
         from yadinassi.execution.direct.python_direct_transactions import check_current_root_if_present
         check_current_root_if_present(m._backend)
         caps=m._backend.capabilities()
         from yadinassi.db.database_transactions import current
         active = current(m._backend)
-        if active is not None and self._pending_write is not None: raise BackendError('unsupported')
+        if self._pending_write is not None:
+            raise BackendError('unsupported' if active is not None else 'uncertain_commit')
         if m._schema.tabular_sections and not caps.catalog_tabular_sections:raise BackendError('unsupported')
         if not caps.atomic_transactions or not (caps.catalog_create if self.is_new() else caps.catalog_update):raise BackendError('unsupported')
         outcomes=caps.catalog_write_outcomes
         if m._schema.numbering!='explicit' and not outcomes:raise BackendError('unsupported')
-        if self._pending_preparation is not None:
-            retained,backend=self._pending_preparation
-            if m._backend is not backend:raise BackendError('schema_changed')
-            if preparation is not None and preparation!=retained:
-                raise BackendError('uncertain_commit')
-            preparation=retained
-        elif self._pending_write is not None and preparation is not None:
-            # Never reinterpret a previously submitted ordinary write as one
-            # protected by a new source/validation contract.
-            raise BackendError('uncertain_commit')
-        selected_source=None
-        if self._pending_write is None:
-            policy = getattr(m._backend, 'catalog_write_preparation', None)
-            source = policy(m._schema.identity) if policy is not None else None
-            selected_source=source
-            if source is not None:
-                if preparation is not None and preparation[0] != source:
-                    raise BackendError('schema_changed')
-                preparation = (source, preparation[1] if preparation is not None else False)
-        retry=self._pending_write is not None
-        if self._pending_write is not None:
-            draft,expected,operation=self._pending_write
-            revision=(m._backend.resolve_write_outcome(operation,draft,expected) if outcomes
-                      else m._backend.resolve_write(operation,draft,expected))
-            if revision is not None:
-                if outcomes:self._accept_outcome(revision)
-                else:self._accept_revision(revision)
-                return ()
-        else:
-            draft=self._write_draft(complete_sections=preparation is not None)
-            expected=self._revision
-            operation=self._operation_id
+        policy = getattr(m._backend, 'catalog_write_preparation', None)
+        selected_source = policy(m._schema.identity) if policy is not None else None
+        if selected_source is not None:
+            if preparation is not None and preparation[0] != selected_source:
+                raise BackendError('schema_changed')
+            preparation = (selected_source, preparation[1] if preparation is not None else False)
+        draft=self._write_draft(complete_sections=preparation is not None)
+        expected=self._revision
+        operation=self._operation_id
         from yadinassi.db.database_transactions import current
         transaction = current(m._backend)
         if transaction is not None:
@@ -396,7 +380,7 @@ class BSLCatalogObject(BSLObject):
             if current_backend() == 'python-direct':
                 from yadinassi.execution.direct.python_direct_catalog_preparation import prepared_validator as prepare_validator
                 prepared_validator=prepare_validator(m,preparation[0])
-        data_backend = m._runtime_data_backend() if preparation is None and not retry else None
+        data_backend = m._runtime_data_backend() if preparation is None else None
         tx = (m._backend.begin_write(operation) if data_backend is None else
               data_backend._begin_catalog_data(m._schema.identity, operation))
         committing=False
@@ -405,37 +389,28 @@ class BSLCatalogObject(BSLObject):
             if tx.database_id!=self._key.database_id or tx.configuration_generation!=m._catalogs._metadata._generation or tx.catalog_schema(m._schema.identity)!=m._schema:raise BackendError('schema_changed')
             if preparation is not None:
                 from .catalog_object_preparation import _prepare_catalog_object, CatalogWriteRefused
-                if retry:
-                    # Receipt absence is already proved. Validate the frozen
-                    # submitted image, never a newly edited buffer or source.
-                    card=CatalogCard(draft.key,expected,draft.code,draft.description,
-                                     draft.deletion_mark,draft.values,draft.tabular_sections,draft.parent,draft.is_folder)
-                    candidate=BSLCatalogObject(m,card)
-                    if expected is None:candidate._values['ref']=m.empty_ref()
-                else:
-                    candidate=self
-                cancel,messages=_prepare_catalog_object(preparation[0],candidate,
+                cancel,messages=_prepare_catalog_object(preparation[0],self,
                     cancel=preparation[1],write_view=tx,prepared=prepared_validator)
                 if cancel:raise CatalogWriteRefused(messages)
-                prepared=candidate._write_draft(complete_sections=True)
-                if retry and prepared!=draft:
-                    raise BackendError('conflict')
-                draft=prepared
+                draft=self._write_draft(complete_sections=True)
             if expected is None:tx.create(draft)
             else:tx.update(draft,expected)
-            # Keep the exact submitted intent across an uncertain commit response.
-            self._pending_write=(draft,expected,operation)
-            self._pending_preparation=(preparation,m._backend) if preparation is not None else None
+            # A failed COMMIT response cannot be retried on this edit
+            # buffer. A fresh object must read persisted state.
+            self._uncertain_write=True
             committing=True
-            revisions=tx.commit_outcomes() if outcomes else tx.commit()
+            if sqlite_backend:
+                revisions=tx.commit_outcomes(_close=False) if outcomes else tx.commit(_close=False)
+            else:
+                revisions=tx.commit_outcomes() if outcomes else tx.commit()
             if len(revisions)!=1:raise BackendError('uncertain_commit')
-            tx.close()  # Cleanup must complete before the revision is accepted.
-            if outcomes:self._accept_outcome(revisions[0])
+            # A confirmed SQLite commit cannot become ambiguous because a
+            # later physical cleanup reported failure.
+            committing=False
+            if outcomes:self._accept_outcome(revisions[0],draft=draft)
             else:self._accept_revision(revisions[0])
+            tx.close()
         except BaseException as error:
-            if not committing:
-                self._pending_write=None
-                self._pending_preparation=None
             for cleanup in (tx.rollback,tx.close):
                 try:cleanup()
                 except BaseException as cleanup_error:
@@ -476,7 +451,7 @@ class BSLCatalogObject(BSLObject):
                 return self._manager._ref(self._key.record_id)
         return _field(self._values,name)
     def set_member(self,name,value):
-        if self._pending_write is not None:raise BackendError('uncertain_commit')
+        if self._uncertain_write or self._pending_write is not None:raise BackendError('uncertain_commit')
         key=_ALIASES.get(name.casefold(),name.casefold())
         if self._manager._schema.hierarchy!='none': key={'родитель':'parent','этогруппа':'isfolder'}.get(key,key)
         if key in self._sections:raise ValueError('tabular section replacement is unsupported')

@@ -107,7 +107,8 @@ class BSLCatalogSection(BSLObject):
             if self._bytes > _MAX_BUFFER_BYTES: raise BackendError('unsupported')
 
     def _mutable(self):
-        if self._owner._pending_write is not None: raise BackendError('uncertain_commit')
+        if self._owner._uncertain_write or self._owner._pending_write is not None:
+            raise BackendError('uncertain_commit')
         if not self._owner._manager._backend.capabilities().catalog_tabular_sections:
             raise BackendError('unsupported')
 

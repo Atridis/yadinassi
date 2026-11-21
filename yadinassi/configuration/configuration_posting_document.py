@@ -1,11 +1,10 @@
-"""Detached posting form images and receipt-only host recovery.
+"""Detached posting form images with read-only refresh after a known commit.
 
 Neither a form interpreter nor the browser owns operation IDs or SQL journals.
 The dedicated host consumes a full typed image only after dispatch is complete.
 """
 from types import MappingProxyType
 from uuid import uuid4
-from secrets import token_hex
 from yadinassi.db.catalog.catalog_backend import BackendError
 from .configuration_document import DocumentObjectSession, DocumentImage, DocumentSaveResult, require_document_form_schema, _OpenedDocument
 from .configuration_posting_application import canonical
@@ -37,7 +36,6 @@ class PostingDocumentSession:
         self._saving = False
         self.pending_commit = self.pending_refresh = False
         self.error = None; self.save_state = 'new'
-        self._operation_id = None; self.receipt_token = None
         self.verify_source()
         if _opened is not None and (type(_opened) is not _OpenedDocument or key is None):
             raise TypeError('owned document opening snapshot required')
@@ -101,18 +99,9 @@ class PostingDocumentSession:
             self.save_state, self.error = 'committed', 'refresh_required'
             return DocumentSaveResult(self.save_state, self.error)
 
-    def _accept_receipt(self, receipt, validate_result):
-        if receipt.state == 'committed':
-            self.pending_commit = not receipt.accepted
-            self.pending_refresh = True
-            self.save_state, self.error = 'committed', 'refresh_required'
-            if receipt.accepted: return self._try_refresh(validate_result)
-        elif receipt.state in ('uncertain', 'prepared'):
-            self.pending_commit = True
-            self.save_state, self.error = 'uncertain', 'outcome_unknown'
-        else:
-            self.pending_commit = self.pending_refresh = False
-            self.save_state, self.error = 'rejected', 'operation_refused'
+    def _unknown(self):
+        self.pending_commit, self.pending_refresh = True, False
+        self.save_state, self.error = 'uncertain', 'outcome_unknown'
         return DocumentSaveResult(self.save_state, self.error)
 
     def execute(self, command, image, *, validate_result=None):
@@ -120,39 +109,43 @@ class PostingDocumentSession:
         if self.pending_commit or self.pending_refresh: raise BackendError('uncertain_commit')
         self.verify_source()
         candidate = self._candidate(image)
-        operation_id, receipt_token = uuid4(), token_hex(16)
+        operation_id = uuid4()
         self._saving = True
-        # Bind before the first effect. The browser receives only this opaque,
-        # form-local receipt capability, never the UUID or expected revision.
-        self._operation_id, self.receipt_token = operation_id, receipt_token
-        self.pending_commit = True
         self.object = candidate
         try:
-            receipt = self.operations.execute(self._operation_id, candidate._draft(), candidate._revision,
-                form=self.form, command=command)
-            return self._accept_receipt(receipt, validate_result)
-        except Exception:
-            try: receipt = self.operations.receipt(self._operation_id)
+            try:
+                outcome = self.operations.execute(operation_id, candidate._draft(), candidate._revision,
+                    form=self.form, command=command)
             except BackendError:
-                self.pending_commit = False
+                # Root admission failures throw before effect. Failures after
+                # the root starts are returned as terminal in-memory outcomes.
                 self.save_state, self.error = 'rejected', 'operation_refused'
                 return DocumentSaveResult(self.save_state, self.error)
-            return self._accept_receipt(receipt, validate_result)
+            except Exception:
+                return self._unknown()
+            if outcome.state == 'committed':
+                return self._try_refresh(validate_result)
+            if outcome.state == 'rejected':
+                self.save_state, self.error = 'rejected', 'operation_refused'
+                return DocumentSaveResult(self.save_state, self.error)
+            return self._unknown()
+        finally:
+            self._saving = False
+
+    def refresh_committed(self, *, validate_result=None):
+        if self._saving: raise BackendError('busy')
+        if self.pending_commit or not self.pending_refresh or self.save_state != 'committed':
+            raise BackendError('uncertain_commit')
+        self._saving = True
+        try: return self._try_refresh(validate_result)
         finally: self._saving = False
 
-    def recover(self, receipt_token, *, validate_result=None):
-        if receipt_token != self.receipt_token or self._operation_id is None:
-            raise BackendError('conflict')
-        if self._saving: raise BackendError('busy')
-        self._saving = True
-        try:
-            if self.pending_commit:
-                return self._accept_receipt(self.operations.resolve(self._operation_id), validate_result)
-            if self.pending_refresh: return self._try_refresh(validate_result)
-            return DocumentSaveResult(self.save_state, self.error)
-        except Exception:
-            return DocumentSaveResult(self.save_state, self.error)
-        finally: self._saving = False
+    def discard_unknown(self):
+        if self._saving or self.save_state != 'uncertain' or not self.pending_commit:
+            raise BackendError('busy')
+        # Drops the detached draft without claiming anything about the write.
+        # No form handlers, write commands, or decision from a storage record.
+        self.operations.close()
 
     def save(self, *args, **kwargs):
         raise BackendError('unsupported')
@@ -162,7 +155,7 @@ class PostingDocumentSession:
         self.operations.close()
 
 
-def dispatch_posting(definition, server, owned, action, command=None, receipt=None):
+def dispatch_posting(definition, server, owned, action, command=None):
     """Called by the trusted broker after server dispatch has fully returned."""
     from yadinassi.forms.form_replication import _pack_state
     from yadinassi.forms.form_tables import BSLFormDataCollection
@@ -186,8 +179,8 @@ def dispatch_posting(definition, server, owned, action, command=None, receipt=No
             session.form._data, session.form._tables, session._document_row_ids = previous_data, previous_tables, previous_ids
     if action == 'execute':
         result = owned.execute(command, definition._document_image(session), validate_result=preflight)
-    elif action == 'recover':
-        result = owned.recover(receipt, validate_result=preflight)
+    elif action == 'refresh':
+        result = owned.refresh_committed(validate_result=preflight)
     elif action == 'sync':
         result = None
     else: raise ValueError('unknown posting action')
@@ -207,21 +200,17 @@ def dispatch_posting(definition, server, owned, action, command=None, receipt=No
             item = session.form.items._values[key]
             item.visible, item.enabled, item.read_only = flags
         del owned._locked_controls
-    return {'receipt': owned.receipt_token, 'state': owned.save_state,
+    return {'state': owned.save_state,
             'error': owned.error, 'posted': None if locked else owned.object.get_member('Posted')}
 
 
-def recover_posting_frame(definition, server, owned, frame, receipt):
-    """Receipt-only trusted barrier. Never invokes a form/BSL routine.
-
-    A retained SQL cleanup owner can prohibit all interpreter transfers. Recovery
-    therefore validates the existing replica envelope but admits no draft delta.
-    """
+def refresh_posting_frame(definition, server, owned, frame):
+    """Trusted read barrier for a known commit. Never invokes a form routine."""
     from yadinassi.forms.form_replication import PROTOCOL, MAX_CALLS
     from yadinassi.ui.protocol import decode_line
-    if receipt != owned.receipt_token or owned._operation_id is None:
-        raise ValueError('wrong posting receipt capability')
-    if not server._gate.acquire(blocking=False): raise ValueError('posting recovery busy')
+    if not owned.pending_refresh or owned.pending_commit:
+        raise ValueError('known commit awaiting refresh required')
+    if not server._gate.acquire(blocking=False): raise ValueError('posting refresh busy')
     try:
         binding = next(b for b in server.bindings if b.name == 'YadinassiPostingSync')
         if (set(frame) != set('protocol id operation revision sequence endpoint arguments delta'.split())
@@ -232,8 +221,8 @@ def recover_posting_frame(definition, server, owned, frame, receipt):
                 or frame['endpoint'] != binding.endpoint or frame['arguments'] != []
                 or frame['delta'] != {'attributes': [], 'items': [], 'title': None, 'cells': [], 'selections': []}
                 or server._requests >= MAX_CALLS or server.session._busy or server.session.state != 'open'):
-            raise ValueError('invalid receipt recovery barrier')
-        state = dispatch_posting(definition, server, owned, 'recover', receipt=receipt)
+            raise ValueError('invalid posting refresh barrier')
+        state = dispatch_posting(definition, server, owned, 'refresh')
         server._last_id = frame['id']; server._requests += 1; server._sequence += 1
         server.session.revision += 1
         return {'form': decode_line(server._reply(frame['id'], accepted=True)), 'posting': state}

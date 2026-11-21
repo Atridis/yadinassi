@@ -96,50 +96,58 @@ class AccumulationProfileTests(unittest.TestCase):
         with self.assertRaises(BackendError):prepare(self.path,maintenance=True)
         with self.assertRaises(BackendError):update(self.path,self.config,maintenance=True)
     def test_same_root_stages_document_posted_and_accumulation(self):
-        b=self.create();operation,unit,draft,request=self.stage(b);requests=unit.requests
+        b=self.create();operation,unit,draft,request=self.stage(b)
         outcomes=unit.commit();self.assertEqual(len(outcomes),3)
         self.assertIs(b.read_document_posted(draft.key),True)
+        self.assertEqual(outcomes[0].result.revision.token,'1')
+        self.assertEqual(outcomes[1].result,PostedIntent(draft.key,1,True))
+        for table in ('unit_of_work_receipt','accumulation_movement_receipt',
+                      'document_commit_receipt','document_posting_receipt'):
+            self.assertEqual(self.sql('SELECT COUNT(*) FROM '+table),[(0,)])
         self.assertEqual(b.read_accumulation(request.register_id,draft.key).rows,request.rows)
-        self.assertEqual(b.resolve_unit_of_work(operation,requests),outcomes)
     def test_rollback_removes_all_ports_and_receipts(self):
         b=self.create();operation,unit,draft,request=self.stage(b);unit.rollback()
         self.assertIsNone(b.read_document_posted(draft.key));self.assertEqual(b.read_accumulation(request.register_id,draft.key).rows,())
         for table in ('document_record','document_posting_state','accumulation_movement','unit_of_work_receipt','accumulation_movement_receipt'):
             self.assertEqual(self.sql('SELECT COUNT(*) FROM '+table),[(0,)])
-    def test_repeated_replacement_has_distinct_frozen_children(self):
+    def test_repeated_replacement_returns_distinct_staged_outcomes(self):
         b=self.create();operation,unit,draft,first=self.stage(b)
         second=self.movement(unit,draft.key,9);unit.stage(TransactionRequest('accumulation_replace',second))
-        requests=unit.requests;outcomes=unit.commit()
-        self.assertEqual(self.sql('SELECT COUNT(*) FROM accumulation_movement_receipt'),[(2,)])
-        self.assertEqual(b.resolve_unit_of_work(operation,requests),outcomes)
+        outcomes=unit.commit()
+        self.assertEqual(tuple(outcome.result.revision for outcome in outcomes[2:]),(1,2))
         self.assertEqual(b.read_accumulation(first.register_id,draft.key).rows,second.rows)
-    def test_historical_root_survives_later_replacement(self):
-        b=self.create();operation,unit,draft,first=self.stage(b);requests=unit.requests;outcomes=unit.commit()
-        later=b.begin_unit_of_work(uuid4());later.stage(TransactionRequest('accumulation_replace',self.movement(later,draft.key,11)));later.commit()
-        self.assertEqual(b.resolve_unit_of_work(operation,requests),outcomes)
-    def test_historical_root_does_not_read_current_movement_payload(self):
-        b=self.create();operation,unit,draft,first=self.stage(b);requests=unit.requests;outcomes=unit.commit()
+    def test_current_movement_payload_corruption_is_rejected_after_commit(self):
+        b=self.create();operation,unit,draft,first=self.stage(b);unit.commit()
         self.sql("UPDATE accumulation_movement SET values_json='[]'")
-        self.assertEqual(b.resolve_unit_of_work(operation,requests),outcomes)
         with self.assertRaises(BackendError):b.read_accumulation(first.register_id,draft.key)
     def test_posted_change_requires_same_root_document_mutation(self):
         b=self.create();operation,unit,draft,first=self.stage(b);unit.commit()
         later=b.begin_unit_of_work(uuid4());self.addCleanup(later.close)
         with self.assertRaises(BackendError):later.stage(TransactionRequest('document_set_posted',PostedIntent(draft.key,1,False)))
         self.assertEqual(later.requests,())
+    def test_posted_change_rejects_wrong_staged_document_revision(self):
+        b=self.create();draft=self.document(b)
+        with b.begin_unit_of_work(uuid4()) as unit:
+            unit.stage(TransactionRequest('document_create',draft))
+            with self.assertRaisesRegex(BackendError,'conflict'):
+                unit.stage(TransactionRequest('document_set_posted',PostedIntent(draft.key,2,True)))
+            unit.stage(TransactionRequest('document_set_posted',PostedIntent(draft.key,1,True)))
+            unit.commit()
+        self.assertIs(b.read_document_posted(draft.key),True)
+
     def test_failed_replacement_preserves_earlier_stages(self):
         b=self.create();operation,unit,draft,first=self.stage(b)
         with self.assertRaises(BackendError):unit.stage(TransactionRequest('accumulation_replace',replace(first,expected_snapshot='0'*64)))
         self.assertEqual(len(unit.requests),3);unit.commit()
         self.assertEqual(b.read_accumulation(first.register_id,draft.key).rows,first.rows)
-    def test_savepoint_restores_journal_rows_and_child_receipts(self):
+    def test_savepoint_restores_journal_and_rows(self):
         b=self.create();operation,unit,draft,first=self.stage(b)
         with self.assertRaisesRegex(ValueError,'rollback'):
             with unit.savepoint():
                 unit.stage(TransactionRequest('accumulation_replace',self.movement(unit,draft.key,99)))
                 raise ValueError('rollback')
         self.assertEqual(len(unit.requests),3);unit.commit()
-        self.assertEqual(self.sql('SELECT COUNT(*) FROM accumulation_movement_receipt'),[(1,)])
+        self.assertEqual(self.sql('SELECT COUNT(*) FROM accumulation_movement_receipt'),[(0,)])
         self.assertEqual(b.read_accumulation(first.register_id,draft.key).rows,first.rows)
     def test_read_only_reopens_but_never_stages(self):
         self.create()
@@ -155,15 +163,6 @@ class AccumulationProfileTests(unittest.TestCase):
     def test_owner_close_never_commits(self):
         b=self.create();operation,unit,draft,request=self.stage(b);unit.close()
         self.assertEqual(self.sql('SELECT COUNT(*) FROM document_record'),[(0,)])
-    def test_corrupt_child_receipt_cannot_resolve_root(self):
-        b=self.create();operation,unit,draft,request=self.stage(b);requests=unit.requests;unit.commit()
-        self.sql("UPDATE accumulation_movement_receipt SET request_hash=?",('0'*64,))
-        with self.assertRaises(BackendError):b.resolve_unit_of_work(operation,requests)
-    def test_wrong_frozen_request_cannot_resolve_root(self):
-        b=self.create();operation,unit,draft,request=self.stage(b);requests=unit.requests;unit.commit()
-        wrong=(*requests[:-1],TransactionRequest('accumulation_replace',replace(request,rows=())))
-        with self.assertRaises(BackendError):b.resolve_unit_of_work(operation,wrong)
-
     def test_interpreter_is_activated_but_plain_document_editor_is_not(self):
         from yadinassi import Interpreter
         from yadinassi.db.database_context import SQLiteDBContext

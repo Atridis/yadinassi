@@ -1,4 +1,4 @@
-"""Exact inventory forms root grants, typed identities and receipt recovery."""
+"""Exact inventory forms root grants, typed identities and terminal outcomes."""
 from contextlib import closing
 from dataclasses import replace
 from datetime import datetime
@@ -15,7 +15,6 @@ from yadinassi.configuration.configuration_inventory_application import import_i
 from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.db.database_transactions import RootOperation, admission, execution
 from yadinassi.db.document.document_backend import DocumentDraft, DocumentKey
-from yadinassi.db.document.document_posting_host import PostingRecoveryUnavailable
 from yadinassi.configuration.demos.inventory_host_operations import InventoryRootOperations, InventoryRootOperation
 from inventory_application_fixture import source, ROOT
 from test_document_posting_host import PostingHostTests as _ScalarHostTests
@@ -65,30 +64,29 @@ class InventoryHostTests(unittest.TestCase):
     test_write_is_unposted_and_has_no_movements=_ScalarHostTests.test_write_is_unposted_and_has_no_movements
     test_undo_posting_clears_owned_movements=_ScalarHostTests.test_undo_posting_clears_owned_movements
     test_new_operation_uses_new_empty_movement_buffer=_ScalarHostTests.test_new_operation_uses_new_empty_movement_buffer
-    test_repeat_uuid_returns_same_receipt_without_handler_replay=_ScalarHostTests.test_repeat_uuid_returns_same_receipt_without_handler_replay
-    test_same_uuid_different_mode_conflicts_before_work=_ScalarHostTests.test_same_uuid_different_mode_conflicts_before_work
-    test_same_uuid_different_draft_conflicts_before_work=_ScalarHostTests.test_same_uuid_different_draft_conflicts_before_work
-    test_same_uuid_different_revision_conflicts=_ScalarHostTests.test_same_uuid_different_revision_conflicts
     test_stale_revision_refused_before_begin=_ScalarHostTests.test_stale_revision_refused_before_begin
     test_mutable_draft_payload_refused=_ScalarHostTests.test_mutable_draft_payload_refused
     test_uuid_string_and_zero_refused=_ScalarHostTests.test_uuid_string_and_zero_refused
     test_child_admission_cannot_activate_host_operation=_ScalarHostTests.test_child_admission_cannot_activate_host_operation
     test_nested_execution_cannot_activate_host_operation=_ScalarHostTests.test_nested_execution_cannot_activate_host_operation
-    test_final_source_recheck_does_not_leave_prepared_ledger=_ScalarHostTests.test_final_source_recheck_does_not_leave_prepared_ledger
     test_handler_cancellation_rolls_back_whole_operation=_ScalarHostTests.test_handler_cancellation_rolls_back_whole_operation
-    test_uncertain_commit_resolves_exact_requests_without_replay=_ScalarHostTests.test_uncertain_commit_resolves_exact_requests_without_replay
-    test_uncertain_without_commit_returns_not_committed_no_replay=_ScalarHostTests.test_uncertain_without_commit_returns_not_committed_no_replay
-    test_uncertain_receipt_locks_close=_ScalarHostTests.test_uncertain_receipt_locks_close
-    test_resolve_mismatched_outcomes_retains_uncertainty=_ScalarHostTests.test_resolve_mismatched_outcomes_retains_uncertainty
     test_known_commit_acceptance_failure_is_not_reported_as_rollback=_ScalarHostTests.test_known_commit_acceptance_failure_is_not_reported_as_rollback
-    test_commit_receipt_survives_cleanup_interruption=_ScalarHostTests.test_commit_receipt_survives_cleanup_interruption
-    test_no_receipt_allocation_is_needed_after_commit=_ScalarHostTests.test_no_receipt_allocation_is_needed_after_commit
-    test_commit_memory_error_retains_preallocated_uncertain_receipt=_ScalarHostTests.test_commit_memory_error_retains_preallocated_uncertain_receipt
-    test_failed_rollback_cleanup_keeps_host_locked=_ScalarHostTests.test_failed_rollback_cleanup_keeps_host_locked
     test_full_source_mismatch_refused_before_begin=_ScalarHostTests.test_full_source_mismatch_refused_before_begin
     test_empty_additional_properties_are_not_external_inputs=_ScalarHostTests.test_empty_additional_properties_are_not_external_inputs
     test_root_entry_failure_is_terminal_not_perpetual_prepared=_ScalarHostTests.test_root_entry_failure_is_terminal_not_perpetual_prepared
     test_second_root_context_token_failure_restores_first_token=_ScalarHostTests.test_second_root_context_token_failure_restores_first_token
+
+    test_failed_rollback_retains_only_physical_cleanup=_ScalarHostTests.test_failed_rollback_retains_only_physical_cleanup
+    test_commit_memory_error_does_not_retain_already_closed_operation=_ScalarHostTests.test_commit_memory_error_does_not_retain_already_closed_operation
+    test_no_outcome_allocation_is_needed_after_commit=_ScalarHostTests.test_no_outcome_allocation_is_needed_after_commit
+    test_lost_reply_and_cleanup_interrupt_do_not_retain_closed_operation=_ScalarHostTests.test_lost_reply_and_cleanup_interrupt_do_not_retain_closed_operation
+    test_unknown_before_commit_does_not_claim_success_or_replay=_ScalarHostTests.test_unknown_before_commit_does_not_claim_success_or_replay
+    test_lost_commit_reply_stays_unknown_without_lookup_or_replay=_ScalarHostTests.test_lost_commit_reply_stays_unknown_without_lookup_or_replay
+    test_final_source_recheck_does_not_retain_operation=_ScalarHostTests.test_final_source_recheck_does_not_retain_operation
+    test_reentrant_execute_is_refused_before_effect=_ScalarHostTests.test_reentrant_execute_is_refused_before_effect
+    test_correlation_id_is_not_a_persistent_history_key=_ScalarHostTests.test_correlation_id_is_not_a_persistent_history_key
+    test_repeated_stale_input_cannot_replay_after_commit=_ScalarHostTests.test_repeated_stale_input_cannot_replay_after_commit
+    test_known_commit_with_retained_connection_can_refresh_without_replay=_ScalarHostTests.test_known_commit_with_retained_connection_can_refresh_without_replay
 
     def test_ungranted_command_refused(self):
         with self.assertRaises(BackendError):self.execute('Unknown')
@@ -106,7 +104,7 @@ class InventoryHostTests(unittest.TestCase):
     def test_wrong_reference_target_refused_before_journal(self):
         with patch.object(self.backend,'begin_unit_of_work',side_effect=AssertionError('journal')):
             with self.assertRaises(BackendError):self.execute(draft=replace(self.draft,values=(self.product,)))
-        self.assertEqual(self.host._operations,{})
+        self.assertIsNone(self.host._active_operation)
 
     def test_foreign_database_reference_refused_before_journal(self):
         foreign=replace(self.warehouse,database_id=uuid4())
@@ -139,17 +137,13 @@ class InventoryHostTests(unittest.TestCase):
         with admission(False),execution(self.backend):
             self.host.verify_source()
             with self.assertRaises(BackendError):self.execute()
-        self.assertEqual(self.host._operations,{})
+        self.assertIsNone(self.host._active_operation)
 
-    def test_receipt_unavailable_to_a_restarted_host(self):
-        receipt=self.execute()
+    def test_no_lookup_after_reopening_host(self):
+        self.assertTrue(self.execute().accepted)
         with closing(InventoryRootOperations(self.context,self.config)) as other:
-            with self.assertRaises(PostingRecoveryUnavailable):other.resolve(receipt.operation_id)
-
-    def test_max_receipts_never_evicts_recovery(self):
-        with patch('yadinassi.configuration.demos.inventory_host_operations.MAX_RECEIPTS',1):
-            self.execute()
-            with self.assertRaises(BackendError):self.execute(expected=self.card().revision)
+            for name in ('_operations','receipt','resolve','intent','acknowledge'):
+                self.assertFalse(hasattr(other,name))
 
     def test_full_source_preserved_after_reopen(self):
         with closing(SQLiteDBContext(self.path)) as context:

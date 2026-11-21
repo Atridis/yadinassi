@@ -151,21 +151,23 @@ class InformationRegisterTests(unittest.TestCase):
             self.assertEqual(len(last.rows),1);self.assertIsNone(last.continuation)
             with self.assertRaises(BackendError):v.scan_register(self.schema.identity,RegisterScanRequest(1,first.continuation))
         finally:v.close()
-    def test_uncertain_record_receipt_recovery_freezes_buffer(self):
+    def test_uncertain_record_freezes_buffer_until_fresh_read(self):
         self.execute('R=InformationRegisters.Prices.CreateRecordManager();R.Item="A";R.Region="North";R.Price=3;')
-        original=RegisterView.commit
+        original=RegisterView._confirm_commit
         def lost(view):original(view);raise OSError('lost acknowledgement')
-        with patch.object(RegisterView,'commit',lost),self.assertRaises(BSLRuntimeError):self.execute('R.Write();')
+        with patch.object(RegisterView,'_confirm_commit',lost),self.assertRaises(BSLRuntimeError):self.execute('R.Write();')
         with self.assertRaises(BSLRuntimeError):self.execute('R.Price=4;')
-        self.assertEqual(self.execute('R.Write();Message(R.Selected());Message(R.Price);'),['Да','3'])
+        with self.assertRaises(BSLRuntimeError):self.execute('R.Write();')
+        self.assertEqual(self.execute('R.Read();Message(R.Selected());Message(R.Price);'),['Да','3'])
         self.assertEqual(len(self.sql('SELECT * FROM information_register_record')),1)
-    def test_uncertain_set_receipt_recovery(self):
+    def test_uncertain_set_freezes_until_fresh_read(self):
         self.execute('S=InformationRegisters.Prices.CreateRecordSet();S.Filter.Region.Set("North");X=S.Add();X.Item="A";X.Price=5;')
-        original=RegisterView.commit
+        original=RegisterView._confirm_commit
         def lost(view):original(view);raise OSError('lost acknowledgement')
-        with patch.object(RegisterView,'commit',lost),self.assertRaises(BSLRuntimeError):self.execute('S.Write();')
+        with patch.object(RegisterView,'_confirm_commit',lost),self.assertRaises(BSLRuntimeError):self.execute('S.Write();')
         with self.assertRaises(BSLRuntimeError):self.execute('S.Clear();')
-        self.execute('S.Write();S.Read();')
+        with self.assertRaises(BSLRuntimeError):self.execute('S.Write();')
+        self.execute('S.Read();')
         self.assertEqual(self.execute('Message(S.Count());Message(S[0].Price);'),['1','5'])
     def test_recordset_duplicate_dimension_keys_are_rejected(self):
         self.execute('S=InformationRegisters.Prices.CreateRecordSet();S.Filter.Region.Set("North");X=S.Add();X.Item="A";X=S.Add();X.Item="A";')
@@ -187,7 +189,9 @@ class InformationRegisterTests(unittest.TestCase):
         try:
             b=context.backend
             key=lambda n:RegisterKey(b.database_id,schema.identity,(Decimal(n),'North'))
-            tx=b.begin_register_write(uuid4());tx.write(RegisterDraft(key('-0'),(Decimal(1),True)));tx.commit()
+            tx=b.begin_register_write(uuid4())
+            try:tx.write(RegisterDraft(key('-0'),(Decimal(1),True)));tx.commit()
+            finally:tx.close()
             view=b.begin_register_read()
             try:
                 self.assertIsNotNone(view.read_record(key('0.00')))

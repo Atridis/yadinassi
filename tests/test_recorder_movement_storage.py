@@ -27,42 +27,37 @@ class RecorderStorageTests(unittest.TestCase):
     def request(self,key=None,rows=None):
         key=key or self.key;snapshot=self.port.read(self.reg,key).snapshot
         return RecorderReplacement(self.reg,key,(RecorderMovementRow(1,True,(Decimal(7),)),) if rows is None else rows,snapshot)
-    def test_replace_read_and_immutable_resolve(self):
-        req=self.request();op=uuid4();out=self.port.replace(op,req)
+    def test_replace_read_and_new_revision(self):
+        req=self.request();out=self.port.replace(req)
         self.assertEqual(self.port.read(self.reg,self.key).rows,req.rows)
-        self.assertEqual(self.port.resolve(op,req),out)
-        self.port.replace(uuid4(),self.request(rows=()))
-        self.assertEqual(self.port.resolve(op,req),out)
+        self.assertEqual(self.port.read(self.reg,self.key).snapshot,out.snapshot)
+        self.port.replace(self.request(rows=()))
+        self.assertEqual(self.port.read(self.reg,self.key).revision,out.revision+1)
     def test_empty_partition_revision_prevents_aba(self):
-        before=self.request(rows=());self.port.replace(uuid4(),before)
+        before=self.request(rows=());self.port.replace(before)
         after=self.port.read(self.reg,self.key)
         self.assertNotEqual(before.expected_snapshot,after.snapshot)
-        with self.assertRaises(BackendError):self.port.replace(uuid4(),before)
+        with self.assertRaises(BackendError):self.port.replace(before)
     def test_two_recorders_same_register_are_disjoint(self):
         other=DocumentKey(self.db,self.doc,uuid4())
         self.c.execute('INSERT INTO document_record VALUES(?,?)',(str(self.doc),str(other.record_id)))
         left,right=self.request(),self.request(other)
-        self.assertNotEqual(self.port.describe(left)[2],self.port.describe(right)[2])
-        self.port.replace(uuid4(),left);self.port.replace(uuid4(),right)
+        self.assertNotEqual(self.port.describe(left)[1],self.port.describe(right)[1])
+        self.port.replace(left);self.port.replace(right)
         self.assertEqual(len(self.port.read(self.reg,other).rows),1)
     def test_missing_recorder_fk_rolls_back_child_journal(self):
-        key=DocumentKey(self.db,self.doc,uuid4());req=self.request(key);op=uuid4()
-        with self.assertRaises(sqlite3.IntegrityError):self.port.replace(op,req)
+        key=DocumentKey(self.db,self.doc,uuid4());req=self.request(key)
+        with self.assertRaises(sqlite3.IntegrityError):self.port.replace(req)
         self.assertEqual(self.port.read(self.reg,key).revision,0)
-        self.assertIsNone(self.port.resolve(op,req))
-    def test_outer_rollback_removes_rows_and_receipts(self):
-        req=self.request();op=uuid4();self.port.replace(op,req)
+    def test_outer_rollback_removes_rows(self):
+        req=self.request();self.port.replace(req)
         self.c.execute('ROLLBACK');self.c.execute('BEGIN')
         self.assertEqual(self.port.read(self.reg,self.key).revision,0)
-        self.assertIsNone(self.port.resolve(op,req))
-    def test_stale_or_different_request_cannot_resolve_receipt(self):
-        req=self.request();op=uuid4();self.port.replace(op,req)
-        with self.assertRaises(BackendError):self.port.resolve(op,self.request(rows=()))
     def test_requires_owned_transaction(self):
         self.c.execute('ROLLBACK')
         with self.assertRaises(BackendError):self.port.read(self.reg,self.key)
     def test_corrupt_scalar_never_hidden_by_partition_read(self):
-        self.port.replace(uuid4(),self.request())
+        self.port.replace(self.request())
         self.c.execute("UPDATE recorder_movement SET values_json='[]'")
         with self.assertRaises(BackendError):self.port.read(self.reg,self.key)
 
@@ -96,8 +91,8 @@ class RecorderJournalTests(RecorderStorageTests):
                 if self._connection.in_transaction:self._connection.execute('ROLLBACK')
                 self.closed=True
         self.View=View
-    def test_root_batch_assigns_distinct_existing_child_ids(self):
-        from yadinassi.db.sqlite.sqlite_transactions import UnitOfWork,_child
+    def test_root_batch_assigns_distinct_in_memory_tickets(self):
+        from yadinassi.db.sqlite.sqlite_transactions import UnitOfWork
         from yadinassi.db.transaction_backend import TransactionRequest
         other=DocumentKey(self.db,self.doc,uuid4())
         self.c.execute('INSERT INTO document_record VALUES(?,?)',(str(self.doc),str(other.record_id)))
@@ -106,9 +101,12 @@ class RecorderJournalTests(RecorderStorageTests):
         tx.stage(TransactionRequest('recorder_replace',self.request(other)))
         outcomes=tx.commit()
         self.assertEqual(len(outcomes),2)
-        child_ids={r[0] for r in self.c.execute('SELECT operation_id FROM recorder_movement_receipt')}
-        self.assertEqual(child_ids,{str(_child(op,0)),str(_child(op,1))})
-        self.assertIsNotNone(self.c.execute('SELECT 1 FROM unit_of_work_receipt WHERE operation_id=?',(str(op),)).fetchone())
+        self.assertEqual([(r.ticket.operation_id,r.ticket.index) for r in outcomes],[(op,0),(op,1)])
+        self.assertEqual(self.c.execute('SELECT COUNT(*) FROM recorder_movement_receipt').fetchone(),(0,))
+        self.assertEqual(self.c.execute('SELECT COUNT(*) FROM unit_of_work_receipt').fetchone(),(0,))
+        self.c.execute('BEGIN')
+        self.assertEqual(self.port.read(self.reg,self.key).revision,1)
+        self.assertEqual(self.port.read(self.reg,other).revision,1)
     def test_outer_stage_failure_keeps_other_partition_and_root_bookkeeping(self):
         from yadinassi.db.sqlite.sqlite_transactions import UnitOfWork
         from yadinassi.db.transaction_backend import TransactionRequest
@@ -116,7 +114,7 @@ class RecorderJournalTests(RecorderStorageTests):
         missing=DocumentKey(self.db,self.doc,uuid4())
         with self.assertRaises(BackendError):tx.stage(TransactionRequest('recorder_replace',self.request(missing)))
         self.assertEqual(len(tx.requests),1)
-        self.assertEqual(self.c.execute('SELECT COUNT(*) FROM recorder_movement_receipt').fetchone()[0],1)
+        self.assertEqual(self.port.read(self.reg,self.key).revision,1)
         tx.rollback()
         self.c.execute('BEGIN');self.assertEqual(self.port.read(self.reg,self.key).revision,0)
     def test_same_partition_repeated_write_requires_fresh_snapshot(self):
@@ -132,28 +130,6 @@ class RecorderJournalTests(RecorderStorageTests):
         from types import SimpleNamespace
         from yadinassi.db.sqlite.sqlite_transactions import _recorder_port
         with self.assertRaises(BackendError):_recorder_port(SimpleNamespace(_backend=SimpleNamespace()))
-    def test_root_recovery_uses_immutable_child_receipt_after_later_replace(self):
-        from types import SimpleNamespace
-        from yadinassi.db.sqlite.sqlite_transactions import UnitOfWork,resolve
-        from yadinassi.db.transaction_backend import TransactionRequest
-        operation=uuid4();request=TransactionRequest('recorder_replace',self.request())
-        tx=UnitOfWork(self.View(operation));tx.stage(request);expected=tx.commit()
-        self.c.execute('BEGIN');self.port.replace(uuid4(),self.request(rows=()));self.c.execute('COMMIT')
-        def begin_read():
-            self.c.execute('BEGIN');return self.View(None)
-        backend=SimpleNamespace(begin_read=begin_read,storage_version=8)
-        self.assertEqual(resolve(backend,operation,(request,)),expected)
-        self.assertEqual(resolve(backend,operation,(request,)),expected)
-    def test_root_recovery_rejects_missing_child_without_replay(self):
-        from types import SimpleNamespace
-        from yadinassi.db.sqlite.sqlite_transactions import UnitOfWork,resolve
-        from yadinassi.db.transaction_backend import TransactionRequest
-        op=uuid4();request=TransactionRequest('recorder_replace',self.request());tx=UnitOfWork(self.View(op));tx.stage(request);tx.commit()
-        self.c.execute('DELETE FROM recorder_movement_receipt')
-        def begin_read():
-            self.c.execute('BEGIN');return self.View(None)
-        with self.assertRaises(BackendError):resolve(SimpleNamespace(begin_read=begin_read),op,(request,))
-        self.assertEqual(self.c.execute('SELECT COUNT(*) FROM recorder_movement_receipt').fetchone()[0],0)
     def test_fresh_only_profile_cannot_enter_additive_update_planner(self):
         from unittest.mock import patch,Mock
         from yadinassi.db.sqlite.sqlite_configuration_update import prepare
@@ -170,7 +146,7 @@ class RecorderJournalTests(RecorderStorageTests):
             with tx.savepoint():
                 tx.stage(TransactionRequest('recorder_replace',self.request()))
                 raise RuntimeError('handler cancelled')
-        self.assertEqual(tx.requests,());self.assertEqual(tx._results,());self.assertEqual(tx._bindings,())
+        self.assertEqual(tx.requests,());self.assertEqual(tx._results,())
         self.assertEqual(tx._bytes,0);self.assertEqual(tx._identities,frozenset())
         self.assertEqual(self.port.read(self.reg,self.key).rows,())
         tx.stage(TransactionRequest('recorder_replace',self.request()));self.assertEqual(len(tx.commit()),1)
@@ -195,8 +171,8 @@ class RecorderJournalTests(RecorderStorageTests):
         self.c.execute('UPDATE recorder_register_schema SET definition=?',(_json(schema_data(schema,self.db)),))
         self.port=RecorderMovementPort(self.c,self.db,1,(schema,))
         other=DocumentKey(self.db,self.doc,uuid4());self.c.execute('INSERT INTO document_record VALUES(?,?)',(str(self.doc),str(other.record_id)))
-        self.port.replace(uuid4(),self.request())
-        with self.assertRaises(sqlite3.IntegrityError):self.port.replace(uuid4(),self.request(other))
+        self.port.replace(self.request())
+        with self.assertRaises(sqlite3.IntegrityError):self.port.replace(self.request(other))
         self.assertEqual(len(self.port.read(self.reg,self.key).rows),1);self.assertEqual(self.port.read(self.reg,other).rows,())
         unique=(RecorderMovementRow(1,True,(Decimal(8),)),)
-        self.port.replace(uuid4(),self.request(other,unique));self.assertEqual(self.port.read(self.reg,other).rows,unique)
+        self.port.replace(self.request(other,unique));self.assertEqual(self.port.read(self.reg,other).rows,unique)

@@ -39,7 +39,7 @@ def validate_database_budget(connection):
 
 
 def stage_posted(connection,database_id,intent):
-    """Caller owns the root transaction and durable receipt; no commit here.
+    """Caller owns the root transaction; no commit here.
 
     Requires the actual document revision already staged on the same connection.
     No revision allocation, callbacks, movement writes or mode inference occur.
@@ -60,30 +60,9 @@ POSTED_RECEIPT_DDL='CREATE TABLE document_posting_receipt(operation_id TEXT PRIM
 
 
 def describe_posted(database_id,generation,intent):
-    from .sqlite_recorder_movements import _hash,_json
+    from .sqlite_recorder_movements import _json
     if type(intent) is not PostedIntent or type(intent.recorder) is not DocumentKey:raise BackendError('invalid_input')
     key=intent.recorder
     if key.database_id!=database_id or any(type(v) is not UUID or not v.int for v in (database_id,key.document_id,key.record_id)) or type(intent.document_revision) is not int or not 1<=intent.document_revision<2**63 or type(intent.posted) is not bool:raise BackendError('invalid_input')
     data=['posted_state_v1',str(database_id),generation,str(key.document_id),str(key.record_id),intent.document_revision,intent.posted]
-    return _hash(data),len(_json(data).encode()),('document_posted',key.document_id,key.record_id)
-
-
-def write_posted_receipt(connection,database_id,generation,operation,intent):
-    from .sqlite_recorder_movements import _json,_hash
-    if type(operation) is not UUID or not operation.int:raise BackendError('invalid_input')
-    digest,_,_=describe_posted(database_id,generation,intent)
-    stage_posted(connection,database_id,intent)
-    payload=_json([str(intent.recorder.document_id),str(intent.recorder.record_id),intent.document_revision,intent.posted])
-    bound=_hash([digest,payload])
-    connection.execute('INSERT INTO document_posting_receipt VALUES(?,?,?)',(str(operation),bound,payload))
-    return intent,bound,payload
-
-
-def resolve_posted_receipt(connection,database_id,generation,operation,intent):
-    from .sqlite_recorder_movements import _json,_hash
-    digest,_,_=describe_posted(database_id,generation,intent)
-    payload=_json([str(intent.recorder.document_id),str(intent.recorder.record_id),intent.document_revision,intent.posted])
-    row=connection.execute('SELECT request_hash,outcome_json FROM document_posting_receipt WHERE operation_id=?',(str(operation),)).fetchone()
-    if row is None:return None
-    if row!=(_hash([digest,payload]),payload):raise BackendError('conflict')
-    return intent
+    return len(_json(data).encode()),('document_posted',key.document_id,key.record_id)

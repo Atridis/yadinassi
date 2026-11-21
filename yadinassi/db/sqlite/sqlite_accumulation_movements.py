@@ -21,11 +21,9 @@ from yadinassi.db.document.document_backend import DocumentKey
 MAX_BYTES = 16 * 1024 * 1024
 MAX_ROW_BYTES = 1024 * 1024
 MAX_SCHEMA_BYTES = 65536
-MAX_RECEIPT_BYTES = 4096
 MAX_DATABASE_ROWS = 10000
 MAX_DATABASE_BYTES = 16 * 1024 * 1024
 MAX_DATABASE_PARTITIONS = 10000
-MAX_DATABASE_RECEIPTS = 10000
 _PERIOD_FIELD = FieldSchema(UUID(int=1), 'Period', 'datetime', ('DateTime',))
 
 ACCUMULATION_DDL = (
@@ -81,12 +79,7 @@ def validate_database_budget(connection):
         '+length(CAST(period AS BLOB))+length(CAST(direction AS BLOB))+64),0) '
         'FROM accumulation_movement').fetchone()
     partitions = connection.execute('SELECT COUNT(*) FROM accumulation_partition').fetchone()[0]
-    receipts, receipt_bytes = connection.execute(
-        'SELECT COUNT(*),COALESCE(SUM(length(CAST(outcome_json AS BLOB))+128),0) '
-        'FROM accumulation_movement_receipt').fetchone()
-    if (rows > MAX_DATABASE_ROWS or size > MAX_DATABASE_BYTES
-            or partitions > MAX_DATABASE_PARTITIONS or receipts > MAX_DATABASE_RECEIPTS
-            or receipt_bytes > MAX_DATABASE_BYTES):
+    if rows > MAX_DATABASE_ROWS or size > MAX_DATABASE_BYTES or partitions > MAX_DATABASE_PARTITIONS:
         raise BackendError('unsupported')
 
 
@@ -327,7 +320,7 @@ class AccumulationMovementPort:
                     result.append((key,self._decoded_partition(schema,key,revision,raw_rows)))
         return tuple(result)
 
-    def describe(self, request):
+    def _prepare_replacement(self, request):
         if type(request) is not AccumulationReplacement:
             raise BackendError('invalid_input')
         schema = self._require(request.register_id, request.recorder)
@@ -342,28 +335,22 @@ class AccumulationMovementPort:
         size = len(_json(intent).encode('utf-8'))
         if size > MAX_BYTES:
             raise BackendError('unsupported')
-        return _hash(intent), size, mutation_identity(request)
+        return schema, rows, size
 
-    def replace(self, operation, request):
-        if type(operation) is not UUID or not operation.int:
-            raise BackendError('invalid_input')
-        digest, _, _ = self.describe(request)
-        if self.connection.execute(
-                'SELECT 1 FROM accumulation_movement_receipt WHERE operation_id=?',
-                (str(operation),)).fetchone():
-            raise BackendError('conflict')
+    def describe(self, request):
+        _, _, size = self._prepare_replacement(request)
+        return size, mutation_identity(request)
+
+    def replace(self, request):
+        schema, rows, _ = self._prepare_replacement(request)
         current = self.read(request.register_id, request.recorder)
         if current.snapshot != request.expected_snapshot:
             raise BackendError('conflict')
         if current.revision >= 2**63 - 1:
             raise BackendError('unsupported')
-        schema = self.schemas[request.register_id]
-        rows = self._encoded(schema, request.rows)
         revision = current.revision + 1
         snapshot = self._snapshot(schema, request.recorder, revision, rows)
         outcome = AccumulationOutcome(request.register_id, request.recorder, revision, snapshot, len(rows))
-        raw = _json(['accumulation_outcome_v1', str(request.register_id), str(request.recorder.document_id),
-                     str(request.recorder.record_id), revision, snapshot, len(rows)])
         key = (str(request.register_id), str(request.recorder.document_id), str(request.recorder.record_id))
         self.connection.execute('SAVEPOINT accumulation_replace')
         try:
@@ -376,8 +363,6 @@ class AccumulationMovementPort:
             self.connection.executemany('INSERT INTO accumulation_movement VALUES(?,?,?,?,?,?,?,?)',
                 [(*key, line, period, int(active), direction, values)
                  for line, period, active, direction, values in rows])
-            self.connection.execute('INSERT INTO accumulation_movement_receipt VALUES(?,?,?)',
-                                    (str(operation), _hash([digest, raw]), raw))
             validate_database_budget(self.connection)
             self.connection.execute('RELEASE accumulation_replace')
         except BaseException:
@@ -385,45 +370,6 @@ class AccumulationMovementPort:
             self.connection.execute('RELEASE accumulation_replace')
             raise
         return outcome
-
-    def resolve(self, operation, request):
-        """Read the immutable receipt; never read or replay current movements."""
-        if type(operation) is not UUID or not operation.int:
-            raise BackendError('invalid_input')
-        digest, _, _ = self.describe(request)
-        key = (str(operation),)
-        if self.connection.execute(
-                "SELECT 1 FROM accumulation_movement_receipt WHERE operation_id=? AND "
-                "(typeof(request_hash)!='text' OR length(request_hash)!=64 OR "
-                "typeof(outcome_json)!='text' OR length(CAST(outcome_json AS BLOB))>?)",
-                (*key, MAX_RECEIPT_BYTES)).fetchone():
-            raise BackendError('integrity')
-        row = self.connection.execute(
-            'SELECT request_hash,outcome_json FROM accumulation_movement_receipt WHERE operation_id=?', key).fetchone()
-        if row is None:
-            return None
-        bound, raw = row
-        try:
-            data = json.loads(raw)
-            canonical = _json(data)
-        except (ValueError, TypeError, RecursionError):
-            raise BackendError('integrity') from None
-        if type(data) is not list or len(data) != 7 or canonical != raw or data[0] != 'accumulation_outcome_v1':
-            raise BackendError('integrity')
-        if data[1:4] != [str(request.register_id), str(request.recorder.document_id), str(request.recorder.record_id)]:
-            raise BackendError('conflict')
-        revision, snapshot, row_count = data[4:]
-        if (type(revision) is not int or not 1 <= revision < 2**63
-                or type(snapshot) is not str or len(snapshot) != 64
-                or any(c not in '0123456789abcdef' for c in snapshot)
-                or type(row_count) is not int or row_count != len(request.rows)):
-            raise BackendError('integrity')
-        if bound != _hash([digest, raw]):
-            raise BackendError('conflict')
-        schema = self.schemas[request.register_id]
-        if snapshot != self._snapshot(schema, request.recorder, revision, self._encoded(schema, request.rows)):
-            raise BackendError('integrity')
-        return AccumulationOutcome(request.register_id, request.recorder, revision, snapshot, row_count)
 
 
 def _admit_headers(connection, database_id, schemas, *, reference_catalogs, enum_domain):

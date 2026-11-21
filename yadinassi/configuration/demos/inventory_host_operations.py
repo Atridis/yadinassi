@@ -1,10 +1,11 @@
-"""Exact full-source inventory UI roots and host-lifetime receipt recovery.
+"""Exact full-source inventory UI roots with no operation history.
 
 No renderer value, form callback or core inventory profile supplies root
 transaction authority. Catalog references in an immutable intent carry database,
 metadata and record identity, never a label or a browser capability.
 """
 from dataclasses import fields
+from threading import Lock
 from uuid import UUID
 
 from yadinassi.db.catalog.catalog_backend import BackendError, CatalogKey, TabularSectionRows, TabularRow
@@ -14,12 +15,9 @@ from yadinassi.configuration.configuration_inventory_application import (
 from yadinassi.db import database_transactions as transactions
 from yadinassi.db.document.document_backend import DocumentDraft, DocumentKey, DocumentRevision
 from yadinassi.db.document.document_posting_host import (
-    RootPostingOperations, PostingOperationIntent, MAX_RECEIPTS,
+    RootPostingOperations, PostingOperationIntent,
     _immutable as scalar_immutable,
 )
-from yadinassi.db.document.document_posting_values import DocumentWriteMode
-
-
 from yadinassi.configuration.configuration_inventory_enum_application import (
     InventoryEnumApplicationConfiguration, PROFILE as ENUM_PROFILE, canonical as enum_canonical)
 from yadinassi.configuration.configuration_main_demo import (MainDemoConfiguration, PROFILE as MAIN_DEMO_PROFILE,
@@ -64,7 +62,7 @@ def require_inventory_host_root(backend):
 
 
 class InventoryRootOperation(transactions.RootOperation):
-    """Same receipt state machine, a different closed trusted-host admission."""
+    """Use the common root operation with a separate trusted-host admission."""
     _admit_root = staticmethod(require_inventory_host_root)
 
 
@@ -85,19 +83,17 @@ def _immutable(value):
 
 
 class InventoryRootOperations(RootPostingOperations):
-    """Exact intents are retained by one application host, not durable after exit.
+    """Source-bound inventory posting with its own typed reference admission."""
+    _operation_type = InventoryRootOperation
 
-    Inherited document reconstruction, resolution and close keep the existing
-    no-handler-replay and uncertain-outcome semantics. Root entry, source and
-    reference admission are explicit here rather than weakening v13.
-    """
     def __init__(self, context, configuration):
         self.context = context
         self.backend = context.backend
         require_inventory_host_root(self.backend)
         self.configuration = canonical(configuration)
         self._binding = None
-        self._operations = {}
+        self._operation_lock = Lock()
+        self._active_operation = None
         self._closed = False
         self._verify()
         from yadinassi.runtime import Interpreter
@@ -130,6 +126,7 @@ class InventoryRootOperations(RootPostingOperations):
     def verify_source(self):
         # Scoped reference normalization needs an integrity read from inside a
         # form activation. It must not install an execution token or journal.
+        self._clean_before_read()
         self._verify(require_root=False)
 
     def _intent(self, operation_id, draft, expected, form, command):
@@ -173,28 +170,4 @@ class InventoryRootOperations(RootPostingOperations):
         for definition, section in zip(schema.tabular_sections, draft.tabular_sections):
             for row in section.rows:
                 references(definition.fields, row.values)
-        return PostingOperationIntent(operation_id, *self._binding,
-            self.configuration.source_digest, self.configuration.profile, form, command, grant.mode, draft, expected)
-
-    def execute(self, operation_id, draft, expected, *, form, command):
-        require_inventory_host_root(self.backend)
-        intent = self._intent(operation_id, draft, expected, form, command)
-        previous = self._operations.get(operation_id)
-        if previous is not None:
-            if previous[0] != intent:
-                raise BackendError('conflict')
-            return previous[1].receipt
-        if len(self._operations) >= MAX_RECEIPTS:
-            raise BackendError('unsupported')
-        self._verify()
-        if self._interpreter._scheduler.pending or self._interpreter._scheduler._active_task is not None:
-            raise BackendError('unsupported')
-        document = self._document(intent)
-        # Verify full source before journal allocation and again at root entry.
-        self._verify()
-        operation = InventoryRootOperation(self.backend, operation_id)
-        modes = {'Write': DocumentWriteMode.WRITE, 'Post': DocumentWriteMode.POSTING,
-                 'UndoPosting': DocumentWriteMode.UNDO_POSTING}
-        callback = lambda: document.write(modes[intent.mode])
-        self._operations[operation_id] = (intent, operation, document)
-        return operation.run(callback)
+        return PostingOperationIntent(operation_id, grant.mode, draft, expected)

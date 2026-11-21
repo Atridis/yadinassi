@@ -267,14 +267,20 @@ class DocumentObjectSession:
             if self.context.backend is not self._backend:
                 self._stale = True; self.error = 'schema_changed'; return self._result()
             if self.pending_refresh: return self._try_refresh(validate_result)
+            if self.pending_commit: return self._result()
             self.error = None
+            prior_revision = self.object._revision
             try:
-                if not self.pending_commit:
-                    self.verify_source()
-                    self.object = self._candidate(image)
+                self.verify_source()
+                self.object = self._candidate(image)
+                prior_revision = self.object._revision
                 self.object.write()
             except BackendError as error:
-                self.pending_commit = self.pending_commit or self.object._pending_write is not None or error.code == 'uncertain_commit'
+                if self.object._revision is not prior_revision and self.object._pending_write is None:
+                    # SQLite confirmed the write; only cleanup/refresh is left.
+                    self.pending_refresh = True
+                    return self._try_refresh(validate_result)
+                self.pending_commit = self.object._pending_write is not None or error.code == 'uncertain_commit'
                 self.save_state = 'uncertain' if self.pending_commit else 'rejected'
                 self.error = error.code
                 return self._result()
@@ -282,13 +288,17 @@ class DocumentObjectSession:
                 if self.object._pending_write is not None:
                     self.pending_commit = True
                     self.save_state, self.error = 'uncertain', 'uncertain_commit'
+                elif self.object._revision is not prior_revision:
+                    self.pending_refresh = True
+                    self.save_state, self.error = 'committed', 'refresh_required'
                 raise
-            self.pending_commit = False
             self.pending_refresh = True
             self.save_state = 'committed'
             return self._try_refresh(validate_result)
         finally: self._saving = False
 
     def require_discardable(self):
-        if self.pending_commit or self.pending_refresh:
-            raise BackendError('uncertain_commit' if self.pending_commit else 'busy')
+        # Unknown writes can only be left behind, then read afresh; no replay
+        # or receipt lookup holds the form open. Known commits can still refresh.
+        if self.pending_refresh:
+            raise BackendError('busy')

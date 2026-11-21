@@ -2,7 +2,7 @@
 
 CatalogKey never enters the scalar form. The one-shot choice ticket binds an
 owner generation and an exact live form row, not a position or presentation.
-The Orders workbench supplies projection preflight and receipt-based writes.
+The Orders workbench supplies projection preflight and atomic writes.
 This opt-in catalog profile is independent of document storage and native UI.
 """
 from copy import copy
@@ -60,7 +60,7 @@ def catalog_page(manager, code, fields):
 
 
 class ReferenceOrdersSession(OrdersWorkbenchSession):
-    """New fixed schema; reuses complete admission and write-recovery machinery."""
+    """Reference schema with the shared read-only refresh and discard actions."""
     def __init__(self, context, *, initial_record=None):
         super().__init__(context, initial_record=initial_record)
         self.generation = self.choice_serial = 0
@@ -125,11 +125,13 @@ class ReferenceOrdersSession(OrdersWorkbenchSession):
         for name in ('FieldCode', 'FieldDescription', 'LinesTable'):
             form.items._values[name.casefold()].read_only = locked or self.object is None
         form.items._values['linestable'].enabled = not locked
-        for name in ('AddLine', 'DeleteLine', 'Recalculate', 'SaveOrder', 'Discard', 'ChooseCustomer', 'ChooseProduct'):
+        for name in ('AddLine', 'DeleteLine', 'Recalculate', 'SaveOrder', 'ChooseCustomer', 'ChooseProduct'):
             form.items._values[(name + 'Button').casefold()].enabled = not locked and self.object is not None
+        form.items._values['discardbutton'].enabled = (not self.pending_refresh
+            and self.active_choice is None and self.object is not None)
         resolve = form.items._values['resolvebutton']
-        resolve.enabled = (self.pending_commit or self.pending_refresh) and self.active_choice is None
-        resolve.title = 'Refresh saved record' if self.pending_refresh else 'Resolve save outcome'
+        resolve.enabled = self.pending_refresh and self.active_choice is None
+        resolve.title = 'Refresh saved record'
 
     def _blocked(self, session):
         if self.active_choice is not None:
@@ -182,6 +184,11 @@ class ReferenceOrdersSession(OrdersWorkbenchSession):
         self._adopt(session, fresh, 'Choose a customer and products, then save this order')
 
     def reload(self, session):
+        if self.pending_commit and self.active_choice is None:
+            # A locally new object can already exist in storage if its reply
+            # was lost. Read that exact key before considering an ordinary reset.
+            super().reload(session)
+            return
         if self._blocked(session) or self.object is None:
             return
         if self.object.is_new():

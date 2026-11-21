@@ -1,10 +1,7 @@
 from contextlib import ExitStack, closing
 from decimal import Decimal
-import hashlib
-import json
 import sqlite3
 import unittest
-from unittest.mock import patch
 
 from scripts.benchmark_sqlite_update_reference import make_update_reference, StaleRevisionError
 
@@ -33,11 +30,8 @@ class SQLiteUpdateReferenceTests(unittest.TestCase):
         self.assertEqual(value.get_member('Description'), '3')
         after = self.run.read_record()
         self.assertEqual(after.revision, before.revision + 3)
-        # Independent expected canonical receipt, not the helper's stored digest.
-        outcomes = [[self.run.catalog_id, after.record_id, str(after.revision), after.code]]
-        intent = [self.run.catalog_id, after.record_id, after.code, '3', bool(after.deletion_mark), '[]', after.revision]
-        encoded = json.dumps(['write_outcomes_v1', [intent], outcomes], ensure_ascii=True, separators=(',', ':'), allow_nan=False)
-        self.assertEqual(self.run._last_receipt[1], hashlib.sha256(encoded.encode()).hexdigest())
+        with closing(sqlite3.connect(self.path)) as connection:
+            self.assertEqual(connection.execute('SELECT COUNT(*) FROM commit_receipt').fetchone()[0], 0)
 
     def test_stale_revision_does_not_write_or_add_receipt(self):
         record = self.run.read_record()
@@ -50,16 +44,18 @@ class SQLiteUpdateReferenceTests(unittest.TestCase):
         with closing(sqlite3.connect(self.path)) as c:
             self.assertEqual(c.execute('SELECT COUNT(*) FROM commit_receipt').fetchone()[0], count)
 
-    def test_receipt_failure_rolls_back_update(self):
+    def test_sql_error_rolls_back_update(self):
         before = self.run.read_record()
-        receipt = self.run.update_record(before, 'first')
-        before = self.run.read_record()
-        with patch('scripts.benchmark_sqlite_update_reference.uuid4', return_value=receipt[0]):
-            with self.assertRaises(sqlite3.IntegrityError):
-                self.run.update_record(before, 'must roll back')
+        with closing(sqlite3.connect(self.path)) as connection, connection:
+            connection.execute(f"CREATE TRIGGER refuse_test_update BEFORE UPDATE ON {self.run.table} "
+                               "BEGIN SELECT RAISE(ABORT, 'refused'); END")
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.run.update_record(before, 'must roll back')
         self.assertEqual(self.run.read_record(), before)
-        self.run.update_record(before, 'recovered')
-        self.assertEqual(self.run.read_record().description, 'recovered')
+        with closing(sqlite3.connect(self.path)) as connection, connection:
+            connection.execute('DROP TRIGGER refuse_test_update')
+        self.run.update_record(before, 'saved')
+        self.assertEqual(self.run.read_record().description, 'saved')
 
     def test_description_validation_and_zero_iterations(self):
         before = self.run.read_record()

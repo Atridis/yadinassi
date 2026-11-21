@@ -445,16 +445,19 @@ export function mountApplication(environment, root, exchange = null) {
     const posting = client.state?.posting?.find(item => item.session === active);
     postingPanel.hidden = !posting;
     if (posting) {
-      postingPanel.append(el('p',`Posting operation: ${posting.state}${posting.error ? ' ('+posting.error+')' : ''}. ${['uncertain','committed'].includes(posting.state) ? 'Posted state awaiting authoritative refresh' : posting.posted ? 'Posted' : 'Not posted'}.`));
+      const text = posting.state === 'uncertain' ? 'Write outcome unknown. Close this draft and reopen the current record from the list. Reopening does not confirm the previous write' :
+        posting.state === 'committed' ? 'Write completed. Refresh the current record to see its saved values' :
+        posting.posted ? 'Posted' : 'Not posted';
+      postingPanel.append(el('p',`Posting operation: ${posting.state}${posting.error ? ' ('+posting.error+')' : ''}. ${text}.`));
       if (['uncertain','committed'].includes(posting.state)) {
-        const recover = button('Resolve saved operation',postingPanel,async () => {
+        const refresh = posting.state === 'committed';
+        const action = button(refresh ? 'Refresh saved record' : 'Discard draft',postingPanel,async () => {
           if (client.pending || client.terminal || client.state.uncertain) return;
-          const owner = posting.session, receipt = posting.receipt;
-          const result = await perform('application.recoverPosting',{session:owner,receipt});
-          if (result && mounts.has(owner)) await mounts.get(owner).mount.refresh();
+          const owner = posting.session;
+          const result = await perform(refresh ? 'application.refreshPosting' : 'application.discardPosting',{session:owner});
+          if (refresh && result && mounts.has(owner)) await mounts.get(owner).mount.refresh();
         });
-        recover.disabled = !posting.receipt || client.pending > 0 || client.terminal || client.state.uncertain;
-        postingPanel.append(el('p','Recovery uses this host’s saved receipt. It never repeats posting handlers. Keep this application open.'));
+        action.disabled = client.pending > 0 || client.terminal || client.state.uncertain;
       }
     }
     drawCatalog(); drawPicker(); drawDialog(); drawInput(); reportView.update(client.state);

@@ -79,7 +79,7 @@ class DirectSourceTransactionTests(unittest.TestCase):
             with self.assertRaises(Stop):
                 self.vm.execute('A=Catalogs.Склады.CreateItem();BeginTransaction();A.Write();CommitTransaction();')
         self.clean();self.assertEqual(self.count(),0)
-    def test_uncertain_commit_keeps_existing_recovery_without_rechecking_source(self):
+    def test_uncertain_commit_neither_recovers_nor_rechecks_source(self):
         self.vm=fixture.DirectDatabaseTests.interpreter(self, allow_extensions=True)
         backend=self.context.backend
         for fault in ('before','after'):
@@ -93,5 +93,6 @@ class DirectSourceTransactionTests(unittest.TestCase):
                 with self.assertRaises((BackendError,BSLRuntimeError)):
                     self.vm.execute('A=Catalogs.Склады.CreateItem();A.Description="fault";BeginTransaction();A.Write();Inject();CommitTransaction();')
             self.assertEqual(len(calls),1);self.clean()
-            self.assertEqual(self.vm.variables['a'].is_new(),fault=='before')
+            self.assertTrue(self.vm.variables['a'].is_new())
+            self.assertIsNotNone(self.vm.variables['a']._pending_write)
         self.assertEqual(self.count(),1)

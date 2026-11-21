@@ -1,12 +1,14 @@
-"""Source-bound host root posting with immutable, host-lifetime receipts.
+"""Source-bound host root posting without operation history.
 
 This API takes plain immutable drafts, not interpreter/form objects. Each
 operation constructs a fresh document with empty AdditionalProperties and an
 empty movement buffer. Supplemental handler inputs are intentionally excluded.
 """
+from contextlib import contextmanager
 from dataclasses import dataclass, fields
 from datetime import datetime
 from decimal import Decimal
+from threading import Lock
 from uuid import UUID
 
 from yadinassi.db.catalog.catalog_backend import BackendError, TabularSectionRows, TabularRow
@@ -15,26 +17,9 @@ from yadinassi.db.database_transactions import RootOperation, require_host_root
 from .document_backend import DocumentDraft, DocumentKey, DocumentRevision
 from .document_posting_values import DocumentWriteMode
 
-MAX_RECEIPTS = 256
-
-
-class PostingRecoveryUnavailable(BackendError):
-    """No live host envelope. Storage retains its closed unsupported category."""
-    reason = 'recovery_unavailable'
-
-    def __init__(self):
-        super().__init__('unsupported')
-
-
 @dataclass(frozen=True, slots=True)
 class PostingOperationIntent:
     operation_id: UUID
-    database_id: UUID
-    generation: int
-    source_digest: str
-    profile: str
-    form: str
-    command: str
     mode: str
     draft: DocumentDraft
     expected: DocumentRevision | None
@@ -58,16 +43,19 @@ def _immutable(value):
 class RootPostingOperations:
     """Owned by the application host, outside form/server dispatch.
 
-    resolve requires this same live adapter. Database receipts alone are not a
-    restart-recovery envelope. Reusing an ID never reruns posting handlers.
+    Results are returned only to the current caller. The host keeps at most
+    one operation, and only while its physical SQLite resources need cleanup.
     """
+    _operation_type = RootOperation
+
     def __init__(self, context, configuration):
         self.context = context
         self.backend = context.backend
         require_host_root(self.backend)
         self.configuration = canonical(configuration)
         self._binding = None
-        self._operations = {}
+        self._operation_lock = Lock()
+        self._active_operation = None
         self._closed = False
         self._verify()
         from yadinassi.runtime import Interpreter
@@ -94,8 +82,29 @@ class RootPostingOperations:
             raise BackendError('schema_changed')
         self._binding = binding
 
+    @contextmanager
+    def _exclusive(self):
+        if not self._operation_lock.acquire(blocking=False):
+            raise BackendError('busy')
+        try: yield
+        finally: self._operation_lock.release()
+
+    def _release_active(self):
+        operation = self._active_operation
+        if operation is not None:
+            try: operation.release_resources()
+            finally:
+                if not operation.needs_cleanup:
+                    self._active_operation = None
+
+    def _clean_before_read(self):
+        if self._active_operation is not None:
+            with self._exclusive():
+                self._release_active()
+
     def verify_source(self):
         """Recheck the full exact source/profile/database binding at host root."""
+        self._clean_before_read()
         self._verify()
 
     def _intent(self, operation_id, draft, expected, form, command):
@@ -112,8 +121,7 @@ class RootPostingOperations:
         if (schema is None or draft.key.database_id != self._binding[0]
                 or form.split('.')[1:2] != [schema.name] or draft.tabular_sections is None):
             raise BackendError('conflict')
-        return PostingOperationIntent(operation_id, *self._binding,
-            self.configuration.source_digest, PROFILE, form, command, grant.mode, draft, expected)
+        return PostingOperationIntent(operation_id, grant.mode, draft, expected)
 
     def _document(self, intent):
         from .documents import BSLDocumentObject
@@ -144,51 +152,36 @@ class RootPostingOperations:
         return document
 
     def execute(self, operation_id, draft, expected, *, form, command):
-        require_host_root(self.backend)
-        intent = self._intent(operation_id, draft, expected, form, command)
-        previous = self._operations.get(operation_id)
-        if previous is not None:
-            if previous[0] != intent: raise BackendError('conflict')
-            return previous[1].receipt
-        if len(self._operations) >= MAX_RECEIPTS: raise BackendError('unsupported')
-        self._verify()
-        if self._interpreter._scheduler.pending or self._interpreter._scheduler._active_task is not None:
-            raise BackendError('unsupported')
-        document = self._document(intent)
-        operation = RootOperation(self.backend, operation_id)
-        modes = {'Write': DocumentWriteMode.WRITE, 'Post': DocumentWriteMode.POSTING,
-                 'UndoPosting': DocumentWriteMode.UNDO_POSTING}
-        # This is the last source/admission check before acquiring the root UoW.
-        callback = lambda: document.write(modes[intent.mode])
-        self._verify()
-        self._operations[operation_id] = (intent, operation, document)
-        return operation.run(callback)
-
-    def resolve(self, operation_id):
-        if type(operation_id) is not UUID or operation_id not in self._operations:
-            raise PostingRecoveryUnavailable()
-        operation = self._operations[operation_id][1]
-        operation.release_for_resolution()
-        self._verify()
-        return operation.resolve()
-
-    def acknowledge(self, operation_id):
-        if type(operation_id) is not UUID or operation_id not in self._operations:
-            raise PostingRecoveryUnavailable()
-        self._verify()
-        return self._operations[operation_id][1].acknowledge()
-
-    def receipt(self, operation_id):
-        if type(operation_id) is not UUID or operation_id not in self._operations:
-            raise PostingRecoveryUnavailable()
-        return self._operations[operation_id][1].receipt
-
-    def intent(self, operation_id):
-        if type(operation_id) is not UUID or operation_id not in self._operations:
-            raise PostingRecoveryUnavailable()
-        return self._operations[operation_id][0]
+        with self._exclusive():
+            if self._active_operation is not None:
+                raise BackendError('uncertain_commit')
+            self._operation_type._admit_root(self.backend)
+            intent = self._intent(operation_id, draft, expected, form, command)
+            self._verify()
+            if self._interpreter._scheduler.pending or self._interpreter._scheduler._active_task is not None:
+                raise BackendError('unsupported')
+            document = self._document(intent)
+            modes = {'Write': DocumentWriteMode.WRITE, 'Post': DocumentWriteMode.POSTING,
+                     'UndoPosting': DocumentWriteMode.UNDO_POSTING}
+            # This is the last source/admission check before acquiring the root UoW.
+            self._verify()
+            operation = self._operation_type(self.backend, operation_id)
+            self._active_operation = operation
+            try:
+                return operation.run(lambda: document.write(modes[intent.mode]))
+            except Exception as error:
+                # A physical cleanup fault may follow an already published
+                # in-memory outcome. Do not tell a caller the write was refused.
+                if isinstance(error, MemoryError) or operation.receipt.state not in ('committed', 'uncertain'):
+                    raise
+                return operation.receipt
+            finally:
+                if not operation.needs_cleanup:
+                    self._active_operation = None
 
     def close(self):
-        if any(op.locked for _, op, _ in self._operations.values()):
-            raise BackendError('uncertain_commit')
-        self._interpreter.close(); self._closed = True
+        with self._exclusive():
+            self._release_active()
+            if not self._closed:
+                self._interpreter.close()
+                self._closed = True

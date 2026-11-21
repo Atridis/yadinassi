@@ -1,5 +1,7 @@
 # Recovering an atomic catalog write batch
 
+> Historical contract, no longer supported by new writes. See [current commit uncertainty behavior](sqlite-commit-uncertainty.md).
+
 This is the host catalog backend's local persistence contract, not a new BSL
 transaction API or a claim of native 1C transaction parity. Existing transactions
 can create and update several catalog objects atomically. A lost COMMIT response

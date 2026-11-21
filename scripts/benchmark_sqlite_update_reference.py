@@ -2,23 +2,16 @@
 
 This is a read/modify/write reference, not a catalog backend. It assumes the
 admitted fixture has no custom fields, sections, hierarchy or write hooks.
-Schema/source admission and operation recovery are deliberately not reproduced.
-Each iteration reads a detached scalar record, then commits an optimistic update
-and the same receipt format as the catalog writer. No batching or durability
-shortcut is used. Setup and verify() belong outside the measured interval.
+Schema/source admission is deliberately not reproduced. Each iteration reads
+a detached scalar record, then commits an optimistic update without a receipt.
+No batching or durability shortcut is used. Setup and verify() are untimed.
 """
 from contextlib import closing
 from dataclasses import dataclass
 from decimal import Decimal
-import hashlib
-import json
 from pathlib import Path
 import sqlite3
-from uuid import UUID, uuid4
-
-
-def _json(value):
-    return json.dumps(value, ensure_ascii=True, separators=(',', ':'), allow_nan=False)
+from uuid import UUID
 
 
 @dataclass(frozen=True)
@@ -53,7 +46,6 @@ class SQLiteUpdateReference:
             self.table = '"' + row[0].replace('"', '""') + '"'
         self.read_record()  # Setup verifies that the requested record exists.
         self._first = None
-        self._last_receipt = None
 
     def _connect(self, readonly=False):
         connection = sqlite3.connect(
@@ -84,12 +76,6 @@ class SQLiteUpdateReference:
             raise ValueError('fixture Description must be a string of at most 100 characters')
         if record.record_id != self.record_id:
             raise ValueError('wrong record')
-        revision = record.revision + 1
-        outcomes = [[self.catalog_id, self.record_id, str(revision), record.code]]
-        intent = [self.catalog_id, self.record_id, record.code, description,
-                  bool(record.deletion_mark), '[]', revision]
-        digest = hashlib.sha256(_json(['write_outcomes_v1', [intent], outcomes]).encode('utf-8')).hexdigest()
-        receipt = (str(uuid4()), digest, _json(outcomes))
         with closing(self._connect()) as connection:
             try:
                 connection.execute('BEGIN IMMEDIATE')
@@ -100,22 +86,19 @@ class SQLiteUpdateReference:
                      self.record_id, record.revision)).rowcount
                 if changed != 1:
                     raise StaleRevisionError('stale revision')
-                connection.execute('INSERT INTO commit_receipt VALUES(?,?,?)', receipt)
                 connection.commit()
             except BaseException:
                 connection.rollback()
                 raise
-        return receipt
 
     def __call__(self):
         self._first = None
-        self._last_receipt = None
         total = Decimal(0)
         for i in range(1, self.n + 1):
             record = self.read_record()
             if self._first is None:
                 self._first = record
-            self._last_receipt = self.update_record(record, str(i))
+            self.update_record(record, str(i))
             total += 1
         return total
 
@@ -123,19 +106,13 @@ class SQLiteUpdateReference:
         """Verify persisted result independently, outside timing; raise on mismatch."""
         if self.n == 0:
             return
-        if self._first is None or self._last_receipt is None:
+        if self._first is None:
             raise AssertionError('reference has not completed')
         actual = self.read_record()
         expected = Record(self.record_id, self._first.revision + self.n,
                           self._first.code, str(self.n), self._first.deletion_mark)
         if actual != expected:
             raise AssertionError((actual, expected))
-        with closing(self._connect(True)) as connection:
-            receipt = connection.execute(
-                'SELECT operation_id,request_hash,revisions_json FROM commit_receipt WHERE operation_id=?',
-                (self._last_receipt[0],)).fetchone()
-        if receipt != self._last_receipt:
-            raise AssertionError('receipt mismatch')
 
 
 def make_update_reference(path, catalog_id, rid, n):

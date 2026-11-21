@@ -307,7 +307,7 @@ def _object_schema(value, budget, target):
     if type(schema) is not (DocumentSchema if document else CatalogSchema):
         _invalid('недопустимая схема объекта')
     if target and (value._pending_write is not None
-                   or (not document and value._pending_preparation is not None)):
+                   or (not document and value._uncertain_write)):
         raise BackendError('uncertain_commit')
     fields = [_Field(name, budget.name(name), True, True, name not in _READONLY)
               for name in (_DOCUMENT if document else _CATALOG)]

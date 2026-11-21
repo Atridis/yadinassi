@@ -79,9 +79,7 @@ def execution(backend):
             transaction = _registered(backend)
             if transaction is not None and transaction.owner is _execution.get():
                 try:
-                    if transaction.unit.state in ('uncertain', 'committed'):
-                        transaction.commit()
-                    else: transaction.rollback()
+                    transaction.finish_execution()
                 except BaseException as cleanup:
                     if (not isinstance(cleanup, Exception) or isinstance(cleanup, MemoryError)) and isinstance(error, Exception) and not isinstance(error, MemoryError):
                         raise
@@ -134,12 +132,8 @@ def begin(backend):
 def commit(backend):
     if not _admission_allowed.get(): raise BackendError('unsupported')
     if backend is not _execution_backend.get(): raise BackendError('unsupported')
-    transaction = _registered(backend) if backend is not None else None
+    transaction = current(backend)
     if transaction is None: raise BackendError('unsupported')
-    if transaction.owner is not _execution.get():
-        if _execution.get() is None or transaction.unit.state not in ('uncertain', 'committed'):
-            raise BackendError('unsupported')
-        transaction.owner = _execution.get()
     transaction.commit()
 
 
@@ -219,33 +213,34 @@ class Transaction:
         return tuple(prepared)
 
     def _install(self):
-        # All dictionaries, refs, UUIDs and section lists already exist. Keep
-        # prepared images until installation ends so retry is idempotent.
+        # All dictionaries, refs, UUIDs and section lists already exist.
+        # Installing a known committed result never writes to SQLite again.
         for participant, values, sections in self.prepared:
             participant.__dict__ = values
             for section in sections: section._dirty = False
         self.backend._bsl_transaction = None
 
+    def _close_terminal(self):
+        """Release physical resources; never read a receipt or reopen a writer."""
+        self.unit.close()
+        if self.unit._view._connection is not None:
+            raise BackendError('uncertain_commit')
+
     def commit(self):
         if self.leases: raise BackendError('unsupported')
         if self.unit.state == 'uncertain':
-            self.backend._bsl_transaction = None
-            try:
-                results = self.backend.resolve_unit_of_work(self.unit.operation_id, self.unit.requests)
-            finally:
-                self.backend._bsl_transaction = self
-            if results is None:
-                self._unlock(); self.backend._bsl_transaction = None
-                raise BackendError('conflict')
-            if results != self.unit._results: raise BackendError('uncertain_commit')
-            self.unit.state = 'committed'
-        elif self.unit.state == 'open':
+            raise BackendError('uncertain_commit')
+        if self.unit.state == 'open':
             if not self.participants:
-                self.unit.rollback(); self.backend._bsl_transaction = None
+                self.rollback()
                 return
             self.prepared = self._prepare()
             self.unit.commit()
-        elif self.unit.state != 'committed': raise BackendError('closed')
+        elif self.unit.state == 'committed':
+            # Only a known successful COMMIT can publish the prebuilt objects.
+            self._close_terminal()
+        else:
+            raise BackendError('closed')
         self._install()
 
     def _unlock(self):
@@ -255,20 +250,32 @@ class Transaction:
 
     def rollback(self):
         if self.leases: raise BackendError('unsupported')
-        if self.unit.state in ('uncertain', 'committed'):
+        if self.unit.state == 'uncertain':
+            raise BackendError('uncertain_commit')
+        if self.unit.state == 'committed':
             # Never describe an already committed transaction as rolled back.
-            self.commit()
+            self._close_terminal()
+            self._install()
             raise BackendError('conflict')
         self.unit.rollback(); self._unlock(); self.backend._bsl_transaction = None
 
     def finish_execution(self):
-        if self.unit.state in ('uncertain', 'committed'):
-            # Resolve while still owning the token; no replay. On failed
-            # resolution retain the locked buffers and pending journal.
-            self.commit()
-        else:
-            self.rollback()
-            raise BackendError('unsupported')
+        if self.leases: raise BackendError('unsupported')
+        if self.unit.state == 'uncertain':
+            try:
+                self._close_terminal()
+            finally:
+                # Once the SQL handle is gone, detach only the owner. Keep
+                # submitted buffers frozen: a lost reply does not prove rollback.
+                if self.unit._view._connection is None:
+                    self.backend._bsl_transaction = None
+            raise BackendError('uncertain_commit')
+        if self.unit.state == 'committed':
+            self._close_terminal()
+            self._install()
+            return
+        self.rollback()
+        raise BackendError('unsupported')
 
     def read_lease(self):
         from .sqlite.sqlite_catalog import _View, _close_document_scan
@@ -364,7 +371,7 @@ def query_view(manager):
 
 @dataclass(frozen=True, slots=True)
 class RootOperationReceipt:
-    """Host-lifetime immutable journal envelope; not a durable restart token."""
+    """One immutable outcome returned to the current host caller."""
     operation_id: UUID
     state: str
     requests: tuple = ()
@@ -395,10 +402,10 @@ def require_host_root(backend):
 
 
 class RootOperation:
-    """Trusted host-only coordinator with preallocated durable outcome images.
+    """Run one trusted host operation and retain its in-memory outcome.
 
-    The callback runs once. Recovery releases retained resources and resolves
-    the exact frozen journal, never a callback, form dispatch or posting handler.
+    An ambiguous COMMIT is terminal. Only a known successful COMMIT can
+    install its prepared images; no durable lookup or replay follows a fault.
     """
     def __init__(self, backend, operation_id):
         self._admit_root(backend)
@@ -418,17 +425,11 @@ class RootOperation:
         # This public coordinator never broadens the original v13 admission.
         require_host_root(backend)
 
-    def acknowledge(self):
-        from .sqlite.sqlite_transactions import acknowledge_root
-        return acknowledge_root(self)
-
     @property
-    def locked(self):
+    def needs_cleanup(self):
         transaction = self._transaction
-        return (self.receipt.state in ('prepared', 'uncertain')
-            or self.receipt.state == 'committed' and not self.receipt.accepted
-            or transaction is not None and (transaction.leases
-                or transaction.unit._view._connection is not None))
+        return transaction is not None and (transaction.leases or
+            transaction.unit._view._connection is not None)
 
     def _enter(self):
         self._admit_root(self.backend)
@@ -468,8 +469,7 @@ class RootOperation:
             self._images = (
                 RootOperationReceipt(self.receipt.operation_id, 'uncertain', requests, outcomes, False, 'uncertain_commit'),
                 RootOperationReceipt(self.receipt.operation_id, 'committed', requests, outcomes, False, 'acceptance_required'),
-                RootOperationReceipt(self.receipt.operation_id, 'committed', requests, outcomes, True),
-                RootOperationReceipt(self.receipt.operation_id, 'not_committed', requests, outcomes, False, 'conflict'))
+                RootOperationReceipt(self.receipt.operation_id, 'committed', requests, outcomes, True))
             self.receipt = self._images[0]
             self._commit_attempted = True
             transaction.commit()
@@ -492,7 +492,7 @@ class RootOperation:
             if tokens is not None: self._leave(tokens)
         return self.receipt
 
-    def release_for_resolution(self):
+    def release_resources(self):
         """Release only this operation's retained SQL resources, no replay."""
         require_admission()
         if _execution.get() is not None or _execution_backend.get() is not None:
@@ -509,25 +509,3 @@ class RootOperation:
             if not self._commit_attempted:
                 transaction._unlock(); self.receipt = self._rejected
         if registered is transaction: self.backend._bsl_transaction = None
-
-    def resolve(self):
-        self.release_for_resolution()
-        self._admit_root(self.backend)
-        if self.receipt.state not in ('uncertain', 'committed') or self.receipt.accepted:
-            return self.receipt
-        transaction = self._transaction
-        if transaction is None or transaction.leases:
-            raise BackendError('unsupported')
-        outcomes = self.backend.resolve_unit_of_work(self.receipt.operation_id, self.receipt.requests)
-        if outcomes is None:
-            if self.receipt.state == 'committed': raise BackendError('integrity')
-            transaction._unlock()
-            self.receipt = self._images[3]
-            return self.receipt
-        if outcomes != self.receipt.outcomes: raise BackendError('integrity')
-        # Publish known committed before acceptance, which can still fail.
-        self.receipt = self._images[1]
-        transaction.unit.state = 'committed'
-        transaction._install()
-        self.receipt = self._images[2]
-        return self.receipt

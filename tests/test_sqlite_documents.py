@@ -189,7 +189,7 @@ D.Write();O=D.Ref.GetObject();Message(O.Lines.Count());O.Lines.Clear();O.Write()
         finally: tx.close()
         self.assertEqual(self.sql('SELECT COUNT(*) FROM document_record'),[(2,)])
 
-    def test_uncertain_committed_response_resolves_without_replay(self):
+    def test_lost_commit_acknowledgement_never_replays_and_cleanup_is_separate(self):
         from test_catalog_commit_cleanup_recovery import FaultConnection
         faults = ({'commit_fault':'after'}, {'close_fault':'after','close_count':1},
                   {'close_fault':'before','close_count':100}, {'commit_fault':'interrupt'},
@@ -208,9 +208,16 @@ D.Write();O=D.Ref.GetObject();Message(O.Lines.Count());O.Lines.Clear();O.Write()
                 expected = (KeyboardInterrupt if fault.get('commit_fault') == 'interrupt' else
                             MemoryError if fault.get('commit_fault') == 'memory' else BackendError)
                 with patch.object(backend,'begin_document_write',side_effect=begin),self.assertRaises(expected): obj.write()
-                self.assertTrue(obj.is_new())
-                with self.assertRaises(BackendError): obj.set_member('Text','different')
-                with self.assertRaises(BackendError): section.add()
+                if fault.get('commit_fault'):
+                    self.assertTrue(obj.is_new())
+                    with self.assertRaisesRegex(BackendError,'uncertain_commit'): obj.set_member('Text','different')
+                    with self.assertRaisesRegex(BackendError,'uncertain_commit'): section.add()
+                    with patch.object(backend,'begin_document_write') as retry:
+                        with self.assertRaisesRegex(BackendError,'uncertain_commit'): obj.write()
+                        retry.assert_not_called()
+                else:
+                    self.assertFalse(obj.is_new())
+                    self.assertEqual(obj.get_member('Number'),str(index).zfill(9))
                 if fault.get('close_count') == 100:
                     self.assertIs(backend._active,captured[0]._view)
                     with self.assertRaisesRegex(BackendError,'closed'): captured[0].documents()
@@ -218,26 +225,28 @@ D.Write();O=D.Ref.GetObject();Message(O.Lines.Count());O.Lines.Clear();O.Write()
                     captured[0]._view._connection.close_count = 0
                     captured[0].close()
                 self.assertIsNone(backend._active)
-                with patch.object(DocumentView,'commit',side_effect=AssertionError('must not replay')): obj.write()
-                self.assertFalse(obj.is_new()); self.assertEqual(obj.get_member('Number'),str(index).zfill(9))
         self.assertEqual(self.sql('SELECT COUNT(*) FROM document_record'),[(len(faults),)])
-        self.assertEqual(self.sql('SELECT COUNT(*) FROM document_commit_receipt'),[(len(faults),)])
+        self.assertEqual(self.sql('SELECT COUNT(*) FROM document_commit_receipt'),[(0,)])
         self.assertEqual(self.sql('SELECT COUNT(*) FROM commit_receipt'),[(0,)])
 
-    def test_uncertain_uncommitted_response_retries_same_frozen_intent(self):
+    def test_uncertain_uncommitted_response_refuses_same_frozen_intent(self):
         obj = self.object()
         def fail_before_commit(tx): tx.close(); raise BackendError('uncertain_commit')
-        with patch.object(DocumentView,'commit',fail_before_commit),self.assertRaises(BackendError): obj.write()
+        with patch.object(DocumentView,'_confirm_commit',fail_before_commit),self.assertRaises(BackendError): obj.write()
         self.assertTrue(obj.is_new());self.assertEqual(self.sql('SELECT COUNT(*) FROM document_record'),[(0,)])
-        obj.write();self.assertEqual(obj.get_member('Number'),'000000001')
+        with self.assertRaisesRegex(BackendError,'uncertain_commit'): obj.write()
+        fresh = self.object();fresh.write()
+        self.assertEqual(fresh.get_member('Number'),'000000001')
 
     def test_explicit_number_collision_skipped_and_rollback_does_not_consume(self):
         self.execute('D=Documents.Orders.CreateDocument();D.Number="000000001";D.Write();N=Documents.Orders.CreateDocument();N.Write();')
         self.assertEqual(self.vm.execute('N.Number'),'000000002')
         obj = self.object()
-        with patch.object(DocumentView,'commit',new=lambda tx:(tx.close(),(_ for _ in ()).throw(BackendError('uncertain_commit')))[1]),self.assertRaises(BackendError): obj.write()
+        with patch.object(DocumentView,'_confirm_commit',new=lambda tx:(tx.close(),(_ for _ in ()).throw(BackendError('uncertain_commit')))[1]),self.assertRaises(BackendError): obj.write()
         self.assertEqual(self.sql('SELECT next_value FROM document_sequence'),[(3,)])
-        obj.write();self.assertEqual(obj.get_member('Number'),'000000003')
+        with self.assertRaisesRegex(BackendError,'uncertain_commit'): obj.write()
+        fresh = self.object();fresh.write()
+        self.assertEqual(fresh.get_member('Number'),'000000003')
 
     def test_select_order_bounds_snapshot_and_get_object(self):
         self.execute('A=Documents.Orders.CreateDocument();A.Date=Date(2026,11,10);A.Write();B=Documents.Orders.CreateDocument();B.Date=Date(2026,11,9);B.Write();S=Documents.Orders.Select();B.Text="later";B.Write();')
@@ -318,14 +327,13 @@ D.Write();O=D.Ref.GetObject();Message(O.Lines.Count());O.Lines.Clear();O.Write()
         self.assertEqual(self.execute('D=Documents.Orders.CreateDocument();D.Number="123456789suffix";D.Text="1234567890123456789012345678901234567890";D.Amount=12.345;D.Write();Message(D.Number);Message(D.Text);Message(D.Amount);'),['123456789','12345678901234567890123456789012','12,35'])
         self.assertEqual(self.vm.execute('D.Ref.Amount'),Decimal('12.35'))
 
-    def test_persisted_receipt_mismatch_never_replayed(self):
-        obj = self.object();original = DocumentView.commit
-        with patch.object(DocumentView,'commit',new=lambda tx:(original(tx),(_ for _ in ()).throw(BackendError('uncertain_commit')))[1]),self.assertRaises(BackendError):obj.write()
-        self.sql('UPDATE document_commit_receipt SET number=?',('000000002',))
-        with self.assertRaises(BackendError): obj.write()
-        self.sql('UPDATE document_commit_receipt SET number=?,request_hash=?',('000000001','0'*64))
-        with self.assertRaises(BackendError):obj.write()
-        self.assertTrue(obj.is_new());self.assertEqual(self.sql('SELECT COUNT(*) FROM document_record'),[(1,)])
+    def test_archived_receipt_is_neither_required_nor_updated(self):
+        obj = self.object()
+        self.sql('INSERT INTO document_commit_receipt VALUES(?,?,?,?,?,?)',
+                 (str(obj._operation_id),'0'*64,str(self.schema.identity),str(obj._key.record_id),1,'archived'))
+        obj.write()
+        self.assertEqual(obj.get_member('Number'),'000000001')
+        self.assertEqual(self.sql('SELECT number FROM document_commit_receipt'),[('archived',)])
 
     def test_number_exhaustion_leaves_new_object_and_no_changes(self):
         self.sql('UPDATE document_sequence SET next_value=?',(10**9,))

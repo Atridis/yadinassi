@@ -612,28 +612,31 @@ class ConfigurationBroker:
         if sid not in self.sessions:
             raise ValueError('retired session')
         server, nocontext, context = self.sessions[sid]
+        owned = self.objects.get(sid)
+        posting_locked = (self.posting_application and owned is not None and hasattr(owned, 'operations')
+                          and (owned.pending_commit or owned.pending_refresh))
+        if posting_locked and operation in ('form', 'invoke', 'reference'):
+            raise ValueError('posting draft is locked')
         if operation == 'posting':
-            _keys(payload, 'action command receipt form')
+            _keys(payload, 'action command form')
             if not self.posting_application or sid not in self.objects or not hasattr(self.objects[sid], 'operations'):
                 raise ValueError('explicit posting form required')
             definition = next(d for d in self.definitions.values() if d.name == self.objects[sid].form)
             binding = next((b for b in server.bindings if b.name == 'YadinassiPostingSync'), None)
             frame = payload['form']; action = payload['action']; owned = self.objects[sid]
             if (binding is None or type(frame) is not dict or frame.get('operation') != 'call'
-                    or frame.get('endpoint') != binding.endpoint or action not in ('execute', 'recover', 'sync')):
+                    or frame.get('endpoint') != binding.endpoint or action not in ('execute', 'refresh', 'sync')):
                 raise ValueError('unknown posting synchronization capability')
             if action == 'execute' and not any(g.form == definition.name and g.command == payload['command']
                     for g in self.posting_configuration.commands):
                 raise ValueError('ungranted posting command')
             if action != 'execute' and payload['command'] is not None:
                 raise ValueError('unexpected posting command')
-            if action == 'recover' and (type(payload['receipt']) is not str or payload['receipt'] != owned.receipt_token):
-                raise ValueError('wrong posting receipt capability')
-            if action != 'recover' and payload['receipt'] is not None:
-                raise ValueError('unexpected posting receipt')
-            if action == 'recover':
-                from yadinassi.configuration.configuration_posting_document import recover_posting_frame
-                return recover_posting_frame(definition, server, owned, frame, payload['receipt'])
+            if action == 'refresh':
+                from yadinassi.configuration.configuration_posting_document import refresh_posting_frame
+                return refresh_posting_frame(definition, server, owned, frame)
+            if owned.pending_commit or owned.pending_refresh:
+                raise ValueError('posting draft is locked')
             # Synchronize typed buffers through the ordinary replica protocol.
             # The root effect cannot run until this dispatch returns successfully.
             response = decode_line(server.exchange(encode_line(frame)))
@@ -641,7 +644,7 @@ class ConfigurationBroker:
                 return {'form': response, 'posting': None}
             from yadinassi.configuration.configuration_posting_document import dispatch_posting
             from yadinassi.forms.form_replication import _pack_state
-            state = dispatch_posting(definition, server, owned, action, payload['command'], payload['receipt'])
+            state = dispatch_posting(definition, server, owned, action, payload['command'])
             response['state'] = _pack_state(server.session, server.session._replica_handler_names)
             encode_line(response)
             return {'form': response, 'posting': state}
@@ -649,6 +652,11 @@ class ConfigurationBroker:
             if payload != {}:
                 raise ValueError('invalid close guard')
             owned = self.objects.get(sid)
+            from yadinassi.configuration.configuration_catalog import CatalogObjectSession
+            if isinstance(owned, CatalogObjectSession) and owned.pending_commit:
+                if self.application is None or not self.application.interpreter.pending_promises:
+                    return {'allowed': True, 'discard_unknown_catalog': True}
+                return {'allowed': False}
             dirty = (self.posting_application and owned is not None and hasattr(owned, 'operations') and
                 next(d for d in self.definitions.values() if d.name == owned.form)._document_image(server.session) != owned.baseline)
             return {'allowed': not dirty and (owned is None or not (owned.pending_commit or owned.pending_refresh))
@@ -680,9 +688,13 @@ class ConfigurationBroker:
                 raise ValueError('application tasks must finish before releasing a form')
             owned = self.objects.get(sid)
             if owned is not None:
-                owned.verify_source()
-                if payload.get('operation') in ('close', 'dispose'):
-                    owned.require_discardable()
+                from yadinassi.configuration.configuration_catalog import CatalogObjectSession
+                discard = (payload.get('operation') == 'dispose'
+                           and isinstance(owned, CatalogObjectSession) and owned.pending_commit)
+                if not discard:
+                    owned.verify_source()
+                    if payload.get('operation') in ('close', 'dispose'):
+                        owned.require_discardable()
             scope = (nullcontext() if self.application is None else
                      self.application.event_messages(server.session._record_message))
             with scope:
@@ -700,13 +712,22 @@ class ConfigurationBroker:
                      self.application.event_messages(nocontext._message))
             with scope:
                 return decode_line(nocontext.exchange(encode_line(payload)))
-        if operation == 'retire':
+        if operation in ('retire', 'discardPosting'):
             if payload != {}:
                 raise ValueError('invalid retirement')
             if self.application is not None and self.application.interpreter.pending_promises:
                 raise ValueError('application tasks must finish before releasing a form')
             owned = self.objects.get(sid)
-            if owned is not None and ((self.posting_application and hasattr(owned, 'operations')) or self.inventory_application): owned.close()
+            if operation == 'discardPosting':
+                if not posting_locked or server.session._busy:
+                    raise ValueError('unknown posting draft required')
+                owned.discard_unknown()
+            elif owned is not None and ((self.posting_application and hasattr(owned, 'operations')) or self.inventory_application):
+                from yadinassi.configuration.configuration_catalog import CatalogObjectSession
+                if isinstance(owned, CatalogObjectSession) and owned.pending_commit and server.session.closed:
+                    owned.close(discard_unknown=True)
+                else:
+                    owned.close()
             del self.sessions[sid]
             self.objects.pop(sid, None)
             try:
@@ -1268,13 +1289,13 @@ class ConfigurationController:
             raise ValueError('posting source command binding changed')
         return command
 
-    def _posting_sync(self, sid, action, command=None, receipt=None):
+    def _posting_sync(self, sid, action, command=None):
         controller, entry = self.sessions[sid]
         binding = next((b for b in self.definitions[entry].program.server_bindings
             if b.name == 'YadinassiPostingSync'), None)
         if binding is None or controller.session._busy:
             raise ValueError('posting barrier requires completed dispatch')
-        self._posting_action = (sid, action, command, receipt)
+        self._posting_action = (sid, action, command)
         try:
             controller.session._request('call', binding)
             controller.session.revision += 1
@@ -1405,10 +1426,8 @@ class ConfigurationController:
                 _keys(result, 'form posting')
                 state = result['posting']
                 if state is not None:
-                    import re
-                    _keys(state, 'receipt state error posted')
-                    if (state['receipt'] is not None and (type(state['receipt']) is not str or not re.fullmatch('[0-9a-f]{32}', state['receipt']))
-                            or state['state'] not in ('new', 'unchanged', 'saved', 'committed', 'uncertain', 'rejected')
+                    _keys(state, 'state error posted')
+                    if (state['state'] not in ('new', 'unchanged', 'saved', 'committed', 'uncertain', 'rejected')
                             or state['error'] not in (None, 'refresh_required', 'outcome_unknown', 'operation_refused')
                             or (state['posted'] is not None if state['state'] in ('uncertain', 'committed')
                                 else type(state['posted']) is not bool)):
@@ -1428,10 +1447,11 @@ class ConfigurationController:
                 self._reference_changed = changed
                 if result['uncertain']: self._lock()
             elif operation == 'guardClose':
-                _keys(result, 'allowed')
-                if type(result['allowed']) is not bool:
+                _keys(result, 'allowed' + (' discard_unknown_catalog' if 'discard_unknown_catalog' in result else ''))
+                if (type(result['allowed']) is not bool or 'discard_unknown_catalog' in result
+                        and (result['allowed'] is not True or result['discard_unknown_catalog'] is not True)):
                     raise ValueError('invalid close guard response')
-            elif operation == 'retire' and result != {}:
+            elif operation in ('retire', 'discardPosting') and result != {}:
                 raise ValueError('invalid retirement')
             return result
         except BaseException:
@@ -1502,11 +1522,11 @@ class ConfigurationController:
         try:
             def exchange(raw):
                 if self._posting_action is not None:
-                    owner, action, command, receipt = self._posting_action
+                    owner, action, command = self._posting_action
                     if owner != sid: raise ValueError('posting action owner mismatch')
                     self._posting_action = None
                     result = self._call('posting', sid, {'action': action, 'command': command,
-                        'receipt': receipt, 'form': decode_line(raw)})
+                        'form': decode_line(raw)})
                     return encode_line(result['form'])
                 if self._reference_action is not None:
                     owner, action = self._reference_action
@@ -1587,11 +1607,11 @@ class ConfigurationController:
                 error = failed
         return error
 
-    def _retire_completed_form(self, sid):
+    def _retire_completed_form(self, sid, *, discard_posting=False):
         """Retirement acknowledgement precedes every completion. Never retry."""
         controller, _ = self.sessions[sid]
         owned = self.owned_results.get(sid)
-        self._call('retire', sid)
+        self._call('discardPosting' if discard_posting else 'retire', sid)
         del self.sessions[sid]
         self.posting_states.pop(sid, None)
         if self.active == sid:
@@ -1819,7 +1839,7 @@ class ConfigurationController:
                 if method != 'application.catalog' or self.report is not None and 'page' in self.report:
                     self.report = None
                 self.report_setup = None
-            error = None; sid = None; form = None
+            error = None; sid = None; form = None; discard_catalog = False
             updates = []; retained_before = set(self.sessions)
             if self.closed:
                 error = 'closed'
@@ -1999,18 +2019,42 @@ class ConfigurationController:
                         raise ValueError('finish reference selection first')
                     closing = (type(nested_request) is dict and nested_request.get('method') == 'form.event'
                                and type(nested_request.get('params')) is dict and nested_request['params'].get('event') == 'close')
-                    if closing and self.definitions[entry].posting_application and nested_request['params'].get('revision') == controller.session.revision:
+                    posting = self.posting_states.get(sid)
+                    posting_blocked = (posting is not None and posting['state'] in ('uncertain', 'committed')
+                                       and not readonly_snapshot)
+                    if (not posting_blocked and closing and self.definitions[entry].posting_application
+                            and nested_request['params'].get('revision') == controller.session.revision):
                         self._posting_sync(sid, 'sync')
                         nested_request = dict(nested_request, params=dict(nested_request['params'], revision=controller.session.revision))
-                    blocked = owner_blocked or (closing and ((self.application is not None
-                                  and self.application.interpreter.pending_promises)
-                               or ((self.definitions[entry].catalog_schema is not None or self.definitions[entry].document_schema is not None or self.application is not None)
-                                  and not self._call('guardClose', sid)['allowed'])))
+                    guard = None
+                    pending_tasks = closing and self.application is not None and self.application.interpreter.pending_promises
+                    if (closing and not posting_blocked and not owner_blocked and not pending_tasks
+                            and (self.definitions[entry].catalog_schema is not None
+                                 or self.definitions[entry].document_schema is not None or self.application is not None)):
+                        guard = self._call('guardClose', sid)
+                    discard_catalog = (guard is not None and guard.get('discard_unknown_catalog') is True
+                            and self.owned_results.get(sid) is None
+                            and set(nested_request) == {'jsonrpc', 'id', 'method', 'params'}
+                            and nested_request['jsonrpc'] == '2.0'
+                            and type(nested_request['id']) is int and 1 <= nested_request['id'] <= MAX_COUNTER
+                            and set(nested_request['params']) == {'event', 'revision'}
+                            and type(nested_request['params']['revision']) is int
+                            and nested_request['params']['revision'] == controller.session.revision)
+                    blocked = (posting_blocked or owner_blocked or pending_tasks
+                               or guard is not None and (not guard['allowed']
+                                   or guard.get('discard_unknown_catalog') and not discard_catalog))
                     if blocked:
                         error = self._owner_block_error(sid) if owner_blocked else 'save_recovery_required'
                         form = self._form_exchange(controller, {'jsonrpc': '2.0', 'id': nested_request['id'],
                             'method': 'form.snapshot', 'params': {}})
                         form['result']['error'] = 'busy'
+                    elif discard_catalog:
+                        # An explicit Close retires only this uncertain draft;
+                        # the replica dispose packet carries no delta or handler.
+                        controller.session.dispose()
+                        form = controller.exchange({'jsonrpc': '2.0', 'id': nested_request['id'],
+                                                    'method': 'form.snapshot', 'params': {}})
+                        error = 'outcome_unknown'
                     else:
                         form = self._form_exchange(controller, nested_request)
                         form, close_error = self._finish_owned_close(sid, form)
@@ -2055,17 +2099,23 @@ class ConfigurationController:
                 sid, form, error = self._answer_dialog(params, updates)
             elif method == 'application.answerInput':
                 sid, form, error = self._answer_input(params, updates)
-            elif method == 'application.recoverPosting':
-                _keys(params, 'session receipt')
+            elif method in ('application.refreshPosting', 'application.discardPosting'):
+                _keys(params, 'session')
                 sid = params['session']
-                if not self.posting_application or sid not in self.sessions:
+                if (not self.posting_application or type(sid) is not str or sid not in self.sessions
+                        or self._owner_blocked(sid) or self.choice is not None):
                     raise ValueError('posting session required')
                 state = self.posting_states.get(sid)
-                if state is None or params['receipt'] != state['receipt'] or state['receipt'] is None:
-                    raise ValueError('posting receipt owner mismatch')
-                self._posting_sync(sid, 'recover', receipt=params['receipt'])
-                controller, entry = self.sessions[sid]
-                form = self._form_exchange(controller, {'jsonrpc': '2.0', 'id': 1, 'method': 'form.snapshot', 'params': {}})
+                if method == 'application.refreshPosting':
+                    if state is None or state['state'] != 'committed':
+                        raise ValueError('known commit awaiting refresh required')
+                    self._posting_sync(sid, 'refresh')
+                    controller, _ = self.sessions[sid]
+                    form = self._form_exchange(controller, {'jsonrpc': '2.0', 'id': 1, 'method': 'form.snapshot', 'params': {}})
+                else:
+                    if state is None or state['state'] != 'uncertain' or self.owned_results.get(sid) is not None:
+                        raise ValueError('unknown posting draft required')
+                    self._retire_completed_form(sid, discard_posting=True)
                 if self.catalog is not None:
                     projection = self._call('catalog', payload={'entry': self.catalog['entry']})
                     error = projection.get('error'); self.catalog = None if error else projection
@@ -2092,7 +2142,8 @@ class ConfigurationController:
                         self.closed = True
             else:
                 raise ValueError('unknown application method')
-            queued_error = self._drain()
+            queued_error = (None if discard_catalog or method in ('application.refreshPosting', 'application.discardPosting')
+                            else self._drain())
             final_updates = []
             for update in updates:
                 owner = update['session']
@@ -2146,7 +2197,7 @@ class ConfigurationHandler(_Handler):
     asset_directory = 'configuration'
     methods = ('application.hello', 'application.snapshot', 'application.open',
                'application.form', 'application.close', 'application.catalog', 'application.openRecord', 'application.openRecorder', 'application.reference',
-               'application.recoverPosting', 'application.answerDialog', 'application.answerInput', 'application.report',
+               'application.refreshPosting', 'application.discardPosting', 'application.answerDialog', 'application.answerInput', 'application.report',
                'application.reportSetup', 'application.reportPage', 'application.catalogPage', 'application.catalogFilter')
 
 

@@ -215,14 +215,15 @@ class BSLInformationRegisterManager(BSLObject):
 class BSLInformationRegisterRecordManager(BSLObject):
     def __init__(self, manager):
         self._manager = manager; self._record_type = manager._record_type
-        self._pending = None; self.clear()
+        self._pending = None; self._standalone_uncertain = False; self.clear()
     def clear(self):
         if self._pending is not None: raise BackendError('uncertain_commit')
         self._values = self._manager._defaults(); self._revision = None
         self._operation_id = uuid4()
     def selected(self): return self._revision is not None
     def read(self):
-        if self._pending is not None: raise BackendError('uncertain_commit')
+        if self._pending is not None and not self._standalone_uncertain:
+            raise BackendError('uncertain_commit')
         m = self._manager; key = m._record_key(self._values)
         view = m._view()
         try: record = view.read_record(key)
@@ -231,6 +232,9 @@ class BSLInformationRegisterRecordManager(BSLObject):
         if record is None:
             for f in m._schema.key_fields: values[f.name.casefold()] = self._values[f.name.casefold()]
         self._values, self._revision = values, None if record is None else record.revision
+        if self._standalone_uncertain:
+            self._operation_id = uuid4()
+            self._pending = None; self._standalone_uncertain = False
     def _accept(self, outcome):
         if type(outcome) is not RegisterOutcome or type(outcome.revision) is not RegisterRevision:
             raise BackendError('uncertain_commit')
@@ -250,18 +254,12 @@ class BSLInformationRegisterRecordManager(BSLObject):
         m = self._manager
         from yadinassi.db.database_transactions import current
         transaction = current(m._backend)
-        if transaction is not None and self._pending is not None: raise BackendError('unsupported')
+        if self._pending is not None: raise BackendError('uncertain_commit')
         if not m._writable(): raise BackendError('unsupported')
-        if self._pending is not None:
-            draft, expected, operation, pending_delete = self._pending
-            if deleted != pending_delete: raise BackendError('uncertain_commit')
-            outcome = m._backend.resolve_register_write(operation,draft,expected,deleted)
-            if outcome is not None: self._accept(outcome); return
-        else:
-            if deleted and self._revision is None: raise ValueError('Read an existing record before Delete')
-            draft = RegisterDraft(m._record_key(self._values),tuple(m._stored(f,self._values[f.name.casefold()])
-                for f in (*m._schema.resources,*m._schema.attributes)))
-            expected, operation = self._revision, self._operation_id
+        if deleted and self._revision is None: raise ValueError('Read an existing record before Delete')
+        draft = RegisterDraft(m._record_key(self._values),tuple(m._stored(f,self._values[f.name.casefold()])
+            for f in (*m._schema.resources,*m._schema.attributes)))
+        expected, operation = self._revision, self._operation_id
         if transaction is not None:
             transaction.stage(self, 'register_delete' if deleted else 'register_write',
                               draft, expected, (draft,expected,operation,deleted))
@@ -272,9 +270,12 @@ class BSLInformationRegisterRecordManager(BSLObject):
             if deleted: tx.delete(draft,expected)
             else: tx.write(draft,expected)
             self._pending = (draft,expected,operation,deleted); committing = True
-            outcome = tx.commit(); tx.close(); self._accept(outcome)
+            outcome = tx._confirm_commit(); self._accept(outcome)
+            committing = False
+            tx.close()
         except BaseException as error:
-            if not committing: self._pending = None
+            if committing: self._standalone_uncertain = True
+            else: self._pending = None
             for cleanup in (tx.rollback,tx.close):
                 try: cleanup()
                 except BaseException as cleanup_error:
@@ -386,6 +387,7 @@ class BSLInformationRegisterRecordSet(BSLObject):
     def __init__(self,manager):
         self._manager=manager;self._set_type=manager._set_type
         self._rows=[];self._snapshot=None;self._pending=None;self._operation_id=uuid4()
+        self._standalone_uncertain=False
         self._filter=_RegisterFilter(self)
     def _editable(self):
         if self._pending is not None: raise BackendError('uncertain_commit')
@@ -420,12 +422,16 @@ class BSLInformationRegisterRecordSet(BSLObject):
         for row in rows:
             row._require();yield row
     def read(self):
-        self._editable();m=self._manager;view=m._view()
+        if not self._standalone_uncertain:self._editable()
+        m=self._manager;view=m._view()
         try: records,snapshot=view.read_set(m._schema.identity,self._filters())
         finally: view.close()
         if type(records) is not tuple or len(records)>1000 or type(snapshot) is not str or len(snapshot)!=64: raise BackendError('integrity')
         rows=[BSLInformationRegisterRecord(self,m._fields(r)) for r in records]
         self._rows=rows;self._snapshot=snapshot
+        if self._standalone_uncertain:
+            self._operation_id=uuid4()
+            self._pending=None;self._standalone_uncertain=False
     def _accept(self,outcome):
         if (type(outcome) is not RegisterSetOutcome or outcome.register_id!=self._manager._schema.identity
                 or type(outcome.snapshot) is not str or len(outcome.snapshot)!=64
@@ -437,18 +443,12 @@ class BSLInformationRegisterRecordSet(BSLObject):
         m=self._manager
         from yadinassi.db.database_transactions import current
         transaction = current(m._backend)
-        if transaction is not None and self._pending is not None: raise BackendError('unsupported')
+        if self._pending is not None: raise BackendError('uncertain_commit')
         if not m._writable(): raise BackendError('unsupported')
-        if self._pending is not None:
-            draft,operation=self._pending
-            if draft.replace!=replace: raise BackendError('uncertain_commit')
-            outcome=m._backend.resolve_register_set(operation,draft)
-            if outcome is not None: self._accept(outcome);return
-        else:
-            rows=tuple(RegisterDraft(m._record_key(row._values),tuple(m._stored(f,row._values[f.name.casefold()])
-                for f in (*m._schema.resources,*m._schema.attributes))) for row in self._rows)
-            draft=RegisterSetDraft(m._schema.identity,self._filters(),rows,replace,self._snapshot)
-            operation=self._operation_id
+        rows=tuple(RegisterDraft(m._record_key(row._values),tuple(m._stored(f,row._values[f.name.casefold()])
+            for f in (*m._schema.resources,*m._schema.attributes))) for row in self._rows)
+        draft=RegisterSetDraft(m._schema.identity,self._filters(),rows,replace,self._snapshot)
+        operation=self._operation_id
         if transaction is not None:
             transaction.stage(self, 'register_set', draft, None, (draft,operation))
             return None
@@ -456,9 +456,12 @@ class BSLInformationRegisterRecordSet(BSLObject):
         try:
             m._check_view(tx);tx.write_set(draft)
             self._pending=(draft,operation);committing=True
-            outcome=tx.commit();tx.close();self._accept(outcome)
+            outcome=tx._confirm_commit();self._accept(outcome)
+            committing=False
+            tx.close()
         except BaseException as error:
-            if not committing: self._pending=None
+            if committing: self._standalone_uncertain=True
+            else: self._pending=None
             for cleanup in (tx.rollback,tx.close):
                 try: cleanup()
                 except BaseException as cleanup_error:

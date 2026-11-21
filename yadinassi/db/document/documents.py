@@ -286,18 +286,10 @@ class BSLDocumentObject(BSLObject):
         m = self._manager
         from yadinassi.db.database_transactions import current
         transaction = current(m._backend)
-        if transaction is not None and self._pending_write is not None: raise BackendError('unsupported')
+        if self._pending_write is not None: raise BackendError('uncertain_commit')
         if not m._writable(): raise BackendError('unsupported')
-        if self._pending_write is not None:
-            draft,expected,operation = self._pending_write
-            result = m._backend.resolve_document_write(operation,draft,expected)
-            if result is not None: self._accept(result); return None
-        else:
-            sections = tuple(s._stored_rows() for s in self._sections.values())
-            draft = DocumentDraft(self._key,self._values['number'],_date(self._values['date']),self._values['deletionmark'],
-                tuple(m._stored(f,self._values[f.name.casefold()]) for f in m._schema.fields),sections,
-                self.is_new() and m._schema.numbering == 'decimal_v1' and self._values['number'] == '')
-            expected,operation = self._revision,self._operation_id
+        draft = self._draft()
+        expected,operation = self._revision,self._operation_id
         if transaction is not None:
             transaction.stage(self, 'document_create' if expected is None else 'document_update',
                               draft, expected, (draft,expected,operation))
@@ -308,7 +300,9 @@ class BSLDocumentObject(BSLObject):
             if expected is None: tx.create(draft)
             else: tx.update(draft,expected)
             self._pending_write = (draft,expected,operation); committing = True
-            result = tx.commit(); tx.close(); self._accept(result)
+            result = tx._confirm_commit(); self._accept(result)
+            committing = False
+            tx.close()
         except BaseException as error:
             if not committing: self._pending_write = None
             for cleanup in (tx.rollback,tx.close):

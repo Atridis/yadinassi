@@ -193,53 +193,36 @@ class RecorderMovementPort:
         with closing(self.connection.execute('SELECT line_number,active,values_json,dimension_key FROM recorder_movement WHERE register_id=? AND document_id=? AND record_id=? ORDER BY line_number',key)) as source:
             return self._decoded_partition(schema,recorder,revision,source)
 
-    def describe(self,request):
+    def _prepare_replacement(self,request):
         if type(request) is not RecorderReplacement:raise BackendError('invalid_input')
         schema=self._require(request.register_id,request.recorder)
         validate_replacement(schema,request,self.database_id);rows=self._encoded(schema,request.rows)
         intent=['recorder_replace_v1',str(self.database_id),self.generation,self.definitions[schema.identity],
             str(request.recorder.document_id),str(request.recorder.record_id),request.expected_snapshot,rows]
-        return _hash(intent),len(_json(intent).encode()),mutation_identity(request)
-
-    def replace(self,operation,request):
-        if type(operation) is not UUID or not operation.int:raise BackendError('invalid_input')
-        digest,size,_=self.describe(request)
+        size=len(_json(intent).encode())
         if size>MAX_BYTES:raise BackendError('unsupported')
+        return schema,rows,size
+
+    def describe(self,request):
+        _,_,size=self._prepare_replacement(request)
+        return size,mutation_identity(request)
+
+    def replace(self,request):
+        schema,rows,_=self._prepare_replacement(request)
         current=self.read(request.register_id,request.recorder)
         if current.snapshot!=request.expected_snapshot:raise BackendError('conflict')
         if current.revision>=2**63-1:raise BackendError('unsupported')
-        schema=self.schemas[request.register_id];rows=self._encoded(schema,request.rows);revision=current.revision+1
+        revision=current.revision+1
         snapshot=self._snapshot(schema,request.recorder,revision,rows)
         result=RecorderOutcome(request.register_id,request.recorder,revision,snapshot,len(rows))
-        payload=_json([str(result.register_id),str(result.recorder.document_id),str(result.recorder.record_id),revision,snapshot,len(rows)])
         key=(str(request.register_id),str(request.recorder.document_id),str(request.recorder.record_id))
-        if self.connection.execute('SELECT 1 FROM recorder_movement_receipt WHERE operation_id=?',(str(operation),)).fetchone():raise BackendError('conflict')
         self.connection.execute('SAVEPOINT recorder_replace')
         try:
             self.connection.execute('DELETE FROM recorder_movement WHERE register_id=? AND document_id=? AND record_id=?',key)
             self.connection.execute('INSERT INTO recorder_partition VALUES(?,?,?,?) ON CONFLICT(register_id,document_id,record_id) DO UPDATE SET revision=excluded.revision',(*key,revision))
             self.connection.executemany('INSERT INTO recorder_movement VALUES(?,?,?,?,?,?,?)',[(*key,line,int(active),raw,self._dimension_key(schema,row)) for (line,active,raw),row in zip(rows,request.rows)])
             validate_database_budget(self.connection)
-            self.connection.execute('INSERT INTO recorder_movement_receipt VALUES(?,?,?)',(str(operation),_hash([digest,payload]),payload))
             self.connection.execute('RELEASE recorder_replace')
         except BaseException:
             self.connection.execute('ROLLBACK TO recorder_replace');self.connection.execute('RELEASE recorder_replace');raise
         return result
-
-    def resolve(self,operation,request):
-        """Recover the immutable outcome, never replay the replacement."""
-        if type(operation) is not UUID or not operation.int:raise BackendError('invalid_input')
-        digest,_,_=self.describe(request)
-        row=self.connection.execute('SELECT request_hash,outcome_json FROM recorder_movement_receipt WHERE operation_id=?',(str(operation),)).fetchone()
-        if row is None:return None
-        bound,raw=row
-        if type(raw) is not str or len(raw.encode())>4096:raise BackendError('integrity')
-        try:data=json.loads(raw)
-        except (ValueError,TypeError):raise BackendError('integrity') from None
-        if type(data) is not list or len(data)!=6 or _json(data)!=raw:raise BackendError('integrity')
-        if data[:3]!=[str(request.register_id),str(request.recorder.document_id),str(request.recorder.record_id)]:raise BackendError('conflict')
-        if type(data[3]) is not int or not 1<=data[3]<2**63 or type(data[4]) is not str or len(data[4])!=64 or any(c not in '0123456789abcdef' for c in data[4]) or type(data[5]) is not int or data[5]!=len(request.rows):raise BackendError('integrity')
-        if bound!=_hash([digest,raw]):raise BackendError('conflict')
-        schema=self.schemas[request.register_id]
-        if data[4]!=self._snapshot(schema,request.recorder,data[3],self._encoded(schema,request.rows)):raise BackendError('integrity')
-        return RecorderOutcome(request.register_id,request.recorder,data[3],data[4],data[5])

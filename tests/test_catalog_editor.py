@@ -116,25 +116,35 @@ class CatalogEditorTests(unittest.TestCase):
         self.assertTrue(self.app.editor.snapshot()['dirty'])
         self.assertEqual(self.row(self.reference.catalog, self.reference.record).values[0], 'other writer')
 
-    def test_uncertain_committed_save_resolves_without_second_write(self):
-        self.select('category'); self.app.event('create'); self.change('Code', '20')
-        original = _View.commit
-        def lose_reply(tx):
-            original(tx); raise BackendError('uncertain_commit')
-        with mock.patch.object(_View, 'commit', lose_reply): self.save()
-        self.assertTrue(self.app.editor.snapshot()['editingLocked'])
-        with self.assertRaises(UIError): self.change('Description', 'cannot mutate intent')
-        with self.assertRaises(UIError): self.app.event('command', control='CancelButton')
-        with mock.patch.object(_View, 'commit', side_effect=AssertionError('must not repeat')): self.save()
-        self.assertEqual(self.app.editor.snapshot()['saveState'], 'saved')
-        self.app.event('closeCard'); self.assertEqual(len(self.app.view.cards), 2)
-
-    def test_uncertain_uncommitted_save_reuses_intent_once(self):
-        self.select('category'); self.app.event('create'); self.change('Code', '20')
-        with mock.patch.object(_View, 'commit', side_effect=BackendError('uncertain_commit')): self.save()
-        self.assertEqual(self.app.editor.snapshot()['saveState'], 'uncertain')
-        self.save(); self.app.event('closeCard')
-        self.assertEqual(len(self.app.view.cards), 2)
+    def test_unknown_save_is_terminal_and_explicit_discard_reads_current_list(self):
+        for committed in (False, True):
+            with self.subTest(committed=committed):
+                self.select('category'); self.app.event('create')
+                self.change('Code', '20')
+                original = _View.commit
+                def lose_reply(tx, **kwargs):
+                    if committed:
+                        original(tx, **kwargs)
+                    raise BackendError('uncertain_commit')
+                with mock.patch.object(_View, 'commit', lose_reply):
+                    self.save()
+                editor = self.app.editor
+                self.assertEqual(editor.snapshot()['saveState'], 'uncertain')
+                self.assertTrue(editor.snapshot()['editingLocked'])
+                with self.assertRaises(UIError): self.change('Description', 'cannot mutate draft')
+                with mock.patch.object(self.context.backend, 'begin_write', side_effect=AssertionError('no retry')):
+                    self.save()
+                    self.assertEqual(editor.snapshot()['saveState'], 'uncertain')
+                    with mock.patch.object(editor.form, 'dispatch', side_effect=AssertionError('no form handler')):
+                        self.app.event('command', control='CancelButton')
+                self.assertIsNone(self.app.editor)
+                self.assertIn('remains unknown', self.app.list_notice)
+                self.assertEqual(len(self.app.view.cards), 1 + committed)
+                if committed:
+                    current = next(card for card in self.app.view.cards if card.values[0] == '20')
+                    self.app.event('openCard', reference=current.reference)
+                    self.assertEqual(self.app.editor.save_state, 'unchanged')
+                    self.app.event('closeCard')
 
     def test_committed_refresh_failure_is_not_reported_as_rollback_or_rewritten(self):
         self.open_existing(); self.change('Text', 'committed')
@@ -144,6 +154,23 @@ class CatalogEditorTests(unittest.TestCase):
         self.assertEqual(self.row(self.reference.catalog, self.reference.record).values[0], 'committed')
         with mock.patch.object(_View, 'commit', side_effect=AssertionError('must not recommit')): self.save()
         self.assertFalse(self.app.editor.snapshot()['dirty'])
+
+    def test_close_fault_after_known_commit_can_only_refresh(self):
+        from test_catalog_commit_cleanup_recovery import FaultConnection
+        self.open_existing(); self.change('Text', 'committed')
+        original = self.context.backend.begin_write
+        def begin(operation):
+            view = original(operation)
+            view._connection = FaultConnection(view._connection, close_fault='after', close_count=1)
+            return view
+        with mock.patch.object(self.context.backend, 'begin_write', side_effect=begin):
+            self.save()
+        self.assertEqual(self.app.editor.snapshot()['saveState'], 'committed')
+        self.assertFalse(self.app.editor.pending_commit)
+        with mock.patch.object(self.context.backend, 'begin_write', side_effect=AssertionError('read only')):
+            self.save()
+        self.assertEqual(self.app.editor.snapshot()['saveState'], 'saved')
+        self.assertEqual(self.row(self.reference.catalog, self.reference.record).values[0], 'committed')
 
     def test_reference_choices_reject_unlisted_and_wrong_target_without_mutation(self):
         self.open_existing()
@@ -304,21 +331,14 @@ class CatalogEditorTests(unittest.TestCase):
         self.assertFalse(editor.snapshot()['editingLocked'])
         self.assertEqual(next(f['inputText'] for f in editor.snapshot()['fields'] if f['name'] == 'Text'), 'repaired externally')
 
-    def test_transient_uncertain_resolution_error_cannot_unlock_or_replace_intent(self):
+    def test_failed_list_read_after_discard_does_not_restore_unknown_draft(self):
         self.select('category'); self.app.event('create'); self.change('Code', '20')
-        commit = _View.commit
-        def lost_reply(tx):
-            commit(tx); raise BackendError('uncertain_commit')
-        with mock.patch.object(_View, 'commit', lost_reply): self.save()
-        for code in ('busy', 'storage_error'):
-            with mock.patch.object(self.context.backend, 'resolve_write', side_effect=BackendError(code)): self.save()
-            self.assertTrue(self.app.editor.snapshot()['editingLocked'])
-            self.assertEqual(self.app.editor.snapshot()['saveState'], 'uncertain')
-            with self.assertRaises(UIError): self.change('Code', '30')
-            with self.assertRaises(UIError): self.app.event('command', control='CancelButton')
-        with mock.patch.object(_View, 'commit', side_effect=AssertionError('must not duplicate')): self.save()
-        self.assertEqual(self.app.editor.snapshot()['saveState'], 'saved')
-        self.app.event('closeCard'); self.assertEqual(len(self.app.view.cards), 2)
+        with mock.patch.object(_View, 'commit', side_effect=BackendError('uncertain_commit')):
+            self.save()
+        with mock.patch.object(self.app, 'refresh_records', side_effect=BackendError('busy')):
+            with self.assertRaises(BackendError):
+                self.app.event('command', control='CancelButton')
+        self.assertIsNone(self.app.editor)
 
 
 class CatalogListRefreshTests(unittest.TestCase):

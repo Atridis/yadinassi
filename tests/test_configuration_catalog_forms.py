@@ -92,6 +92,36 @@ class ConfigurationCatalogFormIntegrationTests(unittest.TestCase):
         self.assertNotEqual(app.sessions[category][0].session.form.title,app.sessions[sid][0].session.form.title)
         self.assertNotIn('Price',broker.objects[category].fields)
 
+    def test_unknown_draft_close_disposes_without_handlers_or_another_write(self):
+        from yadinassi.db.catalog.catalog_backend import BackendError
+        from yadinassi.db.sqlite.sqlite_catalog import _View
+
+        broker, app = self.setup_app()
+        self.rpc(app, 'catalog', entry=self.entry(app))
+        sid = self.create(app); self.fill(app, sid)
+        owned = broker.objects[sid]
+        commit = _View.commit
+        def lost(view, **kwargs):
+            commit(view, **kwargs)
+            raise BackendError('uncertain_commit')
+        with patch.object(_View, 'commit', lost):
+            self.save(app, sid)
+        self.assertTrue(owned.pending_commit)
+        self.assertEqual(owned.save_state, 'uncertain')
+        server = broker.sessions[sid][0].session
+        client = app.sessions[sid][0].session
+        with patch.object(client, '_event', side_effect=AssertionError('no client handlers')), \
+             patch.object(server, '_event', side_effect=AssertionError('no server handlers')), \
+             patch.object(owned._backend, 'begin_write', side_effect=AssertionError('no write')):
+            closed = self.event(app, sid, 'close')
+        self.assertEqual(closed['error'], 'outcome_unknown')
+        self.assertEqual(closed['form']['result']['state']['kind'], 'closed')
+        self.assertNotIn(sid, broker.objects)
+        self.assertEqual(len(closed['state']['catalog']['rows']), 1)
+        record = closed['state']['catalog']['rows'][0]['key']
+        reopened = self.rpc(app, 'openRecord', entry=self.entry(app), record=record, request='fresh')['session']
+        self.assertEqual(broker.objects[reopened].save_state, 'unchanged')
+
     def test_custom_bsl_commands_run_distinct_declared_behaviors(self):
         broker, app = self.setup_app()
         sid = self.create(app); self.fill(app,sid)

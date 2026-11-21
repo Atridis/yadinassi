@@ -1,4 +1,4 @@
-"""Trusted-root posting identity, fault recovery and activation boundaries."""
+"""Trusted-root posting identity, terminal faults and activation boundaries."""
 from contextlib import closing
 from dataclasses import replace
 from datetime import datetime
@@ -13,9 +13,9 @@ from yadinassi.db.catalog.catalog_backend import BackendError, TabularSectionRow
 from yadinassi.configuration.configuration_posting_application import import_posting_application, PROFILE
 from yadinassi.configuration.configuration_document import DocumentObjectSession
 from yadinassi.db.database_context import SQLiteDBContext
-from yadinassi.db.database_transactions import admission, execution, RootOperationReceipt, Transaction
+from yadinassi.db.database_transactions import admission, execution, Transaction
 from yadinassi.db.document.document_backend import DocumentDraft, DocumentKey
-from yadinassi.db.document.document_posting_host import RootPostingOperations, PostingRecoveryUnavailable
+from yadinassi.db.document.document_posting_host import RootPostingOperations
 from yadinassi.db.sqlite.sqlite_transactions import UnitOfWork
 from posting_application_fixture import source, FORM
 
@@ -37,8 +37,6 @@ class PostingHostTests(unittest.TestCase):
 
     def cleanup_host(self):
         if self.host._closed:return
-        for operation in tuple(self.host._operations):
-            self.host.resolve(operation)
         self.host.close()
 
     def execute(self,command='DoPost',draft=None,expected=None,operation=None):
@@ -72,24 +70,31 @@ class PostingHostTests(unittest.TestCase):
         self.execute();self.execute(expected=self.card().revision)
         self.assertEqual(len(self.movement()),1)
 
-    def test_repeat_uuid_returns_same_receipt_without_handler_replay(self):
-        operation=uuid4();first=self.execute(operation=operation)
+    def test_repeated_stale_input_cannot_replay_after_commit(self):
+        operation=uuid4();self.execute(operation=operation)
         with patch('yadinassi.db.document.document_posting.PostingRuntime.write',side_effect=AssertionError('replay')):
-            self.assertIs(self.execute(operation=operation),first)
+            with self.assertRaisesRegex(BackendError,'conflict'):
+                self.execute(operation=operation)
         self.assertEqual(self.card().revision.token,'1')
+        self.assertIsNone(self.host._active_operation)
 
-    def test_same_uuid_different_mode_conflicts_before_work(self):
+    def test_correlation_id_is_not_a_persistent_history_key(self):
         operation=uuid4();self.execute(operation=operation)
-        with patch.object(self.host,'_verify',side_effect=AssertionError('unexpected work')):
-            with self.assertRaisesRegex(BackendError,'conflict'):self.execute('DoWrite',operation=operation)
+        second=self.execute(expected=self.card().revision,operation=operation)
+        self.assertTrue(second.accepted)
+        self.assertEqual(self.card().revision.token,'2')
+        self.assertIsNone(self.host._active_operation)
 
-    def test_same_uuid_different_draft_conflicts_before_work(self):
-        operation=uuid4();self.execute(operation=operation)
-        with self.assertRaisesRegex(BackendError,'conflict'):self.execute(draft=replace(self.draft,number='2'),operation=operation)
-
-    def test_same_uuid_different_revision_conflicts(self):
-        operation=uuid4();self.execute(operation=operation)
-        with self.assertRaisesRegex(BackendError,'conflict'):self.execute(expected=self.card().revision,operation=operation)
+    def test_reentrant_execute_is_refused_before_effect(self):
+        execute=self.execute
+        real=self.host._verify
+        def verify():
+            with self.assertRaisesRegex(BackendError,'busy'):
+                execute()
+            return real()
+        with patch.object(self.host,'_verify',side_effect=verify):
+            self.assertTrue(execute().accepted)
+        self.assertEqual(self.card().revision.token,'1')
 
     def test_ungranted_command_refused(self):
         with self.assertRaisesRegex(BackendError,'unsupported'):self.execute('Post')
@@ -122,14 +127,12 @@ class PostingHostTests(unittest.TestCase):
     def test_old_nonposting_session_still_refuses_backend(self):
         with self.assertRaises(BackendError):DocumentObjectSession(self.context,self.schema,self.files)
 
-    def test_receipt_unknown_after_host_restart_is_unavailable(self):
-        receipt=self.execute();other=RootPostingOperations(self.context,self.config)
-        with self.assertRaises(PostingRecoveryUnavailable):other.resolve(receipt.operation_id)
-        self.assertEqual(PostingRecoveryUnavailable().reason,'recovery_unavailable')
-        self.assertEqual(PostingRecoveryUnavailable().code,'unsupported')
-        other.close()
-
-    def test_final_source_recheck_does_not_leave_prepared_ledger(self):
+    def test_no_lookup_or_history_on_live_or_reopened_adapter(self):
+        self.assertTrue(self.execute().accepted)
+        for name in ('_operations','receipt','resolve','intent','acknowledge'):
+            self.assertFalse(hasattr(self.host,name))
+        self.assertIsNone(self.host._active_operation)
+    def test_final_source_recheck_does_not_retain_operation(self):
         real=self.host._verify;count=0;operation=uuid4()
         def verify():
             nonlocal count
@@ -138,7 +141,7 @@ class PostingHostTests(unittest.TestCase):
             return real()
         with patch.object(self.host,'_verify',side_effect=verify):
             with self.assertRaises(BackendError):self.execute(operation=operation)
-        with self.assertRaises(PostingRecoveryUnavailable):self.host.receipt(operation)
+        self.assertIsNone(self.host._active_operation)
         self.assertIsNone(self.card());self.host.close()
 
     def test_handler_cancellation_rolls_back_whole_operation(self):
@@ -146,76 +149,84 @@ class PostingHostTests(unittest.TestCase):
             receipt=self.execute()
         self.assertEqual(receipt.state,'rejected');self.assertIsNone(self.card());self.assertEqual(self.movement(),())
 
-    def test_uncertain_commit_resolves_exact_requests_without_replay(self):
-        real=UnitOfWork.commit
-        def lost(unit):real(unit);unit.state='uncertain';raise BackendError('uncertain_commit')
-        with patch.object(UnitOfWork,'commit',lost):receipt=self.execute()
-        self.assertEqual(receipt.state,'uncertain')
-        with patch.object(self.backend,'resolve_unit_of_work',wraps=self.backend.resolve_unit_of_work) as resolve, patch('yadinassi.db.document.document_posting.PostingRuntime.write',side_effect=AssertionError('replay')):
-            result=self.host.resolve(receipt.operation_id)
-        resolve.assert_called_once_with(receipt.operation_id,receipt.requests)
-        self.assertEqual(result.state,'committed');self.assertTrue(result.accepted)
-
-    def test_uncertain_without_commit_returns_not_committed_no_replay(self):
-        def lost(unit):unit._view.close();unit.state='uncertain';raise BackendError('uncertain_commit')
-        with patch.object(UnitOfWork,'commit',lost):receipt=self.execute()
-        with patch('yadinassi.db.document.document_posting.PostingRuntime.write',side_effect=AssertionError('replay')):
-            result=self.host.resolve(receipt.operation_id)
-        self.assertEqual(result.state,'not_committed');self.assertIsNone(self.card())
-
-    def test_uncertain_receipt_locks_close(self):
-        def lost(unit):unit._view.close();unit.state='uncertain';raise BackendError('uncertain_commit')
-        with patch.object(UnitOfWork,'commit',lost):receipt=self.execute()
-        with self.assertRaises(BackendError):self.host.close()
-        self.host.resolve(receipt.operation_id);self.host.close()
-
-    def test_resolve_mismatched_outcomes_retains_uncertainty(self):
-        real=UnitOfWork.commit
-        def lost(unit):real(unit);unit.state='uncertain';raise BackendError('uncertain_commit')
-        with patch.object(UnitOfWork,'commit',lost):receipt=self.execute()
-        with patch.object(self.backend,'resolve_unit_of_work',return_value=()):
-            with self.assertRaisesRegex(BackendError,'integrity'):self.host.resolve(receipt.operation_id)
-        self.assertEqual(self.host.receipt(receipt.operation_id).state,'uncertain')
-
-    def test_known_commit_acceptance_failure_is_not_reported_as_rollback(self):
-        with patch.object(Transaction,'_install',side_effect=RuntimeError('refresh')):receipt=self.execute()
-        self.assertEqual(receipt.state,'committed');self.assertFalse(receipt.accepted);self.assertTrue(self.card().posted)
-        result=self.host.resolve(receipt.operation_id);self.assertTrue(result.accepted)
-
-    def test_commit_receipt_survives_cleanup_interruption(self):
+    def test_lost_commit_reply_stays_unknown_without_lookup_or_replay(self):
         real=UnitOfWork.commit;operation=uuid4()
         def lost(unit):real(unit);unit.state='uncertain';raise BackendError('uncertain_commit')
-        with patch.object(UnitOfWork,'commit',lost),patch.object(UnitOfWork,'close',side_effect=KeyboardInterrupt):
-            with self.assertRaises(KeyboardInterrupt):self.execute(operation=operation)
-        receipt=self.host.receipt(operation);self.assertEqual(receipt.state,'uncertain');self.assertTrue(receipt.requests)
-        with self.assertRaises(BackendError):self.host.close()
-        self.assertTrue(self.host.resolve(operation).accepted)
+        with patch.object(UnitOfWork,'commit',lost):result=self.execute(operation=operation)
+        self.assertEqual(result.state,'uncertain');self.assertFalse(result.accepted)
+        self.assertIsNone(self.host._active_operation)
+        with patch('yadinassi.db.document.document_posting.PostingRuntime.write',side_effect=AssertionError('replay')):
+            with self.assertRaisesRegex(BackendError,'conflict'):self.execute(operation=operation)
+            self.host.close()
+        self.assertTrue(self.card().posted)
 
-    def test_no_receipt_allocation_is_needed_after_commit(self):
+    def test_unknown_before_commit_does_not_claim_success_or_replay(self):
+        def lost(unit):unit._view.close();unit.state='uncertain';raise BackendError('uncertain_commit')
+        with patch.object(UnitOfWork,'commit',lost):result=self.execute()
+        self.assertEqual(result.state,'uncertain');self.assertFalse(result.accepted)
+        self.assertIsNone(self.host._active_operation)
+        with patch('yadinassi.db.document.document_posting.PostingRuntime.write',side_effect=AssertionError('replay')):
+            self.host.close()
+        self.assertIsNone(self.card())
+
+    def test_known_commit_acceptance_failure_is_not_reported_as_rollback(self):
+        with patch.object(Transaction,'_install',side_effect=RuntimeError('refresh')):result=self.execute()
+        self.assertEqual(result.state,'committed');self.assertFalse(result.accepted);self.assertTrue(self.card().posted)
+        self.assertIsNone(self.host._active_operation)
+        self.host.close()
+
+    def test_lost_reply_and_cleanup_interrupt_do_not_retain_closed_operation(self):
+        real=UnitOfWork.commit
+        def lost(unit):real(unit);unit.state='uncertain';raise BackendError('uncertain_commit')
+        with patch.object(UnitOfWork,'commit',lost),patch.object(UnitOfWork,'close',side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):self.execute()
+        self.assertIsNone(self.host._active_operation)
+        self.assertTrue(self.card().posted)
+
+    def test_known_commit_with_retained_connection_can_refresh_without_replay(self):
+        def committed(unit):
+            unit._view._connection.execute('COMMIT')
+            unit.state='committed'
+            raise BackendError('storage_error')
+        with patch.object(UnitOfWork,'commit',committed),patch.object(UnitOfWork,'close',side_effect=BackendError('storage_error')):
+            result=self.execute()
+            self.assertEqual((result.state,result.accepted),('committed',False))
+            self.assertTrue(self.host._active_operation.needs_cleanup)
+        with patch('yadinassi.db.document.document_posting.PostingRuntime.write',side_effect=AssertionError('replay')):
+            self.host.verify_source()
+        self.assertIsNone(self.host._active_operation)
+        self.assertTrue(self.card().posted)
+
+    def test_no_outcome_allocation_is_needed_after_commit(self):
         real=UnitOfWork.commit
         def committed(unit):
             result=real(unit)
-            self.allocation_patch=patch('yadinassi.db.database_transactions.RootOperationReceipt',side_effect=MemoryError)
-            self.allocation_patch.start();self.addCleanup(self.allocation_patch.stop)
+            allocation=patch('yadinassi.db.database_transactions.RootOperationReceipt',side_effect=MemoryError)
+            allocation.start();self.addCleanup(allocation.stop)
             return result
-        with patch.object(UnitOfWork,'commit',committed):receipt=self.execute()
-        self.assertEqual(receipt.state,'committed');self.assertTrue(receipt.accepted)
+        with patch.object(UnitOfWork,'commit',committed):result=self.execute()
+        self.assertEqual(result.state,'committed');self.assertTrue(result.accepted)
+        self.assertIsNone(self.host._active_operation)
 
-    def test_commit_memory_error_retains_preallocated_uncertain_receipt(self):
-        real=UnitOfWork.commit;operation=uuid4()
+    def test_commit_memory_error_does_not_retain_already_closed_operation(self):
+        real=UnitOfWork.commit
         def lost(unit):real(unit);unit.state='uncertain';raise MemoryError
         with patch.object(UnitOfWork,'commit',lost):
-            with self.assertRaises(MemoryError):self.execute(operation=operation)
-        self.assertEqual(self.host.receipt(operation).state,'uncertain')
-        self.assertTrue(self.host.resolve(operation).accepted)
+            with self.assertRaises(MemoryError):self.execute()
+        self.assertIsNone(self.host._active_operation)
+        self.assertTrue(self.card().posted)
 
-    def test_failed_rollback_cleanup_keeps_host_locked(self):
-        operation=uuid4()
+    def test_failed_rollback_retains_only_physical_cleanup(self):
         with patch('yadinassi.db.document.document_posting.PostingRuntime.write',side_effect=ValueError('fail')),patch.object(UnitOfWork,'rollback',side_effect=KeyboardInterrupt):
-            with self.assertRaises(KeyboardInterrupt):self.execute(operation=operation)
-        self.assertEqual(self.host.receipt(operation).error,'cleanup_required')
-        with self.assertRaises(BackendError):self.host.close()
-        self.assertEqual(self.host.resolve(operation).state,'rejected');self.assertIsNone(self.card())
+            with self.assertRaises(KeyboardInterrupt):self.execute()
+            active=self.host._active_operation
+            self.assertIsNotNone(active);self.assertTrue(active.needs_cleanup)
+            with self.assertRaisesRegex(BackendError,'uncertain_commit'):self.execute()
+            with self.assertRaises(KeyboardInterrupt):self.host.close()
+            self.assertIs(self.host._active_operation,active)
+        with patch('yadinassi.db.document.document_posting.PostingRuntime.write',side_effect=AssertionError('replay')):
+            self.host.close()
+        self.assertIsNone(self.host._active_operation);self.assertIsNone(self.card())
 
     def test_full_source_mismatch_refused_before_begin(self):
         with patch.object(self.backend,'export_configuration',return_value={}):
@@ -223,24 +234,23 @@ class PostingHostTests(unittest.TestCase):
                 with self.assertRaises(BackendError):self.execute()
 
     def test_empty_additional_properties_are_not_external_inputs(self):
-        operation=uuid4();self.execute(operation=operation)
-        intent=self.host.intent(operation)
-        self.assertEqual(set(intent.__dataclass_fields__),{'operation_id','database_id','generation','source_digest','profile','form','command','mode','draft','expected'})
-
-    def test_max_receipts_never_evicts_recovery_state(self):
-        with patch('yadinassi.db.document.document_posting_host.MAX_RECEIPTS',1):
-            self.execute()
-            with self.assertRaises(BackendError):self.execute(expected=self.card().revision)
-
+        seen=[]
+        real=self.host._document
+        def construct(intent):
+            doc=real(intent)
+            seen.append(intent)
+            self.assertEqual(set(intent.__dataclass_fields__),{'operation_id','mode','draft','expected'})
+            return doc
+        with patch.object(self.host,'_document',side_effect=construct):
+            self.assertTrue(self.execute().accepted)
+        self.assertEqual(len(seen),1)
+        self.assertIsNone(self.host._active_operation)
 
     def test_root_entry_failure_is_terminal_not_perpetual_prepared(self):
         operation=uuid4()
         with patch('yadinassi.db.database_transactions.RootOperation._enter',side_effect=MemoryError):
             with self.assertRaises(MemoryError):self.execute(operation=operation)
-        receipt=self.host.receipt(operation)
-        self.assertEqual(receipt.state,'rejected')
-        with patch('yadinassi.db.document.document_posting.PostingRuntime.write',side_effect=AssertionError('replay')):
-            self.assertIs(self.execute(operation=operation),receipt)
+        self.assertIsNone(self.host._active_operation)
         self.assertIsNone(self.card());self.host.close()
 
     def test_second_root_context_token_failure_restores_first_token(self):
@@ -252,5 +262,5 @@ class PostingHostTests(unittest.TestCase):
         with patch.object(tx,'_execution_backend',Fault()):
             with self.assertRaises(MemoryError):self.execute(operation=operation)
             self.assertIsNone(tx._execution.get())
-        self.assertEqual(self.host.receipt(operation).state,'rejected')
+        self.assertIsNone(self.host._active_operation)
         self.assertIsNone(self.card());self.host.close()

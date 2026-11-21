@@ -29,8 +29,9 @@ class InventoryCatalogSession(CatalogObjectSession):
             if self._interpreter is not None: self._interpreter.close()
             raise
 
-    def close(self):
-        self.require_discardable()
+    def close(self, *, discard_unknown=False):
+        if not (discard_unknown is True and self.pending_commit and not self.pending_refresh):
+            self.require_discardable()
         if self._interpreter is not None: self._interpreter.close()
 
     def verify_source(self):
@@ -42,8 +43,8 @@ class InventoryCatalogSession(CatalogObjectSession):
 class InventoryDocumentSession(PostingDocumentSession):
     """Typed reference images, but no root authority during form dispatch.
 
-    Inherited execute/recover accepts only a trusted host-owned complete image
-    after dispatch. Live opaque receipts retain the exact immutable request.
+    Inherited execute accepts only a trusted host-owned complete image
+    after dispatch. A write with an unknown outcome is never replayed.
     """
     def __init__(self, context, schema, configuration, form, key=None, *, _opened=None):
         configuration = canonical(configuration)
@@ -65,8 +66,6 @@ class InventoryDocumentSession(PostingDocumentSession):
         self.pending_commit = self.pending_refresh = False
         self.error = None
         self.save_state = 'new'
-        self._operation_id = None
-        self.receipt_token = None
         self.verify_source()
         if _opened is not None and (type(_opened) is not _OpenedDocument or key is None):
             raise TypeError('owned document opening snapshot required')

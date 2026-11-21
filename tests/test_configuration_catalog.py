@@ -77,29 +77,34 @@ class CatalogObjectPersistenceTests(unittest.TestCase):
         self.assertEqual((result.state, result.error), ('rejected', 'object_validation'))
         self.assertFalse(self.session.pending_commit)
 
-    def test_committed_uncertain_reply_resolves_without_repeating_handler_or_write(self):
-        commit = _View.commit
-        def lose_reply(tx):
-            commit(tx); raise BackendError('uncertain_commit')
-        callback = mock.Mock(side_effect=lambda values: values)
-        with mock.patch.object(_View, 'commit', lose_reply):
-            result = self.session.save(self.values(), before_write=callback)
-        self.assertEqual(result.state, 'uncertain')
-        with self.assertRaises(BackendError): self.session.require_discardable()
-        with mock.patch.object(_View, 'commit', side_effect=AssertionError('no duplicate commit')):
-            result = self.session.save(self.values(Code='99'), before_write=callback)
-        self.assertEqual(result.state, 'saved')
-        self.assertEqual(dict(result.values)['Code'], '20')
-        self.assertEqual(callback.call_count, 1)
-
-    def test_proven_absent_receipt_reuses_frozen_intent(self):
-        callback = mock.Mock(side_effect=lambda values: values)
-        with mock.patch.object(_View, 'commit', side_effect=BackendError('uncertain_commit')):
-            self.assertEqual(self.session.save(self.values(), before_write=callback).state, 'uncertain')
-        result = self.session.save(self.values(Description='Must not replace intent'), before_write=callback)
-        self.assertEqual(result.state, 'saved')
-        self.assertEqual(dict(result.values)['Description'], 'New category')
-        self.assertEqual(callback.call_count, 1)
+    def test_an_unknown_outcome_never_repeats_preparation_or_write(self):
+        for committed in (False, True):
+            with self.subTest(committed=committed):
+                if committed:
+                    self.session = self.new()
+                commit = _View.commit
+                def lose_reply(tx, **kwargs):
+                    if committed:
+                        commit(tx, **kwargs)
+                    raise BackendError('uncertain_commit')
+                callback = mock.Mock(side_effect=lambda values: values)
+                with mock.patch.object(_View, 'commit', lose_reply):
+                    result = self.session.save(self.values(), before_write=callback)
+                self.assertEqual(result.state, 'uncertain')
+                with self.assertRaises(BackendError):
+                    self.session.require_discardable()
+                with mock.patch.object(BSLCatalogObject, 'write', side_effect=AssertionError('no duplicate write')):
+                    result = self.session.save(self.values(Code='99'), before_write=callback)
+                self.assertEqual(result.state, 'uncertain')
+                self.assertEqual(callback.call_count, 1)
+                view = self.context.backend.begin_read()
+                try:
+                    current = view.read_catalog(self.session.object._key)
+                    self.assertEqual(current is not None, committed)
+                    if committed:
+                        self.assertEqual(current.code, '20')
+                finally:
+                    view.close()
 
     def test_refresh_failure_only_retries_read_and_result_validation(self):
         callback = mock.Mock(side_effect=lambda values: values)

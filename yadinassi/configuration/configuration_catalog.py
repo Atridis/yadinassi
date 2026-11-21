@@ -192,6 +192,8 @@ class CatalogObjectSession:
             raise TypeError('trusted form preparation callback required')
         if validate_result is not None and not callable(validate_result):
             raise TypeError('trusted result validator required')
+        if self.pending_commit:
+            return self._result()  # A terminal unknown is never retried.
         if self.context.backend is not self._backend:
             self._stale = True
             self.error = 'schema_changed'
@@ -199,38 +201,41 @@ class CatalogObjectSession:
         if self.pending_refresh:
             return self._try_refresh(validate_result)
         self.error = None
+        writer = None
         try:
-            if not self.pending_commit:
+            self.verify_source()
+            candidate = self._candidate(values)
+            if before_write is not None:
+                try:
+                    prepared = before_write({name: candidate.get_member(name) for name in self.fields})
+                except Exception:
+                    self.save_state, self.error = 'rejected', 'form_validation'
+                    return self._result()
+                # The callback may execute form code but cannot change which
+                # database/source owns this write.
                 self.verify_source()
-                candidate = self._candidate(values)
-                if before_write is not None:
-                    try:
-                        prepared = before_write({name: candidate.get_member(name) for name in self.fields})
-                    except Exception:
-                        self.save_state, self.error = 'rejected', 'form_validation'
-                        return self._result()
-                    # The callback may execute form code but cannot change which
-                    # database/source owns this write.
-                    self.verify_source()
-                    if prepared is None:
-                        self.save_state, self.error = 'rejected', 'form_validation'
-                        return self._result()
-                    candidate = self._candidate(prepared)
-                self.object = candidate
-            # On retry this exact object retains operation/draft/receipt. Its own
-            # mandatory preparation contract is enforced by CatalogObject.Write.
-            self.object.write()
+                if prepared is None:
+                    self.save_state, self.error = 'rejected', 'form_validation'
+                    return self._result()
+                candidate = self._candidate(prepared)
+            self.object = writer = candidate
+            revision = writer._revision
+            writer.write()
         except CatalogWriteRefused:
-            self.pending_commit = self.object._pending_write is not None
             self.save_state, self.error = 'rejected', 'object_validation'
             return self._result()
         except BackendError as error:
-            self.pending_commit = self.pending_commit or self.object._pending_write is not None or error.code == 'uncertain_commit'
+            if writer is not None and writer._revision is not revision:
+                return self._try_refresh(validate_result)
+            self.pending_commit = self.object._uncertain_write or error.code == 'uncertain_commit'
             self.save_state = 'uncertain' if self.pending_commit else 'rejected'
             self.error = error.code
             return self._result()
         except BaseException:
-            if self.object._pending_write is not None:
+            if writer is not None and writer._revision is not revision:
+                self.pending_refresh = True
+                self.save_state, self.error = 'committed', 'refresh_required'
+            elif self.object._uncertain_write:
                 self.pending_commit = True
                 self.save_state, self.error = 'uncertain', 'uncertain_commit'
             raise

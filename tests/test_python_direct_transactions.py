@@ -77,7 +77,7 @@ class DirectTransactionTests(unittest.TestCase):
         self.vm.register_function('Reenter',lambda:self.vm.execute('CommitTransaction();'))
         with self.assertRaises(BoundaryViolation):self.vm.execute('C=Catalogs.Products.CreateItem();C.Code="A";BeginTransaction();C.Write();Reenter();')
         self.assert_clean();self.assertTrue(self.vm.variables['c'].is_new())
-    def test_uncertain_commit_resolved_without_replay(self):
+    def test_uncertain_commit_releases_owner_and_requires_fresh_read(self):
         for fault in ('before','after'):
             def inject():
                 unit=tx.current(self.backend).unit
@@ -85,7 +85,9 @@ class DirectTransactionTests(unittest.TestCase):
             self.vm.register_function('Inject',inject)
             source='C=Catalogs.Products.CreateItem();C.Code="'+fault+'";BeginTransaction();C.Write();Inject();CommitTransaction();'
             with self.assertRaises((BackendError,BSLRuntimeError)):self.vm.execute(source)
-            self.assert_clean();self.assertEqual(self.vm.variables['c'].is_new(),fault=='before')
+            self.assert_clean();self.assertTrue(self.vm.variables['c'].is_new())
+            self.assertEqual(self.vm.execute(f'Catalogs.Products.FindByCode("{fault}").IsEmpty()'),
+                             fault == 'before')
     def test_import_scalar_call_shares_owner_but_not_foreign_object_authority(self):
         module=self.path.parent/'Helper.bsl';module.write_text('Function Active() Export Return TransactionActive();EndFunction',encoding='utf-8')
         self.vm.execute('// #Import Helper.bsl\nBeginTransaction();A=Helper.Active();RollbackTransaction();',str(self.path.parent/'main.bsl'))
@@ -144,18 +146,22 @@ class DirectTransactionTests(unittest.TestCase):
             self.vm.execute('&AtServerNoContext\nProcedure S() Effect();EndProcedure\nBeginTransaction();S();CommitTransaction();')
         self.assertEqual(events,[]);self.assert_clean()
 
-    def test_uncertain_journal_can_be_resolved_in_later_root_without_replay(self):
+    def test_later_root_cannot_resolve_or_retry_uncertain_commit(self):
         def inject():
             unit=tx.current(self.backend).unit
             unit._view._connection=FaultConnection(unit._view._connection,commit_fault='after')
         self.vm.register_function('Inject',inject)
-        with patch.object(self.backend,'resolve_unit_of_work',side_effect=BackendError('uncertain_commit')):
+        with patch.object(self.backend,'resolve_unit_of_work',
+                          side_effect=AssertionError('durable lookup')) as resolve:
             with self.assertRaises((BackendError,BSLRuntimeError)):
                 self.vm.execute('C=Catalogs.Products.CreateItem();C.Code="A";BeginTransaction();C.Write();Inject();CommitTransaction();')
-        self.assertIsNotNone(self.backend._bsl_transaction)
-        self.assertTrue(self.vm.variables['c'].is_new());self.assertIsNone(tx._execution.get())
-        self.vm.execute('CommitTransaction();')
-        self.assertFalse(self.vm.variables['c'].is_new());self.assert_clean()
+            self.assert_clean()
+            self.assertTrue(self.vm.variables['c'].is_new())
+            with self.assertRaises(BSLRuntimeError):
+                self.vm.execute('CommitTransaction();')
+            resolve.assert_not_called()
+        self.assertTrue(self.vm.variables['c'].is_new());self.assert_clean()
+        self.assertFalse(self.vm.execute('Catalogs.Products.FindByCode("A").IsEmpty()'))
 
     def test_callback_cannot_widen_inherited_denial(self):
         self.vm.register_function('Widen',lambda:tx._admission_allowed.set(True))

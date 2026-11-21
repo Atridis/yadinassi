@@ -215,29 +215,28 @@ class OrdersWorkbenchTests(WorkbenchHelpers, unittest.TestCase):
         with SQLiteDBContext(self.path) as independent:
             seed(independent, 'O003', 'No held read view', 1)
 
-    def test_healthy_channel_uncertain_commit_locks_and_resolves_exact_intent_once(self):
+    def test_unknown_commit_locks_until_explicit_discard_and_read(self):
         from yadinassi.db.sqlite.sqlite_catalog import _View
-        self.open_order(self.controller); self.description(self.controller, 'Committed exact intent')
-        commit = _View.commit; calls = []
-        def lost(tx):
-            calls.append(tx); commit(tx); raise BackendError('uncertain_commit')
+        self.open_order(self.controller); self.description(self.controller, 'Unconfirmed write')
+        commit = _View.commit
+        def lost(tx, **kwargs):
+            commit(tx, **kwargs)
+            raise BackendError('uncertain_commit')
         with mock.patch.object(_View, 'commit', lost):
             failed = self.good(event(self.controller))
         self.assertFalse(failed['state']['uncertain']); self.assertTrue(self.application.pending_commit)
-        self.assertTrue(table(failed)['readOnly']); self.assertFalse(item(failed, 'DiscardButton')['enabled'])
-        intent = self.application.object._pending_write
-        self.assertEqual(event(self.controller, control='DiscardButton')['error'], 'event_failed')
-        with mock.patch.object(self.context.backend,
-                'resolve_write_outcome' if self.context.backend.capabilities().catalog_write_outcomes else 'resolve_write',
-                side_effect=BackendError('busy')):
-            self.good(event(self.controller, control='ResolveButton'))
-        self.assertIs(self.application.object._pending_write, intent)
-        self.assertTrue(self.application.pending_commit)
-        with mock.patch.object(_View, 'commit', side_effect=AssertionError('never duplicate')):
-            resolved = self.good(event(self.controller, control='ResolveButton'))
-        self.assertFalse(self.application.pending_commit); self.assertFalse(resolved['state']['dirty'])
-        self.assertFalse(table(resolved)['readOnly']); self.assertEqual(len(calls), 1)
-        self.assertEqual(self.readback(self.path)[0][1], 'Committed exact intent')
+        self.assertTrue(table(failed)['readOnly'])
+        self.assertFalse(item(failed, 'ResolveButton')['enabled'])
+        self.assertTrue(item(failed, 'DiscardButton')['enabled'])
+        previous = self.application.object
+        with mock.patch.object(self.context.backend, 'begin_write', side_effect=AssertionError('no replay')):
+            self.assertEqual(event(self.controller, control='ResolveButton')['error'], 'event_failed')
+            result = self.good(event(self.controller, control='DiscardButton'))
+        self.assertIsNot(self.application.object, previous)
+        self.assertFalse(self.application.pending_commit)
+        self.assertFalse(result['state']['dirty'])
+        self.assertIn('not the prior write outcome', self.status(result))
+        self.assertEqual(self.readback(self.path)[0][1], 'Unconfirmed write')
 
     def test_confirmed_commit_failed_refresh_only_refreshes_without_writing(self):
         self.open_order(self.controller); self.description(self.controller, 'Known committed')
@@ -280,34 +279,20 @@ class OrdersWorkbenchTests(WorkbenchHelpers, unittest.TestCase):
         result = self.good(event(self.controller, control='RecalculateButton'))
         self.assertFalse(result['state']['dirty'])
 
-    def test_uncertain_absent_receipt_retries_only_retained_intent(self):
+    def test_unknown_uncommitted_draft_does_not_overwrite_other_writer(self):
         from yadinassi.db.sqlite.sqlite_catalog import _View
-        self.open_order(self.controller); self.description(self.controller, 'Exact absent intent')
-        with mock.patch.object(_View, 'commit', side_effect=BackendError('uncertain_commit')):
-            self.good(event(self.controller))
-        draft, expected, operation = self.application.object._pending_write
-        self.assertEqual(draft.key, self.key)
-        original = self.context.backend.begin_write
-        with mock.patch.object(self.context.backend, 'begin_write', wraps=original) as writes:
-            result = self.good(event(self.controller, control='ResolveButton'))
-        self.assertFalse(result['state']['dirty']); self.assertFalse(self.application.pending_commit)
-        self.assertEqual(writes.call_args_list, [mock.call(operation)])
-        self.assertEqual(self.readback(self.path)[0][1], 'Exact absent intent')
-
-    def test_absent_receipt_then_conflict_releases_lock_but_preserves_draft(self):
-        from yadinassi.db.sqlite.sqlite_catalog import _View
-        self.open_order(self.controller); self.description(self.controller, 'My retained draft')
+        self.open_order(self.controller); self.description(self.controller, 'Unconfirmed draft')
         with mock.patch.object(_View, 'commit', side_effect=BackendError('uncertain_commit')):
             self.good(event(self.controller))
         with SQLiteDBContext(self.path) as context:
             second, _, _ = pair(context); self.good(state(second)); self.open_order(second)
             self.description(second, 'Other writer'); self.good(event(second))
-        result = self.good(event(self.controller, control='ResolveButton'))
-        self.assertIn('conflict', self.status(result)); self.assertTrue(result['state']['dirty'])
-        self.assertFalse(self.application.pending_commit); self.assertFalse(table(result)['readOnly'])
-        self.assertIsNone(self.application.object._pending_write)
-        self.assertEqual(item(result, 'FieldDescription')['value']['value'], 'My retained draft')
-        self.good(event(self.controller, control='DiscardButton'))
+        with mock.patch.object(self.context.backend, 'begin_write', side_effect=AssertionError('no replay')):
+            result = self.good(event(self.controller, control='DiscardButton'))
+        self.assertFalse(result['state']['dirty'])
+        self.assertFalse(self.application.pending_commit)
+        self.assertIn('not the prior write outcome', self.status(result))
+        self.assertEqual(item(result, 'FieldDescription')['value']['value'], 'Other writer')
         self.assertEqual(self.readback(self.path)[0][1], 'Other writer')
 
     def test_more_than_32_results_are_explicitly_bounded_and_exact_search_finds_later_record(self):

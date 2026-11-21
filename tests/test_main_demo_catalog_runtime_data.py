@@ -42,7 +42,7 @@ class CatalogRuntimeDataTests(unittest.TestCase):
                           side_effect=AssertionError('unreached handler')):
             self.vm.execute('O=Ref.GetObject();O.Description="Updated";O.Write();')
             self.assertEqual(self.vm.execute('Ref.GetObject().Description'), 'Updated')
-        self.assertEqual(self.snapshot(), ((before[0] + 1, 'Updated'), receipts + 1))
+        self.assertEqual(self.snapshot(), ((before[0] + 1, 'Updated'), receipts))
 
     def test_source_bytes_do_not_reauthorize_data_or_code(self):
         self.mutate("UPDATE configuration_file SET sha256=? WHERE path='Configuration.xml'", ('0' * 64,))

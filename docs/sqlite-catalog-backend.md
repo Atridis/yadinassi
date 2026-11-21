@@ -23,24 +23,21 @@ Use names/required field values from your admitted configuration. Unsupported co
 
 ## Persisted application
 
-The database stores its format marker, logical database UUID, configuration generation/activation state, exact accepted XML/BSL bytes with hashes, normalized catalog schemas, typed catalog records, opaque revisions and commit receipts. Version 1 stores row attributes in tagged JSON. Version 2 stores attributes in individual typed columns; the same closed tagged codec remains in use for canonical write intents and receipt compatibility. Neither representation is a native serialized value format. Exact Decimal text never passes through binary float; dates are timezone-free whole-second calendar values, including year 0001. References retain database/catalog/record identity, including typed empty UUID. Undefined/Null are not implicitly mapped from SQL NULL or admitted into fixed fields.
+The database stores its format marker, logical database UUID, configuration generation/activation state, exact accepted XML/BSL bytes with hashes, normalized catalog schemas, typed catalog records and opaque revisions. Legacy receipt tables can remain for on-disk compatibility. Version 1 stores row attributes in tagged JSON. Version 2 stores attributes in individual typed columns; the same closed tagged codec remains in use for canonical write validation. Neither representation is a native serialized value format. Exact Decimal text never passes through binary float; dates are timezone-free whole-second calendar values, including year 0001. References retain database/catalog/record identity, including typed empty UUID. Undefined/Null are not implicitly mapped from SQL NULL or admitted into fixed fields.
 
 The SQLite connection and catalog operations remain in `sqlite_catalog.py`; the physical-name registry and offline v1 migration are in SQLite-specific modules. `catalog_backend.py` exposes immutable logical schema/card/key/revision types and bounded operations. Runtime owns BSL CatalogObject semantics, UI owns edit/navigation state, and backend owns consistency and persistence. PostgreSQL and MongoDB are future adapter targets only: no dependencies or claimed engine support. Unsupported ordering/filter/transaction capabilities must refuse, not silently change behavior. Default catalog selection has an explicit limit and code/identity order; overflow refuses rather than displaying a truncated total. Typed scans support explicit ordering. These orders are not a claim of native collation parity.
 
-String and Decimal metadata [qualifiers are applied on assignment](catalog-qualifier-assignment.md), and direct backend create/update calls use the same conversion before SQL and receipt construction. Storage decoding remains strict and never converts persisted corruption into an accepted value. Code uniqueness applies to the converted code. This does not add fixed strings, new scalar types, UI behavior or general native catalog parity.
+String and Decimal metadata [qualifiers are applied on assignment](catalog-qualifier-assignment.md), and direct backend create/update calls use the same conversion before SQL. Storage decoding remains strict and never converts persisted corruption into an accepted value. Code uniqueness applies to the converted code. This does not add fixed strings, new scalar types, UI behavior or general native catalog parity.
 
 ## Transactions and failures
 
 Connections explicitly disable implicit Python transaction creation (`isolation_level=None`); writes use `BEGIN IMMEDIATE`, `COMMIT` and `ROLLBACK`, compatible with Python 3.10. Foreign keys are enabled per connection. Initial policy is rollback journal `DELETE`, synchronous `FULL`, one active view/writer per backend instance, and bounded busy waits. Read-only host openings use an internally constructed `mode=ro` URI and `query_only`; callers cannot inject URI options.
 
-An update checks its opaque expected revision inside the write transaction; duplicate code, stale edits and cross-database references refuse. This revision is not native DataVersion. Cancel/discard does not call Write. Successful Write clears new/dirty state only after a confirmed receipt. An uncertain COMMIT response preserves the exact pending intent, blocks further mutation, and resolves the persisted operation receipt before any retry. A mismatch refuses rather than replaying a different create.
+An update checks its opaque expected revision inside the write transaction; duplicate code, stale edits and cross-database references refuse. This revision is not native DataVersion. Cancel/discard does not call Write. Successful Write clears new/dirty state only after confirmed COMMIT. An uncertain response blocks further mutation of that buffer. Discard/reopen or read the current row with a fresh object. The backend does not attempt to prove or repeat the old operation.
 
-Host transactions containing several successful writes can resolve the complete
-ordered batch through the [batch receipt recovery contract](catalog-batch-receipts.md).
-It preserves original revisions and, where supported, generated codes without
-replaying writes or reading a later card as the original outcome.
+Host transactions return ordered results, including revisions and generated codes where applicable, after confirmed COMMIT. See [unknown commit outcomes](sqlite-commit-uncertainty.md) for the current failure contract.
 
-Process termination before commit and after commit is tested with real temporary SQLite files; reopening observes the old or committed state and a matching receipt. This does not prove universal power-loss durability on every filesystem or hardware device. SQLite owns recovery/journaling; do not remove its journal or copy only a live main file. No network filesystem or native concurrent-writer compatibility is claimed.
+Process termination before and after commit is tested with temporary SQLite files; reopening observes the old or committed rows. This does not prove universal power-loss durability on every filesystem or device. SQLite owns recovery/journaling; do not remove its journal or copy only a live main file. No network filesystem or native concurrent-writer compatibility is claimed.
 
 Initial host authority is a local, host-selected regular file under an owned directory (POSIX rejects group/world-writable parents and foreign ownership). Symlink/reparse ancestors and hardlinked database files refuse. macOS’s verified OS-owned `/var` and `/tmp` aliases are normalized before those checks; Windows case/8.3 spelling is canonicalized only after every directory component passes no-link admission. This is **not** protection against a malicious process running as the same OS user or a portable Windows ACL proof. Keep application files in a private local directory. The renderer cannot select database paths or submit SQL.
 
@@ -136,9 +133,8 @@ For admitted flat, ownerless catalogs, `DeletionMark` / `ПометкаУдал�
 is a Boolean in a detached object. Assignment is buffered; `Write` persists it
 along with other edits. Ordinary reads, selections and Query expose the stored
 mark. A mark does not delete a record or invalidate references. Optimistic
-revision conflicts and commit-receipt recovery use the same rules as other
-writes. After an uncertain response, call `Write` to resolve the exact pending
-intent before changing the object. A failed write leaves its edit buffer intact.
+revision conflicts follow the same rules as other writes. An uncertain COMMIT
+requires a fresh read; a known pre-commit rejection leaves the edit buffer intact.
 
 `SetDeletionMark` / `УстановитьПометкуУдаления` remains unsupported. Two
 source-bound native acquisitions on platform 8.3.27.1508 observed successful
@@ -175,7 +171,7 @@ before retrying or removing a failed destination.
 
 ### Format16 transaction-local layout reuse
 
-Every format16 read/write transaction still rehashes current stored source,
+Full format16 transaction admission rehashes current stored source,
 validates its profile/domain, complete physical DDL and both persisted catalog
 layout registries. `_begin` uses those just-validated maps to compare against its
 open-time snapshots, rather than loading the identical maps a second time in the
@@ -196,3 +192,11 @@ reference operations. Explicit row validation and all normal movement-port
 constructors still load their full reference layout; actual reads and writes
 retain their reference checks. This is a reduction in duplicate admission SQL,
 not relaxed source/DDL validation or a new row-cache authority.
+
+### Ordinary direct catalog data operations
+
+The handler-free direct `GetObject` and `Write` use already loaded format16
+catalog metadata and validate the database and selected storage mapping in their
+transaction, without another full configuration/source audit. Execution of
+stored handlers and explicit source or unit-of-work entry keep their own
+admission checks.

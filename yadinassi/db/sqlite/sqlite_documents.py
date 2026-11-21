@@ -3,7 +3,6 @@
 Distinct document tables/keys; catalog layouts and receipt bytes are unchanged.
 The closed tagged scalar codec is shared, never exposed as a native codec.
 """
-from hashlib import sha256
 from decimal import Decimal
 import json
 from uuid import UUID, uuid4
@@ -88,30 +87,18 @@ def load_schemas(connection, catalogs, *, allow_empty=False, enum_domain=None):
     return schemas, rows
 
 
-def _receipt_hash(intent_hash, outcome):
-    revision = outcome.revision
-    payload = ['document_outcome_v1', intent_hash, str(revision.database_id),
-               revision.configuration_generation, str(revision.document_id),
-               str(revision.record_id), revision.token, outcome.number]
-    return sha256(_storage()._json(payload).encode('utf-8')).hexdigest()
-
-
 class DocumentView:
     """One pinned application transaction; one document write per transaction."""
     def __init__(self, view):
         self._view = view
         self.database_id = view.database_id
         self.configuration_generation = view.configuration_generation
-        self._outcome = None; self._hash = None
+        self._outcome = None
         self._register_read_view = None
         if view._backend.storage_version not in (7, 8, 9, 10):
             self._schemas = ()
         else:
             self._schemas = view._backend._document_schemas
-        if view._operation_id is not None and self._connection.execute(
-                'SELECT 1 FROM document_commit_receipt WHERE operation_id=?', (str(view._operation_id),)).fetchone():
-            raise BackendError('conflict')
-
     @property
     def _connection(self): return self._view._connection
     def close(self): self._view.close()
@@ -645,9 +632,9 @@ class DocumentView:
         sections = None if draft.tabular_sections is None else self._sections(schema,draft.tabular_sections,writing=True)
         date = _storage()._encode(draft.date,_DATE_FIELD,self.database_id)[1]
         intent = ['document_write_v1',str(schema.identity),str(draft.key.record_id),number,date,draft.deletion_mark,values,sections,draft.auto_number,None if expected is None else expected.token]
-        encoded = _storage()._json(intent)
-        if len(encoded.encode('utf-8')) > _MAX_ROW: raise BackendError('invalid_input')
-        return schema,intent,sha256(encoded.encode('utf-8')).hexdigest()
+        encoded = _storage()._json(intent).encode('utf-8')
+        if len(encoded) > _MAX_ROW: raise BackendError('invalid_input')
+        return schema,intent,None
 
     def create(self, draft): self._write(draft,None)
     def update(self, draft, expected):
@@ -657,7 +644,7 @@ class DocumentView:
     def _write(self, draft, expected):
         self._view._require(True)
         if self._outcome is not None: raise BackendError('unsupported')
-        schema,intent,digest = self._intent(draft,expected)
+        schema,intent,_ = self._intent(draft,expected)
         _,document,record,number,date,mark,values,sections,auto,_ = intent
         count = self._preflight(schema)
         old = self.read_document(draft.key)
@@ -686,40 +673,26 @@ class DocumentView:
             else:
                 self._connection.execute('UPDATE document_record SET revision=?,number=?,date=?,deletion_mark=?,values_json=?,sections_json=? WHERE document_id=? AND record_id=?',args)
             self._preflight(schema)
-            # Allocate all receipt state while rollback still covers this row
+            # Allocate the result while rollback still covers this row
             # and its sequence. After RELEASE install only existing references.
             outcome = DocumentWriteOutcome(DocumentRevision(self.database_id,self.configuration_generation,schema.identity,draft.key.record_id,str(revision)),number)
         self._outcome = outcome
-        self._hash = digest
 
-    def commit(self):
+    def _confirm_commit(self):
         self._view._require(True)
         if self._outcome is None: raise BackendError('invalid_input')
-        result = self._outcome; revision = result.revision
+        # Caller publishes this acknowledged outcome, then closes its view.
+        _storage()._commit_without_receipt(self._connection)
+        self._view._committed = True
+        return self._outcome
+
+    def commit(self):
         try:
-            self._connection.execute('INSERT INTO document_commit_receipt VALUES(?,?,?,?,?,?)',
-                (str(self._view._operation_id),_receipt_hash(self._hash,result),str(revision.document_id),str(revision.record_id),int(revision.token),result.number))
-            self._connection.execute('COMMIT')
+            result = self._confirm_commit()
             self.close()
         except BaseException as error:
             try: self.close()
             except BaseException as cleanup:
                 if _storage()._interruption(cleanup) and not _storage()._interruption(error): raise
-            if _storage()._interruption(error): raise
-            raise BackendError('uncertain_commit') from None
+            raise
         return result
-
-    def resolve(self, operation_id, draft, expected):
-        self._view._require(); _storage()._uuid(operation_id)
-        schema,intent,digest = self._intent(draft,expected)
-        if self._connection.execute("SELECT 1 FROM document_commit_receipt WHERE operation_id=? AND (typeof(request_hash)!='text' OR length(CAST(request_hash AS BLOB))!=64 OR typeof(document_id)!='text' OR length(CAST(document_id AS BLOB))!=36 OR typeof(record_id)!='text' OR length(CAST(record_id AS BLOB))!=36 OR typeof(revision)!='integer' OR typeof(number)!='text' OR length(CAST(number AS BLOB))>36)", (str(operation_id),)).fetchone(): raise BackendError('integrity')
-        row = self._connection.execute('SELECT request_hash,document_id,record_id,revision,number FROM document_commit_receipt WHERE operation_id=?',(str(operation_id),)).fetchone()
-        if row is None: return None
-        if (row[1],row[2],row[3]) != (str(schema.identity),str(draft.key.record_id),1 if expected is None else int(expected.token)+1): raise BackendError('integrity')
-        validate_string(row[4],schema.number_length)
-        if draft.auto_number:
-            if len(row[4]) != schema.number_length or not row[4].isascii() or not row[4].isdecimal() or int(row[4]) == 0: raise BackendError('integrity')
-        elif row[4] != intent[3]: raise BackendError('integrity')
-        outcome = DocumentWriteOutcome(DocumentRevision(self.database_id,self.configuration_generation,schema.identity,draft.key.record_id,str(row[3])),row[4])
-        if row[0] != _receipt_hash(digest,outcome): raise BackendError('conflict')
-        return outcome

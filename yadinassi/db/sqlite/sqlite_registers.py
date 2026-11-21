@@ -113,10 +113,7 @@ class RegisterView:
         self._view=view;self.database_id=view.database_id
         self.configuration_generation=view.configuration_generation
         self._schemas=view._backend._register_schemas
-        self._outcome=None;self._digest=None;self._scan=None
-        if view._operation_id is not None and self._connection.execute(
-                'SELECT 1 FROM information_register_receipt WHERE operation_id=?',(str(view._operation_id),)).fetchone():
-            raise BackendError('conflict')
+        self._outcome=None;self._scan=None
     @property
     def _connection(self): return self._view._connection
     def close(self):
@@ -273,12 +270,12 @@ class RegisterView:
         intent=['register_set_v1',str(schema.identity),[[str(f.identity),wanted[f.identity]] for f in schema.key_fields if f.identity in wanted],rows,draft.replace,draft.expected_snapshot]
         raw=_storage()._json(intent)
         if len(raw)>MAX_TOTAL: raise BackendError('invalid_input')
-        return schema,rows,sha256(raw.encode()).hexdigest()
+        return schema,rows,None
 
     def write_set(self,draft):
         self._view._require(True)
         if self._outcome is not None: raise BackendError('unsupported')
-        schema,rows,digest=self._set_intent(draft)
+        schema,rows,_=self._set_intent(draft)
         self._scan=None
         old,snapshot=self._scope(schema,draft.filters)
         if draft.expected_snapshot is not None and draft.expected_snapshot!=snapshot: raise BackendError('conflict')
@@ -296,7 +293,7 @@ class RegisterView:
             self._preflight(schema)
             result_rows,result_snapshot=self._scope(schema,draft.filters)
             outcome=RegisterSetOutcome(schema.identity,result_snapshot,len(result_rows))
-        self._outcome=outcome;self._digest=digest
+        self._outcome=outcome
 
     def _intent(self,draft,expected,deleted):
         if type(draft) is not RegisterDraft or type(deleted) is not bool: raise BackendError('invalid_input')
@@ -304,24 +301,24 @@ class RegisterView:
         fields=(*schema.resources,*schema.attributes)
         if type(draft.values) is not tuple or len(draft.values)!=len(fields): raise BackendError('invalid_input')
         values=[_storage()._encode(v,f,self.database_id) for f,v in zip(fields,draft.values)]
-        digest=sha256(raw.encode()).hexdigest()
+        key_digest=sha256(raw.encode()).hexdigest()
         if expected is not None:
             if (type(expected) is not RegisterRevision or type(expected.database_id) is not UUID
                     or type(expected.register_id) is not UUID or type(expected.configuration_generation) is not int
-                    or type(expected.key_digest) is not str or (expected.database_id,expected.configuration_generation,expected.register_id,expected.key_digest)!=(self.database_id,self.configuration_generation,schema.identity,digest)
+                    or type(expected.key_digest) is not str or (expected.database_id,expected.configuration_generation,expected.register_id,expected.key_digest)!=(self.database_id,self.configuration_generation,schema.identity,key_digest)
                     or type(expected.token) is not str or not expected.token.isascii() or not expected.token.isdecimal()
                     or not 0<int(expected.token)<2**63): raise BackendError('invalid_input')
         if deleted and expected is None: raise BackendError('invalid_input')
         intent=['register_write_v1',str(schema.identity),raw,values,None if expected is None else expected.token,deleted]
         encoded=_storage()._json(intent)
         if len(encoded)>MAX_ROW: raise BackendError('invalid_input')
-        return schema,raw,values,sha256(encoded.encode()).hexdigest()
+        return schema,raw,values,None
     def write(self,draft,expected=None): self._write(draft,expected,False)
     def delete(self,draft,expected): self._write(draft,expected,True)
     def _write(self,draft,expected,deleted):
         self._view._require(True)
         if self._outcome is not None: raise BackendError('unsupported')
-        schema,raw,values,digest=self._intent(draft,expected,deleted)
+        schema,raw,values,_=self._intent(draft,expected,deleted)
         self._scan=None
         old=self.read_record(draft.key)
         if expected is None:
@@ -338,59 +335,29 @@ class RegisterView:
             else: self._connection.execute('UPDATE information_register_record SET revision=?,values_json=? WHERE register_id=? AND key_json=?',(revision,_storage()._json(values),str(schema.identity),raw))
             self._preflight(schema)
             outcome=RegisterOutcome(RegisterRevision(self.database_id,self.configuration_generation,schema.identity,sha256(raw.encode()).hexdigest(),str(revision)),deleted)
-        self._outcome=outcome;self._digest=digest
-    def _outcome_data(self,outcome):
-        if type(outcome) is RegisterSetOutcome:
-            return ['register_set_v1',str(outcome.register_id),outcome.snapshot,outcome.count]
-        r=outcome.revision
-        return [str(r.database_id),r.configuration_generation,str(r.register_id),r.key_digest,r.token,outcome.deleted]
-    def commit(self):
+        self._outcome=outcome
+    def _confirm_commit(self):
         self._view._require(True)
         if self._outcome is None: raise BackendError('invalid_input')
-        result=self._outcome;payload=_storage()._json(self._outcome_data(result))
-        bound=sha256((self._digest+payload).encode()).hexdigest()
+        # Caller publishes this acknowledged outcome, then closes its view.
+        _storage()._commit_without_receipt(self._connection)
+        self._view._committed = True
+        return self._outcome
+
+    def commit(self):
         try:
-            self._connection.execute('INSERT INTO information_register_receipt VALUES(?,?,?)',(str(self._view._operation_id),bound,payload))
-            self._connection.execute('COMMIT');self.close()
+            result = self._confirm_commit()
+            self.close()
         except BaseException as error:
             try: self.close()
             except BaseException as cleanup:
                 if _storage()._interruption(cleanup) and not _storage()._interruption(error): raise
-            if _storage()._interruption(error): raise
-            raise BackendError('uncertain_commit') from None
+            raise
         return result
-    def resolve(self,operation,draft,expected,deleted=False):
-        self._view._require();_storage()._uuid(operation)
-        schema,raw,values,digest=self._intent(draft,expected,deleted)
-        if self._connection.execute("SELECT 1 FROM information_register_receipt WHERE operation_id=? AND (typeof(request_hash)!='text' OR length(CAST(request_hash AS BLOB))!=64 OR typeof(outcome_json)!='text' OR length(CAST(outcome_json AS BLOB))>1024)",(str(operation),)).fetchone(): raise BackendError('integrity')
-        row=self._connection.execute('SELECT request_hash,outcome_json FROM information_register_receipt WHERE operation_id=?',(str(operation),)).fetchone()
-        if row is None: return None
-        if type(row[0]) is not str or len(row[0])!=64 or type(row[1]) is not str or len(row[1])>1024: raise BackendError('integrity')
-        p=json.loads(row[1]);key_digest=sha256(raw.encode()).hexdigest()
-        if (type(p) is not list or len(p)!=6 or type(p[1]) is not int or type(p[5]) is not bool
-                or p[:4]!=[str(self.database_id),self.configuration_generation,str(schema.identity),key_digest]
-                or p[5]!=deleted or type(p[4]) is not str or not p[4].isascii() or not p[4].isdecimal()
-                or not 0<int(p[4])<2**63 or (expected is not None and int(p[4])<=int(expected.token))): raise BackendError('integrity')
-        if _storage()._json(p)!=row[1] or sha256((digest+row[1]).encode()).hexdigest()!=row[0]: raise BackendError('conflict')
-        return RegisterOutcome(RegisterRevision(self.database_id,self.configuration_generation,schema.identity,key_digest,p[4]),deleted)
-
-    def resolve_set(self,operation,draft):
-        self._view._require();_storage()._uuid(operation)
-        schema,rows,digest=self._set_intent(draft)
-        if self._connection.execute("SELECT 1 FROM information_register_receipt WHERE operation_id=? AND (typeof(request_hash)!='text' OR length(CAST(request_hash AS BLOB))!=64 OR typeof(outcome_json)!='text' OR length(CAST(outcome_json AS BLOB))>1024)",(str(operation),)).fetchone(): raise BackendError('integrity')
-        row=self._connection.execute('SELECT request_hash,outcome_json FROM information_register_receipt WHERE operation_id=?',(str(operation),)).fetchone()
-        if row is None: return None
-        if type(row[0]) is not str or len(row[0])!=64 or type(row[1]) is not str or len(row[1])>1024: raise BackendError('integrity')
-        p=json.loads(row[1])
-        if (type(p) is not list or len(p)!=4 or p[:2]!=['register_set_v1',str(schema.identity)]
-                or type(p[2]) is not str or len(p[2])!=64 or any(c not in '0123456789abcdef' for c in p[2])
-                or type(p[3]) is not int or not 0<=p[3]<=MAX_ROWS): raise BackendError('integrity')
-        if _storage()._json(p)!=row[1] or sha256((digest+row[1]).encode()).hexdigest()!=row[0]: raise BackendError('conflict')
-        return RegisterSetOutcome(schema.identity,p[2],p[3])
 
 
 # Apply the same narrow error translation as the owning catalog application.
 # Installed by sqlite_catalog after its boundary helper has been defined.
 def install_boundaries(boundary):
-    for name in ('registers','register_schema','read_record','select_records','scan_register','periodic_records','read_set','write_set','resolve_set','write','delete','commit','resolve'):
+    for name in ('registers','register_schema','read_record','select_records','scan_register','periodic_records','read_set','write_set','write','delete','commit'):
         setattr(RegisterView,name,boundary(getattr(RegisterView,name)))

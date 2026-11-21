@@ -123,12 +123,13 @@ class BackendTests(unittest.TestCase):
         absent=Path(self.directory.name)/'absent.sqlite'
         with self.assertRaises(BackendError):SQLiteCatalogBackend(absent,read_only=True)
         self.assertFalse(absent.exists())
-    def test_commit_resolution_binds_exact_intent(self):
+    def test_commit_returns_revision_and_obsolete_resolution_errors(self):
         operation=uuid4();draft=self.draft();tx=self.backend.begin_write(operation);tx.create(draft);revision=tx.commit()[0]
-        self.assertEqual(self.backend.resolve_write(operation,draft),revision)
-        changed=CatalogDraft(draft.key,draft.code,'Other',False,draft.values)
-        with self.assertRaisesRegex(BackendError,'conflict'):self.backend.resolve_write(operation,changed)
-        self.assertIsNone(self.backend.resolve_write(uuid4(),draft))
+        view=self.backend.begin_read()
+        try: self.assertEqual(view.read_catalog(draft.key).revision, revision)
+        finally: view.close()
+        with self.assertRaisesRegex(BackendError,'unsupported'):self.backend.resolve_write(operation,draft)
+        with self.assertRaisesRegex(BackendError,'unsupported'):self.backend.committed_operation(operation)
     def test_hostile_revision_and_persisted_corruption_are_closed(self):
         from dataclasses import replace
         draft=self.draft();tx=self.backend.begin_write(uuid4());tx.create(draft);rev=tx.commit()[0]
@@ -181,7 +182,7 @@ class BackendTests(unittest.TestCase):
 if __name__=='__main__':unittest.main()
 
 class RecoveryTests(BackendTests):
-    def test_crash_before_commit_rolls_back_and_after_commit_is_resolvable(self):
+    def test_crash_before_commit_rolls_back_and_after_commit_is_persisted(self):
         import subprocess
         import sys
         record,operation=uuid4(),uuid4()
@@ -197,9 +198,9 @@ os._exit(17)
         args=[sys.executable,'-c',code,str(self.path),str(self.category.identity),str(record),str(operation)]
         self.assertEqual(subprocess.run(args+['abort'],check=False).returncode,17)
         view=self.backend.begin_read();self.assertIsNone(view.read_catalog(CatalogKey(self.backend.database_id,self.category.identity,record)));view.close()
-        self.assertIsNone(self.backend.committed_operation(operation))
         self.assertEqual(subprocess.run(args+['commit'],check=False).returncode,17)
-        receipt=self.backend.committed_operation(operation)
-        self.assertEqual(len(receipt[1]),1)
-        with self.assertRaisesRegex(BackendError,'conflict'):self.backend.begin_write(operation)
+        with self.assertRaisesRegex(BackendError,'unsupported'):self.backend.committed_operation(operation)
+        connection=sqlite3.connect(self.path)
+        try: self.assertEqual(connection.execute('SELECT COUNT(*) FROM commit_receipt').fetchone(), (0,))
+        finally: connection.close()
         view=self.backend.begin_read();self.assertEqual(view.read_catalog(CatalogKey(self.backend.database_id,self.category.identity,record)).description,'Crash');view.close()

@@ -1,8 +1,8 @@
 """One closed Orders object session for the trusted replicated form example.
 
 This is application infrastructure, not a native BSL global or generic object
-wire format. Detached objects, backend keys, revisions and uncertain write
-intents stay here for the lifetime of the server process. No read view survives
+wire format. Detached objects, backend keys, revisions and detached edit
+buffers stay here for the lifetime of the server process. No read view survives
 an action; no Save looks up an object by its editable code.
 """
 from copy import copy
@@ -78,8 +78,9 @@ class OrdersWorkbenchSession:
         form.set_member('Loaded', self.object is not None)
         for name in ('FieldCode', 'FieldDescription', 'LinesTable'):
             form.items._values[name.casefold()].read_only = locked or self.object is None
-        for name in ('AddLine', 'DeleteLine', 'Recalculate', 'SaveOrder', 'Discard'):
+        for name in ('AddLine', 'DeleteLine', 'Recalculate', 'SaveOrder'):
             form.items._values[(name + 'Button').casefold()].enabled = not locked and self.object is not None
+        form.items._values['discardbutton'].enabled = not self.pending_refresh and self.object is not None
         for name in ('SearchOrders', 'OpenOrder'):
             form.items._values[(name + 'Button').casefold()].enabled = not locked
         form.items._values['ordersTable'.casefold()].enabled = not locked
@@ -89,13 +90,13 @@ class OrdersWorkbenchSession:
                 form.items._values[name.casefold()].visible = False
                 form.items._values[name.casefold()].enabled = False
         resolve = form.items._values['resolveButton'.casefold()]
-        resolve.enabled = locked
-        resolve.title = 'Refresh saved record' if self.pending_refresh else 'Resolve save outcome'
+        resolve.enabled = self.pending_refresh
+        resolve.title = 'Refresh saved record'
 
     def _blocked(self, session):
         if self.pending_commit or self.pending_refresh:
             self._locked(session)
-            self._status(session, 'Resolve the pending save before another action')
+            self._status(session, 'Refresh the saved record or discard the unknown draft before another action')
             return True
         return False
 
@@ -240,10 +241,13 @@ class OrdersWorkbenchSession:
             self._status(session, 'Cannot load the complete order; it may be missing, deleted or exceed form limits. Current record was kept')
 
     def reload(self, session):
-        if self._blocked(session) or self.object is None:
+        if self.pending_refresh or self.object is None:
             return
+        unknown = self.pending_commit
         try:
-            self._adopt(session, self._fresh(session, self.object._key.record_id), 'Changes discarded; record reloaded from the database')
+            message = ('Draft discarded; showing the current record, not the prior write outcome' if unknown
+                       else 'Changes discarded; record reloaded from the database')
+            self._adopt(session, self._fresh(session, self.object._key.record_id), message)
         except Exception:
             self._status(session, 'Reload failed; current record and server edits were kept')
 
@@ -261,22 +265,30 @@ class OrdersWorkbenchSession:
         return candidate
 
     def _write(self, session):
+        revision = self.object._revision
         try:
             self.object.write()
         except CatalogWriteRefused:
-            self.pending_commit = self.object._pending_write is not None
             self._status(session, 'Save refused by object validation; edits were kept')
         except BackendError as error:
-            self.pending_commit = self.object._pending_write is not None or error.code == 'uncertain_commit'
+            if self.object._revision is not revision:
+                self.pending_refresh = True
+                self._refresh(session)
+                return
+            self.pending_commit = self.object._uncertain_write or error.code == 'uncertain_commit'
             if self.pending_commit:
-                self._status(session, 'Database save outcome uncertain. Use Resolve save outcome on this session; do not open another writer')
+                self._status(session, 'Write outcome unknown. Use Discard / Reload to read the current record; this does not confirm the write')
             elif error.code == 'conflict':
                 self._status(session, 'Save conflict: the record changed elsewhere. Edits were kept; Discard / Reload adopts the database version')
             else:
                 self._status(session, 'Save rejected (' + error.code + '); edits were kept')
         except BaseException:
-            self.pending_commit = self.pending_commit or self.object._pending_write is not None
-            self._status(session, 'Save interrupted; resolve the retained intent before continuing' if self.pending_commit
+            if self.object._revision is not revision:
+                self.pending_refresh = True
+                self._status(session, 'Order saved; refresh required')
+                raise
+            self.pending_commit = self.object._uncertain_write
+            self._status(session, 'Write outcome unknown. Discard / Reload reads the current record' if self.pending_commit
                          else 'Save failed before confirmation; edits were kept')
             raise
         else:
@@ -309,10 +321,7 @@ class OrdersWorkbenchSession:
         self._write(session)
 
     def resolve(self, session):
-        # An explicit healthy-channel action only. Retained Write resolves its exact
-        # receipt/intent; confirmed commits can only refresh, never write again.
+        # The binding name is historical. A known commit can only refresh.
         if self.pending_refresh:
             self._refresh(session)
-        elif self.pending_commit:
-            self._write(session)
         self._locked(session)
