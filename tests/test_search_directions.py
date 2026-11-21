@@ -214,7 +214,11 @@ class SearchDirectionIterationTests(unittest.TestCase):
                     alias = SearchDirection; found = New Array;
                     Для Каждого item Из {name} Цикл found.Add(item); КонецЦикла;
                 ''')
-                self.assertEqual(self.vm.variables['found'].items, [BEGIN, END])
+                found = self.vm.variables['found']
+                self.assertIs(type(found), list)
+                self.assertEqual(found, [BEGIN, END])
+                self.assertIs(found[0], BEGIN)
+                self.assertIs(found[1], END)
         self.assertEqual(calls, [True])
 
     def test_nested_break_continue_return_and_repeated_iteration(self):

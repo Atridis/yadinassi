@@ -22,11 +22,16 @@ class OwnedIRSubprocessTests(unittest.TestCase):
     def probe(self, source):
         env = os.environ.copy()
         env['PYTHONPATH'] = os.pathsep.join((str(_ROOT), str(_ROOT / 'tests')))
+        env['PYTHONIOENCODING'] = 'utf-8'
         flags = ['-' + 'O' * sys.flags.optimize] if sys.flags.optimize else []
-        launcher = 'exec(compile(' + repr(_PRELUDE + source) + ', "<direct-probe>", "exec", optimize=0))'
+        launcher = 'exec(compile(' + ascii(_PRELUDE + source) + ', "<direct-probe>", "exec", optimize=0))'
         process = subprocess.run([sys.executable, *flags, '-c', launcher],
-            cwd=_ROOT, env=env, capture_output=True, text=True, timeout=60)
+            cwd=_ROOT, env=env, capture_output=True, encoding='utf-8', timeout=60)
         self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+
+    def test_probe_failure_preserves_unicode_diagnostics(self):
+        with self.assertRaisesRegex(AssertionError, 'Диагностика'):
+            self.probe("raise ValueError('Диагностика')")
 
     def test_direct_rhs_mutation_keeps_admitted_assignment_target(self):
         self.probe('''

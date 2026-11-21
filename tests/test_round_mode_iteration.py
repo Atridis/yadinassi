@@ -35,7 +35,8 @@ class RoundModeIterationTests(unittest.TestCase):
                     alias = RoundMode; found = New Array;
                     Для Каждого item Из {expression} Цикл found.Add(item); КонецЦикла;
                 ''')
-                found = self.vm.variables['found'].items
+                found = self.vm.variables['found']
+                self.assertIs(type(found), list)
                 self.assertEqual(len(found), 2)
                 self.assertEqual(set(found), set(BSLRoundMode))
         self.assertEqual(calls, [True])
