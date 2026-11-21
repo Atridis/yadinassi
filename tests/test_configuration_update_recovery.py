@@ -59,50 +59,80 @@ class ConfigurationUpdateRecoveryTests(unittest.TestCase):
         apply(self.path,plan,maintenance=True);self.backend=SQLiteCatalogBackend(self.path)
         return plan
 
-    def test_historical_document_receipt_exact_generation(self):
-        op=uuid4();draft=self.doc();view=self.backend.begin_document_write(op)
-        view.create(draft);outcome=view.commit()
-        self.assertEqual(self.backend.resolve_document_write(op,draft),outcome)
+    def assert_document(self,draft,revision):
+        with closing(self.backend.begin_document_read()) as reader:
+            record=reader.read_document(draft.key)
+        self.assertEqual((record.number,record.date,record.values),
+                         (draft.number,draft.date,draft.values))
+        self.assertEqual(record.revision.token,revision.token)
+        self.assertEqual(record.revision.configuration_generation,2)
+
+    def assert_register(self,draft,revision):
+        with closing(self.backend.begin_register_read()) as reader:
+            record=reader.read_record(draft.key)
+        self.assertEqual(record.values,draft.values)
+        self.assertEqual(record.revision.token,revision.token)
+        self.assertEqual(record.revision.configuration_generation,2)
+
+    def assert_catalog(self,draft,revision,values):
+        with closing(self.backend.begin_read()) as reader:
+            record=reader.read_catalog(draft.key)
+        self.assertEqual((record.code,record.values),(draft.code,values))
+        self.assertEqual(record.revision.token,revision.token)
+        self.assertEqual(record.revision.configuration_generation,2)
+
+    def test_document_data_survives_generation_change(self):
+        draft=self.doc()
+        with closing(self.backend.begin_document_write(uuid4())) as view:
+            view.create(draft);outcome=view.commit()
         self.evolve()
-        for _ in range(2):self.assertEqual(self.backend.resolve_document_write(op,draft),outcome)
         self.assertEqual(outcome.revision.configuration_generation,1)
-        with self.assertRaises(BackendError):self.backend.resolve_document_write(op,replace(draft,number='altered'))
+        self.assert_document(draft,outcome.revision)
 
-    def test_historical_register_receipt_exact_generation(self):
-        op=uuid4();draft=self.reg();view=self.backend.begin_register_write(op)
-        view.write(draft);outcome=view.commit();self.evolve()
-        for _ in range(2):self.assertEqual(self.backend.resolve_register_write(op,draft),outcome)
-        with self.assertRaises(BackendError):self.backend.resolve_register_write(op,replace(draft,values=(Decimal(9),True)))
+    def test_register_data_survives_generation_change(self):
+        draft=self.reg()
+        with closing(self.backend.begin_register_write(uuid4())) as view:
+            view.write(draft);outcome=view.commit()
+        self.evolve()
+        self.assert_register(draft,outcome.revision)
 
-    def test_historical_register_set_receipt(self):
+    def test_register_set_survives_generation_change(self):
         schema=self.source.information_registers[0]
-        view=self.backend.begin_register_read()
-        try:_,snapshot=view.read_set(schema.identity)
-        finally:view.close()
-        draft=RegisterSetDraft(schema.identity,(),(self.reg(),),True,snapshot)
-        op=uuid4();view=self.backend.begin_register_write(op);view.write_set(draft);outcome=view.commit()
-        self.evolve();self.assertEqual(self.backend.resolve_register_set(op,draft),outcome)
+        with closing(self.backend.begin_register_read()) as view:
+            _,snapshot=view.read_set(schema.identity)
+        draft=self.reg()
+        request=RegisterSetDraft(schema.identity,(),(draft,),True,snapshot)
+        with closing(self.backend.begin_register_write(uuid4())) as view:
+            view.write_set(request);view.commit()
+        self.evolve()
+        with closing(self.backend.begin_register_read()) as view:
+            rows,_=view.read_set(schema.identity)
+        self.assertEqual([(record.key,record.values) for record in rows],[(draft.key,draft.values)])
+        self.assertEqual(rows[0].revision.configuration_generation,2)
 
-    def test_mixed_unit_resolves_all_children_before_and_after(self):
-        requests=(TransactionRequest('catalog_create',self.cat()),TransactionRequest('document_create',self.doc()),TransactionRequest('register_write',self.reg()))
-        op=uuid4()
-        with self.backend.begin_unit_of_work(op) as tx:
+    def test_mixed_unit_records_survive_generation_change(self):
+        catalog,document,register=self.cat(),self.doc(),self.reg()
+        requests=(TransactionRequest('catalog_create',catalog),TransactionRequest('document_create',document),TransactionRequest('register_write',register))
+        with self.backend.begin_unit_of_work(uuid4()) as tx:
             for request in requests:tx.stage(request)
             outcomes=tx.commit()
-        self.assertEqual(self.backend.resolve_unit_of_work(op,requests),outcomes)
+        self.assertTrue(all(x.result.revision.configuration_generation==1 for x in outcomes))
         self.evolve()
-        for _ in range(2):self.assertEqual(self.backend.resolve_unit_of_work(op,requests),outcomes)
-        with self.assertRaises(BackendError):self.backend.resolve_unit_of_work(op,tuple(reversed(requests)))
+        self.assert_catalog(catalog,outcomes[0].result.revision,(False,))
+        self.assert_document(document,outcomes[1].result.revision)
+        self.assert_register(register,outcomes[2].result.revision)
 
     def test_new_mixed_unit_uses_only_current_generation(self):
         self.evolve()
-        requests=(TransactionRequest('catalog_create',replace(self.cat(),values=(True,))),TransactionRequest('document_create',self.doc()),TransactionRequest('register_write',self.reg()))
-        op=uuid4()
-        with self.backend.begin_unit_of_work(op) as tx:
+        catalog,document,register=replace(self.cat(),values=(True,)),self.doc(),self.reg()
+        requests=(TransactionRequest('catalog_create',catalog),TransactionRequest('document_create',document),TransactionRequest('register_write',register))
+        with self.backend.begin_unit_of_work(uuid4()) as tx:
             for request in requests:tx.stage(request)
             result=tx.commit()
-        self.assertEqual(self.backend.resolve_unit_of_work(op,requests),result)
         self.assertTrue(all(x.result.revision.configuration_generation==2 for x in result))
+        self.assert_catalog(catalog,result[0].result.revision,(True,))
+        self.assert_document(document,result[1].result.revision)
+        self.assert_register(register,result[2].result.revision)
 
     def test_profile_sources_mappings_and_unchanged_tables_preserved(self):
         self.assertEqual(self.backend.storage_version,10)
@@ -156,11 +186,10 @@ class ConfigurationUpdateRecoveryTests(unittest.TestCase):
             db.execute("UPDATE configuration_update SET source_generation=target_generation");db.commit()
         with self.assertRaises(BackendError):SQLiteCatalogBackend(self.path)
 
-    def test_old_receipt_tampering_refuses_admission(self):
-        op=uuid4();view=self.backend.begin_register_write(op);view.write(self.reg());view.commit()
+    def test_target_digest_tampering_refuses_admission(self):
         self.evolve();self.backend.close()
-        with closing(sqlite3.connect(self.path)) as db:
-            db.execute('DELETE FROM information_register_receipt WHERE operation_id=?',(str(op),));db.commit()
+        with closing(sqlite3.connect(self.path)) as db,db:
+            db.execute("UPDATE configuration_update SET target_hash=?",('0'*64,))
         with self.assertRaises(BackendError):SQLiteCatalogBackend(self.path)
 
     def test_retained_plan_roundtrip_resolves_after_reopen(self):

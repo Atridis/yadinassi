@@ -52,7 +52,7 @@ expansion proportional to the exponent. These are local budgets, not native
 budgets remain in force. A failed conversion or section-buffer budget check does
 not change row bytes, dirty flags, owner revision or pending write identity.
 
-## Backend writes, receipts and strict reads
+## Backend writes and strict reads
 
 Direct backend callers receive the same conversion as runtime assignments.
 Create/update normalize a fresh owner draft and encode rows incrementally before
@@ -60,37 +60,23 @@ any SQL mutation. Caller-owned frozen draft/row objects are unchanged. All scala
 and reference validation completes before owner/row replacement. Code uniqueness
 is checked on the converted code, so two distinct long inputs can conflict.
 
-Canonical receipt hashes use converted Code/Description and canonical encoded
-owner/section values. Resolution performs the same conversion. Two raw inputs
-with the same converted intent resolve the same receipt; a different resulting
-intent conflicts. For values valid under the UTF-16 qualifiers the historical
-canonical payload and receipt hash are unchanged, including signed zero and
-omitted sections. This is not a guarantee for every value admitted by the old
-Python-codepoint length check.
-
-Runtime uncertainty freezes the already-converted submitted values. Mutation
-stays blocked until resolution; the normalizer cannot change an outstanding
-intent. Optimistic revisions, atomic owner/section rollback and section ordering
-are retained. Failed writes preserve the edit buffer. SQL mutations and their
-revision/intent bookkeeping now share one savepoint: allocation failures,
-interruption and RELEASE failures restore both. A failed cleanup poisons the
-transaction and blocks commit even if closing also fails. Receipt resolution
-requires canonical identifiers and the exact resulting revision token, not just
-a matching intent digest.
+An unknown commit outcome freezes the write buffer. Optimistic revisions,
+atomic owner/section rollback and significant row order are unchanged. SQL
+mutations and staged revisions share one savepoint; allocation failures,
+interruptions and RELEASE failures restore both. Failed physical cleanup
+poisons the transaction and blocks further commit. Read the current row with a
+fresh object instead of resubmitting the frozen write.
 
 The persisted-data codec does **not** normalize. Out-of-range, noncanonical,
 wrong-type and invalid-Unicode stored values still fail. String validation now
 counts UTF-16 units rather than Python code points, so a legacy stored value that
 only fit the old code-point check fails closed; opening does not rewrite it.
-Its outstanding legacy receipt also refuses resolution: a split surrogate is
-invalid input, and a clean truncation differs from the old canonical intent and
-conflicts. The raw draft, stored data and original receipt remain unchanged.
 No migration or repair is silently performed. The project's pre-public-release
 internal storage is not a public compatibility contract.
 The offline v1-to-v2 migration applies the same strict Code/Description validation
 before dropping source records or committing. Legacy supplementary-character
-values outside the UTF-16 bound abort and roll back migration; source values and
-receipts are retained rather than truncated into an unreadable upgraded database.
+values outside the UTF-16 bound abort and roll back migration rather than
+truncating source values.
 
 `!todo`: acquire source-reviewed native CatalogObject and tabular-section
 assignment/Write observations for rounding ties, overflow, negative sign,

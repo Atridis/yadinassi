@@ -12,7 +12,7 @@ modules, install forms, or bypass any other activation issues.
 `decimal_v1` only with a String code width from 1 through 9. Numbered databases
 are newly created owned SQLite v4 files, with durable per-catalog UUID counters.
 Existing explicit-only schemas still create v2 or v3 files. Existing v1/v2/v3
-schema serializations and receipt digests are preserved, and opening them never
+schema serializations are preserved, and opening them never
 adds counters or migrates their data. No v3-to-v4 migration is supplied.
 
 The policy is deliberately precise: auto candidates start at 1, use ASCII decimal
@@ -30,38 +30,23 @@ submitted code and an enabled schema. False preserves explicit-code behavior;
 numbered catalogs reject a blank explicit code. Updates cannot auto-allocate.
 All numbering and owner/section insertion occur under the existing
 `BEGIN IMMEDIATE` transaction and per-record savepoint. Any record failure rolls
-back the counter and that record's receipt bookkeeping with the data. Competing
+back the counter with that record's data. Competing
 backend connections serialize through SQLite or receive the existing bounded
 busy refusal; no number is allocated on opening a form or making an edit.
 
 ## Write outcomes and uncertain commits
 
-V4 advertises `catalog_write_outcomes`. `commit_outcomes()` returns immutable
-`CatalogWriteOutcome(revision, code)` values after the confirmed commit and
-connection cleanup. The existing `commit()` API retains its revision-only result
-for host callers. Both use the same atomic transaction and durable receipt.
+V4 advertises `catalog_write_outcomes`. After confirmed COMMIT,
+`commit_outcomes()` returns ordered `CatalogWriteOutcome(revision, code)`
+values; `commit()` retains its revision-only result. No successful outcome
+is inferred from a subsequent read.
 
-V4 receipts retain the code as well as the revision and bind the original
-submitted request, including its `auto_number_v1`/`decimal_v1` marker, to the
-recorded outcome in one versioned digest. The request is not silently replaced
-with a generated-code draft. `resolve_write_outcome()` returns that exact
-recorded result, including the original code if the record was later edited.
-It does not derive a result from a new card read or allocate a replacement code.
-For multi-write transactions, `resolve_write_outcomes()` verifies the complete
-ordered tuple of `CatalogWriteRequest` intents and returns every original code;
-see [batch receipt recovery](catalog-batch-receipts.md).
-`resolve_write()` and `committed_operation()` retain revision-only views.
-
-This is structural/integrity checking of owned storage, not cryptographic
-protection against a same-user attacker rewriting a database and its hashes.
-
-The runtime requests automatic numbering only for a new object whose Code is
-empty and whose schema explicitly selects this profile. A backend without outcome
-capability refuses that profile. Runtime buffers receive the code only after a
-validated committed outcome. An uncertain COMMIT or cleanup freezes the original
-request and nested section buffers; another Write resolves the receipt or retries
-only a proven uncommitted intent. It never blindly creates a second record. A
-failure before commit leaves the code unassigned and the edit buffer available.
+Automatic numbering applies only to a new object with an empty Code and a
+schema that selects this profile. Runtime objects receive the allocated code
+only after a confirmed commit. If the outcome is unknown, the submitted buffer
+and its sections cannot be written again. Read the current record with a fresh
+object. A confirmed rollback leaves the number available for a separate new
+write. See [unknown commit outcomes](sqlite-commit-uncertainty.md).
 
 ## Boundaries and follow-up
 

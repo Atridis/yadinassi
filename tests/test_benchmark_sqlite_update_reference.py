@@ -31,18 +31,15 @@ class SQLiteUpdateReferenceTests(unittest.TestCase):
         after = self.run.read_record()
         self.assertEqual(after.revision, before.revision + 3)
         with closing(sqlite3.connect(self.path)) as connection:
-            self.assertEqual(connection.execute('SELECT COUNT(*) FROM commit_receipt').fetchone()[0], 0)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name='commit_receipt'").fetchone()[0], 0)
 
-    def test_stale_revision_does_not_write_or_add_receipt(self):
+    def test_stale_revision_does_not_write(self):
         record = self.run.read_record()
         self.run.update_record(record, 'first')
-        with closing(sqlite3.connect(self.path)) as c:
-            count = c.execute('SELECT COUNT(*) FROM commit_receipt').fetchone()[0]
+        saved = self.run.read_record()
         with self.assertRaises(StaleRevisionError):
             self.run.update_record(record, 'stale')
-        self.assertEqual(self.run.read_record().description, 'first')
-        with closing(sqlite3.connect(self.path)) as c:
-            self.assertEqual(c.execute('SELECT COUNT(*) FROM commit_receipt').fetchone()[0], count)
+        self.assertEqual(self.run.read_record(), saved)
 
     def test_sql_error_rolls_back_update(self):
         before = self.run.read_record()

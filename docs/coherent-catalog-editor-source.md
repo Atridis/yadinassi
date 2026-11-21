@@ -16,14 +16,14 @@ unverified reads for custom adapters.
 
 Catalog editor initialization and verification consume the pair. All existing
 before/after checks around detached source execution remain, including pinned
-form and object source equality. The writer, its atomic source/schema checks,
-receipt resolution and transactions are unchanged. Returning source bytes is not
+form and object source equality. The writer's atomic source/schema checks
+remain in force. Returning source bytes is not
 a lasting execution grant, and the SQL read transaction ends before returning.
 
 Tests cover one snapshot per pair, fresh verification on the next call, exact
 expected identity, MainDemo DDL rejection, inert source drift, policy drift and
 custom backend refusal. Existing imported product/kind editor fault injections
-now target the new source-pair seam; receipt no-replay assertions are retained.
+now target the new source-pair seam; write faults are checked without replay.
 
 Measurement uses the unchanged original UI Description/Save harness from
 [`experiments/canonical_validation/measure.py`](https://github.com/Atridis/yadinassi/blob/713fb157cac984d8918681524848efa5f64f6b70/experiments/canonical_validation/measure.py), copied into

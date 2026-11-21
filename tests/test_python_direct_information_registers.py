@@ -34,7 +34,7 @@ class DirectInformationRegisterTests(unittest.TestCase):
         prepared = self.vm.prepare('InformationRegisters.Prices.Get(New Structure("Region,Item","North","A")).Price')
         self.assertEqual(self.vm.execute_prepared(prepared), Decimal(23))
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('SELECT COUNT(*) FROM information_register_receipt').fetchone(), (0,))
+            self.assertIsNone(db.execute("SELECT name FROM sqlite_schema WHERE type='table' AND name='information_register_receipt'").fetchone())
 
     def test_foreign_namespace_and_children_do_not_gain_same_database_authority(self):
         self.vm.execute('Namespace=InformationRegisters;Manager=Namespace.Prices;'

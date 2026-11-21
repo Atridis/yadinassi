@@ -52,15 +52,6 @@ class ConfigurationSectionExportSnapshotTests(unittest.TestCase):
             tx.commit()
         finally: tx.close()
         self.original = self.read()
-        # Keep one historical row to check that export never changes it.
-        with closing(sqlite3.connect(self.path)) as db, db:
-            db.execute('INSERT INTO commit_receipt VALUES(?,?,?)',
-                       (str(self.operation), '0' * 64, '[]'))
-        self.receipt = self.receipt_rows()
-
-    def receipt_rows(self):
-        with closing(sqlite3.connect(self.path)) as db:
-            return db.execute('SELECT * FROM commit_receipt').fetchall()
 
     def read(self):
         view = self.backend.begin_read()
@@ -97,7 +88,6 @@ class ConfigurationSectionExportSnapshotTests(unittest.TestCase):
                         self.assertEqual(revisions, (expected.revision,))
                 finally: view.close()
                 self.assertEqual(self.read(), expected)
-        self.assertEqual(self.receipt_rows(), self.receipt)
         self.assertEqual(self.backend.export_configuration(), self.expected_files)
 
     def test_v3_interleave_source_owner_and_rows_cannot_bypass_export_preflight(self):
@@ -153,7 +143,6 @@ class ConfigurationSectionExportSnapshotTests(unittest.TestCase):
                 expected_rows = (replace(first, values=('interleaved row',) + first.values[1:]),) + before_card.tabular_sections[0].rows[1:]
                 self.assertEqual(changed.tabular_sections, (
                     replace(before_card.tabular_sections[0], rows=expected_rows), before_card.tabular_sections[1]))
-        self.assertEqual(self.receipt_rows(), self.receipt)
 
     def test_v3_failed_export_releases_only_export_connection_and_not_pending_view(self):
         with closing(sqlite3.connect(self.path)) as db, db:
@@ -178,4 +167,3 @@ class ConfigurationSectionExportSnapshotTests(unittest.TestCase):
         self.assertIsNone(self.backend._active)
         self.assertEqual(self.read(), self.original)
         self.assertEqual(self.backend.export_configuration(), self.expected_files)
-        self.assertEqual(self.receipt_rows(), self.receipt)

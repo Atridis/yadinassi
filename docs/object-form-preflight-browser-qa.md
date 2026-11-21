@@ -72,7 +72,7 @@ covering runtime, generated assets, UI source, source configuration, helper,
 contract and workflow. A clean checkout is required before and after the run.
 Real source-derived form/record capabilities are checked but not exported.
 Reports expose readonly labels, not write/reference capabilities. No statement
-API, user SQL, direct browser UUID, root receipt resolution or backend fault
+API, user SQL, direct browser UUID, replay or backend fault
 injection is part of this acquisition.
 
 The ordinary non-root Linux runner uses pinned Playwright 1.64.1 Chromium with

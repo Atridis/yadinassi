@@ -67,15 +67,13 @@ class StandaloneDocumentRegisterNoReceiptTests(unittest.TestCase):
         with patch.object(DocumentView,'_confirm_commit',self.lose_reply(DocumentView._confirm_commit)):
             with self.assertRaises(BSLRuntimeError):
                 vm.execute('X.Write();')
-        with patch.object(backend,'begin_document_write') as begin, \
-             patch.object(backend,'resolve_document_write',create=True) as resolve:
+        with patch.object(backend,'begin_document_write') as begin:
             with self.assertRaises(BSLRuntimeError):
                 vm.execute('X.Write();')
             begin.assert_not_called()
-            resolve.assert_not_called()
         self.assertEqual(self.sql(path,'SELECT number FROM document_record ORDER BY number'),
                          [('000000001',),('000000002',)])
-        self.assertEqual(self.sql(path,'SELECT COUNT(*) FROM document_commit_receipt'),[(0,)])
+        self.assertEqual(self.sql(path,"SELECT name FROM sqlite_schema WHERE type='table' AND name='document_commit_receipt'"),[])
         self.assertFalse(vm.execute('Documents.Orders.FindByNumber("000000002").IsEmpty()'))
         self.assert_no_receipt_access(statements,2)
 
@@ -96,8 +94,7 @@ class StandaloneDocumentRegisterNoReceiptTests(unittest.TestCase):
     def test_records_and_sets_freeze_until_explicit_fresh_read(self):
         vm,path,backend=self.database(register_files())
         statements=self.trace_writes(backend)
-        # Plain python-direct does not currently expose the InformationRegisters
-        # global; exercise the existing language objects against the same SQLite.
+        # Inject the fault at the SQLite commit boundary of the language objects.
         manager=vm._information_registers.get_member('Prices')
         record=manager.create_record_manager()
         record.set_member('Item','A')
@@ -108,17 +105,15 @@ class StandaloneDocumentRegisterNoReceiptTests(unittest.TestCase):
         row=records.add()
         row.set_member('Item','B')
         row.set_member('Price',Decimal(5))
-        for target,resolve_method in ((record,'resolve_register_write'),(records,'resolve_register_set')):
+        for target in (record, records):
             with self.subTest(target=type(target).__name__):
                 with patch.object(RegisterView,'_confirm_commit',self.lose_reply(RegisterView._confirm_commit)):
                     with self.assertRaisesRegex(BackendError,'uncertain_commit'):
                         target.write()
-                with patch.object(backend,'begin_register_write') as begin, \
-                     patch.object(backend,resolve_method,create=True) as resolve:
+                with patch.object(backend,'begin_register_write') as begin:
                     with self.assertRaisesRegex(BackendError,'uncertain_commit'):
                         target.write()
                     begin.assert_not_called()
-                    resolve.assert_not_called()
                 target.read()
         self.assertEqual(record.get_member('Price'),3)
         self.assertEqual(records.get(Decimal(0)).get_member('Price'),5)
@@ -126,5 +121,5 @@ class StandaloneDocumentRegisterNoReceiptTests(unittest.TestCase):
         record.write()
         record.delete()
         self.assertEqual(self.sql(path,'SELECT COUNT(*) FROM information_register_record'),[(1,)])
-        self.assertEqual(self.sql(path,'SELECT COUNT(*) FROM information_register_receipt'),[(0,)])
+        self.assertEqual(self.sql(path,"SELECT name FROM sqlite_schema WHERE type='table' AND name='information_register_receipt'"),[])
         self.assert_no_receipt_access(statements,4)

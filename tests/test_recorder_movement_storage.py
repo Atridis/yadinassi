@@ -66,11 +66,6 @@ class RecorderJournalTests(RecorderStorageTests):
         super().setUp()
         from types import SimpleNamespace
         from contextlib import contextmanager
-        self.c.execute('CREATE TABLE commit_receipt(operation_id TEXT PRIMARY KEY, request_hash TEXT, revisions_json TEXT)')
-        self.c.execute('CREATE TABLE document_commit_receipt(operation_id TEXT PRIMARY KEY, request_hash TEXT, document_id TEXT, record_id TEXT, revision INTEGER, number TEXT)')
-        self.c.execute('CREATE TABLE information_register_receipt(operation_id TEXT PRIMARY KEY, request_hash TEXT, outcome_json TEXT)')
-        self.c.execute('CREATE TABLE document_posting_receipt(operation_id TEXT PRIMARY KEY,request_hash TEXT,outcome_json TEXT)')
-        self.c.execute('CREATE TABLE unit_of_work_receipt(operation_id TEXT PRIMARY KEY,request_hash TEXT,outcomes_json TEXT)')
         owner=self
         class View:
             _backend=SimpleNamespace(storage_version=8,format_version=13,_recorder_schemas=(owner.schema,))
@@ -102,8 +97,6 @@ class RecorderJournalTests(RecorderStorageTests):
         outcomes=tx.commit()
         self.assertEqual(len(outcomes),2)
         self.assertEqual([(r.ticket.operation_id,r.ticket.index) for r in outcomes],[(op,0),(op,1)])
-        self.assertEqual(self.c.execute('SELECT COUNT(*) FROM recorder_movement_receipt').fetchone(),(0,))
-        self.assertEqual(self.c.execute('SELECT COUNT(*) FROM unit_of_work_receipt').fetchone(),(0,))
         self.c.execute('BEGIN')
         self.assertEqual(self.port.read(self.reg,self.key).revision,1)
         self.assertEqual(self.port.read(self.reg,other).revision,1)

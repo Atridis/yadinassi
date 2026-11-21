@@ -1,5 +1,5 @@
-from contextlib import closing
 """Migration tests use authored temporary v1 databases, never user data."""
+from contextlib import closing
 import hashlib
 import json
 from pathlib import Path
@@ -23,7 +23,7 @@ class MigrationTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.path = Path(self.tmp.name) / 'fixture.sqlite'
         self.database_id, self.config_id, self.a, self.b = [uuid4() for _ in range(4)]
-        self.ra, self.rb, self.empty, self.op = uuid4(), uuid4(), uuid4(), uuid4()
+        self.ra, self.rb, self.empty = uuid4(), uuid4(), uuid4()
         fields = (FieldSchema(uuid4(), 'Text', 'string', (32,)),
                   FieldSchema(uuid4(), 'Amount', 'number', (12, 2, 'Any')),
                   FieldSchema(uuid4(), 'Active', 'boolean'),
@@ -34,7 +34,6 @@ class MigrationTests(unittest.TestCase):
         self.va = [['s', 'текст'], ['n', '123.40'], ['b', True], ['d', '00010101000000'], ['r', str(self.b), str(self.rb)]]
         self.vb = [['r', str(self.a), str(self.ra)]]
         self.ve = [['r', str(self.a), str(UUID(int=0))]]
-        self.receipt = (str(self.op), 'a'*64, _json([[str(self.a), str(self.ra), '7']]))
         with closing(sqlite3.connect(self.path)) as db, db:
             for ddl in _V1_DDL: db.execute(ddl)
             db.execute('PRAGMA application_id=%d' % _APPLICATION_ID)
@@ -46,7 +45,6 @@ class MigrationTests(unittest.TestCase):
                 db.execute('INSERT INTO catalog_schema VALUES(?,?,?)', (str(s.identity), s.name, _json(_schema_data(s))))
             for cat, rid, revision, code, value in ((self.a,self.ra,7,'1',self.va), (self.b,self.rb,4,'2',self.vb), (self.b,self.empty,1,'3',self.ve)):
                 db.execute('INSERT INTO catalog_record VALUES(?,?,?,?,?,?,?)', (str(cat), str(rid), revision, code, 'Описание', 0, _json(value)))
-            db.execute('INSERT INTO commit_receipt VALUES(?,?,?)', self.receipt)
         self.plan = prepare_v1(self.path, maintenance=True)
 
     def tearDown(self): self.tmp.cleanup()
@@ -59,9 +57,8 @@ class MigrationTests(unittest.TestCase):
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 1)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM catalog_record').fetchone()[0], 3)
             self.assertIsNone(db.execute("SELECT 1 FROM sqlite_master WHERE name='catalog_storage_map'").fetchone())
-            self.assertEqual(db.execute('SELECT * FROM commit_receipt').fetchone(), self.receipt)
 
-    def test_roundtrip_and_preserved_receipt(self):
+    def test_roundtrip_preserves_record_values_and_revisions(self):
         migrate_v1(self.path, self.plan, maintenance=True)
         with closing(sqlite3.connect(self.path)) as db, db:
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 2)
@@ -70,7 +67,6 @@ class MigrationTests(unittest.TestCase):
             row = db.execute(f'SELECT * FROM {quote_identifier(layout.table_name(self.a))} WHERE record_id=?', (str(self.ra),)).fetchone()
             self.assertEqual(row[:5], (str(self.ra),7,'1','Описание',0))
             self.assertEqual(decode_columns(row[5:], self.sa), self.va)
-            self.assertEqual(db.execute('SELECT * FROM commit_receipt').fetchone(), self.receipt)
             self.assertEqual(db.execute('SELECT database_uuid,generation FROM database_info').fetchone(), (str(self.database_id),3))
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
 
@@ -125,29 +121,27 @@ class MigrationTests(unittest.TestCase):
             self.assertEqual(sum(query.startswith('SELECT definition FROM catalog_schema')
                                  for query in queries), 1)
 
-    def test_backend_reopen_and_old_receipt_resolves_exact_intent(self):
+    def test_backend_reopen_and_previous_revision_guards_writes(self):
         from yadinassi.db.catalog.catalog_backend import CatalogDraft, CatalogKey, Revision
         from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _decode
         values = tuple(_decode(v, f, self.database_id) for v, f in zip(self.va, self.sa.fields))
         draft = CatalogDraft(CatalogKey(self.database_id,self.a,self.ra), '1', 'Описание', False, values)
         expected = Revision(self.database_id,3,self.a,self.ra,'6')
-        intent = [[str(self.a),str(self.ra),'1','Описание',False,_json(self.va),7]]
-        digest = hashlib.sha256(_json(intent).encode('utf-8')).hexdigest()
-        self.receipt = (str(self.op),digest,_json([[str(self.a),str(self.ra),'7']]))
-        self.execute('UPDATE commit_receipt SET request_hash=?, revisions_json=? WHERE operation_id=?', self.receipt[1:] + (self.receipt[0],))
-        self.plan = prepare_v1(self.path, maintenance=True)
         old = SQLiteCatalogBackend(self.path)
         self.assertEqual(old.storage_version, 1)
         old.close()
         migrate_v1(self.path, self.plan, maintenance=True)
         backend = SQLiteCatalogBackend(self.path)
         try:
-            self.assertEqual(backend.resolve_write(self.op,draft,expected).token,'7')
             view = backend.begin_read(); card = view.read_catalog(draft.key); view.close()
             self.assertEqual(card.values,values)
             self.assertEqual(card.revision.token,'7')
-            tx = backend.begin_write(uuid4()); tx.update(draft, card.revision)
-            self.assertEqual(tx.commit()[0].token,'8')
+            with closing(backend.begin_write(uuid4())) as tx:
+                with self.assertRaisesRegex(BackendError, 'conflict'):
+                    tx.update(draft, expected)
+            with closing(backend.begin_write(uuid4())) as tx:
+                tx.update(draft, card.revision)
+                self.assertEqual(tx.commit()[0].token,'8')
         finally: backend.close()
 
     def test_stale_new_backend_rejects_migrated_file(self):
@@ -194,7 +188,7 @@ class MigrationTests(unittest.TestCase):
 
     def test_utf16_v1_is_rejected_without_modification(self):
         path = Path(self.tmp.name) / 'utf16.sqlite'
-        tables = ('database_info', 'configuration_file', 'catalog_schema', 'catalog_record', 'commit_receipt')
+        tables = ('database_info', 'configuration_file', 'catalog_schema', 'catalog_record')
         with closing(sqlite3.connect(self.path)) as source, source, closing(sqlite3.connect(path)) as db, db:
             db.execute("PRAGMA encoding='UTF-16le'")
             for ddl in _V1_DDL: db.execute(ddl)
@@ -211,7 +205,6 @@ class MigrationTests(unittest.TestCase):
             self.assertEqual(db.execute('PRAGMA encoding').fetchone()[0], 'UTF-16le')
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 1)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM catalog_record').fetchone()[0], 3)
-            self.assertEqual(db.execute('SELECT * FROM commit_receipt').fetchone(), self.receipt)
 
     def test_unknown_version_rejected(self):
         self.execute('PRAGMA user_version=3')
@@ -370,13 +363,12 @@ class MigrationTests(unittest.TestCase):
             with self.assertRaisesRegex(BackendError, 'uncertain_commit'): migrate_v1(self.path, self.plan, maintenance=True)
         with closing(sqlite3.connect(self.path)) as db, db:
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 2)
-            self.assertEqual(db.execute('SELECT * FROM commit_receipt').fetchone(), self.receipt)
         self.assertEqual(resolve_migration(self.path, self.plan, maintenance=True), 'committed')
         self.execute("UPDATE migration_marker SET source_hash=?", ('b'*64,))
         self.assertEqual(resolve_migration(self.path, self.plan, maintenance=True), 'uncertain')
 
     def test_process_crash_before_commit_preserves_v1(self):
-        tables = ('database_info', 'configuration_file', 'catalog_schema', 'catalog_record', 'commit_receipt')
+        tables = ('database_info', 'configuration_file', 'catalog_schema', 'catalog_record')
         with closing(sqlite3.connect(self.path)) as db, db:
             before = {table: db.execute(f'SELECT * FROM {table} ORDER BY rowid').fetchall() for table in tables}
         script = """

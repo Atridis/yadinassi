@@ -240,14 +240,5 @@ class UnitOfWork:
     def __exit__(self, *_): self.close()
 
 
-def acknowledge_root(root):
-    raise BackendError('unsupported')
-
-
-def resolve(backend, operation, requests):
-    # Returning None would tell a legacy caller it may retry the write.
-    raise BackendError('unsupported')
-
-
 for _method in ('stage','read_catalog','read_document','read_register','read_document_posted','read_recorder','read_accumulation','commit'):
     setattr(UnitOfWork,_method,_storage()._boundary(getattr(UnitOfWork,_method)))

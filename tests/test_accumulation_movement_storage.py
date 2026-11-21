@@ -212,7 +212,6 @@ class AccumulationStorageTests(unittest.TestCase):
                 with self.assertRaises(BackendError):
                     self.port.replace(request)
         self.assertEqual(self.port.read(self.reg, self.key).revision, 0)
-        self.assertEqual(self.c.execute('SELECT COUNT(*) FROM accumulation_movement_receipt').fetchone(), (0,))
 
     def test_database_row_budget_rolls_back_rows_and_revision(self):
         original = self.port.replace(self.request())
@@ -234,19 +233,6 @@ class AccumulationStorageTests(unittest.TestCase):
         with patch('yadinassi.db.sqlite.sqlite_accumulation_movements.MAX_DATABASE_PARTITIONS', 1), self.assertRaises(BackendError):
             self.port.replace(request)
         self.assertEqual(self.port.read(self.reg, other).revision, 0)
-
-    def test_legacy_receipts_are_inert_during_replacement(self):
-        old = (str(uuid4()), 'old hash', 'old immutable payload')
-        self.c.execute('INSERT INTO accumulation_movement_receipt VALUES(?,?,?)', old)
-        trace = []
-        self.c.set_trace_callback(trace.append)
-        try:
-            outcome = self.port.replace(self.request())
-        finally:
-            self.c.set_trace_callback(None)
-        self.assertEqual(outcome.revision, 1)
-        self.assertFalse([sql for sql in trace if 'accumulation_movement_receipt' in sql])
-        self.assertEqual(self.c.execute('SELECT * FROM accumulation_movement_receipt').fetchall(), [old])
 
     def test_read_and_scan_enforce_payload_budgets(self):
         self.port.replace(self.request())

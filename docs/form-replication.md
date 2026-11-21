@@ -130,7 +130,7 @@ PYTHONPATH=tests:scripts python -m unittest \
   test_execution_directives test_nocontext_runtime test_nocontext_async_runtime \
   test_scalar_context_copyback test_execution_context_date_null \
   test_ui_asset_provenance test_native_preprocessor_budget \
-  test_native_preprocessor_runtime_budget test_catalog_batch_receipts \
+  test_native_preprocessor_runtime_budget test_catalog_batch_outcomes \
   test_native_preprocessor_runtime -v
 ```
 

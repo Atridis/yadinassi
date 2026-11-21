@@ -75,7 +75,7 @@ in-memory Save success. See [protocol v0](ui-protocol-v0.md).
 4. **Actual write flow.** Create/edit draft -> validation -> confirmed atomic
    backend commit -> refresh. Dirty clears only after durable success. Cancel,
    conflict or validation failure does not falsely report Save; an ambiguous
-   commit is resolved by its backend receipt, never a blind retry.
+   commit requires a fresh read of current state, never an automatic retry.
 5. **Packaged local application.** Import an admitted official XML configuration;
    store configuration and code in SQLite; remove the import directory; close
    and reopen; list/read/create/edit/cancel/save/reopen successfully. Only this

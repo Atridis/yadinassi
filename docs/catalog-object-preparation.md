@@ -56,38 +56,21 @@ original BSL still owns its required-reference, duplicate-row and name
 rules. Messages remain inert host records, not navigation instructions.
 
 On ordinary success the same candidate is durably written through the existing
-create/update, numbering and receipt pipeline. Its prepared values are visible
+create/update and numbering transaction. Its prepared values are visible
 to the caller. Refusal, parser/runtime error or conflict does not report success
 and releases the writer. Preparation can still change this disposable candidate
 on failure, as in the original preparation-only API; it is not a UI edit-buffer
 rollback guarantee.
 
-An uncertain outcome retains the exact source, input cancellation, backend
-instance, complete prepared rows and original write intent. Resolution happens
-before parsing or running BSL. A found receipt is accepted without preparation
-or another write, returning no regenerated messages. Ordinary `Write` on that
-same pending object also retains this
-guard; it cannot silently turn a guarded retry into an unguarded one. Another
-source/backend or an attempt to relabel an ordinary pending write is refused.
-
-Only when the receipt is confirmed absent can a new transaction retry. It runs
-the retained checks against a detached copy of the frozen intent, using the new
-writer snapshot. A newly marked/missing target refuses the retry before writing.
-The prepared result must equal the retained intent: a non-idempotent handler
-cannot silently replace an already submitted payload. A pre-commit refusal after
-confirmed absence releases the pending lock; the host can then correct its
-buffer and explicitly request another guarded write. This revalidation is a new
-attempt, not BSL execution to discover a historical commit outcome.
-
-The source is retained only for this in-memory pending operation. There is no
-persistent handler registration, automatic source admission or crash-persistent
-edit session. This does not yet make the original demo's Номенклатура available
-in the local UI: its imported form and tabular editor remain separate work.
+An unknown outcome leaves the submitted candidate unusable for further
+writes. After cleanup, use a fresh object to read the current row. The read
+cannot resolve the prior write and never reruns the BSL handler. This boundary
+does not admit the original demo form or a tabular editor.
 
 ### Preparation-only callers
 
-1. Resolve pending commit/recovery **before** invoking this bridge. A receiver
-   with a pending write is rejected before parsing or execution.
+1. Use a fresh candidate. A receiver with a pending or unknown write is
+   rejected before parsing or execution.
 2. Obtain a disposable candidate and exact admitted object source for the current
    configuration identity/generation. This API does not make that admission.
 3. Prepare once. Cancellation or error is not durable success. Preparation can
@@ -96,8 +79,8 @@ in the local UI: its imported form and tabular editor remain separate work.
 4. After all form/object guards succeed, atomically commit that same candidate
    under backend generation/revision checks. A false cancellation flag is not a
    capability to write. The coordinator must still enforce every write gate.
-5. Resolve an uncertain outcome from its backend receipt. Never repeat BSL
-   preparation as part of outcome recovery.
+5. After an unknown outcome, use a fresh read. Never repeat the submitted
+   write or BSL preparation to investigate its outcome.
 
 Tests execute the unchanged demo object BSL over a separate explicit logical
 SQLite schema, real catalog objects, real references and real tabular rows.

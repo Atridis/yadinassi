@@ -56,7 +56,6 @@ def stage_posted(connection,database_id,intent):
     connection.execute('INSERT INTO document_posting_state VALUES(?,?,?,?) ON CONFLICT(document_id,record_id) DO UPDATE SET document_revision=excluded.document_revision,posted=excluded.posted',(str(key.document_id),str(key.record_id),intent.document_revision,int(intent.posted)))
     return intent
 
-POSTED_RECEIPT_DDL='CREATE TABLE document_posting_receipt(operation_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, outcome_json TEXT NOT NULL)'
 
 
 def describe_posted(database_id,generation,intent):

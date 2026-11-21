@@ -1,4 +1,4 @@
-"""Owned SQLite v8 independent information-register records and receipts.
+"""Owned SQLite v8 independent information-register records.
 
 Register keys are canonical typed dimension tuples. A monotonically increasing
 register revision prevents stale updates after a delete/reinsert cycle.
@@ -15,7 +15,6 @@ REGISTER_DDL = (
     'CREATE TABLE information_register_schema(identity TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, definition TEXT NOT NULL)',
     'CREATE TABLE information_register_record(register_id TEXT NOT NULL REFERENCES information_register_schema(identity), key_json TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), values_json TEXT NOT NULL, PRIMARY KEY(register_id,key_json))',
     'CREATE TABLE information_register_sequence(register_id TEXT PRIMARY KEY REFERENCES information_register_schema(identity), next_value INTEGER NOT NULL CHECK(next_value>0))',
-    'CREATE TABLE information_register_receipt(operation_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, outcome_json TEXT NOT NULL)',
 )
 MAX_ROW = 1024 * 1024
 MAX_TOTAL = 16 * 1024 * 1024
@@ -340,7 +339,7 @@ class RegisterView:
         self._view._require(True)
         if self._outcome is None: raise BackendError('invalid_input')
         # Caller publishes this acknowledged outcome, then closes its view.
-        _storage()._commit_without_receipt(self._connection)
+        _storage()._confirm_sqlite_commit(self._connection)
         self._view._committed = True
         return self._outcome
 

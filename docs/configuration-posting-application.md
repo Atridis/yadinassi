@@ -4,7 +4,7 @@
 typed headers/sections and nonperiodic recorder-owned information registers.
 It retains every original source byte, including forms, handlers and the host
 manifest. Canonical reimport checks the complete grant before storage access.
-Physical format 13 keeps the same DDL and immutable receipt encoding, with a
+Physical format 13 uses the posting data schema, with a
 separate exact marker. Old posting and non-posting source grants are unchanged.
 There is no migration, catalog-reference support, CommonModule authority or
 application-module activation in this profile.

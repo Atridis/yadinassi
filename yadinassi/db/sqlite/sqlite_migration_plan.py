@@ -40,7 +40,7 @@ def _quote(value): return '"'+value.replace('"','""')+'"'
 
 
 def _fingerprint(db, *, upgraded=False, excluded_indexes=()):
-    omitted = {'transaction_profile','unit_of_work_receipt','transaction_migration'} if upgraded else set()
+    omitted = {'transaction_profile','transaction_migration'} if upgraded else set()
     tables = tuple(name for name, in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND substr(name,1,7)!='sqlite_' ORDER BY name") if name not in omitted)
     if len(tables) > 4096: raise BackendError('unsupported')
     digest = hashlib.sha256(b'yadinassi-storage-plan-v1\0'); total = 0

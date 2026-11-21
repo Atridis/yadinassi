@@ -12,14 +12,12 @@ On a miss, the conservative source validator returns its parsed AST, eliminating
 the previous second parse, then the direct compiler lowers it once. The public
 `validate_catalog_object_source` API retains its validation-only return value.
 
-The writer selects current source as before and resolves any pending receipt
-first. A known committed receipt returns before preparation or BSL execution.
-Only after confirmed absence (or a new write) does it prepare code, before
-`begin_write`. The transaction still validates database, generation, full schema
-and source manifest under the existing writer lock. Invocation checks the
-prepared key again and creates fresh _ObjectInterpreter, Boundary, messages and
-Cancel cell using the current candidate and transaction read view. Retry uses
-the retained source and frozen submitted image, not new edited state.
+For a new write, the writer selects the current source and prepares code
+before `begin_write`. The transaction still validates database, generation,
+full schema and source manifest under the existing writer lock. Invocation checks
+the prepared key again and creates a fresh _ObjectInterpreter, Boundary,
+message buffer and Cancel cell using the current candidate and transaction read
+view. An object whose prior outcome is unknown cannot prepare or write again.
 
 This is not an authorization cache. Changes to source/schema/options invalidate
 the single slot; private plan fields are implementation-owned and not a mutable

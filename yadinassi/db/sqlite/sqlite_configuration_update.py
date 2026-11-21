@@ -1,7 +1,7 @@
 """Explicit canonical v11 configuration update planning; never invoked by open.
 
 The immutable plan is a dry-run object, not an executable SQL list. Physical
-application and historical receipt admission are separate from this planner.
+application and target admission are separate from this planner.
 """
 from dataclasses import dataclass
 from uuid import UUID, uuid4
@@ -100,7 +100,7 @@ def prepare(path, target, *, maintenance=False, operation_id=None):
             if db.execute('PRAGMA integrity_check').fetchall() != [('ok',)] or db.execute('PRAGMA foreign_key_check').fetchone():
                 raise BackendError('integrity')
             reserved = tuple(n for n, in db.execute('SELECT name FROM sqlite_master')) + (
-                'configuration_update', 'configuration_history', 'configuration_receipt_epoch')
+                'configuration_update', 'configuration_history')
             layout = extend_layout(backend._layout, delta, reserved)
             tables = tuple(sorted((str(k),v) for k,v in layout._tables.items()))
             fields = tuple(sorted((str(c),str(f),n) for (c,f),n in layout._fields.items()))
@@ -124,7 +124,7 @@ def apply(path, plan, *, maintenance=False):
     from .sqlite_query_indexes import (catalog_query_index_ddls, read_index_bundle_ddls,
                                        admit_query_indexes, _index_name, check_index_bundle_budget)
     from .sqlite_transaction_profile import profile_index_ddls
-    from .sqlite_configuration_history import DDL, encode_files, digest, receipt_rows, validate
+    from .sqlite_configuration_history import DDL, encode_files, digest, validate
     from types import SimpleNamespace
     if type(plan) is not ConfigurationUpdatePlan: raise BackendError('invalid_input')
     current=prepare(path,plan.target,maintenance=maintenance,operation_id=plan.operation_id)
@@ -149,7 +149,6 @@ def apply(path, plan, *, maintenance=False):
             profile_index_ddls(plan.base_profile, source.catalogs, layout),
             read_index_bundle_ddls(plan.base_profile, source.catalogs, layout, format_version=11))
         old_schemas={s.identity:s for s in source.catalogs}
-        epochs=receipt_rows(db)
         for ddl in DDL: db.execute(ddl)
         for addition in delta.catalogs:
             schema=addition.schema;identity=str(schema.identity)
@@ -193,10 +192,9 @@ def apply(path, plan, *, maintenance=False):
         if admit_query_indexes(db, profile_index_ddls(plan.base_profile, plan.target.catalogs, layout), optional) != preserve_read_indexes:
             raise BackendError('integrity')
         target_files={f.path:f.content for f in plan.target.files}
-        db.execute('INSERT INTO configuration_update VALUES(1,?,?,?,?,?,?,?,?,?,?)',
+        db.execute('INSERT INTO configuration_update VALUES(1,?,?,?,?,?,?,?,?,?)',
             (str(plan.operation_id),plan.source_hash,plan.plan_hash,plan.source_generation,plan.source_generation+1,
-             numbering,plan.target.module_runtime,encode_files(source_files),digest(encode_files(target_files)),digest(epochs)))
-        db.executemany('INSERT INTO configuration_receipt_epoch VALUES(?,?,?)',epochs)
+             numbering,plan.target.module_runtime,encode_files(source_files),digest(encode_files(target_files))))
         if db.execute('PRAGMA integrity_check').fetchall()!=[('ok',)] or db.execute('PRAGMA foreign_key_check').fetchone():raise BackendError('integrity')
         candidate=SimpleNamespace(_schemas=plan.target.catalogs,_document_schemas=plan.target.documents,
             _register_schemas=plan.target.information_registers,_layout=layout,storage_version=plan.base_profile,

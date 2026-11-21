@@ -5,7 +5,6 @@ FORMAT_VERSION = 11
 BASE_VERSIONS = (2, 3, 4, 7, 8, 9, 10)
 PROFILE_DDL = (
     'CREATE TABLE transaction_profile(singleton INTEGER PRIMARY KEY CHECK(singleton=1),base_version INTEGER NOT NULL)',
-    'CREATE TABLE unit_of_work_receipt(operation_id TEXT PRIMARY KEY,request_hash TEXT NOT NULL,outcomes_json TEXT NOT NULL)',
     'CREATE TABLE transaction_migration(singleton INTEGER PRIMARY KEY CHECK(singleton=1),migration_id TEXT NOT NULL,source_hash TEXT NOT NULL,plan_hash TEXT NOT NULL)',
 )
 

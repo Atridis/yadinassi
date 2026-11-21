@@ -14,7 +14,7 @@ REGISTRY_DDL = (
 )
 MIGRATION_MARKER_DDL = 'CREATE TABLE migration_marker(singleton INTEGER PRIMARY KEY CHECK(singleton=1), migration_id TEXT NOT NULL, database_uuid TEXT NOT NULL, source_hash TEXT NOT NULL, layout_hash TEXT NOT NULL)'
 _MAX_IDENTIFIER_BYTES = 1024
-_RESERVED = frozenset(('database_info', 'configuration_file', 'catalog_schema', 'catalog_record', 'commit_receipt', 'catalog_storage_map', 'catalog_field_storage_map', 'migration_marker'))
+_RESERVED = frozenset(('database_info', 'configuration_file', 'catalog_schema', 'catalog_record', 'catalog_storage_map', 'catalog_field_storage_map', 'migration_marker'))
 
 
 def quote_identifier(name):

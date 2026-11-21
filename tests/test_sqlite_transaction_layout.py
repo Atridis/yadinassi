@@ -96,7 +96,7 @@ class TransactionLayoutTests(unittest.TestCase):
                 self.backend.begin_read()
         with closing(self.backend.begin_read()): pass
 
-    def test_layout_failure_rolls_back_without_receipt_or_cache_grant(self):
+    def test_layout_failure_rolls_back_without_cache_grant(self):
         original = main_profile.validate_main_demo_ddl
         def corrupt_after_validation(connection, config, domain):
             original(connection, config, domain)
@@ -105,8 +105,7 @@ class TransactionLayoutTests(unittest.TestCase):
             with self.assertRaises(BackendError): self.backend.begin_write(uuid4())
         self.assertIsNone(self.backend._active)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('SELECT COUNT(*) FROM unit_of_work_receipt').fetchone(), (0,))
-            self.assertEqual(db.execute('SELECT COUNT(*) FROM commit_receipt').fetchone(), (0,))
+            self.assertIsNone(db.execute("SELECT name FROM sqlite_schema WHERE type='table' AND name='unit_of_work_receipt'").fetchone())
         with closing(self.backend.begin_write(uuid4())): pass
         with closing(self.backend.begin_read()): pass
 

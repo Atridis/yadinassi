@@ -51,6 +51,8 @@ class PostingProfileTests(unittest.TestCase):
             self.assertNotIn('transaction_profile',names)
             self.assertNotIn('transaction_migration',names)
             self.assertIn('posting_profile',names)
+            self.assertFalse(names.intersection({'document_commit_receipt','document_posting_receipt',
+                                                 'recorder_movement_receipt','unit_of_work_receipt'}))
     def test_original_source_bytes_preserved(self):
         self.create()
         with closing(sqlite3.connect(self.path)) as c:

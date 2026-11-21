@@ -193,7 +193,7 @@ def _boundary(function):
     return call
 
 
-def _commit_without_receipt(connection):
+def _confirm_sqlite_commit(connection):
     """Return only after SQLite confirmed COMMIT; cleanup is a separate step."""
     try:
         connection.execute('COMMIT')
@@ -489,7 +489,6 @@ _DDL = (
     'CREATE TABLE configuration_file(path TEXT PRIMARY KEY, kind TEXT NOT NULL, content BLOB NOT NULL, sha256 TEXT NOT NULL)',
     'CREATE TABLE catalog_schema(identity TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, definition TEXT NOT NULL)',
     'CREATE TABLE catalog_record(catalog_id TEXT NOT NULL REFERENCES catalog_schema(identity), record_id TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), code TEXT NOT NULL, description TEXT NOT NULL, deletion_mark INTEGER NOT NULL CHECK(deletion_mark IN(0,1)), values_json TEXT NOT NULL, PRIMARY KEY(catalog_id,record_id), UNIQUE(catalog_id,code))',
-    'CREATE TABLE commit_receipt(operation_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, revisions_json TEXT NOT NULL)',
 )
 
 
@@ -1454,10 +1453,6 @@ class SQLiteCatalogBackend:
             view.close(); raise
 
     @_boundary
-    def resolve_unit_of_work(self, operation_id, requests):
-        raise BackendError('unsupported')
-
-    @_boundary
     def begin_query_read(self, *, query_language=False):
         if not query_language:
             return self._document_view(None)
@@ -1519,10 +1514,6 @@ class SQLiteCatalogBackend:
             raise
 
     @_boundary
-    def resolve_document_write(self, operation_id, draft, expected_revision=None):
-        raise BackendError('unsupported')
-
-    @_boundary
     def begin_register_read(self):
         if self.storage_version not in (8, 9, 10): raise BackendError('unsupported')
         return self._register_view(None)
@@ -1544,14 +1535,6 @@ class SQLiteCatalogBackend:
             except BaseException as cleanup:
                 if _interruption(cleanup) and not _interruption(error): raise
             raise
-
-    @_boundary
-    def resolve_register_write(self, operation_id, draft, expected=None, deleted=False):
-        raise BackendError('unsupported')
-
-    @_boundary
-    def resolve_register_set(self, operation_id, draft):
-        raise BackendError('unsupported')
 
     def _check_catalog_manifest(self, connection):
         # Compare the same exact persisted triples in one bounded statement.
@@ -1814,28 +1797,6 @@ class SQLiteCatalogBackend:
             return result
         finally: connection.close()
 
-    # Persistent receipts are no longer consulted by this backend. These entry
-    # points deliberately reject old automatic-recovery calls without SQL.
-    @_boundary
-    def resolve_write(self, operation_id, draft, expected_revision=None):
-        raise BackendError('unsupported')
-
-    @_boundary
-    def resolve_write_outcome(self, operation_id, draft, expected_revision=None):
-        raise BackendError('unsupported')
-
-    @_boundary
-    def resolve_writes(self, operation_id, requests):
-        raise BackendError('unsupported')
-
-    @_boundary
-    def resolve_write_outcomes(self, operation_id, requests):
-        raise BackendError('unsupported')
-
-    @_boundary
-    def committed_operation(self, operation_id):
-        raise BackendError('unsupported')
-
     @lifecycle
     def _close_idle_read_handle(self):
         if self._active is not None: raise BackendError('busy')
@@ -1993,8 +1954,7 @@ class _View:
         handle = getattr(self, '_read_handle', None)
         if (self._operation_id is None and handle is not None
                 and handle.connection is self._connection
-                and handle._pending_admission is not None
-                and getattr(self, '_historical_catalogs', None) is None):
+                and handle._pending_admission is not None):
             from yadinassi.configuration.configuration_inventory_enums import _same
             schemas = self._backend._schemas
             if not _same(handle._pending_admission[8], schemas):
@@ -2007,10 +1967,6 @@ class _View:
             raise BackendError('not_found')
         row = self._connection.execute('SELECT definition FROM catalog_schema WHERE identity=?', (str(catalog_id),)).fetchone()
         if row is None: raise BackendError('not_found')
-        historical = getattr(self, '_historical_catalogs', None)
-        if historical is not None:
-            if catalog_id not in historical: raise BackendError('not_found')
-            return historical[catalog_id]
         schema = _schema(row[0], allow_numbering=self._backend.storage_version in (4, 6, 7, 8, 9, 10), allow_hierarchy=self._backend.storage_version == 10, enum_domain=self._backend._enum_domain)
         if self._backend.storage_version not in (3, 4, 6, 7, 8, 9, 10) and schema.tabular_sections: raise BackendError('unsupported')
         return schema
@@ -2948,7 +2904,7 @@ class _View:
         self._require(True)
         revisions = tuple(self._changes)
         try:
-            _commit_without_receipt(self._connection)
+            _confirm_sqlite_commit(self._connection)
         except BaseException as error:
             self._poisoned = True
             if _close:

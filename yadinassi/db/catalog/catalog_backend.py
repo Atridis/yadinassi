@@ -144,7 +144,7 @@ class CatalogWriteOutcome:
 
 @dataclass(frozen=True, slots=True)
 class CatalogWriteRequest:
-    """One successful write in transaction order, retained for receipt recovery.
+    """One requested catalog write in transaction order.
 
     None means create; updates retain the exact submitted expected revision.
     This is an intent, not permission to replay or a transaction executor.
@@ -263,7 +263,6 @@ class Capabilities:
     read_consistency: str = 'transaction_snapshot'
     catalog_tabular_sections: bool = False
     catalog_write_outcomes: bool = False
-    catalog_batch_receipts: bool = False
     document_read: bool = False
     document_create: bool = False
     document_update: bool = False
@@ -305,10 +304,6 @@ class CatalogBackend(Protocol):
     def capabilities(self) -> Capabilities: ...
     def begin_read(self) -> CatalogReadView: ...
     def begin_write(self, operation_id: UUID) -> CatalogWriteTransaction: ...
-    def resolve_write(self, operation_id: UUID, draft: CatalogDraft, expected_revision: Revision | None = None) -> Revision | None: ...
-    def resolve_write_outcome(self, operation_id: UUID, draft: CatalogDraft, expected_revision: Revision | None = None) -> CatalogWriteOutcome | None: ...
-    def resolve_writes(self, operation_id: UUID, requests: tuple[CatalogWriteRequest, ...]) -> tuple[Revision, ...] | None: ...
-    def resolve_write_outcomes(self, operation_id: UUID, requests: tuple[CatalogWriteRequest, ...]) -> tuple[CatalogWriteOutcome, ...] | None: ...
     def close(self) -> None: ...
 
 

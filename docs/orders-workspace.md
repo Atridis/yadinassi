@@ -58,7 +58,7 @@ existing editors intact.
 A lost or malformed child transport is workspace-wide uncertainty: all forms
 lock, and no reconnect or replay is offered. Database uncertainty over a healthy
 transport remains scoped to the owning editor and keeps the workbench's explicit
-Resolve save outcome / Refresh saved record behavior. A confirmed write followed
+Discard / Reload and Refresh saved record behavior. A confirmed write followed
 by failed refresh remains refresh-only. See [the workbench guide](order-workbench.md)
 for exact recovery semantics and [the form guide](form-app.md) for loopback HTTP,
 capability, frame-size and owned-process security boundaries.

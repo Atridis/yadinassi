@@ -219,7 +219,6 @@ class CatalogCommitCleanupRecoveryTests(unittest.TestCase):
         view._connection = FaultConnection(view._connection, close_fault='before', close_count=1)
         with self.assertRaisesRegex(BackendError, 'storage_error'): view.commit()
         view.close()
-        with self.assertRaisesRegex(BackendError, 'unsupported'): backend.committed_operation(operation)
         read = backend.begin_read()
         try:
             self.assertEqual([read.read_catalog(d.key).code for d in drafts], ['1', '2'])

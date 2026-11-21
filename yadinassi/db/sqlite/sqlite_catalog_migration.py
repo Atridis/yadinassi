@@ -34,7 +34,6 @@ _V1_DDL = (
     'CREATE TABLE configuration_file(path TEXT PRIMARY KEY, kind TEXT NOT NULL, content BLOB NOT NULL, sha256 TEXT NOT NULL)',
     'CREATE TABLE catalog_schema(identity TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, definition TEXT NOT NULL)',
     'CREATE TABLE catalog_record(catalog_id TEXT NOT NULL REFERENCES catalog_schema(identity), record_id TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), code TEXT NOT NULL, description TEXT NOT NULL, deletion_mark INTEGER NOT NULL CHECK(deletion_mark IN(0,1)), values_json TEXT NOT NULL, PRIMARY KEY(catalog_id,record_id), UNIQUE(catalog_id,code))',
-    'CREATE TABLE commit_receipt(operation_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, revisions_json TEXT NOT NULL)',
 )
 
 
@@ -86,20 +85,6 @@ def _check_source(db):
     for schema in schemas.values():
         if any(str(f.target_catalog_id) not in schemas for f in schema.fields if f.kind == 'catalog_ref'):
             raise BackendError('integrity')
-    # Bound untrusted data in SQL before materializing it in Python.
-    if db.execute("SELECT 1 FROM commit_receipt WHERE typeof(operation_id)!='text' OR length(CAST(operation_id AS BLOB))>36 OR typeof(request_hash)!='text' OR length(CAST(request_hash AS BLOB))>64 OR typeof(revisions_json)!='text' OR length(CAST(revisions_json AS BLOB))>? LIMIT 1", (_MAX_ROW_BYTES,)).fetchone(): raise BackendError('integrity')
-    # Receipts are retained byte-for-byte; validate bounded fields without changing them.
-    for operation, digest, revisions in db.execute('SELECT operation_id,request_hash,revisions_json FROM commit_receipt'):
-        _canonical_uuid(operation)
-        if type(digest) is not str or len(digest) != 64 or any(c not in '0123456789abcdef' for c in digest) or type(revisions) is not str or len(revisions.encode('utf-8')) > _MAX_ROW_BYTES:
-            raise BackendError('integrity')
-        parsed = json.loads(revisions)
-        if type(parsed) is not list or len(parsed) > _MAX_ROWS: raise BackendError('integrity')
-        for item in parsed:
-            if type(item) is not list or len(item) != 3: raise BackendError('integrity')
-            _canonical_uuid(item[0]); _canonical_uuid(item[1])
-            if item[0] not in schemas or type(item[2]) is not str or not item[2].isascii() or not item[2].isdecimal() or item[2].startswith('0') or not 1 <= int(item[2]) < 2**63:
-                raise BackendError('integrity')
     return database_id, schemas
 
 
@@ -192,8 +177,7 @@ def _source_hash(db):
     malformed = db.execute("SELECT 1 FROM catalog_record WHERE typeof(catalog_id)!='text' OR length(CAST(catalog_id AS BLOB))>36 OR typeof(record_id)!='text' OR length(CAST(record_id AS BLOB))>36 OR typeof(revision)!='integer' OR typeof(code)!='text' OR length(CAST(code AS BLOB))>4096 OR typeof(description)!='text' OR length(CAST(description AS BLOB))>4096 OR typeof(deletion_mark)!='integer' OR typeof(values_json)!='text' OR length(CAST(values_json AS BLOB))>? LIMIT 1", (_MAX_ROW_BYTES*4,)).fetchone()
     if malformed: raise BackendError('integrity')
     tables = (('database_info', 'singleton'), ('configuration_file', 'path'),
-              ('catalog_schema', 'identity'), ('catalog_record', 'catalog_id,record_id'),
-              ('commit_receipt', 'operation_id'))
+              ('catalog_schema', 'identity'), ('catalog_record', 'catalog_id,record_id'))
     total = 0
     for table, order in tables:
         digest.update(table.encode('ascii') + b'\0')

@@ -23,7 +23,7 @@ class NoHandlerWritePolicyTests(unittest.TestCase):
         with closing(sqlite3.connect(self.path)) as con:
             table = self.backend._layout.table_name(self.manager._schema.identity)
             return (con.execute('SELECT * FROM "' + table.replace('"', '""') + '"').fetchall(),
-                    con.execute('SELECT * FROM commit_receipt ORDER BY operation_id').fetchall())
+                    con.execute("SELECT name FROM sqlite_schema WHERE type='table' AND name='commit_receipt'").fetchall())
 
     def test_no_handler_skips_lookup_but_write_still_admits(self):
         with patch.object(self.backend, '_main_demo_write_source', side_effect=AssertionError('redundant lookup')), \

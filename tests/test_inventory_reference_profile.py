@@ -206,7 +206,7 @@ class InventoryRuntimeTests(unittest.TestCase):
             'D.Write(DocumentWriteMode.Posting); RollbackTransaction();')
         obj=self.vm.execute('D')
         self.assertEqual(self.rows(obj),())
-        for table in ('document_record','accumulation_movement','unit_of_work_receipt'):
+        for table in ('document_record','accumulation_movement','accumulation_partition'):
             self.assertEqual(self.sql('SELECT COUNT(*) FROM '+table),[(0,)])
     def test_no_migration_admission(self):
         from yadinassi.db.sqlite.sqlite_migration_plan import prepare

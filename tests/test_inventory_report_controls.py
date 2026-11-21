@@ -147,7 +147,7 @@ class InventoryReportChoiceTests(ControlsFixture,unittest.TestCase):
     def test_choices_never_write_or_resolve_receipts(self):
         before=self.path.read_bytes()
         with patch.object(self.backend,'begin_write',side_effect=AssertionError('write')), \
-             patch.object(self.backend,'resolve_unit_of_work',side_effect=AssertionError('resolve')):
+             patch.object(self.backend,'begin_unit_of_work',side_effect=AssertionError('journal')):
             self.choices()
         self.assertEqual(self.path.read_bytes(),before)
 

@@ -11,10 +11,10 @@ test blob `dc06d93262708e08e2872ba86745d0d11bc22eb9` plus this note.
 
 - Real owned SQLite create/edit/save/close/reopen; exact decimal/date/Boolean
   fields, preserved read-only references, original-revision conflicts, repeated
-  Save, cancel/close and exact uncertain-intent resolution.
+  Save, cancel/close and readback after unknown outcomes.
 - Independent source review closed four integrity/lifecycle findings: aggregate
   text patch ordering, whole pipe-exchange deadline, adoption only after scalar
-  patch installation, and retaining uncertainty after transient resolution errors.
+  patch installation and retaining uncertainty when a fresh read fails.
 - Changed-seam gates: 50 normal + 50 optimized Python tests, then final 30 + 30
   after the last editor/renderer changes; 12 independent JS client tests. Earlier
   broader 83 + 83 runs preceded those reviewed fixes, not a final full-suite claim.

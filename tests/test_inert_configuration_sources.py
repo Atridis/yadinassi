@@ -318,8 +318,6 @@ class InertSourceStorageTests(unittest.TestCase):
             self.assertFalse(caps.atomic_transactions)
             with self.assertRaisesRegex(BackendError, 'unsupported'): self.backend.begin_read()
             with self.assertRaisesRegex(BackendError, 'unsupported'): self.backend.begin_write(uuid4())
-            with self.assertRaisesRegex(BackendError, 'unsupported'): self.backend.committed_operation(uuid4())
-            with self.assertRaisesRegex(BackendError, 'unsupported'): self.backend.resolve_write(uuid4(), None)
         finally: self.backend.activated = False
 
     def test_ordinary_database_never_falls_back_to_source_reader(self):

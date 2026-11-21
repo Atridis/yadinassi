@@ -32,7 +32,7 @@ class CatalogRuntimeDataTests(unittest.TestCase):
     def snapshot(self):
         with closing(sqlite3.connect(self.path)) as db:
             return (db.execute('SELECT revision,description FROM "' + self.table + '"').fetchone(),
-                    db.execute('SELECT COUNT(*) FROM commit_receipt').fetchone()[0])
+                    db.execute("SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name='commit_receipt'").fetchone()[0])
 
     def test_default_bsl_get_and_write_without_full_admission(self):
         before, receipts = self.snapshot()

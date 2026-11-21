@@ -370,7 +370,7 @@ def query_view(manager):
 
 
 @dataclass(frozen=True, slots=True)
-class RootOperationReceipt:
+class RootOperationResult:
     """One immutable outcome returned to the current host caller."""
     operation_id: UUID
     state: str
@@ -412,9 +412,9 @@ class RootOperation:
         if type(operation_id) is not UUID or not operation_id.int:
             raise BackendError('invalid_input')
         self.backend = backend
-        self.receipt = RootOperationReceipt(operation_id, 'prepared')
-        self._rejected = RootOperationReceipt(operation_id, 'rejected', error='operation_failed')
-        self._cleanup = RootOperationReceipt(operation_id, 'uncertain', error='cleanup_required')
+        self.result = RootOperationResult(operation_id, 'prepared')
+        self._rejected = RootOperationResult(operation_id, 'rejected', error='operation_failed')
+        self._cleanup = RootOperationResult(operation_id, 'uncertain', error='cleanup_required')
         self._transaction = None
         self._images = None
         self._commit_attempted = False
@@ -451,13 +451,13 @@ class RootOperation:
         _execution_backend.reset(tokens[1]); _execution.reset(tokens[0])
 
     def run(self, callback):
-        if self.receipt.state != 'prepared' or not callable(callback):
+        if self.result.state != 'prepared' or not callable(callback):
             raise BackendError('conflict')
         tokens = None
         transaction = None
         try:
             tokens = self._enter()
-            transaction = Transaction(self.backend, _execution.get(), operation_id=self.receipt.operation_id)
+            transaction = Transaction(self.backend, _execution.get(), operation_id=self.result.operation_id)
             self._transaction = transaction
             self.backend._bsl_transaction = transaction
             callback()
@@ -467,30 +467,30 @@ class RootOperation:
             # Every final immutable image exists before COMMIT; neither failure
             # handling nor successful installation needs a post-COMMIT allocation.
             self._images = (
-                RootOperationReceipt(self.receipt.operation_id, 'uncertain', requests, outcomes, False, 'uncertain_commit'),
-                RootOperationReceipt(self.receipt.operation_id, 'committed', requests, outcomes, False, 'acceptance_required'),
-                RootOperationReceipt(self.receipt.operation_id, 'committed', requests, outcomes, True))
-            self.receipt = self._images[0]
+                RootOperationResult(self.result.operation_id, 'uncertain', requests, outcomes, False, 'uncertain_commit'),
+                RootOperationResult(self.result.operation_id, 'committed', requests, outcomes, False, 'acceptance_required'),
+                RootOperationResult(self.result.operation_id, 'committed', requests, outcomes, True))
+            self.result = self._images[0]
             self._commit_attempted = True
             transaction.commit()
-            self.receipt = self._images[2]
+            self.result = self._images[2]
         except BaseException as error:
             if transaction is None:
-                self.receipt = self._rejected
+                self.result = self._rejected
             elif transaction.unit.state in ('uncertain', 'committed'):
                 # Publish certainty BEFORE fallible connection cleanup. The
                 # pending participants and exact envelope stay reachable even
                 # if close itself is interrupted or exhausts memory.
-                self.receipt = self._images[1 if transaction.unit.state == 'committed' else 0]
+                self.result = self._images[1 if transaction.unit.state == 'committed' else 0]
                 transaction.unit.close()
             else:
-                self.receipt = self._cleanup
+                self.result = self._cleanup
                 transaction.rollback()
-                self.receipt = self._rejected
+                self.result = self._rejected
             if not isinstance(error, Exception) or isinstance(error, MemoryError): raise
         finally:
             if tokens is not None: self._leave(tokens)
-        return self.receipt
+        return self.result
 
     def release_resources(self):
         """Release only this operation's retained SQL resources, no replay."""
@@ -507,5 +507,5 @@ class RootOperation:
             if transaction.unit._view._connection is not None:
                 raise BackendError('uncertain_commit')
             if not self._commit_attempted:
-                transaction._unlock(); self.receipt = self._rejected
+                transaction._unlock(); self.result = self._rejected
         if registered is transaction: self.backend._bsl_transaction = None

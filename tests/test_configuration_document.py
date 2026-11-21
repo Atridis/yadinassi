@@ -94,11 +94,9 @@ class ConfigurationDocumentTests(unittest.TestCase):
             uncertain = self.owned.save(self.image())
         self.assertEqual(uncertain.state, 'uncertain')
         self.owned.require_discardable()
-        with patch.object(backend, 'begin_document_write') as begin, \
-             patch.object(backend, 'resolve_document_write', create=True) as resolve:
+        with patch.object(backend, 'begin_document_write') as begin:
             result = self.owned.save(self.image(number='wrong', flags=()))
             begin.assert_not_called()
-            resolve.assert_not_called()
         self.assertEqual(result, uncertain)
         reopened = DocumentObjectSession(self.context, self.schema, self.files,
                                          self.owned.object._key)

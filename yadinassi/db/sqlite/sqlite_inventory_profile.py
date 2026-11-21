@@ -8,11 +8,10 @@ from yadinassi.db.catalog.catalog_backend import BackendError
 from yadinassi.configuration.configuration_accumulation_references import (InventoryConfiguration, canonical,
     import_inventory_configuration, PROFILE)
 from .sqlite_accumulation_movements import ACCUMULATION_DDL,AccumulationMovementPort,schema_data
-from .sqlite_document_posting_state import POSTED_DDL,POSTED_RECEIPT_DDL,read_posted
+from .sqlite_document_posting_state import POSTED_DDL,read_posted
 
 MARKER_DDL='CREATE TABLE inventory_profile(singleton INTEGER PRIMARY KEY CHECK(singleton=1),profile TEXT NOT NULL,source_digest TEXT NOT NULL)'
-UNIT_DDL='CREATE TABLE unit_of_work_receipt(operation_id TEXT PRIMARY KEY,request_hash TEXT NOT NULL,outcomes_json TEXT NOT NULL)'
-DDL=(MARKER_DDL,UNIT_DDL,*ACCUMULATION_DDL,POSTED_DDL,POSTED_RECEIPT_DDL)
+DDL=(MARKER_DDL,*ACCUMULATION_DDL,POSTED_DDL)
 
 
 def _storage():

@@ -492,19 +492,6 @@ class BackendQualifierTests(unittest.TestCase):
             finally: tx.close()
             self.assertIsNone(self.read(draft.key))
 
-    def test_malformed_historical_receipt_is_not_consulted_or_rewritten(self):
-        draft = self.draft(); operation = uuid4()
-        revision = self.create(draft, operation)
-        entry = [str(self.schema.identity), '{noncanonical-record}', '09999999999999999999']
-        with _sqlite_mutation(self.path) as connection:
-            connection.execute('INSERT INTO commit_receipt VALUES(?,?,?)',
-                               (str(operation), '0' * 64, _json([entry])))
-        before = self.path.read_bytes()
-        with self.assertRaisesRegex(BackendError, 'unsupported'):
-            self.backend.resolve_write(operation, draft)
-        self.assertEqual(self.read(draft.key).revision, revision)
-        self.assertEqual(self.path.read_bytes(), before)
-
     def test_persisted_out_of_range_strings_and_numbers_are_not_repaired(self):
         draft = self.draft(); self.create(draft)
         table = quote_identifier(self.backend._layout.table_name(self.schema.identity))

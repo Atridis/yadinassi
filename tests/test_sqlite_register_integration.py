@@ -134,7 +134,7 @@ class RegisterStorageIntegrationTests(unittest.TestCase):
         self.assertEqual(self.sql('SELECT name FROM document_schema'), [('Orders',)])
         self.assertEqual(self.sql('SELECT name FROM information_register_schema'), [('Orders',)])
 
-    def test_mixed_catalog_document_and_register_persistence_and_receipts(self):
+    def test_mixed_catalog_document_and_register_persistence(self):
         catalog, document, register = self.drafts()
         operations = [uuid4() for _ in range(3)]
         view = self.backend.begin_write(operations[0])
@@ -162,30 +162,8 @@ class RegisterStorageIntegrationTests(unittest.TestCase):
         record = view.read_record(register.key)
         view.close()
         self.assertEqual((record.values, record.revision), (register.values, register_outcome.revision))
-        self.assertEqual(self.backend.resolve_document_write(operations[1], document), document_outcome)
-        self.assertEqual(self.backend.resolve_register_write(operations[2], register), register_outcome)
-        catalog_receipt = json.loads(self.sql('SELECT revisions_json FROM commit_receipt')[0][0])
-        self.assertEqual(len(catalog_receipt[0]), 4)
-        for table in ('commit_receipt', 'document_commit_receipt', 'information_register_receipt'):
-            self.assertEqual(self.sql(f'SELECT COUNT(*) FROM {table}'), [(1,)])
-
-    def test_receipt_operation_ids_cannot_be_reused_through_other_ports(self):
-        catalog, document, register = self.drafts()
-        operations = [uuid4() for _ in range(3)]
-        for begin, draft, method, operation in (
-                (self.backend.begin_write, catalog, 'create', operations[0]),
-                (self.backend.begin_document_write, document, 'create', operations[1]),
-                (self.backend.begin_register_write, register, 'write', operations[2])):
-            view = begin(operation)
-            getattr(view, method)(draft)
-            view.commit()
-        for operation in operations:
-            for begin in (self.backend.begin_write, self.backend.begin_document_write,
-                          self.backend.begin_register_write):
-                with self.subTest(operation=operation, port=begin.__name__):
-                    with self.assertRaisesRegex(BackendError, 'conflict'):
-                        begin(operation)
-                    self.assertIsNone(self.backend._active)
+        for table in ("document_commit_receipt", "information_register_receipt"):
+            self.assertEqual(self.sql("SELECT name FROM sqlite_schema WHERE type='table' AND name=?", (table,)), [])
 
     def test_read_only_open_keeps_reads_and_refuses_all_write_ports(self):
         self.backend.close()
@@ -383,7 +361,7 @@ class RegisterStorageIntegrationTests(unittest.TestCase):
         with self.assertRaisesRegex(BackendError, 'closed'):
             view.registers()
 
-    def test_record_set_receipt_resolves_through_backend_wrapper(self):
+    def test_record_set_is_readable_after_commit(self):
         _, _, row = self.drafts()
         register = self.config.information_registers[0]
         draft = RegisterSetDraft(register.identity, ((register.dimensions[0].identity, 'item'),), (row,))
@@ -391,6 +369,11 @@ class RegisterStorageIntegrationTests(unittest.TestCase):
         view = self.backend.begin_register_write(operation)
         view.write_set(draft)
         outcome = view.commit()
-        self.assertEqual(self.backend.resolve_register_set(operation, draft), outcome)
         self.assertIsNone(self.backend._active)
-        self.assertIsNone(self.backend.resolve_register_set(uuid4(), draft))
+        view = self.backend.begin_register_read()
+        try:
+            persisted = view.read_record(row.key)
+        finally:
+            view.close()
+        self.assertEqual(persisted.values, row.values)
+        self.assertEqual(outcome.count, 1)

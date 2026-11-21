@@ -81,10 +81,12 @@ class ConfigurationNumberingImportTests(unittest.TestCase):
             finally: backend.close()
             backend = SQLiteCatalogBackend(target)
             try:
-                self.assertEqual(backend.resolve_write_outcome(operation, draft), outcome)
                 self.assertEqual(backend.export_configuration(), files)
                 view = backend.begin_read()
-                try: self.assertEqual(view.read_catalog(draft.key).description, 'saved')
+                try:
+                    card = view.read_catalog(draft.key)
+                    self.assertEqual((card.description, card.code, card.revision),
+                                     ('saved', outcome.code, outcome.revision))
                 finally: view.close()
             finally: backend.close()
 

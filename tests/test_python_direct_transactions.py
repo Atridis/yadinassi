@@ -151,15 +151,12 @@ class DirectTransactionTests(unittest.TestCase):
             unit=tx.current(self.backend).unit
             unit._view._connection=FaultConnection(unit._view._connection,commit_fault='after')
         self.vm.register_function('Inject',inject)
-        with patch.object(self.backend,'resolve_unit_of_work',
-                          side_effect=AssertionError('durable lookup')) as resolve:
-            with self.assertRaises((BackendError,BSLRuntimeError)):
-                self.vm.execute('C=Catalogs.Products.CreateItem();C.Code="A";BeginTransaction();C.Write();Inject();CommitTransaction();')
-            self.assert_clean()
-            self.assertTrue(self.vm.variables['c'].is_new())
-            with self.assertRaises(BSLRuntimeError):
-                self.vm.execute('CommitTransaction();')
-            resolve.assert_not_called()
+        with self.assertRaises((BackendError,BSLRuntimeError)):
+            self.vm.execute('C=Catalogs.Products.CreateItem();C.Code="A";BeginTransaction();C.Write();Inject();CommitTransaction();')
+        self.assert_clean()
+        self.assertTrue(self.vm.variables['c'].is_new())
+        with self.assertRaises(BSLRuntimeError):
+            self.vm.execute('CommitTransaction();')
         self.assertTrue(self.vm.variables['c'].is_new());self.assert_clean()
         self.assertFalse(self.vm.execute('Catalogs.Products.FindByCode("A").IsEmpty()'))
 

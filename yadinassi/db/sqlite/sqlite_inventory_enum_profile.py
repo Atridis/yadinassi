@@ -9,11 +9,10 @@ from yadinassi.configuration.configuration_inventory_enums import (InventoryEnum
     import_inventory_enum_configuration, PROFILE)
 from yadinassi.db.metadata.enum_storage_values import EnumValueDomain
 from .sqlite_accumulation_movements import ACCUMULATION_DDL,AccumulationMovementPort,schema_data
-from .sqlite_document_posting_state import POSTED_DDL,POSTED_RECEIPT_DDL,read_posted
+from .sqlite_document_posting_state import POSTED_DDL,read_posted
 
 MARKER_DDL='CREATE TABLE inventory_profile(singleton INTEGER PRIMARY KEY CHECK(singleton=1),profile TEXT NOT NULL,source_digest TEXT NOT NULL)'
-UNIT_DDL='CREATE TABLE unit_of_work_receipt(operation_id TEXT PRIMARY KEY,request_hash TEXT NOT NULL,outcomes_json TEXT NOT NULL)'
-DDL=(MARKER_DDL,UNIT_DDL,*ACCUMULATION_DDL,POSTED_DDL,POSTED_RECEIPT_DDL)
+DDL=(MARKER_DDL,*ACCUMULATION_DDL,POSTED_DDL)
 
 
 def _storage():

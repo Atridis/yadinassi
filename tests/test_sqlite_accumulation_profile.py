@@ -62,7 +62,9 @@ class AccumulationProfileTests(unittest.TestCase):
             self.assertEqual(other.database_id,b.database_id)
     def test_no_ir_tables_or_fake_migration_marker(self):
         self.create();names={r[0] for r in self.sql("SELECT name FROM sqlite_master WHERE type='table'")}
-        self.assertIn('accumulation_profile',names);self.assertIn('unit_of_work_receipt',names)
+        self.assertIn('accumulation_profile',names)
+        self.assertFalse(names.intersection({'unit_of_work_receipt','document_commit_receipt',
+                                             'document_posting_receipt','accumulation_movement_receipt'}))
         for name in ('posting_profile','recorder_movement','transaction_profile','transaction_migration'):
             self.assertNotIn(name,names)
     def test_source_bytes_are_retained(self):
@@ -101,14 +103,11 @@ class AccumulationProfileTests(unittest.TestCase):
         self.assertIs(b.read_document_posted(draft.key),True)
         self.assertEqual(outcomes[0].result.revision.token,'1')
         self.assertEqual(outcomes[1].result,PostedIntent(draft.key,1,True))
-        for table in ('unit_of_work_receipt','accumulation_movement_receipt',
-                      'document_commit_receipt','document_posting_receipt'):
-            self.assertEqual(self.sql('SELECT COUNT(*) FROM '+table),[(0,)])
         self.assertEqual(b.read_accumulation(request.register_id,draft.key).rows,request.rows)
-    def test_rollback_removes_all_ports_and_receipts(self):
+    def test_rollback_removes_all_ports(self):
         b=self.create();operation,unit,draft,request=self.stage(b);unit.rollback()
         self.assertIsNone(b.read_document_posted(draft.key));self.assertEqual(b.read_accumulation(request.register_id,draft.key).rows,())
-        for table in ('document_record','document_posting_state','accumulation_movement','unit_of_work_receipt','accumulation_movement_receipt'):
+        for table in ('document_record','document_posting_state','accumulation_movement'):
             self.assertEqual(self.sql('SELECT COUNT(*) FROM '+table),[(0,)])
     def test_repeated_replacement_returns_distinct_staged_outcomes(self):
         b=self.create();operation,unit,draft,first=self.stage(b)
@@ -147,7 +146,6 @@ class AccumulationProfileTests(unittest.TestCase):
                 unit.stage(TransactionRequest('accumulation_replace',self.movement(unit,draft.key,99)))
                 raise ValueError('rollback')
         self.assertEqual(len(unit.requests),3);unit.commit()
-        self.assertEqual(self.sql('SELECT COUNT(*) FROM accumulation_movement_receipt'),[(0,)])
         self.assertEqual(b.read_accumulation(first.register_id,draft.key).rows,first.rows)
     def test_read_only_reopens_but_never_stages(self):
         self.create()

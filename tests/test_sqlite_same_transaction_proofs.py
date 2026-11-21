@@ -46,7 +46,7 @@ class SameTransactionProofTests(unittest.TestCase):
         with closing(self.backend.begin_read()) as view:
             self.assertEqual(len(view.catalogs()), 3)
 
-    def test_exact_schema_reused_for_update_and_receipt(self):
+    def test_exact_schema_reused_for_update(self):
         schema = next(schema for schema in self.backend._schemas if schema.name == 'Склады')
         key = CatalogKey(self.backend.database_id, schema.identity, uuid4())
         draft = CatalogDraft(key, '1', 'before', False, ())
@@ -62,7 +62,6 @@ class SameTransactionProofTests(unittest.TestCase):
             result, = writer.commit_outcomes()
         reads = [sql for sql in statements if sql.startswith('SELECT definition FROM catalog_schema')]
         self.assertEqual(len(reads), 1)
-        self.assertEqual(self.backend.resolve_write_outcome(operation, update, previous.revision), result)
         with closing(self.backend.begin_read()) as reader:
             saved = reader.read_catalog(key)
             self.assertEqual((saved.description, saved.revision), ('after', result.revision))

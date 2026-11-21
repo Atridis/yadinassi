@@ -24,7 +24,6 @@ RECORDER_DDL=(
     'CREATE TABLE recorder_register_document(register_id TEXT NOT NULL REFERENCES recorder_register_schema(register_id), document_id TEXT NOT NULL REFERENCES document_schema(identity), PRIMARY KEY(register_id,document_id))',
     'CREATE TABLE recorder_partition(register_id TEXT NOT NULL, document_id TEXT NOT NULL, record_id TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), PRIMARY KEY(register_id,document_id,record_id), FOREIGN KEY(register_id,document_id) REFERENCES recorder_register_document(register_id,document_id), FOREIGN KEY(document_id,record_id) REFERENCES document_record(document_id,record_id))',
     'CREATE TABLE recorder_movement(register_id TEXT NOT NULL, document_id TEXT NOT NULL, record_id TEXT NOT NULL, line_number INTEGER NOT NULL CHECK(line_number>0), active INTEGER NOT NULL CHECK(active IN(0,1)), values_json TEXT NOT NULL, dimension_key TEXT, UNIQUE(register_id,dimension_key), PRIMARY KEY(register_id,document_id,record_id,line_number), FOREIGN KEY(register_id,document_id,record_id) REFERENCES recorder_partition(register_id,document_id,record_id))',
-    'CREATE TABLE recorder_movement_receipt(operation_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, outcome_json TEXT NOT NULL)',
 )
 
 

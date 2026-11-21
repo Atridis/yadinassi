@@ -131,7 +131,6 @@ class UnitOfWorkTests(unittest.TestCase):
         with self.assertRaisesRegex(BackendError,'uncertain_commit'):tx.commit()
         self.assertEqual(tx.state,'uncertain')
         with self.assertRaisesRegex(BackendError,'closed'):tx.commit()
-        with self.assertRaisesRegex(BackendError,'unsupported'):self.backend.resolve_unit_of_work(operation,requests)
         with closing(self.backend.begin_read()) as view:
             self.assertEqual(view.read_catalog(requests[0].draft.key).revision.token,'1')
         with closing(self.backend.begin_document_read()) as view:

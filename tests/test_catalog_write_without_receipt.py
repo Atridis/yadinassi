@@ -30,10 +30,8 @@ class CatalogWriteWithoutReceiptTests(unittest.TestCase):
 
         return patch.object(self.backend, 'begin_write', side_effect=begin), observed, trace
 
-    def test_raw_default_does_not_read_or_modify_historical_receipt(self):
+    def test_raw_write_commits_without_receipt_storage(self):
         operation = uuid4()
-        record = (str(operation), '0' * 64, '[]')
-        self.mutate('INSERT INTO commit_receipt VALUES(?,?,?)', record)
         statements = []
         connect = self.backend._connect
 
@@ -51,10 +49,9 @@ class CatalogWriteWithoutReceiptTests(unittest.TestCase):
                 outcome, = writer.commit_outcomes()
                 self.assertEqual(int(outcome.revision.token), 1 + int(card.revision.token))
                 self.assertIsNone(self.backend._active)
-        sql = [s for s in statements if 'receipt' in s]
-        self.assertTrue(all('sqlite_schema' in statement or 'sqlite_master' in statement for statement in sql), sql)
+        self.assertFalse(any('commit_receipt' in sql for sql in statements), statements)
         with closing(sqlite3.connect(self.path)) as con:
-            self.assertEqual(con.execute('SELECT * FROM commit_receipt').fetchall(), [record])
+            self.assertIsNone(con.execute("SELECT 1 FROM sqlite_schema WHERE name='commit_receipt'").fetchone())
         self.assertEqual(self.snapshot()[0][1], 'Raw update')
 
     def test_ambiguous_result_never_replays_before_or_after_sql_commit(self):
@@ -70,8 +67,7 @@ class CatalogWriteWithoutReceiptTests(unittest.TestCase):
                 self.assertIsNone(item._pending_write)
                 self.assertTrue(item._uncertain_write)
                 self.assertIsNone(self.backend._active)
-                with patch.object(self.backend, 'resolve_write_outcome', side_effect=AssertionError('lookup')), \
-                     patch.object(self.backend, 'begin_write', side_effect=AssertionError('replay')):
+                with patch.object(self.backend, 'begin_write', side_effect=AssertionError('replay')):
                     with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
                         item.write()
                     with self.assertRaisesRegex(BackendError, 'uncertain_commit'):

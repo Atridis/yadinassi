@@ -4,7 +4,7 @@
 for the exact `InventoryApplicationConfiguration` / physical-15
 `accumulation-reference-forms-v1` grant. Raw core15, scalar accumulation14,
 posting13 and other profiles remain denied. It does not install BSL names,
-execute a form/handler, create a root token, open a journal or resolve a receipt.
+execute a form/handler, create a root token or open a writer.
 
 ## Closed API
 
@@ -79,7 +79,7 @@ The controller must map report grants and render labels without exposing or
 accepting persistent keys/UUIDs as browser authority. Labels are plain text,
 never HTML. This module does not implement a wire codec.
 
-## Bounds, failures and receipt fences
+## Bounds, failures and pending-write fences
 
 Fixed limits are 10,000 input occurrences, 100,000 input cells and 1,000,000 text
 characters. Every source row/cell is charged before period exclusion. The existing
@@ -95,12 +95,9 @@ transaction owners. It never borrows a writer's uncommitted state or clears a
 foreign/uncertain owner. Busy, corrupt, replaced, closed or changed sources fail
 closed. Lease cleanup happens before a result is returned, also on interruption.
 
-Detached root receipts are retained by the application host, not discoverable
-from this backend. The controller must retain its pending_commit/pending_refresh
-fences and not call reports while an affected operation requires resolution or
-authoritative refresh. A read is not a resolution attempt and is never evidence
-that an uncertain write rolled back or committed. It cannot unlock a form, replay
-a handler or make a host-lifetime receipt durable after restart.
+The controller retains its pending-write or refresh fences while a draft is
+locked. A report is never evidence that an unknown write rolled back or
+committed. It does not unlock a form or replay a handler.
 
 Tests in `tests/test_inventory_application_reports.py` cover real owned SQLite
 profiles, posted/undo state, exact aggregates and identities, one-lease label
@@ -187,7 +184,7 @@ is charged before either date or dimension filtering. Sparse output expansion
 shares the existing 1,000-row / 25,000-cell caps and refuses the entire result
 rather than truncating. A separate UI adapter may page this retained immutable
 result using scoped opaque cursors; the service never re-reads a later database
-snapshot to fetch another page. Pending receipt fences remain the controller's
+snapshot to fetch another page. Pending-write fences remain the controller's
 responsibility and are not bypassed by filtering or pagination.
 
 Targeted statement tests live in `tests/test_inventory_application_statements.py`;
@@ -209,7 +206,7 @@ Statement results are sealed after the complete bounded read. At most 1,000
 rows / 25,000 cells are retained, with at most 50 whole rows per page and a
 64-KiB encoded page budget. An oversized row or snapshot refuses the entire
 result, never truncates successful output. Previous and Next navigate that
-same detached snapshot without rereading SQLite or resolving a posting receipt.
+same detached snapshot without rereading SQLite or settling a prior write outcome.
 Refresh explicitly to observe another writer. Form activity, a different filter
 setup, and shutdown retire page cursors; an old response cannot target a new
 selection or snapshot. Opaque cursors are host-lifetime only.

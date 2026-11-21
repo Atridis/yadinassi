@@ -116,7 +116,6 @@ class AccumulationPostingRuntimeTests(unittest.TestCase):
         self.assertIs(row.active, True)
         self.assertTrue(obj.get_member('Posted'))
         self.assertFalse(obj.is_new())
-        self.assertEqual(self.sql('SELECT COUNT(*) FROM unit_of_work_receipt'), [(1,)])
 
     def test_duplicate_dimensions_period_and_payload_keep_lines(self):
         obj = self.new()
@@ -146,7 +145,6 @@ class AccumulationPostingRuntimeTests(unittest.TestCase):
         self.assertFalse(obj.get_member('Posted'))
         self.assertEqual(self.rows(obj), ())
         self.assertEqual(self.sql('SELECT COUNT(*) FROM document_record'), [(0,)])
-        self.assertEqual(self.sql('SELECT COUNT(*) FROM accumulation_movement_receipt'), [(0,)])
 
     def test_all_inactive_is_deferred_not_inferred_native_behavior(self):
         obj = self.new()
@@ -206,14 +204,13 @@ class AccumulationPostingRuntimeTests(unittest.TestCase):
         self.assertFalse(obj.get_member('Posted'))
         self.assertEqual(self.vm.execute('S.Count()'), Decimal(1))
 
-    def test_explicit_replacement_writes_share_one_root_receipt(self):
+    def test_explicit_replacement_writes_advance_partition_revision(self):
         self.make('Procedure Posting(Cancel,Mode) S=RegisterRecords.Rows;S.Write=False;'
                   'S.Write();S.Clear();R=S.Add();R.Amount=9;S.Write();EndProcedure')
         obj = self.new()
         self.post()
         self.assertEqual(self.rows(obj)[0].resources, (Decimal(9),))
-        self.assertEqual(self.sql('SELECT COUNT(*) FROM accumulation_movement_receipt'), [(2,)])
-        self.assertEqual(self.sql('SELECT COUNT(*) FROM unit_of_work_receipt'), [(1,)])
+        self.assertEqual(self.sql('SELECT revision FROM accumulation_partition'), [(2,)])
 
     def test_cancel_after_explicit_write_rolls_back_all_ports(self):
         self.make('Procedure Posting(Cancel,Mode) RegisterRecords.Rows.Write();Cancel=True;EndProcedure')
@@ -222,7 +219,6 @@ class AccumulationPostingRuntimeTests(unittest.TestCase):
         self.assertTrue(obj.is_new())
         self.assertEqual(self.rows(obj), ())
         self.assertEqual(self.sql('SELECT COUNT(*) FROM document_posting_state'), [(0,)])
-        self.assertEqual(self.sql('SELECT COUNT(*) FROM accumulation_movement_receipt'), [(0,)])
 
     def test_error_after_explicit_write_rolls_back_all_ports(self):
         self.make('Procedure Posting(Cancel,Mode) RegisterRecords.Rows.Write();Raise "cancel";EndProcedure')
@@ -274,18 +270,16 @@ EndProcedure''')
         self.assertEqual(self.rows(obj), before)
         self.assertEqual(self.sql('SELECT revision FROM document_record'), [(2,)])
 
-    def test_receipt_resolution_does_not_reexecute_or_read_current_rows(self):
+    def test_committed_movement_payload_corruption_remains_live(self):
         obj = self.new()
         with execution(self.backend):
             begin(self.backend)
             obj.write(DocumentWriteMode.POSTING)
             transaction = current(self.backend)
-            operation, requests = transaction.unit.operation_id, transaction.unit.requests
             transaction.commit()
         with closing(sqlite3.connect(self.path)) as connection:
             connection.execute("UPDATE accumulation_movement SET values_json='[]'")
             connection.commit()
-        self.assertEqual(len(self.backend.resolve_unit_of_work(operation, requests)), 3)
         with self.assertRaises(BackendError): self.rows(obj)
 
     def uncertain_posting(self, fault):
@@ -294,7 +288,7 @@ EndProcedure''')
                   'AdditionalProperties.Insert("Calls",Calls+1);RegisterRecords.Rows.Write=True;EndProcedure')
         obj = self.new()
         self.vm.execute('O.AdditionalProperties.Insert("Calls",0);')
-        with execution(self.backend):
+        with self.assertRaisesRegex(BackendError, '^uncertain_commit$'), execution(self.backend):
             begin(self.backend)
             obj.write(DocumentWriteMode.POSTING)
             transaction = current(self.backend)
@@ -303,30 +297,25 @@ EndProcedure''')
             with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
                 transaction.commit()
             self.assertTrue(obj.is_new())
-            if fault == 'after':
+            with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
                 transaction.commit()
-            else:
-                with self.assertRaisesRegex(BackendError, 'conflict'):
-                    transaction.commit()
         self.assertEqual(proxy.commit_calls, 1)
         self.assertEqual(obj.get_member('AdditionalProperties').get_member('Calls'), Decimal(1))
         self.assertFalse(obj.get_member('Ref').is_empty())
         return obj
 
-    def test_uncertain_after_commit_resolves_all_ports_without_handler_replay(self):
+    def test_uncertain_after_commit_keeps_buffer_unconfirmed_without_handler_replay(self):
         obj = self.uncertain_posting('after')
-        self.assertFalse(obj.is_new())
-        self.assertTrue(obj.get_member('Posted'))
+        self.assertTrue(obj.is_new())
+        self.assertTrue(self.backend.read_document_posted(obj._key))
         self.assertEqual(len(self.rows(obj)), 1)
-        self.assertEqual(self.sql('SELECT COUNT(*) FROM unit_of_work_receipt'), [(1,)])
-        self.assertEqual(self.sql('SELECT COUNT(*) FROM accumulation_movement_receipt'), [(1,)])
 
     def test_uncertain_before_commit_does_not_replay_or_persist(self):
         obj = self.uncertain_posting('before')
         self.assertTrue(obj.is_new())
-        self.assertFalse(obj.get_member('Posted'))
+        # The submitted buffer stays frozen; the independent read proves nothing committed.
+        self.assertIsNone(self.backend.read_document_posted(obj._key))
         self.assertEqual(self.rows(obj), ())
-        self.assertEqual(self.sql('SELECT COUNT(*) FROM unit_of_work_receipt'), [(0,)])
         self.assertEqual(self.sql('SELECT COUNT(*) FROM document_record'), [(0,)])
 
     def test_handler_transaction_controls_are_denied(self):
@@ -381,10 +370,8 @@ EndProcedure''')
             transaction = current(self.backend)
             transaction.unit.state = 'uncertain'
             try:
-                with patch.object(self.backend, 'resolve_unit_of_work') as resolve:
-                    with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
-                        self.vm._transaction_active()
-                    resolve.assert_not_called()
+                with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
+                    self.vm._transaction_active()
                 self.assertEqual(transaction.unit.state, 'uncertain')
             finally:
                 transaction.unit.state = 'open'

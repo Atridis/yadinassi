@@ -89,13 +89,12 @@ EndDo;
 
 ## Transactions, ownership and limits
 
-Each write uses one owned SQLite transaction, a frozen intent and a durable
-receipt. Record revisions are monotonically allocated per register, preventing
-stale writes after delete/reinsert cycles. Record sets replace their entire
-scope in one savepoint; failed validation, duplicate keys or limits leave the
-previous scope intact. If commit acknowledgement is lost, buffers freeze until
-the same write resolves its exact receipt. Receipts from catalog, document and
-register operations cannot reuse operation identities.
+Each write uses one owned SQLite transaction. Record revisions are allocated
+monotonically per register, preventing stale writes after delete/reinsert
+cycles. Record sets replace their entire scope in one savepoint; failed
+validation, duplicate keys or limits leave the previous scope intact. An
+unknown COMMIT outcome freezes the submitted buffer. Read the current record
+or set into a fresh buffer, without reissuing the old write.
 
 Read-only connections reject all writes. A backend permits only one active
 read/write view, and mixed query sources share that same pinned snapshot.

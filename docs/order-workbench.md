@@ -75,12 +75,11 @@ transport. Use the application commands described below for database recovery.
   Save preserves the original expected revision and does not overwrite the other
   writer. Your draft stays visible. Copy anything you need before choosing
   Discard / Reload, which adopts the current database version. There is no merge UI.
-- **Database commit outcome uncertain, healthy transport:** the server retains
-  the same object and exact submitted intent. All editing, switching, discard
-  and ordinary Save are locked. **Resolve save outcome** explicitly checks its
-  receipt. A proven absent receipt may retry only that exact retained intent;
-  a known receipt never duplicates the write. Transient resolution errors keep
-  the lock. Resolution does not reinterpret newly edited data.
+- **Database commit outcome unknown, healthy transport:** editing, switching
+  and Save stay locked. **Discard / Reload** reads the record by its original
+  key into a fresh object. It shows current state, not proof of what the previous
+  write did. If the record is absent or loading fails, the old draft remains
+  locked. Nothing retries the write.
 - **Commit confirmed, refresh failed:** **Refresh saved record** only reloads
   the selected object. It cannot write again. Failed whole-projection admission
   after a commit is also a refresh obligation, never permission for another Save.
@@ -114,7 +113,7 @@ callbacks; ordinary BSL module `Var` lifetime remains unchanged.
 The closed `OrdersWorkbenchSession` retains the selected detached CatalogObject,
 baseline, server-issued result-row-to-record mapping, form-line-to-storage-row
 mapping and pending-save state. These objects, backend UUIDs, revisions and write
-receipts never enter the replica protocol. Existing line identities survive
+operation IDs never enter the replica protocol. Existing line identities survive
 ordinary edits; newly added lines receive new storage identities. Each load,
 discard or successful refresh allocates fresh monotonically increasing form row
 IDs, so stale cell events cannot target another record.
@@ -144,7 +143,7 @@ No record is edited as a truncated subset.
 load/edit/add/delete/recalculate/save/reopen, continued edits, unchanged Save,
 identity preservation after code changes, two-writer conflicts, dirty close,
 discard, stale IDs, complete oversized-load refusal, transient reads, uncertain
-commit receipt resolution, post-commit refresh failures and terminal transport
+commit and fresh readback, post-commit refresh failures and terminal transport
 loss. `frontend/form/test/discard.test.mjs` covers the explicit draft policy,
 invalid decimals, unchanged legacy behavior, unavailable controls, pending-save
 locks, dirty navigation protection and record-switch draft isolation.

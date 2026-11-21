@@ -261,8 +261,7 @@ class InventoryReportTests(unittest.TestCase):
     def test_no_writes_receipts_or_handlers_during_report(self):
         self.post(); before = self.path.read_bytes()
         with patch.object(self.backend,'begin_write',side_effect=AssertionError('write')), \
-             patch.object(self.backend,'begin_unit_of_work',side_effect=AssertionError('journal')), \
-             patch.object(self.backend,'resolve_unit_of_work',side_effect=AssertionError('resolve')):
+             patch.object(self.backend,'begin_unit_of_work',side_effect=AssertionError('journal')):
             self.read(); self.read('StockBalance', at=AT)
         self.assertEqual(self.path.read_bytes(), before)
         self.assertIsNone(getattr(self.backend,'_bsl_transaction',None))

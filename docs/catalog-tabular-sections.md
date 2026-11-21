@@ -43,7 +43,7 @@ Use the actual names and admitted types in the loaded configuration. Row fields 
 
 Section edits remain in the detached CatalogObject until `Write()`. Owner fields and all changed section contents are submitted through the existing atomic backend transaction and optimistic owner revision. A section edit causes a full section snapshot to be submitted, including untouched sibling sections. Without section edits, the draft omits sections and existing data stays untouched. DeletionMark does not clear rows. Local row UUIDs survive edits and position changes but are never exposed as BSL references or native line numbers.
 
-Validation errors, duplicate codes and stale revisions preserve the edit buffer and leave committed data unchanged. An uncertain write freezes the exact immutable submitted draft, including row values and order. All nested row/collection mutations refuse until another `Write()` resolves that receipt or safely retries an uncommitted intent. Resolution never blindly appends duplicate rows.
+Validation errors, duplicate codes and stale revisions preserve the edit buffer and leave committed data unchanged. An unknown commit outcome freezes the submitted object, including its rows and sections. Nested mutations and another `Write()` are refused. Read the current record and rows into a fresh object.
 
 ## Explicit boundaries
 

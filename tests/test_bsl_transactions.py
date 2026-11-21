@@ -128,18 +128,15 @@ CommitTransaction();''')
         for phase in ('before', 'after'):
             with self.subTest(phase=phase):
                 obj = self.catalog()
-                with patch.object(type(self.backend), 'resolve_unit_of_work',
-                                  side_effect=AssertionError('durable lookup')) as resolve:
-                    # Normal execution exit also refuses to swallow a possibly
-                    # committed write when the script caught the initial error.
-                    with self.assertRaisesRegex(BackendError, '^uncertain_commit$'), execution(self.backend):
-                        begin(self.backend); obj.write(); tx = current(self.backend)
-                        fault = FaultConnection(tx.unit._view._connection, commit_fault=phase)
-                        tx.unit._view._connection = fault
-                        for action in (commit, active, commit, rollback):
-                            with self.assertRaisesRegex(BackendError, '^uncertain_commit$'):
-                                action(self.backend)
-                    resolve.assert_not_called()
+                # Normal execution exit also refuses to swallow a possibly
+                # committed write when the script caught the initial error.
+                with self.assertRaisesRegex(BackendError, '^uncertain_commit$'), execution(self.backend):
+                    begin(self.backend); obj.write(); tx = current(self.backend)
+                    fault = FaultConnection(tx.unit._view._connection, commit_fault=phase)
+                    tx.unit._view._connection = fault
+                    for action in (commit, active, commit, rollback):
+                        with self.assertRaisesRegex(BackendError, '^uncertain_commit$'):
+                            action(self.backend)
                 self.assertEqual(fault.commit_calls, 1)
                 self.assertIsNone(tx.unit._view._connection)
                 self.assertIsNone(current(self.backend))
@@ -160,13 +157,10 @@ CommitTransaction();''')
             unit._view._connection = fault
             return original(unit)
         self.catalog()
-        with patch.object(UnitOfWork, 'commit', lose_reply), \
-             patch.object(type(self.backend), 'resolve_unit_of_work',
-                          side_effect=AssertionError('durable lookup')) as resolve:
+        with patch.object(UnitOfWork, 'commit', lose_reply):
             with self.assertRaisesRegex(BackendError, '^uncertain_commit$'):
                 self.vm.execute('BeginTransaction();C.Write();Try CommitTransaction(); '
                                 'Except Caught=True; EndTry;')
-            resolve.assert_not_called()
         self.assertTrue(self.vm.variables['caught'])
         self.assertEqual([fault.commit_calls for fault in faults], [1])
         self.assertTrue(self.vm.execute('C.IsNew()'))
@@ -174,14 +168,11 @@ CommitTransaction();''')
 
     def test_uncertain_exception_exit_preserves_error_and_frozen_buffer(self):
         obj = self.catalog()
-        with patch.object(type(self.backend), 'resolve_unit_of_work',
-                          side_effect=AssertionError('durable lookup')) as resolve:
-            with self.assertRaises(KeyboardInterrupt), execution(self.backend):
-                begin(self.backend); obj.write(); tx = current(self.backend)
-                fault = FaultConnection(tx.unit._view._connection, commit_fault='interrupt')
-                tx.unit._view._connection = fault
-                commit(self.backend)
-            resolve.assert_not_called()
+        with self.assertRaises(KeyboardInterrupt), execution(self.backend):
+            begin(self.backend); obj.write(); tx = current(self.backend)
+            fault = FaultConnection(tx.unit._view._connection, commit_fault='interrupt')
+            tx.unit._view._connection = fault
+            commit(self.backend)
         self.assertEqual(fault.commit_calls, 1)
         self.assertIsNone(self.backend._bsl_transaction)
         self.assertIsNone(tx.unit._view._connection)
@@ -190,40 +181,34 @@ CommitTransaction();''')
 
     def test_unknown_owner_is_not_transferred_if_physical_close_fails(self):
         obj = self.catalog()
-        with patch.object(type(self.backend), 'resolve_unit_of_work',
-                          side_effect=AssertionError('durable lookup')) as resolve:
-            with self.assertRaisesRegex(BackendError, '^uncertain_commit$'), execution(self.backend):
-                begin(self.backend); obj.write(); tx = current(self.backend)
-                fault = FaultConnection(tx.unit._view._connection, commit_fault='after',
-                                        close_fault='before', close_count=10)
-                tx.unit._view._connection = fault
+        with self.assertRaisesRegex(BackendError, '^uncertain_commit$'), execution(self.backend):
+            begin(self.backend); obj.write(); tx = current(self.backend)
+            fault = FaultConnection(tx.unit._view._connection, commit_fault='after',
+                                    close_fault='before', close_count=10)
+            tx.unit._view._connection = fault
+            commit(self.backend)
+        original_owner = tx.owner
+        try:
+            with self.assertRaisesRegex(BackendError, '^unsupported$'), execution(self.backend):
                 commit(self.backend)
-            original_owner = tx.owner
-            try:
-                with self.assertRaisesRegex(BackendError, '^unsupported$'), execution(self.backend):
-                    commit(self.backend)
-                self.assertIs(tx.owner, original_owner)
-                self.assertIs(self.backend._bsl_transaction, tx)
-                self.assertIs(tx.unit._view._connection, fault)
-                self.assertEqual(fault.commit_calls, 1)
-            finally:
-                fault.close_count = 0
-            resolve.assert_not_called()
+            self.assertIs(tx.owner, original_owner)
+            self.assertIs(self.backend._bsl_transaction, tx)
+            self.assertIs(tx.unit._view._connection, fault)
+            self.assertEqual(fault.commit_calls, 1)
+        finally:
+            fault.close_count = 0
 
     def test_known_commit_publishes_prebuilt_outcome_without_durable_lookup(self):
         obj = self.catalog()
-        with patch.object(type(self.backend), 'resolve_unit_of_work',
-                          side_effect=AssertionError('durable lookup')) as resolve:
-            with self.assertRaisesRegex(RuntimeError, '^after known commit$'), execution(self.backend):
-                begin(self.backend); obj.write(); tx = current(self.backend)
-                commit_once = tx.unit.commit
-                def after_success():
-                    commit_once()
-                    raise RuntimeError('after known commit')
-                with patch.object(tx.unit, 'commit', side_effect=after_success) as low:
-                    commit(self.backend)
-            low.assert_called_once_with()
-            resolve.assert_not_called()
+        with self.assertRaisesRegex(RuntimeError, '^after known commit$'), execution(self.backend):
+            begin(self.backend); obj.write(); tx = current(self.backend)
+            commit_once = tx.unit.commit
+            def after_success():
+                commit_once()
+                raise RuntimeError('after known commit')
+            with patch.object(tx.unit, 'commit', side_effect=after_success) as low:
+                commit(self.backend)
+        low.assert_called_once_with()
         self.assertIsNone(self.backend._bsl_transaction)
         self.assertFalse(obj.is_new())
         self.assertFalse(self.vm.execute('Catalogs.Products.FindByCode("A").IsEmpty()'))

@@ -1,6 +1,6 @@
 """SQLite v7 non-posting documents using the owned application's transaction.
 
-Distinct document tables/keys; catalog layouts and receipt bytes are unchanged.
+Distinct document tables/keys; catalog layouts remain distinct.
 The closed tagged scalar codec is shared, never exposed as a native codec.
 """
 from decimal import Decimal
@@ -17,7 +17,6 @@ DOCUMENT_DDL = (
     'CREATE TABLE document_schema(identity TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, definition TEXT NOT NULL)',
     'CREATE TABLE document_record(document_id TEXT NOT NULL REFERENCES document_schema(identity), record_id TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), number TEXT NOT NULL, date TEXT NOT NULL, deletion_mark INTEGER NOT NULL CHECK(deletion_mark IN(0,1)), values_json TEXT NOT NULL, sections_json TEXT NOT NULL, PRIMARY KEY(document_id,record_id), UNIQUE(document_id,number))',
     'CREATE TABLE document_sequence(document_id TEXT PRIMARY KEY REFERENCES document_schema(identity), next_value INTEGER NOT NULL CHECK(next_value>0))',
-    'CREATE TABLE document_commit_receipt(operation_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, document_id TEXT NOT NULL, record_id TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), number TEXT NOT NULL)',
 )
 _MAX_ROW = 1024 * 1024
 _MAX_TOTAL = 16 * 1024 * 1024
@@ -682,7 +681,7 @@ class DocumentView:
         self._view._require(True)
         if self._outcome is None: raise BackendError('invalid_input')
         # Caller publishes this acknowledged outcome, then closes its view.
-        _storage()._commit_without_receipt(self._connection)
+        _storage()._confirm_sqlite_commit(self._connection)
         self._view._committed = True
         return self._outcome
 

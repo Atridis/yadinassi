@@ -39,11 +39,11 @@ Renaming or reusing names does not rebind UUIDs. Reopening validates exact metad
 
 ## Atomicity, conflicts and recovery
 
-Owner fields and explicit section replacements execute in the same write transaction under one optimistic owner revision. Every create/update also uses a savepoint covering SQL and its revision/receipt bookkeeping. A failure midway through row replacement or bookkeeping rolls back that entire owner write and restores the previous in-memory journal, so a caller may catch the failure and safely commit earlier successful writes after successful cleanup. Interrupted/failed cleanup poisons the transaction and prohibits commit. Stale revisions cannot alter either the owner or its rows.
+Owner fields and explicit section replacements execute in the same write transaction under one optimistic owner revision. Every create/update also uses a savepoint covering SQL and its staged revision bookkeeping. A failure midway through row replacement or bookkeeping rolls back that entire owner write and restores the previous in-memory journal, so a caller may catch the failure and safely commit earlier successful writes after successful cleanup. Interrupted/failed cleanup poisons the transaction and prohibits commit. Stale revisions cannot alter either the owner or its rows.
 
 Explicit replacement performs DELETE/INSERT of only that owner's section rows within the transaction. It never deletes the catalog owner. Setting `deletion_mark` alone preserves rows, references and the owner; physical catalog-object deletion is unsupported. No hidden tombstones are accumulated for section replacement.
 
-Commit receipts include canonical section UUIDs, ordered row UUIDs and typed values only for explicit section intents. Section ordering is canonicalized by UUID, while row order stays significant. `None` retains exactly the previous seven-element owner request representation and its historical hash. Explicit empty replacement is distinct from omission. An uncertain COMMIT must be resolved from the persisted operation receipt after reopening; never blindly replay. A receipt is for the whole transaction, not separately for each section.
+Section ordering is canonicalized by UUID, while row order stays significant. Explicit empty replacement is distinct from omission. After an unknown COMMIT response, read the current owner and sections together in a fresh snapshot. This does not establish the prior outcome or authorize replay.
 
 ## Bounds
 

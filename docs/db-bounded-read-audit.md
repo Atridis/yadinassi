@@ -22,11 +22,5 @@ existence SELECTs, now 2; movement references formerly 512, now 2. Constant batc
 of 16/64/256 names each perform one schema admission and one value SELECT. These
 are focused tests and trace measurements, not full CI or Enterprise parity.
 
-## Receipt retention follow-up
-
-Receipt garbage collection is not implemented here. A root acknowledgement must
-follow accepted outcome installation, not merely successful COMMIT. Deleting a
-root receipt would permit operation-ID reuse and break replay protection. A future
-cleanup therefore needs an atomic compact tombstone plus validated child cleanup,
-crash/recovery tests, and compatibility with immutable history receipt bindings.
-No current receipts or historical fixtures are removed by this checkpoint.
+The [current write contract](sqlite-commit-uncertainty.md) is separate from
+these read-path measurements.

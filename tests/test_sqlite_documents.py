@@ -226,8 +226,7 @@ D.Write();O=D.Ref.GetObject();Message(O.Lines.Count());O.Lines.Clear();O.Write()
                     captured[0].close()
                 self.assertIsNone(backend._active)
         self.assertEqual(self.sql('SELECT COUNT(*) FROM document_record'),[(len(faults),)])
-        self.assertEqual(self.sql('SELECT COUNT(*) FROM document_commit_receipt'),[(0,)])
-        self.assertEqual(self.sql('SELECT COUNT(*) FROM commit_receipt'),[(0,)])
+        self.assertEqual(self.sql("SELECT name FROM sqlite_schema WHERE type='table' AND name='document_commit_receipt'"),[])
 
     def test_uncertain_uncommitted_response_refuses_same_frozen_intent(self):
         obj = self.object()
@@ -326,14 +325,6 @@ D.Write();O=D.Ref.GetObject();Message(O.Lines.Count());O.Lines.Clear();O.Write()
     def test_normalized_numbers_and_scalar_qualifiers_apply_before_unique_check(self):
         self.assertEqual(self.execute('D=Documents.Orders.CreateDocument();D.Number="123456789suffix";D.Text="1234567890123456789012345678901234567890";D.Amount=12.345;D.Write();Message(D.Number);Message(D.Text);Message(D.Amount);'),['123456789','12345678901234567890123456789012','12,35'])
         self.assertEqual(self.vm.execute('D.Ref.Amount'),Decimal('12.35'))
-
-    def test_archived_receipt_is_neither_required_nor_updated(self):
-        obj = self.object()
-        self.sql('INSERT INTO document_commit_receipt VALUES(?,?,?,?,?,?)',
-                 (str(obj._operation_id),'0'*64,str(self.schema.identity),str(obj._key.record_id),1,'archived'))
-        obj.write()
-        self.assertEqual(obj.get_member('Number'),'000000001')
-        self.assertEqual(self.sql('SELECT number FROM document_commit_receipt'),[('archived',)])
 
     def test_number_exhaustion_leaves_new_object_and_no_changes(self):
         self.sql('UPDATE document_sequence SET next_value=?',(10**9,))

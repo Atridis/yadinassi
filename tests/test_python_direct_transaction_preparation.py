@@ -244,13 +244,10 @@ class DirectTransactionPreparationTests(unittest.TestCase):
             view=tx.current(backend).unit._view
             view._connection=FaultConnection(view._connection,commit_fault='after')
         self.vm.register_function('Inject',inject)
-        with patch.object(prep,'_prepare_catalog_object',wraps=original) as handler, \
-             patch.object(backend,'resolve_unit_of_work',
-                          side_effect=AssertionError('durable lookup')) as resolve:
+        with patch.object(prep,'_prepare_catalog_object',wraps=original) as handler:
             with self.assertRaises((BackendError, BSLRuntimeError)):
                 self.vm.execute('BeginTransaction();P.Write();Inject();CommitTransaction();')
             self.assertEqual(handler.call_count,1)
-            resolve.assert_not_called()
         self.clean()
         self.assertEqual(self.card._pending_write[0].description,'Кабель')
         with self.assertRaises(BackendError):self.card.set_member('Description','different')

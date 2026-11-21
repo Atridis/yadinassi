@@ -16,7 +16,7 @@ exports and reference slots, under admission(False), server/module scope and the
 current native target. Family lifetime checks remain live.
 
 Current writer source/schema checks, transaction staging, movement ownership,
-Boolean cancellation, rollback and receipt resolution are unchanged. No AST VM
+Boolean cancellation, rollback and the transaction boundary remain in force. No AST VM
 dispatch or artificial per-node execution quota is added. Replacing this code
 cache does not grant permission to write.
 
@@ -30,7 +30,7 @@ without selected handlers avoids preparation.
 
 Two older scalar PostingHostTests remain baseline failures: their Number(...)
 call conflicts with the direct external Number field. That compatibility gap was
-not changed or used as a false receipt-success test.
+not changed or used as proof of commit.
 
 ## Measurement
 

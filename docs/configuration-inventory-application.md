@@ -3,7 +3,7 @@
 `accumulation-reference-forms-v1` is a separate opt-in source grant for fresh
 physical format 15. It is not the existing `accumulation-reference-v1` core grant
 and does not widen the scalar format-14 importer, default importer or existing
-format-13 posting application. Schema and receipt encoding are unchanged.
+format-13 posting application. It uses the reference-bearing inventory data schema.
 Database/host integration selects the new exact marker explicitly. The source
 module alone does not create or open a database or grant execution.
 
@@ -134,15 +134,15 @@ message is a follow-up UX task, not
 implemented by the statement paging extension.
 
 Document close compares the complete authoritative typed image and pending
-receipt, not the example's local Dirty flag. An uncertain or committed-but-not-
-refreshed operation stays locked and uses its original receipt; the UI never
-replays handlers or claims rollback. Receipts are retained for this host lifetime,
-not durable recovery after process loss.
+write state, not the example's local Dirty flag. An unknown outcome leaves the
+draft locked until explicit discard. Reopen to read current data. A confirmed
+commit followed by a failed refresh permits reading only. Neither path replays
+handlers or claims rollback.
 
 Stock reports are read-only saved-state projections. Balance is strictly before
 the selected instant; Turnovers includes both endpoints. Labels and typed values
 come from one snapshot. Unsaved form inputs are not included, report reading
-does not resolve an operation, and pending receipts block reports. Changing form
+does not establish a prior outcome, and locked drafts block reports. Changing form
 state clears an old projection; changing period controls never relabels the old
 result. Large results are refused as a whole, not silently truncated.
 

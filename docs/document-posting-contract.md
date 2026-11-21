@@ -25,9 +25,9 @@ For the owned nonperiodic scalar recorder register and document fixture:
   independent dimension uniqueness. Resources do not form the dimension key.
 
 Fresh-only runtime activation is separate from existing v11/v12 profiles. No
-implicit migrations or additive updates are allowed until historical recorder
-receipts are explicitly supported. Privileged/real-time posting, periodic and
-accumulation registers, and unmeasured handler families remain outside scope.
+implicit migrations or additive updates are provided for this profile. Privileged
+and real-time posting, periodic and accumulation registers, and unmeasured
+handler families remain outside scope.
 Unknown or failed setup/readback/query cases are not accepted as successful
 measurements. Cosmetic Designer XML defaults are not byte-parity requirements.
 
@@ -36,7 +36,7 @@ measurements. Cosmetic Designer XML defaults are not byte-parity requirements.
 
 The explicit source grant is `document-recorder-scalar-v1`. The host creates a
 new physical format 13 database with the existing format 7 document layout and
-dedicated posting-state, recorder-partition and immutable receipt tables.
+dedicated posting-state and recorder-partition tables.
 `SQLiteCatalogBackend.create_posting` and `SQLiteDBContext.create_posting`
 require a canonically reimported `PostingConfiguration`. Opening an older file
 does not grant posting. There is no conversion of an existing database.
@@ -53,10 +53,9 @@ A document write, its Posted state and all recorder replacements share one
 journal and one operation savepoint. Cancel, exceptions and resource-limit
 failures roll back the whole document operation while preserving earlier
 operations in an explicit outer transaction. Explicit movement writes are
-immediately visible to Query in that same snapshot. Root receipts bind distinct
-deterministic child receipts, including multiple replacements of one partition.
-A Posted state change requires a document create/update revision staged in that
-same root operation.
+immediately visible to Query in that same snapshot, including multiple
+replacements of one partition. A Posted state change requires the matching
+document create/update revision staged in that same root operation.
 
 The movement buffer is retained for the same object across successful writes.
 A newly loaded object starts with an empty buffer; implicit loading of persisted
@@ -89,5 +88,5 @@ The existing acquisition workflow remains a separate source-bound isolated
 platform measurement, not a replacement for runtime comparison or general
 regression tests.
 
-Configuration changes, migration and historical cross-generation recorder
-receipt recovery are intentionally refused for this fresh-only profile.
+Configuration changes, migration and automatic replay are refused for this
+fresh-only profile.

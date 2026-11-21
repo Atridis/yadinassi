@@ -102,7 +102,7 @@ class PostingRuntimeTests(unittest.TestCase):
         self.vm.execute('BeginTransaction();A.Write(DocumentWriteMode.Posting);Try B.Write(DocumentWriteMode.Posting);Except EndTry;CommitTransaction();')
         self.assertFalse(a.is_new());self.assertTrue(b.is_new());self.assertEqual(self.rows(b),())
         self.assertEqual(self.sql('SELECT count(*) FROM document_record'),[(1,)])
-        self.assertEqual(self.sql('SELECT count(*) FROM recorder_movement_receipt'),[(1,)])
+        self.assertEqual(self.sql('SELECT count(*) FROM recorder_partition'),[(1,)])
 
     def test_outer_rollback_restores_posted_and_unlocks_document(self):
         obj=self.new(3)
@@ -113,11 +113,10 @@ class PostingRuntimeTests(unittest.TestCase):
         self.vm.execute('O.RegisterRecords.OwnedPostingRows.Clear();O.Number="4";O.Write();')
         self.assertFalse(obj.is_new())
 
-    def test_multiple_explicit_writes_have_distinct_root_children(self):
+    def test_multiple_explicit_writes_advance_partition_revision(self):
         obj=self.new(9);self.post()
         self.assertEqual(self.rows(obj)[0].values[1],Decimal(88))
-        self.assertEqual(self.sql('SELECT count(DISTINCT operation_id) FROM recorder_movement_receipt'),[(2,)])
-        self.assertEqual(self.sql('SELECT count(*) FROM unit_of_work_receipt'),[(1,)])
+        self.assertEqual(self.sql('SELECT revision FROM recorder_partition'),[(2,)])
 
     def test_movement_write_property_and_method_are_distinct(self):
         obj=self.new(3)
@@ -136,7 +135,7 @@ class PostingRuntimeTests(unittest.TestCase):
         self.vm.execute('A=O.Ref.GetObject();B=O.Ref.GetObject();A.AdditionalProperties.Insert("Trace","");B.AdditionalProperties.Insert("Trace","");A.Write();')
         with self.assertRaises(BSLRuntimeError):self.vm.execute('B.Write(DocumentWriteMode.Posting);')
         self.assertEqual(self.sql('SELECT revision FROM document_record'),[(2,)])
-        self.assertEqual(self.sql('SELECT count(*) FROM unit_of_work_receipt'),[(2,)])
+        self.assertTrue(self.backend.read_document_posted(self.vm.variables['o']._key))
 
     def assert_handler_control_denied(self,command):
         self.make('Procedure Posting(Cancel,Mode) '+command+' EndProcedure')
@@ -273,13 +272,12 @@ EndProcedure''')
         self.vm.execute('R=O.RegisterRecords.OwnedPostingRows.Add();O.RegisterRecords.OwnedPostingRows.Clear();')
         with self.assertRaises(BSLRuntimeError):self.vm.execute('R.Amount=4;')
 
-    def test_root_receipt_resolution_never_reexecutes_handlers(self):
+    def test_confirmed_commit_publishes_after_handlers_run_once(self):
         obj=self.new(9)
         with execution(self.backend):
             begin(self.backend)
             obj.write(DocumentWriteMode.POSTING)
-            tx=current(self.backend);op=tx.unit.operation_id;requests=tx.unit.requests
-            trace=self.trace(obj);tx.commit()
-        resolved=self.backend.resolve_unit_of_work(op,requests)
-        self.assertEqual(len(resolved),4);self.assertEqual(self.trace(obj),trace)
+            trace=self.trace(obj);current(self.backend).commit()
+        self.assertFalse(obj.is_new())
+        self.assertEqual(self.trace(obj),trace)
         self.assertEqual(self.rows(obj)[0].values[1],Decimal(88))

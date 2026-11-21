@@ -1,4 +1,4 @@
-"""Transaction start reuses an admitted identity but never receipt absence."""
+"""Transaction start reuses an admitted identity."""
 from contextlib import closing
 import sqlite3
 import unittest
@@ -70,18 +70,3 @@ class Format16TransactionBeginProofTests(unittest.TestCase):
                 self.backend.begin_read()
         self.assertIsNone(self.backend._active)
         with closing(self.backend.begin_read()): pass
-
-    def test_catalog_transaction_does_not_consult_old_receipts(self):
-        for table in ('unit_of_work_receipt', 'commit_receipt', 'document_commit_receipt'):
-            with self.subTest(table=table):
-                operation = uuid4()
-                tail = (str(uuid4()), str(uuid4()), 1, '1') if table == 'document_commit_receipt' else ('[]',)
-                args = (str(operation), '0' * 64, *tail)
-                marks = ','.join('?' for _ in args)
-                self.mutate(f'INSERT INTO {table} VALUES({marks})', args)
-                with closing(self.backend.begin_write(operation)) as writer:
-                    self.assertEqual(writer.commit(), ())
-                self.assertIsNone(self.backend._active)
-                with closing(sqlite3.connect(self.path)) as peer:
-                    self.assertEqual(peer.execute(f'SELECT * FROM {table} WHERE operation_id=?',
-                                                 (str(operation),)).fetchone(), args)

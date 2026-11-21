@@ -25,7 +25,7 @@ admitted original default form; other source catalogs are refused. Opening the
 backend pins the database/configuration identity, generation, source manifest,
 active schema and layouts. Every ordinary read and write revalidates the exact
 source. For writes this happens **inside BEGIN IMMEDIATE**, before any mutation;
-the same lock covers source validation, numbering, data and receipt commit.
+the same lock covers source validation, numbering and the data commit.
 
 A UI retains the same backend instance and complete original form-source identity.
 It must reject backend substitution, compare its original identity around form

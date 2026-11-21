@@ -28,8 +28,8 @@ not native 1C managed-form parity or completion of all twelve demo scenarios.
 - Read-only source observations are not write authorization. A changed unrelated
   retained file, generation, catalog metadata, form metadata or handler source
   invalidates new writes; restoration must not silently revive a stale editor.
-- Pending receipt resolution is not a new write. Source drift must not erase an
-  existing durable receipt or cause an already submitted intent to be replayed.
+- Source drift refuses further writes. After an unknown outcome, discard the
+  old draft and read the current record through fresh source admission.
 
 ## UI implementation
 
@@ -96,7 +96,7 @@ Fourteen original-demo UI integration tests plus 44 existing controller,
 protocol and commit-cleanup tests passed normally and under `python -O` (58 per
 mode). They cover real v6 creation, original handlers, read-only Code, refusal,
 normalization, durable save/reopen, numbering, dirty close/discard, real persisted
-source drift and restoration, historical uncertain receipt recovery, refresh,
+source drift and restoration, readback after unknown outcomes, refresh,
 backend replacement in both pending states, and stale discard through protocol.
 An independent static composition review cleared the controller/DB/renderer
 recovery paths. The renderer's existing 20 JavaScript tests pass and its locked

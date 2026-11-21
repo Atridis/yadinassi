@@ -1,34 +1,11 @@
-"""Legacy receipt rows stay inert; host posting needs no acknowledgement."""
+"""Current host outcomes agree with independently reopened business rows."""
 from contextlib import closing
 import sqlite3
 import unittest
 from uuid import uuid4
 
-import test_document_posting_host as posting
 import test_inventory_host_operations as inventory
 from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
-
-
-class LegacyPostingReceiptTests(unittest.TestCase):
-    setUp=posting.PostingHostTests.setUp
-    cleanup_host=posting.PostingHostTests.cleanup_host
-    execute=posting.PostingHostTests.execute
-
-    def test_legacy_root_row_does_not_supply_an_outcome_or_block_a_new_write(self):
-        operation=uuid4()
-        old=(str(operation),'0'*64,'[]')
-        with closing(sqlite3.connect(self.context.path)) as db,db:
-            db.execute('INSERT INTO unit_of_work_receipt VALUES(?,?,?)',old)
-        result=self.execute(operation=operation)
-        self.assertEqual(result.state,'committed');self.assertTrue(result.accepted)
-        self.assertFalse(hasattr(self.host,'acknowledge'))
-        self.assertIsNone(self.host._active_operation)
-        with closing(SQLiteCatalogBackend(self.context.path)) as backend:
-            self.assertTrue(backend.read_document_posted(self.key))
-        with closing(sqlite3.connect(self.context.path)) as db:
-            self.assertEqual(db.execute('SELECT * FROM unit_of_work_receipt').fetchall(),[old])
-            for table in ('document_commit_receipt','document_posting_receipt','recorder_movement_receipt'):
-                self.assertEqual(db.execute('SELECT COUNT(*) FROM '+table).fetchone(),(0,))
 
 
 class InventoryPostingOutcomeTests(unittest.TestCase):
@@ -74,5 +51,6 @@ class EnumInventoryRootOutcomeTests(unittest.TestCase):
                 piece=next(v for v in enum.values if v.name=='Piece')
                 self.assertEqual(card.values[unit].value_id,piece.identity)
             with closing(sqlite3.connect(path)) as db:
-                for table in ('commit_receipt','unit_of_work_receipt'):
-                    self.assertEqual(db.execute('SELECT COUNT(*) FROM '+table).fetchone(),(0,))
+                names = {name for name, in db.execute("SELECT name FROM sqlite_schema WHERE type='table'")}
+                self.assertFalse(names.intersection({'unit_of_work_receipt','document_commit_receipt',
+                                                     'document_posting_receipt','accumulation_movement_receipt'}))

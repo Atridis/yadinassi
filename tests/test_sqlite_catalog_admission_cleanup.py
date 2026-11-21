@@ -132,7 +132,7 @@ class SQLiteCatalogAdmissionCleanupTests(unittest.TestCase):
         other = self.real_connect(self.path, isolation_level=None, timeout=0)
         try:
             with self.assertRaises(sqlite3.OperationalError): other.execute('BEGIN IMMEDIATE')
-            self.assertEqual(other.execute('SELECT COUNT(*) FROM commit_receipt').fetchone(), (0,))
+            self.assertEqual(other.execute("SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name='commit_receipt'").fetchone(), (0,))
         finally: other.close()
         connection.disable_faults()
         owner.close()

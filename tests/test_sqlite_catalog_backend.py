@@ -123,13 +123,11 @@ class BackendTests(unittest.TestCase):
         absent=Path(self.directory.name)/'absent.sqlite'
         with self.assertRaises(BackendError):SQLiteCatalogBackend(absent,read_only=True)
         self.assertFalse(absent.exists())
-    def test_commit_returns_revision_and_obsolete_resolution_errors(self):
+    def test_commit_returns_persisted_revision(self):
         operation=uuid4();draft=self.draft();tx=self.backend.begin_write(operation);tx.create(draft);revision=tx.commit()[0]
         view=self.backend.begin_read()
         try: self.assertEqual(view.read_catalog(draft.key).revision, revision)
         finally: view.close()
-        with self.assertRaisesRegex(BackendError,'unsupported'):self.backend.resolve_write(operation,draft)
-        with self.assertRaisesRegex(BackendError,'unsupported'):self.backend.committed_operation(operation)
     def test_hostile_revision_and_persisted_corruption_are_closed(self):
         from dataclasses import replace
         draft=self.draft();tx=self.backend.begin_write(uuid4());tx.create(draft);rev=tx.commit()[0]
@@ -199,8 +197,7 @@ os._exit(17)
         self.assertEqual(subprocess.run(args+['abort'],check=False).returncode,17)
         view=self.backend.begin_read();self.assertIsNone(view.read_catalog(CatalogKey(self.backend.database_id,self.category.identity,record)));view.close()
         self.assertEqual(subprocess.run(args+['commit'],check=False).returncode,17)
-        with self.assertRaisesRegex(BackendError,'unsupported'):self.backend.committed_operation(operation)
         connection=sqlite3.connect(self.path)
-        try: self.assertEqual(connection.execute('SELECT COUNT(*) FROM commit_receipt').fetchone(), (0,))
+        try: self.assertEqual(connection.execute("SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name='commit_receipt'").fetchone(), (0,))
         finally: connection.close()
         view=self.backend.begin_read();self.assertEqual(view.read_catalog(CatalogKey(self.backend.database_id,self.category.identity,record)).description,'Crash');view.close()

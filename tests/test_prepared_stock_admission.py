@@ -349,7 +349,6 @@ class PreparedStockTransactionTests(unittest.TestCase):
         self.vm.execute('BeginTransaction();O.Write(DocumentWriteMode.Posting);RollbackTransaction();')
         with closing(sqlite3.connect(self.path)) as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM document_record').fetchone(), (0,))
-            self.assertEqual(db.execute('SELECT COUNT(*) FROM unit_of_work_receipt').fetchone(), (0,))
 
 
 class PreparedInventoryTransactionTests(unittest.TestCase):

@@ -13,8 +13,8 @@ unconfirmed operation succeeded. Neither cleanup nor reading invokes a write
 or a posting handler. Once COMMIT is confirmed, a failed form refresh can
 be repeated as a read only.
 
-The normal write path does not write or consult durable business receipts.
-Legacy receipt tables and their existing rows are left intact for storage
-compatibility. They are not used to decide whether to write again. Data
-migration, source authentication, and document movements of type Receipt
-are separate from this policy.
+Business writes have no receipt tables, durable operation log, resolver or
+automatic replay. Opening a database does not migrate it. Do not modify an
+existing database to make it open: any storage conversion is an explicit
+maintenance operation on an owned, verified copy. Migration proof, source
+authentication and inventory movements of type Receipt are separate concepts.

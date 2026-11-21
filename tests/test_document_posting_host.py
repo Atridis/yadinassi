@@ -201,7 +201,7 @@ class PostingHostTests(unittest.TestCase):
         real=UnitOfWork.commit
         def committed(unit):
             result=real(unit)
-            allocation=patch('yadinassi.db.database_transactions.RootOperationReceipt',side_effect=MemoryError)
+            allocation=patch('yadinassi.db.database_transactions.RootOperationResult',side_effect=MemoryError)
             allocation.start();self.addCleanup(allocation.stop)
             return result
         with patch.object(UnitOfWork,'commit',committed):result=self.execute()

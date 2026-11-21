@@ -196,7 +196,7 @@ class StatementReportTests(unittest.TestCase):
         original=StatementReducer.add
         with patch.object(StatementReducer,'add',autospec=True,side_effect=original) as add, \
              patch.object(self.backend,'begin_write',side_effect=AssertionError('write')), \
-             patch.object(self.backend,'resolve_unit_of_work',side_effect=AssertionError('resolve')):
+             patch.object(self.backend,'begin_unit_of_work',side_effect=AssertionError('journal')):
             self.read()
         self.assertEqual(add.call_count,1)
 

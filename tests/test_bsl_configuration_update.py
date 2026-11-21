@@ -1,4 +1,5 @@
 """Future-union tests: explicit BSL ownership across additive maintenance."""
+from contextlib import closing
 from pathlib import Path
 import tempfile
 import unittest
@@ -57,15 +58,17 @@ B.Write();Message(Q.Execute().Unload().Count());RollbackTransaction();''')
         self.assertEqual(self.output,['1','2'])
         self.assertTrue(self.vm.execute('Catalogs.Categories.FindByCode("A").IsEmpty()'))
 
-    def test_old_bsl_batch_receipts_resolve_from_new_context(self):
+    def test_old_bsl_batch_remains_readable_in_new_context(self):
         obj=self.vm.execute('C=Catalogs.Categories.CreateItem();C.Code="A";C')
         with execution(self.backend):
             begin(self.backend);obj.write();tx=current(self.backend)
-            operation,requests=tx.unit.operation_id,tx.unit.requests
             commit(self.backend);outcomes=tx.unit._results
         self.evolve()
-        for _ in range(2):self.assertEqual(self.backend.resolve_unit_of_work(operation,requests),outcomes)
         self.assertEqual(outcomes[0].result.revision.configuration_generation,1)
+        with closing(self.backend.begin_read()) as view:
+            record=view.read_catalog(obj._key)
+            self.assertEqual((record.code,record.values),('A',(False,)))
+            self.assertEqual(record.revision.token,outcomes[0].result.revision.token)
         self.assertFalse(self.vm.execute('Catalogs.Categories.FindByCode("A").Extra'))
 
     def test_active_bsl_writer_prevents_configuration_apply(self):
@@ -80,15 +83,24 @@ B.Write();Message(Q.Execute().Unload().Count());RollbackTransaction();''')
         self.assertEqual(self.path.read_bytes(),before)
         self.assertEqual(resolve(self.path,plan,maintenance=True),'not_committed')
 
-    def test_uncertain_new_generation_bsl_commit_resolves_whole_batch(self):
+    def test_uncertain_new_generation_bsl_commit_never_repeats(self):
         self.evolve()
         obj=self.vm.execute('C=Catalogs.Categories.CreateItem();C.Code="A";C.Extra=True;C')
-        with execution(self.backend):
-            begin(self.backend);obj.write();tx=current(self.backend)
-            tx.unit._view._connection=FaultConnection(tx.unit._view._connection,commit_fault='after')
-            with self.assertRaisesRegex(BackendError,'uncertain_commit'):commit(self.backend)
-            self.assertTrue(obj.is_new());commit(self.backend)
-        self.assertFalse(obj.is_new());self.assertTrue(obj.get_member('Extra'))
+        with self.assertRaisesRegex(BackendError,'uncertain_commit'):
+            with execution(self.backend):
+                begin(self.backend);obj.write();tx=current(self.backend)
+                connection=FaultConnection(tx.unit._view._connection,commit_fault='after')
+                tx.unit._view._connection=connection
+                try: commit(self.backend)
+                finally:
+                    self.assertTrue(obj.is_new())
+                    self.assertEqual(tx.unit.state,'uncertain')
+        self.assertIsNone(current(self.backend))
+        self.assertEqual(connection.commit_calls,1)
+        with closing(self.backend.begin_read()) as view:
+            record=view.read_catalog(obj._key)
+            self.assertEqual((record.code,record.values),('A',(True,)))
+            self.assertEqual(record.revision.configuration_generation,2)
 
     def test_open_query_lease_still_blocks_commit_after_update(self):
         self.evolve()

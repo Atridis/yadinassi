@@ -14,7 +14,7 @@ new profile grant, migration mechanism, or statement of native 1C parity.
 | `create_inventory_application`, `create_inventory_enum_application`, `create_main_demo` | Exact full-source profile type, source digest, canonical schema | No arbitrary source, generic migration, or Enterprise compatibility |
 | `SourceConstantStore.create/reopen/load_source/update_source` | Separate scratch DB schema, file identity, source/codec binding | Not the numbered ordinary SQLite backend formats; source load does not run startup |
 | `SQLiteCatalogBackend.launch_snapshot` | One admitted read snapshot, canonical source and schemas | Returns detached launch input, not activation, writable data or running VM |
-| `begin_unit_of_work` / `resolve_unit_of_work` | Existing formats 11–16, ordinary write/read admission | Does not give BSL ownership, form dispatch or arbitrary callback authority |
+| `begin_unit_of_work` | Formats 11–16, ordinary write admission | Does not give BSL ownership, form dispatch or arbitrary callback authority |
 | `database_transactions.begin/commit/rollback` | Admission token and current synchronous execution owner | No detached/foreign owner or automatic source-profile widening |
 | `database_transactions.require_host_root` | Exact v13 PostingApplicationConfiguration, canonical source, no BSL execution owner | Not the generic root for accumulation or arbitrary source applications; specialized roots retain their own admission |
 | `database_transactions.query_view` | Ordinary admitted read outside a transaction; registered exact query lease inside | Not duck-typed access to any object exposing a connection |
@@ -33,64 +33,13 @@ Implementation anchors: `database_context.py`, `sqlite_catalog.py`,
 `sqlite_launch.py`, `source_constant_store.py`, `database_transactions.py`,
 `inventory_enum_runtime.py`, and the explicit `sqlite_*_profile.py` modules.
 
-## Receipt reclamation design boundary (M1)
+## Write outcomes and maintenance
 
-Current root receipts are host-lifetime envelopes, explicitly not durable restart
-tokens. `RootOperation.run/resolve` marks an outcome accepted only after participant
-installation. COMMIT success alone is insufficient. An uncertain state, cleanup
-failure, unresolved receipt, or a merely committed/unaccepted result must retain
-all recovery evidence. The original checkpoint had no receipt acknowledgement/GC API. The opt-in v2
-duplicate-payload compaction contract is described in
-[root-receipt-acknowledgement.md](root-receipt-acknowledgement.md); it does not delete child receipts.
+A write returns typed outcomes only after confirmed COMMIT. There is no durable
+business receipt, acknowledgement protocol, or replay. After an unknown
+outcome, close resources and read the current database state independently.
+See [unknown commit outcomes](sqlite-commit-uncertainty.md).
 
-The storage root binds ordered child operation IDs, request hashes and complete
-child outcome bytes. `sqlite_transactions.resolve` checks these children before
-returning outcomes. `begin_write` uses persisted receipts to reject operation-ID
-reuse. Thus neither deleting children alone nor deleting an entire successful
-journal is safe: the first breaks recovery, the second permits replay.
-
-Before enabling deletion, an explicit retention protocol must provide:
-
-1. A root-owned acknowledgement after accepted outcome installation, bound to the
-   exact database, generation, operation and frozen ordered requests/outcomes.
-2. A compact durable tombstone that continues to deny operation-ID reuse and
-   distinguishes acknowledged history from genuine absence. Recovery must never
-   translate an acknowledged result into `None` and authorize replay.
-3. Atomic tombstone installation plus child cleanup, with compare-and-check of
-   exact receipts in the same writer transaction. No callback or posting replay.
-4. Idempotent acknowledgement after a lost response; corruption, changed bindings,
-   foreign roots and unresolved states fail closed without deleting evidence.
-5. Compatibility with `sqlite_configuration_history` receipt epochs. That format
-   explicitly requires old receipts to remain byte-for-byte present; those receipts
-   must be retained until a separately admitted compatible protocol exists.
-6. Crash injection before and after each atomic boundary and reopen tests covering
-   acknowledged, committed-unaccepted, uncertain, conflict and missing states.
-
-No runtime deletion is enabled by this document. Introducing an unversioned marker
-into existing canonical receipt JSON would silently change existing resolver and
-schema contracts. Preserve the receipts instead of disguising that as a safe GC.
-
-### Disposable-database counterexamples
-
-`tests/test_receipt_retention_frontier.py` exercises four current-format cases
-using a newly created temporary posting database for each test. It never deletes
-receipts from an existing user database:
-
-* Even `accepted=True` retains independent root and document-child UUID guards.
-* Deleting only the document child makes root resolution fail `integrity`, while
-  opening a new unit of work under that child UUID becomes possible. Retaining
-  only a root tombstone therefore does not preserve the existing child-ID guard.
-* Deleting only the root changes resolution of a known committed operation to
-  `None` and admits that root UUID again. Child receipts do not repair this.
-* Replacing the existing payload with a compact unversioned acknowledgement
-  object fails the old resolver's contract, though its root-ID guard remains.
-
-These are counterexamples to proposed deletion shortcuts, not a GC feature or
-an endorsement of the deliberately corrupted states. A future deletion-based retention
-profile would need versioned acknowledged-resolution assertions. The v2 root
-compaction instead keeps every child outcome and rehydrates exact v1 bindings. It must retain enough identity tombstones to deny reuse
-of both roots and children. Exact historical outcome recovery cannot be promised
-once those outcomes are discarded; the new acknowledged result must be explicit,
-not silently mapped to absence. Fixed-size tombstones can bound retained payload
-per operation but do not bound the number of operation identities. A retention
-horizon would itself require a different, explicit operation-ID lifetime contract.
+An existing database is never changed on open. The storage migration tool is
+a separate, explicit maintenance operation; changes to supported layouts do
+not authorize running it on user data.

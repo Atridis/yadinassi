@@ -172,9 +172,9 @@ class RootPostingOperations:
             except Exception as error:
                 # A physical cleanup fault may follow an already published
                 # in-memory outcome. Do not tell a caller the write was refused.
-                if isinstance(error, MemoryError) or operation.receipt.state not in ('committed', 'uncertain'):
+                if isinstance(error, MemoryError) or operation.result.state not in ('committed', 'uncertain'):
                     raise
-                return operation.receipt
+                return operation.result
             finally:
                 if not operation.needs_cleanup:
                     self._active_operation = None

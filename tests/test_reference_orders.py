@@ -527,9 +527,7 @@ class ReferenceOrdersTests(unittest.TestCase):
         stale = app.object
         self.assertTrue(stale._uncertain_write)
         backend = app.context.backend
-        with mock.patch.object(backend, 'begin_write', side_effect=AssertionError('no second writer')), \
-             mock.patch.object(backend, 'resolve_write', side_effect=AssertionError('no receipt lookup')), \
-             mock.patch.object(backend, 'resolve_write_outcome', side_effect=AssertionError('no receipt lookup')):
+        with mock.patch.object(backend, 'begin_write', side_effect=AssertionError('no second writer')):
             self.command(owner, 'Resolve')
             self.assertTrue(app.pending_commit)
             result = self.command(owner, 'Discard')
@@ -554,9 +552,7 @@ class ReferenceOrdersTests(unittest.TestCase):
         self.assertTrue(stale._uncertain_write)
         self.assertEqual(stale._key, self.refs['O001'])
         backend = app.context.backend
-        with mock.patch.object(backend, 'begin_write', side_effect=AssertionError('no second writer')), \
-             mock.patch.object(backend, 'resolve_write', side_effect=AssertionError('no receipt lookup')), \
-             mock.patch.object(backend, 'resolve_write_outcome', side_effect=AssertionError('no receipt lookup')):
+        with mock.patch.object(backend, 'begin_write', side_effect=AssertionError('no second writer')):
             self.command(owner, 'Resolve')
             self.assertTrue(app.pending_commit)
             result = self.command(owner, 'Discard')

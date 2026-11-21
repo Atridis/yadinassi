@@ -35,7 +35,7 @@ variant retains its complete original source and immutable command/report
 grants. Its temporary core projection cannot occupy a full-variant entry; the
 original core creator still refuses the form variant.
 
-Receipt lookup, uncertain commit handling and handler execution are unchanged.
+This source preparation changes neither transaction outcomes nor handler execution.
 Prepared admission does not replay actions or establish that an unknown
 operation rolled back. It also does not retain application source across a
 host restart.

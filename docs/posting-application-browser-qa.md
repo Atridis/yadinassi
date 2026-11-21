@@ -9,7 +9,7 @@ Preparation is not evidence of a successful run. The existing reviewed-browser w
 3. The example's source `Note = "cancel"` BeforeWrite cancellation. The independent document/posting/movement query snapshot before/after must remain identical. This compares only the selected business columns, not journal, metadata or every database table.
 4. Close every saved form, natural application/child-process shutdown, reopen the persisted database, verify typed values and unchanged SQL snapshot, then natural shutdown again. Forced cleanup cannot satisfy natural-shutdown acceptance.
 
-The example uses the explicit closed `PostingApplication.xml` host manifest extension and fresh-only `document-recorder-forms-v1` physical13 profile. It does not claim native StandardCommand/FormWrite parity, AdditionalProperties continuity or same-object movement-buffer retention. Browser tests do not inject unknown commits or prove cross-process receipt recovery. Recovery fault cases remain in the separate Python/JavaScript suites; no production fault switch is introduced.
+The example uses the explicit closed `PostingApplication.xml` host manifest extension and fresh-only `document-recorder-forms-v1` physical13 profile. It does not claim native StandardCommand/FormWrite parity, AdditionalProperties continuity or same-object movement-buffer retention. Browser tests do not inject unknown commits or prove recovery after a lost process. Recovery fault cases remain in the separate Python/JavaScript suites; no production fault switch is introduced.
 
 ## Execution gate
 

@@ -86,11 +86,13 @@ All reference keys and detached objects live only in the server process; no read
 transaction remains open between actions.
 
 Save uses the existing workbench's immutable target, original optimistic revision,
-whole header/line projection and retained write-receipt recovery. A concurrent
-writer produces a conflict without silently overwriting or retargeting. A
-confirmed commit followed by a failed refresh permits only Refresh saved record,
-not another write. A database write with an uncertain outcome over a healthy
-channel retains its exact intent for explicit Resolve save outcome.
+whole header/line projection. A concurrent writer produces a conflict without
+overwriting or retargeting. A confirmed commit followed by a failed refresh
+permits only **Refresh saved record**, not another write. After an unknown
+outcome on a healthy channel, **Discard / Reload** reads the original record
+key into a fresh object, even when the submitted object was new. If that key
+is absent or the full projection cannot be loaded, the old draft stays locked.
+Readback never proves the previous outcome or retries the write.
 
 Unknown transport, malformed replies, an installation fault after selection
 admission, or uncertain child cleanup locks the whole workspace. There is no
@@ -101,7 +103,7 @@ choices; teardown is not proof that a previously attempted save rolled back.
 
 The dedicated Python regressions cover typed-key readback, create/reopen,
 selection ownership, cancellation, stale rows, cross-catalog/database injection,
-preflight and post-install faults, conflicts and write recovery. Separate renderer
+preflight and post-install faults, conflicts and readback after a write fault. Separate renderer
 and browser checks cover owner blocking and refresh. Test definitions are not
 execution evidence: record the checked source commit and actual suite results.
 No new real-1C managed-form observation or parity is claimed by this application.

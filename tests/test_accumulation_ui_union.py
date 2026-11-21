@@ -69,7 +69,7 @@ class AccumulationUIUnionTests(unittest.TestCase):
             operation = RootOperation(context.backend, uuid4())
             host = RootPostingOperations(context, configuration)
             host.close()
-        self.assertEqual(operation.receipt.state, 'prepared')
+        self.assertEqual(operation.result.state, 'prepared')
         self.assertIsNone(getattr(context.backend, '_bsl_transaction', None))
 
     def test_forms_configuration_cannot_authorize_v14_backend(self):
