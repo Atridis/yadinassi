@@ -23,8 +23,9 @@ from yadinassi.types.type_qualifiers import (
     BSLNumberQualifiers, BSLStringQualifiers,
 )
 from yadinassi.collections.plain_table_storage import Schema, TableStorage, validate_row
+from yadinassi.collections.plain_table_search import SearchIndexes
 from yadinassi.collections.value_tables import (BSLValueTable, BSLValueTableRow, BSLValueTableColumn,
-                           BSLValueTableColumnCollection, BSLCollectionIndexes, BSLCollectionIndex)
+                           BSLValueTableColumnCollection, BSLCollectionIndexes)
 from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
 from yadinassi.types.type_values import type_of
 from yadinassi.db.catalog.catalog_types import BSLCatalogReference, BSLCatalogType
@@ -519,37 +520,48 @@ class _Writer:
             self.emit(',0}')
         self.emit('\n}' if nr else '}')
         self.emit(',' + str(nc - 1) + ',' + str(nr - 1) + '},\n')
-        self.table_indexes(table)
+        self.table_indexes(table, nc)
         self.emit('\n}')
 
-    def table_indexes(self, table):
-        collection = table.indexes
+    def table_indexes(self, table, column_count):
+        collection, search = table.indexes, table._search
         if (type(collection) is not BSLCollectionIndexes or collection.table is not table
-                or type(collection.items) is not list):
+                or type(collection.items) is not list or type(search) is not SearchIndexes
+                or type(search.declarations) is not set
+                or len(search.declarations) != len(collection.items)):
             raise ValueError("ЗначениеВСтрокуВнутр: недопустимая коллекция индексов")
         count = len(collection.items)
         self.nodes += count
         if self.nodes > _MAX_NODES:
             raise _resource("ЗначениеВСтрокуВнутр")
-        if not count:
-            self.emit('{0,0}')
-            return
-        positions = {id(column): position for position, column in enumerate(table.columns.items)}
-        self.emit('{0,' + str(count))
-        for index in collection.items:
-            if (type(index) is not BSLCollectionIndex or index.table is not table
-                    or index._deleted or type(index.columns) is not list):
+        # Validate both live declarations before comparing any key. Never read
+        # the lazy bucket cache; it is not part of the native stream.
+        declaration_nodes = self.nodes
+        for signature in search.declarations:
+            if type(signature) is not tuple or not 0 < len(signature) <= column_count:
                 raise ValueError("ЗначениеВСтрокуВнутр: недопустимый индекс таблицы")
-            self.nodes += len(index.columns)
+            declaration_nodes += len(signature)
+            if declaration_nodes > _MAX_NODES:
+                raise _resource("ЗначениеВСтрокуВнутр")
+            if any(type(position) is not int for position in signature):
+                raise ValueError("ЗначениеВСтрокуВнутр: недопустимый индекс таблицы")
+        self.emit('{0,' + str(count))
+        seen = set()
+        for signature in collection.items:
+            if type(signature) is not tuple or not 0 < len(signature) <= column_count:
+                raise ValueError("ЗначениеВСтрокуВнутр: недопустимый индекс таблицы")
+            self.nodes += len(signature)
             if self.nodes > _MAX_NODES:
                 raise _resource("ЗначениеВСтрокуВнутр")
-            self.emit(',\n{0,' + str(len(index.columns)))
-            for column in index.columns:
-                if (type(column) is not BSLValueTableColumn or column.table is not table
-                        or column._deleted or id(column) not in positions):
+            previous = -1
+            for position in signature:
+                if type(position) is not int or not previous < position < column_count:
                     raise ValueError("ЗначениеВСтрокуВнутр: недопустимая колонка индекса")
-                self.emit(',' + str(positions[id(column)]))
-            self.emit('}')
+                previous = position
+            if signature not in search.declarations or signature in seen:
+                raise ValueError("ЗначениеВСтрокуВнутр: недопустимое объявление индекса")
+            seen.add(signature)
+            self.emit(',\n{0,' + str(len(signature)) + ',' + ','.join(map(str, signature)) + '}')
         self.emit('\n}' if count else '}')
 
     def pair(self, key, value, depth):
@@ -861,26 +873,31 @@ class _Reader:
         self.nodes += count
         if self.nodes > _MAX_NODES:
             raise _resource("ЗначениеИзСтрокиВнутр")
-        columns = table.columns.items
+        column_count = len(table.columns.items)
+        declarations = table._search.declarations
         for entry in body[2:]:
             if type(entry) is not list or len(entry) < 2 or entry[0] != _Atom('0'):
                 self.fail()
             size = self.table_count(entry[1])
-            if len(entry) != size + 2:
+            if len(entry) != size + 2 or not 0 < size <= column_count:
                 self.fail()
             self.nodes += size
             if self.nodes > _MAX_NODES:
                 raise _resource("ЗначениеИзСтрокиВнутр")
             selected = []
+            previous = -1
             for token in entry[2:]:
                 position = self.table_count(token)
-                if position >= len(columns):
+                if not previous < position < column_count:
                     self.fail()
-                selected.append(columns[position])
-            try:
-                table.indexes._add_columns(selected)
-            except (TypeError, ValueError, IndexError):
+                selected.append(position)
+                previous = position
+            signature = tuple(selected)
+            if signature in declarations:
                 self.fail()
+            # The table is fresh and fully owned. Declare only; no eager index
+            # work or dependence on column name parsing.
+            table.indexes.items.append(table._search.declare(signature))
 
     def value(self, group, depth=0):
         self.nodes += 1

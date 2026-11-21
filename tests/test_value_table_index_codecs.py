@@ -33,8 +33,8 @@ def sample():
         table.columns.add(name)
     for number in (1, 2):
         row = table.add()
-        for column, cell in zip(table.columns, ('a', D(number), D(number))):
-            row.cells[column] = cell
+        for position, cell in enumerate(('a', D(number), D(number))):
+            row.set(position, cell)
     return table
 
 
@@ -51,7 +51,8 @@ def table_view(table):
                       'Names': [column.name for column in table.columns],
                       'Rows': [list(row) for row in table.rows]},
             'Indexes': {'Count': D(len(table.indexes.items)),
-                        'Items': [list(index) for index in table.indexes]}}
+                        'Items': [[table.columns.items[i].name for i in signature]
+                                  for signature in table.indexes.items]}}
 
 
 class NativeIndexCodecTests(unittest.TestCase):
@@ -123,13 +124,13 @@ class NativeIndexCodecTests(unittest.TestCase):
         self.assertIs(native.get('Equal'), equal(table, restored))
         self.assertIsNot(restored, table)
         self.assertIs(restored.indexes.table, restored)
-        for original, index in zip(table.indexes, restored.indexes):
-            self.assertIsNot(index, original)
-            self.assertIs(index.table, restored)
-            self.assertFalse(index._deleted)
-            for column in index.columns:
-                self.assertIs(column.table, restored)
-                self.assertTrue(any(column is item for item in restored.columns))
+        self.assertEqual(restored.indexes.items, table.indexes.items)
+        self.assertEqual(restored._search.declarations, {(0, 1), (2,)})
+        self.assertEqual(restored._search.cache, {})
+        for signature in restored.indexes.items:
+            for position in signature:
+                self.assertIs(restored.columns.items[position].table, restored)
+                self.assertIsNot(restored.columns.items[position], table.columns.items[position])
         selected = restored.find_rows(BSLStructure('Key,Second', 'a', D(2)))
         self.assertEqual(selected.items, [restored.rows[1]])
         restored.rows[1].set_member('Key', 'changed')
@@ -170,42 +171,40 @@ class DefensiveIndexCodecTests(unittest.TestCase):
         table.indexes.add('Amount')
         return table
 
-    def test_general_order_empty_repeated_columns_and_duplicate_definitions(self):
+    def test_canonical_composites_and_declaration_order(self):
         table = sample()
-        for columns in ('', 'Amount,Key', 'Key,Key', 'Key,Key'):
+        for columns in ('Amount,Key', 'Second', 'Key,Amount'):
             table.indexes.add(columns)
         restored = read(write(table))
-        self.assertEqual([list(index) for index in restored.indexes],
-                         [[], ['Amount', 'Key'], ['Key', 'Key'], ['Key', 'Key']])
-        self.assertIsNot(restored.indexes.items[2], restored.indexes.items[3])
+        self.assertEqual(restored.indexes.items, [(0, 2), (1,)])
         self.assertEqual(write(restored), write(table))
-        empty = BSLValueTable()
-        empty.indexes.add()
-        self.assertEqual([list(index) for index in read(write(empty)).indexes], [[]])
+        for unsupported in ('', 'Key,Key'):
+            with self.assertRaises(ValueError):
+                table.indexes.add(unsupported)
 
-    def test_column_identity_survives_names_and_canonical_position_changes(self):
+    def test_column_identity_survives_rename(self):
         table = self.indexed()
-        key = table.columns.items[0]
-        key.set_member('Name', '')
-        table.columns.move(key, D(2))
+        table.columns.items[0].set_member('Name', '')
         restored = read(write(table))
-        index = restored.indexes.items[0]
-        self.assertIs(index.columns[0], restored.columns.items[2])
-        self.assertEqual(list(index), ['', 'Second'])
+        self.assertEqual(restored.indexes.items[0], (0, 1))
+        self.assertEqual([restored.columns.items[position].name
+                          for position in restored.indexes.items[0]], ['', 'Second'])
         self.assertEqual(write(restored), write(table))
 
-    def test_nested_children_are_opaque_and_table_snapshots_are_independent(self):
+    def test_nested_index_collection_is_opaque_and_table_snapshots_are_independent(self):
         table = self.indexed()
         graph = BSLArray()
-        graph.items = [table, table.indexes, table.indexes.items[0], table]
+        graph.items = [table, table.indexes, table]
         restored = read(write(graph))
-        self.assertEqual(restored.items[1:3], [None, None])
-        left, right = restored.items[0], restored.items[3]
+        self.assertIsNone(restored.items[1])
+        left, right = restored.items[0], restored.items[2]
         self.assertIsNot(left, right)
         self.assertIsNot(left.indexes, right.indexes)
-        self.assertIsNot(left.indexes.items[0], right.indexes.items[0])
+        self.assertIsNot(left._search.declarations, right._search.declarations)
+        left.indexes.clear()
         left.columns.items[0].set_member('Name', 'Changed')
-        self.assertEqual(list(right.indexes.items[0]), ['Key', 'Second'])
+        self.assertEqual(right.indexes.items, [(0, 1), (2,)])
+        self.assertEqual(right.columns.items[0].name, 'Key')
 
     def test_unknown_index_record_shapes_and_uuids_are_rejected(self):
         for identifier in (COLLECTION_UUID, INDEX_UUID):
@@ -227,7 +226,8 @@ class DefensiveIndexCodecTests(unittest.TestCase):
             '{0,2,{0,2,0,1}}', '{0,1,{1,2,0,1}}', '{0,1,{0,3,0,1}}',
             '{0,1,{0,1,3}}', '{0,1,{0,1,-1}}', '{0,1,{0,1,1.5}}',
             '{0,1,{0,1,"1"}}', '{0,1,{0,1,01}}', '{0,1,0}',
-            '{0,1,{0,0,0}}', '{0,0,{0,0}}',
+            '{0,1,{0,0,0}}', '{0,0,{0,0}}', '{0,1,{0,0}}',
+            '{0,1,{0,2,1,0}}', '{0,1,{0,2,0,0}}', '{0,2,{0,1,0},{0,1,0}}',
         ]
         for invalid in bad_tails:
             with self.subTest(tail=invalid), self.assertRaisesRegex(ValueError, FORMAT_ERROR):
@@ -236,9 +236,10 @@ class DefensiveIndexCodecTests(unittest.TestCase):
 
     def test_oversize_counts_and_total_index_references_are_bounded(self):
         table = BSLValueTable()
-        table.columns.add('Key')
-        for _ in range(4):
-            table.indexes.add('Key,Key')
+        for name in ('Key', 'Second', 'Amount'):
+            table.columns.add(name)
+        for definition in ('Key,Second', 'Key,Amount', 'Second,Amount', 'Key,Second,Amount'):
+            table.indexes.add(definition)
         stream = write(table)
         with patch('yadinassi.formats.storage.serialization._MAX_NODES', 12):
             with self.assertRaisesRegex(ValueError, 'предел ресурсов'):
@@ -252,28 +253,47 @@ class DefensiveIndexCodecTests(unittest.TestCase):
                 read(empty.replace('{0,0}', value))
 
     def test_host_corrupted_index_ownership_is_rejected(self):
-        for change in ('collection-owner', 'index-owner', 'foreign-column', 'removed-column',
-                       'deleted-index', 'deleted-column', 'non-index'):
+        for change in ('collection-owner', 'foreign-column', 'removed-position',
+                       'declaration-mismatch', 'duplicate', 'non-index'):
             with self.subTest(change=change):
                 table = self.indexed()
-                foreign = sample()
-                index = table.indexes.items[0]
                 if change == 'collection-owner':
-                    table.indexes = foreign.indexes
-                elif change == 'index-owner':
-                    index.table = foreign
+                    table.indexes = sample().indexes
                 elif change == 'foreign-column':
-                    index.columns = [foreign.columns.items[0]]
-                elif change == 'removed-column':
-                    table.columns.items.remove(index.columns[0])
-                elif change == 'deleted-index':
-                    index._deleted = True
-                elif change == 'deleted-column':
-                    index.columns[0]._deleted = True
+                    table.indexes.items[0] = (sample().columns.items[0],)
+                elif change == 'removed-position':
+                    table.indexes.items[0] = (3,)
+                elif change == 'declaration-mismatch':
+                    table._search.declarations.remove((0, 1))
+                elif change == 'duplicate':
+                    table.indexes.items[1] = (0, 1)
                 else:
-                    table.indexes.items.append(object())
+                    table.indexes.items[0] = object()
                 with self.assertRaisesRegex(ValueError, 'индекс'):
                     write(table)
+
+    def test_direct_bsl_typed_index_roundtrip_and_live_write(self):
+        vm = Interpreter()
+        try:
+            vm.execute('T=New ValueTable; T.Columns.Add("Key", New TypeDescription("String")); '
+                       'R=T.Add(); R.Key="x"; T.Indexes.Add("Key"); '
+                       'S=ValueToStringInternal(T); C=ValueFromStringInternal(S);')
+            self.assertEqual(vm.variables['c']._search.cache, {})
+            vm.execute('M=C.FindRows(New Structure("Key","x")); Before=M.Count(); '
+                       'M[0].Key="y"; After=C.FindRows(New Structure("Key","x")).Count(); '
+                       'Original=T.FindRows(New Structure("Key","x")).Count();')
+            self.assertEqual((vm.variables['before'], vm.variables['after'], vm.variables['original']),
+                             (D(1), D(0), D(1)))
+        finally:
+            vm.close()
+
+    def test_live_cache_is_not_part_of_the_stream(self):
+        table = self.indexed()
+        stream = write(table)
+        table.find_rows(BSLStructure('Key,Second', 'a', D(2)))
+        self.assertTrue(table._search.cache)
+        self.assertEqual(write(table), stream)
+        self.assertEqual(read(stream)._search.cache, {})
 
     def test_deleted_standalone_children_still_follow_opaque_policy(self):
         table = self.indexed()
