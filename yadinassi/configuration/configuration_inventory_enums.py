@@ -289,9 +289,13 @@ def import_inventory_enum_configuration(files, *, inventory_runtime=None):
 
 
 def _same(expected, actual):
-    if type(expected) is not type(actual):
+    kind = type(expected)
+    if kind is not type(actual):
         return False
-    if type(expected) is UUID:
+    # Exact immutable leaves cannot have dataclass fields or equality hooks.
+    if kind is str or kind is bytes or kind is int or kind is bool or expected is None:
+        return expected == actual
+    if kind is UUID:
         # Exact UUID class alone must not execute an injected integer equality
         # hook in a forged in-memory schema. Fresh import supplies valid UUIDs.
         try:
@@ -299,7 +303,7 @@ def _same(expected, actual):
         except AttributeError:
             return False
         return type(value) is int and expected.int == value
-    if type(expected) is tuple:
+    if kind is tuple:
         if len(expected) != len(actual):
             return False
         for a, b in zip(expected, actual):

@@ -113,9 +113,18 @@ def read_source(connection, *, _prepared=None, _with_layout=False, _expected_ver
         raise BackendError('integrity')
     if connection.execute('SELECT 1 FROM migration_marker LIMIT 1').fetchone():
         raise BackendError('integrity')
-    count,size=connection.execute('SELECT COUNT(*),COALESCE(SUM(length(content)),0) FROM configuration_file').fetchone()
+    # Check both limits before fetching any payload. The total/count budget
+    # takes precedence over an invalid individual row, as before.
+    count,size,invalid=connection.execute('''
+        SELECT COUNT(*), COALESCE(SUM(length(content)),0),
+               MAX(CASE WHEN typeof(path)!='text' OR length(path)>256
+                             OR typeof(content)!='blob' OR length(content)>1048576
+                             OR typeof(sha256)!='text' OR length(sha256)!=64
+                        THEN 1 ELSE 0 END)
+        FROM configuration_file
+        ''').fetchone()
     if not 1<=count<=2048 or size>8*1024*1024:raise BackendError('unsupported')
-    if connection.execute("SELECT 1 FROM configuration_file WHERE typeof(path)!='text' OR length(path)>256 OR typeof(content)!='blob' OR length(content)>1048576 OR typeof(sha256)!='text' OR length(sha256)!=64 LIMIT 1").fetchone():raise BackendError('integrity')
+    if invalid:raise BackendError('integrity')
     files={};entries=[]
     for path,kind,raw,digest in connection.execute('SELECT path,kind,content,sha256 FROM configuration_file'):
         if kind!=('module' if path.endswith('.bsl') else 'xml') or hashlib.sha256(raw).hexdigest()!=digest:raise BackendError('integrity')

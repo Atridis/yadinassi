@@ -66,6 +66,44 @@ class TransactionSourceTests(unittest.TestCase):
         self.mutate("UPDATE configuration_file SET content=?,sha256=? WHERE path='Configuration.xml'", (raw, sha256(raw).hexdigest()))
         with self.assertRaises(BackendError): self.backend.begin_read()
 
+    def test_envelope_refuses_malformed_rows_before_reading_payload(self):
+        with closing(sqlite3.connect(':memory:')) as db:
+            from yadinassi.db.sqlite.sqlite_catalog import _APPLICATION_ID
+            db.execute(f'PRAGMA application_id={_APPLICATION_ID}')
+            db.execute('PRAGMA user_version=16')
+            db.execute('CREATE TABLE migration_marker(unused)')
+            db.execute('CREATE TABLE configuration_file(path,kind,content,sha256)')
+            payload_sql = 'SELECT path,kind,content,sha256 FROM configuration_file'
+            for label, rows, reason in (
+                ('empty', (), 'unsupported'),
+                ('path type', ((b'x', 'xml', b'', '0'*64),), 'integrity'),
+                ('path length', (('x'*257, 'xml', b'', '0'*64),), 'integrity'),
+                ('content type', (('x', 'xml', 'not a blob', '0'*64),), 'integrity'),
+                ('digest type', (('x', 'xml', b'', b'0'*64),), 'integrity'),
+                ('digest length', (('x', 'xml', b'', '0'*63),), 'integrity'),
+                ('row count before shape', (('x', 'xml', b'', '0'),)*2049, 'unsupported'),
+            ):
+                with self.subTest(label=label):
+                    db.set_trace_callback(None)
+                    db.execute('DELETE FROM configuration_file')
+                    db.executemany('INSERT INTO configuration_file VALUES(?,?,?,?)', rows)
+                    trace = []
+                    db.set_trace_callback(trace.append)
+                    with self.assertRaisesRegex(BackendError, f'^{reason}$'):
+                        profile.read_source(db)
+                    self.assertNotIn(payload_sql, trace)
+            for count, reason in ((1, 'integrity'), (8, 'unsupported')):
+                with self.subTest(oversize_blob_rows=count):
+                    db.set_trace_callback(None)
+                    db.execute('DELETE FROM configuration_file')
+                    db.executemany("INSERT INTO configuration_file VALUES('x','xml',zeroblob(1048577),?)",
+                                   [('0'*64,)]*count)
+                    trace = []
+                    db.set_trace_callback(trace.append)
+                    with self.assertRaisesRegex(BackendError, f'^{reason}$'):
+                        profile.read_source(db)
+                    self.assertNotIn(payload_sql, trace)
+
     def test_register_schema_validation_is_not_skipped(self):
         self.mutate('DELETE FROM accumulation_register_schema')
         with self.assertRaises(BackendError): self.backend.begin_write(uuid4())

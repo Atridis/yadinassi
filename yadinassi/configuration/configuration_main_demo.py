@@ -232,14 +232,17 @@ def import_main_demo_configuration(files, *, profile=None):
 
 
 @lru_cache(maxsize=1)
-def _parsed_source_witness(files):
+def _parsed_source_witness(files, manifest):
     """Private pure parse memo, never a database/owner/write admission.
 
-    The key contains exact immutable source bytes, not a config object or a
-    data_version. Public APIs never expose this cached object.
-    Failures are not cached. Database readers still independently verify their
-    actual bytes, marker, database identity and DDL in the current snapshot.
+    The key contains the exact immutable bytes and expected hash manifest,
+    not a config object or a data_version. Public APIs never expose the result.
+    A miss checks the complete hash manifest before any parsing; failures are
+    not cached. Database readers independently verify their actual bytes,
+    marker, database identity and DDL in the current snapshot.
     """
+    if {path: sha256(raw).hexdigest() for path, raw in files} != dict(manifest):
+        raise ValueError('main demo source mismatch')
     return import_main_demo_configuration(dict(files), profile=PROFILE)
 
 
@@ -248,17 +251,18 @@ def _canonical_witness(configuration):
             or type(configuration.profile) is not str or configuration.profile != PROFILE
             or type(configuration.files) is not tuple
             or any(type(x) is not tuple or len(x)!=2 or type(x[0]) is not str
-                   or type(x[1]) is not bytes for x in configuration.files)
-            or len({p for p,raw in configuration.files}) != len(configuration.files)):
+                   or type(x[1]) is not bytes for x in configuration.files)):
         raise ValueError('main demo configuration required')
-    # Rehash the full current envelope even on a parse-cache hit. Bounds and
-    # the closed path/hash set are checked before consulting process-local data.
-    if (len(configuration.files) != len(SOURCE_SHA256)
+    paths = {p for p, _ in configuration.files}
+    if len(paths) != len(configuration.files):
+        raise ValueError('main demo configuration required')
+    # Bound input before using the exact bytes as the key. A changed byte
+    # misses and runs the same hash validation in the importer.
+    if (paths != SOURCE_SHA256.keys()
             or any(len(raw) > xml.MAX_FILE_BYTES for _, raw in configuration.files)
-            or sum(len(raw) for _, raw in configuration.files) > xml.MAX_TOTAL_BYTES
-            or {p: sha256(raw).hexdigest() for p, raw in configuration.files} != SOURCE_SHA256):
+            or sum(len(raw) for _, raw in configuration.files) > xml.MAX_TOTAL_BYTES):
         raise ValueError('main demo source mismatch')
-    witness = _parsed_source_witness(tuple(sorted(configuration.files)))
+    witness = _parsed_source_witness(tuple(sorted(configuration.files)), tuple(SOURCE_SHA256.items()))
     # A caller may forge even frozen dataclasses via object.__setattr__. Compare
     # every schema/handler/profile field without copying a validation-only result.
     # The public canonical() API copies after this check; validate_canonical()
