@@ -6,6 +6,12 @@ from yadinassi.db.document.document_backend import DocumentKey
 
 MAX_POSTED_RECORDS=10000
 
+_POINT_SQL = (
+    'SELECT r.revision,p.document_revision,p.posted FROM document_record r '
+    'LEFT JOIN document_posting_state p ON p.document_id=r.document_id AND p.record_id=r.record_id '
+    'WHERE r.document_id=? AND r.record_id=?'
+)
+
 POSTED_DDL='CREATE TABLE document_posting_state(document_id TEXT NOT NULL, record_id TEXT NOT NULL, document_revision INTEGER NOT NULL CHECK(document_revision>0), posted INTEGER NOT NULL CHECK(posted IN(0,1)), PRIMARY KEY(document_id,record_id), FOREIGN KEY(document_id,record_id) REFERENCES document_record(document_id,record_id))'
 
 @dataclass(frozen=True,slots=True)
@@ -18,9 +24,19 @@ class PostedIntent:
 def read_posted(connection,database_id,key):
     if type(key) is not DocumentKey or key.database_id!=database_id:raise BackendError('invalid_input')
     if not connection.in_transaction:raise BackendError('closed')
-    row=connection.execute('SELECT r.revision,p.document_revision,p.posted FROM document_record r LEFT JOIN document_posting_state p ON p.document_id=r.document_id AND p.record_id=r.record_id WHERE r.document_id=? AND r.record_id=?',(str(key.document_id),str(key.record_id))).fetchone()
-    if row is None:return None
-    return decode_posted(*row)
+    row=connection.execute(_POINT_SQL,(str(key.document_id),str(key.record_id))).fetchone()
+    return None if row is None else decode_posted(*row)
+
+
+def read_posted_statement(connection, database_id, key):
+    """A detached point read on an admitted ordinary data connection."""
+    from .sqlite_single_statement import fetch_one
+    if (type(key) is not DocumentKey or type(key.database_id) is not UUID
+            or key.database_id != database_id or type(key.document_id) is not UUID
+            or type(key.record_id) is not UUID):
+        raise BackendError('invalid_input')
+    row = fetch_one(connection, _POINT_SQL, (str(key.document_id), str(key.record_id)))
+    return None if row is None else decode_posted(*row)
 
 
 def decode_posted(revision, state_revision, posted):

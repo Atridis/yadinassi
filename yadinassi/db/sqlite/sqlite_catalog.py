@@ -1424,6 +1424,14 @@ class SQLiteCatalogBackend:
     def read_document_posted(self, key):
         if self.format_version not in (13, 14, 15, 16): raise BackendError('unsupported')
         from .sqlite_document_posting_state import read_posted
+        # As with ordinary format-16 catalog data, use the opened binding.
+        # This host scalar read grants no source, posting or query authority.
+        if self.format_version == 16 and self._catalog_runtime_data is not None:
+            from yadinassi.db.database_transactions import current
+            if current(self) is None:
+                from .sqlite_document_posting_state import read_posted_statement
+                from .sqlite_single_statement import run
+                return run(self, lambda connection: read_posted_statement(connection, self.database_id, key))
         view = self.begin_read()
         try: return read_posted(view._connection, self.database_id, key)
         finally: view.close()
