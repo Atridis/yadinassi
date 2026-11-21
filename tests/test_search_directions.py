@@ -172,6 +172,24 @@ class SearchDirectionValueTests(unittest.TestCase):
         self.assertEqual(self.output, ['0', '1', 'Да', 'Да', '7', 'updated',
                                       'end', 'zero', 'one', 'false', 'true', 'round', 'Да'])
 
+    def test_direct_arrays_and_maps_keep_native_enum_keys_distinct(self):
+        self.vm.execute('''values = New Array;
+            values.Add(directions.FromBegin); values.Add(RoundMode.Round15as10);
+            Message(values.Find(directions.СНачала));
+            Message(values.Find(RoundMode.Round15as10));
+            Message(values.Find(directions.FromEnd) = Undefined);
+            map = New Map;
+            map[directions.FromBegin] = "direction";
+            map.Insert(RoundMode.Round15as10, "round");
+            map[0] = "zero";
+            fixed = New FixedMap(map);
+            map.Delete(directions.FromBegin);
+            Message(map.Get(directions.FromBegin) = Undefined);
+            Message(fixed[directions.FromBegin]);
+            Message(fixed[RoundMode.Round15as10]);
+            Message(fixed[0]);''')
+        self.assertEqual(self.output, ['0', '1', 'Да', 'Да', 'direction', 'round', 'zero'])
+
     def test_host_namespace_subclasses_are_not_typed_or_serialized(self):
         class HostNamespace(BSLSearchDirections):
             def __str__(self):

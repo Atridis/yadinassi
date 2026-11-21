@@ -10,6 +10,8 @@ from yadinassi.text.collation import _DIRECT_STRING_KEY_ABI as _string_key
 from yadinassi.temporal.dates import _DIRECT_EQUALITY_DATE_STATE, UnsupportedDateRange
 from yadinassi.types.values import NULL, to_string, _DIRECT_TYPE_PRESENTATIONS, _DIRECT_ARRAY_TYPE, _DIRECT_FIXED_ARRAY_TYPE, _DIRECT_FIXED_COLLECTION_TYPE, divide as _divide
 from yadinassi.collections.structures import _DIRECT_FIXED_STRUCTURE_SNAPSHOT
+from yadinassi.collections.search_directions import BSLSearchDirection
+from yadinassi.numeric.round_modes import BSLRoundMode
 from yadinassi.collections.maps import _DIRECT_FIXED_MAP_SNAPSHOT
 from .experimental_naked_boundaries import BoundaryViolation
 from .experimental_naked_collections import _NakedMap, _TypedMap
@@ -23,7 +25,7 @@ class UnsupportedScalarSemantics(BoundaryViolation):
 _COLLECTION_TYPES = (list, dict, _NakedMap, _TypedMap, _DirectStructure)
 _SCALAR_TYPES = (bool, Decimal, str, type(None))
 _FIND_FIXED_TYPES = (_DIRECT_FIXED_ARRAY_TYPE, _DIRECT_FIXED_STRUCTURE_SNAPSHOT[0],
-                     _DIRECT_FIXED_MAP_SNAPSHOT[0])
+                     _DIRECT_FIXED_MAP_SNAPSHOT[0], BSLSearchDirection, BSLRoundMode)
 
 
 _SCALAR_TYPE_IDS=tuple(map(id,_SCALAR_TYPES))

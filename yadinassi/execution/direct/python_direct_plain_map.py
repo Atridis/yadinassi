@@ -4,11 +4,13 @@ Copy construction is an explicit canonical input boundary, not arbitrary Python
 iterable expansion. Normal empty construction uses a dict subclass with native key/value storage.
 """
 from yadinassi.collections.maps import BSLFixedMap
+from yadinassi.collections.search_directions import BSLSearchDirection
+from yadinassi.numeric.round_modes import BSLRoundMode
 from yadinassi.execution.codegen.experimental_naked_collections import _reject_opaque_date_key
 from decimal import Decimal
 from .python_direct_numbers import public_number
 
-_KEY_TYPES=(Decimal,str,bool,int,float,type(None))
+_KEY_TYPES=(Decimal,str,bool,int,float,type(None),BSLSearchDirection,BSLRoundMode)
 _KEY_TYPE_IDS=frozenset(id(kind) for kind in _KEY_TYPES)
 
 def _reject_key(key):
