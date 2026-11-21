@@ -29,7 +29,8 @@ from yadinassi.http.http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTT
 from yadinassi.streams.binary_streams import BSLBinaryDataBuffer, BSLMemoryStream, BSLStream
 from yadinassi.collections.maps import BSLMap, BSLFixedMap
 from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
-from yadinassi.formats.json.json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings, _DIRECT_SOURCE_JSON_CLASSES
+from yadinassi.formats.json.json_processing import (BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings,
+    _DIRECT_SOURCE_JSON_CLASSES, _DIRECT_SOURCE_JSON_DICT, _DIRECT_JSON_READ)
 from .python_direct_names import NAMES as SYSTEM_NAMES, VALUE_IDS as SYSTEM_VALUE_IDS, ITERABLES
 from yadinassi.configuration.metadata import BSLMetadata, BSLCatalogMetadataCollection, BSLCatalogMetadata
 from yadinassi.db.query.queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
@@ -53,6 +54,36 @@ _PURE_COLLECTION_TYPE_IDS=frozenset(map(id,(
     BSLTypeDescription, BSLNumberQualifiers, BSLStringQualifiers,
     BSLDateQualifiers, BSLBinaryDataQualifiers,
 )))
+
+
+# Read/Прочитать has a fixed no-argument, Boolean-returning contract and
+# advances an already-buffered text snapshot. OpenFile/OpenStream still use
+# their own resource gates. Inspect only hooks needed to grant this method.
+_JSON_READER,_JSON_READ,_JSON_READ_CODE,_JSON_READ_MRO,_JSON_READ_FIELDS,_JSON_READ_SEAL = _DIRECT_JSON_READ
+
+
+def _bind_json_read(boundary,value):
+    boundary._check_effect()
+    if _JSON_READER.__mro__ is not _JSON_READ_MRO or _JSON_READ.__code__ is not _JSON_READ_CODE:
+        raise BoundaryViolation('JSON method metadata ABI changed')
+    for namespace,size,entries in _JSON_READ_SEAL:
+        if len(namespace)!=size or any(namespace.get(key) is not expected for key,expected in entries):
+            raise BoundaryViolation('JSON method metadata ABI changed')
+    fields=_DIRECT_SOURCE_JSON_DICT.__get__(value,_JSON_READER)
+    if len(fields)!=len(_JSON_READ_FIELDS) or any(type(key) is not str or key not in _JSON_READ_FIELDS for key in fields):
+        # The existing general contract still decides nonstandard layouts,
+        # including benign embedding attributes and forbidden method shadows.
+        return None
+
+    def invoke(*args):
+        boundary._check_effect()
+        # The canonical signature reports excess arguments after they are
+        # evaluated, at the original call site. No synthesized host wrapper.
+        if _JSON_READ.__code__ is not _JSON_READ_CODE:
+            raise BoundaryViolation('JSON method metadata ABI changed')
+        try:return _JSON_READ(value,*args)
+        finally:boundary._check_effect()
+    return invoke
 
 
 def _verify_collection(boundary,value):
@@ -264,6 +295,13 @@ class CatalogBoundary:
         # Preserve the public JSON function/procedure contract before argument
         # evaluation. This is only a restriction on an already admitted surface.
         if require_value and any(type(value) is cls for cls in (BSLJSONReader, BSLJSONWriter)):
+            if (type(value) is _JSON_READER and not omitted and type(name) is str
+                    and name.casefold() in ('read','прочитать')
+                    and self._verify_context is False and self.policy is None
+                    and not getattr(self,'_server_side',False) and self.vm._has_module_context
+                    and self.vm.database_context is None):
+                cursor = _bind_json_read(self,value)
+                if cursor is not None:return cursor
             self._catalog_owner(value)
             # Validate definition-time receiver/base ABI before reading metadata;
             # neither a class override nor an instance hook may run here.

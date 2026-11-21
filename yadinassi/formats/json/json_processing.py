@@ -750,3 +750,13 @@ _DIRECT_SOURCE_JSON_STDLIB_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items(
     for cls in dict.fromkeys(base for receiver in (json.JSONDecoder,json.JSONEncoder,json.JSONDecodeError)
         for base in receiver.__mro__))
 _DIRECT_SOURCE_JSON_DICT=next(vars(cls)['__dict__'] for cls in BSLJSONWriter.__mro__ if '__dict__' in vars(cls))
+
+# Standalone Read() dispatch depends only on these receiver hooks and fields,
+# not the whole JSON or object-class API. Pin them where the class is defined.
+_DIRECT_JSON_READ_FIELDS = frozenset(('_source','_tokens','_position','_current'))
+_DIRECT_JSON_READ_HOOKS = ('get_member','get_method','read','__getattribute__','__getattr__','__setattr__',
+                           *sorted(_DIRECT_JSON_READ_FIELDS))
+_DIRECT_JSON_READ = (BSLJSONReader, BSLJSONReader.read, BSLJSONReader.read.__code__,
+    BSLJSONReader.__mro__, _DIRECT_JSON_READ_FIELDS,
+    tuple((vars(cls),len(vars(cls)),tuple((key,vars(cls).get(key)) for key in _DIRECT_JSON_READ_HOOKS))
+          for cls in (BSLJSONReader,BSLObject)))

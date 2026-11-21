@@ -1,9 +1,11 @@
 """Top-level JSON procedure call-site metadata, not new JSON capabilities."""
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.syntax.parser import parse
-from yadinassi.formats.json.json_processing import BSLJSONWriter
+from yadinassi.formats.json.json_processing import BSLJSONReader, BSLJSONWriter
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class DirectJSONProceduresTests(unittest.TestCase):
@@ -99,5 +101,63 @@ class DirectJSONProceduresTests(unittest.TestCase):
         vm=Interpreter();vm.execute('R=New JSONReader;R.SetString("1");A=R.Read();B=R.Skip();R.Close();')
         self.assertIs(vm.execute('A'),True);self.assertIs(vm.execute('B'),False)
         with self.assertRaises(BSLError):vm.execute('X=R.Close();')
+
+
+    def test_read_expression_rejects_changed_receiver_hooks(self):
+        vm=Interpreter();self.addCleanup(vm.close)
+        vm.execute('R=New JSONReader;R.SetString("1");')
+        reader=vm.variables['r']
+        plan=vm.prepare('X=R.Read();')
+        seen=[]
+        def replaced(*args):seen.append('hook');return False
+        for hook in ('read','get_member'):
+            with self.subTest(hook=hook),patch.object(BSLJSONReader,hook,replaced):
+                with self.assertRaises(BoundaryViolation):vm.execute_prepared(plan)
+        with patch.object(reader,'get_method',replaced):
+            with self.assertRaises(BoundaryViolation):vm.execute_prepared(plan)
+        self.assertEqual((seen,reader._position),([], -1))
+        vm.execute_prepared(plan);self.assertIs(vm.variables['x'],True)
+        self.assertEqual(vm.execute('R.CurrentValue'),1)
+        reader.instrumentation_note='benign host attribute'
+        vm.execute('R.Close();R.SetString("2");')
+        vm.execute_prepared(plan)
+        self.assertEqual(vm.execute('R.CurrentValue'),2)
+
+    def test_read_arity_keeps_late_argument_effect_and_does_not_move_cursor(self):
+        seen=[]
+        vm=Interpreter(output=seen.append);self.addCleanup(vm.close)
+        vm.execute('Function Arg() Message("arg");Return 1;EndFunction '
+                   'R=New JSONReader;R.SetString("1");')
+        for arguments,count in (('Arg()',2),(',Arg()',3),('Arg(),',3)):
+            seen.clear()
+            with self.subTest(arguments=arguments),self.assertRaisesRegex(
+                    BSLError,rf'BSLJSONReader.read\(\) takes 1 positional argument but {count} were given'):
+                vm.execute('X=R.Read('+arguments+');')
+            self.assertEqual((seen,vm.variables['r']._position),(['arg'],-1))
+        vm.execute('X=R.Прочитать();');self.assertIs(vm.variables['x'],True)
+        self.assertEqual(vm.execute('R.CurrentValue'),1)
+
+    def test_read_checks_interpreter_lifetime_after_argument_effect(self):
+        seen=[]
+        def output(message):
+            seen.append(message)
+            vm.close()
+        vm=Interpreter(output=output);self.addCleanup(vm.close)
+        vm.execute('Function Arg() Message("arg");Return 1;EndFunction '
+                   'R=New JSONReader;R.SetString("1");')
+        reader=vm.variables['r']
+        with self.assertRaises(BoundaryViolation):vm.execute('X=R.Read(Arg());')
+        self.assertEqual((seen,reader._position),(['arg'],-1))
+
+    def test_read_keeps_the_open_file_snapshot(self):
+        with TemporaryDirectory() as folder:
+            path=Path(folder)/'source.json';path.write_text('1',encoding='utf-8')
+            vm=Interpreter();self.addCleanup(vm.close)
+            vm.variables['path']=str(path)
+            vm.execute('R=New JSONReader;R.OpenFile(Path);')
+            path.write_text('2',encoding='utf-8')
+            vm.execute('X=R.Read();');self.assertIs(vm.variables['x'],True)
+            self.assertEqual(vm.execute('R.CurrentValue'),1)
+
 
 if __name__=='__main__':unittest.main()
