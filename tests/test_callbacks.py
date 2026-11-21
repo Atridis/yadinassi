@@ -225,7 +225,8 @@ Function Wrapper(Result, Extra) Export Return RunCallback(Extra,Result); EndFunc
         for target in ('1', 'New Structure', '"not.imported"'):
             with self.subTest(target=target):
                 self.vm.execute(f'D=New CallbackDescription("Echo",{target});')
-                with self.assertRaisesRegex(BSLError, 'текущего модуля'):
+                message = 'не импортирован' if target.startswith('"') else 'текущего модуля'
+                with self.assertRaisesRegex(BSLError, message):
                     self.vm.execute('RunCallback(D,1)')
 
     def test_complex_error_handler_is_rejected_not_silently_ignored(self):
@@ -329,6 +330,21 @@ Function Receive(Val D) Return 1; EndFunction
                          [Decimal(12),Decimal(22),Decimal(13)])
         self.assertIs(self.vm.execute('da.Module'), self.vm.imports['a'])
 
+    def test_imported_factory_returns_own_exported_prepared_callback(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root/'Call.bsl').write_text(
+                'Var Seen; Seen=0; '
+                'Procedure Store(V,E) Export Seen=V+E; EndProcedure '
+                'Function Current() Export Return Seen; EndFunction '
+                'Function Descriptor() Export Return New CallbackDescription("Store",ThisObject,5); EndFunction',
+                encoding='utf-8')
+            self.vm.execute('// #Import Call.bsl\nD=Call.Descriptor();', str(root/'Main.bsl'))
+            plan = self.vm.prepare('R=RunCallback(D,7); Value=Call.Current();')
+            self.vm.execute_prepared(plan)
+            self.assertIsNone(self.vm.variables['r'])
+            self.assertEqual(self.vm.variables['value'], 12)
+
     def test_imported_descriptor_factory_and_cross_module_chain_use_owner_state(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)
@@ -352,8 +368,12 @@ Function Make(E) Export Return New CallbackDescription("Step",ThisObject,E); End
                             'c=New CallbackDescription("Sum","pAcKaGe.a",4); answer=RunCallback(c,6);',
                             str(root/'Main.bsl'))
             self.assertEqual(self.vm.variables['answer'], Decimal(10))
-            with self.assertRaises(BSLError):
-                self.vm.execute('New CallbackDescription("Sum","../A.bsl")')
+            self.vm.execute('bad=New CallbackDescription("Sum","../A.bsl");')
+            with self.assertRaisesRegex(BSLError, 'не импортирован'):
+                self.vm.execute('RunCallback(bad,6)')
+            self.assertIs(self.vm.execute('bad.Module'), self.vm.variables['bad'].module)
+            with self.assertRaisesRegex(BSLError, 'не является модулем оповещения'):
+                self.vm.execute('New CallbackDescription("Sum",Package)')
 
     def test_async_function_handler_returns_promise_and_existing_await_result(self):
         self.vm.execute('''

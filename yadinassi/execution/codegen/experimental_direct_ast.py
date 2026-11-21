@@ -701,6 +701,11 @@ class Emitter:
                 bound=self.invoke(self.attribute(self.name('_context',t),resolver,t),[self.const(key,t)],t,
                     [self.node(py.keyword,t,arg='argument_count',value=self.const(len(node.arguments),t))] if self.source_scopes else [])
                 return self.dynamic_call(bound,node,references=False)
+            if (kindname in ('callbackdescription','описаниеоповещения')
+                    and len(node.arguments)>1 and self.import_path(node.arguments[1]) is not None):
+                key='new:'+kindname;self.required.add(key)
+                bound=self.invoke(self.attribute(self.name('_context',t),'resolve_service',t),[self.const(key,t)],t)
+                return self.dynamic_call(bound,node,references=False)
             args=[self.expr(arg) for arg in node.arguments]
             if kindname in ('valuelist','списокзначений'):return self.call('_PlainValueList',args,t)
             if kindname in ('array','массив'):
@@ -1164,6 +1169,16 @@ class Emitter:
         finally:
             self.external_actuals-=external_actuals
 
+    def callback_module_slot(self,node):
+        if not self.import_names:return -1
+        if type(node) is bsl.New and node.name.casefold() in ('callbackdescription','описаниеоповещения'):
+            return 1
+        if type(node) is bsl.Call and type(node.callee) is bsl.Name:
+            name=node.callee.name.casefold()
+            if name in ('readjson','прочитатьjson'):return 5
+            if name in ('writejson','записатьjson'):return 4
+        return -1
+
     def _dynamic_call(self,bound,node,references,call_token,native_mode,argument_guard):
         t=call_token or (node.callee.token if type(node) is bsl.Call else node.token);temporary=self.temp()
         setup=[self.node(py.NamedExpr,t,target=self.name(temporary,t,True),value=bound)]
@@ -1185,10 +1200,17 @@ class Emitter:
             check=self.invoke(self.attribute(self.name(temporary,t),'requires_reference',t),[self.const(index,t)],t)
             if native_mode is None:return check
             return self.node(py.BoolOp,t,op=py.And(),values=[self.node(py.UnaryOp,t,op=py.Not(),operand=self.name(native_mode,t)),check])
-        args=[]
+        args=[];module_slot=self.callback_module_slot(node)
         for index,arg in enumerate(node.arguments):
             if index in omitted:
                 args.append(self.node(py.Subscript,t,value=self.name(defaults,t),slice=self.const(index,t),ctx=py.Load()));continue
+            if index==module_slot:
+                path=self.import_path(arg)
+                if path is not None:
+                    accepted=self.call('getattr',[self.name(temporary,t),self.const('accepts_callback_module',t),self.const(False,t)],t)
+                    test=self.node(py.Compare,t,left=accepted,ops=[py.Is()],comparators=[self.const(True,t)])
+                    owner=self.invoke(self.attribute(self.name('_context',t),'import_callback_module',t),[self.const(path,t)],t)
+                    args.append(self.node(py.IfExp,t,test=test,body=owner,orelse=self.expr(arg)));continue
             if not references:
                 args.append(self.expr(arg));continue
             plain=arg

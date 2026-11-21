@@ -261,6 +261,21 @@ Count=0;
             self.assertEqual(self.vm.execute('ReadJSON(reader,,,,"Revive",B)'), D(12))
         self.assertEqual(self.vm.variables['count'], D(0))
 
+    def test_prepared_imported_reviver_reuses_export_for_each_event(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root/'Handler.bsl').write_text(
+                'Var Calls; Calls=0; '
+                'Function Revive(P,V,E) Export Calls=Calls+1; Return V; EndFunction '
+                'Function Seen() Export Return Calls; EndFunction',
+                encoding='utf-8')
+            self.vm.execute('// #Import Handler.bsl\n', str(root/'Main.bsl'))
+            self.reader('[1,2]')
+            plan = self.vm.prepare('R=ReadJSON(Reader,,,,"Revive",Handler); Calls=Handler.Seen();')
+            self.vm.execute_prepared(plan)
+            self.assertEqual(list(self.vm.variables['r']), [D(1),D(2)])
+            self.assertEqual(self.vm.variables['calls'], D(3))
+
     def test_converter_handles_fixed_collections(self):
         self.writer()
         self.vm.execute('a=New Array; a.Add(id); s=New Structure("id",id); '

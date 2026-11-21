@@ -1,4 +1,4 @@
-"""Synchronous direct dispatch for passive callbacks of the current module."""
+"""Synchronous direct dispatch for passive callbacks of the current or an explicitly imported module."""
 
 from yadinassi.application.callbacks import run_callback_marker
 from yadinassi.application.direct_callbacks import CallbackDescription
@@ -50,15 +50,16 @@ def bind(context, key, service, *, argument_count):
                                description.additional_parameters)
         if type(name) is not str or not name or target is None:
             raise ValueError('ОписаниеОповещения: не заданы имя процедуры и модуль')
-        if type(target) is not _Module or target is not vm._self_module:
-            raise ValueError('ОписаниеОповещения: ожидается объект текущего модуля (не другого интерпретатора)')
         # Callbacks transfer values, never caller storage locations. Mutable
         # data keeps its identity, but a host Reference is not a BSL value.
         if type(result) is Reference or type(extra) is Reference:
             raise TypeError('ВыполнитьОбработкуОповещения: ожидается значение, не ссылка на переменную')
         # This is the same ready/owned/exported routine gateway as ThisObject.F.
         # A procedure is allowed: RunCallback itself returns Undefined.
-        call = context.resolve_public_module_call(target, name, require_value=False, argument_count=2)
+        if type(target) is _Module and target is vm._self_module:
+            call = context.resolve_public_module_call(target, name, require_value=False, argument_count=2)
+        else:
+            call = context.resolve_callback_target(target, name, require_value=False, argument_count=2)
         return call(result, extra)
 
     def omissions(bound, positions, count):

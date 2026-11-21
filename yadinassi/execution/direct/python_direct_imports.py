@@ -368,6 +368,39 @@ class ImportBoundary:
         return self._resolve_public_call(value,key,require_value=require_value,
                                          argument_count=argument_count,path=None)
 
+    def import_callback_module(self,path):
+        """Expose an owned module only in a canonical callback target slot."""
+        owner=self._import_target(path)
+        if type(owner) is not _Module:
+            raise ValueError('Пространство импорта не является модулем оповещения')
+        return owner
+
+    def resolve_callback_target(self,target,name,*,require_value,argument_count,reusable=False):
+        path=None
+        if type(target) is str:
+            # Lookup only existing canonical namespace bindings; never load a
+            # path or resolve a configuration manager from a handler string.
+            path=tuple(part.casefold() for part in target.split('.'))
+            if not all(path):
+                raise ValueError('Модуль оповещения не импортирован: '+target)
+            try:target=self.import_callback_module(path)
+            except ValueError:
+                raise ValueError('Модуль оповещения не импортирован: '+target) from None
+        if type(target) is not _Module:
+            raise ValueError('ОписаниеОповещения: ожидается объект текущего модуля или импортированного модуля (не другого интерпретатора)')
+        _receiver_hooks(_CLASS_ABI[:1])
+        child=target.interpreter
+        if type(child) is not Interpreter or child._family_owner is not self.vm._family_owner:
+            raise ValueError('Модуль оповещения другого интерпретатора')
+        if child is self.vm._family_owner and child is not self.vm:
+            raise ValueError('Модуль оповещения не импортирован текущим модулем')
+        self._public_module(target)
+        if not target.ready or name.startswith('_'):
+            raise ValueError('Метод объекта не обнаружен: '+name)
+        return self._resolve_public_call(target,name.casefold(),require_value=require_value,
+                                         argument_count=argument_count,path=path,
+                                         callback_only=True,reusable=reusable)
+
     def _split_import(self,path):
         """Locate the module without treating its exported data as namespaces."""
         self._check_import_activation()
@@ -544,7 +577,8 @@ class ImportBoundary:
             invoke.prepare_omissions=lambda bound,positions,count:(bound,dict.fromkeys(positions,None))
         return invoke
 
-    def _resolve_public_call(self,owner,name,*,require_value,argument_count,path):
+    def _resolve_public_call(self,owner,name,*,require_value,argument_count,path,
+                             callback_only=False,reusable=False):
         child=owner.interpreter
         exports=_PUBLIC.get(child)
         public=None if exports is None else exports[0].get(name)
@@ -557,7 +591,7 @@ class ImportBoundary:
         module=child._direct_routine_modules.get(name)
         if id(module)!=public[0] or module.signatures.get(name) is not public[1]:
             raise BoundaryViolation('module routine declaration changed')
-        if name in module.dual_names or (path is None and name in module.server_names):
+        if name in module.dual_names or ((path is None or callback_only) and name in module.server_names):
             raise ValueError('Двухконтекстная подпрограмма через объект модуля пока не поддерживается')
         returns_value,minimum,maximum,references=public[1]
         if require_value and not returns_value:raise TypeError('Процедура не возвращает значение: '+name)
@@ -583,7 +617,7 @@ class ImportBoundary:
             nonlocal used
             validate()
             if not minimum<=len(args)<=maximum:raise TypeError('Неверное количество аргументов: '+name)
-            if used:raise BoundaryViolation('module call already consumed')
+            if used and not reusable:raise BoundaryViolation('module call already consumed')
             used=True
             if local:
                 function=resolve(self,name,require_value=require_value,allow_references=True,argument_count=len(args))
@@ -617,6 +651,7 @@ class ImportBoundary:
             finally:
                 context.revoke()
                 child._direct_active=active;context._routine_exports.clear()
+        if reusable:invoke.check_binding=validate
         invoke.requires_reference=lambda index:index in references
         def omissions(bound,positions,count):
             validate()

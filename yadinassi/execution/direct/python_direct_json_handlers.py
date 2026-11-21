@@ -1,4 +1,4 @@
-"""Synchronous JSON callbacks on the current direct ordinary module only."""
+"""Synchronous JSON callbacks on the current or an explicitly imported direct module."""
 
 from yadinassi.types.values import BSLObject, Reference
 from yadinassi.formats.json.json_processing import (
@@ -73,29 +73,47 @@ def bind(context, key, service, original, implementation):
         if (type(vm) is not Interpreter or getattr(context, '_server_side', False)
                 or vm.execution_context != 'client' or not vm._has_module_context
                 or vm._configuration_runtime is not None or vm.database_context is not None
-                or type(target) is not _Module or target is not vm._self_module
-                or target.interpreter is not vm or type(handler) is not str or not handler):
+                or type(handler) is not str or not handler or target is None):
             raise TypeError('JSON: обработчик требует экспортной функции текущего модуля')
         name = handler.casefold()
-        registry = getattr(vm, '_direct_routine_modules', None)
-        module = registry.get(name) if type(registry) is dict else None
-        if type(module) is not RoutineModule or name not in module.local_function_exports:
-            raise ValueError('JSON: обработчик не является экспортной функцией текущего модуля')
         count = 3 if is_read else 4
-        _, minimum, maximum, references = module.signatures[name]
-        if not minimum <= count <= maximum:
-            raise TypeError('JSON: неверное число аргументов обработчика')
-        routine = resolve(context, name, require_value=True, allow_references=True, argument_count=count)
+        local = type(target) is _Module and target is vm._self_module
+        if local:
+            if target.interpreter is not vm:
+                raise BoundaryViolation('canonical JSON handler module owner changed')
+            registry = getattr(vm, '_direct_routine_modules', None)
+            module = registry.get(name) if type(registry) is dict else None
+            if type(module) is not RoutineModule or name not in module.local_function_exports:
+                raise ValueError('JSON: обработчик не является экспортной функцией текущего модуля')
+            _, minimum, maximum, references = module.signatures[name]
+            if not minimum <= count <= maximum:
+                raise TypeError('JSON: неверное число аргументов обработчика')
+            routine = resolve(context, name, require_value=True, allow_references=True, argument_count=count)
+            cancel_byref = 3 in references
+        else:
+            try:
+                routine = context.resolve_callback_target(target, name, require_value=True,
+                                                          argument_count=count, reusable=True)
+            except (TypeError, ValueError) as error:
+                raise ValueError('JSON: недопустимый обработчик: '+str(error)) from None
+            cancel_byref = routine.requires_reference(3)
         extra = values[offset + 2] if len(values) > offset + 2 else None
+        if not local and type(extra) is Reference:
+            raise TypeError('JSON: дополнительные параметры обработчика должны быть значением')
         receiver = values[0]
 
         def check():
             context._check_effect()
             if (context._services.get(key) is not service or service.function is not implementation
                     or service.returns_value is not is_read or type(service.reference_parameters) is not frozenset
-                    or service.reference_parameters or vm._self_module is not target
-                    or vm._direct_routine_modules is not registry or registry.get(name) is not module):
+                    or service.reference_parameters):
                 raise BoundaryViolation('canonical JSON handler binding changed')
+            if local:
+                if (vm._self_module is not target or vm._direct_routine_modules is not registry
+                        or registry.get(name) is not module):
+                    raise BoundaryViolation('canonical JSON handler binding changed')
+            else:
+                routine.check_binding()
             _receiver(receiver, _READER if is_read else _WRITER)
 
         def callback(request):
@@ -104,7 +122,7 @@ def bind(context, key, service, original, implementation):
                 if is_read:
                     return routine(request.property, request.value, extra)
                 cancel = [False]
-                ref = Reference(lambda: cancel[0], lambda value: cancel.__setitem__(0, value)) if 3 in references else False
+                ref = Reference(lambda: cancel[0], lambda value: cancel.__setitem__(0, value)) if cancel_byref else False
                 return routine(request.property, request.value, extra, ref), cancel[0]
             finally:
                 check()
@@ -123,6 +141,7 @@ def bind(context, key, service, original, implementation):
         finally:
             check()
 
+    invoke.accepts_callback_module = True
     if hasattr(original, 'requires_reference'):
         invoke.requires_reference = original.requires_reference
     return invoke
