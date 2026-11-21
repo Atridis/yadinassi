@@ -192,10 +192,21 @@ def _plain_append_receiver(value):
                             and _PlainArray.__dict__.get('append',list.append) is list.append)
 
 
+# These names may pin the actual file-owning HTTPRequest in a generated
+# receiver slot. No release expression is emitted for unrelated member calls.
+_REQUEST_BODY_METHODS = frozenset((
+    'setbodyfilename','установитьимяфайлатела','getbodyfilename','получитьимяфайлатела',
+    'getbodyasstring','получитьтелокакстроку','getbodyasbinarydata','получитьтелокакдвоичныеданные',
+    'getbodyasstream','получитьтелокакпоток','setbodyfromstring','установитьтелоизстроки',
+    'setbodyfrombinarydata','установитьтелоиздвоичныхданных',
+))
+
+
 class Emitter:
     def __init__(self,filename):
         self.filename=filename;self.constants=[];self.serial=0
         self.has_goto=False;self.goto_last_expression=None
+        self.http_body_receiver=False
         self.local_field_facts={};self.integer_lane=False;self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.module_boundaries=0;self.range_indices={};self.external_actuals=0
         self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
         self.standalone_script=False;self.link_imports=False;self.import_links=[]
@@ -867,6 +878,15 @@ class Emitter:
                 call=self.invoke(selected,arguments,t)
             call=self.receiver_boundary(call,receiver,t,
                 native_array=not invalid_arity and method in ('add','get','count','ubound'))
+            if generic and method in _REQUEST_BODY_METHODS:
+                # The request owns the admitted file until the last real BSL
+                # alias dies. A successful body call must not pin it in a
+                # compiler-only local for the remainder of the routine.
+                self.http_body_receiver=True
+                release=self.node(py.NamedExpr,t,target=self.name(receiver,t,True),value=self.const(None,t))
+                release=self.node(py.IfExp,t,test=exact('_HTTPRequest'),body=release,orelse=self.const(None,t))
+                pair=self.node(py.Tuple,t,elts=[bind,call,release],ctx=py.Load())
+                return self.node(py.Subscript,t,value=pair,slice=self.const(1,t),ctx=py.Load())
             pair=self.node(py.Tuple,t,elts=[bind,call],ctx=py.Load())
             return self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
         if k is bsl.Call and type(node.callee) is bsl.Name and node.callee.name.casefold() in self.routines:
@@ -2023,6 +2043,9 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     from yadinassi.collections.plain_table_storage import RowStorage
     namespace=dict(_raw_table_value=RowStorage.get_value,_raw_table_positional=_vt.BSLValueTableRow._positional_value,_dynamic_remainder=remainder,_dynamic_divide=divide,_dynamic_sign=sign,_dynamic_public_number=public_number,_plain_array_loop=_plain_array_loop,_plain_append_receiver=_plain_append_receiver,_list_append=list.append,_native_host_reference=_native_host_reference,_native_cell_reference=_native_cell_reference,_native_fragment_binding=_native_fragment_binding,_NativeCell=_NativeCell,_PublishedModuleCell=_PublishedModuleCell,_adapt_native_cell=_adapt_native_cell,_PrivateTable=_vt.BSLValueTable,_PrivateValueList=PlainValueList,_PlainValueList=PlainValueList,_PlainValueListItem=PlainValueListItem,_module_primitive_type_ids=frozenset(id(kind) for kind in (list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure)),_module_data_types=data_types,_module_data_type_ids=frozenset(id(kind) for kind in data_types),_native_dict_get=dict.get,_native_dict_setitem=dict.__setitem__,_PlainArray=_PlainArray,_Decimal=Decimal,_PlainMap=PlainMap,_plain_map=plain_map,_execute_fragment=execute_fragment,_fragment_binding=_fragment_binding,_bind_eval=bind_eval,_raise_arity_error=raise_arity_error,_host_omission_error=_host_omission_error,_host_omission_values=_host_omission_values,_dynamic_construct=dynamic_construct,_invalid_native_arity=_invalid_native_arity,_typed_find=scalar.typed_find,_list_delete=_list_delete,_native_ubound=_native_ubound,_readonly=readonly,_array_set_checked=_array_set_checked,_bounded_insert=bounded_insert,_structure_insert=structure_insert,_array_constructor_bounds=bounded_array,_new_structure=new_structure,_structure_from_schema=structure_from_schema,_host_name_reference=_host_name_reference,_Cell=_Cell,_as_ref=_as_ref,_bound_ref=_bound_ref,_UNSET_REF=_UNSET_REF,_OMITTED_REF=_OMITTED_REF,_argument_count_error=_argument_count_error,_routine_value_error=_routine_value_error,_procedure_value_error=_procedure_value_error,_identity_reference=_identity_reference,_IndexRef=_IndexRef,_AttributeRef=_AttributeRef,_SlotReference=live_state._SlotReference,_source_reference=source_reference,_canonical_reference=_canonical_reference,_structure_property=structure_property,_native_method_missing=_native_method_missing,_native_count=_native_count,_MapEntry=_MapEntry,_array_member=_array_member,_native_property_missing=_native_property_missing,_structure_get_known=structure_get_known,_structure_set_known=structure_set_known,_native_property_write_missing=_native_property_write_missing,_checked_array_index=_checked_array_index,_checked_literal_array_index=_checked_literal_array_index,_partial=partial,_native_getitem=_NATIVE_GETITEM,_list_get=_list_get,_TypedMap=_TypedMap,_NakedMap=_NakedMap,_DirectStructure=_DirectStructure,_host_reference=host_reference,_UNSET=UNSET,_missing=missing,_native_add=_NATIVE_ADD,_concatenate=scalar.concatenate,_divide=scalar.decimal_divide,_sign=scalar.decimal_sign,_order=scalar.uca_order,_truth=scalar.truth,_equal=equal,_not_equal=not_equal,_MISSING=_MISSING,_handled_error=handled_error,_reraise_handled=reraise_handled,_raise_error=raise_error,_presentation=scalar.presentation,_BSLRuntimeError=BSLRuntimeError)
     namespace['_nonconstructible_date'] = _nonconstructible_date
+    if emitter.http_body_receiver:
+        from yadinassi.http.http_client import BSLHTTPRequest
+        namespace['_HTTPRequest'] = BSLHTTPRequest
     # Exception handlers share the module source instead of emitting one literal each.
     namespace['_diagnostic_source'] = source_text
     if pure_bindings is not None:

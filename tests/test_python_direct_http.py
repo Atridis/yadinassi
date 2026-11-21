@@ -14,6 +14,34 @@ from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
 from yadinassi.execution.direct.python_direct_plain_map import PlainMap
 
 class DirectHTTPTests(unittest.TestCase):
+    def test_file_body_follows_bsl_alias_not_method_receiver_temps(self):
+        from yadinassi.http import http_client
+
+        with TemporaryDirectory() as root:
+            path=Path(root,'request.bin')
+            path.write_bytes(b'abc')
+            for kind, statements, expected in (
+                ('success','Q.GetBodyFileName(); Q=Undefined; Message("check");',[True]),
+                ('caught','Q.GetBodyFileName(); Try Raise "stop"; Except Q=Undefined; Message("check"); EndTry;',[True]),
+                ('alias','A=Q; Q.GetBodyFileName(); Q=Undefined; Message("check"); '
+                         'A=Undefined; Message("check");',[False,True]),
+            ):
+                with self.subTest(kind=kind):
+                    opened=[]
+                    observed=[]
+                    open_regular=http_client._open_regular
+                    def track(name):
+                        handle=open_regular(name)
+                        opened.append(handle)
+                        return handle
+                    vm=Interpreter(lambda _:observed.append(opened[0].closed))
+                    vm.variables['path']=str(path)
+                    with patch.object(http_client,'_open_regular',track):
+                        vm.execute('Procedure Run(Val Path) Q=New HTTPRequest("/"); '
+                                   'Q.SetBodyFileName(Path); '+statements+' EndProcedure Run(Path);')
+                    self.assertEqual(len(opened),1)
+                    self.assertEqual(observed,expected)
+
     def test_constructor_holes_source_ast_prepared(self):
         from yadinassi.syntax.parser import parse
         source='C=New HTTPConnection("127.0.0.1",8080,,,,10);R=C.Timeout;Q=New HTTPRequest("/",);'
