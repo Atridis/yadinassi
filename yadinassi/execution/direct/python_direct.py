@@ -387,6 +387,16 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None):
                 return bound
             return super().resolve_optional_service(name,*args,**kwargs)
 
+        def _unregistered_service(self,name):
+            # A missing BSL routine during ordinary Eval is a language error,
+            # not a denial of an existing host or transaction capability.
+            depth=getattr(self,'_eval_depth',None)
+            if (depth and depth[0] and self.policy is None
+                    and getattr(self,'_direct_transaction_owner',None) is None and vm.database_context is None
+                    and not name.startswith('new:')):
+                raise ValueError('Переменная или функция не определена: '+name)
+            super()._unregistered_service(name)
+
         def resolve_service(self,name,*args,**kwargs):
             modules=getattr(vm,'_direct_routine_modules',None)
             key=name.casefold()

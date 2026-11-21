@@ -59,6 +59,29 @@ class DirectEvalTests(unittest.TestCase):
         vm=Interpreter();vm.execute('S="Eval(S)";Try Eval(S);Except Caught=True;EndTry;R=Eval("1");')
         self.assertTrue(vm.variables['caught']);self.assertEqual(vm.variables['r'],1)
 
+    def test_missing_routine_in_eval_is_catchable_without_evaluating_arguments(self):
+        for allow_extensions in (False,True):
+            with self.subTest(allow_extensions=allow_extensions):
+                vm=Interpreter(allow_extensions=allow_extensions)
+                self.addCleanup(vm.close)
+                vm.execute('''Var Calls; Calls=0;
+Function Effect() Calls=Calls+1; Return 1; EndFunction
+Try R=Eval("Absent(Effect())"); Except Caught=ErrorDescription(); EndTry;
+Next=Eval("Effect()");''')
+                self.assertIn('Переменная или функция не определена',vm.variables['caught'])
+                self.assertEqual(vm.variables['calls'],1)
+                self.assertEqual(vm.variables['next'],1)
+
+    def test_eval_does_not_turn_host_authority_denial_into_language_error(self):
+        vm=Interpreter(allow_extensions=True)
+        self.addCleanup(vm.close)
+        def refused():
+            raise BoundaryViolation('host authority lost')
+        vm.register_function('Refused',refused)
+        with self.assertRaisesRegex(BoundaryViolation,'host authority lost'):
+            vm.execute('Try Eval("Refused()"); Except Caught=True; EndTry;')
+        self.assertNotIn('caught',vm.variables)
+
     def test_diagnostic_context_preserves_description(self):
         vm=Interpreter();vm.execute('Try X=1/0;Except R=Eval("ErrorDescription()");S=ErrorDescription();EndTry;')
         self.assertIn('Деление на ноль',vm.variables['r']);self.assertEqual(vm.variables['r'],vm.variables['s'])

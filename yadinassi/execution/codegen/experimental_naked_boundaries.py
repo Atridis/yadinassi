@@ -93,13 +93,16 @@ class BoundaryContext:
         """Only generated calls with positional holes enter this path."""
         return self.resolve_service(name,*args,**kwargs)
 
+    def _unregistered_service(self,name):
+        raise BoundaryViolation('unregistered host service: '+name)
+
     def resolve_service(self,name,fallback=_MISSING,*,require_value=False,allow_references=False,argument_count=None):
         if self._verify_context:self._check()
         key=name.casefold()
         if key not in self._services:
             if fallback is not _MISSING:
                 return self.resolve_extension_value(fallback,require_value=require_value,allow_references=allow_references)
-            raise BoundaryViolation('unregistered host service: '+name)
+            self._unregistered_service(name)
         function=self._services[key]  # Registered service outranks a variable.
         if key in ('errordescription','описаниеошибки','errorinfo','информацияобошибке') and type(function) is HostFunction:
             from .experimental_naked_errors import description_service
