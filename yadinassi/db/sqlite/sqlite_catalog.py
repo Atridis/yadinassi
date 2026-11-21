@@ -656,7 +656,7 @@ class SQLiteCatalogBackend:
             self._catalog_runtime_data = None
             if self.format_version == 16:
                 from .sqlite_catalog_runtime_data import CatalogRuntimeData
-                self._catalog_runtime_data = CatalogRuntimeData(self, connection, _APPLICATION_ID)
+                self._catalog_runtime_data = CatalogRuntimeData(self)
             self._sqlite_schema_version = connection.execute('PRAGMA schema_version').fetchone()[0]
             # The generic epoch descriptor must also notice DDL changes whose
             # writer deliberately restored schema_version to its old value.
@@ -1683,11 +1683,14 @@ class SQLiteCatalogBackend:
                 connection = handle.connection
                 if connection.in_transaction:
                     raise BackendError('busy')
+            catalog_data = self._catalog_runtime_data if _catalog_data else None
+            if catalog_data is not None and operation_id is not None:
+                from .sqlite_catalog_runtime_data import authorize_write
+                connection.set_authorizer(authorize_write)
             try:
                 connection.execute('BEGIN IMMEDIATE' if operation_id is not None else 'BEGIN')
                 proofs = None
                 descriptor = None
-                catalog_data = self._catalog_runtime_data if _catalog_data else None
                 if handle is not None and catalog_data is None and self._read_admission_cache_allowed():
                     # BEGIN alone does not pin a snapshot. Reading sqlite_schema
                     # takes a real shared read lock before sampling data_version.
@@ -1701,7 +1704,6 @@ class SQLiteCatalogBackend:
                             raise BackendError('schema_changed')
                         descriptor = handle.admission
                 if catalog_data is not None:
-                    catalog_data.check(connection)
                     if handle is not None and connection.execute('PRAGMA journal_mode').fetchone() != ('delete',):
                         raise BackendError('unsupported')
                 elif descriptor is None:
@@ -1716,10 +1718,10 @@ class SQLiteCatalogBackend:
                             from yadinassi.configuration.configuration_inventory_enums import _same
                             if not _same(descriptor, current):
                                 raise BackendError('schema_changed')
-                # The format-16 snapshot proved this UUID and generation 1.
-                # The runtime data lane checks identity directly; only the raw
-                # lane may reuse a warmed full admission on its pinned epoch.
-                identity = (UUID(int=self.database_id.int), 1) if self.format_version == 16 else None
+                # Ordinary data uses its open descriptor. The raw format-16
+                # lane independently proved this UUID and generation 1.
+                identity = (catalog_data.identity if catalog_data is not None else
+                            (UUID(int=self.database_id.int), 1) if self.format_version == 16 else None)
                 view = _View(self, connection, operation_id, admitted_identity=identity,
                              catalog_data=catalog_data)
                 if handle is not None:
@@ -1827,7 +1829,6 @@ class _View:
         self._query_language = query_language
         self._catalog_data = catalog_data
         self._committed = False
-        self._catalog_data_schemas = None if catalog_data is None else {}
         self._closed = False; self._poisoned = False; self._changes = []
         self._scan_cursor = None
         self._validated_sources = {}
@@ -1941,11 +1942,7 @@ class _View:
     def catalog_schema(self, catalog_id):
         self._require(); _uuid(catalog_id)
         if self._catalog_data is not None:
-            schemas = self._catalog_data_schemas
-            schema = schemas.get(catalog_id)
-            if schema is None:
-                schema = schemas[catalog_id] = self._catalog_data.catalog(self._connection, catalog_id)
-            return schema
+            return self._catalog_data.catalog(catalog_id)
         if self._query_language:
             for schema in self._backend._schemas:
                 if schema.identity == catalog_id:

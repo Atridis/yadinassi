@@ -78,10 +78,10 @@ class BSLCatalogManager(BSLObject):
             return backend
         return None
 
-    def _view(self, *, catalog_data=False):
+    def _view(self):
         from yadinassi.db.database_transactions import forbid_transfer
         forbid_transfer(self._backend)
-        data_backend = self._runtime_data_backend() if catalog_data else None
+        data_backend = self._runtime_data_backend()
         view = (self._backend.begin_read() if data_backend is None
                 else data_backend._begin_catalog_data(self._schema.identity))
         try:
@@ -158,7 +158,7 @@ class BSLCatalogManager(BSLObject):
         values.update((f.name.casefold(),self._logical(f,v)) for f,v in zip(self._schema.fields,card.values))
         return values
     def _read(self,record):
-        view=self._view(catalog_data=True)
+        view=self._view()
         try:return view.read_catalog(self._key(record))
         finally:view.close()
     def _read_member(self,ref,name):

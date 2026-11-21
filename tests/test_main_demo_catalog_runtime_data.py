@@ -2,6 +2,8 @@
 from contextlib import ExitStack, closing
 from dataclasses import replace
 import sqlite3
+import os
+import shutil
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
@@ -44,6 +46,39 @@ class CatalogRuntimeDataTests(unittest.TestCase):
             self.assertEqual(self.vm.execute('Ref.GetObject().Description'), 'Updated')
         self.assertEqual(self.snapshot(), ((before[0] + 1, 'Updated'), receipts))
 
+    def test_two_catalogs_read_create_update_and_select_without_metadata_sql(self):
+        # Both managers are part of the already opened data descriptor, with
+        # distinct physical maps. SQL below records actual application work.
+        statements=[]
+        connect=sqlite3.connect
+        def observe(*args,**kwargs):
+            connection=connect(*args,**kwargs)
+            connection.set_trace_callback(statements.append)
+            return connection
+        handle=self.backend._read_handle
+        if handle is not None:handle.connection.set_trace_callback(statements.append)
+        for name in ('Склады','ВидыНоменклатуры'):
+            self.vm._catalogs.get_member(name)
+        statements.clear()
+        with patch.object(sqlite3,'connect',observe), \
+             patch.object(self.backend,'_validate_transaction_admission',
+                          side_effect=AssertionError('ordinary record admission')):
+            for name in ('Склады','ВидыНоменклатуры'):
+                self.vm.execute(f'M=Catalogs.{name}; C=M.CreateItem(); C.Description="New"; C.Write();'
+                                'R=C.Ref; O=R.GetObject(); O.Description="Updated"; O.Write();'
+                                'N=R.Description; S=M.Select(); HasRow=S.Next(); '
+                                'Found=M.FindByDescription("Updated",True); Exact=Found.Description="Updated"; '
+                                'Same=M.FindByCode(C.Code)=R;')
+                self.assertEqual(self.vm.variables['n'],'Updated')
+                self.assertTrue(self.vm.variables['hasrow'])
+                self.assertTrue(self.vm.variables['exact'])
+                self.assertTrue(self.vm.variables['same'])
+        forbidden=('database_info','sqlite_schema','sqlite_master','catalog_schema','storage_map')
+        unexpected=[sql for sql in statements if any(name in sql.lower() for name in forbidden)]
+        self.assertEqual(unexpected,[])
+        for verb in ('SELECT','INSERT','UPDATE','COMMIT'):
+            self.assertTrue(any(sql.startswith(verb) for sql in statements), (verb,statements))
+
     def test_source_bytes_do_not_reauthorize_data_or_code(self):
         self.mutate("UPDATE configuration_file SET sha256=? WHERE path='Configuration.xml'", ('0' * 64,))
         with self.assertRaises(BackendError):
@@ -55,40 +90,66 @@ class CatalogRuntimeDataTests(unittest.TestCase):
         self.vm.execute('O=Ref.GetObject();O.Description="Opened layout";O.Write();')
         self.assertEqual(self.snapshot()[0][1], 'Opened layout')
 
-    def test_selected_catalog_and_layout_mutation_are_refused(self):
+    def assert_fresh_admission_rejects_external_edit(self):
+        with self.assertRaises(BackendError):
+            self.backend.begin_read()
+        with self.assertRaises(BackendError):
+            self.backend.begin_write(uuid4())
+        with self.assertRaises(BackendError):
+            SQLiteCatalogBackend(self.path)
+
+    def test_ordinary_data_uses_open_layout_after_external_registry_edit(self):
         for table, key, name, value in (
                 ('catalog_schema', 'identity', 'name', 'changed name'),
                 ('catalog_storage_map', 'catalog_id', 'physical_name', 'changed_table')):
             with self.subTest(table=table), closing(sqlite3.connect(self.path)) as db:
-                self.vm.execute('O=Ref.GetObject();')
                 old = db.execute(f'SELECT {name} FROM {table} WHERE {key}=?', (self.catalog,)).fetchone()[0]
-                before = self.snapshot()
+                before, receipts = self.snapshot()
                 self.mutate(f'UPDATE {table} SET {name}=? WHERE {key}=?', (value, self.catalog))
                 try:
-                    with self.assertRaises(BSLError):
-                        self.vm.execute('Ref.GetObject()')
-                    with self.assertRaises(BSLError):
-                        self.vm.execute('O.Description="Should not persist";O.Write();')
-                    self.assertEqual(self.snapshot(), before)
+                    self.assert_fresh_admission_rejects_external_edit()
+                    self.assertEqual(self.vm.execute('Ref.GetObject().Description'), before[1])
+                    self.vm.execute('O=Ref.GetObject();O.Description="Opened mapping";O.Write();')
+                    self.assertEqual(self.snapshot(), ((before[0]+1, 'Opened mapping'), receipts))
+                    self.assertEqual(db.execute(f'SELECT {name} FROM {table} WHERE {key}=?',
+                                                (self.catalog,)).fetchone(), (value,))
                 finally:
                     self.mutate(f'UPDATE {table} SET {name}=? WHERE {key}=?', (old, self.catalog))
 
-    def test_real_ddl_change_even_with_restored_cookie_and_live_identity(self):
+    def test_external_trigger_is_not_executed_even_with_restored_cookie(self):
         self.vm.execute('O=Ref.GetObject();')
         before = self.snapshot()
         with closing(sqlite3.connect(self.path)) as db, db:
             old = db.execute('PRAGMA schema_version').fetchone()[0]
-            db.execute('CREATE TRIGGER unopened_shape AFTER UPDATE ON "' + self.table + '" BEGIN SELECT 1; END')
+            db.execute(f"""CREATE TRIGGER unopened_shape AFTER UPDATE ON "{self.table}"
+                       BEGIN UPDATE "{self.table}" SET description='Unexpected'; END""")
             db.execute(f'PRAGMA schema_version={old}')
-        with self.assertRaises(BSLError):
-            self.vm.execute('Ref.GetObject()')
+        self.assert_fresh_admission_rejects_external_edit()
+        self.assertEqual(self.vm.execute('Ref.GetObject().Description'), before[0][1])
         with self.assertRaises(BSLError):
             self.vm.execute('O.Description="Should not persist";O.Write();')
         self.assertEqual(self.snapshot(), before)
-        self.mutate('DROP TRIGGER unopened_shape')
+        self.assertIsNone(self.backend._active)
+
+    def test_open_generation_stays_fixed_while_fresh_admission_rejects_edit(self):
+        before, receipts = self.snapshot()
         self.mutate('UPDATE database_info SET generation=2')
-        with self.assertRaises(BSLError):
-            self.vm.execute('O.Write();')
+        self.assert_fresh_admission_rejects_external_edit()
+        self.vm.execute('O=Ref.GetObject();O.Description="Opened generation";O.Write();')
+        self.assertEqual(self.snapshot(), ((before[0]+1, 'Opened generation'), receipts))
+        self.assertEqual(self.vm.variables['o']._revision.configuration_generation, 1)
+
+    def test_ordinary_catalogs_refuse_replaced_file_even_with_same_database_identity(self):
+        self.vm.execute('O=Ref.GetObject();')
+        before = self.snapshot()
+        self.backend._close_idle_read_handle()
+        replacement = self.path.with_suffix('.replacement')
+        shutil.copyfile(self.path,replacement)
+        os.replace(replacement,self.path)
+        with self.assertRaisesRegex(BSLError,'schema_changed'):
+            self.vm.execute('Ref.GetObject()')
+        with self.assertRaisesRegex(BSLError,'schema_changed'):
+            self.vm.execute('O.Description="Replacement";O.Write();')
         self.assertEqual(self.snapshot(), before)
 
     def test_opened_handler_witness_cannot_be_replaced(self):

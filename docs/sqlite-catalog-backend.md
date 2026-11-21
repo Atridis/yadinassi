@@ -195,8 +195,15 @@ not relaxed source/DDL validation or a new row-cache authority.
 
 ### Ordinary direct catalog data operations
 
-The handler-free direct `GetObject` and `Write` use already loaded format16
-catalog metadata and validate the database and selected storage mapping in their
-transaction, without another full configuration/source audit. Execution of
-stored handlers and explicit source or unit-of-work entry keep their own
-admission checks.
+Ordinary direct catalog reads and handler-free creation/updates use the
+format-16 identity, schema and physical layout admitted when the backend was
+opened. They do not reread the configuration header, SQLite schema, logical
+catalog definitions or physical maps for each record operation. The file
+identity, transaction and row checks remain in force; writes retain the
+expected-revision predicate. The ordinary writer rejects any trigger or view
+program reached while SQLite prepares its SQL.
+
+Changing configuration metadata or physical DDL through a separate SQLite
+connection while the backend is open is not supported. Close and reopen the
+backend to admit a new layout. Raw storage, explicit unit-of-work, migration
+and stored executable-source paths keep their own admission checks.
