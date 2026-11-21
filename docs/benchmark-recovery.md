@@ -7,6 +7,7 @@ No old timings, ratios or counters are copied into new measurements.
 ## Current report
 
 CI compares the native Python reference with both bare BSL execution modes.
+The recovered bare matrix measures and publishes only N=4096 in CI.
 It does not time or profile a separate yadinassi classes layer. Recorded
 historical evidence remains unchanged; references to four layers below describe
 the original recovery grid, not the current report.
@@ -19,7 +20,7 @@ reports. `native-bare-8666e8-checked-report.md` has 11 core and 34 method cases.
 `native-pairs-912b2b-report.md` supplies later Map iteration context, not new IDs.
 These reports cannot establish equality of a reconstructed workload's source.
 
-N=512 and N=4096 are required for all identifiers. Four layers are distinct:
+The historical grid includes N=512 and N=4096 for all identifiers. Four layers are distinct:
 Python, classes, ordinary BSL API (preparsed AST, compilation included), prepared
 BSL API (plan prepared before timing). The sole deliberate historical skip is
 `method.valuetable.find` at N4096 in all layers. Do not silently omit that row.
@@ -80,7 +81,8 @@ adds default rows to an existing one-column table; ValueList.Add fills all four
 default fields. Validation checks full ordered state and table schema/row owner.
 
 Run `python scripts/benchmark_recovered_drivers.py --output /tmp/recovery-run.json`.
-The command measures N512/N4096, alternating layer order, five rounds by default,
+The command measures both sizes by default; pass `--size 4096` to reproduce the
+CI size selection. It alternates layer order, with five rounds by default,
 with unprofiled wall/CPU medians, then a separate untimed profiler pass. Both BSL
 APIs operate on the same parsed source; only ordinary API compilation is timed.
 Unsupported/unbound cases remain explicit. Any bound-case error fails the command

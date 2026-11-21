@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from scripts.benchmark_call_counts import capture
-from scripts.benchmark_recovery import scaffold, LAYERS
+from scripts.benchmark_recovery import scaffold, LAYERS, SIZES
 from scripts.benchmark_summary import ratio_cell
 
 # Each Python source is the actual executed 1x baseline, not pseudocode.
@@ -211,7 +211,7 @@ def summary(report):
     if any(case == 'method.valuetable.create' for case, _, _ in measured):
         lines += ['Эталон Python для create: конструктор пустой таблицы и отдельный '
                   'add_column("N") внутри замера, без epoch или индексов.', '']
-    for n in (512,4096):
+    for n in sorted({row['n'] for row in report['rows']}):
         lines += [f'### N={n}', '| Сценарий | Python мс | Bare с компиляцией × | Готовый bare × | Python/C готового bare |', '|---|---:|---:|---:|---:|']
         for case in CONTRACTS:
             if (case,n,'prepared') not in measured: continue
@@ -219,7 +219,9 @@ def summary(report):
             ratios = ' | '.join(ratio_cell(row['ratio_to_python']) for row in rows[1:])
             lines.append(f"| {case} | {rows[0]['wall_seconds']*1000:.4f} | {ratios} | {rows[2]['python_calls']}/{rows[2]['c_calls']} |")
     unbound=sorted({r['case'] for r in report['rows'] if r['status']=='unbound'})
-    lines += ['', 'Не восстановлены: '+(', '.join(unbound) if unbound else 'нет'), '', 'Явный пропуск: method.valuetable.find N4096 во всех слоях.']
+    lines += ['', 'Не восстановлены: '+(', '.join(unbound) if unbound else 'нет')]
+    if any(r['status']=='skipped' for r in report['rows']):
+        lines += ['', 'Явный пропуск: method.valuetable.find N4096 во всех слоях.']
     for r in report['rows']:
         if r['status']=='error': lines.append(f"ERROR {r['case']} N{r['n']} {r['layer']}: {r['reason']}")
     return '\n'.join(lines)+'\n'
@@ -229,8 +231,11 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--rounds',type=int,default=5)
+    parser.add_argument('--size',type=int,choices=SIZES,help='measure only this size; default: both sizes')
     args=parser.parse_args()
-    report=scaffold(subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip())
+    sizes = (args.size,) if args.size is not None else SIZES
+    commit = subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
+    report=scaffold(commit, sizes=sizes)
     report.update(python=sys.version,dirty=bool(subprocess.check_output(['git','status','--porcelain'],cwd=ROOT)),
                   reconstructed_workloads=True, historical_source_equivalence=False,
                   backend='explicit native_bare_compiler (not public default)',
@@ -238,7 +243,7 @@ def main():
                   compiler_sha256=hashlib.sha256((ROOT/'yadinassi/execution/codegen/native_bare_compiler.py').read_bytes()).hexdigest())
     index={(r['case'],r['n'],r['layer']): r for r in report['rows']}
     for case in CONTRACTS:
-        for n in (512,4096):
+        for n in sizes:
             if case == 'method.valuetable.find' and n == 4096: continue
             try:
                 for row in measure_case(case,n,args.rounds): index[row['case'],n,row['layer']].update(row,reason=None)

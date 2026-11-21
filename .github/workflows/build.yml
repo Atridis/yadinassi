@@ -162,7 +162,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           python -m unittest tests.test_benchmark_recovery tests.test_benchmark_recovered_drivers
-          python scripts/benchmark_recovered_drivers.py --output performance-results/recovered-bare.json --rounds 5
+          python scripts/benchmark_recovered_drivers.py --output performance-results/recovered-bare.json --rounds 5 --size 4096
       - name: Publish isolated bare coverage and preliminary measurements
         if: ${{ !cancelled() }}
         run: |

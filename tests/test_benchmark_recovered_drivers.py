@@ -1,7 +1,10 @@
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
-from scripts.benchmark_recovered_drivers import CONTRACTS, binding, measure_case, summary
-from scripts.benchmark_recovery import scaffold
+from scripts.benchmark_recovered_drivers import CONTRACTS, binding, main, measure_case, summary
+from scripts.benchmark_recovery import LAYERS, scaffold
 
 class DriversTests(unittest.TestCase):
     def test_all_bound_workloads_three_report_layers(self):
@@ -23,10 +26,34 @@ class DriversTests(unittest.TestCase):
         self.assertEqual([call.args[2] for call in selected.call_args_list],
                          ['python', 'default', 'prepared'])
         report = dict(commit='abc', rows=rows)
-        import json
         self.assertNotIn('"layer": "classes"', json.dumps(report))
         self.assertNotIn('Классы', summary(report))
         self.assertEqual(len(rows), 3)
+
+    def test_cli_selected_size_is_only_size_measured_and_published(self):
+        def sample(case, n, rounds):
+            return [dict(case=case, n=n, layer=layer, status='measured',
+                         wall_seconds=.001, ratio_to_python=1, python_calls=1, c_calls=0)
+                    for layer in LAYERS]
+
+        with TemporaryDirectory() as root:
+            output = Path(root) / 'recovered-bare.json'
+            with patch('sys.argv', ['runner', '--output', str(output), '--size', '4096']), \
+                 patch('scripts.benchmark_recovered_drivers.measure_case', side_effect=sample) as measure:
+                main()
+            report = json.loads(output.read_text(encoding='utf-8'))
+            text = output.with_suffix('.md').read_text(encoding='utf-8')
+        self.assertEqual([call.args for call in measure.call_args_list],
+                         [(case, 4096, 5) for case in CONTRACTS if case != 'method.valuetable.find'])
+        self.assertTrue(report['complete'])
+        self.assertEqual({row['n'] for row in report['rows']}, {4096})
+        self.assertEqual(len(report['rows']), 156)
+        self.assertEqual({(row['case'], row['layer']) for row in report['rows']
+                          if row['status'] == 'skipped'},
+                         {('method.valuetable.find', layer) for layer in LAYERS})
+        self.assertEqual(text.count('### N='), 1)
+        self.assertIn('### N=4096', text)
+        self.assertNotIn('N=512', text)
 
     def test_state_corruption_rejected(self):
         for case in ('method.array.add','method.valuetable.add','method.valuelist.add'):

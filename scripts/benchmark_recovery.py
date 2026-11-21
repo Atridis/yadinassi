@@ -22,14 +22,14 @@ def load_manifest():
     return value
 
 
-def scaffold(commit):
+def scaffold(commit, *, sizes=SIZES):
     if not isinstance(commit, str) or len(commit) != 40 or any(c not in '0123456789abcdef' for c in commit):
         raise ValueError('exact source commit required')
     manifest = load_manifest()
     rows = []
     for group in ('core', 'method'):
         for case in manifest[group]:
-            for n in SIZES:
+            for n in sizes:
                 for layer in LAYERS:
                     skipped = case == 'method.valuetable.find' and n == 4096
                     rows.append(dict(group=group, case=case, n=n, layer=layer,
@@ -45,12 +45,14 @@ def scaffold(commit):
 def render(report):
     if any(row['status'] not in ('unbound', 'skipped') for row in report['rows']):
         raise ValueError('scaffold renderer does not accept measured rows')
+    sizes = sorted({row['n'] for row in report['rows']})
+    size_labels = '/'.join(f'N{n}' for n in sizes)
     lines = ['## Восстановление отчёта: матрица покрытия', '',
              'Это scaffold, не новый замер. Исторические результаты не перенесены.',
-             'Цель: 11 основных + 41 методический сценарий, N512/N4096.',
+             f'Цель: 11 основных + 41 методический сценарий, {size_labels}.',
              'Python/C-вызовы считаются отдельно от времени; отсутствующее значение не равно нулю.',
              f"Коммит исходников: `{report['commit']}`", '']
-    for n in SIZES:
+    for n in sizes:
         for api, title in MODES.items():
             lines += [f'### N={n}: {title}', '', '| Сценарий | Python | BSL |', '|---|---|---|']
             cases = load_manifest()['core'] + load_manifest()['method']
