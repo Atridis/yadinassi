@@ -74,8 +74,17 @@ First=GetFromTempStorage(Address);First[0]="changed";Return GetFromTempStorage(A
             app.execute('PutToTempStorage(SideEffect(),New UUID)')
     def test_standalone_cannot_create_ambient_storage(self):
         interpreter=Interpreter(output=lambda value:None);self.addCleanup(interpreter.close)
-        with self.assertRaisesRegex(BSLRuntimeError,'explicit application'):
-            interpreter.execute('PutToTempStorage("v",New UUID)')
+        call = 'Saved=PutToTempStorage("v",New UUID);'
+        source = 'temporary-storage.bsl'
+        with self.assertRaises(BSLRuntimeError) as raised:
+            interpreter.execute(f'Saved="old";\n{call}\nAfter=True;', source)
+        error = raised.exception
+        self.assertEqual((error.source, error.line, error.source_line), (source, 2, call))
+        self.assertRegex(error.message.casefold(), r'temporary storage.*(?:requires|needs).*application')
+        self.assertIsNone(interpreter._configuration_runtime)
+        self.assertEqual(interpreter.variables, {'saved': 'old'})
+        interpreter.execute('Recovered=Saved;')
+        self.assertEqual(interpreter.variables['recovered'], 'old')
     def test_unknown_owner_fails_closed(self):
         app=self.app()
         with self.assertRaises(BSLRuntimeError):app.execute('Store.Put("v",42)')
