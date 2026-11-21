@@ -35,31 +35,35 @@ _FILE_NAME = "application.sqlite"
 # Fixed synthetic identities; exact bytes are pinned, not promised reproducible
 # across SQLite versions. Regeneration must preserve logical content/schema.
 _FIXTURE_SQLITE_VERSION = '3.53.1'
-_FIXTURE_SHA256 = 'aabc7b0b6aa0f0c0ed28fef937b4e46b7152aba822cc6465447b9c814cf101ef'
+_FIXTURE_SHA256 = '23a454687f57552299891a74258392f56eb99347fcf6608978e9fc34f01c6353'
 _FIXTURE_SOURCE_FILES = {
     'Configuration.xml': b'<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" version="2.20"><Configuration uuid="10000000-0000-4000-8000-000000000001"><Properties><Name>NativeHostFixture</Name></Properties><ChildObjects><Catalog>HostItems</Catalog></ChildObjects></Configuration></MetaDataObject>',
     'Catalogs/HostItems.xml': b'<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" version="2.20"><Catalog uuid="10000000-0000-4000-8000-000000000002"><Properties><Name>HostItems</Name><CodeType>String</CodeType><CodeLength>8</CodeLength><DescriptionLength>32</DescriptionLength><Autonumbering>false</Autonumbering><CheckUnique>true</CheckUnique></Properties><ChildObjects/></Catalog></MetaDataObject>',
 }
 _FIXTURE_BYTES = zlib.decompress(base64.b64decode(
-    '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'
+    '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'
+    'AAAuvv8BAlGyfw=='
 ))
 if hashlib.sha256(_FIXTURE_BYTES).hexdigest() != _FIXTURE_SHA256:
     raise RuntimeError("invalid owned SQLite fixture")
