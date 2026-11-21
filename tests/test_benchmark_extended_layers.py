@@ -41,8 +41,7 @@ class ExtendedReferenceTests(unittest.TestCase):
                             self.assertEqual(raw, {'total': 3, 'by_verb': {'SELECT': 3}})
                         else:
                             for sql in case['sql_statements'].values():
-                                self.assertEqual(sql['by_verb']['UPDATE'], 3)
-                            self.assertEqual(raw, {'total': 6, 'by_verb': {'SELECT': 3, 'UPDATE': 3}})
+                                self.assertEqual(sql, {'total': 6, 'by_verb': {'SELECT': 3, 'UPDATE': 3}})
                     else:
                         self.assertNotIn('sql_statements', case)
                     if name.startswith('form.'):
