@@ -34,6 +34,12 @@ from yadinassi.db.catalog.catalogs import BSLCatalogObject
 from yadinassi.db.document.document_types import BSLDocumentReference, BSLDocumentType
 from yadinassi.db.registers.information_registers import BSLInformationRegisterType
 from yadinassi.db.document.document_lines import BSLDocumentLinesType, BSLDocumentLines, BSLDocumentLine, BSLDocumentSectionType
+from yadinassi.execution.codegen.experimental_naked_collections import (
+    _TypedMap, _DIRECT_MAP_ENTRY_TYPE, _DIRECT_MAP_ENTRY_STORAGE,
+)
+from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure, structure_key
+from yadinassi.execution.direct.python_direct_plain_array import PlainArray
+from yadinassi.execution.direct.python_direct_plain_map import PlainMap
 from yadinassi.types.values import BSLArray, BSLFixedArray, BSLType, NULL, equal
 
 
@@ -239,6 +245,24 @@ def _pattern_entry(kind: BSLType, value: BSLTypeDescription) -> str:
     return entry + '}'
 
 
+_NATIVE_MAP_SERIALIZABLE_KEYS = (type(None), bool, str, int, Decimal)
+
+
+def _native_map_entries(value):
+    for key, item in dict.items(value):
+        if not any(type(key) is kind for kind in _NATIVE_MAP_SERIALIZABLE_KEYS):
+            raise TypeError("ЗначениеВСтрокуВнутр: недопустимый ключ соответствия")
+        yield key, item
+
+
+def _native_structure_entries(value):
+    for key, entry in dict.items(value):
+        if (type(key) is not str or type(entry) is not tuple or len(entry) != 2
+                or type(entry[0]) is not str or structure_key(entry[0]) != key):
+            raise TypeError("ЗначениеВСтрокуВнутр: недопустимое свойство структуры")
+        yield entry
+
+
 class _Writer:
     def __init__(self, *, direct=False):
         self.direct = direct
@@ -271,7 +295,7 @@ class _Writer:
                 self.emit(char)
         self.emit('"')
 
-    def value(self, value, depth=0):
+    def value(self, value, depth=0, *, native_numbers=False):
         if type(value) is BSLEnumReference or type(value) is BSLEnumType:
             raise ValueError("ЗначениеВСтрокуВнутр: сериализация типов и ссылок перечислений пока не поддерживается")
         # !todo: measure native catalog reference/type codecs; metadata UUID is not a type GUID.
@@ -281,33 +305,37 @@ class _Writer:
         self.nodes += 1
         if self.nodes > _MAX_NODES or depth > _MAX_DEPTH:
             raise _resource("ЗначениеВСтрокуВнутр")
-        direct_items = None
-        direct_pair = None
-        try:
-            kind = type_of(value)
-        except TypeError:
-            if not self.direct:
-                raise TypeError("ЗначениеВСтрокуВнутр: значение не относится к поддерживаемым типам BSL") from None
-            from yadinassi.execution.codegen.experimental_naked_collections import (_TypedMap, _DIRECT_MAP_ENTRY_TYPE,
-                                                        _DIRECT_MAP_ENTRY_STORAGE)
-            from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
-            if type(value) is _DIRECT_MAP_ENTRY_TYPE:
-                # Read the definition-time storage descriptor, never user hooks.
-                state = _DIRECT_MAP_ENTRY_STORAGE.__get__(value, _DIRECT_MAP_ENTRY_TYPE)
-                if (type(state) is not dict or len(state) != 2
-                        or any(type(key) is not str for key in state)
-                        or set(state) != {'key', 'value'}):
-                    raise TypeError("ЗначениеВСтрокуВнутр: недопустимое состояние пары")
-                from yadinassi.execution.direct.python_direct_numbers import public_number
-                direct_pair = (public_number(state['key']), public_number(state['value']))
-                kind = BSLType.KEY_AND_VALUE
-            elif type(value) is list:
-                kind, direct_items = BSLType.ARRAY, value
-            elif type(value) is _TypedMap:
-                kind, direct_items = BSLType.MAP, dict.values(value)
-            elif type(value) is _DirectStructure:
-                kind, direct_items = BSLType.STRUCTURE, dict.values(value)
-            else:
+        value_type = type(value)
+        direct_items = direct_pair = None
+        entry_count = None
+        if value_type is int and (self.direct or native_numbers):
+            # Compiler-owned integers have the existing wire number type. A
+            # coarse bit bound rejects huge integers before Decimal allocation.
+            if value.bit_length() > 4 * _MAX_NUMBER_DIGITS:
+                raise _resource("ЗначениеВСтрокуВнутр")
+            kind, value = BSLType.NUMBER, Decimal(value)
+        elif value_type is PlainArray or (self.direct and value_type is list):
+            kind, direct_items, entry_count = BSLType.ARRAY, list.__iter__(value), list.__len__(value)
+        elif value_type is PlainMap:
+            kind, direct_items, entry_count = BSLType.MAP, _native_map_entries(value), dict.__len__(value)
+        elif value_type is _DirectStructure:
+            kind, direct_items = BSLType.STRUCTURE, _native_structure_entries(value)
+            entry_count = dict.__len__(value)
+        elif self.direct and value_type is _TypedMap:
+            kind, direct_items = BSLType.MAP, dict.values(value)
+        elif self.direct and value_type is _DIRECT_MAP_ENTRY_TYPE:
+            # Read the definition-time storage descriptor, never user hooks.
+            state = _DIRECT_MAP_ENTRY_STORAGE.__get__(value, _DIRECT_MAP_ENTRY_TYPE)
+            if (type(state) is not dict or len(state) != 2
+                    or any(type(key) is not str for key in state)
+                    or set(state) != {'key', 'value'}):
+                raise TypeError("ЗначениеВСтрокуВнутр: недопустимое состояние пары")
+            direct_pair = (state['key'], state['value'])
+            kind = BSLType.KEY_AND_VALUE
+        else:
+            try:
+                kind = type_of(value)
+            except TypeError:
                 raise TypeError("ЗначениеВСтрокуВнутр: значение не относится к поддерживаемым типам BSL") from None
         if kind in (BSLType.CATALOGS_MANAGER, BSLType.DOCUMENTS_MANAGER, BSLType.INFORMATION_REGISTERS_MANAGER):
             raise ValueError("ЗначениеВСтрокуВнутр: сериализация менеджера справочников пока не поддерживается")
@@ -377,20 +405,20 @@ class _Writer:
                         self.pair(value.key, value.value, depth)
                 else:
                     items = direct_items if direct_items is not None else value.items if kind in _ARRAYS else value._items.values()
-                    count = len(items)
+                    count = len(items) if entry_count is None else entry_count
                     if count > _MAX_NODES:
                         raise _resource("ЗначениеВСтрокуВнутр")
                     self.emit('{' + str(count))
                     if kind in _ARRAYS:
                         for item in items:
                             self.emit(',\n')
-                            self.value(item, depth + 1)
+                            self.value(item, depth + 1, native_numbers=entry_count is not None)
                     else:
                         # Associative payload order is not a compatibility contract.
                         entries = items
                         for key, item in entries:
                             self.emit(',\n')
-                            self.pair(key, item, depth)
+                            self.pair(key, item, depth, native_numbers=entry_count is not None)
                     self.emit('\n}' if count else '}')
                 self.emit('\n}')
             finally:
@@ -564,11 +592,11 @@ class _Writer:
             self.emit(',\n{0,' + str(len(signature)) + ',' + ','.join(map(str, signature)) + '}')
         self.emit('\n}' if count else '}')
 
-    def pair(self, key, value, depth):
+    def pair(self, key, value, depth, *, native_numbers=False):
         self.emit('{\n')
-        self.value(key, depth + 1)
+        self.value(key, depth + 1, native_numbers=native_numbers)
         self.emit(',\n')
-        self.value(value, depth + 1)
+        self.value(value, depth + 1, native_numbers=native_numbers)
         self.emit('\n}')
 
 

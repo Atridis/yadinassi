@@ -54,6 +54,54 @@ class InternalSerializationTests(unittest.TestCase):
                     self.assertEqual(vm.variables['s'],
                                      value_to_string_internal(BSLKeyAndValue('Key', Decimal(7))))
 
+    def test_bsl_nested_mutable_collections_roundtrip_without_aliases(self):
+        source = (
+            'A=New Array; M=New Map; T=New Structure("Value", 7); '
+            'M.Insert("Key", T); A.Add(M); A.Add(12); '
+            'S=ValueToStringInternal(A); R=ValueFromStringInternal(S); '
+            'T.Value=22; Copy=R[0].Get("Key"); N=Copy.Value; I=R[1]; '
+            'Stable=ValueToStringInternal(R)=S;')
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                if prepared:
+                    vm.execute_prepared(vm.prepare(source))
+                else:
+                    vm.execute(source)
+                self.assertEqual((vm.variables['n'], vm.variables['i']), (7, 12))
+                self.assertIs(vm.variables['stable'], True)
+
+    def test_exact_native_collections_keep_existing_wire_bytes(self):
+        from yadinassi.collections.maps import BSLMap
+        from yadinassi.collections.structures import BSLStructure
+        from yadinassi.execution.codegen.experimental_naked_structure import new_structure
+        from yadinassi.execution.direct.python_direct_plain_array import PlainArray
+        from yadinassi.execution.direct.python_direct_plain_map import PlainMap
+        from yadinassi.types.values import BSLArray
+
+        native = PlainMap()
+        native[3] = new_structure('Ёж', 7)  # Native integer key and field.
+        model = BSLMap()
+        model.insert(Decimal(3), BSLStructure('Ёж', Decimal(7)))
+        boxed = BSLArray()
+        boxed.items = [model, Decimal(9), True]
+        direct = PlainArray([native, 9, True])
+        data = value_to_string_internal(direct)
+        self.assertEqual(data, value_to_string_internal(boxed))
+        self.assertEqual(value_to_string_internal(value_from_string_internal(data)), data)
+
+    def test_native_map_cycles_and_non_codec_keys_remain_unsupported(self):
+        from yadinassi.execution.direct.python_direct_plain_map import PlainMap
+        value = PlainMap()
+        value['self'] = value
+        with self.assertRaisesRegex(ValueError, 'циклические'):
+            value_to_string_internal(value)
+        value.clear()
+        value[1.5] = 'valid Python key, no internal number representation'
+        with self.assertRaisesRegex(TypeError, 'ключ'):
+            value_to_string_internal(value)
+
     def test_serialization_retains_stored_digits_beyond_presentation(self):
         value = Decimal('0.' + '1' * 540)
         self.assertEqual(value_to_string_internal(value), '{"N",0.' + '1' * 540 + '}')
@@ -125,8 +173,20 @@ class InternalSerializationTests(unittest.TestCase):
         for expression in expressions:
             with self.subTest(expression=expression):
                 original = vm.execute(expression)
-                kind = type_values.type_of(original)
-                restored = value_from_string_internal(value_to_string_internal(original))
+                if expression in ('New Array', 'New Structure', 'New Map'):
+                    # Interpreter TypeOf admits exact mutable direct shapes;
+                    # the Python metadata registry describes the boxed types.
+                    kind = vm.execute(f'TypeOf({expression})')
+                    if type(original) is list:
+                        # Bare lists belong to the trusted direct caller, not
+                        # the public Python value_to_string_internal API.
+                        stream = vm.execute(f'ValueToStringInternal({expression})')
+                    else:
+                        stream = value_to_string_internal(original)
+                else:
+                    kind = type_values.type_of(original)
+                    stream = value_to_string_internal(original)
+                restored = value_from_string_internal(stream)
                 if kind in (BSLType.ROUND_MODES, BSLType.SEARCH_DIRECTIONS,
                             BSLType.XML_STRING_PROCESSING_MANAGER,
                             BSLType.NUMBER_QUALIFIERS, BSLType.STRING_QUALIFIERS,
