@@ -46,7 +46,7 @@ class SourceScalarContextTests(unittest.TestCase):
                 self.assertEqual(vm.variables['r'], 3)
                 self.assertTrue(all(x > 0 for x in first), first)
                 self.assertEqual(first, many)
-                self.assertGreater(large[('_check_loop', 'server')], small[('_check_loop', 'server')])
+                self.assertEqual(large[('_check_loop', 'server')], small[('_check_loop', 'server')])
 
     def test_same_side_server_common_uses_own_crossing_context(self):
         conf = server_fixture.SourceServerCallTests().with_extra(configuration('',

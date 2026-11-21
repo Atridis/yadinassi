@@ -379,7 +379,7 @@ class Emitter:
         # grants access: the existing authority resolver remains in both arms.
         kind=self.call('id',[self.call('type',[self.name(receiver,t)],t)],t)
         return self.node(py.Compare,t,left=kind,ops=[py.NotIn()],comparators=[self.name('_module_data_type_ids',t)])
-    def receiver_boundary(self,value,receiver,t):
+    def receiver_boundary(self,value,receiver,t,*,native_array=False):
         if self.static_module_kinds:return value
         if self.standalone_script:
             # The resolver handles actual external calls. Built-in collections
@@ -392,6 +392,12 @@ class Emitter:
         # liveness before/after its operation is not.
         kind=self.call('id',[self.call('type',[self.name(receiver,t)],t)],t)
         primitive=self.node(py.Compare,t,left=kind,ops=[py.In()],comparators=[self.name('_module_primitive_type_ids',t)])
+        if native_array and self.source_scopes and not self.authority:
+            # Exact array reads and append do not invoke any protocol on an
+            # element. Other receivers still go through their effect boundary.
+            array=self.exact_native('list',self.name(receiver,t),t)
+            primitive=self.node(py.BoolOp,t,op=py.And(),values=[
+                self.node(py.UnaryOp,t,op=py.Not(),operand=array),primitive])
         if type(value) is py.Call and not value.keywords:
             # Evaluate the single actual subtree first, then authorize the
             # mutation. No helper frame may retain arguments on failure.
@@ -707,7 +713,7 @@ class Emitter:
                 call=self.node(py.IfExp,t,test=exact('list'),body=native_call,orelse=other_call)
             else:
                 call=self.invoke(select,[self.expr(node.index)],t)
-            call=self.receiver_boundary(call,receiver,t)
+            call=self.receiver_boundary(call,receiver,t,native_array=True)
             pair=self.node(py.Tuple,t,elts=[bind,call],ctx=py.Load())
             return self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
         if k is bsl.Conditional:
@@ -859,7 +865,8 @@ class Emitter:
                     actuals=self.node(py.Subscript,t,value=packed,slice=self.node(py.Slice,t,lower=None,upper=self.const(-1,t),step=None),ctx=py.Load())
                     arguments=[self.node(py.Starred,t,value=actuals,ctx=py.Load())]
                 call=self.invoke(selected,arguments,t)
-            call=self.receiver_boundary(call,receiver,t)
+            call=self.receiver_boundary(call,receiver,t,
+                native_array=not invalid_arity and method in ('add','get','count','ubound'))
             pair=self.node(py.Tuple,t,elts=[bind,call],ctx=py.Load())
             return self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
         if k is bsl.Call and type(node.callee) is bsl.Name and node.callee.name.casefold() in self.routines:
@@ -911,8 +918,9 @@ class Emitter:
                         arguments.append(actual)
                     else:arguments.append(self.output_reference(plain,node.callee.token if type(plain) is not bsl.Name or self.external_name(plain.name) else None) if type(plain) in (bsl.Name,bsl.Index,bsl.Attribute) else self.call('_Cell',[self.expr(arg)],node.callee.token))
             function=self.name(self.routine_symbols[routine.name.casefold()],node.callee.token)
-            if self.source_scopes or (self.authority and not self.standalone_script):
-                check=self.invoke(self.attribute(self.name('_context',t),'_check',t),[],t)
+            if self.authority and (self.source_scopes or not self.standalone_script):
+                gate='_check_loop' if self.source_scopes else '_check'
+                check=self.invoke(self.attribute(self.name('_context',t),gate,t),[],t)
                 function=self.node(py.Subscript,t,value=self.node(py.Tuple,t,elts=[check,function],ctx=py.Load()),slice=self.const(-1,t),ctx=py.Load())
             keywords=[self.node(py.keyword,node.callee.token,arg='_native_cells',value=self.const(True,node.callee.token))] if self.native_cells else []
             return self.invoke(function,arguments,node.callee.token,keywords)
@@ -1191,7 +1199,8 @@ class Emitter:
 
     def plain_array_loop(self,node,slow):
         """Move liveness checks out of an exact native append loop."""
-        if self.has_goto or self.catalog_bounds or self.region_active or len(node.body)!=1:
+        if (self.has_goto or self.catalog_bounds or self.region_active or len(node.body)!=1
+                or self.source_scopes and not self.authority):
             return slow
         start,end=node.start,node.end
         if (type(start) is not bsl.Literal or type(end) is not bsl.Literal

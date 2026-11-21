@@ -4,6 +4,7 @@ SourceApplication still owns compilation selection, module access, safe mode,
 transactions and closure. Unsupported crossings/receivers fail before effects.
 """
 from contextlib import contextmanager
+from contextvars import ContextVar
 from decimal import localcontext
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation, _MISSING
 from yadinassi.execution.codegen.experimental_naked_collections import _Cell
@@ -33,6 +34,15 @@ from .source import python_direct_source_xdto_xml as xdto_xml
 from .source import python_direct_source_xdto_json as xdto_json
 from .source import python_direct_source_xdto_local as local_xdto
 from .source.python_direct_source_scalar_services import resolve as resolve_scalar
+
+
+_SOURCE_FRAME = ContextVar("direct_source_frame", default=None)
+_SOURCE_NAMES = frozenset((
+    'metadata','метаданные','xdtofactory','фабрикаxdto','constants','константы',
+    'sessionparameters','параметрысеанса','enums','перечисления',
+    'configurationextensions','расширенияконфигурации',
+    'configurationextensionssource','источникрасширенийконфигурации',
+))
 
 
 def check_owner(owner):
@@ -72,11 +82,7 @@ def _external_names(owner,declared=()):
     from .python_direct_names import NAMES
     app=owner.application
     from yadinassi.configuration.source_manager_modules import MANAGER_NAMES
-    names=set(NAMES)|set(app.modules)|set(MANAGER_NAMES)|{
-        'metadata','метаданные','xdtofactory','фабрикаxdto','constants','константы',
-        'sessionparameters','параметрысеанса','enums','перечисления',
-        'configurationextensions','расширенияконфигурации',
-        'configurationextensionssource','источникрасширенийконфигурации'}
+    names=set(NAMES)|set(app.modules)|set(MANAGER_NAMES)|_SOURCE_NAMES
     names.update(app.interpreter.exported_variables)
     return tuple(names-set(declared)-set(owner.module_names))
 
@@ -140,7 +146,7 @@ def _check_plan(owner,plan):
             raise BoundaryViolation('source declaration binding changed')
 
 
-def _compile(owner,program,*,exports=False,layout=(),_extra_externals=(),_callable_externals=()):
+def _compile(owner,program,*,exports=False,layout=(),_extra_externals=(),_callable_externals=(),_meter_loops=True):
     names={n.name.casefold() for n in program if type(n) is ast.Routine}
     names.update(name.casefold() for n in program if type(n) is ast.Var for name in n.names)
     from yadinassi.configuration.configuration_source_runtime import _SourceInterpreter
@@ -151,7 +157,7 @@ def _compile(owner,program,*,exports=False,layout=(),_extra_externals=(),_callab
         source_name=program[0].token.source if program else '<source>',
         module_names=tuple(layout),external_names=tuple(dict.fromkeys((*_external_names(owner,names|set(layout)),*_extra_externals))),
         constructors=(local_xdto.CONSTRUCTOR_NAMES+xdto_xml.CONSTRUCTOR_NAMES+xdto_json.CONSTRUCTOR_NAMES if type(owner) is _SourceInterpreter else ())+tuple(CONSTRUCTORS)+query.CONSTRUCTOR_NAMES+host_info.CONSTRUCTORS+resources.CONSTRUCTOR_NAMES+stored_values.CONSTRUCTOR_NAMES+('uuid','уникальныйидентификатор'),
-        exports=exports,source_scopes=True,authority_checks=True,
+        exports=exports,source_scopes=True,authority_checks=_meter_loops,
         callable_externals=_callable_externals,shadowable_externals=shadowable,
         scalar_routines=getattr(owner,'_direct_source_scalar_reuse',False))
     native={'array','массив','structure','структура','map','соответствие','uuid','уникальныйидентификатор'}
@@ -183,6 +189,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             super().__init__()
         self.vm=owner;self.app=owner.application;self._services=owner.functions
         self.plan=plan
+        self._parent_frame = None
         self.side=owner.execution_context;self.generation=owner._family_generation
         self.logical_side=owner._logical_side;self.layout=frozenset(owner.module_names)
         self.storage=owner.variables;self.types=owner.types
@@ -199,6 +206,15 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
                                 or self._local_activation is not None)
                            and not owner.allow_extensions else None)
     def _check(self):
+        self._audit_frame()
+        # Ordinary local calls do not audit the caller again. An actual
+        # effect can reenter the Python host and affect suspended BSL frames.
+        parent = getattr(self, '_parent_frame', None)
+        while parent is not None:
+            parent._audit_frame()
+            parent = parent._parent_frame
+
+    def _audit_frame(self):
         super()._check();check_owner(self.vm);_check_plan(self.vm,self.plan)
         from .source.python_direct_source_server import check_activation
         check_activation(self.vm)
@@ -236,6 +252,24 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
                 or source_transactions._current.get() is not self.app
                 or safe_mode._CURRENT.get() is not self.app.safe_mode):
             raise BoundaryViolation('direct source loop authority changed or ended')
+
+    def _check_local_dispatch(self):
+        if not self._local_scalars():
+            return self._check()
+        self._check_local_lifetime()
+        vm, app, root = self.vm, self.app, self._loop_root
+        if (app.interpreter is not root or app.state not in ('starting','running')
+                or vm.application is not app or vm._family_generation != root._family_generation
+                or vm._scheduler is not root._scheduler
+                or vm._scheduler.pending or vm._scheduler._active_task is not None
+                or vm.database_context is not None or vm._configuration_runtime is not None
+                or not vm._has_module_context or vm.locals is not None
+                or database_transactions._execution.get() is not None
+                or vm.execution_backend != 'python-direct'
+                or vm.compilation_profile != app.compilation_profile
+                or vm.variables is not self.storage or vm.functions is not self._services
+                or vm.types is not self.types):
+            raise BoundaryViolation('direct source activation changed or ended')
 
     def _guard_references(self,bound):
         def invoke(*values):
@@ -303,8 +337,14 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         self.scalar_values((value,))
         return value
     def external_get(self,name):
-        self._check()
         from .python_direct_names import NAMES
+        from yadinassi.configuration.source_manager_modules import MANAGER_NAMES
+        if (self._local_scalars() and name not in NAMES and name not in _SOURCE_NAMES
+                and name not in MANAGER_NAMES and name in self.app.modules
+                and self.app._instances.get((name,self.side,False)) is not None):
+            self._check_local_dispatch()
+            return self.app.module(name,self.vm)
+        self._check()
         if name in NAMES:return NAMES[name]
         extension=extensions.namespace(self,name)
         if extension is not None:return extension
@@ -347,6 +387,11 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         key=name.casefold()
         bound=resolve_scalar(self,key,**kwargs)
         if bound is not None:return bound
+        if self._local_scalars():
+            routine=(self.vm.server_routines if self.side=='server' else self.vm.routines).get(key)
+            if routine is not None:
+                self._check_local_dispatch()
+                return self._routine(self.vm,routine,**kwargs)
         self._check()
         if key in ('new:xmlreadersettings','new:параметрычтенияxml',
                 'new:xmlwritersettings','new:параметрызаписиxml','new:dombuilder',
@@ -436,7 +481,10 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         keys=instance_keys(self.app,owner)
         def provenance():
             from .source.python_direct_source_server import check_activation
-            if owner is self.vm and check_activation(owner):return
+            if owner is self.vm:
+                if self._local_scalars() and self._local_activation is not None:
+                    self._check_local_lifetime();return
+                if check_activation(owner):return
             if owner is self.app.interpreter:return
             if not keys or any(self.app._instances.get(k) is not owner for k in keys):
                 raise BoundaryViolation('source routine owner replaced')
@@ -460,7 +508,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             # This is an owned BSL call, never a host extension invocation.
             if direct and self.policy is not None:
                 self._before('call_value', bound_name)
-            self._check();check_owner(owner);provenance();plan=_preflight(owner,routine)
+            check=self._check_local_dispatch if direct else self._check
+            check();check_owner(owner);provenance();plan=_preflight(owner,routine)
             if (owner.server_routines if self.side=='server' else owner.routines).get(routine.name.casefold()) is not routine:
                 raise BoundaryViolation('source routine binding changed')
             values=tuple(_ForwardReference(v) if i in refs and type(v) is Reference else v for i,v in enumerate(values))
@@ -470,16 +519,14 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
                     for value in values:_encode_scalar(value)
                 if reuse is None:
                     result=_invoke_plan(owner,routine,values,plan,
-                        same_side_admitted=(direct and owner is not self.vm and self._local_scalars()
-                                            and not owner.allow_extensions
-                                            and not getattr(owner,'_direct_source_server_activation',False)))
+                        same_side_admitted=(direct and self._local_scalars() and not owner.allow_extensions))
                 else:
                     # Reuse can perform work before a cache miss invokes the
                     # target. Readmit at that point, not just before lookup.
                     result=reuse(values,lambda:invoke(owner,routine,values))
                 if scalar_reuse:_encode_scalar(result)
                 return result
-            finally:self._check()
+            finally:check()
         if direct:
             if refs and not allow_references:
                 from yadinassi.execution.codegen.experimental_naked_boundaries import UnsupportedHostSignature
@@ -494,7 +541,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             bound=self.resolve_callable(HostFunction(routine.name,call,returns_value=routine.is_function,reference_parameters=refs),
                                         require_value=require_value,allow_references=allow_references)
         def omissions(current,positions,count):
-            self._check();provenance()
+            (self._check_local_dispatch if direct else self._check)();provenance()
             if count>len(routine.parameters) or any(i>=len(routine.parameters) or routine.parameters[i].default is None for i in positions):
                 raise TypeError('Неверное количество аргументов: '+routine.name)
             from yadinassi.execution.codegen.experimental_naked_collections import _OMITTED_REF
@@ -562,7 +609,13 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             finally:self._check()
         raise ValueError('direct source receiver is not integrated')
     def resolve_source_member(self,value,name,*,require_value=False,argument_count=None,allow_references=False):
-        self._check()
+        from yadinassi.runtime import _Module
+        if (type(value) is _Module and self._local_scalars()
+                and type(value.interpreter) is type(self.vm)
+                and value.interpreter._logical_side == self.side):
+            self._check_local_dispatch()
+        else:
+            self._check()
         owner=self._module(value,_caller_checked=True)
         if owner is not None:
             routine=value.routine(name)
@@ -685,15 +738,23 @@ def _run(owner,plan,callback=None,*,same_side_admitted=False):
     from yadinassi.execution.execution_policy import execution_backend_policy
     check_owner(owner)
     context=SourceBoundary(owner,plan)
+    parent = _SOURCE_FRAME.get()
+    if (parent is not None and parent._active
+            and parent.app is context.app and parent.side == context.side):
+        context._parent_frame = parent
+    token = _SOURCE_FRAME.set(context)
     previous=getattr(owner,'_direct_source_active',0)
     owner._direct_source_active=previous+1
     try:
         from .source.python_direct_source_requests import request_scope
         with request_scope(owner),target_context(owner.native_target),execution_backend_policy('python-direct'),localcontext() as decimal:
             decimal.prec=38
-            if same_side_admitted and context._local_scalars():
-                # Target owner, module binding, and plan were checked after
-                # the actual arguments, before this synchronous activation.
+            local=context._local_scalars() and (same_side_admitted or not getattr(owner,'_direct_source_server_activation',False))
+            if local:
+                # Same-side calls already admitted the target after argument
+                # evaluation. A root launch admits the compiled plan here.
+                if not same_side_admitted:
+                    _check_plan(owner,plan)
                 context._start_lease()
                 context._check_local_lifetime()
             else:
@@ -702,13 +763,22 @@ def _run(owner,plan,callback=None,*,same_side_admitted=False):
                 try:
                     result=plan.function(owner.variables,plan.constants,[],context)
                     return result if callback is None else callback(result)
-                finally:context._check()
+                finally:
+                    if local:
+                        context._check_local_dispatch()
+                    else:
+                        context._check()
             except Exception as error:
                 converted=convert_error(error,plan.source_name,plan.source_text)
                 if converted is error:raise
                 raise converted from None
     finally:
-        context.leave();owner._direct_source_active=previous
+        _SOURCE_FRAME.reset(token)
+        try:
+            context.leave()
+        finally:
+            context._parent_frame = None
+            owner._direct_source_active=previous
 
 
 def execute(owner,program):
@@ -726,9 +796,10 @@ def execute(owner,program):
             raise ValueError('direct source mixed-side declarations are not integrated')
     declared={name.casefold() for n in declarations if type(n) is ast.Var for name in n.names}
     layout=set(owner.module_names)|declared
-    declaration_plan=_compile(owner,declarations,exports=True,layout=layout) if declarations else None
+    declaration_plan=_compile(owner,declarations,exports=True,layout=layout,
+                              _meter_loops=owner.allow_extensions) if declarations else None
     statements=[n for n in program if type(n) not in (ast.Routine,ast.Var)]
-    statement_plan=_compile(owner,statements,layout=layout)
+    statement_plan=_compile(owner,statements,layout=layout,_meter_loops=owner.allow_extensions)
     # Complete admission and compilation before publishing declarations/effects.
     owner.module_names.update(declared)
     for n in declarations:
