@@ -45,7 +45,7 @@ from yadinassi.formats.json.json_dates import BSLJSONSerializerSettings
 from yadinassi.formats.json.json_processing import (BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings,
     _DIRECT_SOURCE_JSON_CLASSES, _DIRECT_SOURCE_JSON_DICT, _DIRECT_JSON_READ)
 from .python_direct_names import (NAMES as SYSTEM_NAMES, VALUE_IDS as SYSTEM_VALUE_IDS,
-    ITERABLE_IDS, ITERATION_ENUM_VALUE_IDS)
+    ITERABLE_IDS, OPAQUE_ENUM_IDS, FIELD_ONLY_NAMESPACE_IDS)
 from yadinassi.configuration.metadata import (BSLMetadata, BSLCatalogMetadataCollection, BSLCatalogMetadata,
     BSLInformationRegisterMetadata, BSLInformationRegisterMetadataCollection)
 from yadinassi.db.query.queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
@@ -64,6 +64,9 @@ NAMES=('metadata','метаданные','catalogs','справочники','do
 _DOM_LISTS=(BSLDOMNodeList,BSLDOMElementList,BSLDOMAttributeMap)
 _DETACHED_TYPES=(*_NODE_CLASSES,*_DOM_LISTS,BSLDOMBuilder,BSLDOMWriter,BSLDOMNamespaceResolver,BSLDOMXPathResult,BSLXMLReader, BSLXMLReaderSettings, BSLXMLNamespaceContext, BSLXMLWriter, BSLXMLWriterSettings, BSLValueList, BSLValueTable, BSLTypeDescription, BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers, BSLQueryResult, BSLQueryResultSelection, BSLStructure, BSLFixedStructure, BSLKeyAndValue, BSLArray, BSLFixedArray, BSLFixedMap, BSLRegexResult, BSLRegexGroup, BSLFile, BSLBinaryData, BSLTextReader, BSLTextWriter, BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream, BSLStream, BSLDataHashing, BSLDataReader, BSLDataWriter, BSLReadDataResult, BSLMap, BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings, BSLJSONSerializerSettings)
 _DETACHED_TYPE_IDS=frozenset(map(id,_DETACHED_TYPES))
+_QUALIFIER_TYPE_IDS=frozenset(map(id, (
+    BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers,
+)))
 _PURE_COLLECTION_TYPE_IDS=frozenset(map(id,(
     BSLValueTable, BSLValueTableRow, BSLValueTableColumn, BSLValueTableColumnCollection,
     BSLCollectionIndex, BSLCollectionIndexes, BSLFixedArray, BSLFixedStructure, BSLFixedMap,
@@ -297,7 +300,7 @@ class CatalogBoundary:
 
     def get_member(self,value,name):
         if id(type(value)) in zip_reader.TYPE_IDS:return zip_reader.get(self,value,name)
-        if id(value) in ITERATION_ENUM_VALUE_IDS:
+        if id(value) in OPAQUE_ENUM_IDS:
             if self._verify_context:self._check()
             raise ValueError('Поле объекта не обнаружено: '+name)
         verify=_verify_collection(self,value)
@@ -307,6 +310,9 @@ class CatalogBoundary:
             if verify:self._check_effect()
 
     def resolve_set_member(self,value,name):
+        if id(value) in OPAQUE_ENUM_IDS:
+            if self._verify_context:self._check()
+            raise ValueError('Свойство недоступно для записи: '+name)
         verify=_verify_collection(self,value)
         self._catalog_owner(value,verify=verify)
         def write(new_value):
@@ -395,7 +401,8 @@ class CatalogBoundary:
         # emitted for indexing and For Each. These enum namespaces have no
         # methods; their scalar identities have no member protocol at all.
         identity=id(value)
-        if identity in ITERABLE_IDS or identity in ITERATION_ENUM_VALUE_IDS:
+        if (identity in ITERABLE_IDS or identity in OPAQUE_ENUM_IDS or identity in FIELD_ONLY_NAMESPACE_IDS
+                or id(type(value)) in _QUALIFIER_TYPE_IDS):
             if self._verify_context:self._check()
             raise ValueError('Метод объекта не обнаружен: '+name)
         if omitted and type(value) in (BSLTextReader,BSLTextWriter,BSLDataWriter,BSLDataHashing):
@@ -509,7 +516,9 @@ class CatalogBoundary:
         if id(type(value)) in zip_reader.TYPE_IDS:return zip_reader.resolve(self,value,name,syntax=True)
         if name in ('__iter__','__getitem__','__setitem__'):
             identity=id(value)
-            if identity in ITERATION_ENUM_VALUE_IDS or (name!='__iter__' and identity in ITERABLE_IDS):
+            if (identity in OPAQUE_ENUM_IDS or identity in FIELD_ONLY_NAMESPACE_IDS
+                    or id(type(value)) in _QUALIFIER_TYPE_IDS
+                    or (name!='__iter__' and identity in ITERABLE_IDS)):
                 if self._verify_context:self._check()
                 if name=='__iter__':raise ValueError('Для Каждого ожидает массив или коллекцию')
                 raise ValueError('Индексирование для этого типа не поддерживается')

@@ -12,7 +12,9 @@ from yadinassi.text.chars import CHARS
 from yadinassi.collections.search_directions import BSLSearchDirection, SEARCH_DIRECTIONS
 from yadinassi.collections.sort_directions import BSLSortDirection, SORT_DIRECTIONS
 from yadinassi.numeric.round_modes import BSLRoundMode, ROUND_MODES
-from yadinassi.types.type_qualifiers import ALLOWED_SIGNS, ALLOWED_LENGTHS, DATE_FRACTIONS
+from yadinassi.types.type_qualifiers import (ALLOWED_SIGNS, ALLOWED_LENGTHS, DATE_FRACTIONS,
+    BSLAllowedSign, BSLAllowedLength, BSLDateFractions)
+from yadinassi.types.values import BSLType
 from yadinassi.types.error_info import ERROR_CATEGORIES
 from yadinassi.formats.json.json_dates import JSON_DATE_FORMATS, JSON_DATE_WRITING_VARIANTS
 from yadinassi.formats.json.json_processing import JSON_LINE_BREAKS, JSON_VALUE_TYPES
@@ -58,5 +60,7 @@ ITERABLES = (SEARCH_DIRECTIONS, SORT_DIRECTIONS, ROUND_MODES)
 # instances alive: types, equal payloads and freshly forged instances confer no
 # authority (including authority to dispatch a Python protocol).
 ITERABLE_IDS = frozenset(map(id, ITERABLES))
-ITERATION_ENUM_VALUES = (*BSLSearchDirection, *BSLSortDirection, *BSLRoundMode)
-ITERATION_ENUM_VALUE_IDS = frozenset(map(id, ITERATION_ENUM_VALUES))
+OPAQUE_ENUM_VALUES = (*BSLSearchDirection, *BSLSortDirection, *BSLRoundMode, *BSLType,
+                      *BSLAllowedSign, *BSLAllowedLength, *BSLDateFractions)
+OPAQUE_ENUM_IDS = frozenset(map(id, OPAQUE_ENUM_VALUES))
+FIELD_ONLY_NAMESPACE_IDS = frozenset(map(id, (ALLOWED_SIGNS, ALLOWED_LENGTHS, DATE_FRACTIONS)))
