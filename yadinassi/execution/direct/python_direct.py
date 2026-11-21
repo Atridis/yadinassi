@@ -368,6 +368,9 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None):
     from yadinassi.db import source_transactions, database_transactions
     from .python_direct_routines import bind_omissions, resolve as resolve_routine
     class DirectBoundary(ImportBoundary,ValueTreeBoundary,ServicesBoundary, LiveMetadataBoundary, DetachedMetadataBoundary, CatalogBoundary, BoundaryContext):
+        def current_module(self):
+            return vm._self_module
+
         def resolve_optional_service(self,name,*args,**kwargs):
             key=name.casefold()
             module=getattr(vm,'_direct_routine_modules',{}).get(key)

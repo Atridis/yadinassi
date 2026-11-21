@@ -208,7 +208,7 @@ class Emitter:
         self.has_goto=False;self.goto_last_expression=None
         self.http_body_receiver=False
         self.local_field_facts={};self.integer_lane=False;self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.module_boundaries=0;self.range_indices={};self.external_actuals=0
-        self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
+        self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.current_module=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
         self.standalone_script=False;self.link_imports=False;self.import_links=[]
         self.import_names=frozenset();self.require_last_expression=None;self.region_active=False;self.region_ops={};self.region_states={};self.routines={};self.routine_symbols={};self.numeric_routine_symbols={};self.address_routine_symbols={};self.module_globals=set();self.scope=None;self.source_refs={};self.loop_increments=[];self.required=set();self.pure_builtins={};self.visits=0;self.python_nodes=0
     def node(self,kind,token,**fields):
@@ -292,8 +292,12 @@ class Emitter:
             return self.node(py.IfExp,token,test=test,body=value,orelse=self.call('_missing',[self.const(name,token)],token))
         if self.external_name(name):return self.invoke(self.attribute(self.name('_context',token),'external_get',token),[self.const(name.casefold(),token)],token)
         self.check_name(name)
-        if self.scope is not None and name.casefold() not in self.scope['globals']:
-            key=name.casefold()
+        key=name.casefold()
+        implicit_self=self.current_module and key in ('thisobject','этотобъект')
+        if self.scope is not None and key not in self.scope['globals']:
+            # A declared local or parameter shadows the implicit module value.
+            if implicit_self and key not in self.scope['local_declarations']:
+                return self.invoke(self.attribute(self.name('_context',token),'current_module',token),[],token)
             if key in self.scope['bindings']:
                 if key not in self.scope['slots']:self.scope['slots'][key]=self.temp()
                 address=self.scope.get('addresses',{}).get(key)
@@ -316,7 +320,9 @@ class Emitter:
         value=self.invoke(self.attribute(self.name('_initial',token),'get',token),[self.const(name.casefold(),token),self.name('_UNSET',token)],token)
         bound=self.node(py.NamedExpr,token,target=self.name(temporary,token,True),value=value)
         test=self.node(py.Compare,token,left=bound,ops=[py.IsNot()],comparators=[self.name('_UNSET',token)])
-        return self.node(py.IfExp,token,test=test,body=self.name(temporary,token),orelse=self.call('_missing',[self.const(name,token)],token))
+        missing=(self.invoke(self.attribute(self.name('_context',token),'current_module',token),[],token)
+                 if implicit_self else self.call('_missing',[self.const(name,token)],token))
+        return self.node(py.IfExp,token,test=test,body=self.name(temporary,token),orelse=missing)
     def temp(self):self.serial+=1;return '_temporary_'+str(self.serial)
     def import_path(self,node):
         parts=[]
@@ -1674,7 +1680,7 @@ def _routine_region(routine, scope):
     return end,operations,states
 
 
-def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_whole_source=False,_require_last_expression=False,_profile=None,_source_scopes=False,_authority=False,_scalar_routines=False,_callable_externals=(),_shadowable=(),_configuration_calls=False,_host_bindings=False,_catalog_bounds=False,_lean_configuration=False,_retain_generated=True,_allow_pure_builtins=False):
+def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_whole_source=False,_require_last_expression=False,_profile=None,_source_scopes=False,_authority=False,_scalar_routines=False,_callable_externals=(),_shadowable=(),_configuration_calls=False,_host_bindings=False,_catalog_bounds=False,_lean_configuration=False,_retain_generated=True,_allow_pure_builtins=False,_current_module=False):
     """Lower a module, optionally auditing the generated Python source."""
     if not _native_partial_binding(partial):_reject('noncanonical partial binding is outside research contract')
     if not _native_operator_binding(_NATIVE_ADD,'add') or not _native_operator_binding(_NATIVE_GETITEM,'getitem'):
@@ -1704,6 +1710,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             pure_bindings=candidate
             emitter.pure_builtins={name:'_pure_'+name for name in candidate.services}
     emitter.has_goto=has_goto
+    emitter.current_module=_profile is None or _current_module
     emitter.owned_constructors=_profile is not None;emitter.configuration_calls=_configuration_calls;emitter.host_bindings=_host_bindings;emitter.catalog_bounds=_catalog_bounds;emitter.source_scopes=_source_scopes;emitter.authority=_authority;emitter.scalar_routines=_scalar_routines
     emitter.callable_externals=frozenset(_callable_externals);emitter.shadowable=frozenset(_shadowable)
     emitter.import_names=frozenset(imported);t=program[0].token
@@ -2086,14 +2093,14 @@ def compile_owned(program, *, source_text, source_name, module_names=(),
                   external_names=(), constructors=(), exports=False, source_scopes=False,
                   authority_checks=False, scalar_routines=False, callable_externals=(),
                   shadowable_externals=(), require_last_expression=False, configuration_calls=False, host_bindings=False, catalog_bounds=False,
-                  lean_configuration=False, retain_generated=True):
+                  lean_configuration=False, retain_generated=True, current_module=False):
     """Compile an already-authorized side's declarations to Python definitions.
 
     Namespace inputs describe names, not a runtime grant. The owning invocation
     still supplies its checked context and state. No interpreter or old emitter
     is called, and no foreign side is inferred from ambient VM state.
     """
-    for flag in (exports,source_scopes,authority_checks,scalar_routines,require_last_expression,configuration_calls,host_bindings,catalog_bounds,lean_configuration,retain_generated):
+    for flag in (exports,source_scopes,authority_checks,scalar_routines,require_last_expression,configuration_calls,host_bindings,catalog_bounds,lean_configuration,retain_generated,current_module):
         if type(flag) is not bool:raise TypeError('owned compile flags require Boolean')
     for names in (module_names,external_names,constructors,callable_externals,shadowable_externals):
         if type(names) is not tuple or any(type(name) is not str for name in names):
@@ -2122,7 +2129,7 @@ def compile_owned(program, *, source_text, source_name, module_names=(),
             _source_scopes=source_scopes,_authority=authority_checks,
             _scalar_routines=scalar_routines,_callable_externals=callable_externals,
             _shadowable=shadowable_externals,_configuration_calls=configuration_calls,_host_bindings=host_bindings,_catalog_bounds=catalog_bounds,
-            _lean_configuration=lean_configuration,_retain_generated=retain_generated)
+            _lean_configuration=lean_configuration,_retain_generated=retain_generated,_current_module=current_module)
     except PythonDirectUnsupported as error:
         if not source_scopes:raise
         from .experimental_naked_collections import UnsupportedNakedSyntax

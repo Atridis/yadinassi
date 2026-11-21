@@ -71,6 +71,10 @@ class ServerBoundary(ServicesBoundary,CatalogBoundary,BoundaryContext):
         self._register_root=getattr(parent,'_register_root',None)
         self._routine_exports={};self.state={}
         self.module_context=module_context
+    def current_module(self):
+        if self.module_context:return self.vm._self_module
+        return super().current_module()
+
     def _check_role(self):
         vm=self.vm
         if (vm._family_closed or vm.database_context is not self.database

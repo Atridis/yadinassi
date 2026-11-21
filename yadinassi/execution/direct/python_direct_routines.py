@@ -57,7 +57,7 @@ def prepare(vm, program, plan, *, retain_generated=True):
     if server_names-nocontext_names:
         server_plan=compile_server(server,source_text=plan.source_text,source_name=plan.source_name,
             module_names=tuple(server_layout),external_names=tuple(NAMES),constructors=tuple(CONSTRUCTORS)+('uuid','уникальныйидентификатор'),
-            exports=True,retain_generated=retain_generated)
+            exports=True,retain_generated=retain_generated,current_module=True)
     nocontext_plan=None
     if nocontext:
         nocontext_plan=compile_server(nocontext,source_text=plan.source_text,source_name=plan.source_name,
@@ -74,7 +74,7 @@ def prepare(vm, program, plan, *, retain_generated=True):
     if initializer_body:
         _,_,initializer_constructors,initializer_calls=_source_facts(initializer_body)
         initializer_plan=compile_server(initializer_body,retain_generated=retain_generated,source_text=plan.source_text,source_name=plan.source_name,
-            module_names=tuple(server_layout),external_names=tuple(NAMES),constructors=tuple(CONSTRUCTORS)+('uuid','уникальныйидентификатор'))
+            module_names=tuple(server_layout),external_names=tuple(NAMES),constructors=tuple(CONSTRUCTORS)+('uuid','уникальныйидентификатор'),current_module=True)
     return RoutineModule(exports,signatures,_contract(vm),frozenset(vm.module_names)|declared,
                          constructors,calls-names,server_plan,server_names,server_layout,
                          initializer_plan,initializer_constructors,initializer_calls,nocontext_plan,nocontext_names,dual_plan,dual_names)

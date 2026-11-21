@@ -46,6 +46,9 @@ class BoundaryContext:
         self._revoked = False
         self._handled_errors = []
 
+    def current_module(self):
+        raise ValueError("Объект модуля недоступен в подпрограмме без контекста")
+
     def external_get(self, name):
         """Explicit product namespace seam; ordinary contexts grant none."""
         self._check()
