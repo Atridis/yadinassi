@@ -17,13 +17,14 @@ from yadinassi.db.document.document_lines import BSLDocumentLines, BSLDocumentLi
 from yadinassi.db.document.document_posting_values import BSLRecorderCollection, BSLRecorderSet, BSLRecorderRow, DOCUMENT_WRITE_MODES
 from yadinassi.db.registers.accumulation_posting_values import BSLAccumulationCollection, BSLAccumulationSet, BSLAccumulationRow, ACCUMULATION_RECORD_TYPES
 from yadinassi.db.query.queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
+from yadinassi.db.query.query_packages import BSLTempTablesManager, TEMP_TABLE_MANAGER_NAMES
 
 SELF=('thisobject','этотобъект')
 SYSTEM={'accumulationrecordtype':ACCUMULATION_RECORD_TYPES,'виддвижениянакопления':ACCUMULATION_RECORD_TYPES,
         'documentwritemode':DOCUMENT_WRITE_MODES,'режимзаписидокумента':DOCUMENT_WRITE_MODES}
 OWNED=(BSLDocumentLines,BSLDocumentLine,BSLRecorderCollection,BSLRecorderSet,BSLRecorderRow,
        BSLAccumulationCollection,BSLAccumulationSet,BSLAccumulationRow,BSLStructure,
-       BSLQuery,BSLQueryResult,BSLQueryResultSelection)
+       BSLQuery,BSLQueryResult,BSLQueryResultSelection,BSLTempTablesManager)
 
 class PostingBoundary(BoundaryContext):
     def __init__(self,vm):
@@ -31,7 +32,7 @@ class PostingBoundary(BoundaryContext):
         self.vm=vm;self.document=vm._document
         self._owned={id(self.document):self.document}
         self._owned.update((id(value),value) for value in SYSTEM.values())
-        self._services.update(('new:'+name,value) for name,value in vm.types.items() if name in ('query','запрос'))
+        self._services.update(('new:'+name,value) for name,value in vm.types.items() if name in _POSTING_CONSTRUCTORS)
     def _check(self):
         super()._check()
         owner=self.vm._family_owner
@@ -108,7 +109,7 @@ class PostingBoundary(BoundaryContext):
 from dataclasses import dataclass
 from types import MappingProxyType
 
-_POSTING_CONSTRUCTORS=('query','запрос')
+_POSTING_CONSTRUCTORS=('query','запрос',*TEMP_TABLE_MANAGER_NAMES)
 # Core child bindings, never the parent's mutable custom registrations.
 _POSTING_CALLABLE_FIELDS=('number','число','date','дата')
 _POSTING_REPAIRS=tuple(REPAIRS)+('authority_checkpoints',)

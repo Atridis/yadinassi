@@ -42,6 +42,9 @@ def _check_tables(tables):
             raise ValueError('Temporary table resource limit exceeded')
 
 
+TEMP_TABLE_MANAGER_NAMES = ('temptablesmanager', 'менеджервременныхтаблиц')
+
+
 class BSLTempTablesManager(BSLObject):
     """Explicitly owned table lifetime; a closed manager cannot be reopened."""
     def __init__(self, owner=None):

@@ -41,6 +41,7 @@ from .python_direct_names import NAMES as SYSTEM_NAMES, VALUE_IDS as SYSTEM_VALU
 from yadinassi.configuration.metadata import (BSLMetadata, BSLCatalogMetadataCollection, BSLCatalogMetadata,
     BSLInformationRegisterMetadata, BSLInformationRegisterMetadataCollection)
 from yadinassi.db.query.queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
+from yadinassi.db.query.query_packages import BSLTempTablesManager
 from yadinassi.collections.value_tables import (BSLValueTable, BSLValueTableRow, BSLCollectionIndex, BSLCollectionIndexes,
                            BSLValueTableColumn, BSLValueTableColumnCollection, _DIRECT_ITERATION_TYPES)
 _CALL_TABLE, _CALL_COLUMNS, _CALL_ROW, _ = _DIRECT_ITERATION_TYPES
@@ -197,6 +198,9 @@ class CatalogBoundary:
             if enums is not None and enum_type.snapshot is enums.metadata:return
             owner=None
         elif kind is BSLQuery: owner=value._catalogs
+        elif kind is BSLTempTablesManager:
+            if value._owner is root._metadata:return
+            owner=None
         elif kind in (BSLValueTableRow, BSLValueTableColumn, BSLValueTableColumnCollection,
                       BSLCollectionIndex, BSLCollectionIndexes):
             # Detached table data has no database authority. Its public protocol

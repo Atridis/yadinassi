@@ -14,6 +14,7 @@ from yadinassi.http.http_client import BSLHTTPConnection, BSLHTTPRequest
 from yadinassi.streams.binary_streams import BSLBinaryDataBuffer
 from yadinassi.formats.json.json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings, read_json, write_json
 from yadinassi.types.values import HostFunction, BSLFixedArray, _DIRECT_TO_STRING_ABI
+from yadinassi.db.query.query_packages import BSLTempTablesManager, TEMP_TABLE_MANAGER_NAMES
 from yadinassi.collections.structures import BSLFixedStructure
 from yadinassi.collections.maps import BSLFixedMap
 from . import python_direct_fixed as fixed
@@ -58,6 +59,7 @@ CONSTRUCTORS = {
         (('valuetablecolumn','колонкатаблицызначений'),None),
         (('valuetablecolumncollection','коллекцияколоноктаблицызначений'),None),
         (('typedescription','описаниетипов'),BSLTypeDescription),
+        (TEMP_TABLE_MANAGER_NAMES,BSLTempTablesManager),
         (('numberqualifiers','квалификаторычисла'),BSLNumberQualifiers),
         (('stringqualifiers','квалификаторыстроки'),BSLStringQualifiers),
         (('datequalifiers','квалификаторыдаты'),BSLDateQualifiers),
@@ -364,6 +366,12 @@ class ServicesBoundary:
             if expected is None:
                 raise ValueError('Тип не определен: '+name[4:])
             factory=self.vm.types.get(key[4:])
+            if expected is BSLTempTablesManager:
+                # The factory binds this interpreter's catalog metadata to the
+                # manager, just like the owning Query constructor.
+                if type(factory) is not HostFunction:
+                    raise BoundaryViolation('temporary tables constructor requires registered factory')
+                return super().resolve_callable(factory)
             if factory is None and expected in (BSLDOMBuilder,BSLDOMWriter,BSLDOMDocument,BSLDOMNamespaceResolver,BSLXMLReader,BSLXMLReaderSettings,BSLXMLWriter,BSLXMLWriterSettings):
                 raise ValueError('Тип не определен: '+name[4:])
             if type(factory) is not HostFunction or factory.function is not expected:
