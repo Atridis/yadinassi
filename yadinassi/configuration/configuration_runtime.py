@@ -121,6 +121,11 @@ class ConfigurationApplication:
         self.last_exit_warning = ''
         self._cli_database = ((database_context, database_context.backend, get_ident())
                               if _cli_database is _CLI_DATABASE else None)
+        from yadinassi.db.database_context import SQLiteDBContext
+        self._client_sqlite = ((database_context, database_context.backend, get_ident())
+                               if type(database_context) is SQLiteDBContext and side is None
+                               and self._cli_database is None and not allow_extensions
+                               and not host_services else None)
         self.interpreter = Interpreter(self._message, native_target=native_target,
                                        database_context=database_context,
                                        allow_extensions=allow_extensions)

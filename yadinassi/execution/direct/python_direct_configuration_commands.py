@@ -144,7 +144,7 @@ class _Scope:
             request=self._reuse_request;self._reuse_request=None
             request.__exit__(None,None,None)
 
-    def check(self,app,owner):
+    def check_origin(self):
         if get_ident()!=self.thread or not self.active or _COMMAND_SCOPE.get() is not self:_deny()
         # A copied Context retains ContextVar values, but cannot reset the
         # origin Context's token. Rotate the token synchronously to validate
@@ -152,6 +152,9 @@ class _Scope:
         try:_COMMAND_SCOPE.reset(self.token)
         except (ValueError,RuntimeError):_deny()
         self.token=_COMMAND_SCOPE.set(self)
+
+    def check(self,app,owner):
+        self.check_origin()
         self._check_state(app,owner)
 
     def _check_state(self,app,owner):

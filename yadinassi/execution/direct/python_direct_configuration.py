@@ -62,6 +62,12 @@ def check_owner(app, owner, *, allow_database=False):
                 or root.database_context is not database or database.backend is not backend
                 or backend._closed or root.allow_extensions or owner.allow_extensions):
             raise BoundaryViolation('managed CLI database owner changed or closed')
+    elif app._client_sqlite is not None:
+        database,backend,thread=app._client_sqlite
+        if (not allow_database or get_ident()!=thread or owner.database_context is not database
+                or root.database_context is not database or database.backend is not backend
+                or backend._closed is not False or root.allow_extensions or owner.allow_extensions):
+            raise BoundaryViolation('client configuration SQLite owner changed or closed')
     elif owner.database_context is not None and not allow_database:
         raise BoundaryViolation('direct configuration database execution is not connected')
 
@@ -274,15 +280,19 @@ class ConfigurationBoundary(BoundaryContext):
 
 
 def install(app,owner,program,source_text=''):
-    check_owner(app,owner);app.check_program(program)
+    check_owner(app,owner,allow_database=app._client_sqlite is not None);app.check_program(program)
     if any(type(n) not in (ast.Routine,ast.Var) for n in program):
         raise BoundaryViolation('direct configured module requires declarations only')
     if any(type(n) is ast.Routine and (n.is_async or n.is_dual) for n in program):
         raise BoundaryViolation('direct configured async/dual routines are not connected')
     owned=_snapshot(program)
+    sqlite_names=sqlite_constructors=()
+    if app._client_sqlite is not None:
+        from .python_direct_configuration_sqlite import NAMES, CONSTRUCTORS
+        sqlite_names,sqlite_constructors=NAMES,CONSTRUCTORS
     plan=compile_owned(owned,retain_generated=False,source_text=source_text,source_name=program[0].token.source if program else '<configuration>',
-        external_names=tuple(app._definitions)+(enums.NAMES+('metadata','метаданные')
-            if app.configuration.enumerations else ()),constructors=('uuid','уникальныйидентификатор'),
+        external_names=tuple(app._definitions)+sqlite_names+(enums.NAMES+('metadata','метаданные')
+            if app.configuration.enumerations else ()),constructors=('uuid','уникальныйидентификатор')+sqlite_constructors,
         exports=True,authority_checks=True,configuration_calls=True,
         lean_configuration=app._cli_database is not None)
     # Capture original declaration bindings when this exact plan is installed.
@@ -348,7 +358,15 @@ def invoke_routine(app,owner,routine,arguments):
     if registry.get(routine.name.casefold()) is not routine:
         raise BoundaryViolation('direct configuration routine replaced')
     if len(arguments)!=len(routine.parameters):raise TypeError('configuration argument count mismatch')
-    context=ConfigurationBoundary(app,owner,routine)
+    scope=_COMMAND_SCOPE.get()
+    if (scope is not None and app._client_sqlite is not None
+            and owner is not app.interpreter and routine.execution_context=='client'):
+        from .python_direct_configuration_commands import _Scope
+        if type(scope) is not _Scope:raise BoundaryViolation('invalid command scope')
+        from .python_direct_configuration_sqlite import SQLiteClientRoutine
+        context=SQLiteClientRoutine(app,owner,routine)
+    else:
+        context=ConfigurationBoundary(app,owner,routine)
     previous=getattr(owner,'_transaction_activation_allowed',True)
     owner._transaction_activation_allowed=False
     owner._context_stack.append(routine.execution_context)
