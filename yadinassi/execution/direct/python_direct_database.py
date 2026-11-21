@@ -33,6 +33,7 @@ from yadinassi.formats.regex.regex_functions import BSLRegexResult, BSLRegexGrou
 from yadinassi.streams.file_io import BSLFile, BSLBinaryData, BSLTextReader, BSLTextWriter
 from yadinassi.http.http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse
 from yadinassi.streams.binary_streams import BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream, BSLStream
+from yadinassi.streams.data_hashing import BSLDataHashing
 from yadinassi.streams.data_io import BSLDataReader, BSLDataWriter, BSLReadDataResult
 from yadinassi.collections.maps import BSLMap, BSLFixedMap
 from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
@@ -55,7 +56,7 @@ NAMES=('metadata','метаданные','catalogs','справочники','do
 # Canonical detached receivers only; child rows/items and database owners still
 # traverse live ownership validation. Public protocols retain resource guards.
 _DOM_LISTS=(BSLDOMNodeList,BSLDOMElementList,BSLDOMAttributeMap)
-_DETACHED_TYPES=(*_NODE_CLASSES,*_DOM_LISTS,BSLDOMBuilder,BSLDOMWriter,BSLDOMNamespaceResolver,BSLDOMXPathResult,BSLXMLReader, BSLXMLReaderSettings, BSLXMLNamespaceContext, BSLXMLWriter, BSLXMLWriterSettings, BSLValueList, BSLValueTable, BSLTypeDescription, BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers, BSLQueryResult, BSLQueryResultSelection, BSLStructure, BSLFixedStructure, BSLKeyAndValue, BSLArray, BSLFixedArray, BSLFixedMap, BSLRegexResult, BSLRegexGroup, BSLFile, BSLBinaryData, BSLTextReader, BSLTextWriter, BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream, BSLStream, BSLDataReader, BSLDataWriter, BSLReadDataResult, BSLMap, BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings)
+_DETACHED_TYPES=(*_NODE_CLASSES,*_DOM_LISTS,BSLDOMBuilder,BSLDOMWriter,BSLDOMNamespaceResolver,BSLDOMXPathResult,BSLXMLReader, BSLXMLReaderSettings, BSLXMLNamespaceContext, BSLXMLWriter, BSLXMLWriterSettings, BSLValueList, BSLValueTable, BSLTypeDescription, BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers, BSLQueryResult, BSLQueryResultSelection, BSLStructure, BSLFixedStructure, BSLKeyAndValue, BSLArray, BSLFixedArray, BSLFixedMap, BSLRegexResult, BSLRegexGroup, BSLFile, BSLBinaryData, BSLTextReader, BSLTextWriter, BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream, BSLStream, BSLDataHashing, BSLDataReader, BSLDataWriter, BSLReadDataResult, BSLMap, BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings)
 _DETACHED_TYPE_IDS=frozenset(map(id,_DETACHED_TYPES))
 _PURE_COLLECTION_TYPE_IDS=frozenset(map(id,(
     BSLValueTable, BSLValueTableRow, BSLValueTableColumn, BSLValueTableColumnCollection,
@@ -359,14 +360,18 @@ class CatalogBoundary:
         return self.resolve_member(value,name)
 
     def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
-        if omitted and type(value) in (BSLTextReader,BSLTextWriter,BSLDataWriter):
+        if omitted and type(value) in (BSLTextReader,BSLTextWriter,BSLDataWriter,BSLDataHashing):
             key=name.casefold()
             accepted=()
             if type(value) in (BSLTextReader,BSLTextWriter) and key in ('open','открыть'):
                 accepted=(1,2,3,4)
             elif type(value) is BSLDataWriter and key in ('writeline','записатьстроку'):
                 accepted=(1,2)
+            elif type(value) is BSLDataHashing and key in ('append','добавить'):
+                accepted=(1,)
             if any(index not in accepted for index in omitted):
+                if type(value) is BSLDataHashing:
+                    raise TypeError('Пропущен обязательный аргумент метода хеширования')
                 raise TypeError('Пропущен обязательный аргумент метода чтения или записи')
             # Generated actuals already contain positional None placeholders.
             return self.resolve_member(value,name)
@@ -475,7 +480,7 @@ class CatalogBoundary:
         elif name=='__setitem__':
             function=value.set if type(value) in (BSLArray, BSLFixedArray, BSLMap, BSLFixedMap, BSLFixedStructure) else lambda index,new:value.set_index(index,new)
         elif name=='__iter__':
-            if type(value) not in (BSLArray, BSLFixedArray, BSLFixedStructure, BSLFixedMap, BSLValueList, BSLCollectionIndex, BSLCollectionIndexes, BSLInformationRegisterRecordSet, BSLCatalogSection, BSLDocumentLines) and not any(value is item for item in ITERABLES) and not any(type(value) is kind for kind in _DOM_LISTS):
+            if type(value) not in (BSLArray, BSLFixedArray, BSLFixedStructure, BSLFixedMap, BSLValueList, BSLCollectionIndex, BSLCollectionIndexes, BSLInformationRegisterRecordSet, BSLCatalogSection, BSLDocumentLines, BSLBinaryDataBuffer) and not any(value is item for item in ITERABLES) and not any(type(value) is kind for kind in _DOM_LISTS):
                 raise BoundaryViolation('direct database iterator not connected')
             function=lambda:iter(value)
         else:

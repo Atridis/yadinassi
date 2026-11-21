@@ -15,6 +15,7 @@ from yadinassi.streams.data_compression import BSLDeflation
 from yadinassi.http.http_client import BSLHTTPConnection, BSLHTTPRequest
 from yadinassi.streams.binary_streams import BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream
 from yadinassi.streams.data_io import BSLDataReader, BSLDataWriter
+from yadinassi.streams.data_hashing import BSLDataHashing
 from yadinassi.formats.json.json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings, read_json, write_json
 from yadinassi.types.values import HostFunction, BSLFixedArray, _DIRECT_TO_STRING_ABI
 from yadinassi.db.query.query_packages import BSLTempTablesManager, TEMP_TABLE_MANAGER_NAMES
@@ -112,6 +113,8 @@ ORDINARY_CONSTRUCTORS = {
     'datareader': BSLDataReader, 'чтениеданных': BSLDataReader,
     'datawriter': BSLDataWriter, 'записьданных': BSLDataWriter,
     'readdataresult': None, 'результатчтенияданных': None,
+    'datahashing': BSLDataHashing, 'хешированиеданных': BSLDataHashing,
+    'hashfunction': None, 'хешфункция': None,
     'valuestorage': BSLValueStorage, 'хранилищезначения': BSLValueStorage,
     'deflation': BSLDeflation, 'сжатиеданных': BSLDeflation,
 }
@@ -426,7 +429,9 @@ class ServicesBoundary:
                 if type(factory) is not HostFunction:
                     raise BoundaryViolation('temporary tables constructor requires registered factory')
                 return super().resolve_callable(factory)
-            if factory is None and expected in (BSLDOMBuilder,BSLDOMWriter,BSLDOMDocument,BSLDOMNamespaceResolver,BSLXMLReader,BSLXMLReaderSettings,BSLXMLWriter,BSLXMLWriterSettings):
+            if factory is None and expected in (BSLDOMBuilder,BSLDOMWriter,BSLDOMDocument,
+                    BSLDOMNamespaceResolver,BSLXMLReader,BSLXMLReaderSettings,BSLXMLWriter,
+                    BSLXMLWriterSettings,BSLBinaryDataBuffer,BSLDataHashing):
                 raise ValueError('Тип не определен: '+name[4:])
             if type(factory) is not HostFunction or factory.function is not expected:
                 raise BoundaryViolation('direct constructor requires canonical registration: '+key[4:])
@@ -437,7 +442,7 @@ class ServicesBoundary:
                 from .python_direct_value_storage import constructor
                 return constructor(self,key[4:],factory,**kwargs)
             bound=super().resolve_callable(factory)
-            if expected in (BSLDOMBuilder,BSLDOMWriter,BSLDOMDocument,BSLDOMNamespaceResolver,BSLXMLReader,BSLXMLWriter,BSLXMLReaderSettings,BSLXMLWriterSettings,BSLHTTPConnection,BSLHTTPRequest,BSLFile,BSLBinaryDataBuffer,*_STREAM_CONSTRUCTORS,BSLValueList,BSLValueTable,BSLTypeDescription,BSLNumberQualifiers,BSLStringQualifiers,BSLDateQualifiers,BSLBinaryDataQualifiers):
+            if expected in (BSLDOMBuilder,BSLDOMWriter,BSLDOMDocument,BSLDOMNamespaceResolver,BSLXMLReader,BSLXMLWriter,BSLXMLReaderSettings,BSLXMLWriterSettings,BSLHTTPConnection,BSLHTTPRequest,BSLFile,BSLBinaryDataBuffer,BSLDataHashing,*_STREAM_CONSTRUCTORS,BSLValueList,BSLValueTable,BSLTypeDescription,BSLNumberQualifiers,BSLStringQualifiers,BSLDateQualifiers,BSLBinaryDataQualifiers):
                 original=bound
                 def guarded(*values):
                     external = (not self._verify_context and (expected in _FILE_CONSTRUCTORS

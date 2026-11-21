@@ -16,7 +16,7 @@ from yadinassi.streams.binary_streams import (BSLMemoryStream as Memory, BSLFile
     BSLPositionInStream as Origin)
 from yadinassi.streams.file_io import BSLBinaryData as Binary
 from yadinassi.types.type_values import type_of
-from yadinassi.types.values import BSLType
+from yadinassi.types.values import BSLType, HostFunction
 
 
 def digest(value):
@@ -178,6 +178,19 @@ Try New HashFunction; Except Message("no-constructor"); EndTry;''')
         self.assertEqual(out,['3421780262','Да','Да','Да','0','readonly','no-codec','no-constructor'])
         self.assertIs(type_of(Hash(Function.CRC32)),BSLType.DATA_HASHING)
         with self.assertRaises(ValueError): serialization.value_to_string_internal(Function.CRC32)
+
+    def test_direct_constructor_refuses_replaced_registration(self):
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        for name in ('DataHashing', 'BinaryDataBuffer'):
+            with self.subTest(name=name):
+                vm = Interpreter(allow_extensions=True)
+                self.addCleanup(vm.close)
+                replacement = mock.Mock(side_effect=AssertionError('replaced factory ran'))
+                vm.types[name.casefold()] = HostFunction(name, replacement)
+                arguments = 'HashFunction.SHA256' if name == 'DataHashing' else '4'
+                with self.assertRaisesRegex(BoundaryViolation, 'canonical registration'):
+                    vm.execute(f'X=New {name}({arguments});')
+                replacement.assert_not_called()
 
     def test_dynamic_new_and_unknown_factory_omission_guard(self):
         out=[]; Interpreter(out.append).execute('''A=New Array; A.Add(HashFunction.SHA256);
