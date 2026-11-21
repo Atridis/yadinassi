@@ -11,7 +11,9 @@ from yadinassi.configuration.configuration_runtime import ConfigurationApplicati
 from yadinassi.configuration.configuration_xml import import_configuration
 from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.execution.direct.python_direct_configuration_sessions import SessionStartup
+from yadinassi.execution.direct import python_direct_configuration_metadata as readers
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.types.values import HostFunction
 
@@ -52,6 +54,31 @@ class DirectConfigurationSessionTests(unittest.TestCase):
         from yadinassi.application.session_parameters import _UNSET
         self.assertIs(app.session_parameters._values['flag'],_UNSET)
         self.assertIsNone(app._session_owner)
+
+    def test_client_metadata_names_are_readonly_and_do_not_read_session_values(self):
+        app=self.app(files_for_session(''))
+        self.assertTrue(app.start())
+        before=dict(app.session_parameters._values)
+        with patch.object(readers,'validate_definition',side_effect=AssertionError('unrelated common module')):
+            self.assertEqual(app.execute('Metadata.SessionParameters.Count()'), Decimal(5))
+            self.assertEqual(app.execute('Метаданные.ПараметрыСеанса.Получить(0).Имя'), 'Ready')
+            self.assertEqual(app.execute('Metadata.SessionParameters["text"].FullName()'), 'ПараметрСеанса.Text')
+            self.assertTrue(app.execute(
+                '(Metadata.FindByFullName("ПараметрСеанса.FLAG")=Metadata.SessionParameters.Flag)'))
+            with self.assertRaises(PythonDirectUnsupported):
+                app.execute('Tmp=Metadata.SessionParameters.Flag;')
+        self.assertNotIn('tmp',app.interpreter.variables)
+        self.assertEqual(app.session_parameters._values,before)
+
+    def test_fullname_dispatch_preserves_existing_enum_metadata(self):
+        from test_configuration_enumerations import enum_files
+        files=files_for_session('')
+        files['Configuration.xml']=files['Configuration.xml'].replace(
+            b'</ChildObjects>',b'<Enum>Status</Enum></ChildObjects>')
+        files['Enums/Status.xml']=enum_files()['Enums/Status.xml']
+        app=self.app(files); self.assertTrue(app.start())
+        self.assertEqual(app.execute('Metadata.FindByFullName("Enum.Status").Name'),'Status')
+        self.assertEqual(app.execute('Metadata.FindByFullName("SessionParameter.Flag").Name'),'Flag')
 
     def test_startup_uses_canonical_message_without_inheriting_host_services(self):
         messages, calls = [], []

@@ -1,15 +1,26 @@
-"""Scope-issued, non-retainable readonly CommonModules metadata intermediates.
+"""Scope-issued, non-retainable readonly configuration metadata intermediates.
 
 Tokens contain no owner, definition, source text or Python attribute payload.
 Only this reader registry can interpret them; no host getter is delegated.
 """
 from decimal import Decimal
 from yadinassi.configuration.configuration_modules import _DIRECT_COMMON_MODULE_METADATA_ABI
+from yadinassi.configuration.configuration_session_parameters import SessionParameterDefinition
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.types.values import to_string
 
 ROOT_NAMES=('metadata','метаданные')
 COLLECTION_NAMES=('commonmodules','общиемодули')
+SESSION_NAMES=('sessionparameters','параметрысеанса')
+FIND_FULL=('findbyfullname','найтипополномуимени')
+SESSION_PREFIXES=('sessionparameter','параметрсеанса')
+NAME=('name','имя')
+
+
+def session_full_name(value):
+    if type(value) is not str:return False
+    prefix,sep,_=value.partition('.')
+    return bool(sep) and prefix.casefold() in SESSION_PREFIXES
 _FIELDS={alias:field for field,aliases in (
     ('name',('name','имя')),
     ('global_module',('global','глобальный')),
@@ -53,13 +64,58 @@ class Readers:
     def __init__(self,scope):
         self.scope=scope
         self.definitions=tuple(scope.configuration.common_modules)
-        self.snapshots=tuple(validate_definition(d) for d in self.definitions)
+        self.snapshots=None
         self.issued={};self.cache={}
+        self.sessions=None
+
+    def session_records(self):
+        definitions=self.scope.configuration.session_parameters
+        if self.sessions is None:
+            if type(definitions) is not tuple:raise BoundaryViolation('invalid session metadata')
+            names={}; display=[]
+            for index,definition in enumerate(definitions):
+                if type(definition) is not SessionParameterDefinition or type(definition.name) is not str:
+                    raise BoundaryViolation('invalid session metadata')
+                key=definition.name.casefold()
+                if key in names:raise BoundaryViolation('ambiguous session metadata')
+                names[key]=index
+                display.append(definition.name)
+            self.sessions=(definitions,names,tuple(display))
+        if definitions is not self.sessions[0]:raise BoundaryViolation('session metadata changed')
+        return self.sessions
+
+    def session_name(self,index):
+        definitions,_,display=self.session_records()
+        definition=definitions[index]
+        if type(definition) is not SessionParameterDefinition or type(definition.name) is not str:
+            raise BoundaryViolation('invalid session metadata')
+        if definition.name is not display[index]:raise BoundaryViolation('session metadata changed')
+        return definition.name
+
+    def session_at(self,key,*,numeric=False,missing=False):
+        definitions,names,_=self.session_records()
+        if type(key) is str and not numeric:
+            index=names.get(key.casefold())
+            if index is None:
+                if missing:return None
+                raise ValueError('metadata name not found')
+        elif type(key) is Decimal and key.is_finite() and key==key.to_integral_value():
+            if not 0<=key<len(definitions):raise IndexError('metadata index out of bounds')
+            index=int(key)
+        else:raise TypeError('metadata index requires integer Number')
+        self.session_name(index)
+        return self.issue('session_item',index)
+
+    def find_session(self,name):
+        if type(name) is not str:raise TypeError('metadata full name requires String')
+        prefix,sep,key=name.partition('.')
+        if sep and prefix.casefold() in SESSION_PREFIXES:return self.session_at(key,missing=True)
+        return None
 
     def check(self,context):
         context._check()
         if context._command_scope is not self.scope:raise BoundaryViolation('foreign metadata scope')
-        for definition,snapshot in zip(self.definitions,self.snapshots):
+        for definition,snapshot in zip(self.definitions,self.snapshots or ()):
             if validate_definition(definition)!=snapshot:raise BoundaryViolation('common-module metadata changed')
 
     def issue(self,kind,index=None):
@@ -104,7 +160,15 @@ class Readers:
         kind,index=self.record(context,value)
         if type(name) is not str:raise BoundaryViolation('invalid metadata member name')
         key=name.casefold()
-        if kind=='root' and key in COLLECTION_NAMES:return self.issue('collection')
+        if kind=='root' and key in COLLECTION_NAMES:
+            if self.snapshots is None:
+                self.snapshots=tuple(validate_definition(d) for d in self.definitions)
+            return self.issue('collection')
+        if kind=='root' and key in SESSION_NAMES:return self.issue('sessions')
+        if kind=='sessions':
+            if key in _METHODS:raise ValueError('metadata method-name property access is unsupported')
+            return self.session_at(key)
+        if kind=='session_item' and key in NAME:return self.session_name(index)
         if kind=='collection':
             if key in _METHODS:raise ValueError('metadata method-name property access is unsupported')
             result=self.find(key)
@@ -119,7 +183,12 @@ class Readers:
         kind,index=self.record(context,value)
         if type(name) is not str:raise BoundaryViolation('invalid metadata method name')
         key=name.casefold()
-        if kind=='collection' and key in COUNT:operation=lambda:Decimal(len(self.snapshots));count=0
+        if kind=='root' and key in FIND_FULL:operation=self.find_session;count=1
+        elif kind=='sessions' and key in COUNT:operation=lambda:Decimal(len(self.session_records()[0]));count=0
+        elif kind=='sessions' and key in GET:operation=lambda item:self.session_at(item,numeric=True);count=1
+        elif kind=='sessions' and key=='__getitem__':operation=self.session_at;count=1
+        elif kind=='session_item' and key in FULLNAME:operation=lambda:'ПараметрСеанса.'+self.session_name(index);count=0
+        elif kind=='collection' and key in COUNT:operation=lambda:Decimal(len(self.snapshots));count=0
         elif kind=='collection' and key in FIND:operation=self.find_reader;count=1
         elif kind=='collection' and key in GET:operation=lambda value:self.at(value) if type(value) is not str else self.numeric_only();count=1
         elif kind=='collection' and key=='__getitem__':operation=self.at;count=1

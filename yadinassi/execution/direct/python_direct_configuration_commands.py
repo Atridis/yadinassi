@@ -244,6 +244,7 @@ class _Scope:
 def _validate_command(program,app):
     referenced=set()
     enum_names=enums.NAMES if app.configuration.enumerations else ()
+    session_names=metadata.SESSION_NAMES if app.configuration.session_parameters else ()
     def readonly(token,message='metadata is read-only'):
         raise BSLRuntimeError(message,token.source,token.line,token.column,source_line=token.source_line)
     def reader_kind(node):
@@ -254,15 +255,18 @@ def _validate_command(program,app):
         if kind is ast.Attribute:
             parent=reader_kind(node.object);key=node.name.casefold()
             if parent=='root' and key in metadata.COLLECTION_NAMES:return 'collection'
+            if parent=='root' and key in session_names:return 'sessions'
             if parent=='root' and key in enum_names:return 'enum'
             if parent=='enum' and not key.startswith('_'):return 'enum'
             if parent=='collection':return 'item'
+            if parent=='sessions':return 'session_item'
+            if parent=='session_item' and key in metadata.NAME:return 'scalar'
             if parent=='item' and key in metadata.SCALAR_FIELDS:return 'scalar'
             if parent is not None:_unsupported()
         if kind is ast.Index:
             parent=reader_kind(node.object)
-            if parent in ('collection','enum'):
-                expression(node.index);return 'item' if parent=='collection' else 'enum'
+            if parent in ('collection','enum','sessions'):
+                expression(node.index);return {'collection':'item','enum':'enum','sessions':'session_item'}[parent]
         if kind is ast.Call:
             callee=node.callee
             while type(callee) is ast.Group:callee=callee.expression
@@ -271,6 +275,13 @@ def _validate_command(program,app):
                 if parent=='collection' and key in metadata.COUNT:result,count='scalar',0
                 elif parent=='collection' and key in metadata.FIND+metadata.GET:result,count='item',1
                 elif parent=='item' and key in metadata.FULLNAME:result,count='scalar',0
+                elif parent=='sessions' and key in metadata.COUNT:result,count='scalar',0
+                elif parent=='sessions' and key in metadata.GET:result,count='session_item',1
+                elif parent=='session_item' and key in metadata.FULLNAME:result,count='scalar',0
+                elif (session_names and parent=='root' and key in metadata.FIND_FULL
+                        and len(node.arguments)==1 and type(node.arguments[0]) is ast.Literal
+                        and metadata.session_full_name(node.arguments[0].value)):
+                    result,count='session_item',1
                 elif enum_names and parent=='root' and key in enums.FIND_TYPE+enums.FIND_NAME:result,count='enum',1
                 elif parent=='enum' and key in enums.bridge._ZERO:result,count='enum',0
                 elif parent=='enum' and key in enums.bridge._ONE:result,count='enum',1
@@ -293,7 +304,10 @@ def _validate_command(program,app):
             return
         if kind is ast.Group:expression(node.expression);return
         if kind is ast.Unary:expression(node.operand);return
-        if kind is ast.Binary:expression(node.left);expression(node.right);return
+        if kind is ast.Binary:
+            if (node.operator in ('=','<>') and session_names
+                    and reader_kind(node.left)==reader_kind(node.right)=='session_item'):return
+            expression(node.left);expression(node.right);return
         if kind is ast.Call:
             callee=node.callee
             while type(callee) is ast.Group:callee=callee.expression

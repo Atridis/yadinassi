@@ -181,11 +181,20 @@ class ConfigurationBoundary(BoundaryContext):
     def resolve_member(self,value,name):
         self._check()
         if self._command_scope is not None:
-            from .python_direct_configuration_metadata import is_reader
+            from .python_direct_configuration_metadata import is_reader, session_full_name
             if is_reader(value):
                 readers=self._command_scope.metadata
                 key=name.casefold()
                 if key in enums.FIND_TYPE+enums.FIND_NAME and readers.record(self,value)[0]=='root':
+                    if key in enums.FIND_NAME and self._command_scope.configuration.session_parameters:
+                        session=readers.method(self,value,name)
+                        if not self._command_scope.configuration.enumerations:return session
+                        enum=self._enums().metadata_method(key)
+                        def find(full_name):
+                            if session_full_name(full_name):return session(full_name)
+                            return enum(full_name)
+                        find.returns_value=True
+                        return find
                     return self._enums().metadata_method(key)
                 return readers.method(self,value,name)
             if enums.receiver_type(value):
