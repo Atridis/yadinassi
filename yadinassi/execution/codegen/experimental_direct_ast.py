@@ -312,6 +312,13 @@ class Emitter:
             if key in self.module_cells:local=self.node(py.Subscript,t,value=self.name(self.static_module_names[key],t),slice=self.const(0,t),ctx=py.Store())
             targets=[local]
         return self.node(py.Assign,t,targets=targets,value=value)
+    def read_missing(self,name,key,token):
+        if (self.current_module and not self.owned_constructors
+                and key in ('runcallback','выполнитьобработкуоповещения')):
+            return self.invoke(self.attribute(self.name('_context',token),'capture_run_callback',token),
+                               [self.const(key,token)],token)
+        return self.call('_missing',[self.const(name,token)],token)
+
     def read(self,name,token):
         if self.scope is None and name.casefold() in self.static_module_names:
             value=self.name(self.static_module_names[name.casefold()],token)
@@ -344,13 +351,13 @@ class Emitter:
                     missing=self.invoke(self.attribute(self.name('_context',token),'external_get',token),[self.const(key,token)],token) if key in self.scope['shadows'] else self.call('_missing',[self.const(name,token)],token)
                     return self.node(py.IfExp,token,test=test,body=value,orelse=missing)
                 return value
-            return self.call('_missing',[self.const(name,token)],token)
+            return self.read_missing(name,key,token)
         temporary=self.temp()
         value=self.invoke(self.attribute(self.name('_initial',token),'get',token),[self.const(name.casefold(),token),self.name('_UNSET',token)],token)
         bound=self.node(py.NamedExpr,token,target=self.name(temporary,token,True),value=value)
         test=self.node(py.Compare,token,left=bound,ops=[py.IsNot()],comparators=[self.name('_UNSET',token)])
         missing=(self.invoke(self.attribute(self.name('_context',token),'current_module',token),[],token)
-                 if implicit_self else self.call('_missing',[self.const(name,token)],token))
+                 if implicit_self else self.read_missing(name,key,token))
         return self.node(py.IfExp,token,test=test,body=self.name(temporary,token),orelse=missing)
     def temp(self):self.serial+=1;return '_temporary_'+str(self.serial)
     def import_path(self,node):

@@ -259,6 +259,9 @@ class ImportBoundary:
     def resolve_service(self,name,*args,**kwargs):
         if (self.vm.imports and ':' not in name and name.casefold() not in self.vm.functions
                 and name.casefold() not in getattr(self.vm,'_direct_routine_modules',{})):
+            from .python_direct_callback import CapturedRunCallback
+            if args and type(args[0]) is CapturedRunCallback:
+                return super().resolve_service(name,*args,**kwargs)
             if self._verify_context:self._check()
             raise ValueError('Переменная или функция не определена: '+name)
         return super().resolve_service(name,*args,**kwargs)

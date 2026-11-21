@@ -43,6 +43,7 @@ from yadinassi.formats.storage.serialization import _DIRECT_VALUE_TO_STRING_ABI,
 from yadinassi.runtime import _eval_marker
 from . import python_direct_user_messages as user_messages
 from yadinassi.application.callbacks import callback_description_marker, run_callback_marker
+from . import python_direct_callback as callbacks
 from yadinassi.application.direct_callbacks import CallbackDescription as _CallbackDescription, construct as _new_callback, read as _callback_read
 
 _FILE_EFFECTS = frozenset(map(id, (
@@ -275,7 +276,12 @@ class ServicesBoundary:
             raise ValueError('Свойство недоступно для записи: '+name)
         return readonly
 
+    def capture_run_callback(self,key):
+        return callbacks.capture(self,key)
+
     def resolve_callable(self,value,*,require_value=False,allow_references=False,_extension_value=False):
+        if type(value) is callbacks.CapturedRunCallback:
+            return callbacks.resolve_captured(self,value)
         if (type(value) is user_messages.HostFunction and type(value.function) is user_messages.MethodType
                 and type(value.function.__self__) is user_messages.BSLUserMessage):
             return user_messages.captured(self,value,require_value=require_value,allow_references=allow_references)
@@ -414,10 +420,11 @@ class ServicesBoundary:
         from yadinassi.application.temporary_storage import SourceTemporaryCall
         from yadinassi.configuration.common_templates import SourceTemplateCall
         function=self._services.get(key)
-        if (key in ('runcallback','выполнитьобработкуоповещения')
-                and type(function) is HostFunction and function.function is run_callback_marker):
-            from .python_direct_callback import bind
-            return bind(self,key,function,argument_count=kwargs.get('argument_count'))
+        if (function is None and args and type(args[0]) is callbacks.CapturedRunCallback
+                and key not in self._services):
+            return callbacks.resolve_captured(self,args[0],argument_count=kwargs.get('argument_count'))
+        if (key in callbacks.NAMES and type(function) is HostFunction and function.function is run_callback_marker):
+            return callbacks.bind(self,key,function,argument_count=kwargs.get('argument_count'))
         if key in ('readjson','прочитатьjson','writejson','записатьjson'):
             count=kwargs.get('argument_count')
             if count is not None and type(function) is HostFunction:

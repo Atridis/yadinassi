@@ -74,6 +74,57 @@ Kind=TypeOf(C);Text=String(C);'''
         self.assertEqual(events, ['close'])
         self.assertEqual(vm.variables['seen'], 0)
 
+    def test_capture_is_bilingual_in_plain_prepared_execution_and_shadows_locals(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('Function Add(V,E) Export Return V+E; EndFunction '
+                   'Function Local(Val RunCallback) Return RunCallback; EndFunction '
+                   'D=New CallbackDescription("Add",ThisObject,2);')
+        plan = vm.prepare('Dispatch=ВЫПОЛНИТЬОбработкуОповещения; '
+                          'A=Dispatch(D,4); B=Local("local value");')
+        vm.execute_prepared(plan)
+        vm.execute_prepared(plan)
+        self.assertEqual((vm.variables['a'], vm.variables['b']), (6, 'local value'))
+        self.assertFalse(callable(vm.variables['dispatch']))
+        with self.assertRaises(BSLError):
+            vm.execute('ValueToStringInternal(Dispatch);')
+
+    def test_captured_alias_checks_arity_before_arguments(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('Var Seen; Seen=0; Dispatch=RunCallback; '
+                   'Function Arg() Seen=Seen+1; Return 1; EndFunction')
+        with self.assertRaisesRegex(BSLError, 'от 1 до 2 аргументов'):
+            vm.execute('Dispatch(Arg(),Arg(),Arg());')
+        self.assertEqual(vm.variables['seen'],0)
+
+    def test_captured_dispatch_cannot_move_between_owners(self):
+        owner, other = Interpreter(), Interpreter()
+        self.addCleanup(owner.close)
+        self.addCleanup(other.close)
+        owner.execute('Dispatch=RunCallback;')
+        other.execute('Var Seen; Seen=0; Procedure P(V,E) Export Seen=1; EndProcedure '
+                      'D=New CallbackDescription("P",ThisObject);')
+        other.variables['dispatch'] = owner.variables['dispatch']
+        with self.assertRaises(BoundaryViolation):
+            other.execute('Dispatch(D);')
+        self.assertEqual(other.variables['seen'], 0)
+
+    def test_captured_dispatch_can_call_already_imported_owner(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root/'Receiver.bsl').write_text(
+                'Function Work(V,E) Export Return V+E; EndFunction', encoding='utf-8')
+            vm.execute('// #Import Receiver.bsl\n'
+                       'D=New CallbackDescription("Work",Receiver,3); Dispatch=RunCallback;',
+                       str(root/'Main.bsl'))
+            self.assertEqual(vm.execute('Dispatch(D,7)'), 10)
+
     def test_readonly_and_private_attributes_closed(self):
         vm=Interpreter();vm.execute('C=New CallbackDescription("P");')
         for expr in ('C.ProcedureName="Other"','C.__class__','C.procedure_name','C.ProcedureName()'):
