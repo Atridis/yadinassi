@@ -8,9 +8,9 @@ from yadinassi.streams.binary_streams import POSITIONS_IN_STREAM, BYTE_ORDERS, F
 from yadinassi.streams.file_io import TEXT_ENCODINGS
 from yadinassi.streams.data_hashing import HASH_FUNCTIONS
 from yadinassi.text.chars import CHARS
-from yadinassi.collections.search_directions import SEARCH_DIRECTIONS
-from yadinassi.collections.sort_directions import SORT_DIRECTIONS
-from yadinassi.numeric.round_modes import ROUND_MODES
+from yadinassi.collections.search_directions import BSLSearchDirection, SEARCH_DIRECTIONS
+from yadinassi.collections.sort_directions import BSLSortDirection, SORT_DIRECTIONS
+from yadinassi.numeric.round_modes import BSLRoundMode, ROUND_MODES
 from yadinassi.types.type_qualifiers import ALLOWED_SIGNS, ALLOWED_LENGTHS, DATE_FRACTIONS
 from yadinassi.types.error_info import ERROR_CATEGORIES
 from yadinassi.formats.json.json_dates import JSON_DATE_FORMATS, JSON_DATE_WRITING_VARIANTS
@@ -49,3 +49,10 @@ VALUES = tuple(NAMES.values())
 # VALUES retains these immutable singletons, so their identities cannot be reused.
 VALUE_IDS = frozenset(map(id, VALUES))
 ITERABLES = (SEARCH_DIRECTIONS, SORT_DIRECTIONS, ROUND_MODES)
+
+# Immutable namespace receivers and their actual scalar members. Keep the
+# instances alive: types, equal payloads and freshly forged instances confer no
+# authority (including authority to dispatch a Python protocol).
+ITERABLE_IDS = frozenset(map(id, ITERABLES))
+ITERATION_ENUM_VALUES = (*BSLSearchDirection, *BSLSortDirection, *BSLRoundMode)
+ITERATION_ENUM_VALUE_IDS = frozenset(map(id, ITERATION_ENUM_VALUES))

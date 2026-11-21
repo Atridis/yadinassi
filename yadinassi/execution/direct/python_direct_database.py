@@ -42,7 +42,8 @@ from yadinassi.collections.plain_value_list import PlainValueList, PlainValueLis
 from yadinassi.formats.json.json_dates import BSLJSONSerializerSettings
 from yadinassi.formats.json.json_processing import (BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings,
     _DIRECT_SOURCE_JSON_CLASSES, _DIRECT_SOURCE_JSON_DICT, _DIRECT_JSON_READ)
-from .python_direct_names import NAMES as SYSTEM_NAMES, VALUE_IDS as SYSTEM_VALUE_IDS, ITERABLES
+from .python_direct_names import (NAMES as SYSTEM_NAMES, VALUE_IDS as SYSTEM_VALUE_IDS,
+    ITERABLE_IDS, ITERATION_ENUM_VALUE_IDS)
 from yadinassi.configuration.metadata import (BSLMetadata, BSLCatalogMetadataCollection, BSLCatalogMetadata,
     BSLInformationRegisterMetadata, BSLInformationRegisterMetadataCollection)
 from yadinassi.db.query.queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
@@ -201,7 +202,7 @@ class CatalogBoundary:
         elif kind is BSLEnumerations:
             if value is self.vm._metadata._enumerations:return
             owner=None
-        elif kind in (BSLEnumManager,BSLEnumReference):
+        elif kind is BSLEnumManager or kind is BSLEnumReference:
             enum_type=value._value_type if kind is BSLEnumManager else value.value_type
             enums=self.vm._metadata._enumerations
             if enums is not None and enum_type.snapshot is enums.metadata:return
@@ -210,12 +211,13 @@ class CatalogBoundary:
         elif kind is BSLTempTablesManager:
             if value._owner is root._metadata:return
             owner=None
-        elif kind in (BSLValueTableRow, BSLValueTableColumn, BSLValueTableColumnCollection,
-                      BSLCollectionIndex, BSLCollectionIndexes):
+        elif (kind is BSLValueTableRow or kind is BSLValueTableColumn
+              or kind is BSLValueTableColumnCollection or kind is BSLCollectionIndex
+              or kind is BSLCollectionIndexes):
             # Detached table data has no database authority. Its public protocol
             # still enforces row/column ownership, deletion and slice restrictions.
             if type(value.table) is BSLValueTable:
-                if kind in (BSLCollectionIndex, BSLCollectionIndexes) and value.table._bounded_slice_read:
+                if (kind is BSLCollectionIndex or kind is BSLCollectionIndexes) and value.table._bounded_slice_read:
                     raise BoundaryViolation('bounded slice index receiver is not connected')
                 return
             raise BoundaryViolation('noncanonical value table owner')
@@ -235,7 +237,7 @@ class CatalogBoundary:
             owner=None
         elif kind is BSLCatalogs: owner=value
         elif kind is BSLCatalogManager: owner=value._catalogs
-        elif kind in (BSLCatalogObject, BSLCatalogSelection): owner=value._manager._catalogs
+        elif kind is BSLCatalogObject or kind is BSLCatalogSelection: owner=value._manager._catalogs
         elif kind is BSLCatalogSection: owner=value._owner._manager._catalogs
         elif kind is BSLCatalogSectionRow: owner=value._section._owner._manager._catalogs
         elif kind is BSLCatalogReference:
@@ -286,6 +288,9 @@ class CatalogBoundary:
         raise ValueError('catalog namespace is read-only')
 
     def get_member(self,value,name):
+        if id(value) in ITERATION_ENUM_VALUE_IDS:
+            if self._verify_context:self._check()
+            raise ValueError('Поле объекта не обнаружено: '+name)
         verify=_verify_collection(self,value)
         self._catalog_owner(value,verify=verify)
         try:return value.get_member(name)
@@ -375,6 +380,13 @@ class CatalogBoundary:
         return self.resolve_member(value,name)
 
     def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
+        # A spelled member call must not reach the internal protocol names
+        # emitted for indexing and For Each. These enum namespaces have no
+        # methods; their scalar identities have no member protocol at all.
+        identity=id(value)
+        if identity in ITERABLE_IDS or identity in ITERATION_ENUM_VALUE_IDS:
+            if self._verify_context:self._check()
+            raise ValueError('Метод объекта не обнаружен: '+name)
         if omitted and type(value) in (BSLTextReader,BSLTextWriter,BSLDataWriter,BSLDataHashing):
             key=name.casefold()
             accepted=()
@@ -479,6 +491,12 @@ class CatalogBoundary:
         return invoke
 
     def resolve_member(self,value,name):
+        if name in ('__iter__','__getitem__','__setitem__'):
+            identity=id(value)
+            if identity in ITERATION_ENUM_VALUE_IDS or (name!='__iter__' and identity in ITERABLE_IDS):
+                if self._verify_context:self._check()
+                if name=='__iter__':raise ValueError('Для Каждого ожидает массив или коллекцию')
+                raise ValueError('Индексирование для этого типа не поддерживается')
         from . import python_direct_fixed_find as fixed_find
         if fixed_find.owns(value,name):return fixed_find.resolve(self,value,name)
         if name=='__iter__':
@@ -495,7 +513,7 @@ class CatalogBoundary:
         elif name=='__setitem__':
             function=value.set if type(value) in (BSLArray, BSLFixedArray, BSLMap, BSLFixedMap, BSLFixedStructure) else lambda index,new:value.set_index(index,new)
         elif name=='__iter__':
-            if type(value) not in (BSLArray, BSLFixedArray, BSLFixedStructure, BSLFixedMap, BSLValueList, BSLCollectionIndex, BSLCollectionIndexes, BSLInformationRegisterRecordSet, BSLCatalogSection, BSLDocumentLines, BSLBinaryDataBuffer) and not any(value is item for item in ITERABLES) and not any(type(value) is kind for kind in _DOM_LISTS):
+            if type(value) not in (BSLArray, BSLFixedArray, BSLFixedStructure, BSLFixedMap, BSLValueList, BSLCollectionIndex, BSLCollectionIndexes, BSLInformationRegisterRecordSet, BSLCatalogSection, BSLDocumentLines, BSLBinaryDataBuffer) and id(value) not in ITERABLE_IDS and not any(type(value) is kind for kind in _DOM_LISTS):
                 raise BoundaryViolation('direct database iterator not connected')
             function=lambda:iter(value)
         else:
