@@ -9,6 +9,7 @@ opaque references. There is no qualifier coercion, codec or index engine here.
 from decimal import Decimal
 
 from yadinassi.temporal.dates import BSLDate, MAX_TICKS
+from yadinassi.text.sort_keys import text_sort_key
 from yadinassi.types.values import NULL
 
 _SORT_DATE_TICKS = vars(BSLDate)["ticks"]
@@ -140,7 +141,6 @@ def scalar_equal(left, right):
         return False
     return left == right
 
-
 def _sort_value(value):
     kind = type(value)
     if value is None:
@@ -154,7 +154,7 @@ def _sort_value(value):
             raise ValueError('nonfinite sort value')
         return 1, 1, value
     if kind is str:
-        return 1, 2, value
+        return 1, 2, text_sort_key(value)
     if value is NULL:
         return 0, 1, 0
     if kind is BSLDate:
@@ -375,13 +375,21 @@ class TableStorage:
             if type(entry) is not tuple or len(entry) != 2 or type(entry[1]) is not bool:
                 raise TypeError('sort entry must be (column_name, descending_bool)')
             prepared.append((self.schema.offset(entry[0]), entry[1]))
-        # Materialize all scalar keys before changing physical row order.
-        decorated = [(row, tuple(_sort_value(list.__getitem__(row, name))
-                                 for name, _ in prepared)) for row in self.rows]
-        for index in range(len(prepared) - 1, -1, -1):
-            decorated.sort(key=lambda entry: entry[1][index], reverse=prepared[index][1])
+        # Sort a copy so an invalid key never changes the physical row order.
+        if len(prepared) == 1:
+            position, descending = prepared[0]
+            ordered = sorted(self.rows,
+                             key=lambda row: _sort_value(list.__getitem__(row, position)),
+                             reverse=descending)
+        else:
+            # Mixed directions need stable passes over the materialized keys.
+            decorated = [(row, tuple(_sort_value(list.__getitem__(row, position))
+                                     for position, _ in prepared)) for row in self.rows]
+            for index in range(len(prepared) - 1, -1, -1):
+                decorated.sort(key=lambda entry: entry[1][index], reverse=prepared[index][1])
+            ordered = [row for row, _ in decorated]
         self.epoch += 1
-        self.rows[:] = [row for row, _ in decorated]
+        self.rows[:] = ordered
 
 # Definition-time code/data identity, consumed by the direct boundary before a
 # callback-free operation group. These tuples do not grant receiver authority.

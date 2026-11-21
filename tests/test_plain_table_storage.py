@@ -116,6 +116,27 @@ class PlainTableStorageTests(unittest.TestCase):
         self.assertEqual([r.get_value('Amount') for r in table.rows],[D(2),D(1),D(1),D(1)])
         self.assertIs(table.rows[1],identities[2]);self.assertIs(table.rows[2],identities[3])
 
+    def test_russian_sort_key_is_stable_in_both_directions(self):
+        table = self.storage()
+        values = ['Жук', 'Ёлка', 'Ель', 'ёлка', 'ель', 'Я', 'A', 'a', 'á', 'ѐ', '😀']
+        original = {}
+        for value in values:
+            row = table.add()
+            row.set_value('Name', value)
+            original[value] = row
+        rows = table.rows
+        for descending, russian in (
+                (False, ['Ель', 'ель', 'Ёлка', 'ёлка', 'Жук', 'Я']),
+                (True, ['Я', 'Жук', 'Ёлка', 'ёлка', 'Ель', 'ель'])):
+            table.sort([('Name', descending)])
+            self.assertIs(table.rows, rows)
+            sorted_values = [row.get_value('Name') for row in rows]
+            self.assertEqual([v for v in sorted_values if v in russian], russian)
+            self.assertEqual([v for v in sorted_values if v not in russian],
+                             sorted(['A', 'a', 'á', 'ѐ', '😀'], reverse=descending))
+            for row in rows:
+                self.assertIs(row, original[row.get_value('Name')])
+
     def test_opaque_comparison_and_sort_fail_without_hooks_or_reordering(self):
         effects=[]
         class Hostile:

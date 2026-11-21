@@ -18,7 +18,7 @@ covers all 96 original labelled records, not a local sort prediction.
 
 Tests under ModelSafetyTests are synthetic correctness/resource checks, not
 additional native observations. Native equivalence beyond the observed lengths 15..18 is unverified. The
-blocking API tests below assert the documented stable Python scalar ordering.
+blocking API tests below assert stable lightweight scalar ordering.
 """
 from decimal import Decimal as D, Inexact, Rounded, localcontext
 from contextlib import nullcontext
@@ -114,13 +114,25 @@ def input_ids(size, insertion):
 
 
 
+# Independent expected weights for the fixture's actual labels. Non-Russian
+# labels retain their Python order; Russian case variants share a weight.
+_EXPECTED_KEY_ORDER = (' ', '!', 'A', 'a', 'a ', 'a-1', 'a1', 'a10',
+                       'a2', 'á', 'е', 'ё', 'я', '😀')
+
+
+def fixture_key(label):
+    if label in ('Е', 'Ё', 'Я'):
+        label = label.lower()
+    return _EXPECTED_KEY_ORDER.index(label)
+
+
 def python_order(size, insertion, mode):
     ids = input_ids(size, insertion)
     if mode == 'asc-id-desc':
         ids.sort(reverse=True)
     elif mode == 'desc-id-asc':
         ids.sort()
-    return tuple(sorted(ids, key=lambda i: KEYS[i - 1],
+    return tuple(sorted(ids, key=lambda i: fixture_key(KEYS[i - 1]),
                         reverse=mode.startswith('desc')))
 
 
@@ -167,7 +179,7 @@ class NativeTargetSortTests(unittest.TestCase):
         self.assertEqual(tuple(unique.index(key) for key in keys), RANKS)
 
     def test_all_96_python_orders_preserve_records_and_metadata(self):
-        # Python scalar ordering is the documented lightweight contract.
+        # Check the documented lightweight ordering and original row identity.
         # Historical native IDs remain unchanged in the explicit diagnostic:
         # python -m unittest tests.compatibility_native_table_sort -v
         observed = 0

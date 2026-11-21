@@ -1,5 +1,11 @@
 # Lightweight Table sorting and historic order
 
+The lightweight string key orders the 33 Russian letters alphabetically
+(`Е`, `Ё`, `Ж`) and treats their uppercase and lowercase forms as equivalent.
+Other characters are unchanged in the key; this is not a locale collation.
+Equal keys retain input order. Single-column sorting passes its key function
+directly to Python's `sorted` and replaces the rows only after success.
+
 Blocking `test_native_target_sort` checks all 96 Python orders, record/cell/owner
 and metadata preservation, numeric ordering and callback rejection. The readonly
 `cells` snapshot contract is checked separately, not excused as collation.
