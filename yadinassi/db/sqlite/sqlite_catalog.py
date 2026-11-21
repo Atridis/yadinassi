@@ -1639,6 +1639,7 @@ class SQLiteCatalogBackend:
             if _admit_source(connection, self.database_id, self._schemas, self._document_schemas,
                              enum_source, _prepared=self._prepared_source) != self.accumulation_configuration:
                 raise BackendError('schema_changed')
+            return config.catalogs
 
     def _read_admission_cache_allowed(self):
         # Source-bearing profiles require their own complete descriptor. Generic
@@ -1783,6 +1784,7 @@ class SQLiteCatalogBackend:
                 connection.execute('BEGIN IMMEDIATE' if operation_id is not None else 'BEGIN')
                 proofs = None
                 descriptor = None
+                admitted_catalogs = None
                 if handle is not None and catalog_data is None and self._read_admission_cache_allowed():
                     # BEGIN alone does not pin a snapshot. Reading sqlite_schema
                     # takes a real shared read lock before sampling data_version.
@@ -1799,7 +1801,13 @@ class SQLiteCatalogBackend:
                     if handle is not None and connection.execute('PRAGMA journal_mode').fetchone() != ('delete',):
                         raise BackendError('unsupported')
                 elif descriptor is None:
-                    self._validate_transaction_admission(connection)
+                    admitted = self._validate_transaction_admission(connection)
+                    if operation_id is not None and admitted is not None:
+                        # The manifest and source proved these schemas on
+                        # this locked connection. Keep them private to the
+                        # writer and its registered leases.
+                        from copy import deepcopy
+                        admitted_catalogs = deepcopy({s.identity.int:s for s in admitted})
                     if handle is not None and self._read_admission_cache_allowed():
                         current = self._read_admission_descriptor()
                         descriptor = self._read_admission_baseline
@@ -1815,7 +1823,7 @@ class SQLiteCatalogBackend:
                 identity = (catalog_data.identity if catalog_data is not None else
                             (UUID(int=self.database_id.int), 1) if self.format_version == 16 else None)
                 view = _View(self, connection, operation_id, admitted_identity=identity,
-                             catalog_data=catalog_data)
+                             catalog_data=catalog_data, admitted_catalogs=admitted_catalogs)
                 if handle is not None:
                     view._read_handle = handle
                 if handle is not None and catalog_data is None:
@@ -1918,10 +1926,11 @@ class SQLiteCatalogBackend:
 
 class _View:
     def __init__(self, backend, connection, operation_id, *, query_language=False,
-                 admitted_identity=None, catalog_data=None):
+                 admitted_identity=None, catalog_data=None, admitted_catalogs=None):
         self._backend, self._connection, self._operation_id = backend, connection, operation_id
         self._query_language = query_language
         self._catalog_data = catalog_data
+        self._admitted_catalogs = admitted_catalogs
         self._committed = False
         self._closed = False; self._poisoned = False; self._changes = []
         self._scan_cursor = None
@@ -2037,6 +2046,10 @@ class _View:
         self._require(); _uuid(catalog_id)
         if self._catalog_data is not None:
             return self._catalog_data.catalog(catalog_id)
+        if self._admitted_catalogs is not None:
+            schema = self._admitted_catalogs.get(catalog_id.int)
+            if schema is None: raise BackendError('not_found')
+            return schema
         if self._query_language:
             for schema in self._backend._schemas:
                 if schema.identity == catalog_id:

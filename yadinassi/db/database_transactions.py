@@ -297,7 +297,9 @@ class Transaction:
                 if write or mutate: raise BackendError('unsupported')
                 return super()._require()
         if self.unit.state != 'open': raise BackendError('uncertain_commit')
-        lease = Lease(self.backend, self.unit._view._connection, None)
+        writer = self.unit._view
+        lease = Lease(self.backend, writer._connection, None,
+                      admitted_catalogs=writer._admitted_catalogs)
         entry = (Lease, lease)
         previous_count = self.leases
         try:

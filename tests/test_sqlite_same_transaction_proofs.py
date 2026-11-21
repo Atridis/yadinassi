@@ -61,7 +61,9 @@ class SameTransactionProofTests(unittest.TestCase):
             writer.update(update, previous.revision)
             result, = writer.commit_outcomes()
         reads = [sql for sql in statements if sql.startswith('SELECT definition FROM catalog_schema')]
-        self.assertEqual(len(reads), 1)
+        # The fresh writer already proved the complete format-16 manifest on
+        # this locked connection; update does not reread a selected entry.
+        self.assertEqual(reads, [])
         with closing(self.backend.begin_read()) as reader:
             saved = reader.read_catalog(key)
             self.assertEqual((saved.description, saved.revision), ('after', result.revision))
