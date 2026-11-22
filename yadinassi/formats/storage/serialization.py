@@ -6,6 +6,7 @@ New runtime types must be added explicitly to the codec policy and its completen
 """
 
 from dataclasses import dataclass
+from weakref import ReferenceType
 
 from yadinassi.types.unique_identifiers import BSLUUID, canonical_codec_uuid
 from yadinassi.temporal.dates import BSLDate, codec_text, read_codec
@@ -28,7 +29,7 @@ from yadinassi.collections.value_tables import (BSLValueTable, BSLValueTableRow,
                            BSLValueTableColumnCollection, BSLCollectionIndexes)
 from .value_storage_table import _wire_index_definitions
 from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
-from yadinassi.collections.plain_value_list import PlainValueList, PlainValueListItem
+from yadinassi.collections.plain_value_list import PlainValueList, PlainValueListItem, _ItemMembership
 from yadinassi.types.type_values import type_of
 from yadinassi.db.catalog.catalog_types import BSLCatalogReference, BSLCatalogType
 from yadinassi.db.metadata.enum_types import BSLEnumReference, BSLEnumType
@@ -60,6 +61,9 @@ FORMAT_ERROR = "Ошибка преобразования: Ошибка форм
 # These are implementation resource budgets, not inferred native limits.
 _PLAIN_LIST_NEXT_ID = vars(PlainValueList)['_next_id']
 _PLAIN_LIST_ITEM_ID = vars(PlainValueListItem)['_id']
+_PLAIN_LIST_ITEM_MEMBERSHIP = vars(PlainValueListItem)['_membership']
+_PLAIN_LIST_OWNER = vars(_ItemMembership)['owner']
+_PLAIN_LIST_CLEAR_ID = vars(_ItemMembership)['cleared_before']
 _PLAIN_FIXED_MAP_STORAGE = vars(PlainFixedMap)['_snapshot']
 
 _TYPE_IDS = {
@@ -334,6 +338,8 @@ class _Writer:
             entry_count = dict.__len__(value)
         elif self.direct and value_type is PlainValueList:
             kind = BSLType.VALUE_LIST
+        elif self.direct and value_type is PlainValueListItem:
+            kind = BSLType.VALUE_LIST_ITEM
         elif self.direct and value_type is _TypedMap:
             kind, direct_items = BSLType.MAP, dict.values(value)
         elif self.direct and value_type is _DIRECT_MAP_ENTRY_TYPE:
@@ -411,7 +417,10 @@ class _Writer:
                     else:
                         self.value_list(value, depth)
                 elif kind is BSLType.VALUE_LIST_ITEM:
-                    self.value_list_item(value, depth)
+                    if value_type is PlainValueListItem:
+                        self.plain_value_list_item(value, depth)
+                    else:
+                        self.value_list_item(value, depth)
                 elif kind is BSLType.VALUE_TABLE:
                     self.table(value, depth)
                 elif kind is BSLType.KEY_AND_VALUE:
@@ -481,22 +490,42 @@ class _Writer:
         seen = set()
 
         def write_item(item, item_depth):
-            if type(item) is not PlainValueListItem or list.__len__(item) != 4:
-                raise ValueError("ЗначениеВСтрокуВнутр: недопустимый элемент списка значений")
-            try:
-                identifier = _PLAIN_LIST_ITEM_ID.__get__(item, PlainValueListItem)
-            except AttributeError:
-                identifier = None
-            payload, presentation, check, picture = list.__iter__(item)
-            if (type(identifier) is not int or not 0 <= identifier < next_id
-                    or identifier in seen or type(presentation) is not str
-                    or type(check) is not bool or picture is not None):
+            identifier, owner, payload, presentation, check = self.plain_list_item_fields(item)
+            if owner is not value or not 0 <= identifier < next_id or identifier in seen:
                 raise ValueError("ЗначениеВСтрокуВнутр: недопустимый элемент списка значений")
             seen.add(identifier)
             self.list_item_fields(presentation, check, payload, identifier, item_depth)
 
         self.list_entries(list.__iter__(value), count, depth, write_item)
         self.emit(',\n{"Pattern"},0,' + str(next_id - 1) + '}')
+
+    @staticmethod
+    def plain_list_item_fields(item):
+        if type(item) is not PlainValueListItem or list.__len__(item) != 4:
+            raise ValueError("ЗначениеВСтрокуВнутр: недопустимый элемент списка значений")
+        try:
+            identifier = _PLAIN_LIST_ITEM_ID.__get__(item, PlainValueListItem)
+            membership = _PLAIN_LIST_ITEM_MEMBERSHIP.__get__(item, PlainValueListItem)
+        except AttributeError:
+            raise ValueError("ЗначениеВСтрокуВнутр: недопустимый элемент списка значений") from None
+        if type(membership) is not _ItemMembership:
+            raise ValueError("ЗначениеВСтрокуВнутр: недопустимое состояние элемента списка значений")
+        owner_ref = _PLAIN_LIST_OWNER.__get__(membership, _ItemMembership)
+        cleared_before = _PLAIN_LIST_CLEAR_ID.__get__(membership, _ItemMembership)
+        payload, presentation, check, picture = list.__iter__(item)
+        if (type(identifier) is not int or not -1 <= identifier < 2 ** 32
+                or type(owner_ref) is not ReferenceType or type(cleared_before) is not int
+                or type(presentation) is not str
+                or type(check) is not bool or picture is not None):
+            raise ValueError("ЗначениеВСтрокуВнутр: недопустимый элемент списка значений")
+        owner = owner_ref()
+        if owner is not None and type(owner) is not PlainValueList:
+            raise ValueError("ЗначениеВСтрокуВнутр: недопустимый список значений элемента")
+        return (identifier if identifier >= cleared_before else -1), owner, payload, presentation, check
+
+    def plain_value_list_item(self, item, depth):
+        identifier, owner, payload, presentation, check = self.plain_list_item_fields(item)
+        self.list_item_fields(presentation, check, payload, identifier if owner is not None else -1, depth)
 
     def list_entries(self, items, count, depth, write_item):
         self.emit('{6,' + _LIST_ENTRY_ID + ',0,0,\n{' + str(count))

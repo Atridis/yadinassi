@@ -239,13 +239,16 @@ class _ValueListItemReference(_Reference):
         except AttributeError as exc:raise ValueError(str(exc)) from None
         if self.field == 3:
             raise ValueError('Свойство элемента списка недоступно для передачи по ссылке: '+name)
+        item._require_live_owner()
 
     @property
     def value(self):
+        self.item._require_live_owner()
         return self.item[self.field]
 
     @value.setter
     def value(self,value):
+        self.item._require_live_owner()
         self.item[self.field]=value
 
 class _AttributeRef(_Reference):

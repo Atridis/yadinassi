@@ -316,12 +316,14 @@ class ValueListReferenceRuntimeTests(unittest.TestCase):
         self.vm.execute('owner = New ValueList; item = owner.Add(10, "old", False); '
                         'other = owner.Add(20, "second", False);')
 
-    def test_plain_prepared_reference_keeps_the_same_item_without_owner_storage(self):
+    def test_plain_prepared_reference_keeps_the_same_item_with_shared_weak_owner(self):
         from yadinassi.collections.plain_value_list import PlainValueListItem
 
         item = self.vm.variables['item']
         self.assertIs(type(item), PlainValueListItem)
-        self.assertFalse(hasattr(item, '_owner_ref'))
+        self.assertIs(item._membership.owner(), self.vm.variables['owner'])
+        self.assertIs(item._membership, self.vm.variables['other']._membership)
+        self.assertFalse(hasattr(item, '__dict__'))
         self.vm.execute_prepared(self.vm.prepare(
             'Procedure Update(x, y) x = 83; Message(y); EndProcedure '
             'Update(owner.Get(0).Value, item.Значение);'))
@@ -487,8 +489,8 @@ class ValueListReferenceBoundaryTests(unittest.TestCase):
                 with self.assertRaises(BSLError):
                     vm.execute('Change(item.Value);')
                 self.assertEqual(output, ['entered'])
-                self.assertIsNone(item._owner_ref())
-                self.assertEqual(item.value, D(10))
+                self.assertIsNone(item._membership.owner())
+                self.assertEqual(vm.execute("item.Value"), D(10))
                 self.assertIsNone(vm.locals)
 
     def test_arbitrary_host_objects_and_item_subclasses_cannot_supply_member_hooks(self):

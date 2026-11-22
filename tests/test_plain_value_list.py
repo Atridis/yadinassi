@@ -47,7 +47,7 @@ class PlainValueListTests(unittest.TestCase):
         values.insert(0, 3)
         self.assertIs(values.get(1), first)
         values.delete(first)
-        self.assertEqual(first.get_id(), D(0))
+        self.assertEqual(first.get_id(), D(-1))
         self.assertIsNone(values.find_by_id(0))
         self.assertIs(values.find_by_id(second.get_id()), second)
         values.move(second, -1)

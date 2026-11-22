@@ -299,9 +299,21 @@ class CatalogBoundary:
         from . import python_direct_table_references as table_refs
         if table_refs.member(value):return table_refs.bind(self,value,name)
         kind=type(value)
-        if kind is PlainValueListItem and not self._verify_context:
+        if kind is PlainValueListItem:
             from yadinassi.execution.codegen.experimental_naked_collections import _ValueListItemReference
-            return _ValueListItemReference(value,name)
+            if not self._verify_context:
+                return _ValueListItemReference(value,name)
+            self._check()
+            direct = _ValueListItemReference(value,name)
+            def read_plain():
+                self._check()
+                return direct.value
+            def write_plain(new_value):
+                self._check()
+                direct.value = new_value
+            from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
+            from yadinassi.types.values import Reference
+            return _ForwardReference(Reference(read_plain,write_plain))
         if kind is PlainValueList and not self._verify_context:
             raise ValueError('Поле объекта не обнаружено: '+name)
         if (kind is BSLQueryResultSelection or kind is BSLFixedStructure

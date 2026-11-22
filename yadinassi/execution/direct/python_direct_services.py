@@ -313,7 +313,8 @@ class ServicesBoundary:
                         raise BoundaryViolation('serialization implementation changed during argument evaluation')
                     # Only native representations with a finite captured codec.
                     kind = type(argument)
-                    if kind is _CanonicalMapEntry or kind is PlainValueList or kind is fixed.PlainFixedMap:
+                    if (kind is _CanonicalMapEntry or kind is PlainValueList
+                            or kind is PlainValueListItem or kind is fixed.PlainFixedMap):
                         return _direct_value_to_string_internal(argument)
                     return _DIRECT_VALUE_TO_STRING_ABI(argument)
                 except PermissionError as error:raise BoundaryViolation(str(error)) from error

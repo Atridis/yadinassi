@@ -1,12 +1,13 @@
 """Lightweight ValueList storage for the direct backend, not the legacy adapter.
 
-Values are references in four-position list records inside a native list. There is no owner
-weakref, per-element ID dictionary, mutation revision, render cache or recursive
-admission. Identifiers use one extra item slot and a monotonic list counter; lookup is linear.
+Values are kept in four-position records in a native list. Items share one
+small membership record with a weak reference to their list. There is no ID
+dictionary, mutation revision, render cache or recursive admission. Identifier lookup is linear.
 Native Python ordering replaces 1C collation. Typed lists/UI/serialization remain
 separate capabilities; this module does not grant access to them.
 """
 from decimal import Decimal
+from weakref import ReferenceType, ref
 
 
 
@@ -35,13 +36,22 @@ def _same(left, right):
     return False
 
 
+class _ItemMembership:
+    __slots__ = ('owner', 'cleared_before')
+
+    def __init__(self, owner):
+        self.owner = ref(owner)
+        # IDs are never reused. Clear/LoadValues detach the whole old range.
+        self.cleared_before = 0
+
+
 class PlainValueListItem(list):
     """Four fixed native slots: value, presentation, check, picture.
 
-    No per-instance dictionary, owner or field-property descriptors; one ID slot.
+    No per-instance dictionary or field-property descriptors.
     Generated code addresses these slots directly.
     """
-    __slots__ = ('_id',)
+    __slots__ = ('_id', '_membership')
 
     def __eq__(self, other):
         return self is other
@@ -50,8 +60,22 @@ class PlainValueListItem(list):
         return self is not other
 
     def get_id(self):
-        if type(self._id) is not int: raise TypeError('Invalid ValueList item identifier')
-        return Decimal(self._id)
+        identifier = self._id
+        if type(identifier) is not int: raise TypeError('Invalid ValueList item identifier')
+        state = self._membership
+        if type(state) is not _ItemMembership or type(state.cleared_before) is not int:
+            raise TypeError('Invalid ValueList item membership')
+        if identifier < state.cleared_before:
+            return Decimal(-1)
+        self._require_live_owner()
+        return Decimal(identifier)
+
+    def _require_live_owner(self):
+        state = self._membership
+        if type(state) is not _ItemMembership or type(state.owner) is not ReferenceType:
+            raise TypeError('Invalid ValueList item membership')
+        if state.owner() is None:
+            raise ValueError('Список значений элемента освобождён')
 
     def get_member(self, name):
         return list.__getitem__(self, _field(name))
@@ -75,11 +99,16 @@ _FIELDS = {'value': 0, 'значение': 0,
 
 
 class PlainValueList(list):
-    __slots__ = ('_next_id',)
+    __slots__ = ('_next_id', '_membership', '__weakref__')
 
     def __init__(self):
         list.__init__(self)
         self._next_id = 0
+        self._membership = None
+
+    def _start_membership(self):
+        state = self._membership = _ItemMembership(self)
+        return state
 
     @property
     def items(self):
@@ -94,6 +123,7 @@ class PlainValueList(list):
     def add(self, value=None, presentation='', check=False, picture=None):
         item = PlainValueListItem((value, presentation, check, picture))
         if type(self._next_id) is not int: raise TypeError('Invalid ValueList identifier counter')
+        item._membership = self._membership or self._start_membership()
         item._id = self._next_id
         self._next_id += 1
         list.append(self, item)
@@ -103,6 +133,7 @@ class PlainValueList(list):
         position = _index(index)
         item = PlainValueListItem((value, presentation, check, picture))
         if type(self._next_id) is not int: raise TypeError('Invalid ValueList identifier counter')
+        item._membership = self._membership or self._start_membership()
         item._id = self._next_id
         self._next_id += 1
         list.insert(self, position, item)
@@ -132,9 +163,16 @@ class PlainValueList(list):
         return _index(item_or_index)
 
     def delete(self, item_or_index):
-        list.__delitem__(self, self._position(item_or_index))
+        position = self._position(item_or_index)
+        item = _item(list.__getitem__(self, position))
+        list.__delitem__(self, position)
+        item._id = -1
 
-    clear = list.clear
+    def clear(self):
+        state = self._membership
+        if state is not None:
+            state.cleared_before = self._next_id
+        list.clear(self)
 
     def move(self, item_or_index, offset):
         position = self._position(item_or_index)

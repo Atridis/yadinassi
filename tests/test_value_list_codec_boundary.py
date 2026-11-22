@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from tests.native_observations import extract_payload, inverse_stream, read_observation
 from yadinassi import Interpreter
+from yadinassi.types.errors import BSLError
 from yadinassi.formats.storage import serialization
 from yadinassi.formats.storage.serialization import value_from_string_internal as read
 from yadinassi.formats.storage.serialization import value_to_string_internal as write
@@ -89,6 +90,57 @@ class ValueListCodecBoundaryTests(unittest.TestCase):
                     self.assertEqual([i.get_id() for i in restored], [D(2), D(1)])
                     self.assertEqual(restored.add().get_id(), D(3))
         self.assertIsNot(read(write(populated)).items[1].value, array)
+
+    def test_direct_item_stream_matches_native_and_follows_lifetime(self):
+        from gc import collect
+
+        for route in ('ordinary', 'prepared', 'captured'):
+            with self.subTest(route=route):
+                vm = Interpreter(allow_extensions=route == 'captured')
+                self.addCleanup(vm.close)
+                vm.execute('L = New ValueList; I = L.Add(10, "first", True); '
+                           'J = L.Add(20, "second");')
+                name = 'ValueToStringInternal'
+                if route == 'captured':
+                    name = 'Saved'
+                    vm.variables['saved'] = vm.functions['valuetostringinternal']
+                def stream(item):
+                    source = f'{name}({item})'
+                    if route == 'prepared':
+                        return vm.execute_prepared(vm.prepare(source))
+                    return vm.execute(source)
+
+                payload = stream('I')
+                self.assertEqual(payload, self.native('item').get('Write'))
+                vm.execute('L.Move(I, 1);')
+                self.assertEqual(self._id(vm, 'I'), D(0))
+                self.assertEqual(stream('I'), payload)
+
+                vm.execute('L.Delete(I); L.Clear(); K = L.Add(30);')
+                self.assertEqual(self._id(vm, 'I'), D(-1))
+                self.assertEqual(self._id(vm, 'J'), D(-1))
+                self.assertEqual(self._id(vm, 'K'), D(2))
+                self.assertEqual(read(stream('I'))._id, -1)
+                self.assertEqual(read(stream('J'))._id, -1)
+                vm.execute('A = New Array; A.Add(40); L.LoadValues(A); H = L[0];')
+                self.assertEqual(self._id(vm, 'K'), D(-1))
+                self.assertEqual(read(stream('K'))._id, -1)
+                self.assertEqual(self._id(vm, 'H'), D(3))
+
+                vm.execute('L = Undefined;')
+                collect()
+                self.assertEqual(self._id(vm, 'K'), D(-1))
+                self.assertEqual(read(stream('H'))._id, -1)
+                with self.assertRaisesRegex(BSLError, 'освобождён'):
+                    self._id(vm, 'H')
+                vm.variables['decoded'] = read(payload)
+                self.assertEqual(stream('Decoded'), payload)
+                with self.assertRaisesRegex(BSLError, 'идентификатор'):
+                    self._id(vm, 'Decoded')
+
+    @staticmethod
+    def _id(vm, item):
+        return vm.execute(f'{item}.GetID()')
 
     def test_detached_item_and_history_empty_models_preserve_stream_ids(self):
         values = sample()
