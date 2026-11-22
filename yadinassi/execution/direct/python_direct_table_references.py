@@ -43,6 +43,7 @@ def bind(context,value,key,*,index=False):
     def write(new):
         check(write=True)
         try:
+            if type(value) is _ROW:_admit_bound_write(root,value,key,index)
             if index:context.resolve_member(value,'__setitem__')(key,new)
             else:context.resolve_set_member(value,key)(new)
         finally:check()
@@ -113,6 +114,30 @@ def _same_code(function, specs):
     code,defaults=specs[function]
     return function.__code__ is code and function.__defaults__ is defaults and function.__kwdefaults__ is None
 
+
+
+def _admit_bound_write(root, row, key, indexed):
+    # The generic boundary has just validated the live schema and column vector.
+    # Leave rejection of deleted rows, readonly slices and missing keys to the
+    # public operation, which owns their diagnostics.
+    state=raw(root)
+    if state['_bounded_slice_read'] or raw(row)['_deleted']:return
+    schema=_KSCHEMA.__get__(state['_storage'],_KERNEL)
+    if type(key) is str:
+        position=_OFFSETS.__get__(schema,_SCHEMA).get(key.casefold())
+        if position is None:return
+    elif indexed and (type(key) is int or type(key) is Decimal):
+        keys=_KEYS.__get__(schema,_SCHEMA)
+        position=_MODEL_BINDINGS['_index'](key,len(keys))
+    else:return
+    column=_METADATA.__get__(schema,_SCHEMA)[position]
+    description=raw(column)['value_type']
+    if type(description) is not _TYPE_DESCRIPTION:fail()
+    fields=raw(description)
+    if any(type(k) is not str for k in fields) or 'types' in vars(_TYPE_DESCRIPTION):fail()
+    types=fields.get('types')
+    if type(types) is not tuple:fail()
+    if types:_typed_conversion(description,fields)
 
 def _typed_conversion(description,fields):
     # Unowned or nullable query descriptors have their own resolver. For an
