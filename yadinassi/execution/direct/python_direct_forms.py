@@ -11,14 +11,13 @@ from .python_direct_handlers import prepare_handlers
 from .python_direct_services import TYPE_QUALIFIER_CONSTRUCTORS
 from yadinassi.syntax import ast
 from .python_direct_configuration import ConfigurationBoundary, check_owner, _COMMAND_SCOPE
-from .python_direct_names import VALUE_LIST_CONSTRUCTOR_ALIASES
+from .python_direct_names import VALUE_LIST_CONSTRUCTOR_ALIASES, VALUE_LIST_CHOICE_ALIASES
 from yadinassi.db.database_context import SQLiteDBContext
 from . import python_direct_user_messages as user_messages
 
 CALLBACK_CONSTRUCTORS=('callbackdescription','описаниеоповещения')
 DECLARATION_CONSTRUCTORS=('typedescription','описаниетипов','formattribute','реквизитформы')
 VALUE_LIST_SERVICES=tuple('new:'+name for name in VALUE_LIST_CONSTRUCTOR_ALIASES)
-CHOOSE_ITEM_NAMES=('showchooseitem','показатьвыборэлемента')
 
 SYSTEM_NAMES = ('thisobject','этотобъект','items','элементы','commands','команды',
                 'parameters','параметры','formfieldtype','видполяформы',
@@ -260,18 +259,9 @@ class FormBoundary(ConfigurationBoundary):
             return user_messages.resolve(self,value,name,require_value=require_value,omitted=omitted)
         kind=type(value)
         if kind is BSLValueList or kind is BSLValueListItem:
+            if kind is BSLValueList and name.casefold() in VALUE_LIST_CHOICE_ALIASES:
+                return self._bind_value_selection(value,name,require_value,omitted)
             if omitted:raise TypeError('form ValueList argument omission is unsupported')
-            if kind is BSLValueList and name.casefold() in CHOOSE_ITEM_NAMES:
-                self._check()
-                if require_value:raise TypeError('Процедура не возвращает значение: '+name)
-                if self.app is None:
-                    raise ValueError('ShowChooseItem requires an application-owned client dispatch')
-                self.app.require_value_selection(self.owner)
-                def choose(*arguments):
-                    self._check()
-                    try:return self.app.dispatch_value_selection(self.owner,value,arguments)
-                    finally:self._check()
-                return choose
             # These native data methods carry no form or host authority.
             # Form entry/exit still check the owning event; only the UI method
             # above crosses an effect boundary.

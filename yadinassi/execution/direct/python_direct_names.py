@@ -20,6 +20,7 @@ from yadinassi.formats.json.json_dates import JSON_DATE_FORMATS, JSON_DATE_WRITI
 from yadinassi.formats.json.json_processing import JSON_LINE_BREAKS, JSON_VALUE_TYPES
 
 VALUE_LIST_CONSTRUCTOR_ALIASES = ("valuelist", "списокзначений")
+VALUE_LIST_CHOICE_ALIASES = ("showchooseitem", "показатьвыборэлемента")
 CHARS_ALIASES = ("chars", "символы")
 XML_CLEANUP_ALIASES = ("xmlstringprocessing", "обработкастрокиxml")
 

@@ -39,7 +39,9 @@ from .python_direct import REPAIRS, _snapshot
 from yadinassi.execution.codegen.native_targets import target_context
 from yadinassi.syntax import ast
 from yadinassi.types.values import HostFunction
+from yadinassi.collections.value_lists import BSLValueList
 from . import python_direct_configuration_enums as enums
+from .python_direct_names import VALUE_LIST_CHOICE_ALIASES
 
 
 def check_owner(app, owner, *, allow_database=False):
@@ -276,6 +278,10 @@ class ConfigurationBoundary(BoundaryContext):
             if reusable:
                 result=invoke_reusable(self.app,self.owner,target,routine,args)
                 self._check()
+            elif (scope is None and self.app._value_selection_service is not None
+                    and self.app._input_call_key in self.owner._scheduler.active_context.state):
+                with self.app.input_delegation(self.owner,target,routine):
+                    result=invoke_routine(self.app,target,routine,args)
             else:result=invoke_routine(self.app,target,routine,args)
             if scope is not None:scope.values((result,))
             return result
@@ -309,6 +315,8 @@ class ConfigurationBoundary(BoundaryContext):
 
     def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
         if self._command_scope is None:
+            if type(value) is BSLValueList and name.casefold() in VALUE_LIST_CHOICE_ALIASES:
+                return self._bind_value_selection(value,name,require_value,omitted)
             return super().resolve_member_call(value,name,require_value=require_value,omitted=omitted)
         bound=self.resolve_member(value,name)
         if self._command_scope is not None and require_value and not bound.returns_value:
@@ -318,6 +326,20 @@ class ConfigurationBoundary(BoundaryContext):
                 raise TypeError('metadata methods do not accept omitted arguments')
             return bound.with_omissions(omitted)
         return bound
+
+    def _bind_value_selection(self,value,name,require_value,omitted):
+        self._check()
+        if omitted:raise TypeError('form ValueList argument omission is unsupported')
+        if require_value:raise TypeError('Процедура не возвращает значение: '+name)
+        app,owner=self.app,self.owner
+        if app is None:
+            raise ValueError('ShowChooseItem requires an application-owned client dispatch')
+        app.require_value_selection(owner)
+        def choose(*arguments):
+            self._check()
+            try:return app.dispatch_value_selection(owner,value,arguments)
+            finally:self._check()
+        return choose
 
 
 def install(app,owner,program,source_text=''):

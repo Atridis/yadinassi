@@ -545,6 +545,24 @@ class ConfigurationApplication:
             raise ValueError('foreign input origin')
         return origin
 
+    @contextmanager
+    def input_delegation(self, caller, owner, routine):
+        """Extend a broker-owned event, never originate one from a module call."""
+        state = self.interpreter._scheduler.active_context.state
+        chain = state.get(self._input_call_key)
+        if chain is None or not (frames := chain['frames']):
+            yield
+            return
+        # Push a refused edge as well: a reentrant unrelated caller must not
+        # borrow the old tail even when its target happens to be that owner.
+        admitted = (frames[-1][1] is caller and self.side == 'client'
+                    and caller.execution_context == owner.execution_context == routine.execution_context == 'client'
+                    and caller._has_module_context is True and owner._has_module_context is True
+                    and routine.module_context is True
+                    and routine.is_async is False and routine.is_dual is False)
+        with self.input_call(caller, owner, admitted):
+            yield
+
     def require_value_selection(self, caller):
         """No global BSL name: the interpreter forwards the actual call origin."""
         self.require_open()

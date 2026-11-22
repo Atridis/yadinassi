@@ -373,6 +373,38 @@ EndFunction
                 self.assertIs(app.sessions[owner][0].session.interpreter.variables['seen'], original)
             else: self.assertIsNone(self.answer(app, owner, descriptor)['error'])
 
+    def test_nested_client_common_calls_preserve_only_the_current_form_callback(self):
+        from configuration_runtime_fixture import module_files
+
+        def input_sources(showing):
+            files = sources(showing=showing)
+            extra = module_files([('InputDelegate',
+                'Procedure Ask(Val Completion) Export ShowInputValue(Completion,1,"nested"); EndProcedure', {})])
+            files.update({path: content for path, content in extra.items() if path.startswith('CommonModules/')})
+            files['Configuration.xml'] = files['Configuration.xml'].replace(
+                b'</ChildObjects>', b'<CommonModule>InputDelegate</CommonModule></ChildObjects>')
+            files['CommonModules/Tools/Ext/Module.bsl'] += (
+                b'\nProcedure Ask(Val Completion) Export InputDelegate.Ask(Completion); EndProcedure')
+            return files
+
+        _, active, _, active_owner, descriptor = self.pending(input_sources('Tools.Ask(Callback);'))
+        self.assertEqual(descriptor['text'], 'nested')
+        self.assertIsNone(self.answer(active, active_owner, descriptor)['error'])
+        self.assertEqual(self.extra(active, active_owner).get('Calls'), 1)
+        callback = active.sessions[active_owner][0].session.interpreter.variables['callback']
+
+        _, other, _ = self.host(input_sources('BorrowCallback(); Tools.Ask(Callback);'))
+        other_owner = self.open(other)
+        vm = other.sessions[other_owner][0].session.interpreter
+        def borrow(): vm.variables['callback'] = callback
+        vm.functions['borrowcallback'] = HostFunction('BorrowCallback', borrow, returns_value=False)
+        result = self.event(other, other_owner)
+        self.assertEqual(result['form']['result']['error'], 'event_failed')
+        self.assertFalse(other.inputs)
+        self.assertFalse(other.owner_inputs)
+        self.assertNotIn(other.application._input_call_key, vm._scheduler.active_context.state)
+        self.assertEqual(self.extra(active, active_owner).get('Calls'), 1)
+
     def test_marker_has_no_ambient_or_direct_callable_authority(self):
         source = BSLValueList(); source.add('x')
         for alias in ('ShowChooseItem','ПоказатьВыборЭлемента'):
