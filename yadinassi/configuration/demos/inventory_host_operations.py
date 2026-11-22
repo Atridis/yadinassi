@@ -4,6 +4,7 @@ No renderer value, form callback or core inventory profile supplies root
 transaction authority. Catalog references in an immutable intent carry database,
 metadata and record identity, never a label or a browser capability.
 """
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import fields
 from threading import Lock
@@ -34,7 +35,7 @@ def canonical(configuration):
             else scalar_canonical(configuration))
 
 
-def _source_configuration(backend, *, _admitted=None):
+def _inventory_profile(backend, *, _admitted=None):
     """Read-only source check, not a root-execution grant for a form VM."""
     from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
     if (type(backend) is not SQLiteCatalogBackend
@@ -56,6 +57,11 @@ def _source_configuration(backend, *, _admitted=None):
         if not _same(_admitted, backend.accumulation_configuration):
             raise BackendError('schema_changed')
         configuration = _admitted
+    return configuration
+
+
+def _source_configuration(backend, *, _admitted=None):
+    configuration = _inventory_profile(backend, _admitted=_admitted)
     if backend.export_configuration() != dict(configuration.files):
         raise BackendError('schema_changed')
     return configuration
@@ -111,9 +117,23 @@ class InventoryRootOperations(RootPostingOperations):
         self._interpreter = Interpreter(database_context=context, output=lambda value: None)
         self._interpreter._documents.posting_runtime()
 
-    def _verify(self, *, require_root=True):
+    def _verify_owner(self):
         if self._closed or self.context.backend is not self.backend:
             raise BackendError('schema_changed')
+
+    def _verify_view(self, view, configuration):
+        binding = (view.database_id, view.configuration_generation)
+        if tuple(sorted(view.documents(), key=lambda s: str(s.identity))) != tuple(sorted(configuration.documents, key=lambda s: str(s.identity))):
+            raise BackendError('schema_changed')
+        for schema in configuration.catalogs:
+            if view.catalog_schema(schema.identity) != schema:
+                raise BackendError('schema_changed')
+        if self._binding is not None and binding != self._binding:
+            raise BackendError('schema_changed')
+        return binding
+
+    def _verify(self, *, require_root=True):
+        self._verify_owner()
         if require_root:
             require_inventory_host_root(self.backend)
         self.context.require_active(tabular_sections=True)
@@ -123,16 +143,9 @@ class InventoryRootOperations(RootPostingOperations):
             raise BackendError('schema_changed')
         view = self.backend.begin_document_read()
         try:
-            binding = (view.database_id, view.configuration_generation)
-            if tuple(sorted(view.documents(), key=lambda s: str(s.identity))) != tuple(sorted(configuration.documents, key=lambda s: str(s.identity))):
-                raise BackendError('schema_changed')
-            for schema in configuration.catalogs:
-                if view.catalog_schema(schema.identity) != schema:
-                    raise BackendError('schema_changed')
+            binding = self._verify_view(view, configuration)
         finally:
             view.close()
-        if self._binding is not None and binding != self._binding:
-            raise BackendError('schema_changed')
         self._binding = binding
 
     def verify_source(self):
@@ -140,6 +153,28 @@ class InventoryRootOperations(RootPostingOperations):
         # form activation. It must not install an execution token or journal.
         self._clean_before_read()
         self._verify(require_root=False)
+
+    @contextmanager
+    def _reference_read(self):
+        """One already source-admitted SQLite snapshot for closed form reads."""
+        from yadinassi.configuration.configuration_references import admitted_reference_view
+        self._clean_before_read()
+        self._verify_owner()
+        self.context.require_active(tabular_sections=True)
+        transactions.forbid_transfer(self.backend)
+        config = _inventory_profile(self.backend, _admitted=self._read_source_witness)
+        if not _same(config, self.configuration):
+            raise BackendError('schema_changed')
+        view = self.backend.begin_document_read()
+        try:
+            # The raw document read already admitted exact persisted source,
+            # schemas and layout under this lock. No export or second handle.
+            base = admitted_reference_view(self.backend, view)
+            self._verify_view(view, config)
+            yield base
+            self.backend._check_file()
+        finally:
+            view.close()
 
     def _intent(self, operation_id, draft, expected, form, command):
         if type(operation_id) is not UUID or not operation_id.int:

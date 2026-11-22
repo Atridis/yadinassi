@@ -31,7 +31,7 @@ from .form_table_replication import (pack_tables, unpack_tables, install_tables,
     capture_tables, capture_selections, table_delta, selection_delta,
     admit_table_delta, apply_table_delta, TableImage, require_scalar_and_table_text)
 
-from .form_references import is_reference, adjust, encode, decode, require_scope
+from .form_references import is_reference, adjust, encode, decode, require_scope, reference_batch
 
 PROTOCOL = 'yadinassi-form/1'
 TABLE_PROTOCOL = 'yadinassi-form/2'
@@ -170,20 +170,22 @@ def _object_identity(session, item):
 
 def _pack_state(session, handlers, *, reuse_tables=False):
     form = session.form
-    attributes = []
-    for key, attribute in form._attributes.items():
-        kind = attribute.value_type
-        if is_reference(kind):
-            require_scope(kind, session)
-            attributes.append([attribute.name, kind.scope.wire_type(kind.target), [kind.target], attribute.title,
-                key in form._static, encode(kind, form._data[key], _encode_form_scalar)])
-            continue
-        attributes.append([attribute.name, kind.types[0].value,
-            [int(kind.number_qualifiers.digits), int(kind.number_qualifiers.fraction_digits),
-             kind.number_qualifiers.allowed_sign.value, int(kind.string_qualifiers.length),
-             kind.string_qualifiers.allowed_length.value, kind.date_qualifiers.date_fractions.value],
-            attribute.title, key in form._static, _encode_form_scalar(form._data[key])])
-    return {'attributes': attributes, 'tables': None if reuse_tables else pack_tables(form), 'title': form.title,
+    with reference_batch(getattr(session, "reference_scope", None)):
+        attributes = []
+        for key, attribute in form._attributes.items():
+            kind = attribute.value_type
+            if is_reference(kind):
+                require_scope(kind, session)
+                attributes.append([attribute.name, kind.scope.wire_type(kind.target), [kind.target], attribute.title,
+                    key in form._static, encode(kind, form._data[key], _encode_form_scalar)])
+                continue
+            attributes.append([attribute.name, kind.types[0].value,
+                [int(kind.number_qualifiers.digits), int(kind.number_qualifiers.fraction_digits),
+                 kind.number_qualifiers.allowed_sign.value, int(kind.string_qualifiers.length),
+                 kind.string_qualifiers.allowed_length.value, kind.date_qualifiers.date_fractions.value],
+                attribute.title, key in form._static, _encode_form_scalar(form._data[key])])
+        tables = None if reuse_tables else pack_tables(form)
+    return {'attributes': attributes, 'tables': tables, 'title': form.title,
         'items': [[item.name, 'button' if type(item) is BSLFormButton else 'table' if type(item) is BSLFormTable else 'group' if type(item) is BSLFormGroup else 'field',
             item.title, item.visible, item.enabled, item.read_only,
             item.command_name if type(item) is BSLFormButton else item.data_path,

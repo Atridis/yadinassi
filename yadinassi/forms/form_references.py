@@ -3,8 +3,11 @@
 Bindings and descriptors are trusted Python infrastructure, never BSL constructors.
 Client replicas have presentation/empty/equality only, not UUIDs or object readers.
 """
+from contextlib import ExitStack, contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from secrets import token_hex
+from threading import get_ident
 import re
 
 from yadinassi.db.catalog.catalog_types import BSLCatalogReference, BSLCatalogType
@@ -16,6 +19,55 @@ from yadinassi.types.values import BSLObject, HostFunction
 _MAX_TEXT = 1024
 _MAX_IDENTITIES = 4096
 _MISSING = object()
+_READ_BATCH = ContextVar('owned_form_reference_read', default=None)
+
+
+class _ReferenceRead:
+    def __init__(self, scope, stack):
+        self.scope, self._stack = scope, stack
+        self.thread = get_ident()
+        self.active = True
+        self._view = None
+        self.normalized, self.presentations = {}, {}
+        self.checked_targets = set()
+
+    def revoke(self):
+        self.active = False
+        self._view = None
+        self.normalized.clear()
+        self.presentations.clear()
+        self.checked_targets.clear()
+
+    def view(self):
+        if not self.active or self.thread != get_ident():
+            raise ValueError('expired form reference batch')
+        if self._view is None:
+            self._view = self._stack.enter_context(self.scope._batch_read())
+        return self._view
+
+
+def active_reference_read(scope):
+    captured = _READ_BATCH.get()
+    return (captured if captured is not None and captured.scope is scope
+            and captured.active and captured.thread == get_ident() else None)
+
+
+@contextmanager
+def reference_batch(scope):
+    """Only closed validation/encoding phases; never wrap a BSL or host effect."""
+    if scope is None or scope._batch_read is None or active_reference_read(scope) is not None:
+        yield
+        return
+    with ExitStack() as stack:
+        batch = _ReferenceRead(scope, stack)
+        token = _READ_BATCH.set(batch)
+        try:
+            yield
+        finally:
+            # Context copies retain the object. Revoke before releasing any
+            # owned read lease so they cannot observe cached authority/labels.
+            batch.revoke()
+            _READ_BATCH.reset(token)
 
 
 def _text(value):
@@ -142,6 +194,7 @@ class FormReferenceScope:
         self.identity = token_hex(16) if self.server else None
         self._issued = {}; self._keys = {}; self._client = {}; self._client_values = {}
         self._owner = None
+        self._batch_read = None
 
     def attach(self, owner):
         if self._owner is not None and self._owner is not owner:

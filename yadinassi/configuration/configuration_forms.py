@@ -307,32 +307,33 @@ class FormDefinition:
             raise ValueError('complete document header required')
         if tuple(k for k,v in image.sections)!=tuple(k for k,v in self.object_sections):
             raise ValueError('complete document sections required')
-        data=session.form._data.copy()
-        for (field,slot),(_,value) in zip(self.object_fields,image.values):
-            key=slot.casefold()
-            from yadinassi.forms.form_references import adjust
-            adjusted=adjust(session.form._attributes[key].value_type, value)
-            if type(adjusted) is not type(value) or adjusted!=value: raise ValueError("document header does not fit form type")
-            data[key]=adjusted
-        identities={};replacements={};allocations={}
-        for (_,slot),(_,rows) in zip(self.object_sections,image.sections):
-            table=session.form._tables[slot.casefold()]
-            old_ids=[r._row_id for r in table._rows]
-            allocated=table._allocated
-            records=[]
-            for index,row in enumerate(rows):
-                if tuple(k for k,v in row.values)!=tuple(c.name for c in table.schema.columns):
-                    raise ValueError('complete document row required')
-                if index<len(old_ids): identity=old_ids[index]
-                else: allocated+=1;identity=allocated
-                values=tuple(v for k,v in row.values)
-                for column,value in zip(table.schema.columns,values):
-                    adjusted=column.value_type.adjust_value(value)
-                    if type(adjusted) is not type(value) or adjusted!=value: raise ValueError('document row does not fit form type')
-                records.append((identity,values))
-                if row.identity is not None: identities[slot.casefold(),identity]=row.identity
-            replacements[slot.casefold()]=tuple(records);allocations[slot.casefold()]=allocated
-        validate_table_data(session.form,replacements,data)
+        from yadinassi.forms.form_references import adjust, reference_batch
+        with reference_batch(session.reference_scope):
+            data=session.form._data.copy()
+            for (field,slot),(_,value) in zip(self.object_fields,image.values):
+                key=slot.casefold()
+                adjusted=adjust(session.form._attributes[key].value_type, value)
+                if type(adjusted) is not type(value) or adjusted!=value: raise ValueError("document header does not fit form type")
+                data[key]=adjusted
+            identities={};replacements={};allocations={}
+            for (_,slot),(_,rows) in zip(self.object_sections,image.sections):
+                table=session.form._tables[slot.casefold()]
+                old_ids=[r._row_id for r in table._rows]
+                allocated=table._allocated
+                records=[]
+                for index,row in enumerate(rows):
+                    if tuple(k for k,v in row.values)!=tuple(c.name for c in table.schema.columns):
+                        raise ValueError('complete document row required')
+                    if index<len(old_ids): identity=old_ids[index]
+                    else: allocated+=1;identity=allocated
+                    values=tuple(v for k,v in row.values)
+                    for column,value in zip(table.schema.columns,values):
+                        adjusted=column.value_type.adjust_value(value)
+                        if type(adjusted) is not type(value) or adjusted!=value: raise ValueError('document row does not fit form type')
+                    records.append((identity,values))
+                    if row.identity is not None: identities[slot.casefold(),identity]=row.identity
+                replacements[slot.casefold()]=tuple(records);allocations[slot.casefold()]=allocated
+            validate_table_data(session.form,replacements,data)
         for key,records in replacements.items(): session.form._tables[key]._replace_rows(records,allocations[key])
         session.form._data=data
         session._document_row_ids=identities

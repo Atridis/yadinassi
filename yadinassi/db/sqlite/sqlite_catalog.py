@@ -2053,23 +2053,27 @@ class SQLiteCatalogBackend:
         try:
             # Pin preflight and payload reads to the same SQLite snapshot.
             connection.execute('BEGIN')
-            if _source_profile_for_issues(self.activation_issues) == DOCUMENT_FORMS_PROFILE:
-                imported = self._document_form_source_snapshot(connection)
-                return {f.path: f.content for f in imported.files}
-            if _source_profile_for_issues(self.activation_issues) in (BUSINESS_PROFILE, REFERENCE_PROFILE):
-                imported, _, _, _ = self._business_source_snapshot(connection)
-                return {f.path: f.content for f in imported.files}
-            if self.storage_version in (5, 6):
-                imported, _, _, _ = (self._demo_source_snapshot(connection) if self.storage_version == 6 else self._inert_source_snapshot(connection))
-                return {f.path: f.content for f in imported.files}
-            count,total = connection.execute('SELECT COUNT(*),COALESCE(SUM(length(content)),0) FROM configuration_file').fetchone()
-            if not 1 <= count <= _MAX_FILES or total > _MAX_CONFIG_BYTES: raise BackendError('integrity')
-            result = {}
-            for path, content, digest in connection.execute('SELECT path,content,sha256 FROM configuration_file ORDER BY path'):
-                if type(content) is not bytes or type(path) is not str or len(path) > 256 or len(content) > 1024*1024 or hashlib.sha256(content).hexdigest() != digest: raise BackendError('integrity')
-                result[path] = content
-            return result
+            return self._export_configuration_snapshot(connection)
         finally: connection.close()
+
+    def _export_configuration_snapshot(self, connection):
+        """Bounded exact file export on the caller's owned read snapshot."""
+        if _source_profile_for_issues(self.activation_issues) == DOCUMENT_FORMS_PROFILE:
+            imported = self._document_form_source_snapshot(connection)
+            return {f.path: f.content for f in imported.files}
+        if _source_profile_for_issues(self.activation_issues) in (BUSINESS_PROFILE, REFERENCE_PROFILE):
+            imported, _, _, _ = self._business_source_snapshot(connection)
+            return {f.path: f.content for f in imported.files}
+        if self.storage_version in (5, 6):
+            imported, _, _, _ = (self._demo_source_snapshot(connection) if self.storage_version == 6 else self._inert_source_snapshot(connection))
+            return {f.path: f.content for f in imported.files}
+        count,total = connection.execute('SELECT COUNT(*),COALESCE(SUM(length(content)),0) FROM configuration_file').fetchone()
+        if not 1 <= count <= _MAX_FILES or total > _MAX_CONFIG_BYTES: raise BackendError('integrity')
+        result = {}
+        for path, content, digest in connection.execute('SELECT path,content,sha256 FROM configuration_file ORDER BY path'):
+            if type(content) is not bytes or type(path) is not str or len(path) > 256 or len(content) > 1024*1024 or hashlib.sha256(content).hexdigest() != digest: raise BackendError('integrity')
+            result[path] = content
+        return result
 
     @lifecycle
     def _close_idle_read_handle(self):

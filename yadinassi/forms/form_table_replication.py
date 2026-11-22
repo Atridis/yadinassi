@@ -12,7 +12,7 @@ from .form_tables import (FormTableColumn, FormTableSchema, BSLFormDataCollectio
     MAX_TABLE_ALLOCATED as MAX_ROW_IDENTITIES, validate_table_data, table_text_size)
 from .form_model import BSLFormTable, MAX_TOTAL_TEXT, name, text, scalar
 from yadinassi.ui.protocol import encode_value, decode_value
-from .form_references import is_reference, adjust, encode, decode
+from .form_references import is_reference, adjust, encode, decode, reference_batch
 from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.types.type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
     BSLDateQualifiers, BSLAllowedSign, BSLAllowedLength, BSLDateFractions)
@@ -74,16 +74,17 @@ def _decode_column(row, session):
 
 
 def pack_tables(form):
-    validate_table_data(form)
-    result = []
-    for table in form._tables.values():
-        snapshot = table._snapshot()
-        result.append({'id': table._identity, 'name': table.schema.name,
-            'title': table.schema.title, 'columns': [_column(c) for c in table.schema.columns],
-            'allocated': snapshot.allocated,
-            'rows': [[identity, [encode(c.value_type, value, encode_value) for c,value in zip(table.schema.columns,values)]]
-                     for identity, values in snapshot.rows]})
-    return result
+    with reference_batch(getattr(form._session, "reference_scope", None)):
+        validate_table_data(form)
+        result = []
+        for table in form._tables.values():
+            snapshot = table._snapshot()
+            result.append({'id': table._identity, 'name': table.schema.name,
+                'title': table.schema.title, 'columns': [_column(c) for c in table.schema.columns],
+                'allocated': snapshot.allocated,
+                'rows': [[identity, [encode(c.value_type, value, encode_value) for c,value in zip(table.schema.columns,values)]]
+                         for identity, values in snapshot.rows]})
+        return result
 
 
 def _schema(packet):

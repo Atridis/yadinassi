@@ -10,7 +10,7 @@ import json
 
 from yadinassi.streams.file_io import _methods
 from .form_model import BSLFormAttribute, _Owned, name, scalar, text, MAX_TOTAL_TEXT
-from .form_references import is_reference, adjust, encode, require_scope
+from .form_references import is_reference, adjust, encode, require_scope, reference_batch
 from yadinassi.types.values import BSLType
 
 MAX_TABLES = 4
@@ -170,12 +170,13 @@ def validate_table_data(form, replacements=None, scalar_data=None):
     data = form._data if scalar_data is None else scalar_data
     total_text = sum(len(value) for value in data.values() if type(value) is str)
     cells = 0; packet = []
-    for key, table in form._tables.items():
-        rows = replacements[key] if key in replacements else table._snapshot().rows
-        encoded_rows, row_text = _validate_rows(table, rows)
-        cells += len(rows) * len(table.schema.columns)
-        total_text += row_text
-        packet.append([table._identity, encoded_rows])
+    with reference_batch(getattr(form._session, "reference_scope", None)):
+        for key, table in form._tables.items():
+            rows = replacements[key] if key in replacements else table._snapshot().rows
+            encoded_rows, row_text = _validate_rows(table, rows)
+            cells += len(rows) * len(table.schema.columns)
+            total_text += row_text
+            packet.append([table._identity, encoded_rows])
     if cells > MAX_TABLE_CELLS or total_text > MAX_TOTAL_TEXT:
         raise ValueError('ТаблицаФормы: превышен предел данных')
     if _wire_bytes(packet) > MAX_TABLE_DATA_BYTES:
@@ -233,7 +234,11 @@ class BSLFormDataCollection(_Owned):
         """
         if type(allocated) is not int or not self._allocated <= allocated <= MAX_TABLE_ALLOCATED:
             raise ValueError('ТаблицаФормы: неверный счетчик строк')
-        encoded, text_size = _validate_rows(self, rows)
+        if self._variable_wire:
+            with reference_batch(self._form._session.reference_scope):
+                encoded, text_size = _validate_rows(self, rows)
+        else:
+            encoded, text_size = _validate_rows(self, rows)
         wire_size = None if self._variable_wire else _wire_bytes([self._identity, encoded])
         for identity, values in rows:
             if identity > allocated or identity not in self._by_id and identity <= self._allocated:
