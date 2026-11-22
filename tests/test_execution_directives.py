@@ -5,6 +5,8 @@ import tempfile
 import unittest
 
 from yadinassi import Interpreter, BSLError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.syntax.parser import parse
 
 
@@ -63,8 +65,11 @@ Function AlsoInvisible() Return 0; EndFunction
 Message(S());
 ''')
         self.assertEqual(self.messages, ['42'])
-        self.assertEqual(set(self.vm.server_routines), {'s'})
-        self.assertNotIn('invisible', self.vm.routines)
+        for name in ('Invisible', 'AlsoInvisible'):
+            with self.subTest(name=name), self.assertRaisesRegex(
+                    BoundaryViolation, 'unregistered host service: ' + name.casefold()):
+                self.vm.execute(f'Message({name}());')
+        self.assertEqual(self.messages, ['42'])
 
     def test_nested_server_calls_and_recursion_stay_server(self):
         self.vm.execute('''
@@ -109,11 +114,9 @@ Message(Outer(40));
         self.vm.execute('Function F() Return "client"; EndFunction')
         self.vm.execute('&AtServer\nFunction F() Return "server"; EndFunction')
         self.assertEqual(self.vm.execute('F()'), 'server')
-        self.assertNotIn('f', self.vm.routines)
         self.vm.execute('&AtClient\nFunction F() Return "client-again"; EndFunction')
         self.assertEqual(self.vm.execute('F()'), 'client-again')
-        self.assertNotIn('f', self.vm.server_routines)
-        with self.assertRaisesRegex(BSLError, 'Одноименные'):
+        with self.assertRaisesRegex(PythonDirectUnsupported, 'duplicate routine declarations'):
             self.vm.execute('Message("bad"); Function F() Return 0; EndFunction\n'
                             '&AtServer\nFunction F() Return 1; EndFunction')
         self.assertEqual(self.messages, [])
@@ -131,9 +134,10 @@ Message(Outer(40));
 EndProcedure
 #EndIf
 """)
-                self.assertNotIn('s', self.vm.server_routines)
-                with self.assertRaises(BSLError):
+                with self.assertRaisesRegex(BoundaryViolation, 'unregistered host service: s'):
                     self.vm.execute('S();')
+                self.assertEqual(self.vm.execution_context, 'client')
+                self.assertEqual(self.messages, [])
 
     def test_server_to_client_denied_before_argument_effects(self):
         self.vm.execute('''
