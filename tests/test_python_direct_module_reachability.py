@@ -44,8 +44,56 @@ class ModuleReachabilityTests(unittest.TestCase):
         self.assertEqual((vm.variables['r'],vm.variables['n']),(210,20))
         self.assertNotIn('z',vm.variables)
 
+    def test_exact_scalar_expression_arms_keep_table_loop_closed(self):
+        for condition in ('Not True', '1=2', 'Not (Not (1.00=2))',
+                          '(1.25) >= (1.50)', 'True <= False'):
+            with self.subTest(condition=condition):
+                vm=self.vm()
+                plan=vm.prepare(TABLE+f'''
+                    If {condition} Then
+                        Z=T.Copy();
+                    ElsIf Not (1=2) Then
+                        N=T.Count();
+                    ElsIf Eval("True") Then
+                        Z=T.Copy();
+                    EndIf;
+                ''')
+                self.assertIn('_PrivateTable()',plan._plan.generated_source)
+                self.assertIn('_raw_table_value',plan._plan.generated_source)
+                self.assertNotIn('_reload_module',plan._plan.generated_source)
+                vm.execute_prepared(plan)
+                self.assertEqual((vm.variables['r'],vm.variables['n']),(210,20))
+                self.assertNotIn('z',vm.variables)
+
+    def test_unknown_and_faulting_scalar_operations_are_not_run_by_proof(self):
+        for condition,succeeds in (('Eval("False")',True), ('1=0/0',False),
+                                   ('"a"<1',False)):
+            with self.subTest(condition=condition):
+                vm=self.vm()
+                plan=vm.prepare(TABLE+f'If {condition} Then Z=T.Copy(); EndIf;')
+                self.assertNotIn('_PrivateTable()',plan._plan.generated_source)
+                if succeeds:
+                    vm.execute_prepared(plan)
+                else:
+                    with self.assertRaises(BSLError):
+                        vm.execute_prepared(plan)
+                self.assertEqual(vm.variables['r'],210)
+                self.assertNotIn('z',vm.variables)
+
+    def test_expression_proof_preserves_dead_source_validation(self):
+        vm=self.vm()
+        for suffix in ('If Not True Then A=New UnavailableConstructor; EndIf;',
+                       'If 1=1 Then N=1; ElsIf New UnavailableConstructor Then N=2; EndIf;'):
+            with self.subTest(suffix=suffix), self.assertRaises(PythonDirectUnsupported):
+                vm.prepare(TABLE+suffix)
+        with self.assertRaises(BSLError):
+            vm.prepare(TABLE+'If 1=2 Then Break; EndIf;')
+        with self.assertRaises(BSLError):
+            vm.prepare('Goto ~Inner; If 1=2 Then ~Inner: R=1; EndIf;')
+        self.assertNotIn('t',vm.variables)
+
     def test_reachable_or_unknown_effect_keeps_generic_route(self):
-        for condition in ('True','Gate','0'):
+        for condition in ('True','Not False','1=1','Gate','0'):
             with self.subTest(condition=condition):
                 vm=self.vm()
                 vm.variables['gate']=True

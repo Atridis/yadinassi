@@ -13,18 +13,56 @@ class _Decline(Exception):pass
 OTHERWISE=object()
 
 
+def _ungroup(node):
+    while type(node) is bsl.Group:
+        node = node.expression
+    return node
+
+
+def _literal_boolean(node):
+    """Prove a boolean without evaluating names, calls or context-sensitive operations."""
+    inverted = False
+    node = _ungroup(node)
+    while type(node) is bsl.Unary and type(node.operator) is str and node.operator == 'NOT':
+        inverted = not inverted
+        node = _ungroup(node.operand)
+    if type(node) is bsl.Literal and type(node.value) is bool:
+        value = node.value
+    elif type(node) is bsl.Binary and type(node.operator) is str:
+        left, right = _ungroup(node.left), _ungroup(node.right)
+        if type(left) is not bsl.Literal or type(right) is not bsl.Literal:
+            return None
+        left, right = left.value, right.value
+        kind = type(left)
+        if kind is not type(right) or (kind is not bool and kind is not Decimal):
+            return None
+        # Finite exact numbers compare identically in the Decimal and integer
+        # lanes, regardless of Decimal context; no signs/rounding are evaluated.
+        if kind is Decimal and not (left.is_finite() and right.is_finite()):
+            return None
+        op = node.operator
+        if op == '=':
+            value = left == right  # Same as the direct equality kernel here.
+        elif op == '<>':
+            value = left != right
+        elif op in ('<', '<=', '>', '>='):
+            from yadinassi.execution.codegen.experimental_naked_scalar_semantics import order
+            value = order(left, right, op)
+        else:
+            return None
+    else:
+        return None
+    return value != inverted
+
+
 def ordered_if(node, *, literal_reachability):
-    """Yield every arm and whether its test and body can run in source order."""
+    """Yield every arm, its live test/body flags, and a proven boolean if any."""
     reaches=True
     for condition,body in node.branches:
-        literal=None
-        if literal_reachability:
-            leaf=condition
-            while type(leaf) is bsl.Group:leaf=leaf.expression
-            if type(leaf) is bsl.Literal and type(leaf.value) is bool:literal=leaf.value
-        yield condition,body,reaches,reaches and literal is not False
+        literal=_literal_boolean(condition) if reaches and literal_reachability else None
+        yield condition,body,reaches,reaches and literal is not False,literal
         if literal is True:reaches=False
-    yield OTHERWISE,node.otherwise,False,reaches
+    yield OTHERWISE,node.otherwise,False,reaches,None
 
 
 def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=None, builtin_external_names=(), numeric_routines=None, address_routines=None, literal_reachability=False, module_declarations=False):
@@ -183,8 +221,8 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
                 require(all(nested.get(key)==kind for key,kind in env.items()))
             elif k is bsl.If:
                 branches=[]
-                for condition,body,live_test,live_body in ordered_if(node,literal_reachability=literal_reachability):
-                    if live_test:require(expression(condition,env) in ('number','bool'))
+                for condition,body,live_test,live_body,literal in ordered_if(node,literal_reachability=literal_reachability):
+                    if live_test and literal is None:require(expression(condition,env) in ('number','bool'))
                     if live_body:
                         nested=dict(env);sequence(body,nested);branches.append(nested)
                 merged={key:kind for key,kind in branches[0].items() if all(branch.get(key)==kind for branch in branches)}

@@ -1735,9 +1735,14 @@ class Emitter:
                     journals.pop();self.scope['initialized'].difference_update(changes)
                     initialized_paths.append(changes)
             proven=bool(self.static_module_kinds and self.literal_reachability)
-            for condition,body,live_test,live_body in ordered_if(node,literal_reachability=proven):
+            for condition,body,live_test,live_body,literal in ordered_if(node,literal_reachability=proven):
                 if condition is not OTHERWISE:
-                    test=self.truth(condition,t) if live_test else self.without_module_facts(self.truth,condition,t)
+                    if literal is not None:
+                        # The proof admits only exact total scalar operators;
+                        # dead bodies/tests outside that subset still validate.
+                        test=self.literal(literal,condition.token)
+                    else:
+                        test=self.truth(condition,t) if live_test else self.without_module_facts(self.truth,condition,t)
                 emitted=(branch_sequence(body) if live_body else
                          self.without_module_facts(branch_sequence,body))
                 if condition is OTHERWISE:
@@ -1972,7 +1977,7 @@ def _routine_region(routine, scope):
 
 
 def _live_if_children(node):
-    for condition,body,live_test,live_body in ordered_if(node,literal_reachability=True):
+    for condition,body,live_test,live_body,_ in ordered_if(node,literal_reachability=True):
         if live_test:yield condition
         if live_body:yield from body
 
