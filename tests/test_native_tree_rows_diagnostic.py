@@ -61,9 +61,12 @@ class RowsDiagnosticTests(unittest.TestCase):
         def part(number):
             observed.append(int(number)); return vector[int(number)-1]
         vm.register_function('TreeRowsDiagnosticPart', part)
+        self.addCleanup(vm.close)
+        # The packet body is unchanged; only the four injected observations vary.
+        plan = vm.prepare(calls())
         for parts in itertools.product('TFE', repeat=4):
             vector = ''.join(parts); output.clear(); observed.clear()
-            vm.execute(calls())
+            vm.execute_prepared(plan)
             self.assertEqual(observed, [1,2,3,4])
             self.assertEqual(len(output), 45)
             for i,line in enumerate(output,1):
