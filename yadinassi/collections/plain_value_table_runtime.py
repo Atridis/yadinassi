@@ -388,6 +388,15 @@ class BSLCollectionIndexes(BSLObject):
         for handle in self._handles:self._handle(handle)
         return self._handles
 
+    def _copy_definitions(self, target):
+        handles = self._active()
+        if not handles:return
+        positions = {id(column): i for i,column in enumerate(self.table.columns._items)}
+        for handle in handles:
+            # Remap ordered column identities to the copy; its row-position
+            # search cache is built only by a later matching FindRows.
+            target._add_positions(self._positions(handle._columns, positions))
+
     @staticmethod
     def _signature(positions):
         if len(set(positions)) != len(positions):
@@ -570,6 +579,7 @@ class BSLValueTable(BSLObject):
             if type(row) is not BSLValueTableRow or row.table is not self:raise ValueError('foreign copy row')
             copied=result.add()
             for name in selected:copied.set_member(name,row.get_member(name))
+        if columns is None:self.indexes._copy_definitions(result.indexes)
         return result
     def group_by(self,grouping_columns,totaling_columns=None):
         _writable(self)

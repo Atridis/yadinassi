@@ -177,8 +177,9 @@ class NativeIndexTests(unittest.TestCase):
         copied = table.copy()
         self.assertEqual(names(copied), [['Key', 'Second']])
         self.assertIsNot(copied.indexes, table.indexes)
-        self.assertIsNot(copied.indexes.items[0], index)
-        self.assertIs(copied.indexes.items[0].columns[0], copied.columns.items[0])
+        copied_index = copied.indexes.get_index(D(0))
+        self.assertIsNot(copied_index, index)
+        self.assertIs(copied_index._columns[0], copied.columns.items[0])
         self.assertEqual([list(row) for row in copied], [list(row) for row in table])
         self.assertEqual(names(table.copy(None, 'Key')), [])
         self.assertEqual(names(table.copy_columns('Key')), [])
@@ -310,6 +311,36 @@ class NativeIndexTests(unittest.TestCase):
         copied.columns.get(D(0)).set_member('Name', 'Renamed')
         self.assertEqual(names(copied), [['Renamed', 'Second'], ['Renamed'], ['Amount']])
         self.assertEqual(names(table), [['Key', 'Second'], ['Key'], ['Amount']])
+
+    def test_bsl_implicit_column_copy_preserves_only_independent_declarations(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('T=New ValueTable; T.Columns.Add("Key"); T.Columns.Add("Amount"); '
+                   'R=T.Add(); R.Key="first"; R.Amount=1; '
+                   'R=T.Add(); R.Key="second"; R.Amount=2; '
+                   'T.Indexes.Add("Key"); T.Indexes.Add("Key"); T.Indexes.Add(); '
+                   'First=New Structure("Key","first"); Warm=T.FindRows(First); '
+                   'C=T.Copy(); S=T.Copy(First); P=T.Copy(,"Key,Amount"); Q=T.CopyColumns();')
+        source, full, selected, projected, columns_only = (vm.variables[k] for k in ('t','c','s','p','q'))
+        self.assertTrue(source._search.cache)
+        for copy, count in ((full,2),(selected,1)):
+            self.assertEqual(len(copy.rows),count)
+            self.assertEqual(names(copy),[['Key'],['Key'],[]])
+            self.assertEqual(copy._search.declarations,{(0,)})
+            self.assertFalse(copy._search.cache)
+            self.assertEqual(copy._search.builds,0)
+            self.assertIsNot(copy.indexes.get_index(D(0)),source.indexes.get_index(D(0)))
+        self.assertEqual(names(projected),[])
+        self.assertEqual(names(columns_only),[])
+        vm.execute('C.Columns[0].Name="Renamed"; '
+                   'Match=C.FindRows(New Structure("Renamed","first")); '
+                   'C[0].Renamed="changed"; StillSource=T.FindRows(First);')
+        self.assertEqual(names(full),[['Renamed'],['Renamed'],[]])
+        self.assertEqual(names(source),[['Key'],['Key'],[]])
+        self.assertIs(vm.variables['match'].items[0],full.rows[0])
+        self.assertIs(vm.variables['stillsource'].items[0],source.rows[0])
+        self.assertEqual(source.rows[0].get_member('Key'),'first')
+        self.assertEqual(selected.rows[0].get_member('Key'),'first')
 
     def test_native_supplement_detached_links_and_cleared_text(self):
         table = supplement_sample()
