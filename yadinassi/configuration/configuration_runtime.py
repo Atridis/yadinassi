@@ -574,12 +574,13 @@ class ConfigurationApplication:
 
     def initialize_session_parameters(self, caller, names):
         self.session_parameters._authorize(caller)
-        if self._session_binding is not None:
-            from yadinassi.execution.direct.python_direct_configuration_sessions import initialize
-            initialize(self,names)
-        # The shared semantic layer uses a generator for source execution.
-        # This generated route completes synchronously and never yields.
-        yield from ()
+        if getattr(self,'_session_binding',None) is None and self._session_owner is not None:
+            raise ValueError('direct lazy session initialization is not connected')
+        from yadinassi.execution.direct.python_direct_configuration_sessions import initialize_lazy
+        initialize_lazy(self,names)
+        # The shared reader consumes an iterable, but this direct call admits
+        # and runs synchronously before returning it.
+        return ()
 
     def _start_session(self):
         if self._session_binding is not None:

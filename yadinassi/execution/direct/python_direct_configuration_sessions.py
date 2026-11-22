@@ -17,7 +17,10 @@ _READ=BSLSessionParameters.read
 
 
 def initialize(app,names=None):
-    owner,routine,plan=app._session_binding
+    binding=app._session_binding
+    if type(binding) is not tuple or len(binding)!=3:
+        raise BoundaryViolation('configuration session initializer binding changed')
+    owner,routine,plan=binding
     if (type(owner) is not Interpreter or owner is not app._session_owner
             or type(routine) is not ast.Routine or routine is not app._session_handler
             or routine.execution_context!='server' or routine.is_function or routine.is_async
@@ -31,16 +34,19 @@ def initialize(app,names=None):
             or by_value is not False or parameter.by_value is not False
             or default is not None or parameter.default is not None):
         raise BoundaryViolation('configuration session initializer parameter changed')
-    if names is not None:
-        # The existing session state supplies a fresh one-name array on a
-        # cache miss. Give generated code the ordinary native Array storage.
-        store=app.session_parameters
-        if (type(names) is not BSLArray or type(names.items) is not list or len(names.items)!=1
-                or type(names.items[0]) is not str or names.items[0].casefold() not in store._initializing):
-            raise BoundaryViolation('invalid lazy session parameter request')
-        names=names.items.copy()
     invoke_routine(app,owner,routine,(_Cell(names),))
 
+
+def initialize_lazy(app,names):
+    # The shared reader supplies a fresh one-name array while that name is
+    # being initialized. Startup's Undefined request is never a lazy request.
+    store=app.session_parameters
+    items=names.items if type(names) is BSLArray else None
+    if (type(items) is not list or len(items)!=1
+            or type(items[0]) is not str or items[0].casefold() not in store._initializing):
+        raise BoundaryViolation('invalid lazy session parameter request')
+    if app._session_binding is not None:
+        initialize(app,items.copy())
 
 def _read(store,owner,name):
     iterator=_READ(store,owner,name)

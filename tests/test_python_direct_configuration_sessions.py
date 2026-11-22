@@ -185,3 +185,28 @@ class DirectConfigurationSessionTests(unittest.TestCase):
         self.assertIs(other('Read','Flag'),False)
         with self.assertRaisesRegex(InvocationError,'server_error'):
             invoke('Read','Flag')
+
+
+    def test_explicit_lazy_admission_does_not_wait_for_iteration(self):
+        from yadinassi.types.values import BSLArray
+        for files in (files_for_session(),files_for_session('')):
+            app=self.app(files,side='server')
+            self.assertTrue(app.start())
+            before=dict(app.session_parameters._values)
+            request=BSLArray()
+            request.items.append('Flag')  # not an active read of Flag
+            for argument in (None,request):
+                with self.subTest(initializer=bool(app._session_binding),argument=argument):
+                    with self.assertRaisesRegex(BoundaryViolation,'invalid lazy session parameter request'):
+                        app.initialize_session_parameters(app.interpreter,argument)
+            self.assertEqual(app.session_parameters._values,before)
+
+
+    def test_explicit_endpoint_absent_initializer_keeps_native_unset_error(self):
+        app=self.app(files_for_session(''),side='server')
+        self.assertTrue(app.start())
+        binding=next(item for item in app.server_bindings if item.name=='Read')
+        _,invoke=app.server_endpoints[binding.endpoint]
+        with self.assertRaisesRegex(BSLRuntimeError,'not set'):
+            invoke(['Flag'])
+        self.assertEqual(app.session_parameters._initializing,set())
