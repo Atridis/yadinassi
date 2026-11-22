@@ -47,14 +47,13 @@ class FixedIdentitySecurityTests(unittest.TestCase):
             self.assertIsNone(scalar.typed_find([first],second))
         self.assertEqual(effects,[])
 
-    def test_native_collection_observations_match_both_backends(self):
+    def test_native_collection_observations(self):
         source='''A=New Array; A.Add(1); F=New FixedArray(A); G=New FixedArray(A);
         Message(F=F); Message(F=G); Message(F<>G);
         B=New Array; B.Add(F); Message(B.Find(F)); Message(B.Find(G)=Undefined);'''
-        for backend in ('python-direct','compiled-strict'):
-            output=[];vm=Interpreter(output=output.append,execution_backend=backend)
-            self.addCleanup(vm.close);vm.execute(source)
-            self.assertEqual(output,['Да','Нет','Да','0','Да'])
+        output=[];vm=Interpreter(output=output.append)
+        self.addCleanup(vm.close);vm.execute(source)
+        self.assertEqual(output,['Да','Нет','Да','0','Да'])
 
     def test_identity_does_not_admit_members_or_scalar_operations(self):
         class Fixed(BSLFixedArray):pass

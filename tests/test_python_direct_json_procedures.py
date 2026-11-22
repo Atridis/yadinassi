@@ -75,13 +75,12 @@ class DirectJSONProceduresTests(unittest.TestCase):
         self.assertEqual(writer._parts,[])
 
     def test_canonical_control_rejects_procedure_before_effects(self):
-        for backend in ('python-direct','compiled-strict'):
-            vm=Interpreter(execution_backend=backend, allow_extensions=True);seen=[]
-            vm.register_function('Effect',lambda:seen.append(1) or 1)
-            vm.execute('W=New JSONWriter;W.SetString();')
-            with self.subTest(backend=backend),self.assertRaises(BSLError):vm.execute('X=W.WriteValue(Effect());')
-            self.assertEqual(seen,[])
-            vm.execute('W.WriteValue(1);');self.assertEqual(vm.execute('W.Close()'),'1')
+        vm=Interpreter(allow_extensions=True);seen=[]
+        vm.register_function('Effect',lambda:seen.append(1) or 1)
+        vm.execute('W=New JSONWriter;W.SetString();')
+        with self.assertRaises(BSLError):vm.execute('X=W.WriteValue(Effect());')
+        self.assertEqual(seen,[])
+        vm.execute('W.WriteValue(1);');self.assertEqual(vm.execute('W.Close()'),'1')
 
     def test_foreign_metaclass_not_consulted_by_new_callsite_gate(self):
         from yadinassi.execution.direct.python_direct_database import CatalogBoundary

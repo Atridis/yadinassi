@@ -35,12 +35,11 @@ class DirectTableOmissionsTests(unittest.TestCase):
             self.assertEqual(seen,[])
 
     def test_optional_versus_explicit_undefined_and_aliases(self):
-        for backend in ('python-direct','compiled-strict'):
-            vm=Interpreter(execution_backend=backend)
-            vm.execute('T=New ТаблицаЗначений;C=T.Колонки.Добавить(,,"Header");D=T.Колонки.Вставить(0,"D",,,);T.Добавить();T.ЗаполнитьЗначения(7,);R=T.Скопировать(,);Q=T.СкопироватьКолонки();')
-            self.assertEqual(vm.execute('C.Name'),'');self.assertEqual(vm.execute('D.Width'),0)
-            self.assertEqual(vm.execute('R.Count()'),1);self.assertEqual(vm.execute('Q.Count()'),0)
-            with self.assertRaises(BSLError):vm.execute('T.Columns.Add(Undefined);')
+        vm=Interpreter()
+        vm.execute('T=New ТаблицаЗначений;C=T.Колонки.Добавить(,,"Header");D=T.Колонки.Вставить(0,"D",,,);T.Добавить();T.ЗаполнитьЗначения(7,);R=T.Скопировать(,);Q=T.СкопироватьКолонки();')
+        self.assertEqual(vm.execute('C.Name'),'');self.assertEqual(vm.execute('D.Width'),0)
+        self.assertEqual(vm.execute('R.Count()'),1);self.assertEqual(vm.execute('Q.Count()'),0)
+        with self.assertRaises(BSLError):vm.execute('T.Columns.Add(Undefined);')
 
     def test_valid_effect_order_and_once(self):
         vm=Interpreter(allow_extensions=True);vm.execute('T=New ValueTable;');seen=[]

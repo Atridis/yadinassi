@@ -106,13 +106,13 @@ R=Read();''')
             self.assertEqual(vm.variables['x'],1);self.assertTrue(vm._has_module_context)
             self.assertEqual(vm.execution_context,'client')
 
-    def test_original_nocontext_witness_matches_control(self):
+    def test_original_nocontext_witness_matches_native_projection(self):
         text=Path('scripts/native_1c_bootstrap/client_probe.bsl').read_text(encoding='utf-8')
         source=text.split('// BEGIN bounded no-context witness\n',1)[1].split('// BEGIN bounded dual witness',1)[0]
-        rows=[]
-        for backend in ('python-direct','compiled-strict'):
-            vm=Interpreter(compilation_profile='managed-thick-file',execution_backend=backend)
-            vm.execute(source);rows.append(list(vm.execute('RunNoContextProbe()')))
-        self.assertEqual([len(row) for row in rows],[15,15])
-        self.assertEqual(*rows)
-        self.assertEqual(rows[0][1:6],[Decimal(12),Decimal(22),Decimal(0),Decimal(12),Decimal(2)])
+        vm=Interpreter(compilation_profile='managed-thick-file')
+        vm.execute(source)
+        # Complete native core projection pinned in test_native_nocontext_measurement.
+        rows=list(vm.execute('RunNoContextProbe()'))
+        self.assertEqual(rows,['nocontext.core.v3',12,22,0,12,2,True,16,True,6,14,14,True,7,18])
+        for slot in (6,8,12):
+            self.assertIs(rows[slot],True)

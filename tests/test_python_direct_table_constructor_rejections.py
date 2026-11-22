@@ -26,12 +26,11 @@ class DirectTableConstructorRejectionsTests(unittest.TestCase):
                 self.assertEqual(seen,[])
 
     def test_dynamic_constructor_keeps_target_and_parameter_effect_order(self):
-        for backend in ('python-direct','compiled-strict'):
-            vm=Interpreter(execution_backend=backend, allow_extensions=True);seen=[]
-            vm.register_function('Target',lambda:seen.append('target') or 'ValueTableRow')
-            vm.register_function('Parameters',lambda:seen.append('parameters') or None)
-            vm.execute('Try New(Target(),Parameters());Except Caught=True;EndTry;')
-            self.assertTrue(vm.variables['caught']);self.assertEqual(seen,['target','parameters'])
+        vm=Interpreter(allow_extensions=True);seen=[]
+        vm.register_function('Target',lambda:seen.append('target') or 'ValueTableRow')
+        vm.register_function('Parameters',lambda:seen.append('parameters') or None)
+        vm.execute('Try New(Target(),Parameters());Except Caught=True;EndTry;')
+        self.assertTrue(vm.variables['caught']);self.assertEqual(seen,['target','parameters'])
 
     def test_custom_registration_cannot_grant_denied_constructor_authority(self):
         for name in NAMES:

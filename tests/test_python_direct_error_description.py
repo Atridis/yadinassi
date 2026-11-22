@@ -25,16 +25,16 @@ EndTry;
 Try
  Try Raise "origin";Except Raise;EndTry;
 Except D=ErrorDescription();EndTry;'''
-        rows=[]
-        for backend in ('python-direct','compiled-strict'):
-            vm=Interpreter(execution_backend=backend);vm.execute(source,'nested.bsl');rows.append(vm.variables)
-        self.assertEqual(*rows);self.assertEqual(rows[0]['c'],'');self.assertIn('origin',rows[0]['d'])
+        vm=Interpreter();vm.execute(source,'nested.bsl')
+        self.assertEqual(vm.variables,{
+            'a':'nested.bsl:1:5: outer','b':'nested.bsl:2:27: inner',
+            'c':'','d':'nested.bsl:6:6: origin',
+        })
 
     def test_stale_outer_rethrow_is_rejected(self):
         source='Try Raise "outer";Except Try Raise "inner";Except X=1;EndTry;Raise;EndTry;'
-        for backend in ('python-direct','compiled-strict'):
-            with self.assertRaisesRegex(BSLRuntimeError,'после вложенного обработчика'):
-                Interpreter(execution_backend=backend).execute(source)
+        with self.assertRaisesRegex(BSLRuntimeError,'после вложенного обработчика'):
+            Interpreter().execute(source)
 
     def test_python_failure_is_normalized_at_bsl_source(self):
         vm=Interpreter();vm.execute('Try\n R=1/0;\nExcept\n D=ErrorDescription();\nEndTry;','division.bsl')
@@ -47,10 +47,9 @@ Function D() Return ErrorDescription();EndFunction
 &AtServerNoContext
 Function S() Return ErrorDescription();EndFunction
 Try Raise "caller";Except A=C();B=D();C=S();E=ErrorDescription();EndTry;'''
-        rows=[]
-        for backend in ('python-direct','compiled-strict'):
-            vm=Interpreter(execution_backend=backend);vm.execute(source);rows.append(tuple(vm.variables[k] for k in ('a','b','c','e')))
-        self.assertEqual(*rows);self.assertEqual(rows[0][2],'');self.assertEqual(rows[0][0],rows[0][1])
+        vm=Interpreter();vm.execute(source)
+        caller='<строка>:6:5: caller'
+        self.assertEqual(vm.variables,{'a':caller,'b':caller,'c':'','e':caller})
 
     def test_custom_builtin_and_bad_arity_are_preserved(self):
         vm=Interpreter(allow_extensions=True);vm.register_function('ErrorDescription',lambda:'custom')

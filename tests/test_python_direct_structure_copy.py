@@ -10,8 +10,8 @@ from yadinassi.syntax.parser import parse
 
 
 class DirectStructureCopyTests(unittest.TestCase):
-    def vm(self,backend='python-direct', *, allow_extensions=False):
-        vm=Interpreter(allow_extensions=allow_extensions, execution_backend=backend);self.addCleanup(vm.close);return vm
+    def vm(self, *, allow_extensions=False):
+        vm=Interpreter(allow_extensions=allow_extensions);self.addCleanup(vm.close);return vm
 
     def test_routes_shallow_copy_case_spelling_order_and_independent_top_level(self):
         source='''A=New Array;A.Add(1);S=New Structure("ß,SS,Child",0,2,A);
@@ -36,19 +36,15 @@ R=F.ss;V=U.SS;N=F.Child.Count();M=U.Count();'''
         source='''F=New FixedStructure("Name,Count",1,2);T=New Structure(F);
 T.Name=3;T.Delete("Count");T.Insert("Next",4);R=F.Name;N=F.Count();
 Empty=New Structure(New FixedStructure);E=Empty.Count();'''
-        observations=[]
-        for backend in ('python-direct','compiled-strict'):
-            vm=self.vm(backend);vm.execute(source)
-            observations.append(tuple(vm.variables[k] for k in ('r','n','e')))
-        self.assertEqual(observations,[(1,2,0),(1,2,0)])
+        vm=self.vm();vm.execute(source)
+        self.assertEqual(tuple(vm.variables[k] for k in ('r','n','e')),(1,2,0))
 
     def test_extra_actuals_run_then_error_and_old_target_is_not_replaced(self):
-        for backend in ('python-direct','compiled-strict'):
-            vm=self.vm(backend, allow_extensions=True);events=[]
-            vm.register_function('Effect',lambda:events.append('rhs') or 4)
-            vm.execute('F=New FixedStructure("X",1);T=7;Try T=New Structure(F,Effect());Except Error=ErrorDescription();EndTry;')
-            self.assertEqual(events,['rhs']);self.assertEqual(vm.variables['t'],7)
-            self.assertIn('Копирование структуры ожидает один аргумент',vm.variables['error'])
+        vm=self.vm(allow_extensions=True);events=[]
+        vm.register_function('Effect',lambda:events.append('rhs') or 4)
+        vm.execute('F=New FixedStructure("X",1);T=7;Try T=New Structure(F,Effect());Except Error=ErrorDescription();EndTry;')
+        self.assertEqual(events,['rhs']);self.assertEqual(vm.variables['t'],7)
+        self.assertIn('Копирование структуры ожидает один аргумент',vm.variables['error'])
 
     def test_dynamic_constructor_uses_same_thaw(self):
         vm=self.vm();vm.execute('F=New FixedStructure("X",1);Args=New Array;Args.Add(F);T=New("Structure",Args);T.X=2;R=F.X;')

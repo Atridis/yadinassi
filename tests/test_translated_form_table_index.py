@@ -5,6 +5,9 @@ from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.execution.execution_policy import execution_backend_policy
 from yadinassi.execution.codegen import translated_access as access
+from yadinassi.forms.form_runtime import FormSession
+from yadinassi.forms.form_model import BSLFormAttribute
+from yadinassi.types.type_descriptions import BSLTypeDescription
 from test_form_tables import make, active
 import test_form_tables as form_tests
 
@@ -31,6 +34,58 @@ class TranslatedFormTableIndexTests(unittest.TestCase):
                 self.assertEqual(dict(snapshot.attributes)['Status'], 'firstfirst')
                 self.assertEqual(seen, [Decimal(0), Decimal(0)])
                 session.dispatch('close', revision=2)
+
+    def test_generated_index_actual_reads_one_live_row(self):
+        source = form_tests.SOURCE.replace(' Work();', ' Status = LabelOf(Lines[Index()]);') + '''
+&AtClient
+Function Index()
+    Message("index");
+    Return 0;
+EndFunction
+&AtClient
+Function LabelOf(Val Row)
+    Return Row.Label;
+EndFunction
+'''
+        session = FormSession(source, tables=(form_tests.SCHEMA,),
+            attributes=(BSLFormAttribute('Status', BSLTypeDescription('String')),),
+            bindings={'OnCreateAtServer': 'Create'})
+        session.open()
+        snapshot = session.dispatch('command', revision=1, control='RunButton')
+        self.assertEqual(dict(snapshot.attributes)['Status'], 'first')
+        self.assertEqual(session.messages, ('index',))
+
+    def test_index_preparation_and_finished_read_require_current_form_table(self):
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.direct.python_direct_forms import FormBoundary
+
+        session = make()
+        other = make()
+        session.open()
+        other.open()
+        table = session.form._tables['lines']
+        foreign = other.form._tables['lines']
+        with active(session):
+            context = FormBoundary(session, session.interpreter.server_routines['work'])
+            context.enter()
+            try:
+                with self.assertRaisesRegex(BoundaryViolation, 'foreign direct form receiver'):
+                    context.resolve_member(foreign, '__getitem__')
+                read = context.resolve_member(table, '__getitem__')
+                self.assertIs(read(Decimal(0)), table.get(Decimal(0)))
+                for invalid in (Decimal(-1), Decimal('0.5'), Decimal(1), True):
+                    with self.assertRaises(ValueError):
+                        read(invalid)
+                with self.assertRaises(ValueError):
+                    context.resolve_member(table, '__setitem__')
+                with patch.dict(session.form._tables):
+                    session.form._tables.pop('lines')
+                    with self.assertRaisesRegex(ValueError, 'отсоединенная'):
+                        read(Decimal(0))
+            finally:
+                context.leave()
+        session.dispatch('close', revision=1)
+        other.dispatch('close', revision=1)
 
     def test_value_service_keeps_live_checks_and_other_vm_rejection(self):
         session = make(); session.open()

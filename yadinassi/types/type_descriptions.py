@@ -20,6 +20,7 @@ from yadinassi.db.metadata.enum_types import BSLEnumReference, BSLEnumType
 from yadinassi.db.document.document_types import BSLDocumentReference, BSLDocumentType
 from yadinassi.db.registers.information_registers import BSLInformationRegisterType
 from yadinassi.db.document.document_lines import BSLDocumentLinesType, BSLDocumentLines, BSLDocumentLine, BSLDocumentSectionType
+from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 from yadinassi.temporal.dates import BSLDate, TICKS_PER_SECOND, date
 from yadinassi.numeric.numbers import round_number
 from .type_qualifiers import (
@@ -134,23 +135,28 @@ def _type_set(value):
             if kind is None:
                 raise ValueError(f"ОписаниеТипов: тип не поддерживается: {token.strip()}")
             kinds.append(kind)
-    elif type(value) is BSLArray:
-        if type(value.items) is not list:
-            raise TypeError('ОписаниеТипов: недопустимый состав Массива типов')
-        if len(value.items) > _MAX_TYPE_ARGUMENT:
-            raise ValueError("ОписаниеТипов: превышен предел ресурсов Yadinassi (4096 типов)")
-        kinds = value.items
     else:
-        raise TypeError("ОписаниеТипов: ожидается строка или Массив значений Тип")
-    references = [kind for kind in kinds if _is_reference_type(kind)]
+        if type(value) is BSLArray:
+            kinds = value.items
+            if type(kinds) is not list:
+                raise TypeError('ОписаниеТипов: недопустимый состав Массива типов')
+        elif type(value) is list or type(value) is PlainArray:
+            kinds = value
+        else:
+            raise TypeError("ОписаниеТипов: ожидается строка или Массив значений Тип")
+        if list.__len__(kinds) > _MAX_TYPE_ARGUMENT:
+            raise ValueError("ОписаниеТипов: превышен предел ресурсов Yadinassi (4096 типов)")
+    # Native arrays are list storage. Do not invoke subclass length/iteration
+    # protocols or copy/box the array before validating its type descriptors.
+    references = [kind for kind in list.__iter__(kinds) if _is_reference_type(kind)]
     if references:
         # !todo Measure composite reference descriptions, duplicate/Undefined
         # inputs and union fallbacks before expanding this singleton boundary.
-        if len(kinds) != 1:
+        if list.__len__(kinds) != 1:
             _unsupported('составное описание ссылки')
         return {_checked_reference_type(references[0])}
     result = set()
-    for kind in kinds:
+    for kind in list.__iter__(kinds):
         # Validate before hashing: host objects must never supply equality/hash.
         if (type(kind) is BSLDocumentLinesType or type(kind) is BSLDocumentSectionType
                 or type(kind) is BSLInformationRegisterType):

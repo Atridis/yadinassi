@@ -12,6 +12,8 @@ from itertools import permutations
 import unittest
 
 from yadinassi import BSLError, Interpreter
+from yadinassi.execution.direct.python_direct_plain_array import PlainArray
+from yadinassi.syntax.parser import parse
 from yadinassi.temporal.dates import BSLDate, MAX_TICKS, date, shift_date
 from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.types.type_qualifiers import (
@@ -80,6 +82,52 @@ class DescriptionConstructionTests(unittest.TestCase):
         self.assertEqual(override.number_qualifiers.fraction_digits, D(1))
         self.assertEqual(source.number_qualifiers.digits, D(5))
         self.assertNotEqual(override, source)
+
+    def test_canonical_arrays_in_direct_and_prepared_constructors(self):
+        source = (
+            'A=New Array;A.Add(Type("Number"));A.Add(Type("String"));A.Add(Type("Number"));'
+            'B=Новый Массив;B.Добавить(Тип("Дата"));'
+            'C=Новый Массив;C.Добавить(Тип("Строка"));'
+            'R=New TypeDescription(A); S=Новый ОписаниеТипов(R,B,C);'
+        )
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter()
+                try:
+                    if prepared:
+                        vm.execute_prepared(vm.prepare_program(parse(source)))
+                    else:
+                        vm.execute(source)
+                    self.assertIs(type(vm.variables['a']), list)
+                    self.assertEqual(vm.variables['r'].types, (BSLType.STRING, BSLType.NUMBER))
+                    self.assertEqual(vm.variables['s'].types, (BSLType.DATE, BSLType.NUMBER))
+                    self.assertEqual(vm.execute('New TypeDescription(New Array)').types, ())
+                finally:
+                    vm.close()
+
+    def test_exact_native_array_and_existing_element_limits(self):
+        for array_kind in (list, PlainArray):
+            with self.subTest(array_kind=array_kind):
+                source = array_kind([BSLType.NUMBER] * 4096)
+                description = TD(source)
+                self.assertEqual(description.types, (BSLType.NUMBER,))
+                source.append(BSLType.NUMBER)
+                with self.assertRaisesRegex(ValueError, '4096 типов'):
+                    TD(source)
+                source.clear()
+                self.assertEqual(description.types, (BSLType.NUMBER,))
+                with self.assertRaisesRegex(TypeError, 'элементы массива'):
+                    TD(array_kind(['Number']))
+                with self.assertRaisesRegex(ValueError, 'одновременное добавление'):
+                    TD(description, array_kind([BSLType.STRING]), array_kind([BSLType.STRING]))
+
+        class OtherList(list):
+            pass
+
+        with self.assertRaisesRegex(TypeError, 'ожидается строка или Массив'):
+            TD(OtherList([BSLType.NUMBER]))
+        with self.assertRaisesRegex(TypeError, 'ожидается строка или Массив'):
+            TD(BSLFixedArray(array(BSLType.NUMBER)))
 
     def test_structural_equality_is_independent_of_qualifier_object_identity(self):
         left = TD('Number', NQ(D(5), D(2)))
@@ -156,7 +204,7 @@ class DescriptionConstructionTests(unittest.TestCase):
 
     def test_invalid_and_out_of_scope_constructors_are_atomic(self):
         bad_sources = ('Unknown', 'BinaryData', 'Array', 'Null,Number',
-                       'Number,,String', [], {}, D(1), True, NULL,
+                       'Number,,String', (), {}, D(1), True, NULL,
                        BSLType.STRING, array('String'), array(BSLType.ARRAY),
                        BSLFixedArray(array(BSLType.STRING)))
         for source in bad_sources:

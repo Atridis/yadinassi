@@ -250,7 +250,7 @@ class MetadataReferenceDescriptionTests(unittest.TestCase):
         for owner in (BSLValueTable(), BSLValueTree()):
             for kind, _ in self.kinds():
                 with self.assertRaises(ValueError): owner.columns.add('Ref', _reference_description(kind))
-                self.assertEqual(owner.columns.items, [])
+                self.assertEqual(owner.columns.get_method('Count')(), 0)
 
     def test_host_bound_reference_table_schema_stays_closed_for_storage_and_queries(self):
         for kind, ref_class in self.kinds():

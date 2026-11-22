@@ -61,8 +61,13 @@ def method(context,value,name):
                 context._check();require(context.session,value)
                 yield item
         return iterate
-    function=value.get_method(name)
-    if type(function) is not HostFunction:raise BoundaryViolation('noncanonical form method')
+    if name=='__getitem__' and type(value) is BSLFormDataCollection:
+        # Bind before the index expression; the shared invocation guard
+        # rechecks this live collection before reading.
+        function=value.get_index
+    else:
+        function=value.get_method(name)
+        if type(function) is not HostFunction:raise BoundaryViolation('noncanonical form method')
     def invoke(*args):
         context._check();require(context.session,value)
         try:return function(*args)

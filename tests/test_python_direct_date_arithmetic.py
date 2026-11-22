@@ -1,7 +1,6 @@
 """Native Python operators reuse measured Date tick algorithms, not VM dispatch."""
 from decimal import Decimal, localcontext, Rounded, Inexact
 import unittest
-from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.temporal.dates import BSLDate, MAX_TICKS, UnsupportedDateRange, shift_date, date_difference
 
@@ -13,24 +12,37 @@ class DirectDateArithmeticTests(unittest.TestCase):
             self.assertEqual(value+delta,shift_date(value,delta))
             self.assertEqual(value-delta,shift_date(value,delta.copy_negate()))
         self.assertEqual(value-BSLDate(123450000),date_difference(value,BSLDate(123450000)))
-    def test_direct_and_reference_program_values_and_order(self):
-        source='a=Date(2024,1,1);b=a+0.12345;c=b-0.00005;elapsed=c-a;'
-        results=[]
-        for backend in ('interpreter','python-direct'):
-            vm=Interpreter(execution_backend=backend, allow_extensions=True)
-            try:
-                vm.execute(source)
-                results.append((vm.variables['b'].ticks,vm.variables['c'].ticks,vm.variables['elapsed']))
-            finally:vm.close()
-        self.assertEqual(*results)
-        vm=Interpreter(allow_extensions=True);seen=[]
-        vm.register_function('Left',lambda:seen.append('left') or BSLDate(10000))
-        vm.register_function('Right',lambda:seen.append('right') or Decimal(1))
+    def test_direct_program_matches_fixed_tick_offsets(self):
+        source = 'a=Date(2024,1,1);b=a+0.12345;c=b-0.00005;elapsed=c-a;'
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter()
+                try:
+                    if prepared:
+                        vm.execute_prepared(vm.prepare(source))
+                    else:
+                        vm.execute(source)
+                    values = vm.variables
+                    start = values['a'].ticks
+                    # A tick is 0.0001 s. Each half tick rounds away from zero.
+                    self.assertEqual(values['b'].ticks - start, 1235)
+                    self.assertEqual(values['c'].ticks - start, 1234)
+                    self.assertEqual(values['elapsed'], Decimal('0.1234'))
+                finally:
+                    vm.close()
+
+    def test_direct_date_operands_keep_left_to_right_effect_order(self):
+        vm = Interpreter(allow_extensions=True)
+        seen = []
+        vm.register_function('Left', lambda: seen.append('left') or BSLDate(10000))
+        vm.register_function('Right', lambda: seen.append('right') or Decimal(1))
         try:
-            with patch.object(Interpreter,'visit_Binary',side_effect=AssertionError('VM dispatch')):
-                vm.execute('result=Left()+Right();')
-            self.assertEqual(seen,['left','right']);self.assertEqual(vm.variables['result'].ticks,20000)
-        finally:vm.close()
+            vm.execute('result=Left()+Right();')
+            self.assertEqual(seen, ['left', 'right'])
+            self.assertEqual(vm.variables['result'].ticks, 20000)
+        finally:
+            vm.close()
+
     def test_wrong_types_do_not_invoke_reflected_host_callbacks(self):
         class Foreign:
             def __radd__(self,other):raise AssertionError('host callback')

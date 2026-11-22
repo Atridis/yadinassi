@@ -178,20 +178,25 @@ class ConfigurationApplicationTests(unittest.TestCase):
         self.assertEqual(self.rpc(app, 'close')['state']['kind'], 'closed')
 
     def test_frozen_configuration_route_is_explicit_and_first_argument_only(self):
-        with mock.patch.object(entrypoint.configuration_app, 'main', return_value=6) as app, mock.patch.object(entrypoint, 'cli_main', return_value=9):
+        with (mock.patch('yadinassi.ui.configuration_app.main', return_value=6) as app,
+              mock.patch.object(entrypoint, 'cli_main', return_value=9) as cli):
             self.assertEqual(entrypoint.main(['--configuration-ui', 'owned']), 6)
             app.assert_called_with(['owned'])
             self.assertEqual(entrypoint.main(['--configuration-ui-runtime', 'owned']), 6)
             app.assert_called_with(['--runtime', 'owned'])
+            app.reset_mock()
             self.assertEqual(entrypoint.main(['-c', '--configuration-ui']), 9)
+            cli.assert_called_once_with(['-c', '--configuration-ui'])
+            app.assert_not_called()
 
     def test_frozen_child_reuses_executable_without_python_mode(self):
-        from yadinassi.execution.execution_policy import execution_backend_policy
-        for mode in ('interpreter', 'compiled-strict'):
-            with self.subTest(backend=mode), execution_backend_policy(mode), mock.patch.object(ConfigurationProcess, '_start') as start, mock.patch.object(sys, 'frozen', True, create=True):
-                ConfigurationProcess(ROOT/'counter', ROOT/'existing.sqlite')
-                command, env = start.call_args.args
-                expected = [sys.executable, '--configuration-ui-runtime', str((ROOT/'counter').resolve()), '--f', str((ROOT/'existing.sqlite').resolve())]
-                expected.extend(['--execution-backend', mode])
-                self.assertEqual(command, expected)
-                self.assertEqual(env['PYTHONIOENCODING'], 'utf-8')
+        with (mock.patch.object(ConfigurationProcess, '_start') as start,
+              mock.patch.object(sys, 'frozen', True, create=True)):
+            ConfigurationProcess(ROOT/'counter', ROOT/'existing.sqlite')
+            command, env = start.call_args.args
+            self.assertEqual(command, [
+                sys.executable, '--configuration-ui-runtime', str((ROOT/'counter').resolve()),
+                '--f', str((ROOT/'existing.sqlite').resolve()),
+                '--execution-backend', 'python-direct',
+            ])
+            self.assertEqual(env['PYTHONIOENCODING'], 'utf-8')

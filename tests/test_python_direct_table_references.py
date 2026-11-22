@@ -27,10 +27,9 @@ class DirectTableReferenceTests(unittest.TestCase):
             self.assertEqual(vm.execute('C.Title'),'seven');self.assertEqual(vm.execute('R.A'),9 if route=='eval' else 7)
 
     def test_live_alias_val_and_write_then_error_match_canonical_control(self):
-        for backend in ('python-direct','compiled-strict'):
-            vm=Interpreter(execution_backend=backend);vm.execute(SETUP)
-            vm.execute('Procedure Pair(X,Y) X=3;Y=Y+X;EndProcedure Procedure ValOnly(Val X) X=99;EndProcedure Procedure Fail(X) X=11;Raise "after";EndProcedure Pair(R.A,R[0]);ValOnly(R.A);Before=R.A;Try Fail(R.A);Except EndTry;After=R.A;')
-            self.assertEqual((vm.variables['before'],vm.variables['after']),(6,11))
+        vm=Interpreter();vm.execute(SETUP)
+        vm.execute('Procedure Pair(X,Y) X=3;Y=Y+X;EndProcedure Procedure ValOnly(Val X) X=99;EndProcedure Procedure Fail(X) X=11;Raise "after";EndProcedure Pair(R.A,R[0]);ValOnly(R.A);Before=R.A;Try Fail(R.A);Except EndTry;After=R.A;')
+        self.assertEqual((vm.variables['before'],vm.variables['after']),(6,11))
 
     def test_binding_failure_precedes_later_argument_effects(self):
         vm=Interpreter(allow_extensions=True);vm.execute(SETUP+'Procedure Change(X,Y) X=2;EndProcedure');seen=[]

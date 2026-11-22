@@ -189,7 +189,7 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
         result = vm.execute('СнимокТипов(12.5)')
         self.assertEqual(result.get('Write'), '{"N",12.5}')
         self.assertTrue(result.get('ReadWriteEqual'))
-        self.assertNotIn('readwrite', result._items)  # Equal stream is represented once.
+        self.assertFalse(result.property('ReadWrite'))  # Equal stream is represented once.
         self.assertTrue(result.get('TypeReadEqual'))
         self.assertEqual(result.get('ReadType'), result.get('Type'))
         self.assertTrue(result.get('Equal'))
@@ -224,7 +224,7 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
         vm.execute(supplement.split(TYPES_SUPPLEMENT_BODY_START, 1)[0])
         ordinary = vm.execute('КвалификаторыОписанияДополнения(New TypeDescription("Number"))')
         self.assertTrue(ordinary.get('ReadWriteEqual'))
-        self.assertNotIn('readwrite', ordinary._items)
+        self.assertFalse(ordinary.property('ReadWrite'))
         vm.register_function('ЗначениеИзСтрокиВнутр', lambda text: None)
         changed = vm.execute('КвалификаторыОписанияДополнения(New TypeDescription("Number"))')
         self.assertEqual(changed.get('Write'), ordinary.get('Write'))

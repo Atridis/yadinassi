@@ -54,22 +54,20 @@ F=New FixedArray(A); B=New Array(F); B[0][0]=9; S.N=2;'''
 
     def test_omissions_are_not_undefined_and_do_not_publish_mutation(self):
         for call in ('A.Add(,)','A.Insert(0,)','A.Insert(,1)','A.Set(0,)','A.Delete(0,)'):
-            for backend in ('python-direct','compiled-strict'):
-                vm=Interpreter(execution_backend=backend)
-                vm.execute('A=New Array; A.Add("kept"); Caught=False;')
-                vm.execute('Try '+call+'; Except Caught=True; EndTry;')
-                self.assertTrue(vm.variables['caught'])
-                self.assertEqual(vm.execute('A.Count()'),1);self.assertEqual(vm.execute('A[0]'),'kept')
+            vm=Interpreter()
+            vm.execute('A=New Array; A.Add("kept"); Caught=False;')
+            vm.execute('Try '+call+'; Except Caught=True; EndTry;')
+            self.assertTrue(vm.variables['caught'])
+            self.assertEqual(vm.execute('A.Count()'),1);self.assertEqual(vm.execute('A[0]'),'kept')
 
     def test_omission_does_not_evaluate_arguments(self):
         for call in ('A.Insert(Effect(),)', 'A.Set(,Effect())'):
-            for backend in ('python-direct','compiled-strict'):
-                events=[];vm=Interpreter(execution_backend=backend, allow_extensions=True)
-                vm.register_function('Effect',lambda:events.append('effect') or 0)
-                vm.execute('A=New Array; A.Add(7);')
-                with self.assertRaises(BSLError):vm.execute(call)
-                self.assertEqual(events,[]);self.assertEqual(vm.execute('A[0]'),7)
-                vm.execute('A.Insert(0,9);');self.assertEqual(vm.execute('A.Count()'),2)
+            events=[];vm=Interpreter(allow_extensions=True)
+            vm.register_function('Effect',lambda:events.append('effect') or 0)
+            vm.execute('A=New Array; A.Add(7);')
+            with self.assertRaises(BSLError):vm.execute(call)
+            self.assertEqual(events,[]);self.assertEqual(vm.execute('A[0]'),7)
+            vm.execute('A.Insert(0,9);');self.assertEqual(vm.execute('A.Count()'),2)
 
     def test_fixed_copy_rejects_extra_dimension_and_nested_subclass(self):
         vm=Interpreter();vm.execute('F=New FixedArray(New Array);')

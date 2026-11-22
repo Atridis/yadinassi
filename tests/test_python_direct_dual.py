@@ -30,13 +30,10 @@ class DirectDualTests(unittest.TestCase):
 
     def test_original_positive_operation_preserves_side_masks_aliases(self):
         source=Path('scripts/native_1c_bootstrap/client_probe.bsl').read_text(encoding='utf-8').split('// BEGIN bounded dual witness\n',1)[1].split('// BEGIN bounded Date Null measurement',1)[0]
-        outputs=[]
-        for backend in ('python-direct','compiled-strict'):
-            vm=Interpreter(compilation_profile='managed-thick-file',execution_backend=backend)
-            vm.execute(source)
-            vm.execute('X=1;A=New Array;A.Add(2);R=DualProbeOperation(X,A,False);M=R.Mask;R.Container[0]=32;V=A[0];Y=X;')
-            outputs.append((vm.variables['m'],vm.variables['v'],vm.variables['y']))
-        self.assertEqual(outputs,[(0,32,12),(0,32,12)])
+        vm=Interpreter(compilation_profile='managed-thick-file')
+        vm.execute(source)
+        vm.execute('X=1;A=New Array;A.Add(2);R=DualProbeOperation(X,A,False);M=R.Mask;R.Container[0]=32;V=A[0];Y=X;')
+        self.assertEqual(tuple(vm.variables[k] for k in ('m','v','y')),(0,32,12))
 
     def test_profile_branches_for_each_side(self):
         vm=Interpreter()
@@ -127,8 +124,7 @@ Z=100;Tick();
 
     def test_original_dual_witness_matches_control(self):
         source=Path('scripts/native_1c_bootstrap/client_probe.bsl').read_text(encoding='utf-8').split('// BEGIN bounded dual witness\n',1)[1].split('// BEGIN bounded Date Null measurement',1)[0]
-        rows=[]
-        for backend in ('python-direct','compiled-strict'):
-            vm=Interpreter(compilation_profile='managed-thick-file',execution_backend=backend)
-            vm.execute(source);rows.append(list(vm.execute('CollectDualDirectiveProbe()')))
-        self.assertEqual([len(row) for row in rows],[9,9]);self.assertEqual(*rows)
+        vm=Interpreter(compilation_profile='managed-thick-file')
+        vm.execute(source)
+        # Complete native projection, also pinned in test_native_dual_measurement.
+        self.assertEqual(list(vm.execute('CollectDualDirectiveProbe()')),[0,32,17,0,17,41,0,32,17])

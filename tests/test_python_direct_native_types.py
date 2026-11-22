@@ -57,10 +57,8 @@ Function Change(X) X=9;Return 2;EndFunction
 &AtServer
 Function F(Val Named,Val Expression,Val Token) R=Named*100+Expression*10+Token;Named=77;Return R;EndFunction
 X=1;R=F((X),Identity(X),Change(X));'''
-        rows=[]
-        for backend in ('python-direct','compiled-strict'):
-            vm=Interpreter(execution_backend=backend);vm.execute(source);rows.append((vm.variables['x'],vm.variables['r']))
-        self.assertEqual(rows,[(9,912),(9,912)])
+        vm=Interpreter();vm.execute(source)
+        self.assertEqual((vm.variables['x'],vm.variables['r']),(9,912))
 
     def test_val_property_and_index_expressions_keep_early_values(self):
         vm=Interpreter();vm.execute('''Function Change(S,A) S.X=9;A[0]=8;Return 0;EndFunction

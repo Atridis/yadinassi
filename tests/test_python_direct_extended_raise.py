@@ -35,19 +35,18 @@ R=E.Code;A=E.AdditionalInformation;S=E.InitialString;'''
 
     def test_excess_manual_ast_arguments_do_not_run_optional_effects(self):
         from copy import deepcopy
-        for backend in ('python-direct','compiled-strict'):
-            for route in ('ast','prepared') if backend=='python-direct' else ('ast',):
-                with self.subTest(backend=backend,route=route):
-                    vm=Interpreter(execution_backend=backend, allow_extensions=True);effects=[]
-                    vm.register_function('Description',lambda:effects.append('description') or 'x')
-                    vm.register_function('Optional',lambda:effects.append('optional') or 'x')
-                    nodes=parse('Try Raise(Description(),Optional());Except E=ErrorInfo();EndTry;')
-                    raised=nodes[0].body[0]
-                    raised.optional_arguments=[deepcopy(raised.optional_arguments[0]) for _ in range(5)]
-                    if route=='ast':vm.execute_program(nodes)
-                    else:vm.execute_prepared(vm.prepare_program(nodes))
-                    self.assertEqual(effects,['description'])
-                    self.assertIn('не более 5',vm.variables['e'].description)
+        for route in ('ast','prepared'):
+            with self.subTest(route=route):
+                vm=Interpreter(allow_extensions=True);effects=[]
+                vm.register_function('Description',lambda:effects.append('description') or 'x')
+                vm.register_function('Optional',lambda:effects.append('optional') or 'x')
+                nodes=parse('Try Raise(Description(),Optional());Except E=ErrorInfo();EndTry;')
+                raised=nodes[0].body[0]
+                raised.optional_arguments=[deepcopy(raised.optional_arguments[0]) for _ in range(5)]
+                if route=='ast':vm.execute_program(nodes)
+                else:vm.execute_prepared(vm.prepare_program(nodes))
+                self.assertEqual(effects,['description'])
+                self.assertIn('не более 5',vm.variables['e'].description)
 
     def test_all_optional_effects_before_validation_and_no_repeat(self):
         vm=Interpreter(allow_extensions=True);effects=[]

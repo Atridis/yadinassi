@@ -9,8 +9,8 @@ from yadinassi.types.error_info import BSLErrorInfo
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class DirectErrorInfoTests(unittest.TestCase):
-    def vm(self,backend='python-direct', *, allow_extensions=False):
-        vm=Interpreter(allow_extensions=allow_extensions, execution_backend=backend);self.addCleanup(vm.close);return vm
+    def vm(self, *, allow_extensions=False):
+        vm=Interpreter(allow_extensions=allow_extensions);self.addCleanup(vm.close);return vm
 
     def test_source_ast_prepared_snapshot_and_fields_without_vm(self):
         from yadinassi.syntax.parser import parse
@@ -30,17 +30,15 @@ class DirectErrorInfoTests(unittest.TestCase):
 
     def test_nested_handlers_discard_outer_and_rethrow_keeps_snapshot(self):
         source='Try Raise "outer";Except A=ErrorInfo();Try Raise "inner";Except B=ErrorInfo();EndTry;C=ErrorInfo();EndTry;Try Try Raise "origin";Except E=ErrorInfo();Raise;EndTry;Except F=ErrorInfo();EndTry;'
-        for backend in ('python-direct','compiled-strict'):
-            vm=self.vm(backend);vm.execute(source)
-            self.assertEqual(vm.variables['a'].description,'outer');self.assertEqual(vm.variables['b'].description,'inner')
-            self.assertTrue(vm.variables['c']._empty);self.assertIs(vm.variables['e'],vm.variables['f'])
+        vm=self.vm();vm.execute(source)
+        self.assertEqual(vm.variables['a'].description,'outer');self.assertEqual(vm.variables['b'].description,'inner')
+        self.assertTrue(vm.variables['c']._empty);self.assertIs(vm.variables['e'],vm.variables['f'])
 
     def test_eval_does_not_inherit_caller_but_same_side_routine_does(self):
         source='Function F() Return ErrorInfo();EndFunction Try Raise "outer";Except A=F();B=Eval("ErrorInfo()");C=ErrorInfo();EndTry;'
-        for backend in ('python-direct','compiled-strict'):
-            vm=self.vm(backend);vm.execute(source)
-            self.assertEqual(vm.variables['a'].description,'outer');self.assertTrue(vm.variables['b']._empty)
-            self.assertIs(vm.variables['a'],vm.variables['c'])
+        vm=self.vm();vm.execute(source)
+        self.assertEqual(vm.variables['a'].description,'outer');self.assertTrue(vm.variables['b']._empty)
+        self.assertIs(vm.variables['a'],vm.variables['c'])
 
     def test_server_crossing_is_fresh(self):
         vm=self.vm();vm.execute('&AtServerNoContext\nFunction F() Return ErrorInfo().Description;EndFunction Try Raise "outer";Except A=F();B=ErrorInfo().Description;EndTry;')

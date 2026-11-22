@@ -12,12 +12,11 @@ class ArrayPresentationSecurityTests(unittest.TestCase):
     def test_regular_and_subclass_presentation_matches_existing_backend_contract(self):
         class Array(BSLArray):
             def __str__(self):raise AssertionError('host str')
-        for backend in ('python-direct','compiled-strict'):
-            for kind in (BSLArray,Array):
-                output=[];vm=Interpreter(output=output.append,execution_backend=backend)
-                self.addCleanup(vm.close);vm.variables['a']=kind()
-                vm.execute('Message(a);Message(String(a));Message("type:"+a);')
-                self.assertEqual(output,['Массив','Массив','type:Массив'])
+        for kind in (BSLArray,Array):
+            output=[];vm=Interpreter(output=output.append)
+            self.addCleanup(vm.close);vm.variables['a']=kind()
+            vm.execute('Message(a);Message(String(a));Message("type:"+a);')
+            self.assertEqual(output,['Массив','Массив','type:Массив'])
 
     def test_no_fields_or_metaclass_descriptors_are_read(self):
         class Meta(type):

@@ -17,12 +17,11 @@ class PersistentRoutineArityTests(unittest.TestCase):
                 self.assertEqual(output,[])
 
     def test_optional_bounds_do_not_reject_valid_calls(self):
-        for backend in ('python-direct','compiled-strict'):
-            vm=Interpreter(execution_backend=backend);self.addCleanup(vm.close)
-            vm.execute('Function F(Val A,Val B=2) Return A+B;EndFunction')
-            self.assertEqual(vm.execute('F(3)'),5);self.assertEqual(vm.execute('F(3,4)'),7)
-            for call,count in (('F()',0),('F(1,2,3)',3)):
-                with self.assertRaisesRegex(BSLError,f'2 аргументов, получено {count}'):vm.execute(call)
+        vm=Interpreter();self.addCleanup(vm.close)
+        vm.execute('Function F(Val A,Val B=2) Return A+B;EndFunction')
+        self.assertEqual(vm.execute('F(3)'),5);self.assertEqual(vm.execute('F(3,4)'),7)
+        for call,count in (('F()',0),('F(1,2,3)',3)):
+            with self.assertRaisesRegex(BSLError,f'2 аргументов, получено {count}'):vm.execute(call)
 
     def test_redeclared_signature_drives_new_diagnostic(self):
         vm=Interpreter(execution_backend='python-direct');self.addCleanup(vm.close)

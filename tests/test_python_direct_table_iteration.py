@@ -11,8 +11,8 @@ from yadinassi.syntax.parser import parse
 
 
 class DirectTableIterationTests(unittest.TestCase):
-    def vm(self,backend='python-direct'):
-        vm=Interpreter(execution_backend=backend);self.addCleanup(vm.close);return vm
+    def vm(self):
+        vm=Interpreter();self.addCleanup(vm.close);return vm
     def table(self):
         t=BSLValueTable();t.columns.add('X');t.columns.add('Y')
         r=t.add();r.set_member('X',Decimal(1));r.set_member('Y',Decimal(2))
@@ -32,14 +32,12 @@ Total=0;For Each Row In T Do For Each Cell In Row Do Total=Total+Cell;EndDo;EndD
                 else:vm.execute_prepared(vm.prepare(source))
             self.assertEqual(vm.variables['names'],'XY');self.assertEqual(vm.variables['total'],3)
 
-    def test_row_cells_snapshot_and_deleted_row_owner_iteration_match_legacy(self):
+    def test_row_cells_snapshot_and_deleted_row_owner_iteration(self):
         source='''T=New ValueTable;T.Columns.Add("X");T.Columns.Add("Y");R=T.Add();R.X=1;R.Y=2;
 S=0;For Each V In R Do S=S+V;R.Y=10;EndDo;
 Other=T.Add();Other.X=7;T.Delete(R);N=0;For Each Live In R Do N=N+Live.X;EndDo;'''
-        results=[]
-        for backend in ('python-direct','compiled-strict'):
-            vm=self.vm(backend);vm.execute(source);results.append((vm.variables['s'],vm.variables['n']))
-        self.assertEqual(results,[(3,7),(3,7)])
+        vm=self.vm();vm.execute(source)
+        self.assertEqual((vm.variables['s'],vm.variables['n']),(3,7))
 
     def test_live_list_append_and_delete_match_canonical_iterators(self):
         for kind in ('table','columns'):
