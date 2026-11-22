@@ -55,6 +55,19 @@ class ImportedProductEditorTests(unittest.TestCase):
         try: return view.read_catalog(self.editor.object._key)
         finally: view.close()
 
+    def assert_uncertain(self):
+        state = self.editor.snapshot()
+        self.assertEqual((state['saveState'], state['error']), ('uncertain', 'uncertain_commit'))
+        self.assertTrue(state['editingLocked'])
+        self.assertTrue(state['dirty'])
+        self.assertTrue(self.editor.pending_commit)
+        self.assertFalse(self.editor.pending_refresh)
+
+    def discard(self):
+        self.app.event('command', control='CancelButton')
+        self.assertIsNone(self.app.editor)
+        self.assertIn('Previous write outcome remains unknown', self.app.list_notice)
+
     def test_original_description_change_normalizes_and_warns(self):
         self.change('Description', ' x ')
         snapshot = self.editor.snapshot()
@@ -129,16 +142,28 @@ class ImportedProductEditorTests(unittest.TestCase):
         self.assertEqual(after['fields'], before['fields']); self.assertEqual(after['sections'], before['sections'])
         self.assertTrue(after['sourceStale'])
 
-    def test_uncertain_committed_recovery_does_not_replay_form_or_object(self):
-        self.valid(); commit = _View.commit
-        def uncertain(view): commit(view); raise BackendError('uncertain_commit')
+    def test_unknown_committed_save_does_not_replay_and_fresh_open_reads_record(self):
+        row = self.valid(); commit = _View.commit
+        def uncertain(view, **options): commit(view, **options); raise BackendError('uncertain_commit')
         with patch.object(_View, 'commit', uncertain): self.save()
-        self.assertTrue(self.editor.pending_commit)
+        self.assert_uncertain()
+        key = self.editor.object._key
         with patch.object(self.editor, '_product_event', side_effect=AssertionError('form replay')), \
              patch.object(self.app.backend, 'read_catalog_editor_source', side_effect=AssertionError('source replay')), \
+             patch.object(self.editor, '_refresh', side_effect=AssertionError('outcome guessed')), \
              patch.object(_View, 'commit', side_effect=AssertionError('second commit')):
             self.save()
-        self.assertEqual(self.editor.save_state, 'saved')
+            self.assert_uncertain()
+        card = self.stored()
+        self.assertIsNotNone(card)
+        self.assertEqual(card.description, 'Кабель USB-C')
+        self.discard()
+        self.app.open(CatalogRef(str(key.catalog_id), str(key.record_id)))
+        self.editor = self.app.editor
+        state = self.editor.snapshot()
+        self.assertFalse(state['editingLocked'])
+        self.assertFalse(state['dirty'])
+        self.assertEqual(state['sections'][0]['rows'][0]['id'], row)
 
     def test_refresh_recovery_does_not_replay_form(self):
         self.valid()
@@ -162,19 +187,25 @@ class ImportedProductEditorTests(unittest.TestCase):
             with self.assertRaises(UIError): self.change('Description', 'Different name')
         self.assertEqual(self.editor.snapshot(), before)
 
-    def test_absent_receipt_revalidation_refusal_unlocks_editor(self):
+    def test_unknown_rolled_back_save_does_not_revalidate_or_unlock_draft(self):
         self.valid()
         with patch.object(_View, 'commit', side_effect=BackendError('uncertain_commit')):
             self.save()
-        self.assertTrue(self.editor.pending_commit)
+        self.assert_uncertain()
         self.kind.set_member('DeletionMark', True); self.kind.write()
-        self.save()
-        self.assertEqual(self.editor.error, 'object_validation')
-        self.assertFalse(self.editor.pending_commit)
-        self.assertIsNone(self.editor.object._pending_write)
+        with patch.object(self.editor, '_product_event', side_effect=AssertionError('form replay')), \
+             patch.object(_View, 'commit', side_effect=AssertionError('second commit')):
+            self.save()
+        self.assert_uncertain()
         self.assertIsNone(self.stored())
-        self.change('Description', 'Still editable')
-        self.editor.command('CancelButton'); self.assertTrue(self.editor.form.closed)
+        with self.assertRaises(UIError):
+            self.change('Description', 'Cannot change unknown draft')
+        self.discard()
+        self.assertEqual(self.app.view.page(0, 8)['total'], 0)
+        self.app.open()
+        self.editor = self.app.editor
+        self.assertFalse(self.editor.snapshot()['editingLocked'])
+        self.change('Description', 'Fresh draft is editable')
 
     def mark(self, obj, value):
         app = CatalogEditorApplication(SQLiteDBContext(self.path))
@@ -275,7 +306,7 @@ class ImportedProductEditorTests(unittest.TestCase):
         self.valid(); self.save(); self.change('DeletionMark', True); self.save()
         marked = self.stored()
         # Ordinary product Save retains its original mandatory object validation
-        # and fresh revision, unlike receipt/refresh recovery (which cannot write).
+        # and fresh revision. A confirmed refresh, by contrast, cannot write.
         event = self.editor._product_event
         with patch.object(self.editor, '_product_event', wraps=event) as prepared:
             self.save()
@@ -301,35 +332,45 @@ class ImportedProductEditorTests(unittest.TestCase):
         self.assertTrue(self.deletion_field()['inputText'])
         self.assertEqual(self.stored(), before)
 
-    def test_mark_uncertain_commit_resolves_retained_boolean_without_replay(self):
-        self.valid(); self.save(); self.change('DeletionMark', True)
+    def test_unknown_committed_mark_is_visible_after_discard_and_reopen(self):
+        self.valid(); self.save(); reference = self.ref(self.editor.object)
+        self.change('DeletionMark', True)
         commit = _View.commit
-        def uncertain(view): commit(view); raise BackendError('uncertain_commit')
+        def uncertain(view, **options): commit(view, **options); raise BackendError('uncertain_commit')
         with patch.object(_View, 'commit', uncertain): self.save()
-        self.assertTrue(self.editor.pending_commit)
+        self.assert_uncertain()
         with self.assertRaises(UIError): self.change('DeletionMark', False)
         with self.assertRaises(UIError): self.editor.command('CancelButton')
         with patch.object(self.editor, '_product_event', side_effect=AssertionError('form replay')), \
              patch.object(_View, 'commit', side_effect=AssertionError('second commit')):
             self.save()
-        self.assertFalse(self.editor.pending_commit)
-        self.assertTrue(self.stored().deletion_mark)
-        self.assertTrue(self.deletion_field()['inputText'])
+        self.assert_uncertain()
+        self.assertIs(self.stored().deletion_mark, True)
+        self.assertIs(self.deletion_field()['inputText'], True)
+        self.discard()
+        self.app.open(reference)
+        self.editor = self.app.editor
+        self.assertIs(self.deletion_field()['inputText'], True)
         self.assertFalse(self.editor.snapshot()['dirty'])
 
-    def test_unmark_absent_receipt_revalidation_refuses_and_keeps_mark(self):
+    def test_unknown_rolled_back_unmark_preserves_record_and_locks_draft(self):
         self.valid(); self.change('DeletionMark', True); self.save(); marked = self.stored()
+        reference = self.ref(self.editor.object)
         self.change('DeletionMark', False)
         with patch.object(_View, 'commit', side_effect=BackendError('uncertain_commit')): self.save()
-        self.assertTrue(self.editor.pending_commit)
-        self.mark(self.warehouse, True); self.save()
-        self.assertEqual(self.editor.error, 'object_validation')
-        self.assertFalse(self.editor.pending_commit)
-        self.assertFalse(self.deletion_field()['inputText'])
+        self.assert_uncertain()
+        self.mark(self.warehouse, True)
+        with patch.object(self.editor, '_product_event', side_effect=AssertionError('form replay')), \
+             patch.object(_View, 'commit', side_effect=AssertionError('second commit')):
+            self.save()
+        self.assert_uncertain()
+        self.assertIs(self.deletion_field()['inputText'], False)
         self.assertEqual(self.stored(), marked)
-        self.change('DeletionMark', True); self.save()
-        self.assertIsNone(self.editor.error)
-        self.assertTrue(self.stored().deletion_mark)
+        self.discard()
+        self.app.open(reference)
+        self.editor = self.app.editor
+        self.assertIs(self.deletion_field()['inputText'], True)
+        self.assertFalse(self.editor.snapshot()['dirty'])
 
     def test_mark_refresh_retry_adopts_checkbox_without_second_write(self):
         self.valid(); self.save(); self.change('DeletionMark', True)
