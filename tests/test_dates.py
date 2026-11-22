@@ -13,6 +13,7 @@ import re
 import unittest
 
 from yadinassi import BSLError, Interpreter
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.temporal.dates import (
     BSLDate, UnsupportedDateRange, component, date, date_difference,
     literal_date, shift_date,
@@ -370,10 +371,14 @@ class DateRuntimeTests(unittest.TestCase):
                          shift_date(date(BASE_TEXT), Decimal('-0.0001')))
 
     def test_date_is_a_global_function_not_a_new_constructor(self):
-        for expression in ('New Date', 'Новый Дата', 'New Date(2024, 2, 29)',
+        for expression in ('New Date', 'Новый Дата',
                            'New("Date")', 'New(Type("Date"))', 'New (Type("Дата"))'):
             with self.subTest(expression=expression), self.assertRaises(BSLRuntimeError):
                 self.vm.execute(expression)
+        # The direct compiler handles only the zero-argument diagnostic at
+        # runtime. The argument-bearing static form is not a constructor.
+        with self.assertRaises(PythonDirectUnsupported):
+            self.vm.prepare('New Date(2024, 2, 29)')
 
     def test_unsupported_operators_and_host_reflection_do_not_leak(self):
         self.vm.execute('value = Date(2024, 2, 29);')

@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.syntax.parser import parse
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.types.values import Reference
@@ -31,9 +32,13 @@ class CompiledForSlotTests(unittest.TestCase):
                 reads.append(value[0]); return value[0]
             def set_value(new):
                 writes.append(new); value[0] = new
-            vm = Interpreter(execution_backend=mode)
-            vm.locals = {'i': Reference(get, set_value)}
-            vm.execute('For i=1 To 3 Do EndDo;')
+            vm = Interpreter(execution_backend=mode, allow_extensions=True)
+            self.addCleanup(vm.close)
+            # Exercise the live host reference via a separately compiled BSL
+            # by-reference routine, not the retired visitor's vm.locals.
+            vm.variables['actual'] = Reference(get, set_value)
+            vm.execute('Procedure CountThrough(i) For i=1 To 3 Do EndDo; EndProcedure')
+            vm.execute('CountThrough(actual);')
             self.assertEqual(writes, list(map(Decimal, (1, 2, 3, 4))))
             self.assertEqual(len(reads), 7)
             self.assertEqual(value[0], 4)
@@ -51,7 +56,7 @@ class CompiledForSlotTests(unittest.TestCase):
     def test_host_installed_import_invalidates_counter_write(self):
         vm = Interpreter(execution_backend='python-direct', allow_extensions=True)
         vm.register_function('Install', lambda: vm.imports.__setitem__('i', object()))
-        with self.assertRaises(BSLRuntimeError):
+        with self.assertRaisesRegex(BoundaryViolation, 'foreign import binding'):
             vm.execute('For i=1 To 2 Do Install();EndDo;')
         self.assertEqual(vm.variables['i'], 1)
 

@@ -9,6 +9,7 @@ from yadinassi.collections.structures import BSLFixedStructure
 from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
 from .python_direct_plain_array import PlainArray
 from yadinassi.collections.search_directions import BSLSearchDirection
+from yadinassi.collections.sort_directions import BSLSortDirection
 from yadinassi.numeric.round_modes import BSLRoundMode
 from yadinassi.temporal.dates import BSLDate, MAX_TICKS, _DIRECT_EQUALITY_DATE_STATE
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
@@ -27,6 +28,7 @@ from .python_direct_numbers import public_number
 
 _KEY_TYPES=(Decimal,str,int,float,type(None),BSLSearchDirection,BSLRoundMode,BSLNull,BSLType)
 _KEY_TYPE_IDS=frozenset(id(kind) for kind in _KEY_TYPES)
+_ASC, _DESC = BSLSortDirection.ASC, BSLSortDirection.DESC
 
 _DATE_TICKS = vars(BSLDate)['ticks']
 _DATE_BOUNDARY = _DIRECT_EQUALITY_DATE_STATE[1]
@@ -177,6 +179,8 @@ def _admit_extended_key(key):
     if type(key) is BSLTypeDescription:
         return _ScalarKey(key, _scalar_map_key(key))
     if id(type(key)) in _IDENTITY_KEY_TYPE_IDS:
+        return _IdentityKey(key)
+    if key is _ASC or key is _DESC:
         return _IdentityKey(key)
     raise TypeError("Map key requires a scalar Python value")
 

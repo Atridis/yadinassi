@@ -29,6 +29,7 @@ def parameter_entries(plan,routine):
 
 
 _COMMAND_SCOPE = ContextVar("direct_configuration_command", default=None)
+from yadinassi import runtime as _runtime
 from yadinassi.execution import safe_mode
 from yadinassi.db import source_transactions, database_transactions
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
@@ -57,9 +58,9 @@ def check_owner(app, owner, *, allow_database=False):
         raise BoundaryViolation('direct configuration restricted execution is not connected')
     grant=app._cli_database
     if grant is not None:
-        from yadinassi.runtime import Interpreter
+        interpreter_type=_runtime.Interpreter
         database,backend,thread=grant
-        if (type(root) is not Interpreter or type(owner) is not Interpreter
+        if (type(root) is not interpreter_type or type(owner) is not interpreter_type
                 or get_ident()!=thread or owner.database_context is not database
                 or root.database_context is not database or database.backend is not backend
                 or backend._closed or root.allow_extensions or owner.allow_extensions):

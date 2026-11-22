@@ -1,8 +1,10 @@
 """Explicit managed CLI starts real stored BSL through its owned application."""
 from contextlib import redirect_stderr, redirect_stdout
+import dis
 from io import StringIO
 from pathlib import Path
 import tempfile
+from types import CodeType
 import unittest
 from unittest.mock import patch
 
@@ -60,19 +62,27 @@ class ManagedCLIRuntimeTests(unittest.TestCase):
         self.assertEqual(self.cli(['-c', 'Message(7);'], managed=False), (0, '7\n', ''))
 
     def test_managed_cli_leaves_only_actual_boundary_dispatch(self):
+        def operations(code):
+            # The generated source is intentionally not retained in this mode.
+            names = {op.argval for op in dis.get_instructions(code)
+                     if op.opname in ('LOAD_METHOD', 'LOAD_ATTR')}
+            for constant in code.co_consts:
+                if type(constant) is CodeType:
+                    names.update(operations(constant))
+            return names
+
         files = self.archive('Var X; X=Tools.Compute(2); Procedure OnStart() Message(X); EndProcedure')
-        guarded = ConfigurationApplication.from_files(files, output=lambda value: None)
+        guarded = ConfigurationApplication.from_files(
+            files, output=lambda value: None, allow_extensions=True)
         self.addCleanup(guarded.close, force=True)
         guarded_plan = guarded._modules['tools', 'client'].interpreter._direct_configuration_plan
-        self.assertIn('_context.checkpoint()', guarded_plan.generated_source)
-        self.assertIn('_context._check()', guarded_plan.generated_source)
+        self.assertLessEqual({'checkpoint', '_check'}, operations(guarded_plan.function.__code__))
         self.assertIs(guarded.interpreter.allow_extensions, True)
         with SQLiteDBContext(self.db) as context:
             cli_app = ConfigurationApplication._from_cli_database(context)
             self.addCleanup(cli_app.close, force=True)
             cli_plan = cli_app._modules['tools', 'client'].interpreter._direct_configuration_plan
-            self.assertNotIn('_context.checkpoint()', cli_plan.generated_source)
-            self.assertNotIn('_context._check()', cli_plan.generated_source)
+            self.assertTrue({'checkpoint', '_check'}.isdisjoint(operations(cli_plan.function.__code__)))
             self.assertIn('authority_checkpoints', cli_plan.repairs)
             self.assertIs(cli_app.interpreter.allow_extensions, False)
             with redirect_stdout(StringIO()) as out:

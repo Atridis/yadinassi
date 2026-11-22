@@ -13,6 +13,7 @@ from yadinassi.types.unique_identifiers import BSLUUID
 from yadinassi.types.values import BSLType, NULL, to_string, _DIRECT_TYPE_PRESENTATIONS, _DIRECT_ARRAY_TYPE, _DIRECT_FIXED_ARRAY_TYPE, _DIRECT_FIXED_COLLECTION_TYPE, divide as _divide
 from yadinassi.collections.structures import _DIRECT_FIXED_STRUCTURE_SNAPSHOT
 from yadinassi.collections.search_directions import BSLSearchDirection
+from yadinassi.collections.sort_directions import BSLSortDirection
 from yadinassi.numeric.round_modes import BSLRoundMode
 from yadinassi.collections.maps import _DIRECT_FIXED_MAP_SNAPSHOT
 from .experimental_naked_boundaries import BoundaryViolation
@@ -27,7 +28,8 @@ class UnsupportedScalarSemantics(BoundaryViolation):
 _COLLECTION_TYPES = (list, dict, _NakedMap, _TypedMap, _DirectStructure)
 _SCALAR_TYPES = (bool, Decimal, str, type(None))
 _FIND_IDENTITY_TYPES = (_DIRECT_FIXED_ARRAY_TYPE, _DIRECT_FIXED_STRUCTURE_SNAPSHOT[0],
-                        _DIRECT_FIXED_MAP_SNAPSHOT[0], BSLSearchDirection, BSLRoundMode, BSLType)
+                        _DIRECT_FIXED_MAP_SNAPSHOT[0], BSLSearchDirection, BSLSortDirection,
+                        BSLRoundMode, BSLType)
 
 
 _SCALAR_TYPE_IDS=tuple(map(id,_SCALAR_TYPES))
