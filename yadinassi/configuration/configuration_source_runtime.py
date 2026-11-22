@@ -72,8 +72,8 @@ class _SourceInterpreter(Interpreter):
                                'СтрокаСоединенияИнформационнойБазы')
         self._register_platform_function('CurrentRunMode', application.current_run_mode)
         self._register_platform_function('ТекущийРежимЗапуска', application.current_run_mode)
-        self._register_platform_function('RefreshReusableValues', lambda: application.reusable_values.refresh(self))
-        self._register_platform_function('ОбновитьПовторноИспользуемыеЗначения', lambda: application.reusable_values.refresh(self))
+        self._register_platform_function('RefreshReusableValues', lambda: application.reusable_values.refresh(self),
+                                         'ОбновитьПовторноИспользуемыеЗначения', returns_value=False)
         self._register_platform_function('SetSafeMode', lambda enabled: application.safe_mode.set(enabled),
                                'УстановитьБезопасныйРежим', returns_value=False)
         self._register_platform_function('SafeMode', lambda: application.safe_mode.get(), 'БезопасныйРежим')

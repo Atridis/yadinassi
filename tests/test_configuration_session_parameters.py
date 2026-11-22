@@ -1,9 +1,11 @@
-"""Authored trusted-host session contract; native acquisition is separate."""
+"""Session-parameter lifecycle and metadata contracts for their respective hosts."""
 from decimal import Decimal
 from uuid import uuid4
 import unittest
 from configuration_runtime_fixture import module_files, SERVER
 from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.configuration.configuration_xml import import_configuration
 from yadinassi.configuration.configuration_modules import MODULE_RUNTIME
 from yadinassi.types.errors import BSLRuntimeError
@@ -45,6 +47,17 @@ class ConfigurationSessionParameterTests(unittest.TestCase):
         if start:app.start()
         return app
 
+    def source_application(self,files=None,*,output=lambda value:None):
+        # Tests of the BSL application lifecycle use the source host. The
+        # separate explicit ConfigurationApplication API has different entry
+        # and transport contracts; keep its activation/negative tests there.
+        files=dict(files_for_session() if files is None else files)
+        files.setdefault('Ext/ManagedApplicationModule.bsl',b'')
+        app=SourceApplication(import_source(files),output=output)
+        self.addCleanup(app.close)
+        app.start()
+        return app
+
     def test_import_is_inert_and_requires_explicit_profile(self):
         files=files_for_session();result=import_configuration(files,module_runtime=MODULE_RUNTIME)
         self.assertEqual(len(result.session_parameters),5)
@@ -60,24 +73,24 @@ class ConfigurationSessionParameterTests(unittest.TestCase):
 
     def test_startup_precedes_application_event(self):
         output=[]
-        app=self.application(files_for_session(application='Procedure BeforeStart(Cancel) Message(Access.Read("Ready")); EndProcedure'),output=output.append)
+        app=self.source_application(files_for_session(application='Procedure BeforeStart(Cancel) Message(Access.Read("Ready")); EndProcedure'),output=output.append)
         self.assertEqual(output,['Да'])
-        self.assertTrue(app.execute('Access.Read("Ready")'))
+        self.assertTrue(app.interpreter.execute('Access.Read("Ready")'))
 
     def test_lazy_false_is_a_set_value_and_does_not_repeat(self):
-        app=self.application()
-        self.assertFalse(app.execute('Access.Read("Flag")'))
-        self.assertFalse(app.execute('Access.Read("Flag")'))
-        self.assertEqual(app.execute('Access.Read("Calls")'),Decimal(1))
+        app=self.source_application()
+        self.assertFalse(app.interpreter.execute('Access.Read("Flag")'))
+        self.assertFalse(app.interpreter.execute('Access.Read("Flag")'))
+        self.assertEqual(app.interpreter.execute('Access.Read("Calls")'),Decimal(1))
 
     def test_unset_is_not_scalar_default(self):
-        app=self.application()
-        with self.assertRaisesRegex(BSLRuntimeError,'not set'):app.execute('Access.Read("Other")')
+        app=self.source_application()
+        with self.assertRaisesRegex(BSLRuntimeError,'not set'):app.interpreter.execute('Access.Read("Other")')
 
     def test_unknown_name_rejected_without_handler(self):
-        app=self.application()
-        with self.assertRaisesRegex(BSLRuntimeError,'unknown session parameter'):app.execute('Access.Read("Missing")')
-        self.assertEqual(app.execute('Access.Read("Calls")'),Decimal(0))
+        app=self.source_application()
+        with self.assertRaisesRegex(BSLRuntimeError,'unknown session parameter'):app.interpreter.execute('Access.Read("Missing")')
+        self.assertEqual(app.interpreter.execute('Access.Read("Calls")'),Decimal(0))
 
     def test_server_dot_and_index_share_values(self):
         app=self.application(side='server')
@@ -87,21 +100,21 @@ class ConfigurationSessionParameterTests(unittest.TestCase):
         self.assertTrue(app.execute('ПараметрыСеанса.Flag'))
 
     def test_logical_client_has_no_session_parameter_global(self):
-        app=self.application()
-        with self.assertRaisesRegex(BSLRuntimeError,'server application context'):app.execute('SessionParameters.Flag')
-        with self.assertRaises(BSLRuntimeError):app.execute('Access.Handle()')
+        app=self.source_application()
+        with self.assertRaisesRegex(BSLRuntimeError,'server application context'):app.interpreter.execute('SessionParameters.Flag')
+        with self.assertRaises(BSLRuntimeError):app.interpreter.execute('Access.Handle()')
 
     def test_typed_assignment_preserves_value_on_failure(self):
-        app=self.application()
-        app.execute('Access.Write("Flag",True);')
-        with self.assertRaises(BSLRuntimeError):app.execute('Access.Write("Flag",3);')
-        self.assertTrue(app.execute('Access.Read("Flag")'))
+        app=self.source_application()
+        app.interpreter.execute('Access.Write("Flag",True);')
+        with self.assertRaises(BSLRuntimeError):app.interpreter.execute('Access.Write("Flag",3);')
+        self.assertTrue(app.interpreter.execute('Access.Read("Flag")'))
 
     def test_sessions_do_not_share_state(self):
-        files=files_for_session();a=self.application(files);b=self.application(files)
-        a.execute('Access.Write("Text","only a");')
-        with self.assertRaisesRegex(BSLRuntimeError,'not set'):b.execute('Access.Read("Text")')
-        self.assertEqual(a.execute('Access.Read("Text")'),'only a')
+        files=files_for_session();a=self.source_application(files);b=self.source_application(files)
+        a.interpreter.execute('Access.Write("Text","only a");')
+        with self.assertRaisesRegex(BSLRuntimeError,'not set'):b.interpreter.execute('Access.Read("Text")')
+        self.assertEqual(a.interpreter.execute('Access.Read("Text")'),'only a')
 
     def test_closed_namespace_cannot_be_reused_in_another_application(self):
         app=self.application(side='server');namespace=app.execute('SessionParameters');app.close(force=True)
@@ -112,8 +125,8 @@ class ConfigurationSessionParameterTests(unittest.TestCase):
         source='''Procedure SessionParametersSetting(P)
 If P<>Undefined Then X=SessionParameters.Flag; EndIf;
 EndProcedure'''
-        app=self.application(files_for_session(source))
-        with self.assertRaisesRegex(BSLRuntimeError,'recursive session parameter'):app.execute('Access.Read("Flag")')
+        app=self.source_application(files_for_session(source))
+        with self.assertRaisesRegex(BSLRuntimeError,'recursive session parameter'):app.interpreter.execute('Access.Read("Flag")')
         self.assertEqual(app.session_parameters._initializing,set())
 
     def test_session_module_exports_and_top_level_code_rejected(self):
@@ -129,12 +142,12 @@ EndProcedure'''
         source='''Procedure SessionParametersSetting(P)
 If P=Undefined Then Access.Write("Ready",True); EndIf;
 EndProcedure'''
-        app=self.application(files_for_session(source))
-        self.assertTrue(app.execute('Access.Read("Ready")'))
+        app=self.source_application(files_for_session(source))
+        self.assertTrue(app.interpreter.execute('Access.Read("Ready")'))
 
     def test_missing_handler_keeps_parameters_unset(self):
-        app=self.application(files_for_session(''))
-        with self.assertRaisesRegex(BSLRuntimeError,'not set'):app.execute('Access.Read("Flag")')
+        app=self.source_application(files_for_session(''))
+        with self.assertRaisesRegex(BSLRuntimeError,'not set'):app.interpreter.execute('Access.Read("Flag")')
 
     def test_foreign_schema_type_and_unknown_component_rejected(self):
         for before,after in ((b'xs:boolean',b'xs:base64Binary'),(b'</SessionParameter>',b'<ChildObjects/></SessionParameter>')):
@@ -147,10 +160,10 @@ EndProcedure'''
         with self.assertRaises(ValueError):app.start()
 
     def test_declared_metadata_is_ordered_without_initializing_values(self):
-        app=self.application()
-        self.assertEqual(app.execute('Metadata.SessionParameters.Count()'),Decimal(5))
-        self.assertEqual(app.execute('Метаданные.ПараметрыСеанса.Get(0).Name'),'Ready')
-        self.assertEqual(app.execute('Access.Read("Calls")'),Decimal(0))
+        app=self.source_application()
+        self.assertEqual(app.interpreter.execute('Metadata.SessionParameters.Count()'),Decimal(5))
+        self.assertEqual(app.interpreter.execute('Метаданные.ПараметрыСеанса.Get(0).Name'),'Ready')
+        self.assertEqual(app.interpreter.execute('Access.Read("Calls")'),Decimal(0))
 
     def test_parameter_metadata_exposes_qualified_type_not_runtime_value(self):
         app=self.application()
@@ -184,9 +197,9 @@ EndProcedure'''
                 ('<SessionParameter>'+name+'</SessionParameter></ChildObjects>').encode())
             files['SessionParameters/'+name+'.xml']=parameter.read_bytes()
         files['Ext/SessionModule.bsl']=(root/'scripts/session_parameter_behavior/SessionModule.bsl').read_bytes()
-        app=self.application(files)
+        app=self.source_application(files)
         actual=[]
         for case in range(1,17):
             with self.subTest(case=case):
-                actual.append(app.execute('NativeCases.Run('+str(case)+')'))
+                actual.append(app.interpreter.execute('NativeCases.Run('+str(case)+')'))
         self.assertEqual(actual,json.loads(raw))
