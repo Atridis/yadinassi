@@ -10,7 +10,10 @@ from decimal import Decimal
 
 from yadinassi.temporal.dates import BSLDate, MAX_TICKS
 from yadinassi.text.sort_keys import text_sort_key
-from yadinassi.types.values import NULL
+from yadinassi.types.values import BSLArray, BSLType, NULL
+from yadinassi.execution.direct.python_direct_plain_array import _DIRECT_PLAIN_ARRAY_TYPE
+from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
+from .structures import BSLStructure
 
 _SCALAR_TYPES = (type(None), str, bool, int, Decimal, type(NULL))
 _SORT_DATE_TICKS = vars(BSLDate)["ticks"]
@@ -141,6 +144,17 @@ def scalar_equal(left, right):
         return False
     return left == right
 
+def table_object_sort_rank(kind):
+    """Observed table order of Array, Structure and reflected Type."""
+    if kind is list or kind is _DIRECT_PLAIN_ARRAY_TYPE or kind is BSLArray:
+        return 0
+    if kind is _DirectStructure or kind is BSLStructure:
+        return 1
+    if kind is BSLType:
+        return 2
+    return None
+
+
 def _sort_value(value):
     kind = type(value)
     if value is None:
@@ -169,6 +183,14 @@ def _sort_value(value):
             raise NotImplementedError('sorting unknown dates is not supported')
         return 1, 3, ticks
     raise NotImplementedError('sorting opaque values is not supported')
+
+
+def _sort_object_value(value):
+    rank = table_object_sort_rank(type(value))
+    if rank is None:
+        raise NotImplementedError('sorting opaque values is not supported')
+    # Objects of the same collection kind are ties, not payload comparisons.
+    return rank, text_sort_key(str(value)) if rank == 2 else 0
 
 
 class TableStorage:
@@ -394,17 +416,23 @@ class TableStorage:
         for entry in order:
             if type(entry) is not tuple or len(entry) != 2 or type(entry[1]) is not bool:
                 raise TypeError('sort entry must be (column_name, descending_bool)')
-            prepared.append((self.schema.offset(entry[0]), entry[1]))
+            position = self.schema.offset(entry[0])
+            # A column may sort scalar or object keys, not both. Select the
+            # projection once, without adding a per-row test to the scalar sort.
+            object_column = self.rows and (
+                table_object_sort_rank(type(list.__getitem__(self.rows[0], position))) is not None
+            )
+            prepared.append((position, entry[1], _sort_object_value if object_column else _sort_value))
         # Sort a copy so an invalid key never changes the physical row order.
         if len(prepared) == 1:
-            position, descending = prepared[0]
+            position, descending, project = prepared[0]
             ordered = sorted(self.rows,
-                             key=lambda row: _sort_value(list.__getitem__(row, position)),
+                             key=lambda row: project(list.__getitem__(row, position)),
                              reverse=descending)
         else:
             # Mixed directions need stable passes over the materialized keys.
-            decorated = [(row, tuple(_sort_value(list.__getitem__(row, position))
-                                     for position, _ in prepared)) for row in self.rows]
+            decorated = [(row, tuple(project(list.__getitem__(row, position))
+                                     for position, _, project in prepared)) for row in self.rows]
             for index in range(len(prepared) - 1, -1, -1):
                 decorated.sort(key=lambda entry: entry[1][index], reverse=prepared[index][1])
             ordered = [row for row, _ in decorated]

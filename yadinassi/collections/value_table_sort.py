@@ -19,8 +19,8 @@ from .value_table_collation import caseless_string_key, MAX_STRING_LENGTH
 from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508, current_native_target
 from yadinassi.execution.codegen.native_target_sort import introsort
 from yadinassi.temporal.dates import BSLDate
-from .structures import BSLStructure
-from yadinassi.types.values import BSLArray, BSLType, NULL
+from .plain_table_storage import table_object_sort_rank
+from yadinassi.types.values import NULL
 from .value_tables import _text
 
 _MAX_SORT_CELLS = 1_000_000
@@ -68,12 +68,9 @@ def _value_key(value, budget):
         return False, (4, _string_key(value, budget))
     if kind is BSLDate:
         return False, (5, value.require_known().ticks)
-    if kind is BSLArray:
-        return True, (0, 0)
-    if kind is BSLStructure:
-        return True, (1, 0)
-    if kind is BSLType:
-        return True, (2, _string_key(str(value), budget))
+    rank = table_object_sort_rank(kind)
+    if rank is not None:
+        return True, (rank, _string_key(str(value), budget) if rank == 2 else 0)
     raise ValueError('Сортировка: тип ключа пока не поддерживается в Yadinassi')
 
 

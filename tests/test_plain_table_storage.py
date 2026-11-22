@@ -137,6 +137,48 @@ class PlainTableStorageTests(unittest.TestCase):
             for row in rows:
                 self.assertIs(row, original[row.get_value('Name')])
 
+    def test_value_table_object_sort_matches_observed_order_and_keeps_rows(self):
+        from yadinassi import Interpreter
+
+        source = """
+            T=New ValueTable; T.Columns.Add("Key"); T.Columns.Add("ID");
+            First=T.Add(); First.Key=New Structure("A",2); First.ID=1;
+            Row=T.Add(); Row.Key=New Array; Row.ID=2;
+            Row=T.Add(); Row.Key=New Structure("A",1); Row.ID=3;
+            Row=T.Add(); Row.Key=New Array; Row.ID=4;
+            Row=T.Add(); Row.Key=Type("Number"); Row.ID=5;
+            Row=T.Add(); Row.Key=Type("String"); Row.ID=6;
+            T.Sort("Key");
+            IDs=""; For Each Row In T Do IDs=IDs+String(Row.ID); EndDo;
+            SameRow=(T[2]=First);
+        """
+        # Native Windows collections.out table.ops.sort.objects.
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm=Interpreter()
+                self.addCleanup(vm.close)
+                if prepared:
+                    vm.execute_prepared(vm.prepare(source))
+                else:
+                    vm.execute(source)
+                self.assertEqual(vm.variables['ids'], '241365')
+                self.assertIs(vm.variables['samerow'], True)
+                vm.execute('T.Sort("Key, ID Desc"); '
+                           'IDs=""; For Each Row In T Do IDs=IDs+String(Row.ID); EndDo;')
+                self.assertEqual(vm.variables['ids'], '423165')
+
+    def test_mixed_object_and_scalar_sort_keys_do_not_publish_any_rows(self):
+        for values in (([], D(1)), (D(1), [])):
+            table = self.storage()
+            for value in values:
+                table.add().set_value('Amount', value)
+            before = tuple(table.rows)
+            epoch = table.epoch
+            with self.assertRaises(NotImplementedError):
+                table.sort([('Amount', False)])
+            self.assertEqual(table.epoch, epoch)
+            self.assertTrue(all(left is right for left, right in zip(table.rows, before)))
+
     def test_opaque_comparison_and_sort_fail_without_hooks_or_reordering(self):
         effects=[]
         class Hostile:
