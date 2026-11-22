@@ -405,10 +405,17 @@ class TableStorage:
         if type(order) is not tuple and type(order) is not list:
             raise TypeError('sort order must be exact list or tuple')
         prepared = []
+        seen = set() if len(order) > 1 else None
         for entry in order:
             if type(entry) is not tuple or len(entry) != 2 or type(entry[1]) is not bool:
                 raise TypeError('sort entry must be (column_name, descending_bool)')
             position = self.schema.offset(entry[0])
+            if seen is not None:
+                # Later uses of the same column cannot break a tie on it,
+                # including aliases with a conflicting direction.
+                if position in seen:
+                    continue
+                seen.add(position)
             # A column may sort scalar or object keys, not both. Select the
             # projection once, without adding a per-row test to the scalar sort.
             object_column = self.rows and (
