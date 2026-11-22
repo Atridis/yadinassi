@@ -619,6 +619,33 @@ Message(Side.F());
         with self.assertRaises(BSLError):
             self.vm.execute('Message(Side)')
 
+    def test_module_block_declarations_collide_before_import_or_source_effects(self):
+        self.write('Side.bsl', 'Message("import"); Function F() Export Return 42; EndFunction')
+        blocks = ('If False Then Var sIdE; EndIf;',
+                  'Try Raise "test"; Except While False Do Var sIdE; EndDo; EndTry;')
+        for block in blocks:
+            for prepared in (False, True):
+                with self.subTest(block=block, prepared=prepared):
+                    output = []
+                    vm = Interpreter(output=output.append)
+                    self.addCleanup(vm.close)
+                    source = '// #Import Side.bsl\nMessage("source");\n' + block
+                    self.main.write_text(source, encoding='utf-8')
+                    with self.assertRaisesRegex(BSLError, 'Имя импорта конфликтует с объявлением') as error:
+                        if prepared:
+                            vm.prepare_program(parse(source, str(self.main)))
+                        else:
+                            vm.execute(source, str(self.main))
+                    self.assertEqual(error.exception.source, str(self.main))
+                    self.assertEqual(error.exception.line, 3)
+                    self.assertEqual(output, [])
+                    self.assertEqual(vm.imports, {})
+                    self.assertNotIn('side', vm.variables)
+
+        # Without a matching imported root the declaration is still valid.
+        self.assertEqual(self.vm.execute(
+            'If True Then Var Side; Side = 7; EndIf; Side'), Decimal(7))
+
     def test_same_namespace_cannot_rebind_to_another_directory(self):
         self.write('Side.bsl', 'Function F() Export Return 1; EndFunction')
         self.write('other/Side.bsl', 'Function F() Export Return 2; EndFunction')

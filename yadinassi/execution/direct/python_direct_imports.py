@@ -57,6 +57,28 @@ def import_names(vm,program=(),*,facts=None):
     return tuple(sorted(names))
 
 
+def _module_declarations(program):
+    """Declarations inside client module blocks share the import namespace."""
+    pending=list(reversed(program))
+    while pending:
+        node=pending.pop()
+        kind=type(node)
+        if kind is ast.Var:
+            yield tuple(name.casefold() for name in node.names),node.token
+        elif kind is ast.Routine:
+            yield (node.name.casefold(),),node.token
+            # Routine locals and parameters have their own namespace.
+        elif kind is ast.If:
+            pending.extend(reversed(node.otherwise))
+            for _,body in reversed(node.branches):
+                pending.extend(reversed(body))
+        elif kind is ast.Try:
+            pending.extend(reversed(node.handler))
+            pending.extend(reversed(node.body))
+        elif kind in (ast.For,ast.ForEach,ast.While):
+            pending.extend(reversed(node.body))
+
+
 @dataclass(frozen=True, slots=True)
 class PreparedImportFacts:
     """Syntax-only immutable summaries, never cached authority or live state."""
@@ -71,19 +93,19 @@ class PreparedImportFacts:
 def prepare_facts(vm, program):
     # Validate filenames once against the same canonical syntax rules. Live
     # namespace storage/layout is still validated at every invocation.
-    import_names(vm, program)
-    imports=[]; declarations=[]; routines=[]; variables=set(); roots=set()
+    names=import_names(vm,program)
+    declarations=tuple(_module_declarations(program)) if names else ()
+    imports=[]; routines=[]; variables=set(); roots=set()
     for node in program:
         if type(node) is ast.Import:
             imports.append((node.filename,node.token))
             roots.add(node.filename.split('.')[0].casefold())
         elif type(node) is ast.Routine:
             key=node.name.casefold()
-            declarations.append(((key,),node.token));routines.append((key,node.exported))
+            routines.append((key,node.exported))
         elif type(node) is ast.Var:
-            declarations.append((tuple(name.casefold() for name in node.names),node.token))
             variables.update(name.casefold() for name in node.exported_names)
-    return PreparedImportFacts(tuple(imports),tuple(declarations),tuple(routines),
+    return PreparedImportFacts(tuple(imports),declarations,tuple(routines),
                                frozenset(variables),frozenset(roots),
                                program[0].token.source if program else '<строка>')
 
@@ -177,14 +199,17 @@ def check_live(vm):
         if _SEALS.get(vm)!=_tree(vm):raise BoundaryViolation('import namespace changed outside loader')
 
 
+def _check_declarations(names,declarations):
+    for declared,token in declarations:
+        if any(name in names for name in declared):
+            raise BSLError('Имя импорта конфликтует с объявлением',token.source,token.line,token.column)
+
+
 def preflight(vm,program=(),*,facts=None):
     if facts is not None:
         if facts.imports:_hooks(vm)
         names=set(import_names(vm,facts=facts))
-        if names:
-            for declared,token in facts.declarations:
-                if any(name in names for name in declared):
-                    raise BSLError('Имя импорта конфликтует с объявлением',token.source,token.line,token.column)
+        if names:_check_declarations(names,facts.declarations)
         for filename,token in facts.imports:
             name=filename.split('.')[0].casefold()
             if name in vm.variables or name in vm.functions or name in getattr(vm,'_direct_routine_modules',{}):
@@ -192,10 +217,7 @@ def preflight(vm,program=(),*,facts=None):
         return
     if any(type(node) is ast.Import for node in program):_hooks(vm)
     names=set(import_names(vm,program))
-    for node in program:
-        declared=([node.name] if type(node) is ast.Routine else node.names if type(node) is ast.Var else ())
-        if any(name.casefold() in names for name in declared):
-            raise BSLError('Имя импорта конфликтует с объявлением',node.token.source,node.token.line,node.token.column)
+    if names:_check_declarations(names,_module_declarations(program))
     for node in program:
         if type(node) is ast.Import:
             name=node.filename.split('.')[0].casefold()
