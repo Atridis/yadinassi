@@ -64,7 +64,7 @@ class DirectCatalogPreparationTests(unittest.TestCase):
         with self.assertRaises(CatalogWriteRefused) as result:self.card.write()
         self.assertEqual(len(result.exception.messages),3);self.assertTrue(self.card.is_new())
         self.assertIsNone(self.card._pending_write)
-        self.assertEqual(len(self.card._manager.select()._rows),0)
+        self.assertIs(self.card._manager.select().next(),False)
 
     def test_duplicate_equal_separate_references_refuses_update(self):
         self.card.write()

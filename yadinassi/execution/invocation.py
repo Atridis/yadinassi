@@ -69,6 +69,12 @@ def _decode_scalar(value):
     return result
 
 
+@dataclass(frozen=True, slots=True)
+class _FormInvocation:
+    port: object
+    binding: InvocationBinding
+
+
 class InvocationPort:
     """One serialized, host-owned byte exchange. No automatic retry or reconnect.
 
@@ -110,14 +116,14 @@ class InvocationPort:
             key = binding.name.casefold()
             if key in session.reserved_names or key in session.form._static:
                 raise ValueError('form invocation name already bound')
-            self._bind(session.interpreter, binding)
+            self._bind(session.interpreter, binding, _form_transport=True)
             # Later server-side composition cannot shadow the trusted alias with
             # a dynamic attribute. No renderer input can install this binding.
             session.reserved_names.add(key)
         finally:
             session._gate.release()
 
-    def _bind(self, interpreter, binding):
+    def _bind(self, interpreter, binding, *, _form_transport=False):
         key = binding.name.casefold()
         if key in interpreter.routines or key in interpreter.server_routines or key in interpreter.functions:
             raise ValueError('invocation name already bound')
@@ -126,8 +132,13 @@ class InvocationPort:
             [ast.Parameter(token, parameter, True) for parameter in binding.parameters],
             binding.is_function, False, [], execution_context='server', module_context=False)
         interpreter.server_routines[key] = routine
-        interpreter._invocation_bindings[key] = (routine,
-            lambda values: self.invoke(binding, values, output=interpreter.output))
+        if _form_transport:
+            invoke = _FormInvocation(self, binding)
+        else:
+            # Source-owned form replication already supplies a caller boundary.
+            def invoke(values):
+                return self.invoke(binding, values, output=interpreter.output)
+        interpreter._invocation_bindings[key] = (routine, invoke)
 
     def invoke(self, binding, values, *, output=lambda message: None, _check_reply=None):
         if not self._gate.acquire(blocking=False): raise InvocationError('busy')

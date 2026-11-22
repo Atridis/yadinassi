@@ -130,13 +130,31 @@ class FormBoundary(ConfigurationBoundary):
             key=args[0].casefold()
             binding=self.owner._invocation_bindings[key]
             routine,invoke=binding
+            from yadinassi.execution.invocation import InvocationBinding, InvocationPort, _FormInvocation
+            remote=type(invoke) is _FormInvocation
+            # InvocationPort registers an empty NoContext transport stub, not
+            # a local form server handler carrying ThisObject.
+            if type(routine) is not ast.Routine:
+                raise BoundaryViolation('form invocation binding changed')
             signature=(routine.is_function,tuple((p.name,p.by_value,p.default) for p in routine.parameters))
+            if remote:
+                port,contract=invoke.port,invoke.binding
+                if type(port) is not InvocationPort or type(contract) is not InvocationBinding:
+                    raise BoundaryViolation('form invocation binding changed')
+                name,endpoint,parameters,returns=contract.name,contract.endpoint,contract.parameters,contract.is_function
+                if (name.casefold()!=key or returns is not routine.is_function
+                        or parameters!=tuple(p.name for p in routine.parameters)):
+                    raise BoundaryViolation('form invocation binding changed')
             def check():
                 self._check()
                 if (self.owner.execution_context!='client'
                         or self.owner._invocation_bindings.get(key) is not binding
                         or self.owner.server_routines.get(key) is not routine
-                        or routine.execution_context!='server' or not routine.module_context
+                        or routine.execution_context!='server' or routine.module_context is not (not remote)
+                        or remote and (type(routine.body) is not list or routine.body
+                            or invoke.port is not port or invoke.binding is not contract
+                            or contract.name is not name or contract.endpoint is not endpoint
+                            or contract.parameters is not parameters or contract.is_function is not returns)
                         or (routine.is_function,tuple((p.name,p.by_value,p.default) for p in routine.parameters))!=signature
                         or any(not p.by_value or p.default is not None for p in routine.parameters)):
                     raise BoundaryViolation('form invocation binding changed')
@@ -148,8 +166,25 @@ class FormBoundary(ConfigurationBoundary):
                 check()
                 if len(values)!=len(routine.parameters):
                     raise TypeError('form invocation argument count')
-                try:return invoke(list(values))
-                finally:self._check()
+                if not remote:
+                    try:return invoke(list(values))
+                    finally:self._check()
+                from .python_direct_server import _LateNamedValue
+                unpacked=[]
+                for value in values:
+                    if type(value) is _LateNamedValue:
+                        try:value=value.reference.get()
+                        finally:check()
+                    unpacked.append(value)
+                def output(message):
+                    check()
+                    self.owner.output(message)
+                    check()
+                try:return port.invoke(contract,unpacked,output=output,_check_reply=check)
+                finally:check()
+            if remote:
+                from .python_direct_server import _LateNamedValue
+                call.prepare_named_value=_LateNamedValue
             if kwargs.get('allow_references',False):call.requires_reference=lambda index:False
             return call
         if args and args[0] in tuple('new:'+name for name in CALLBACK_CONSTRUCTORS):

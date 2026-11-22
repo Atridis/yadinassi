@@ -147,9 +147,13 @@ class DirectCatalogBoundsWriteTests(unittest.TestCase):
             self.card.write()
         self.assertTrue(self.card.is_new());self.assertIsNone(self.card._pending_write)
         self.assertIsNone(self.db.backend._active)
-        self.assertEqual(len(self.card._manager.select()._rows),0)
+        self.assertIs(self.card._manager.select().next(),False)
         self.card.write()
-        self.assertFalse(self.card.is_new());self.assertEqual(len(self.card._manager.select()._rows),1)
+        self.assertFalse(self.card.is_new())
+        selection=self.card._manager.select()
+        self.assertIs(selection.next(),True)
+        self.assertEqual(selection.get_member('Ref').reference_uuid,self.card.get_member('Ref').reference_uuid)
+        self.assertIs(selection.next(),False)
 
     def test_uncaught_budget_failure_rolls_back_owned_transaction_prior_stage(self):
         ref=self.warehouse.get_member('Ссылка');original=ref.get_object(ref).get_member('Наименование')
@@ -164,7 +168,7 @@ class DirectCatalogBoundsWriteTests(unittest.TestCase):
         with self.assertRaisesRegex(BSLError,'step budget'):self.vm.execute('Probe();')
         transaction_fixture.DirectTransactionPreparationTests.clean(self)
         self.assertEqual(ref.get_object(ref).get_member('Наименование'),original)
-        self.assertEqual(len(self.card._manager.select()._rows),0)
+        self.assertIs(self.card._manager.select().next(),False)
         self.assertIsNone(self.card._pending_write);self.assertIsNone(self.warehouse._pending_write)
         self.assertEqual(owners[0].leases,0)
 
@@ -182,7 +186,7 @@ class DirectCatalogBoundsWriteTests(unittest.TestCase):
                 tx.commit(self.db.backend)
         self.vm.register_function('Probe',probe);self.vm.execute('Probe();')
         transaction_fixture.DirectTransactionPreparationTests.clean(self)
-        self.assertEqual(len(self.card._manager.select()._rows),0)
+        self.assertIs(self.card._manager.select().next(),False)
         ref=self.warehouse.get_member('Ссылка');self.assertEqual(ref.get_object(ref).get_member('Наименование'),'prior stage')
         # New admitted root/preparation gets new counters after the caught failure.
         self.vm.register_function('WriteCard',self.card.write);self.vm.execute('WriteCard();')

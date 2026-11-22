@@ -167,7 +167,11 @@ class DirectTransactionPreparationTests(unittest.TestCase):
                 self.assertEqual(handler.call_count,1)
             self.clean();self.assertTrue(card.is_new())
             self.assertIsNotNone(card._pending_write)
-            self.assertEqual(len(card._manager.select()._rows),int(fault=='after'))
+            selection=card._manager.select()
+            self.assertIs(selection.next(),fault=='after')
+            if fault=='after':
+                self.assertEqual(selection.get_member('Description'),'Кабель')
+                self.assertIs(selection.next(),False)
     def test_rebinding_pinned_owner_parts_fails_before_stage(self):
         original=prep._prepare_catalog_object
         for mode in ('manager','unit','metadata','connection'):

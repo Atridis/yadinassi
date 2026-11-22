@@ -76,12 +76,59 @@ class FormInvocationTests(unittest.TestCase):
         self.assertFalse(port.uncertain)
         self.assertEqual(session.interpreter.server_routines['remotetotal'].body, [])
         self.assertNotIn('calculate', session.interpreter.server_routines)
-        self.assertTrue(server._interpreter.server_routines['calculate'].body)
+        server_module=server._interpreter._direct_routine_modules['calculate']
+        self.assertIn('calculate',server_module.nocontext_names)
+        self.assertIsNotNone(server_module.nocontext_plan)
         frame = decode_line(requests[0])
         self.assertEqual(frame['arguments'], [{'type': 'Number', 'value': '20.10'},
                                              {'type': 'Number', 'value': '3'}])
         self.assertEqual(set(frame), {'protocol', 'id', 'endpoint', 'arguments'})
         self.assertNotIn(b'Calculate', requests[0])
+
+    def test_remote_alias_rejects_contextful_or_nonempty_stub(self):
+        from unittest.mock import patch
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+
+        session, port, server, requests = self.setup_form()
+        session.open()
+        stub = session.interpreter.server_routines['remotetotal']
+        self.assertIs(stub.module_context,False)
+        for field, value in (('module_context',True),
+                             ('body',session.interpreter.routines['calculatecommand'].body)):
+            with self.subTest(field=field),patch.object(stub,field,value):
+                with self.assertRaises(BoundaryViolation):
+                    self.command(session)
+                self.assertEqual(requests,[])
+
+    def test_bound_remote_alias_rejects_replaced_adapter_before_wire(self):
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.direct.python_direct_forms import FormBoundary
+
+        session, port, server, requests = self.setup_form()
+        session.open()
+        vm = session.interpreter
+        adapter = vm._invocation_bindings['remotetotal'][1]
+        context = FormBoundary(session, vm.routines['calculatecommand'])
+        session._begin(session.revision)
+        context.enter()
+        try:
+            call = context.resolve_service('remotetotal', require_value=True)
+            alternate = InvocationPort(lambda raw: self.fail('unexpected transport'))
+            for target, field, replacement in ((adapter, 'port', alternate),
+                                               (adapter.binding, 'endpoint', 2)):
+                with self.subTest(field=field):
+                    original = getattr(target, field)
+                    object.__setattr__(target, field, replacement)
+                    try:
+                        with self.assertRaises(BoundaryViolation):
+                            call(Decimal(4), Decimal(3))
+                    finally:
+                        object.__setattr__(target, field, original)
+                    self.assertEqual(requests, [])
+        finally:
+            context.leave()
+            session._busy = False
+            session._gate.release()
 
     def test_real_separate_process_calculates_form_result_without_client_server_body(self):
         child = '''import sys
