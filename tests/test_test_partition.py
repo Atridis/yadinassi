@@ -51,6 +51,55 @@ class PartitionTests(unittest.TestCase):
         self.assertEqual(set.union(*groups), set(history))
         self.assertEqual(p.select('heavy', 2, 0)[1], plan().select('heavy', 2, 0)[1])
 
+    def test_linux_supplement_moves_only_complete_group_and_never_changes_intel_weights(self):
+        old = case('completed', 'Old')
+        new = case('completed', 'New')
+        other = case('another', 'Old')
+        smoke = case('smoke', 'Smoke')
+        names = lambda *tests: frozenset(partition.identity(test)[0] for test in tests)
+        known = weights([old], seconds=1, intel=9)
+        supplement = {names(old, new): 8.0, names(other): 6.0}
+        nodes = [unittest.TestSuite([test]) for test in (old, new, other, smoke)]
+        p = partition.partition_suite(unittest.TestSuite(nodes), known, linux_placement=supplement)
+        light, first, second = (p.select(tier, count, index)[1]
+            for tier, count, index in (('light', 1, 0), ('heavy', 2, 0), ('heavy', 2, 1)))
+        self.assertEqual(set(light['selected_ids']), names(smoke))
+        self.assertEqual(set(first['selected_ids']), names(old, new))
+        self.assertEqual(set(second['selected_ids']), names(other))
+        self.assertEqual((first['estimated_intel_seconds'], second['estimated_intel_seconds']), (9, 0))
+        self.assertEqual((first['estimated_linux_supplement_seconds'],
+                          second['estimated_linux_supplement_seconds']), (8, 6))
+        self.assertEqual(set(light['selected_ids'] + first['selected_ids'] + second['selected_ids']),
+                         set(p.select('all')[1]['selected_ids']))
+        extra = case('completed', 'Added')
+        p = partition.partition_suite(unittest.TestSuite([*nodes, unittest.TestSuite([extra])]),
+                                      known, linux_placement=supplement)
+        self.assertEqual(set(p.select('light')[1]['selected_ids']), names(old, new, extra, smoke))
+        self.assertEqual(set(p.select('heavy')[1]['selected_ids']), names(other))
+
+    def test_linux_placement_data_is_exact_and_never_loaded_on_other_platforms(self):
+        source = dict(commit='a'*40, tree='b'*40, platform='linux', machine='x86_64',
+                      python='.'.join(map(str, sys.version_info[:3])))
+        group = dict(report_sha256='c'*64, tests={'module.Case.test_body': 4.1})
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'linux.json'
+            profile = {'schema': 1, 'source': source, 'groups': [group]}
+            with mock.patch.object(partition.sys, 'platform', 'linux'), \
+                 mock.patch.object(partition.platform, 'machine', return_value='x86_64'):
+                path.write_text(json.dumps(profile), encoding='utf-8')
+                self.assertEqual(partition.load_linux_placement(path),
+                                 {frozenset(group['tests']): 4.1})
+                profile['groups'].append(group)
+                path.write_text(json.dumps(profile), encoding='utf-8')
+                with self.assertRaisesRegex(ValueError, 'invalid Linux placement group'):
+                    partition.load_linux_placement(path)
+            for platform in ('win32', 'darwin'):
+                with mock.patch.object(partition.sys, 'platform', platform):
+                    self.assertEqual(partition.load_linux_placement(path), {})
+            with mock.patch.object(partition.sys, 'platform', 'linux'), \
+                 mock.patch.object(partition.platform, 'machine', return_value='aarch64'):
+                self.assertEqual(partition.load_linux_placement(path), {})
+
     def test_four_shards_preserve_fixture_groups_exact_union_and_balance(self):
         tests = [case('module_%d' % i, 'Case') for i in range(9)]
         # A second node from module_0 must stay with its fixture group.

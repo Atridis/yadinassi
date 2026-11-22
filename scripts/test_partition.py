@@ -1,6 +1,7 @@
 """Partition discovered unittest module suites; history affects placement, never coverage.
 
-Unknown tests keep their whole fixture group in the light tier. Original module
+Unknown tests keep their whole fixture group in Light unless a matching Linux
+measurement covers the complete group. Original module
 suite objects (including load_tests suites) are retained, not flattened/rebuilt.
 """
 import argparse
@@ -8,6 +9,8 @@ from dataclasses import dataclass
 import json
 import math
 import os
+import platform
+import sys
 from pathlib import Path
 import unittest
 
@@ -15,6 +18,7 @@ from scripts.run_tests import TimedTextTestRunner, TimedTextTestResult, perf_cou
 
 WEIGHTS = ('seconds', 'intel_seconds')
 MAX_TESTS = 20000
+LINUX_PLACEMENT = 'scripts/linux_test_placement.json'
 
 
 def load_history(path):
@@ -55,6 +59,45 @@ def validate_weights(weights):
             raise ValueError('invalid history weight')
 
 
+
+def load_linux_placement(path):
+    """Supplemental placement only, not an official timing profile."""
+    if sys.platform != 'linux' or path is None or not Path(path).exists():
+        return {}
+    from scripts.ci_test_gate import read_json, sha
+    data = read_json(path)
+    if (type(data) is not dict or set(data) != {'schema', 'source', 'groups'}
+            or type(data['schema']) is not int or data['schema'] != 1
+            or type(data['source']) is not dict
+            or set(data['source']) != {'commit', 'tree', 'platform', 'machine', 'python'}
+            or data['source']['platform'] != 'linux'
+            or any(type(data['source'][key]) is not str or not data['source'][key]
+                   for key in ('machine', 'python'))
+            or type(data['groups']) is not list):
+        raise ValueError('invalid Linux placement envelope')
+    sha(data['source']['commit']); sha(data['source']['tree'])
+    if (platform.machine() != data['source']['machine']
+            or data['source']['python'].split('.')[:2] != [str(n) for n in sys.version_info[:2]]):
+        return {}
+    groups, seen = {}, set()
+    for entry in data['groups']:
+        if (type(entry) is not dict or set(entry) != {'report_sha256', 'tests'}
+                or type(entry['report_sha256']) is not str or len(entry['report_sha256']) != 64
+                or any(c not in '0123456789abcdef' for c in entry['report_sha256'])
+                or type(entry['tests']) is not dict or not entry['tests']
+                or any(type(name) is not str or not name or len(name) > 1000
+                       or type(seconds) not in (int, float) or not math.isfinite(seconds)
+                       or not 0 <= seconds <= 86400 for name, seconds in entry['tests'].items())
+                or seen.intersection(entry['tests'])):
+            raise ValueError('invalid Linux placement group')
+        names = frozenset(entry['tests'])
+        groups[names] = sum(entry['tests'].values())
+        seen.update(names)
+        if len(seen) > MAX_TESTS:
+            raise ValueError('too many Linux placement tests')
+    return groups
+
+
 def identity(test):
     if isinstance(test, unittest.FunctionTestCase):
         return unittest.FunctionTestCase.id(test), type(test).__module__
@@ -84,11 +127,21 @@ class Plan:
             raise ValueError('invalid shard index')
         selected = [g for g in self.groups if tier == 'all' or g['tier'] == tier]
         bins, totals = [[] for _ in range(shard_count)], [0.0] * shard_count
+        linux_totals = [0.0] * shard_count
+        measured = [g for g in selected if g['linux_seconds']]
+        ordinary = [g for g in selected if not g['linux_seconds']]
         # Longest-processing-time first, stable identity and index tie breaks.
-        for group in sorted(selected, key=lambda g: (-g['intel_seconds'], g['ids'][0])):
+        for group in sorted(ordinary, key=lambda g: (-g['intel_seconds'], g['ids'][0])):
             index = min(range(shard_count), key=lambda i: (totals[i], i))
             bins[index].append(group)
             totals[index] += group['intel_seconds']
+        # Balance only this extra Linux work against itself. Intel history
+        # remains a separate estimate and is only a tie-breaker here.
+        for group in sorted(measured, key=lambda g: (-g['linux_seconds'], g['ids'][0])):
+            index = min(range(shard_count), key=lambda i: (linux_totals[i], totals[i], i))
+            bins[index].append(group)
+            totals[index] += group['intel_seconds']
+            linux_totals[index] += group['linux_seconds']
         chosen = bins[shard_index]
         indexes = {index for group in chosen for index in group['nodes']}
         suite = unittest.TestSuite(node for index, node in enumerate(self.nodes) if index in indexes)
@@ -98,6 +151,7 @@ class Plan:
         unknown_ids = [name for names in self.ids for name in names if name in unknown]
         return suite, {'tier': tier, 'shard_count': shard_count, 'shard_index': shard_index,
                        'selected_ids': selected_ids, 'estimated_intel_seconds': totals[shard_index],
+                       'estimated_linux_supplement_seconds': linux_totals[shard_index],
                        'discovered_ids': [name for names in self.ids for name in names],
                        'unknown_ids': unknown_ids, 'unknown_count': len(unknown_ids),
                        'unknown_fraction': len(unknown_ids) / sum(map(len, self.ids))
@@ -108,8 +162,9 @@ class Plan:
                        'selected_group_count': len(chosen)}
 
 
-def partition_suite(suite, history, threshold=3.0):
+def partition_suite(suite, history, threshold=3.0, *, linux_placement=None):
     validate_weights(history)
+    linux_placement = linux_placement or {}
     if (type(threshold) not in (float, int) or not math.isfinite(threshold) or threshold < 0
             or type(suite) is not unittest.TestSuite):
         raise ValueError('invalid discovery root or threshold')
@@ -153,8 +208,13 @@ def partition_suite(suite, history, threshold=3.0):
         unknown = component['empty'] or bool(unknown_ids)
         sums = {platform: sum(history.get(name, {}).get(platform, 0.0) for name in names)
                 for platform in WEIGHTS}
+        tier = 'light' if unknown or sums['seconds'] <= threshold else 'heavy'
+        # Exact discovered membership includes all overlapping load_tests
+        # nodes. Partial reports or an added/removed test cannot match.
+        measured = linux_placement.get(frozenset(names), 0.0) if tier == 'light' and linux_placement else 0.0
         groups.append({'nodes': indexes, 'ids': names or ['<empty-suite-%d>' % indexes[0]],
-                       'tier': 'light' if unknown or sums['seconds'] <= threshold else 'heavy',
+                       'tier': 'heavy' if measured > threshold else tier,
+                       'linux_seconds': measured if measured > threshold else 0.0,
                        'intel_seconds': sums['intel_seconds'], 'unknown': unknown,
                        'unknown_ids': unknown_ids})
     return Plan(nodes, groups, ids)
@@ -207,7 +267,7 @@ class PartitionRunner(TimedTextTestRunner):
 
 
 def write_summary(report, path):
-    """Append numeric diagnostics only; timing never changes placement or success."""
+    """Append diagnostic counts; this summary never affects the partition."""
     with Path(path).open('a', encoding='utf-8') as stream:
         stream.write(
             f"### Test partition: {report['tier']} ({report['shard_index']}/{report['shard_count']})\n\n"
@@ -215,6 +275,8 @@ def write_summary(report, path):
             f"({report['unknown_fraction']:.2%}).\n"
             f"- Unknown IDs selected: {report['selected_unknown_count']}; "
             f"selected fixture groups: {report['selected_group_count']}.\n"
+            f"- Supplemental Linux placement: {report['estimated_linux_supplement_seconds']:.3f} s "
+            "(local per-test measurements; not Intel estimates).\n"
             f"- Discovery wall time: {report['discovery_seconds']:.3f} s.\n"
             f"- Partition wall time: {report['partition_wall_seconds']:.3f} s "
             "(includes class/module fixtures, cleanups and runner reporting).\n"
@@ -229,6 +291,8 @@ def main(argv=None):
     parser.add_argument('--shard-count', type=int, choices=(1, 2, 4, 8), default=1)
     parser.add_argument('--shard-index', type=int, default=0)
     parser.add_argument('--history', default='scripts/test_durations.json')
+    parser.add_argument('--linux-placement', default=LINUX_PLACEMENT,
+                        help='Linux-only fixture group measurements; empty path disables')
     parser.add_argument('--report')
     parser.add_argument('--plan-output')
     parser.add_argument('--plan-only', action='store_true')
@@ -238,7 +302,8 @@ def main(argv=None):
     discovery_started = perf_counter()
     suite = unittest.TestLoader().discover('tests')
     discovery_seconds = perf_counter() - discovery_started
-    plan = partition_suite(suite, load_history(args.history))
+    plan = partition_suite(suite, load_history(args.history),
+                           linux_placement=load_linux_placement(args.linux_placement or None))
     selected, report = plan.select(args.tier, args.shard_count, args.shard_index)
     report['discovery_seconds'] = discovery_seconds
     if args.plan_output:
