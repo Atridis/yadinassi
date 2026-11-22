@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from yadinassi.db.catalog.catalog_backend import BackendError, CatalogComparison, CatalogPredicate, FieldSchema
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogComparison, CatalogFieldComparison, CatalogPredicate, FieldSchema
 from .sqlite_catalog_numbers import comparison
 
 _OPERATORS = {'eq':'=', 'ne':'!=', 'lt':'<', 'le':'<=', 'gt':'>', 'ge':'>='}
@@ -18,10 +18,36 @@ def compound_where(predicate, lower):
     return '(' + joiner.join(part for part,_ in terms) + ')', tuple(v for _,args in terms for v in args)
 
 
+def ordered_field_comparison(operator, left, right):
+    """Render only identical, order-preserving physical encodings."""
+    from .sqlite_typed_rows import number_storage
+    a, column = left
+    b, other = right
+    kind = a.kind if type(a) is FieldSchema else a
+    if kind != (b.kind if type(b) is FieldSchema else b):
+        raise BackendError('unsupported')
+    if kind == 'number':
+        if (type(a) is not FieldSchema or type(b) is not FieldSchema
+                or a.qualifiers[1] != b.qualifiers[1]
+                or number_storage(a) != number_storage(b)):
+            raise BackendError('unsupported')
+    elif kind == 'boolean':
+        if operator not in ('eq','ne'): raise BackendError('unsupported')
+    elif kind not in ('string','datetime'):
+        raise BackendError('unsupported')
+    return f'({column} {_OPERATORS[operator]} {other})', ()
+
+
 def ordered_where(predicate, fields):
     """Render exact scalar clauses against a provider-defined field map."""
     if type(predicate) is CatalogPredicate:
         return compound_where(predicate,lambda term:ordered_where(term,fields))
+    if type(predicate) is CatalogFieldComparison:
+        if (type(predicate.operator) is not str or predicate.operator not in _OPERATORS
+                or any(type(field) not in (str, UUID) or field not in fields
+                       for field in (predicate.field,predicate.other_field))):
+            raise BackendError('invalid_input')
+        return ordered_field_comparison(predicate.operator,fields[predicate.field],fields[predicate.other_field])
     if (type(predicate) is not CatalogComparison or type(predicate.field) not in (str, UUID)
             or type(predicate.operator) is not str or predicate.operator not in _OPERATORS
             or predicate.field not in fields):

@@ -46,7 +46,7 @@ from yadinassi.db.catalog.catalog_backend import (BackendError, Capabilities, Ca
                               CatalogOrder, CatalogScanRequest, CatalogPage, CatalogScalarRow,
                               CatalogValueRow, CatalogValuePage, TabularSectionSchema,
                               TabularRow, TabularSectionRows, CatalogSectionRecord, CatalogSectionPage, CatalogWriteOutcome,
-                              _TabularSectionChanges, _point_conjunction)
+                              _TabularSectionChanges, _point_predicate, CatalogFieldComparison)
 
 _APPLICATION_ID = 0x59414449
 _MAX_ROWS = 10000
@@ -2458,7 +2458,7 @@ class _View:
             if value.catalog_id != target: raise BackendError('invalid_input')
         else: raise BackendError('unsupported')
 
-    def _scan_predicate(self, schema, predicate, budget, depth=0, owner_catalog_id=None):
+    def _scan_predicate(self, schema, predicate, budget, depth=0, owner_catalog_id=None, *, field_pairs=False):
         budget[0] += 1
         if budget[0] > 64 or depth > 8: raise BackendError('unsupported')
         if type(predicate) is CatalogComparison:
@@ -2466,10 +2466,15 @@ class _View:
             if type(predicate.operator) is not str or predicate.operator not in ('eq','ne','lt','le','gt','ge'): raise BackendError('unsupported')
             if kind == 'catalog_ref' and predicate.operator not in ('eq','ne'): raise BackendError('unsupported')
             self._scan_operand(kind, target, predicate.value)
+        elif field_pairs and type(predicate) is CatalogFieldComparison:
+            if (type(predicate.operator) is not str or predicate.operator not in ('eq','ne','lt','le','gt','ge')):
+                raise BackendError('unsupported')
+            self._scan_field(schema,predicate.field)
+            self._scan_field(schema,predicate.other_field)
         elif type(predicate) is CatalogPredicate:
             if type(predicate.kind) is not str or predicate.kind not in ('and','or') or type(predicate.terms) is not tuple or not 1 <= len(predicate.terms) <= 64: raise BackendError('invalid_input')
             for term in predicate.terms:
-                self._scan_predicate(schema, term, budget, depth+1, owner_catalog_id)
+                self._scan_predicate(schema, term, budget, depth+1, owner_catalog_id, field_pairs=field_pairs)
         else: raise BackendError('invalid_input')
 
     @staticmethod
@@ -2555,6 +2560,19 @@ class _View:
                     term[0] for term in terms) + ')', tuple(v for term in terms for v in term[1]))
             column = field_sql(predicate.field)
             if column is None: return None
+            if type(predicate) is CatalogFieldComparison:
+                from .sqlite_ordered_predicates import ordered_field_comparison
+                def definition(field):
+                    return (self._scan_field(schema,field)[0] if type(field) is str else
+                            next(item for item in schema.fields if item.identity == field))
+                other = field_sql(predicate.other_field)
+                if other is None: return None
+                try:
+                    return ordered_field_comparison(predicate.operator,(definition(predicate.field),column),
+                                                    (definition(predicate.other_field),other))
+                except BackendError as error:
+                    if error.code != 'unsupported': raise
+                    return None
             value = predicate.value
             if type(value) is CatalogKey: value = str(value.record_id)
             elif type(value) is decimal.Decimal:
@@ -2774,10 +2792,10 @@ class _View:
             raise BackendError('invalid_input')
         return self._scan_catalog(catalog_id, request, fields)
 
-    def _validate_catalog_scan(self, schema, request, fields, max_rows):
+    def _validate_catalog_scan(self, schema, request, fields, max_rows, *, field_pairs=False):
         if type(request) is not CatalogScanRequest or type(request.page_size) is not int or not 1 <= request.page_size <= max_rows or type(request.order) is not tuple or len(request.order) > 16: raise BackendError('invalid_input')
         if type(request.string_comparison) is not str or request.string_comparison not in ('codepoint','casefold_v1'): raise BackendError('unsupported')
-        if request.predicate is not None: self._scan_predicate(schema,request.predicate,[0])
+        if request.predicate is not None: self._scan_predicate(schema,request.predicate,[0],field_pairs=field_pairs)
         if fields is not None:
             for field in fields: self._scan_field(schema, field)
         seen = set()
@@ -2798,11 +2816,11 @@ class _View:
                 or type(fields) is not tuple or not 1 <= len(fields) <= 128):
             raise BackendError('invalid_input')
         try:
-            self._validate_catalog_scan(schema, request, fields, _MAX_ROWS)
+            self._validate_catalog_scan(schema, request, fields, _MAX_ROWS, field_pairs=True)
         except BackendError as error:
             if error.code != 'unsupported': raise
             return None
-        if not request.order and not _point_conjunction(request.predicate, ('code','ref')):
+        if not request.order and not _point_predicate(request.predicate, ('code','ref')):
             raise BackendError('invalid_input')
         plan = self._scan_sql(schema,request)
         if plan is None: return None

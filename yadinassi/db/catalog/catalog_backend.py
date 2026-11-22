@@ -180,26 +180,74 @@ class CatalogPredicate:
     terms: tuple
 
 
-def _point_conjunction(predicate, keys):
-    """A typed AND-only tree containing positive equality on an admitted key.
+@dataclass(frozen=True, slots=True)
+class CatalogFieldComparison:
+    """A comparison between two exact fields of the same physical source."""
+    field: str | UUID
+    operator: str
+    other_field: str | UUID
 
-    The caller still binds or validates every operand and applies the whole
-    predicate. This classification never extracts a separate filter.
+
+def _point_predicate(predicate, keys):
+    """Prove one positive key equality necessary for the complete predicate.
+
+    A true conjunction requires every child; a true disjunction requires only
+    one. Keep only equalities common to all disjuncts. SQL UNKNOWN, like a
+    false result, is not selected. Never extract or discard a filter.
     """
-    pending = [predicate]
-    found = False
+    from yadinassi.db.document.document_backend import DocumentKey
+
+    def atom(term):
+        if type(term) is CatalogFieldComparison:
+            return set()
+        if type(term) is not CatalogComparison:
+            return None
+        if (type(term.field) is not str or term.field not in keys
+                or type(term.operator) is not str or term.operator != 'eq'):
+            return set()
+        value = term.value
+        if term.field == 'code' and type(value) is str:
+            return {(term.field,value)}
+        if term.field == 'ref':
+            if type(value) is CatalogKey:
+                identity = value.database_id,value.catalog_id,value.record_id
+            elif type(value) is DocumentKey:
+                identity = value.database_id,value.document_id,value.record_id
+            else:
+                return set()
+            if all(type(item) is UUID and type(item.int) is int for item in identity):
+                return {(term.field,type(value),*(item.int for item in identity))}
+        return set()
+
+    # Do not impose extra expression limits on the proof. The calling provider
+    # validates supported physical clauses separately. A raw cyclic DTO cannot
+    # be a predicate, even if one of its reachable leaves has a point.
+    pending = [(predicate,False)]
+    active, proved = set(), {}
     while pending:
-        term = pending.pop()
-        if type(term) is CatalogPredicate:
-            if type(term.kind) is not str or term.kind != 'and' or type(term.terms) is not tuple or not term.terms:
-                return False
-            pending.extend(term.terms)
-        elif type(term) is CatalogComparison:
-            if type(term.field) is str and term.field in keys and type(term.operator) is str and term.operator == 'eq':
-                found = True
+        term, exit_node = pending.pop()
+        identity = id(term)
+        if identity in proved:
+            continue
+        if type(term) is not CatalogPredicate:
+            result = atom(term)
+            if result is None: return False
+            proved[identity] = result
+        elif exit_node:
+            children = iter(term.terms)
+            required = proved[id(next(children))].copy()
+            combine = required.update if term.kind == 'and' else required.intersection_update
+            for child in children: combine(proved[id(child)])
+            active.remove(identity)
+            proved[identity] = required
         else:
-            return False
-    return found
+            if (identity in active or type(term.kind) is not str or term.kind not in ('and','or')
+                    or type(term.terms) is not tuple or not term.terms):
+                return False
+            active.add(identity)
+            pending.append((term,True))
+            pending.extend((child,False) for child in reversed(term.terms))
+    return bool(proved[id(predicate)])
 
 
 @dataclass(frozen=True, slots=True)

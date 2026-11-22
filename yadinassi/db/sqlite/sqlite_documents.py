@@ -678,7 +678,7 @@ class DocumentView:
 
     def ordered_document_values(self, identity, request, fields, *, scalar_filter=False):
         """One bounded query-language page over owned native columns."""
-        from yadinassi.db.catalog.catalog_backend import CatalogComparison, CatalogOrder, CatalogPredicate, CatalogScanRequest, _point_conjunction
+        from yadinassi.db.catalog.catalog_backend import CatalogComparison, CatalogOrder, CatalogPredicate, CatalogScanRequest, _point_predicate
         from yadinassi.db.document.document_backend import DocumentValuePage
         view=self._view
         view._require()
@@ -716,13 +716,31 @@ class DocumentView:
         order.extend(('r.date ASC','r.number COLLATE BINARY ASC','r.record_id ASC'))
         predicate = request.predicate
         if scalar_filter:
-            if not request.order: return None
-            from .sqlite_ordered_predicates import ordered_where
+            from .sqlite_ordered_predicates import compound_where, ordered_where
             definitions = {'number':'string', 'date':'datetime', 'deletion_mark':'boolean'}
             definitions.update((field.identity, field) for field in attributes
                                if field.kind in ('string','number','boolean','datetime'))
-            clause, args = ordered_where(predicate, {field:(definition, fields_sql[field])
-                                                    for field, definition in definitions.items()})
+            pairs = {field:(definition, fields_sql[field]) for field,definition in definitions.items()}
+            from yadinassi.db.query.query_parser import MAX_PREDICATE_DEPTH, MAX_TOKENS
+            remaining = MAX_TOKENS
+            def lower(term, depth=0):
+                # Each parsed parenthesized level can contribute AND and OR.
+                # Raw read-view requests don't necessarily originate there.
+                nonlocal remaining
+                remaining -= 1
+                if remaining < 0 or depth > 2*(MAX_PREDICATE_DEPTH+1):
+                    raise BackendError('unsupported')
+                if type(term) is CatalogPredicate:
+                    return compound_where(term,lambda child:lower(child,depth+1))
+                if type(term) is CatalogComparison and type(term.field) is str and term.field == 'ref':
+                    clauses, values = self._document_where(schema,(term,))
+                    return '(' + clauses[0] + ')',tuple(values)
+                return ordered_where(term,pairs)
+            try: clause,args = lower(predicate)
+            except BackendError as error:
+                if error.code != 'unsupported': raise
+                return None
+            if not request.order and not _point_predicate(predicate, ('ref',)): return None
             where = (clause,)
         else:
             if predicate is None:
@@ -734,7 +752,7 @@ class DocumentView:
             if not request.order:
                 if (type(terms) is not tuple or len(terms) > 128
                         or not all(type(term) is CatalogComparison for term in terms)
-                        or not _point_conjunction(predicate, ('ref',))):
+                        or not _point_predicate(predicate, ('ref',))):
                     return None
             where,args = self._document_where(schema,terms)
         _storage()._close_document_scan(view)

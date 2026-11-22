@@ -440,7 +440,7 @@ class _Plan:
             if a[0] is not b[0] or a[1]!=b[1]:raise TypeError('Mixed enum field comparison is outside this profile')
         return syntax.Comparison(left, node.operator, right)
 
-    def storage_predicate(self, node, source, *, allow_or=False):
+    def storage_predicate(self, node, source, *, allow_or=False, field_pairs=False):
         """Translate only closed, non-throwing bound field/constant predicates.
 
         Return None for the entire predicate on any unsupported term. Partial
@@ -452,13 +452,19 @@ class _Plan:
         if type(node) is syntax.Predicate:
             if node.kind not in (('and', 'or') if allow_or else ('and',)):
                 return None
-            terms = tuple(self.storage_predicate(term, source, allow_or=allow_or)
+            terms = tuple(self.storage_predicate(term, source, allow_or=allow_or, field_pairs=field_pairs)
                           for term in node.terms)
             if any(term is None for term in terms): return None
             return CatalogPredicate(node.kind, terms)
         if (type(node) is not syntax.Comparison or type(node.field) is not _BoundField
                 or node.field.source != source or node.operator not in ('eq','ne','lt','le','gt','ge')):
             return None
+        if field_pairs and type(node.value) is _BoundField:
+            from .query_ordered_predicates import bind_field_comparison
+            return bind_field_comparison(node,source)
+        if field_pairs and type(node.value) is Decimal:
+            from .query_ordered_predicates import total_number
+            if not total_number(self,node.value): return None
         if type(node.value) not in (str, bool, Decimal, BSLDate, BSLCatalogReference):
             return None
         try:

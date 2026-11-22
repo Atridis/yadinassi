@@ -219,7 +219,7 @@ def try_ordered_select(plan, view, budget=None):
     if select is None: return None
     from uuid import UUID
     from yadinassi.db.catalog.catalog_backend import (
-        CatalogKey, CatalogOrder, CatalogPredicate, CatalogScanRequest, CatalogValuePage, CatalogValueRow, _point_conjunction,
+        CatalogKey, CatalogOrder, CatalogPredicate, CatalogScanRequest, CatalogValuePage, CatalogValueRow, _point_predicate,
     )
     filtered = False
     if document:
@@ -227,24 +227,25 @@ def try_ordered_select(plan, view, budget=None):
         from .document_queries import _ordered_header_value
         predicates = plan.document_storage_predicate(plan.predicate, 0)
         if predicates is None:
-            if not q.order: return None
             from yadinassi.db.sqlite.sqlite_documents import DocumentView
             from .query_ordered_predicates import bind_scalar_predicate
             if (type(view) is not DocumentView or not view._view._query_language
                     or view._view._operation_id is not None
-                    or any(c.kind in ('catalog_ref','document_ref','enum_ref') for c in plan.fields[0])):
+                    or any(c.kind in ('catalog_ref','document_ref','enum_ref') and c.field != 'ref'
+                           for c in plan.fields[0])):
                 return None
-            predicate = bind_scalar_predicate(plan, ('number','date','deletion_mark'))
+            predicate = bind_scalar_predicate(plan, ('number','date','deletion_mark'), field_pairs=True,
+                                              standard_leaf=plan.document_storage_predicate)
             if predicate is None: return None
             filtered = True
         else:
             predicate = CatalogPredicate('and', predicates) if predicates else None
         page_type, row_type, key_type = DocumentValuePage, DocumentValueRow, DocumentKey
     else:
-        predicate = plan.storage_predicate(plan.predicate, 0, allow_or=bool(q.order))
+        predicate = plan.storage_predicate(plan.predicate, 0, allow_or=True, field_pairs=True)
         if plan.predicate is not None and predicate is None: return None
         page_type, row_type, key_type = CatalogValuePage, CatalogValueRow, CatalogKey
-    if not q.order and not _point_conjunction(predicate, ('ref',) if document else ('code','ref')):
+    if not q.order and not _point_predicate(predicate, ('ref',) if document else ('code','ref')):
         return None
     from .queries import BSLQueryResult, _logical, _section_value, _MAX_CELLS, _MAX_RESULT_TEXT
 

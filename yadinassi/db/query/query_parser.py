@@ -9,6 +9,7 @@ import re
 
 MAX_TEXT = 65536
 MAX_TOKENS = 2048
+MAX_PREDICATE_DEPTH = 32
 MAX_ROWS = 10000
 
 
@@ -429,7 +430,7 @@ class _Parser:
         return Decimal(sign + self.take('number'))
 
     def condition(self, depth=0):
-        if depth > 32:
+        if depth > MAX_PREDICATE_DEPTH:
             raise ValueError('Query predicate nesting limit exceeded')
         terms = [self.conjunction(depth)]
         while self.accept('or'):
@@ -443,7 +444,7 @@ class _Parser:
         return terms[0] if len(terms) == 1 else Predicate('and', tuple(terms))
 
     def atom(self, depth):
-        if depth > 32: raise ValueError('Query predicate nesting limit exceeded')
+        if depth > MAX_PREDICATE_DEPTH: raise ValueError('Query predicate nesting limit exceeded')
         if self.accept('not'):
             return Predicate('not', (self.atom(depth + 1),))
         if self.peek() == '(':
