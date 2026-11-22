@@ -8,8 +8,9 @@ from types import MappingProxyType
 from yadinassi.types.values import BSLObject, BSLArray, HostFunction
 from yadinassi.types.type_descriptions import BSLTypeDescription
 from .plain_table_search import SearchIndexes
-from .value_tables import _adjust, _default
-from .plain_table_storage import RowStorage, TableStorage, Schema, scalar_equal
+from .value_tables import _adjust, _default, _text
+from .value_table_group import _scalar_key, _total_values
+from .plain_table_storage import RowStorage, TableStorage, Schema, scalar_equal, validate_row
 
 
 def _index(value,count,inserting=False):
@@ -139,7 +140,11 @@ class BSLValueTableColumnCollection(BSLObject):
         self.table.clear()
     def count(self):return Decimal(len(self._items))
     def _index_of(self,column):return next((i for i,c in enumerate(self._items) if c is column),-1)
-    def index_of(self,column):return Decimal(self._index_of(column))
+    def index_of(self,column):
+        if (type(column) is BSLValueTableColumn and column.table is self.table
+                and column._deleted and column._name == ''):
+            return Decimal(2 ** 32 - 1)
+        return Decimal(self._index_of(column))
     def insert(self,index,name='',value_type=None,title='',width=Decimal(0)):
         _writable(self.table)
         if type(index) is int:n=index
@@ -276,7 +281,9 @@ class BSLValueTableRow(RowStorage,BSLObject):
         _writable(self.table)
         self.table._storage.epoch += 1
         list.__setitem__(self,slice(None),[prepared[k] for k in self.schema._keys])
-    def __iter__(self):return map(public_cell,list.__iter__(self))
+    def __iter__(self):
+        if self._deleted:return iter(self.table.rows)
+        return map(public_cell,list.__iter__(self))
     def get_method(self,name):return _method(self,name,(
         (('get','получить'),'get',True),(('set','установить'),'set',False),(('owner','владелец'),'owner',True)))
     def __str__(self):return 'СтрокаТаблицыЗначений'
@@ -564,7 +571,92 @@ class BSLValueTable(BSLObject):
             copied=result.add()
             for name in selected:copied.set_member(name,row.get_member(name))
         return result
-    def group_by(self,*args):raise NotImplementedError('ValueTable grouping is parked')
+    def group_by(self,grouping_columns,totaling_columns=None):
+        _writable(self)
+        storage=self._storage
+        if (type(storage) is not TableStorage or storage.owner is not self
+                or type(self.rows) is not list or storage.rows is not self.rows
+                or type(storage.schema) is not Schema
+                or type(self.columns) is not BSLValueTableColumnCollection or self.columns.table is not self
+                or type(self.indexes) is not BSLCollectionIndexes or self.indexes.table is not self):
+            raise ValueError('noncanonical grouping storage')
+        schema=storage.schema
+        columns=self.columns._items
+        if (type(columns) is not list or type(schema._names) is not list
+                or type(schema._metadata) is not list or type(schema._defaults) is not list
+                or not len(columns)==len(schema._names)==len(schema._metadata)==len(schema._defaults)):
+            raise ValueError('noncanonical grouping schema')
+
+        def positions(specification):
+            if specification is None:return ()
+            return tuple(dict.fromkeys(schema.offset(name) for part in _text(specification).split(',')
+                                       if (name:=part.strip())))
+
+        groups,totals=positions(grouping_columns),positions(totaling_columns)
+        if set(groups).intersection(totals):
+            raise ValueError('Списки колонок группировки и суммирования пересекаются')
+        retained=set(groups+totals)
+        kept,selected,names,defaults,removed_columns=[],[],[],[],[]
+        old_defaults=schema._defaults
+        for i,column in enumerate(columns):
+            if (type(column) is not BSLValueTableColumn or column.table is not self
+                    or column._deleted is not False or schema._metadata[i] is not column
+                    or type(schema._names[i]) is not str):
+                raise ValueError('noncanonical grouping column')
+            if i in retained:
+                kept.append(i);selected.append(column)
+                names.append(schema._names[i]);defaults.append(old_defaults[i])
+            else:
+                removed_columns.append(column)
+        descriptions=[column.value_type for column in selected]
+        if any(type(d) is not BSLTypeDescription for d in descriptions):
+            raise ValueError('noncanonical grouping column description')
+        query_count=sum(_query_column(d) for d in descriptions)
+        total_descriptions=[columns[i].value_type for i in totals]
+        buckets={}
+        removed_rows=[]
+        for row in self.rows:
+            validate_row(row, schema, self, row_type=BSLValueTableRow)
+            if row.table is not self:raise ValueError('foreign grouping row')
+            if not kept:
+                removed_rows.append(row)
+                continue
+            key_values=[list.__getitem__(row,i) for i in groups]
+            amount_values=[list.__getitem__(row,i) for i in totals]
+            token=tuple(_scalar_key(v) for v in key_values)
+            bucket=buckets.get(token)
+            if bucket is None:
+                buckets[token]=(row,[[v] for v in amount_values])
+            else:
+                removed_rows.append(row)
+                for values,v in zip(bucket[1],amount_values):values.append(v)
+
+        # Complete all conversions before changing rows, columns or indexes.
+        projected=[]
+        previous=[]
+        for first,amounts in buckets.values():
+            original=list.copy(first)
+            calculated={i:_total_values(d,values) for i,d,values in
+                        zip(totals,total_descriptions,amounts)}
+            projected.append((first,[calculated[i] if i in calculated else original[i] for i in kept]))
+            previous.append(original)  # Defer dropped payload finalizers until the state is coherent.
+        survivors=[row for row,_ in projected]
+
+        self.indexes.clear()
+        schema._publish(names,selected,defaults)
+        storage.epoch+=1
+        schema.data_epoch+=1
+        self.columns._items[:]=selected
+        self.columns._query_columns=query_count
+        for column in removed_columns:
+            column._name=''
+            column._deleted=True
+        for row,values in projected:list.__setitem__(row,slice(None),values)
+        for row in removed_rows:row._deleted=True
+        self.rows[:]=survivors
+        # Detached iteration uses the current owner table, not these cells.
+        for row in removed_rows:list.clear(row)
+
     def get_member(self,name):
         if name.casefold() in ('columns','колонки'):return self.columns
         if name.casefold() in ('indexes','индексы'):return self.indexes

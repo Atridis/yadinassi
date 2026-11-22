@@ -102,6 +102,58 @@ class GroupByTests(unittest.TestCase):
                 self.assertEqual(list(removed), [])
                 self.assertEqual(list(appended), [])
 
+    def test_plain_group_rejects_an_opaque_key_atomically_then_clears_index(self):
+        effects=[]
+        class Meta(type):
+            def __eq__(self,other): effects.append('class eq'); raise AssertionError('class eq')
+            def __hash__(self): effects.append('class hash'); raise AssertionError('class hash')
+        class Opaque(metaclass=Meta):
+            def __eq__(self,other): effects.append('eq'); raise AssertionError('eq')
+            def __hash__(self): effects.append('hash'); raise AssertionError('hash')
+
+        vm=Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute("""
+          T=New ValueTable; T.Columns.Add("Key"); T.Columns.Add("Amount"); T.Columns.Add("Drop");
+          First=T.Add(); First.Key=1; First.Amount=3;
+          Last=T.Add(); Last.Key=1; Last.Amount=4;
+          I=T.Indexes.Add("Amount,Drop");
+          Before=T.FindRows(New Structure("Amount,Drop",3,Undefined));
+        """)
+        t=vm.variables['t']; first,last=t.rows
+        index=vm.variables['i']; columns=tuple(t.columns)
+        self.assertTrue(t._search.cache)
+        last.set_member('Key',Opaque())
+        snapshot=(t._storage.epoch,t._storage.schema.version,t._storage.schema.data_epoch)
+        with self.assertRaisesRegex(ValueError,'группировка этого типа'):
+            t.group_by('Key','Amount')
+        self.assertEqual(effects,[])
+        self.assertEqual(tuple(t.rows),(first,last))
+        self.assertTrue(t._search.cache)
+        self.assertEqual(index._columns,(columns[1],columns[2]))
+        self.assertEqual(snapshot,(t._storage.epoch,t._storage.schema.version,t._storage.schema.data_epoch))
+
+        last.set_member('Key',1)  # exact Python int, same Number key as Decimal(1)
+        vm.execute_prepared(vm.prepare('T.GroupBy("Key","Amount");'))
+        self.assertEqual(t.rows,[first])
+        self.assertEqual(tuple(t.columns),columns[:2])
+        self.assertIs(type(first.get_member('Key')),D)
+        self.assertEqual(first.get_member('Amount'),D(7))
+        self.assertIs(next(iter(last)),first)
+        self.assertEqual(t.indexes.count(),D(0))
+        self.assertEqual(index._columns,(None,None))
+        self.assertFalse(t._search.cache)
+
+    def test_plain_group_requires_writable_table(self):
+        table=sample()
+        original_rows=list(table.rows)
+        original_columns=tuple(table.columns)
+        table._bounded_slice_read=True
+        with self.assertRaisesRegex(ValueError,'readonly'):
+            table.group_by('Key','Amount')
+        self.assertEqual(table.rows,original_rows)
+        self.assertEqual(tuple(table.columns),original_columns)
+
     def test_selection_tolerance_and_original_order(self):
         table = sample()
         table.group_by(' Second,, Key,Key ', ' Amount,Amount ')
@@ -196,15 +248,17 @@ class GroupByTests(unittest.TestCase):
             group_by(table, 'Key', 'Amount')
         self.assertEqual(state(table), before)
 
-    def test_resource_boundaries_reject_before_mutation(self):
+    def test_grouping_applies_column_argument_limits_not_an_aggregate_text_limit(self):
         table = sample()
         before = state(table)
-        for target in ('yadinassi.collections.value_table_group._MAX_GROUP_TEXT',
-                       'yadinassi.collections.value_tables._MAX_TEXT'):
-            with patch(target, 2):
-                with self.assertRaises(ValueError):
-                    table.group_by('Key', 'Amount')
-            self.assertEqual(state(table), before)
+        with patch('yadinassi.collections.value_tables._MAX_TEXT', 2):
+            with self.assertRaises(ValueError):
+                table.group_by('Key', 'Amount')
+        self.assertEqual(state(table), before)
+        # Aggregate text does not impose a second limit on the direct table.
+        with patch('yadinassi.collections.value_table_group._MAX_GROUP_TEXT', 2):
+            table.group_by('Key', 'Amount')
+        self.assertEqual(table.count(), D(3))
 
 
 class NativeGroupByTests(unittest.TestCase):

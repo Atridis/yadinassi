@@ -49,7 +49,7 @@ def resolve(boundary,value):
         if bound is not root:invalid()
         keys=_KEYS.__get__(schema,_SCHEMA)
         if kind is _ROW:
-            row_check(value,root,schema,keys)
+            row_check(value,root,schema,keys,detached_iteration=True)
         if kind is _COLUMNS:
             if value is not columns:invalid()
             items=column_items

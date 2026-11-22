@@ -44,7 +44,7 @@ def hooks():
             if len(current)!=len(kwdefaults) or any(current.get(k) is not v for k,v in kwdefaults):fail()
 
 
-def row_check(row,table,schema,keys,pure=False,*,active=False):
+def row_check(row,table,schema,keys,pure=False,*,active=False,detached_iteration=False):
     if type(row) is not _ROW:fail()
     data=raw(row)
     if len(data)!=4:fail()
@@ -53,7 +53,8 @@ def row_check(row,table,schema,keys,pure=False,*,active=False):
     deleted=data.get('_deleted')
     if (data.get('schema') is not schema or data.get('_owner') is not table
             or data.get('table') is not table or type(deleted) is not bool):fail()
-    if list.__len__(row)!=len(keys) or (active and deleted):fail()
+    if (active and deleted) or (list.__len__(row)!=len(keys) and not (deleted and detached_iteration)):
+        fail()
     if pure and any(v is not None and type(v) is not Decimal for v in list.__iter__(row)):return False
     return True
 

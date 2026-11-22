@@ -46,9 +46,15 @@ class PlainTableRuntimeTests(unittest.TestCase):
         t=self.table();r=t.add();c=t.columns.get(0)
         with self.assertRaises(TypeError):r.cells[c]=1
         self.assertIsNone(r.get_member('N'))
-    def test_explicit_parked_operations(self):
+    def test_group_only_preserves_first_row_and_kept_column(self):
         t=self.table()
-        with self.assertRaises(NotImplementedError):t.group_by('N')
+        column=t.columns.get(0)
+        first=t.add()
+        first.set_member('N',1)
+        t.add().set_member('N',1)
+        t.group_by('N')
+        self.assertEqual(t.rows,[first])
+        self.assertIs(t.columns.get(0),column)
         t.indexes.add('N')
         self.assertEqual(t.indexes.count(), 1)
         self.assertEqual(t._search.builds, 0)

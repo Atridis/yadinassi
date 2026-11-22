@@ -33,10 +33,11 @@ def _columns(table, specification):
 def _scalar_key(value):
     if value is None or value is NULL:
         return (type(value), value)
-    if type(value) in (str, bool):
-        if type(value) is str:
+    kind = type(value)
+    if kind is str or kind is bool:
+        if kind is str:
             _text(value)
-        return (type(value), value)
+        return (kind, value)
     if type(value) is int:
         return (Decimal, value)
     if type(value) is Decimal:
@@ -74,7 +75,8 @@ def _sum(values):
 def _numeric(value):
     if type(value) is int:
         return value
-    if type(value) in (Decimal, str, bool) or value is None:
+    kind = type(value)
+    if kind is Decimal or kind is str or kind is bool or value is None:
         return _number_value(value)
     if type(value) is BSLDate:
         value.require_known()
@@ -93,9 +95,11 @@ def _single_type_total(description, values):
 
 
 def _total(column, rows):
-    description = column.value_type
+    return _total_values(column.value_type, [row.cells[column] for row in rows])
+
+
+def _total_values(description, values):
     kinds = description.types
-    values = [row.cells[column] for row in rows]
     if len(kinds) == 1:
         return _single_type_total(description, values)
     if kinds and BSLType.NUMBER not in kinds:
@@ -104,7 +108,7 @@ def _total(column, rows):
             from yadinassi.types.type_descriptions import _qualified_string
             return _qualified_string(Decimal(0), description.string_qualifiers)
         raise ValueError('Свернуть: нулевая сумма этого составного типа пока не подтверждена')
-    numeric = [v for v in values if type(v) in (int, Decimal)]
+    numeric = [v for v in values if type(v) is int or type(v) is Decimal]
     result = _adjust(description, _sum(numeric))
     if kinds:
         # The supplement proves per-merge qualification for a single Number
