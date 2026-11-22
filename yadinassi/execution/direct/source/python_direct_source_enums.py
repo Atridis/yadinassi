@@ -3,12 +3,16 @@ from uuid import UUID
 from yadinassi.db.metadata.enumerations import BSLEnumerations,BSLEnumManager,EnumMetadata,EnumValueMetadata,_DIRECT_ENUM_ABI
 from yadinassi.db.metadata.enum_types import BSLEnumReference,BSLEnumType
 from yadinassi.configuration.metadata import _DeclaredMetadataCollection
+from yadinassi.configuration.configuration_source_metadata import SourceMetadataRoot,SourceMetadataObject
+from yadinassi.configuration.configuration_source import SourceMetadata
+from yadinassi.configuration.configuration_enumerations import EnumDefinition
 from yadinassi.types.values import HostFunction
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 _TYPES=(BSLEnumerations,BSLEnumManager,BSLEnumReference,EnumMetadata,EnumValueMetadata)
 _ZERO={'count','количество','emptyref','пустаяссылка','metadata','метаданные','isempty','пустая','fullname','полноеимя'}
 _ONE={'get','получить','indexof','индекс','find','найти','contains','содержит'}
+FIND_BY_TYPE=('findbytype','найтипотипу')
 
 
 def _abi(value):
@@ -110,6 +114,67 @@ def check(boundary,value):
             if type(value.reference_uuid) is not UUID:break
             if value.reference_uuid.int==0 or any(value.reference_uuid==item.identity for item in meta._definition.values):return
     raise BoundaryViolation('foreign or retired source enumeration value')
+
+
+def resolve_metadata_by_type(boundary, receiver, name, *, require_value=False,
+                             argument_count=None, allow_references=False):
+    """Find the one live source enum declaration, with its ordinary identity."""
+    if type(receiver) is not SourceMetadataRoot or receiver is not boundary.app.metadata:
+        raise BoundaryViolation('foreign source metadata root')
+    if argument_count is not None and argument_count!=1:
+        raise TypeError('FindByType requires one argument')
+
+    def find(value):
+        boundary._check()
+        if receiver is not boundary.app.metadata:
+            raise BoundaryViolation('source metadata binding changed')
+        if type(value) is not BSLEnumType:
+            raise TypeError('FindByType requires a source enumeration Type')
+        _abi(value)
+        namespace=boundary.app.enumerations
+        if (type(namespace) is not BSLEnumerations
+                or boundary.vm._metadata._enumerations is not namespace
+                or type(namespace._managers) is not dict
+                or type(namespace.metadata) is not _DeclaredMetadataCollection
+                or type(namespace.metadata._items) is not dict
+                or value.snapshot is not namespace.metadata or type(value.name) is not str):
+            raise BoundaryViolation('foreign or retired source enumeration type')
+        key=value.name.casefold()
+        manager=namespace._managers.get(key)
+        if (type(manager) is not BSLEnumManager or type(manager._metadata) is not EnumMetadata
+                or namespace.metadata._items.get(key) is not manager._metadata
+                or type(value.family) is not str
+                or not (value is manager._value_type and value.family=='ref'
+                        or value is manager._manager_type and value.family=='manager')):
+            raise BoundaryViolation('source enumeration type binding changed')
+        definition=manager._metadata._definition
+        if (type(definition) is not EnumDefinition or type(definition.name) is not str
+                or definition.name!=value.name):
+            raise BoundaryViolation('source enumeration definition changed')
+        # The live manager was created from an admitted declared enum. Use
+        # its exact inventory entry, not a walk of the sibling metadata.
+        path='Enums/'+definition.name+'.xml'
+        if type(receiver._inventory) is not dict or type(receiver._objects) is not dict:
+            raise BoundaryViolation('source enumeration metadata inventory changed')
+        entry=receiver._inventory.get(path)
+        if (type(entry) is not SourceMetadata or type(entry.family) is not str or entry.family!='Enum'
+                or type(entry.name) is not str or entry.name!=definition.name
+                or type(entry.path) is not str or entry.path!=path):
+            raise BoundaryViolation('source enumeration metadata is not declared')
+        identities=(definition.identity,value.metadata_uuid,entry.identity)
+        if (any(type(item) is not UUID or type(item.int) is not int for item in identities)
+                or not identities[0].int==identities[1].int==identities[2].int):
+            raise BoundaryViolation('source enumeration metadata identity changed')
+        if path not in receiver._objects:
+            receiver._objects[path]=SourceMetadataObject(receiver,entry)
+        result=receiver._objects[path]
+        if (type(result) is not SourceMetadataObject or result._root is not receiver
+                or result._entry is not entry or result._parent is not None):
+            raise BoundaryViolation('source enumeration metadata binding changed')
+        return result
+
+    return boundary.resolve_callable(HostFunction(name,find),require_value=require_value,
+                                     allow_references=allow_references)
 
 
 def namespace(boundary,name):

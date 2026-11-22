@@ -658,6 +658,9 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             argument_count=argument_count,allow_references=allow_references)
         if extensions.owns(value):return extensions.resolve(self,value,name,require_value=require_value,
             argument_count=argument_count,allow_references=allow_references)
+        if value is self.app.metadata and name.casefold() in enums.FIND_BY_TYPE:
+            return enums.resolve_metadata_by_type(self,value,name,require_value=require_value,
+                argument_count=argument_count,allow_references=allow_references)
         if enums.supports(self,value):return enums.resolve(self,value,name,require_value=require_value,
             argument_count=argument_count,allow_references=allow_references)
         if sessions.owns(value):return sessions.resolve(self,value,name,require_value=require_value,
