@@ -237,7 +237,7 @@ class Emitter:
     missing_metadata_roots=()
     def __init__(self,filename):
         self.filename=filename;self.constants=[];self.serial=0
-        self.has_goto=False;self.literal_reachability=False;self.goto_last_expression=None
+        self.has_goto=False;self.literal_reachability=False;self.table_prefix=False;self.goto_last_expression=None
         self.goto_destinations={};self.goto_transfers={};self.goto_dispatch=[]
         self.http_body_receiver=False
         self.known_calls={};self.known_origins=();self.known_selection_reads=set()
@@ -1770,7 +1770,8 @@ class Emitter:
         if k is bsl.For:
             routine_path=self.native_cells and bool(self.routines) and node.name.casefold() in self.static_module_names
             local_path=self.scope is None and node.name.casefold() in self.static_module_names and not self.authority and not self.catalog_bounds and not self.source_scopes
-            if (self.static_module_kinds or routine_path or local_path) and type(node.start) is bsl.Literal and type(node.end) is bsl.Literal:
+            if (not self.table_prefix and (self.static_module_kinds or routine_path or local_path)
+                    and type(node.start) is bsl.Literal and type(node.end) is bsl.Literal):
                 start,end=node.start.value,node.end.value
                 pending=list(node.body);mutated=False
                 while pending:
@@ -2288,6 +2289,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         definitions.append(emitter.node(py.FunctionDef,routine.token,name=emitter.routine_symbols[key],args=args,body=routine_body,decorator_list=[],returns=None,type_comment=None))
     # Module locals are the register file; dynamic edges explicitly synchronize.
     static_facts=None
+    table_prefix_end=0;table_prefix_kinds={}
     builtin_results=None
     if pure_bindings is not None:
         from yadinassi.execution.direct.python_direct_pure_builtins import result_kinds
@@ -2338,6 +2340,16 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
                 from yadinassi.execution.direct.python_direct_local_facts import analyze as analyze_local
                 emitter.local_field_facts,local_scalars=analyze_local(program,opaque_names=opaque,routines=emitter.routines)
                 emitter.scalar_kinds.update(local_scalars)
+            if (static_facts is None and facts_reachability and pure_bindings is None
+                    and not emitter.routines and not emitter.module_globals and not cells
+                    and type(program[0]) is bsl.Assign and type(program[0].target) is bsl.Name):
+                origin=program[0].value
+                if (type(origin) is bsl.New and origin.name.casefold() in ('valuetable','таблицазначений')
+                        and not origin.arguments):
+                    end,kinds=analyze_static(program,opaque_names=opaque,
+                        literal_reachability=True,table_prefix_origin=origin)
+                    if (1<end<len(program) and any(type(node) is bsl.For for node in program[1:end])):
+                        table_prefix_end,table_prefix_kinds=end,kinds
     if static_facts is not None and not emitter.module_cells and not emitter.authority and not emitter.catalog_bounds:
         emitter.integer_lane=bool(static_facts[1]) and all(
             kind in ('number','bool','string','table','row','columns','column','map','map_insert')
@@ -2392,9 +2404,27 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     emitter.region_active=bool(region_end)
     if has_goto and type(program[-1]) is bsl.ExpressionStatement:
         emitter.goto_last_expression=program[-1]
-    body=emitter.sequence(program[:region_end])
-    emitter.region_active=False
-    body+=emitter.sequence([node for node in program[region_end:] if type(node) is not bsl.Routine])
+    if table_prefix_end:
+        # Keep the ordinary constructor and one shared register file. Switch
+        # lowering, never visibility: only normal generic edges and module exit
+        # publish, so no old (possibly finalizable) values retire early.
+        body=emitter.sequence(program[:1])
+        segment=program[1:table_prefix_end]
+        generic=emitter.sequence(segment)
+        emitter.static_module_kinds=table_prefix_kinds
+        # Use the ordinary Decimal counter/increments and public facade values.
+        emitter.table_prefix=True
+        specialized=emitter.sequence(segment)
+        emitter.table_prefix=False
+        emitter.static_module_kinds={}
+        slot=emitter.static_module_names[program[0].target.name.casefold()]
+        test=emitter.call('_fresh_closed_table',[emitter.name('_context',t),emitter.name(slot,t)],t)
+        body.append(emitter.node(py.If,t,test=test,body=specialized,orelse=generic))
+        body+=emitter.sequence(program[table_prefix_end:])
+    else:
+        body=emitter.sequence(program[:region_end])
+        emitter.region_active=False
+        body+=emitter.sequence([node for node in program[region_end:] if type(node) is not bsl.Routine])
     if region_end:body.insert(0,emitter.node(py.Assign,t,targets=[emitter.name('_collection_fast',t,True)],value=emitter.const(False,t)))
     if not has_goto and type(program[-1]) is bsl.ExpressionStatement:
         last=body.pop()
@@ -2463,6 +2493,9 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     if emitter.known_selection_reads:
         from yadinassi.execution.direct.python_direct_known_methods import selection_read_protocol
         namespace['_known_selection_read_protocol']=selection_read_protocol
+    if table_prefix_end:
+        from yadinassi.execution.direct.python_direct_plain_tables import fresh_closed_table
+        namespace['_fresh_closed_table']=fresh_closed_table
     if destinations:namespace['_GotoTransfer']=_GotoTransfer
     namespace['_nonconstructible_type'] = _nonconstructible_type
     if emitter.http_body_receiver:

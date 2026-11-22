@@ -65,7 +65,7 @@ def ordered_if(node, *, literal_reachability):
     yield OTHERWISE,node.otherwise,False,reaches,None
 
 
-def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=None, builtin_external_names=(), numeric_routines=None, address_routines=None, literal_reachability=False, module_declarations=False):
+def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=None, builtin_external_names=(), numeric_routines=None, address_routines=None, literal_reachability=False, module_declarations=False, table_prefix_origin=None):
     builtin_results = builtin_results or {}
     kinds={};names=set();opaque=set(opaque_names)|{'thisobject','этотобъект'}
     checked=set();active=set()
@@ -84,6 +84,7 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
         elif k is bsl.Name:
             require(node.name.casefold() in env);kind=env[node.name.casefold()]
         elif k is bsl.New:
+            if table_prefix_origin is not None:require(node is table_prefix_origin)
             constructors={'array':'array','массив':'array','map':'map','соответствие':'map','valuetable':'table','таблицазначений':'table','valuelist':'valuelist','списокзначений':'valuelist'}
             require(node.name.casefold() in constructors and not node.arguments);kind=constructors[node.name.casefold()]
         elif k is bsl.Index:
@@ -241,6 +242,16 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
                 while len(kinds)>committed:kinds.popitem()
                 break
         return kinds
+    if table_prefix_origin is not None:
+        # Reuse the closed transfer rules, saving only successful top-level
+        # statements; the first unproved statement and all successors stay generic.
+        env={};prefix_kinds={}
+        for index,node in enumerate(program):
+            kinds={}
+            try:sequence((node,),env)
+            except _Decline:return index,prefix_kinds
+            prefix_kinds.update(kinds)
+        return len(program),prefix_kinds
     # Declarations are still lowered into their original export and scheduler
     # entry points. They are not execution edges of a closed module body.
     if module_declarations:program=(node for node in program if type(node) is not bsl.Routine)

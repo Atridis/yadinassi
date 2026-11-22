@@ -71,7 +71,7 @@ def column_check(column,table,names,metadata,index):
     return col
 
 
-def validate(value,pure=False,*,row_only=False,iteration=False):
+def validate(value,pure=False,*,row_only=False,iteration=False,fresh=False):
     hooks()
     kind=type(value)
     if kind is _TABLE:table=value
@@ -90,6 +90,13 @@ def validate(value,pure=False,*,row_only=False,iteration=False):
     if type(kernel) is not _STORAGE or type(rows) is not list or type(columns) is not _COLUMNS or type(indexes) is not _INDEXES:fail()
     if kernel.owner is not table or kernel.rows is not rows or kernel.row_factory is not _ROW or type(kernel.schema) is not _SCHEMA:fail()
     if type(kernel.epoch) is not int or kernel.epoch<0:fail()
+    if fresh:
+        # Decline nonempty or reused origin state without a graph traversal.
+        schema=kernel.schema
+        if kind is not _TABLE or rows or kernel.epoch:return False
+        for group,expected in ((schema._keys,list),(schema._names,list),
+                               (schema._metadata,list),(schema._defaults,list),(schema._offsets,dict)):
+            if type(group) is not expected or group:return False
     if iteration:
         # A read-only iterator need not admit indexes, names or row contents
         # it will never consume. Bind the owners and shared storage here; each
@@ -113,6 +120,7 @@ def validate(value,pure=False,*,row_only=False,iteration=False):
     if schema._index_search is not (cache if cache.declarations else None):fail()
     # Raw collection-region writes deliberately omit facade index history.
     if pure and schema._index_search is not None:return False
+    if fresh and (cache.declarations or cache.cache or cache.builds):return False
     for signature in cache.declarations:
         if type(signature) is not tuple or any(type(i) is not int or i<0 for i in signature):fail()
     # Derived cache is private implementation state, not a receiver graph.
@@ -135,6 +143,7 @@ def validate(value,pure=False,*,row_only=False,iteration=False):
     if type(cols['_query_columns']) is not int or not 0<=cols['_query_columns']<=len(keys):fail()
     if pure and cols['_query_columns']:return False
     if set(ix)!={'table','items','_handles'} or ix['table'] is not table or type(ix['items']) is not list or type(ix['_handles']) is not list:fail()
+    if fresh and (cols['_items'] or cols['_query_columns'] or ix['items'] or ix['_handles']):return False
     if any(type(sig) is not tuple or any(type(i) is not int or i<0 for i in sig) for sig in ix['items']):fail()
     if set(ix['items'])!=cache.declarations:fail()
     if len(cols['_items'])!=len(keys):fail()
@@ -159,3 +168,15 @@ def validate(value,pure=False,*,row_only=False,iteration=False):
         if not row_check(value,table,schema,keys,pure):return False
     if kind is _COLUMN and not any(column is value for column in cols['_items']):fail()
     return True
+
+
+def fresh_closed_table(context,value):
+    # This value has just passed the normal constructor. The true branch can
+    # touch only this empty graph and data allocated by the closed source.
+    # Never check previously published tables or release their references here.
+    if (type(value) is not _TABLE or context.policy is not None or context.loop_budget is not None
+            or context._verify_context):return False
+    try:
+        return validate(value,pure=True,fresh=True)
+    except BoundaryViolation:
+        return False

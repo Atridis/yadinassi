@@ -204,3 +204,135 @@ class ModuleDeclarationReachabilityTests(unittest.TestCase):
         self.assertEqual(output,[])
         vm.execute('P=Deferred();')
         self.assertEqual(output,['start','resume'])
+
+
+class LiveTablePrefixTests(unittest.TestCase):
+    def vm(self, **kwargs):
+        vm=Interpreter(**kwargs)
+        self.addCleanup(vm.close)
+        return vm
+
+    def test_warm_repeats_keep_one_table_origin_and_same_aliases(self):
+        from unittest.mock import Mock, patch
+
+        vm=self.vm()
+        plan=vm.prepare(TABLE+'''
+            Alias=T;
+            Snapshot=T.Copy();
+            Alias[0].X=99;
+            N=Snapshot[0].X;
+        ''')
+        namespace=plan._plan.function.__globals__
+        admitted=Mock(wraps=namespace['_fresh_closed_table'])
+        previous=None
+        with patch.dict(namespace,_fresh_closed_table=admitted):
+            for _ in range(3):
+                vm.execute_prepared(plan)
+                table=vm.variables['t']
+                self.assertIsNot(table,previous)
+                self.assertIs(vm.variables['alias'],table)
+                self.assertEqual((table.get_index(0).get_member('X'),vm.variables['n']),(99,1))
+                self.assertIsNot(vm.variables['snapshot'],table)
+                previous=table
+        self.assertEqual(admitted.call_count,3)
+        self.assertEqual(len({id(call.args[1]) for call in admitted.call_args_list}),3)
+
+    def test_exact_copy_does_not_move_module_publication_before_finalizer(self):
+        from decimal import Decimal
+
+        vm=self.vm()
+        observed=[]
+        class Retired:
+            def __del__(self):
+                try:
+                    state=vm.variables
+                    observed.append((state['t'] is state['alias'], state['snapshot'].count()))
+                    state['t'].get_index(0).set_member('X',Decimal(999))
+                except Exception as error:
+                    observed.append(type(error))
+        vm.variables['zz']=Retired()
+        plan=vm.prepare(TABLE+'Alias=T; ZZ=1; Snapshot=T.Copy();')
+        self.assertIn('_fresh_closed_table',plan._plan.generated_source)
+        vm.execute_prepared(plan)
+        self.assertEqual(observed,[(True,20)])
+        self.assertEqual(vm.variables['t'].get_index(0).get_member('X'),999)
+        self.assertEqual(vm.variables['snapshot'].get_index(0).get_member('X'),1)
+
+    def test_actual_observer_and_execute_see_and_can_replace_registers(self):
+        from decimal import Decimal
+        from yadinassi.collections.value_tables import BSLValueTable
+
+        observed=[]
+        replacement=BSLValueTable()
+        def output(text):
+            self.assertEqual(text,'observe')
+            state=vm.variables
+            observed.append((state['t'] is state['alias'],type(state['r']),state['r']))
+            state['r']=Decimal(8)
+            state['t']=replacement
+        vm=self.vm(output=output)
+        plan=vm.prepare(TABLE+'''
+            Alias=T;
+            Message("observe");
+            Execute("R=R+7; Alias[0].X=18;");
+            N=T.Count();
+        ''')
+        vm.execute_prepared(plan)
+        self.assertEqual(observed,[(True,Decimal,210)])
+        self.assertEqual((vm.variables['r'],vm.variables['n']),(15,0))
+        self.assertIs(vm.variables['t'],replacement)
+        self.assertEqual(vm.variables['alias'].get_index(0).get_member('X'),18)
+
+    def test_declined_origin_uses_same_generic_path_without_retry(self):
+        from unittest.mock import Mock, patch
+
+        vm=self.vm()
+        plan=vm.prepare(TABLE+'Snapshot=T.Copy();')
+        namespace=plan._plan.function.__globals__
+        declined=Mock(return_value=False)
+        with patch.dict(namespace,_fresh_closed_table=declined):
+            vm.execute_prepared(plan)
+        declined.assert_called_once()
+        self.assertEqual((vm.variables['r'],vm.variables['snapshot'].count()),(210,20))
+        self.assertIs(declined.call_args.args[1],vm.variables['t'])
+
+    def test_failed_prefix_and_suffix_keep_only_completed_effects(self):
+        for source, row_count, value in (
+                (TABLE.replace('Row.X=I','Row.Missing=I')+'Snapshot=T.Copy();',1,None),
+                (TABLE+'Raise "suffix"; Snapshot=T.Copy();',20,210)):
+            with self.subTest(row_count=row_count):
+                vm=self.vm()
+                plan=vm.prepare(source)
+                self.assertIn('_fresh_closed_table',plan._plan.generated_source)
+                with self.assertRaises(BSLError):
+                    vm.execute_prepared(plan)
+                self.assertEqual((vm.variables['t'].count(),vm.variables.get('r')),(row_count,value))
+                self.assertNotIn('snapshot',vm.variables)
+
+    def test_unassigned_cell_uses_ordinary_bsl_truth_and_order(self):
+        for condition in ('Row.X', 'Row.X < 1'):
+            with self.subTest(condition=condition):
+                vm=self.vm()
+                plan=vm.prepare(TABLE.split('R=0;')[0].replace('Row.X=I;', '')+f'''
+                    If {condition} Then R=99; EndIf;
+                    Snapshot=T.Copy();
+                ''')
+                self.assertIn('_fresh_closed_table',plan._plan.generated_source)
+                with self.assertRaises(BSLError):
+                    vm.execute_prepared(plan)
+                self.assertEqual(vm.variables['t'].count(),20)
+                self.assertIsNone(vm.variables['row'].get_member('X'))
+                self.assertNotIn('r',vm.variables)
+                self.assertNotIn('snapshot',vm.variables)
+
+    def test_goto_extensions_and_second_constructor_are_not_specialized(self):
+        for vm,suffix in ((self.vm(),'Goto ~Done; ~Done: Snapshot=T.Copy();'),
+                          (self.vm(allow_extensions=True),'Snapshot=T.Copy();'),
+                          (self.vm(),'Snapshot=T.Copy();')):
+            with self.subTest(extension=vm.allow_extensions,suffix=suffix):
+                prefix=TABLE if vm.allow_extensions or suffix.startswith('Goto') else TABLE.replace(
+                    'T.Columns.Add("X");','U=New ValueTable; T.Columns.Add("X");')
+                plan=vm.prepare(prefix+suffix)
+                self.assertNotIn('_fresh_closed_table',plan._plan.generated_source)
+                vm.execute_prepared(plan)
+                self.assertEqual(vm.variables['snapshot'].count(),20)
