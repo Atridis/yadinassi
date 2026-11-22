@@ -98,13 +98,24 @@ Requests still have monotonically increasing identities and are never replayed.
 
 ## Fixed table replication
 
-The private pair protocol is `yadinassi-form/1`. Trusted host registration supplies
+The full-state private pair protocol is `yadinassi-form/1`. Trusted host registration supplies
 `FormTableSchema` objects; the browser cannot define columns. Tables carry bounded
 scalar cells, monotonic row identities and per-control selection. Client barriers
 send existing-cell and selection deltas. Only server BSL can add/delete rows.
 Detached admission validates the entire scalar/cell/selection candidate before
 installation, preserves surviving row objects and invalidates removed rows.
 An initially empty table schema inventory is also fixed after bootstrap.
+
+Paired hosts can explicitly use `yadinassi-form/2` (the built-in stdio launcher
+and non-posting, non-reference configuration tables). Opening always sends a
+full image. A later scalar barrier can omit the table payload only when the
+client acknowledges the last admitted image and neither replica changed the
+table. The generation is bound to the exact full image; normal request identity,
+revision, sequence, cell admission and selection checks still apply. A missing
+or stale acknowledgement sends a new full image, not another invocation.
+Reference-bearing tables and custom exchanges remain on full replication by
+default; old `/1` packets retain their strict grammar. Existing model-data
+budgets apply; framing limits count bytes and nodes actually transmitted.
 
 The [table guide](form-tables.md) documents the limits, package manifest, browser
 editing and durable create-only order example. Form collection/row handles cannot

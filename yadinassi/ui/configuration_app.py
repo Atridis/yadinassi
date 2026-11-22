@@ -24,6 +24,7 @@ from yadinassi.forms.form_dialogs import (DIALOG_CAPABILITY, MAX_DIALOGS, MAX_DI
     QuestionDialogMode, DialogReturnCode, OwnedDialog, dialog_text)
 from yadinassi.forms.form_value_input import (INPUT_CAPABILITY, MAX_INPUTS, ScalarInputSpec,
     ValueListSelection, OwnedInput, scalar_descriptor)
+from yadinassi.forms.form_replication import PROTOCOL as FULL_REPLICA_PROTOCOL
 from .form_app import FormController, FormProcess, PROTOCOL as FORM_PROTOCOL
 from .local_app import LocalTransportError, LocalUIServer, _Handler
 from .protocol import decode_line, encode_line, MAX_LINE_BYTES, MAX_COUNTER, UIError
@@ -624,8 +625,9 @@ class ConfigurationBroker:
             definition = next(d for d in self.definitions.values() if d.name == self.objects[sid].form)
             binding = next((b for b in server.bindings if b.name == 'YadinassiPostingSync'), None)
             frame = payload['form']; action = payload['action']; owned = self.objects[sid]
-            if (binding is None or type(frame) is not dict or frame.get('operation') != 'call'
-                    or frame.get('endpoint') != binding.endpoint or action not in ('execute', 'refresh', 'sync')):
+            if (binding is None or type(frame) is not dict or frame.get('protocol') != FULL_REPLICA_PROTOCOL
+                    or frame.get('operation') != 'call' or frame.get('endpoint') != binding.endpoint
+                    or action not in ('execute', 'refresh', 'sync')):
                 raise ValueError('unknown posting synchronization capability')
             if action == 'execute' and not any(g.form == definition.name and g.command == payload['command']
                     for g in self.posting_configuration.commands):
@@ -1542,7 +1544,8 @@ class ConfigurationController:
                     **{i:FormEnumTarget(n) for i,_,n in definition.enum_targets}})
             controller = FormController(definition.client_package(), exchange, parameters=parameters, reference_scope=reference_scope,
                 bind_interpreter=lambda vm: self._bind(sid, vm),
-                interpreter_factory=None if self.application is None else self.application.form_interpreter_factory)
+                interpreter_factory=None if self.application is None else self.application.form_interpreter_factory,
+                reuse_tables=bool(definition.tables) and not definition.posting_application and reference_scope is None)
             if definition.posting_application:
                 controller.session.form._host_readonly = frozenset((dict(definition.object_fields)["Posted"].casefold(),))
             self.sessions[sid] = (controller, entry)

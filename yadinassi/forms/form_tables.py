@@ -199,9 +199,11 @@ class BSLFormDataCollection(_Owned):
                                   for column in schema.columns)
         self._empty_wire_size = None if self._variable_wire else len(str(identity)) + 5  # [identity,[]]
         self._wire_size = self._empty_wire_size
+        self._generation = 0
 
     def _commit_usage(self, text_size, wire_size):
         self._text_size, self._wire_size = text_size, wire_size
+        self._generation += 1
 
     def _check(self, server=False):
         super()._check(server)

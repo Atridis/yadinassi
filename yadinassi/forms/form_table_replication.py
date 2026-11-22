@@ -9,8 +9,8 @@ from decimal import Decimal
 
 from .form_tables import (FormTableColumn, FormTableSchema, BSLFormDataCollection,
     MAX_TABLES, MAX_TABLE_COLUMNS as MAX_COLUMNS, MAX_TABLE_ROWS as MAX_ROWS,
-    MAX_TABLE_ALLOCATED as MAX_ROW_IDENTITIES, validate_table_data)
-from .form_model import BSLFormTable, name, text, scalar
+    MAX_TABLE_ALLOCATED as MAX_ROW_IDENTITIES, validate_table_data, table_text_size)
+from .form_model import BSLFormTable, MAX_TOTAL_TEXT, name, text, scalar
 from yadinassi.ui.protocol import encode_value, decode_value
 from .form_references import is_reference, adjust, encode, decode
 from yadinassi.types.type_descriptions import BSLTypeDescription
@@ -191,7 +191,7 @@ def selection_delta(current, baseline):
     return result
 
 
-def admit_table_delta(form, cells, selections, scalar_data):
+def admit_table_delta(form, cells, selections, scalar_data, *, table_text=None):
     """Whole delta admission before scalars, cells, or selection are changed."""
     tables = {table._identity: table for table in form._tables.values()}
     replacements = {}; seen = set()
@@ -221,7 +221,10 @@ def admit_table_delta(form, cells, selections, scalar_data):
                 break
     replacements = {key: tuple((identity, tuple(values)) for identity, values in rows)
                     for key, rows in replacements.items()}
-    validate_table_data(form, replacements=replacements, scalar_data=scalar_data)
+    if table_text is None or replacements:
+        validate_table_data(form, replacements=replacements, scalar_data=scalar_data)
+    else:
+        require_scalar_and_table_text(scalar_data, table_text)
     controls = {item._replica_id: item for item in form.items._values.values() if type(item) is BSLFormTable}
     admitted = []; seen = set()
     for selection in _list(selections, MAX_TABLES):
@@ -247,3 +250,41 @@ def apply_table_delta(form, admitted):
         table._replace_rows(rows, table._allocated)
     for item, row_id in selections:
         item.current_row = row_id
+
+
+def require_scalar_and_table_text(data, table_text):
+    if sum(len(value) for value in data.values() if type(value) is str) + table_text > MAX_TOTAL_TEXT:
+        raise ValueError('ТаблицаФормы: превышен предел данных')
+
+
+class TableImage:
+    """An admitted table image, scoped to one owned form and its mutation epochs."""
+    def __init__(self, form, generation):
+        self.form = form
+        self.generation = generation
+        self.text = table_text_size(form)
+        self.tables = tuple((key, table, table.schema, table._rows, table._by_id,
+                             table._identity, table._allocated, table._generation)
+                            for key, table in form._tables.items())
+
+    @classmethod
+    def admitted(cls, form, generation):
+        # Reference and enum encoders resolve live owner/presentation state
+        # independently of row mutations. They stay on full replication.
+        if form._session.reference_scope is None and form._tables:
+            return cls(form, generation)
+        return None
+
+    def matches(self, form):
+        if (form is not self.form or form._session.reference_scope is not None
+                or type(form._tables) is not dict or len(form._tables) != len(self.tables)):
+            return False
+        for (key, table), (saved_key, saved, schema, rows, by_id, identity, allocated, generation) in zip(
+                form._tables.items(), self.tables):
+            if (type(key) is not str or key != saved_key or table is not saved or table.schema is not schema
+                    or table._rows is not rows or table._by_id is not by_id
+                    or type(table._identity) is not int or table._identity != identity
+                    or type(table._allocated) is not int or table._allocated != allocated
+                    or type(table._generation) is not int or table._generation != generation):
+                return False
+        return True

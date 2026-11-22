@@ -5,6 +5,10 @@ closed state packet and prebound endpoint IDs cross the boundary. This is not a
 network service, a persistence transaction or a native UI-event parity claim.
 """
 from decimal import Decimal, localcontext
+from hashlib import sha256
+import json
+import re
+from secrets import token_hex
 from threading import Lock
 
 from .form_model import (BSLClientApplicationForm, BSLFormAttribute, BSLFormField,
@@ -25,11 +29,13 @@ from yadinassi.temporal.dates import BSLDate
 
 from .form_table_replication import (pack_tables, unpack_tables, install_tables,
     capture_tables, capture_selections, table_delta, selection_delta,
-    admit_table_delta, apply_table_delta)
+    admit_table_delta, apply_table_delta, TableImage, require_scalar_and_table_text)
 
 from .form_references import is_reference, adjust, encode, decode, require_scope
 
 PROTOCOL = 'yadinassi-form/1'
+TABLE_PROTOCOL = 'yadinassi-form/2'
+_TABLE_GENERATION = re.compile(r'[0-9a-f]{96}')
 _REASONS = frozenset(('invalid_request', 'sequence', 'stale_revision', 'closed',
     'request_limit', 'unknown_endpoint', 'invalid_arguments', 'invalid_delta',
     'server_error', 'result_unavailable', 'busy'))
@@ -61,6 +67,19 @@ def _integer(value, low=0, high=MAX_COUNTER):
     if type(value) is not int or not low <= value <= high:
         raise ValueError('invalid form counter')
     return value
+
+
+def _table_generation(value):
+    if value is not None and (type(value) is not str or _TABLE_GENERATION.fullmatch(value) is None):
+        raise ValueError('invalid form table generation')
+    return value
+
+
+def _table_digest(tables):
+    # The exact admitted JSON table artifact, not a hash of user equality or
+    # asserted revisions. Its digest is checked on receipt before installation.
+    raw = json.dumps(tables, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode('utf-8')
+    return sha256(raw).hexdigest()
 
 
 def _rows(value, maximum):
@@ -149,7 +168,7 @@ def _object_identity(session, item):
     return identity
 
 
-def _pack_state(session, handlers):
+def _pack_state(session, handlers, *, reuse_tables=False):
     form = session.form
     attributes = []
     for key, attribute in form._attributes.items():
@@ -164,7 +183,7 @@ def _pack_state(session, handlers):
              kind.number_qualifiers.allowed_sign.value, int(kind.string_qualifiers.length),
              kind.string_qualifiers.allowed_length.value, kind.date_qualifiers.date_fractions.value],
             attribute.title, key in form._static, _encode_form_scalar(form._data[key])])
-    return {'attributes': attributes, 'tables': pack_tables(form), 'title': form.title,
+    return {'attributes': attributes, 'tables': None if reuse_tables else pack_tables(form), 'title': form.title,
         'items': [[item.name, 'button' if type(item) is BSLFormButton else 'table' if type(item) is BSLFormTable else 'group' if type(item) is BSLFormGroup else 'field',
             item.title, item.visible, item.enabled, item.read_only,
             item.command_name if type(item) is BSLFormButton else item.data_path,
@@ -181,20 +200,20 @@ def _pack_state(session, handlers):
         **({'layout': [list(row) for row in form._layout]} if form._layout else {})}
 
 
-def _unpack_state(packet, session, handlers):
+def _unpack_state(packet, session, handlers, *, table_image=None):
     # Scalar host preflight contexts predate the optional reference scope.
     # Reference packet branches still require an explicit enrolled scope.
     scope = getattr(session, 'reference_scope', None)
     checkpoint = None if scope is None else (scope.identity, dict(scope._client), dict(scope._client_values))
     try:
-        return _unpack_state_candidate(packet, session, handlers)
+        return _unpack_state_candidate(packet, session, handlers, table_image=table_image)
     except BaseException:
         if checkpoint is not None:
             scope.identity, scope._client, scope._client_values = checkpoint
         raise
 
 
-def _unpack_state_candidate(packet, session, handlers):
+def _unpack_state_candidate(packet, session, handlers, *, table_image=None):
     """Validate an entire detached candidate before touching live client state."""
     _keys(packet, 'attributes tables title items commands actions allocated lifecycle' +
         (' layout' if type(packet) is dict and 'layout' in packet else ''))
@@ -237,7 +256,17 @@ def _unpack_state_candidate(packet, session, handlers):
             candidate._static.add(key)
     if sum(len(value) for value in candidate._data.values() if type(value) is str) > MAX_TOTAL_TEXT:
         raise ValueError('form text limit')
-    unpack_tables(packet['tables'], candidate, session)
+    if table_image is None:
+        unpack_tables(packet['tables'], candidate, session)
+    else:
+        if (packet['tables'] is not None or not table_image.matches(session.form)
+                or any(key in candidate._attributes or key in session.reserved_names
+                       for key in session.form._tables)):
+            raise ValueError('invalid reused form tables')
+        require_scalar_and_table_text(candidate._data, table_image.text)
+        # Read-only during validation; normal selection and layout checks
+        # still use the live table identities and row membership.
+        candidate._tables = session.form._tables
     identities = set()
     for row in _rows(packet['commands'], MAX_COMMANDS):
         command_name, title, action, identity = _row(row, 4)
@@ -323,10 +352,11 @@ def _unpack_state_candidate(packet, session, handlers):
     return candidate, allocated, packet['lifecycle']
 
 
-def _install_state(session, decoded):
+def _install_state(session, decoded, *, reuse_tables=False):
     candidate, allocated, lifecycle = decoded
     form = session.form
-    install_tables(form, candidate)
+    if not reuse_tables:
+        install_tables(form, candidate)
     # Existing event parameters/references continue to denote their local item.
     # Removed/retyped items are invalidated rather than silently kept usable.
     for destination, source in ((form.items, candidate.items), (form.commands, candidate.commands)):
@@ -351,26 +381,26 @@ def _install_state(session, decoded):
     return lifecycle
 
 
-def _capture(form):
+def _capture(form, *, tables=None):
     return {'attributes': {key: encode(form._attributes[key].value_type, value, _encode_form_scalar) for key, value in form._data.items()},
-            'tables': capture_tables(form), 'selections': capture_selections(form),
+            'tables': capture_tables(form) if tables is None else tables, 'selections': capture_selections(form),
             'items': {key: _appearance(item) for key, item in form.items._values.items()},
             'title': form.title}
 
 
-def _delta(form, baseline):
-    current = _capture(form)
+def _delta(form, baseline, *, reuse_tables=False):
+    current = _capture(form, tables=baseline['tables'] if reuse_tables else None)
     if set(current['attributes']) != set(baseline['attributes']) or set(current['items']) != set(baseline['items']):
         raise ValueError('client cannot change form schema')
     return {'attributes': [[key, value] for key, value in current['attributes'].items()
             if value != baseline['attributes'][key]],
         'items': [value for key, value in current['items'].items() if value != baseline['items'][key]],
         'title': current['title'] if current['title'] != baseline['title'] else None,
-        'cells': table_delta(current['tables'], baseline['tables']),
+        'cells': [] if reuse_tables else table_delta(current['tables'], baseline['tables']),
         'selections': selection_delta(current['selections'], baseline['selections'])}
 
 
-def _admit_delta(form, packet):
+def _admit_delta(form, packet, *, table_image=None):
     _keys(packet, 'attributes items title cells selections')
     data = form._data.copy(); seen = set()
     for row in _rows(packet['attributes'], MAX_ATTRIBUTES):
@@ -396,7 +426,8 @@ def _admit_delta(form, packet):
         seen.add(key); text(title, 1024); _booleans([visible, enabled, readonly])
         items.append((form.items._values[key], title, visible, enabled, readonly))
     title = form.title if packet['title'] is None else text(packet['title'], 1024)
-    tables = admit_table_delta(form, packet['cells'], packet['selections'], data)
+    tables = admit_table_delta(form, packet['cells'], packet['selections'], data,
+        table_text=None if table_image is None else table_image.text)
     return data, items, title, tables
 
 
@@ -454,74 +485,102 @@ class ReplicatedFormServer:
         self.bindings = tuple(self.bindings)
         self._gate = Lock(); self._last_id = 0; self._sequence = 0; self._requests = 0
         self._allow_host_sync = False
+        self._table_image = None
 
-    def _reply(self, request_id, *, accepted=False, value=None, reason=None):
+    def _reply(self, request_id, *, accepted=False, value=None, reason=None,
+               protocol=PROTOCOL, reuse_image=None):
         session = self.session
-        response = {'protocol': PROTOCOL, 'id': request_id,
+        response = {'protocol': protocol, 'id': request_id,
             'status': 'ok' if reason is None else 'error', 'accepted': accepted,
             'revision': session.revision, 'sequence': self._sequence,
             'messages': list(session.messages) if accepted else [],
             'state': None}
+        image = None
         try:
             if accepted:
-                response['state'] = _pack_state(session, self._handler_names)
+                image = reuse_image if reuse_image is not None and reuse_image.matches(session.form) else None
+                if image is not None:
+                    require_scalar_and_table_text(session.form._data, image.text)
+                response['state'] = _pack_state(session, self._handler_names, reuse_tables=image is not None)
+                if (protocol == TABLE_PROTOCOL and image is None and session.reference_scope is None
+                        and response['state']['tables']):
+                    generation = token_hex(16) + _table_digest(response['state']['tables'])
+                    image = TableImage.admitted(session.form, generation)
+            if protocol == TABLE_PROTOCOL:
+                response['table_generation'] = None if image is None else image.generation
             for message in response['messages']:
                 bounded_text(message, 1024)
             response['value' if reason is None else 'reason'] = _encode_scalar(value) if reason is None else reason
-            return encode_line(response)
+            raw = encode_line(response)
+            if accepted:
+                self._table_image = image
+            return raw
         except Exception:
-            return encode_line({'protocol': PROTOCOL, 'id': request_id, 'status': 'error',
+            return encode_line({'protocol': protocol, 'id': request_id, 'status': 'error',
                 'accepted': accepted, 'revision': session.revision, 'sequence': self._sequence,
-                'messages': [], 'state': None, 'reason': 'result_unavailable'})
+                'messages': [], 'state': None, 'reason': 'result_unavailable',
+                **({'table_generation': None} if protocol == TABLE_PROTOCOL else {})})
 
     def exchange(self, raw):
         if not self._gate.acquire(blocking=False):
             return self._reply(None, reason='busy')
         request_id = None
+        protocol = PROTOCOL
         try:
             try:
                 request = decode_line(raw)
-                _keys(request, 'protocol id operation revision sequence endpoint arguments delta')
+                if type(request) is dict and request.get('protocol') == TABLE_PROTOCOL:
+                    protocol = TABLE_PROTOCOL
+                _keys(request, 'protocol id operation revision sequence endpoint arguments delta' +
+                      (' table_generation' if protocol == TABLE_PROTOCOL else ''))
                 request_id = _integer(request['id'], 1)
                 _integer(request['revision']); _integer(request['sequence'], 1)
                 _integer(request['endpoint'], 0, MAX_ENDPOINTS)
-                if (request['protocol'] != PROTOCOL or request['operation'] not in ('open', 'call', 'close', 'dispose', 'sync')
+                generation = _table_generation(request['table_generation']) if protocol == TABLE_PROTOCOL else None
+                if (request['protocol'] != protocol or request['operation'] not in ('open', 'call', 'close', 'dispose', 'sync')
                         or request['operation'] == 'sync' and not self._allow_host_sync):
                     raise ValueError('invalid request')
                 _rows(request['arguments'], 32)
             except Exception:
-                return self._reply(request_id, reason='invalid_request')
+                return self._reply(request_id, reason='invalid_request', protocol=protocol)
             if request_id <= self._last_id or request['sequence'] != self._sequence + 1:
-                return self._reply(request_id, reason='sequence')
+                return self._reply(request_id, reason='sequence', protocol=protocol)
             if self._requests >= MAX_CALLS:
-                return self._reply(request_id, reason='request_limit')
+                return self._reply(request_id, reason='request_limit', protocol=protocol)
             self._last_id = request_id; self._requests += 1
             session = self.session; operation = request['operation']
+            if operation == 'open' and generation is not None:
+                return self._reply(request_id, reason='invalid_request', protocol=protocol)
             if request['revision'] != session.revision:
-                return self._reply(request_id, reason='stale_revision')
+                return self._reply(request_id, reason='stale_revision', protocol=protocol)
             if session.closed or operation != 'dispose' and (operation == 'open') != (session.state == 'created'):
-                return self._reply(request_id, reason='closed')
+                return self._reply(request_id, reason='closed', protocol=protocol)
             routine = None; admitted = None; values = []
+            image = self._table_image
+            reuse_image = (image if protocol == TABLE_PROTOCOL and image is not None
+                           and generation == image.generation and image.matches(session.form) else None)
             if operation == 'call':
                 routine = self._routines.get(request['endpoint'])
                 if routine is None:
-                    return self._reply(request_id, reason='unknown_endpoint')
+                    return self._reply(request_id, reason='unknown_endpoint', protocol=protocol)
                 try:
                     if len(request['arguments']) != len(routine.parameters):
                         raise ValueError('arity')
                     values = [_decode_scalar(value) for value in request['arguments']]
                 except Exception:
-                    return self._reply(request_id, reason='invalid_arguments')
+                    return self._reply(request_id, reason='invalid_arguments', protocol=protocol)
             elif request['endpoint'] != 0 or request['arguments']:
-                return self._reply(request_id, reason='invalid_arguments')
+                return self._reply(request_id, reason='invalid_arguments', protocol=protocol)
             try:
                 if operation in ('open', 'dispose'):
                     if request['delta'] is not None:
                         raise ValueError('unexpected opening delta')
                 else:
-                    admitted = _admit_delta(session.form, request['delta'])
+                    admitted = _admit_delta(session.form, request['delta'], table_image=reuse_image)
+                    if admitted[3][0]:
+                        reuse_image = None
             except Exception:
-                return self._reply(request_id, reason='invalid_delta')
+                return self._reply(request_id, reason='invalid_delta', protocol=protocol)
             session._begin(session.revision)
             self._sequence += 1
             result = None; reason = None
@@ -552,7 +611,8 @@ class ReplicatedFormServer:
                     session.closed = True; session.state = 'failed'
             finally:
                 session.revision += 1; session._busy = False; session._gate.release()
-            return self._reply(request_id, accepted=True, value=result, reason=reason)
+            return self._reply(request_id, accepted=True, value=result, reason=reason,
+                               protocol=protocol, reuse_image=reuse_image)
         finally:
             self._gate.release()
 
@@ -563,10 +623,11 @@ class ReplicatedFormSession(FormSession):
     Form event revision, server revision, client sequence and request ID are
     separate counters. Unknown outcomes lock the channel; nothing is replayed.
     """
-    def __init__(self, source, exchange, *, handlers, bindings=(), output=None, parameters=None, interpreter_factory=None, reference_scope=None):
+    def __init__(self, source, exchange, *, handlers, bindings=(), output=None, parameters=None,
+                 interpreter_factory=None, reference_scope=None, reuse_tables=False):
         _source(source, 'client')
-        if not callable(exchange):
-            raise TypeError('byte exchange required')
+        if not callable(exchange) or type(reuse_tables) is not bool:
+            raise TypeError('byte exchange and Boolean reuse option required')
         self._handlers, _ = _bindings(handlers, handlers=True)
         _bindings(bindings)
         super().__init__(source, output=output, parameters=parameters, interpreter_factory=interpreter_factory, reference_scope=reference_scope)
@@ -586,6 +647,8 @@ class ReplicatedFormSession(FormSession):
         self._request_id = 0; self.server_revision = 0; self.client_sequence = 0
         self.uncertain = False; self._baseline = None
         self._allow_host_sync = False
+        self._protocol = TABLE_PROTOCOL if reuse_tables else PROTOCOL
+        self._table_image = None
 
     def synchronize_owned(self):
         if not self._allow_host_sync or self._owned_form_enrollment is None or self.state != 'open':
@@ -629,11 +692,15 @@ class ReplicatedFormSession(FormSession):
             if self._request_id >= MAX_CALLS:
                 raise InvocationError('request_limit')
             request_id = self._request_id + 1
-            raw = encode_line({'protocol': PROTOCOL, 'id': request_id,
+            image = self._table_image
+            sent_image = image if image is not None and image.matches(self.form) else None
+            raw = encode_line({'protocol': self._protocol, 'id': request_id,
                 'operation': operation, 'revision': self.server_revision,
                 'sequence': self.client_sequence + 1, 'endpoint': 0 if binding is None else binding.endpoint,
                 'arguments': [_encode_scalar(value) for value in values],
-                'delta': None if operation in ('open', 'dispose') else _delta(self.form, self._baseline)})
+                'delta': None if operation in ('open', 'dispose') else _delta(self.form, self._baseline, reuse_tables=sent_image is not None),
+                **({'table_generation': None if sent_image is None else sent_image.generation}
+                   if self._protocol == TABLE_PROTOCOL else {})})
             self._request_id = request_id
             try:
                 started = True
@@ -641,8 +708,11 @@ class ReplicatedFormSession(FormSession):
                 if type(response) is not dict or response.get('status') not in ('ok', 'error'):
                     raise ValueError('invalid response')
                 success = response['status'] == 'ok'
-                _keys(response, 'protocol id status accepted revision sequence messages state ' + ('value' if success else 'reason'))
-                if response['protocol'] != PROTOCOL or _integer(response['id'], 1) != request_id:
+                _keys(response, 'protocol id status accepted revision sequence messages state ' +
+                      ('value' if success else 'reason') + (' table_generation' if self._protocol == TABLE_PROTOCOL else ''))
+                generation = (_table_generation(response['table_generation'])
+                              if self._protocol == TABLE_PROTOCOL else None)
+                if response['protocol'] != self._protocol or _integer(response['id'], 1) != request_id:
                     raise ValueError('invalid response identity')
                 accepted = response['accepted']; _booleans([accepted])
                 if (_integer(response['revision']) != self.server_revision + int(accepted) or
@@ -659,20 +729,32 @@ class ReplicatedFormSession(FormSession):
                         raise ValueError('procedure returned value')
                 elif type(response['reason']) is not str or response['reason'] not in _REASONS:
                     raise ValueError('invalid response reason')
+                reuse_image = None
                 if accepted:
-                    decoded = _unpack_state(response['state'], self, self._handlers)
+                    state = response['state']
+                    if type(state) is dict and state.get('tables') is None:
+                        if sent_image is None or generation != sent_image.generation:
+                            raise ValueError('unacknowledged form table generation')
+                        reuse_image = sent_image
+                    elif generation is not None and (self.reference_scope is not None
+                            or type(state) is not dict or type(state.get('tables')) is not list
+                            or not state['tables'] or generation[32:] != _table_digest(state['tables'])):
+                        raise ValueError('form table generation does not match its image')
+                    decoded = _unpack_state(state, self, self._handlers, table_image=reuse_image)
                     lifecycle = decoded[2]
                     if operation in ('call', 'sync') and lifecycle != 'open' or operation in ('close', 'dispose') and lifecycle != 'closed':
                         raise ValueError('invalid response lifecycle')
-                elif response['state'] is not None or messages:
+                elif response['state'] is not None or messages or generation is not None:
                     raise ValueError('rejected response contains effects')
             except Exception:
                 self.uncertain = True
                 raise InvocationError('outcome_unknown') from None
             if accepted:
-                _install_state(self, decoded)
+                _install_state(self, decoded, reuse_tables=reuse_image is not None)
                 self.server_revision = response['revision']; self.client_sequence = response['sequence']
-                self._baseline = _capture(self.form)
+                self._baseline = _capture(self.form, tables=self._baseline['tables'] if reuse_image is not None else None)
+                self._table_image = (None if generation is None else reuse_image or
+                                     TableImage.admitted(self.form, generation))
                 if operation == 'open':
                     self.state = lifecycle
                     self.closed = lifecycle != 'open'
