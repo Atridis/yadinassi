@@ -1,4 +1,4 @@
-"""Finite source-owned scalar XDTO Type/Create/Value, without IO grants."""
+"""Finite source-owned XDTO scalar operations and read-only type metadata."""
 from types import MethodType
 from weakref import ReferenceType,WeakKeyDictionary
 from decimal import Decimal
@@ -28,6 +28,13 @@ def _unique_class_requirements(abi):
 
 _HOOK_ABI=_unique_class_requirements(_ABI)
 _FACTORY=io.BSLXDTOFactory;_TYPE=values.BSLXDTOValueType;_VALUE=values.BSLXDTODataValue
+_OBJECT_TYPE=values.BSLXDTOObjectType
+_TYPE_NAMES=frozenset(('name','имя','namespaceuri','uriпространстваимен'))
+_SCALAR_TYPE_FIELDS=_TYPE_NAMES | {'basetype','базовыйтип'}
+_OBJECT_TYPE_FIELDS=_TYPE_NAMES | {'ordered','упорядоченный','abstract','абстрактный',
+    'open','открытый','sequenced','последовательный','mixed','смешанный'}
+_SCALAR_TYPE_GET=_TYPE.get_member
+_OBJECT_TYPE_GET=_OBJECT_TYPE.get_member
 _LOADER=source.SourceXDTOPackages;_LOAD=_LOADER.load
 _TYPE_CALL=_FACTORY.type;_CREATE_CALL=_FACTORY.create
 _METHODS={'type':_TYPE_CALL,'тип':_TYPE_CALL,'create':_CREATE_CALL,'создать':_CREATE_CALL}
@@ -279,6 +286,15 @@ def get(boundary,value,name):
         key=name.casefold()
         if key not in _METHODS:raise ValueError('source XDTO factory member not integrated')
         return HostFunction(name,_METHODS[key].__get__(factory,_FACTORY))
+    if type(value) is _TYPE and name.casefold() in _SCALAR_TYPE_FIELDS:
+        _kind(factory,value)
+        return _SCALAR_TYPE_GET(value,name)
+    if type(value) is _OBJECT_TYPE and name.casefold() in _OBJECT_TYPE_FIELDS:
+        _field_keys(value)
+        if (value._factory is not factory or type(value._uri) is not str or type(value._name) is not str
+                or factory._types.get((value._uri,value._name)) is not value):
+            raise BoundaryViolation('source XDTO requires a current object type from this factory')
+        return _OBJECT_TYPE_GET(value,name)
     if type(value) is _VALUE:
         _field_keys(value);fields=vars(value)
         saved=_VALUES.get(value)

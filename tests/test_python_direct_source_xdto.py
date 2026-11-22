@@ -29,6 +29,33 @@ class SourceScalarXDTOTests(unittest.TestCase):
         self.assertEqual(app.xdto._loaded,set());self.assertEqual(vm.execute('V.Значение;'),'primitive')
         vm.execute('F=XDTOFactory.Type;T=F("urn:owned:records","Code");C=XDTOFactory.Create;V=C(T,"owned");')
         self.assertEqual(vm.execute('V.Value;'),'owned');self.assertEqual(app.xdto._loaded,{'urn:owned:records'})
+    def test_readonly_type_names_base_and_object_shape_reuse_registered_descriptors(self):
+        app=self.app();vm=app.interpreter
+        vm.execute('T=ФабрикаXDTO.Тип("urn:owned:records","Code"); '
+                   'O=XDTOFactory.Type("urn:owned:envelope","Envelope");')
+        self.assertEqual(vm.execute('T.Имя + ":" + T.URIПространстваИмен + ":" + T.БазовыйТип.Name;'),
+                         'Code:urn:owned:records:string')
+        self.assertEqual(vm.execute('O.Name+":"+O.NamespaceURI;'),'Envelope:urn:owned:envelope')
+        self.assertTrue(vm.execute('O.Ordered And Not O.Open And Not O.Abstract '
+                                   'And Not O.Sequenced And Not O.Mixed;'))
+        for code in ('T.Name="renamed";', 'O.Ordered=False;', 'O.Properties;', 'T.Name();'):
+            with self.subTest(code=code),self.assertRaises(DENIED):
+                vm.execute(code)
+        self.assertEqual(vm.execute('T.Name+":"+O.Name;'),'Code:Envelope')
+
+    def test_type_metadata_rejects_foreign_unregistered_and_changed_descriptors(self):
+        mapping=existing.SourceXDTOTests().mapping(False)
+        app=self.app(mapping);other=self.app(mapping);vm=app.interpreter
+        other.interpreter.execute('T=XDTOFactory.Type("urn:owned:records","Record");')
+        vm.execute('T=XDTOFactory.Type("urn:owned:records","Record");')
+        vm.variables['foreign']=other.interpreter.variables['t']
+        vm.variables['fake']=xdto_values.BSLXDTOObjectType(app.xdto.factory,'Record','urn:owned:records')
+        for code in ('Foreign.Name;','Fake.Ordered;'):
+            with self.subTest(code=code),self.assertRaises(BoundaryViolation):
+                vm.execute(code)
+        vm.variables['t']._name='Changed'
+        with self.assertRaises(BoundaryViolation):vm.execute('T.Name;')
+
     def test_foreign_types_and_closed_saved_context(self):
         a=self.app();b=self.app();foreign=b.xdto.factory.type(xdto_values.XS,'string')
         a.interpreter.variables['foreign']=foreign
