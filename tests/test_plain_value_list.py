@@ -124,15 +124,15 @@ class PlainValueListTests(unittest.TestCase):
         self.assertEqual(values.get(D(-1))[0], 1)
         self.assertEqual(values.get(D('0.5'))[0], 3)
 
-    def test_date_sort_rejects_malformed_unknown_and_mixed_dates_atomically(self):
+    def test_value_sort_rejects_malformed_unknown_and_opaque_keys_atomically(self):
         from yadinassi.temporal.dates import BSLDate
         malformed=BSLDate(0)
         object.__setattr__(malformed,'ticks',True)
         known=BSLDate(20)
         for keys,error in (((known,malformed),ValueError),
                            ((known,BSLDate(0,True)),NotImplementedError),
-                           ((known,0),TypeError),
-                           ((0,known),TypeError)):
+                           ((known,object()),TypeError),
+                           ((0,object()),TypeError)):
             with self.subTest(error=error,keys=tuple(map(type,keys))):
                 values=PlainValueList()
                 first=values.add(keys[0],'b')

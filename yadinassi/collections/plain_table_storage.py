@@ -153,7 +153,7 @@ def table_object_sort_rank(kind):
     return None
 
 
-def _sort_value(value):
+def _sort_value(value, *, python_string_order=False, unsupported=NotImplementedError):
     kind = type(value)
     if value is None:
         return 0, 0, 0
@@ -166,12 +166,12 @@ def _sort_value(value):
             raise ValueError('nonfinite sort value')
         return 1, 1, value
     if kind is str:
-        return 1, 2, text_sort_key(value)
+        return 1, 2, value if python_string_order else text_sort_key(value)
     if value is NULL:
         return 0, 1, 0
     if kind is BSLDate:
         return 1, 3, _sort_date_ticks(value)
-    raise NotImplementedError('sorting opaque values is not supported')
+    raise unsupported('sorting opaque values is not supported')
 
 
 def _sort_object_value(value):

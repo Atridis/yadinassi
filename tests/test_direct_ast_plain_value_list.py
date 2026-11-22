@@ -134,6 +134,25 @@ class DirectPlainValueListTests(unittest.TestCase):
                 self.assertIs(owner[i],items[j])
             self.assertEqual(tuple(item.get_id() for item in items),identifiers)
 
+    def test_value_list_mixed_scalar_order_and_empty_ties(self):
+        for values, asc, desc in (
+                (('"2"','Date(2024,1,1)','2','True','Undefined','Null','False','0'),
+                 (4,5,6,3,7,2,0,1),(1,0,2,7,3,6,5,4)),
+                (('Null','Undefined','Null','Undefined'),(1,3,0,2),(0,2,1,3)),
+                (('0','True','-1','False','2.0','2'),(3,1,2,0,4,5),(4,5,0,2,1,3)),
+                (('"a"','"Z"','False'),(2,1,0),(0,1,2)),
+        ):
+            with self.subTest(values=values):
+                vm=self.vm()
+                vm.execute('L=New ValueList;' + ''.join(f'L.Add({value});' for value in values))
+                owner=vm.variables['l']
+                original=tuple(owner)
+                for suffix,order in (('()',asc),('(SortDirection.Desc)',desc)):
+                    vm.execute('L.SortByValue'+suffix+';')
+                    self.assertEqual(tuple(item.get_id() for item in owner),order)
+                    for item, index in zip(owner,order):
+                        self.assertIs(item,original[index])
+
     def test_value_list_procedure_in_value_position_binds_receiver_but_not_arguments(self):
         vm=self.vm()
         vm.execute('Var L, Seen; L=New ValueList; First=L.Add(2,"b"); L.Add(1,"a"); Seen=New Array; '

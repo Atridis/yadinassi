@@ -11,7 +11,8 @@ from types import MappingProxyType
 from weakref import ReferenceType, ref
 
 from yadinassi.types.values import NULL, to_string
-from yadinassi.temporal.dates import BSLDate, _sort_date_ticks
+from yadinassi.temporal.dates import BSLDate
+from .plain_table_storage import _sort_value
 from .sort_directions import _sort_descending
 
 
@@ -73,11 +74,9 @@ def _item(item):
     return item
 
 
-def _date_item_sort_key(item):
-    value = list.__getitem__(_item(item), 0)
-    if type(value) is not BSLDate:
-        raise TypeError('ValueList date sorting requires only dates')
-    return _sort_date_ticks(value)
+def _scalar_item_sort_key(item):
+    # Reuse the scalar ranks, not ValueTable's string collation.
+    return _sort_value(list.__getitem__(_item(item), 0), python_string_order=True, unsupported=TypeError)
 
 
 def _index(index):
@@ -326,18 +325,24 @@ class PlainValueList(list):
     def _sort(self, field, direction):
         descending = _sort_descending(direction)
         # Fail before list.sort can invoke arbitrary stored host hooks.
+        prior = None
         for item in self:
             if type(item) is not PlainValueListItem:
                 raise TypeError('ValueList contains a foreign item')
             kind = type(list.__getitem__(item, field))
-            if kind is not str and kind is not int and kind is not Decimal and kind is not bool:
-                if field == 0 and kind is BSLDate:
-                    # Validate every date key before mutating the owner.
-                    # The sorted references retain item identity and ties.
-                    ordered = sorted(list.__iter__(self), key=_date_item_sort_key, reverse=descending)
-                    list.__setitem__(self, slice(None), ordered)
-                    return
+            if kind is prior:
+                continue
+            simple = kind is str or kind is int or kind is Decimal or kind is bool
+            if field == 0 and (not simple or (prior is not None and not
+                    ((prior is int or prior is Decimal) and (kind is int or kind is Decimal)))):
+                # Validate and sort detached item references before changing
+                # the owner. Python's stable sort then preserves ties and IDs.
+                ordered = sorted(list.__iter__(self), key=_scalar_item_sort_key, reverse=descending)
+                list.__setitem__(self, slice(None), ordered)
+                return
+            if not simple:
                 raise TypeError('ValueList sorting requires scalar values')
+            prior = kind
         list.sort(self, key=lambda item: list.__getitem__(item, field), reverse=descending)
 
 
