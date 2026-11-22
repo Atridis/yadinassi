@@ -323,9 +323,11 @@ class TypedIndexSnapshotTests(unittest.TestCase):
         snapshot = storage.capture(table_with(numeric()))
         root = snapshot._root
         root = (*root[:3], ((0,),))
-        with mock.patch('yadinassi.collections.plain_table_search.SearchIndexes.declare',
-                        side_effect=ValueError('runtime budget')):
-            with self.assertRaises(storage.SnapshotError): storage.restore(storage.Snapshot(root))
+        with mock.patch('yadinassi.collections.plain_table_search.SearchIndexes.bind',
+                        side_effect=ValueError('index rebuild failed')) as rebuild:
+            with self.assertRaises(storage.SnapshotError):
+                storage.restore(storage.Snapshot(root))
+        rebuild.assert_called_once()
 
 
 class TypedTableAdmissionTests(unittest.TestCase):

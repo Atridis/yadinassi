@@ -70,7 +70,14 @@ class PlainTableIntegerValuesTests(unittest.TestCase):
             self.assertEqual(table.find_rows(BSLStructure('N', True)).items, table.rows[:1])
         table.rows[1].set_index(0, 2)
         self.assertEqual(table.find_rows(BSLStructure('N', D(1))).items, table.rows[2:3])
-        self.assertEqual(table.find_rows(BSLStructure('N', D(2))).items, [table.rows[1], table.rows[3]])
+        # Editing an indexed key re-inserts the row after an existing match.
+        first, second = table.find_rows(BSLStructure('N', D(2))).items
+        self.assertIs(first, table.rows[3])
+        self.assertIs(second, table.rows[1])
+        table.indexes.clear()
+        first, second = table.find_rows(BSLStructure('N', D(2))).items
+        self.assertIs(first, table.rows[1])
+        self.assertIs(second, table.rows[3])
 
     def test_group_numeric_helpers(self):
         self.assertEqual(_scalar_key(1), _scalar_key(D(1)))
