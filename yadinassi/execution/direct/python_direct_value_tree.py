@@ -174,6 +174,13 @@ _STRUCTURAL_LIMITS=tuple((name,maxval) for name,maxval in _LIMITS
 _STRUCTURAL_METHODS={cls:tuple((name,method) for name,method in methods
     if name in ('get_member','get_method','count','_clear_target','_live','_budget'))
     for cls,_,methods in model._DIRECT_TREE_CLASS_ABI}
+_READ_METHODS=model._DIRECT_TREE_READ_METHODS
+_POSITION,_POSITION_CODE,_POSITION_DEFAULTS=model._DIRECT_TREE_READ_POSITION
+_NAME_LIMIT_MODULE,_MAX_NAME_TEXT=model._DIRECT_TREE_NAME_LIMIT
+_READ_UNAVAILABLE=object()
+_GET_NAMES=frozenset(('get','получить'))
+_COLUMN_FIELDS={'name':'name','имя':'name','title':'title','заголовок':'title',
+                'width':'width','ширина':'width'}
 _DELETED_ROW='Строка дерева удалена; доступ к отсоединенным строкам не поддерживается'
 
 
@@ -190,33 +197,26 @@ def _structural_fields(value,kind):
     if kind.__mro__ is not mro:
         raise BoundaryViolation('ValueTree structural identity hooks changed')
     data=_INSTANCE_DICT.__get__(value,kind)
-    if (type(data) is not dict or len(data)!=len(expected)
-            or any(type(key) is not str or key not in expected for key in data)):
+    if (type(data) is not dict or any(type(key) is not str or key not in expected for key in data)
+            or len(data)!=len(expected) and not (kind is _COLUMN and len(data)==len(expected)-1
+                                                and '_columns_clear_reset' not in data)):
         raise BoundaryViolation('ValueTree structural state changed')
     return data
 
 
-def structural_count(boundary,value,projection,spelling):
+def _structural_state(boundary,value,kind):
     if not boundary._value_tree_active:
         raise BoundaryViolation('ValueTree activation expired')
     if (model._ROW_REGISTRY_STATE is not _STRUCTURAL_REGISTRY or model._RowRegistry is not _STRUCTURAL_REGISTRY_TYPE
             or model._DIRECT_TREE_ORIGINS is not _ORIGINS):
         raise BoundaryViolation('ValueTree structural provenance changed')
-    kind=type(value)
-    # Only the effective receiver/projection semantics may be consulted.
-    # Stable private operations are never invoked from this fast lane.
-    checked=(kind,) if projection is None else (kind,_ROWS if projection=='rows' else _COLUMNS)
-    for cls in checked:
-        current=vars(cls)
-        if any(current.get(name) is not method for name,method in _STRUCTURAL_METHODS[cls]):
-            raise BoundaryViolation('ValueTree structural methods changed')
     limits={}
     for name,maximum in _STRUCTURAL_LIMITS:
         current=vars(model).get(name)
         if type(current) is not int or not 0<current<=maximum:
             raise BoundaryViolation('ValueTree quota changed')
         limits[name]=current
-    root=value if kind is _TREE else _structural_fields(value,kind).get('table' if kind is _COLUMNS else 'tree')
+    root=value if kind is _TREE else _structural_fields(value,kind).get('table' if kind in (_COLUMNS,_COLUMN) else 'tree')
     if type(root) is not _TREE:
         raise BoundaryViolation('foreign ValueTree root')
     root_data=_structural_fields(root,_TREE)
@@ -240,6 +240,22 @@ def structural_count(boundary,value,projection,spelling):
     rows=len(state[2]);width=len(column_items)
     if rows>limits['_MAX_ROWS'] or width>limits['_MAX_COLUMNS'] or rows*width>limits['_MAX_CELLS']:
         raise ValueError('ДеревоЗначений: превышен предел ресурсов Yadinassi')
+
+    return root,root_rows,columns,state[2],root_rows_data,column_data,limits
+
+
+def structural_count(boundary,value,projection,spelling):
+    kind=type(value)
+    # Only the effective receiver/projection semantics may be consulted.
+    # Stable private operations are never invoked from this fast lane.
+    checked=(kind,) if projection is None else (kind,_ROWS if projection=='rows' else _COLUMNS)
+    for cls in checked:
+        current=vars(cls)
+        if any(current.get(name) is not method for name,method in _STRUCTURAL_METHODS[cls]):
+            raise BoundaryViolation('ValueTree structural methods changed')
+    root,root_rows,columns,_,root_rows_data,column_data,limits=_structural_state(boundary,value,kind)
+    root_items=root_rows_data['items']
+    width=len(column_data['items'])
 
     if (kind is _TREE and projection=='columns') or value is columns:return Decimal(width)
     if (kind is _TREE and projection=='rows') or value is root_rows:
@@ -300,6 +316,195 @@ def structural_count(boundary,value,projection,spelling):
     if forward:return boundary._tree_method(collection,spelling)()
     if first_deleted:raise ValueError(_DELETED_ROW)
     return Decimal(len(root_items if items is None else items))
+
+
+def _ordinary_read(boundary):
+    return (getattr(boundary,'_known_method_local',False)
+            and not boundary._verify_context and boundary.policy is None)
+
+
+def _read_methods(kind,*names):
+    current=vars(kind);methods=_READ_METHODS[kind]
+    slots=current.get('__slotnames__')
+    if type(slots) is not list or slots:
+        raise BoundaryViolation('ValueTree structural copy metadata changed')
+    for name in names:
+        fn,code=methods[name]
+        if current.get(name) is not fn or fn.__code__ is not code:
+            raise BoundaryViolation('ValueTree structural methods changed')
+
+
+def _read_position(index,size):
+    namespace=vars(model)
+    if (namespace.get('_position') is not _POSITION or _POSITION.__code__ is not _POSITION_CODE
+            or _POSITION.__defaults__ is not _POSITION_DEFAULTS or namespace.get('Decimal') is not Decimal
+            or any(name in namespace for name in ('type','int','IndexError','TypeError'))):
+        raise BoundaryViolation('ValueTree positional conversion changed')
+    return _POSITION(index,size)
+
+
+def _row_state(state,row):
+    root,_,_,entries,_,_,limits=state
+    if type(row) is not _ROW:raise BoundaryViolation('foreign ValueTree result')
+    data=_structural_fields(row,_ROW)
+    collection=data['collection'];parent=data['parent'];children=data['rows'];depth=data['depth']
+    if (data['tree'] is not root or type(collection) is not _ROWS or type(children) is not _ROWS
+            or type(depth) is not int or not 0<=depth<=limits['_MAX_DEPTH']
+            or type(data['_deleted']) is not bool or type(data['cells']) is not dict):
+        raise BoundaryViolation('ValueTree row storage changed')
+    origin(row,(root,collection,parent,children))
+    if data['_deleted'] is False:
+        entry=entries.get(id(row))
+        if type(entry) is not ReferenceType or entry() is not row:
+            raise BoundaryViolation('ValueTree row is not registered')
+    return data
+
+
+def _rows_state(state,collection,*,binding=False):
+    root,root_rows,_,_,root_data,_,limits=state
+    if type(collection) is not _ROWS:raise BoundaryViolation('foreign ValueTree row collection')
+    current=collection;child_data=None;child_depth=None;depth=0
+    while current is not root_rows:
+        if type(current) is not _ROWS or depth>limits['_MAX_DEPTH']:
+            raise BoundaryViolation('ValueTree ancestor changed')
+        data=_structural_fields(current,_ROWS);parent=data['parent']
+        if data['tree'] is not root or type(data['items']) is not list:
+            raise BoundaryViolation('ValueTree row collection storage changed')
+        origin(current,(root,parent))
+        if parent is None:return _READ_UNAVAILABLE
+        parent_data=_row_state(state,parent)
+        if (parent_data['rows'] is not current or child_depth is not None
+                and child_depth!=parent_data['depth']+1):
+            raise BoundaryViolation('ValueTree ancestor changed')
+        child_depth=parent_data['depth']
+        if child_data is None:
+            if data['_columns_clear_forward'] is not False:return _READ_UNAVAILABLE
+            if parent_data['_deleted'] and not binding:raise ValueError(_DELETED_ROW)
+            child_data=data
+        current=parent_data['collection'];depth+=1
+    if child_depth is not None and child_depth!=0:
+        raise BoundaryViolation('ValueTree depth changed')
+    if child_data is not None:return child_data
+    if root_data['_columns_clear_forward'] is not False:return _READ_UNAVAILABLE
+    return root_data
+
+
+def _column_state(root,column):
+    if type(column) is not _COLUMN:raise BoundaryViolation('foreign ValueTree result')
+    data=_structural_fields(column,_COLUMN)
+    if (data['table'] is not root or type(data['_deleted']) is not bool
+            or ('_columns_clear_reset' in data and type(data['_columns_clear_reset']) is not bool)):
+        raise BoundaryViolation('ValueTree column storage changed')
+    origin(column,(root,))
+    return data
+
+
+def _named_column(root,columns,name):
+    limit=vars(_NAME_LIMIT_MODULE).get('_MAX_TEXT')
+    if type(limit) is not int or not 0<limit<=_MAX_NAME_TEXT:
+        raise BoundaryViolation('ValueTree name quota changed')
+    if len(name)>limit:raise ValueError('ТаблицаЗначений: превышен предел ресурсов Yadinassi')
+    key=name.casefold()
+    for column in columns:
+        data=_column_state(root,column);spelling=data['name']
+        if type(spelling) is not str:raise BoundaryViolation('ValueTree column name changed')
+        if spelling.casefold()==key:return column
+    raise ValueError(f'Колонка не найдена: {name}')
+
+
+def _row_cells(state,data):
+    # Seal all keys before lookup, including an exact canonical column's
+    # identity hash. Only the reached row's dictionary is inspected.
+    cells=data['cells']
+    if len(cells)>state[-1]['_MAX_COLUMNS']:raise BoundaryViolation('ValueTree cell budget changed')
+    for column in cells:_column_state(state[0],column)
+    return cells
+
+
+def _structural_member(boundary,value,kind,key,name):
+    boundary._check_effect()
+    _read_methods(kind,'get_member')
+    state=_structural_state(boundary,value,kind);root,root_rows,columns,_,_,column_data,_=state
+    if kind is _TREE:return root_rows if key in ('rows','строки') else columns
+    if kind is _COLUMN:
+        data=_column_state(root,value);field=_COLUMN_FIELDS[key]
+        if data['_deleted']:
+            if data.get('_columns_clear_reset') is True:return Decimal(0) if field=='width' else ''
+            raise ValueError('Колонка дерева удалена')
+        # Non-text fields still follow their ordinary exact representations.
+        result=data[field]
+        if type(result) is not (Decimal if field=='width' else str):
+            raise BoundaryViolation('ValueTree column metadata changed')
+        return result
+    _read_methods(_ROW,'_live','get_index')
+    data=_row_state(state,value)
+    parent_collection=_rows_state(state,data['collection'])
+    if parent_collection is _READ_UNAVAILABLE:return _READ_UNAVAILABLE
+    cells=_row_cells(state,data)
+    if data['_deleted']:raise ValueError(_DELETED_ROW)
+    if key in ('rows','строки'):
+        child=data['rows']
+        child_data=_structural_fields(child,_ROWS)
+        if child_data['tree'] is not root or child_data['parent'] is not value or type(child_data['items']) is not list:
+            raise BoundaryViolation('foreign ValueTree child collection')
+        origin(child,(root,value))
+        return child
+    if key in ('parent','родитель'):return data['parent']
+    _read_methods(_COLUMNS,'get_index','find')
+    return cells[_named_column(root,column_data['items'],name)]
+
+
+def _positional_read(boundary,value,kind,key,name):
+    boundary._check_effect()
+    subscript=key=='__getitem__'
+    selected=_READ_METHODS[kind]['get_index' if subscript else 'get'][0]
+    _read_methods(kind,*('get_index','get') if subscript else ('get_method','get'))
+    state=_structural_state(boundary,value,kind);root=state[0]
+    if kind is _ROWS:
+        _read_methods(_ROWS,'_clear_target','_live')
+        # A deleted parent is a model error at invocation, after arguments.
+        if _rows_state(state,value,binding=True) is _READ_UNAVAILABLE:return None
+    else:
+        data=_structural_fields(value,_COLUMNS);origin(value,(root,))
+        if type(data['items']) is not list:raise BoundaryViolation('ValueTree column collection storage changed')
+    epoch=boundary._value_tree_epoch
+    def invoke(*args):
+        boundary._check_effect()
+        if epoch is not boundary._value_tree_epoch or not _ordinary_read(boundary):
+            raise BoundaryViolation('ValueTree structural call activation changed')
+        _read_methods(kind,*('get_index','get') if subscript else ('get_method','get'))
+        live=_structural_state(boundary,value,kind)
+        if live[0] is not root:raise BoundaryViolation('ValueTree owner changed')
+        if len(args)!=1 or owns(args[0]):
+            # Preserve ordinary callable arity and validation of tree-valued
+            # improper indices on their existing checked dispatch.
+            return boundary._tree_method(value,name,_canonical=selected)(*args)
+        index=args[0]
+        if kind is _ROWS:
+            _read_methods(_ROWS,'_clear_target','_live')
+            data=_rows_state(live,value)
+            if data is _READ_UNAVAILABLE:
+                # A legal column clear can change forwarding during argument
+                # evaluation. Keep the already captured receiver and actuals.
+                return boundary._tree_method(value,name,_canonical=selected)(*args)
+            items=data['items'];row=items[_read_position(index,len(items))]
+            raw=_row_state(live,row)
+            parent=data['parent']
+            if (raw['collection'] is not value or raw['parent'] is not parent or raw['_deleted']
+                    or raw['depth']!=(0 if parent is None else _row_state(live,parent)['depth']+1)):
+                raise BoundaryViolation('foreign ValueTree row result')
+            _row_cells(live,raw)
+            return row
+        data=_structural_fields(value,_COLUMNS);origin(value,(root,))
+        items=data['items']
+        if type(items) is not list:raise BoundaryViolation('ValueTree column collection storage changed')
+        if subscript and type(index) is str:
+            _read_methods(_COLUMNS,'find')
+            return _named_column(root,items,index)
+        column=items[_read_position(index,len(items))]
+        if _column_state(root,column)['_deleted']:raise BoundaryViolation('deleted ValueTree column result')
+        return column
+    return invoke
 
 
 def cell_keys(row,root):
@@ -444,8 +649,12 @@ class ValueTreeBoundary:
 
     def get_member(self,value,name):
         if not owns(value):return super().get_member(value,name)
-        root=check(self,value)
         kind=type(value);key=name.casefold()
+        if (kind is _ROW or kind is _TREE and key in ('rows','строки','columns','колонки')
+                or kind is _COLUMN and key in _COLUMN_FIELDS) and _ordinary_read(self):
+            result=_structural_member(self,value,kind,key,name)
+            if result is not _READ_UNAVAILABLE:return result
+        root=check(self,value)
         structural=(
             kind is _TREE and key in ('rows','строки','columns','колонки')
             or kind is _ROW and key in ('rows','строки','parent','родитель')
@@ -505,18 +714,22 @@ class ValueTreeBoundary:
         if not owns(value):return super().resolve_member(value,name)
         return self._tree_method(value,name)
 
-    def _tree_method(self,value,name,*,require_value=False):
+    def _tree_method(self,value,name,*,require_value=False,_canonical=None):
+        key=name.casefold();kind=type(value)
+        if (_canonical is None and (kind is _ROWS or kind is _COLUMNS)
+                and (key in _GET_NAMES or name=='__getitem__') and _ordinary_read(self)):
+            method=_positional_read(self,value,kind,key,name)
+            if method is not None:return method
         root=check(self,value)
         epoch=self._value_tree_epoch
         if name in ('__iter__','__getitem__','__setitem__') and type(value) not in (_ROWS,_ROW,_COLUMNS):
             raise ValueError('ValueTree receiver does not support indexing or iteration')
-        if name=='__iter__':function=HostFunction(name,lambda:iter(value))
+        if _canonical is not None:function=HostFunction(name,_canonical.__get__(value,kind))
+        elif name=='__iter__':function=HostFunction(name,lambda:iter(value))
         elif name=='__getitem__':function=HostFunction(name,value.get_index)
         elif name=='__setitem__':function=HostFunction(name,value.set_index,returns_value=False)
         else:function=value.get_method(name)
         self._validate_host_function(function,require_value)
-        key=name.casefold()
-        kind=type(value)
         positional_child = (
             kind is _ROWS and key in ('get','получить','__getitem__')
             or kind is _COLUMNS and key in ('get','получить')

@@ -1556,3 +1556,11 @@ _DIRECT_TREE_ENUM_MEMBERS = tuple((member,tuple(vars(member).items()))
     for cls in (BSLType,_direct_qualifiers.BSLAllowedSign,
                 _direct_qualifiers.BSLAllowedLength,_direct_qualifiers.BSLDateFractions)
     for member in cls)
+
+# Touched method code is pinned with the model, not at the first direct read.
+_DIRECT_TREE_READ_METHODS = {
+    cls: {name: (fn, fn.__code__) for name, fn in fields if type(fn) is type(_position)}
+    for cls, _, fields in _DIRECT_TREE_CLASS_ABI
+}
+_DIRECT_TREE_READ_POSITION = (_position, _position.__code__, _position.__defaults__)
+_DIRECT_TREE_NAME_LIMIT = (_direct_tables, _direct_tables._MAX_TEXT)

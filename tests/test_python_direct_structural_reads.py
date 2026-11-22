@@ -45,6 +45,92 @@ class StructuralReadTests(unittest.TestCase):
         vm.execute_prepared(program)
         self.assertEqual(vm.variables['r'], 8)
 
+    def test_prepared_tree_positional_fields_use_only_current_owners(self):
+        vm = self.vm()
+        vm.execute('T=New ValueTree;T.Columns.Add("X");T.Columns.Add("Y");'
+                   'P=T.Rows.Add();P.X=1;Nested=P.Rows.Add();Nested.X=2;'
+                   'Unrelated=T.Rows.Add();')
+        tree=vm.variables['t']; row=vm.variables['p']; child=vm.variables['nested']
+        # No search or default checks on an unobserved row/column.
+        vm.variables['unrelated'].cells={}
+        original=tree.columns.items[1].value_type
+        tree.columns.items[1].value_type=None
+        plan=vm.prepare('A=T.Rows.Get(0).X; B=T.Строки[0].Строки.Получить(0).X;'
+                        'C=T.Колонки[0].Имя; D=T.Columns.Get(0).Name;')
+        with patch.object(direct_tree,'hooks',side_effect=AssertionError('full model audit')):
+            vm.execute_prepared(plan)
+        self.assertEqual(tuple(vm.variables[k] for k in 'abcd'),(1,2,'X','X'))
+        tree.columns.items[1].value_type=original
+        self.assertIs(vm.execute('T.Rows.Get(0);'),row)
+        self.assertIs(vm.execute('P.Rows[0];'),child)
+        old=row.rows.items[0];row.rows.items[0]=row
+        with self.assertRaises(BoundaryViolation):vm.execute('P.Rows[0];')
+        row.rows.items[0]=old
+        tree._all_rows.pop(child)
+        with self.assertRaises(BoundaryViolation):vm.execute('P.Rows.Get(0);')
+
+    def test_tree_position_binds_before_effects_and_rechecks_after_arguments(self):
+        vm=self.vm()
+        vm.execute('Var R,Other,Calls;T=New ValueTree;T.Columns.Add("X");T.Rows.Add().X=1;'
+                   'U=New ValueTree;U.Columns.Add("X");U.Rows.Add().X=2;'
+                   'R=T.Rows;Other=U.Rows;Calls=0;'
+                   'Function Choose() Calls=Calls+1;R=Other;Return 0;EndFunction;'
+                   'A=R.Get(Choose()).X;B=R[0].X;')
+        self.assertEqual(tuple(vm.variables[k] for k in ('a','b','calls')),(1,2,1))
+        tree=vm.variables['t']; context=make_boundary(vm); context.enter()
+        try:
+            selected=context.resolve_member(tree.rows,'Get')
+            self.assertIs(selected(0),tree.rows.items[0])
+            tree._all_rows.pop(tree.rows.items[0])
+            with self.assertRaises(BoundaryViolation):selected(0)
+        finally:context.leave()
+        context.enter()
+        try:
+            with self.assertRaises(BoundaryViolation):selected(0)
+        finally:context.leave()
+
+    def test_unsupported_magic_spelling_does_not_enter_direct_positional_dispatch(self):
+        vm=self.vm()
+        vm.execute('Var Calls;Calls=0;T=New ValueTree;T.Columns.Add("X");T.Rows.Add().X=1;'
+                   'Function IndexArg() Calls=Calls+1;Return 0;EndFunction;'
+                   'A=False;B=False;'
+                   'Try V=T.Rows.__GETITEM__(IndexArg());Except A=True;EndTry;'
+                   'Try V=T.Columns.__GETITEM__(IndexArg());Except B=True;EndTry;')
+        self.assertIs(vm.variables['a'],True);self.assertIs(vm.variables['b'],True)
+        self.assertEqual(vm.variables['calls'],0)
+
+    def test_tree_position_wrong_index_and_extensions_preserve_effects(self):
+        vm=self.vm()
+        vm.execute('T=New ValueTree;P=T.Rows.Add();R=P.Rows;T.Rows.Delete(P);')
+        for expression in ('T.Rows[2]','T.Rows.Get(0.5)','R.Get(0)'):
+            with self.subTest(expression=expression):
+                vm.execute(f'Caught=False;Try V={expression};Except Caught=True;EndTry;')
+                self.assertIs(vm.variables['caught'],True)
+        hosted=self.vm(allow_extensions=True)
+        hosted.execute('T=New ValueTree;T.Columns.Add("X");T.Rows.Add().X=1;')
+        tree=hosted.variables['t']; original=value_trees.BSLValueTreeRowCollection.get; events=[]
+        def mutate():
+            value_trees.BSLValueTreeRowCollection.get=lambda *_: events.append('mutant')
+            return 0
+        hosted.register_function('Mutate',mutate)
+        try:
+            with self.assertRaises(BoundaryViolation):hosted.execute('T.Rows.Get(Mutate()).X;')
+        finally:value_trees.BSLValueTreeRowCollection.get=original
+        self.assertEqual(events,[]);self.assertEqual(len(tree.rows.items),1)
+
+    def test_tree_position_preserves_retained_column_clear_and_delete_forwarding(self):
+        vm=self.vm(native_target=LINUX_8_3_27_1508)
+        vm.execute('Var T,Col;T=New ValueTree;Col=T.Columns.Add("X");Parent=T.Rows.Add();'
+                   'Retained=Parent.Rows;Retained.Add();'
+                   'Function Choose() T.Columns.Clear();T.Rows.Add();Return 0;EndFunction;'
+                   'Selected=Retained.Get(Choose());')
+        self.assertIs(vm.variables['selected'],vm.variables['t'].rows.items[0])
+        self.assertEqual(vm.execute('Col.Name;'),'')
+        vm.execute('U=New ValueTree;U.Columns.Add("X");P=U.Rows.Add();Old=P.Rows;Old.Add();'
+                   'U.Columns.Delete(U.Columns.Get(0));U.Rows.Add();'
+                   'Caught=False;Try V=Old.Get(0);Except Caught=True;EndTry;')
+        self.assertIs(vm.variables['caught'],True)
+
     def test_evaluated_projections_keep_live_structural_reads_in_both_contexts(self):
         from test_query_ordered_top_pushdown import OrderedTopMainDemoTests
         from yadinassi.execution.direct import python_direct_structural_reads as structural
