@@ -1,7 +1,8 @@
 """Recovered source-bound client replay; earlier PASS results are not inherited."""
 import hashlib,json,sys,unittest
 from pathlib import Path
-from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from configuration_runtime_fixture import module_files
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
@@ -15,16 +16,24 @@ def application():
         files['Configuration.xml']=files['Configuration.xml'].replace(b'</ChildObjects>',('<CommonModule>'+name+'</CommonModule></ChildObjects>').encode())
         for suffix in ('.xml','/Ext/Module.bsl'):
             path='CommonModules/'+name+suffix;files[path]=raw[path]
-    app=ConfigurationApplication.from_files(files);app.start();return app
+    app=SourceApplication(import_source(files));app.start();return app
 class NativeReplay(unittest.TestCase):
     def test_source_binding(self):
         value=json.loads(NATIVE.read_bytes());self.assertEqual(value['run_id'],43130157790)
         self.assertEqual(value['head_sha'],'e27ab7a56a0b3295ad7ac9a69ccf48fecd701d18')
         for key,wanted in [('source_sha256',SOURCE_SHA256),('form_sha256',FORM_SHA256),('modules_sha256',MODULES_SHA256),('module_sha256',route.module_digest())]:self.assertEqual(value[key],wanted)
         wire=''.join(f'CM{i}={v}|' for i,v in enumerate(value['observations'],1)).encode();self.assertEqual(hashlib.sha256(wire).hexdigest(),value['output_sha256']);self.assertEqual(len(value['observations']),16)
+
+    def test_native_sequence_uses_two_client_requests(self):
+        app=application();self.addCleanup(app.close)
+        vm=app.interpreter
+        first=vm.execute('Results=New Array; For N=1 To 15 Do Results.Add(Observe(N)); EndDo; Results')
+        second=vm.execute('Bit(SessionToken=ReuseSession.Token("lifetime"))+":"+Bit(RequestToken=ReuseRequest.Token("lifetime"))')
+        self.assertEqual([*first,second],json.loads(NATIVE.read_bytes())['observations'])
+
 def case(number):
     def test(self):
-        app=application();self.addCleanup(app.close,force=True)
+        app=application();self.addCleanup(app.close)
         if number==16:
             app.interpreter.execute('Observe(15)')
             actual=app.interpreter.execute('Bit(SessionToken=ReuseSession.Token("lifetime"))+":"+Bit(RequestToken=ReuseRequest.Token("lifetime"))')

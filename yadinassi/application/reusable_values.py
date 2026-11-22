@@ -84,9 +84,9 @@ class ReusableValueCache:
     def close(self):
         if not self._closed:self.refresh();self._closed=True
 
-def argument_key(values):
+def argument_key(values, *, _source_client=False):
     """Closed typed primitive/flat Structure keys; unsupported inputs refuse."""
-    from yadinassi.temporal.dates import BSLDate
+    from yadinassi.temporal.dates import BSLDate, _DIRECT_EQUALITY_DATE_STATE, _DIRECT_ORDER_DATE_TICKS
     from yadinassi.collections.structures import BSLStructure
     from yadinassi.types.values import NULL
     def scalar(value):
@@ -94,7 +94,16 @@ def argument_key(values):
         if value is NULL:return ('null',)
         if type(value) is bool:return ('boolean',value)
         if type(value) is str:return ('string',value) if len(value)<=65536 else None
-        if type(value) is BSLDate:return None if value.boundary else ('date',value.ticks)
+        if type(value) is BSLDate:
+            if not _source_client:return None if value.boundary else ('date',value.ticks)
+            try:
+                boundary = _DIRECT_EQUALITY_DATE_STATE[1].__get__(value)
+                ticks = _DIRECT_ORDER_DATE_TICKS[0].__get__(value)
+            except AttributeError:return None
+            return ('date',ticks) if boundary is False and type(ticks) is int and 0<=ticks<=_DIRECT_ORDER_DATE_TICKS[1] else None
+        if _source_client and type(value) is int:
+            if value.bit_length()>8192:return None
+            value=Decimal(value)
         if type(value) is Decimal:
             if not value.is_finite() or value.__sizeof__()>4096:return None
             sign,digits,exponent=value.as_tuple()
@@ -105,10 +114,32 @@ def argument_key(values):
             return ('number',sign,tuple(digits),exponent)
         return None
     if type(values) is not tuple or len(values)>128:return None
+    if _source_client:
+        from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure, structure_key
     result=[]
     for value in values:
         part=scalar(value)
-        if part is None and type(value) is BSLStructure:
+        if part is None and _source_client and (type(value) is _DirectStructure or type(value) is BSLStructure):
+            if type(value) is _DirectStructure:
+                items=value
+            else:
+                state=vars(value)
+                if type(state) is not dict or any(type(key) is not str for key in state):return None
+                items=state.get('_items')
+                if type(items) is not dict:return None
+            if dict.__len__(items)>128:return None
+            fields=[]
+            for name,pair in dict.items(items):
+                if type(name) is not str or type(pair) is not tuple or len(pair)!=2 or type(pair[0]) is not str:
+                    return None
+                try:
+                    if structure_key(pair[0])!=name:return None
+                except ValueError:return None
+                leaf=scalar(pair[1])
+                if leaf is None:return None
+                fields.append((name,leaf))
+            part=('structure',tuple(sorted(fields)))
+        elif part is None and type(value) is BSLStructure:
             if len(value._items)>128:return None
             fields=[]
             for name,(_,item) in value._items.items():

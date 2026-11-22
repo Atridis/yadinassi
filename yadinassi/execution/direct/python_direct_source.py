@@ -5,7 +5,7 @@ transactions and closure. Unsupported crossings/receivers fail before effects.
 """
 from contextlib import contextmanager
 from contextvars import ContextVar
-from decimal import localcontext
+from decimal import Decimal, localcontext
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation, _MISSING
 from yadinassi.execution.codegen.experimental_naked_collections import _Cell
 from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
@@ -146,6 +146,16 @@ def _check_plan(owner,plan):
             raise BoundaryViolation('source declaration binding changed')
 
 
+def _saved_signed_default(node):
+    # The grammar's only non-Literal default is a signed numeric literal.
+    # Client reuse can key that constant without executing an expression.
+    # The ServerCall adapter continues to admit exact Literal nodes only.
+    if (type(node) is ast.Unary and type(node.operator) is str and node.operator in ('+','-')
+            and type(operand:=node.operand) is ast.Literal and type(value:=operand.value) is Decimal):
+        return (node.operator,operand,value,value.copy_negate() if node.operator=='-' else value)
+    return _MISSING
+
+
 def _compile(owner,program,*,exports=False,layout=(),_extra_externals=(),_callable_externals=(),_meter_loops=True):
     names={n.name.casefold() for n in program if type(n) is ast.Routine}
     names.update(name.casefold() for n in program if type(n) is ast.Var for name in n.names)
@@ -165,11 +175,11 @@ def _compile(owner,program,*,exports=False,layout=(),_extra_externals=(),_callab
     plan._source_layout=frozenset(layout)
     plan._source_routines=tuple((n,_signature(n)) for n in program if type(n) is ast.Routine)
     plan._source_signatures={id(node):signature for node,signature in plan._source_routines}
-    # Crossing defaults are snapshotted at compilation, not first invocation.
-    # Nonliteral defaults retain their ordinary same-side behavior but cannot
-    # acquire authority through the bounded all-Val crossing adapter.
+    # Share the compilation-time declaration snapshot with both the crossing
+    # adapter and the client cache. Each admits its own argument envelope.
     plan._source_crossing_defaults={n.name.casefold(): tuple(
-        (p, p.default, p.default.value if type(p.default) is ast.Literal else _MISSING)
+        (p,p.default,p.default.value if type(p.default) is ast.Literal
+         else _MISSING if p.default is None else _saved_signed_default(p.default))
         for p in n.parameters) for n in program if type(n) is ast.Routine}
     plan._source_constructors=frozenset(n.name.casefold() for n in _nodes(program)
         if type(n) is ast.New and n.name.casefold() in native)

@@ -1,5 +1,6 @@
 """Same-side reuse never caches authority or falls back to VM dispatch."""
 from contextlib import ExitStack
+from decimal import Decimal
 from unittest.mock import patch
 import unittest
 import subprocess
@@ -134,3 +135,73 @@ raise SystemExit(not result.wasSuccessful())
         with patch.object(ReusableValueCache,'__new__',side_effect=lambda *a:effects.append('factory')):
             with self.assertRaises(BoundaryViolation):self.execute(app,'Helpers.Value();')
         self.assertEqual(effects,[])
+
+
+class SourceClientReuseTests(unittest.TestCase):
+    def app(self, body, **options):
+        from configuration_runtime_fixture import module_files
+        files=module_files([('Helpers',body,{'ReturnValuesReuse':'DuringSession'})])
+        messages=[]
+        app=SourceApplication(source(extra=files),output=messages.append,**options)
+        self.addCleanup(app.close)
+        self.assertTrue(app.start())
+        return app,messages
+
+    def test_client_omission_and_signed_defaults_only_key_missing_actuals(self):
+        app,out=self.app('Function Value(Val X=-2,Val Y=4) Export '
+                         'Message("compute"); Return X; EndFunction')
+        vm=app.interpreter
+        self.assertEqual(vm.execute('Helpers.Value()'),Decimal(-2))
+        self.assertEqual(vm.execute('Helpers.Value(-2,4)'),Decimal(-2))
+        self.assertEqual(vm.execute('Helpers.Value(,4)'),Decimal(-2))
+        self.assertIsNone(vm.execute('Helpers.Value(Undefined,4)'))
+        self.assertEqual(out,['compute','compute'])
+
+    def test_client_byref_samples_once_on_hit_and_never_copies_out(self):
+        from yadinassi.types.values import Reference
+        from yadinassi.types.errors import BSLError
+        app,out=self.app('Function Value(X) Export '
+                         'Message("compute"); X=X+1; Return X; EndFunction')
+        vm=app.interpreter
+        values=[Decimal(3),Decimal(3)]
+        effects=[]
+        def get(i):
+            effects.append(('read',i));return values[i]
+        def put(i,value):
+            effects.append(('write',i));values[i]=value
+        for i,name in enumerate(('a','b')):
+            vm.variables[name]=Reference(lambda i=i:get(i),lambda value,i=i:put(i,value))
+        with self.assertRaises(BSLError):
+            vm.execute('Helpers.Value(A,0)')
+        self.assertEqual(effects,[])
+        self.assertEqual(vm.execute('Helpers.Value(A)'),Decimal(4))
+        self.assertEqual(vm.execute('Helpers.Value(B)'),Decimal(4))
+        self.assertEqual(values,[Decimal(4),Decimal(3)])
+        self.assertEqual(effects,[('read',0),('read',0),('write',0),('read',0),('read',1)])
+        self.assertEqual(out,['compute'])
+
+    def test_client_byref_readmit_policy_before_warm_lookup(self):
+        from yadinassi.types.values import Reference
+        app,out=self.app('Function Value(X) Export Message("compute"); Return X; EndFunction')
+        vm=app.interpreter
+        self.assertEqual(vm.execute('Helpers.Value(3)'),Decimal(3))
+        cache=app.reusable_values._session
+        saved=tuple(cache._entries.items())
+        seen=[]
+        def read():
+            seen.append('read')
+            path='CommonModules/Helpers.xml'
+            app.files[path]=app.files[path].replace(b'DuringSession',b'DuringRequest')
+            return Decimal(3)
+        vm.variables['a']=Reference(read,lambda _:self.fail('cache hit must not write'))
+        with self.assertRaises(BoundaryViolation):
+            vm.execute('Helpers.Value(A)')
+        self.assertEqual(seen,['read'])
+        self.assertEqual(out,['compute'])
+        self.assertEqual(tuple(cache._entries.items()),saved)
+
+    def test_client_procedures_run_live_and_do_not_enter_cache(self):
+        app,out=self.app('Procedure SetValue(X) Export Message(X); X=X+1; EndProcedure')
+        app.interpreter.execute('A=0; Helpers.SetValue(A); Helpers.SetValue(A); Message(A);')
+        self.assertEqual(out,['0','1','2'])
+        self.assertFalse(app.reusable_values._session._entries)
