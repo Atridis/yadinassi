@@ -6,10 +6,16 @@ from yadinassi.db.document.document_backend import DocumentSchema
 from .sqlite_typed_rows import attribute_column, attribute_definitions
 
 
-def data_table(schema):
-    if type(schema) is not DocumentSchema or type(schema.identity) is not UUID or not schema.identity.int:
+def document_data_table(identity):
+    if type(identity) is not UUID or not identity.int:
         raise BackendError('invalid_input')
-    return 'document_data_' + schema.identity.hex
+    return 'document_data_' + identity.hex
+
+
+def data_table(schema):
+    if type(schema) is not DocumentSchema:
+        raise BackendError('invalid_input')
+    return document_data_table(schema.identity)
 
 
 def section_table(schema, section):

@@ -1528,12 +1528,38 @@ class SQLiteCatalogBackend:
         if self.format_version == 16 and self._catalog_runtime_data is not None:
             from yadinassi.db.database_transactions import current
             if current(self) is None:
-                from .sqlite_document_posting_state import read_posted_statement
-                from .sqlite_single_statement import run
-                return run(self, lambda connection: read_posted_statement(connection, self.database_id, key))
+                return self._read_document_posted_detached(key)
         view = self.begin_read()
         try: return read_posted(view._connection, self.database_id, key)
         finally: view.close()
+
+    def _read_document_posted_detached(self,key,*,header=None):
+        from .sqlite_document_posting_state import read_posted_statement
+        from .sqlite_single_statement import run
+
+        def point(connection):
+            value = read_posted_statement(connection,self.database_id,key,header=header)
+            if header is not None: self._check_file()
+            return value
+        return run(self,point)
+
+    @_boundary
+    def _read_document_posted_scalar(self,schema,key,generation):
+        from yadinassi.db.database_transactions import forbid_transfer
+        from yadinassi.db.document.document_backend import DocumentKey
+        from .sqlite_catalog_runtime_data import CatalogRuntimeData
+
+        forbid_transfer(self)
+        data = self._catalog_runtime_data
+        if self.format_version!=16 or type(data) is not CatalogRuntimeData:
+            raise BackendError('unsupported')
+        if type(key) is not DocumentKey: raise BackendError('invalid_input')
+        _uuid(key.database_id); _uuid(key.document_id); _uuid(key.record_id,empty=True)
+        if (type(generation) is not int or (key.database_id,generation)!=data.identity
+                or (self.database_id,self.configuration_generation)!=data.identity):
+            raise BackendError('schema_changed')
+        header = data.posted_document(self,schema,key.document_id)
+        return self._read_document_posted_detached(key,header=(generation,*header))
 
     @_boundary
     def read_recorder(self, register_id, key):
@@ -3468,3 +3494,7 @@ _ORDINARY_MAIN_DEMO_WRITE_ABI = tuple((name, getattr(SQLiteCatalogBackend, name)
 # Preserve host overrides and fault-injection adapters on the existing raw lane.
 _REGISTER_OPEN_ABI = {name:getattr(SQLiteCatalogBackend,name)
                       for name in ('begin_read','begin_register_read','begin_register_write')}
+
+# A host-overridden public read path keeps its admitted document view.
+_DOCUMENT_POSTED_OPEN_ABI = {name:getattr(SQLiteCatalogBackend,name)
+                             for name in ('begin_document_read','begin_read')}

@@ -177,9 +177,54 @@ class BSLDocumentManager(BSLObject):
         view = self._view()
         try: return view.read_document(self._key(record))
         finally: view.close()
+    def _posted_data_backend(self, ref):
+        from types import MethodType
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _DOCUMENT_POSTED_OPEN_ABI
+        from yadinassi.execution.direct.python_direct_transactions import _Owner, _ROOT_OWNER
+
+        if type(self) is not BSLDocumentManager: return None
+        backend = self._backend
+        if (type(backend) is not SQLiteCatalogBackend or backend.format_version!=16
+                or backend._catalog_runtime_data is None):
+            return None
+        owner = _ROOT_OWNER.get()
+        if (type(owner) is not _Owner or owner.token is not None or owner.backend is not backend
+                or owner.vm.allow_extensions is not False or owner.vm._configuration_runtime is not None
+                or owner.vm._documents is not self._documents or owner.database is not self._documents._context
+                or self._catalogs is not owner.catalogs
+                or owner.vm._metadata._documents is not self._documents._metadata
+                or type(ref) is not BSLDocumentReference or ref.value_type is not self._value_type
+                or ref.metadata is not self._metadata):
+            return None
+        callback = ref.read_member
+        if (type(callback) is not MethodType or callback.__self__ is not self
+                or callback.__func__ is not BSLDocumentManager._read_member):
+            return None
+        for name, function in _DOCUMENT_POSTED_OPEN_ABI.items():
+            live = getattr(backend,name)
+            if type(live) is not MethodType or live.__self__ is not backend or live.__func__ is not function:
+                return None
+        owner.check(backend)
+        from yadinassi.configuration.demos.inventory_enum_runtime import query_owner
+        # A Boolean does not need an enum conversion or read lease, but the
+        # existing format16 owner/namespace witness must still be live.
+        scope = query_owner(self._catalogs)
+        meta = self._documents._metadata
+        if (scope is None or scope.backend is not backend or scope.context is not owner.database
+                or scope.metadata is not owner.vm._metadata
+                or scope.database_id!=meta._database_id or scope.configuration_generation!=meta._generation):
+            return None
+        return backend
+
     def _read_member(self,ref,name):
         from yadinassi.db.sqlite.sqlite_documents import DocumentView
         key = _name(name)
+        if key=='posted':
+            backend = self._posted_data_backend(ref)
+            if backend is not None:
+                result = backend._read_document_posted_scalar(self._schema,self._key(ref.reference_uuid),
+                                                               self._documents._metadata._generation)
+                return False if result is None else result
         standard = {'number':'number','date':'date','deletionmark':'deletion_mark','posted':'posted','ref':'ref'}
         definition = next((field for field in self._schema.fields if field.name.casefold()==key),None)
         view = self._view()

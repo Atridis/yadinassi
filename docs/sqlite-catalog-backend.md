@@ -67,6 +67,16 @@ same admission. Writes keep real SQLite transactions, row budgets, conflict and
 revision checks, matching foreign keys and rollback. Raw host ports, configured
 and extension paths, and explicit transaction units retain full admission.
 
+On ordinary owned BSL format-16 document references, `Posted` reads one live
+header/state statement without a new transaction. The statement checks the
+selected document declaration, database identity/generation, the header and
+posting revision, and the presence of its required attribute row. It does not
+load attribute values, parts or unrelated source. Empty and missing references
+return false. This uses the opened layout: external physical schema/source
+changes still require reopening; raw/managed document reads and preexisting
+transaction-transfer restrictions are unchanged.
+
+
 
 
 
