@@ -216,6 +216,38 @@ class FormTableReuseTests(unittest.TestCase):
         self.assertFalse(bad['accepted']); self.assertEqual(bad['reason'], 'invalid_delta')
         self.assertEqual(dict(server.session.snapshot().attributes)['Calls'], Decimal(0))
 
+    def test_accepted_open_pins_protocol_without_consuming_invalid_switch(self):
+        profiles = (replica.PROTOCOL, replica.TABLE_PROTOCOL)
+        for established, alternate in (profiles, profiles[::-1]):
+            with self.subTest(established=established):
+                _, server, _, _ = self.pair(self.scalar_server('Calls=Calls+1; Return Calls;'))
+
+                def exchange(protocol, operation='call', *, delta=None, wrong=False):
+                    frame = fixtures.ReplicatedTableTests().request(server, delta)
+                    frame.update(protocol=protocol, operation=operation)
+                    if operation == 'open':
+                        frame.update(endpoint=0, arguments=[])
+                    if wrong:
+                        frame.update(revision=0, endpoint=2)
+                    if protocol == replica.TABLE_PROTOCOL:
+                        frame['table_generation'] = None
+                    return decode_line(server.exchange(encode_line(frame)))
+
+                invalid_open = exchange(alternate, 'open', delta={})
+                self.assertEqual(invalid_open['reason'], 'invalid_delta')
+                self.assertIsNone(server._replica_protocol)
+                self.assertTrue(exchange(established, 'open')['accepted'])
+                last_id = server._last_id
+                rejected = exchange(alternate, delta=fixtures.scalar_delta(), wrong=True)
+                self.assertFalse(rejected['accepted'])
+                self.assertEqual(rejected['reason'], 'invalid_request')
+                self.assertEqual(server._last_id, last_id)
+                self.assertEqual(server.session.revision, 1)
+                self.assertEqual(dict(server.session.snapshot().attributes)['Calls'], Decimal(0))
+                self.assertEqual(exchange(established, 'open')['reason'], 'closed')
+                self.assertTrue(exchange(established, delta=fixtures.scalar_delta())['accepted'])
+                self.assertEqual(dict(server.session.snapshot().attributes)['Calls'], Decimal(1))
+
     def test_owned_stdio_child_uses_same_compact_grammar(self):
         import json
         from pathlib import Path

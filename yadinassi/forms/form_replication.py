@@ -486,6 +486,7 @@ class ReplicatedFormServer:
         self._gate = Lock(); self._last_id = 0; self._sequence = 0; self._requests = 0
         self._allow_host_sync = False
         self._table_image = None
+        self._replica_protocol = None
 
     def _reply(self, request_id, *, accepted=False, value=None, reason=None,
                protocol=PROTOCOL, reuse_image=None):
@@ -534,6 +535,8 @@ class ReplicatedFormServer:
                 _keys(request, 'protocol id operation revision sequence endpoint arguments delta' +
                       (' table_generation' if protocol == TABLE_PROTOCOL else ''))
                 request_id = _integer(request['id'], 1)
+                if self._replica_protocol is not None and protocol is not self._replica_protocol:
+                    raise ValueError('form replica protocol changed')
                 _integer(request['revision']); _integer(request['sequence'], 1)
                 _integer(request['endpoint'], 0, MAX_ENDPOINTS)
                 generation = _table_generation(request['table_generation']) if protocol == TABLE_PROTOCOL else None
@@ -588,6 +591,7 @@ class ReplicatedFormServer:
                 if admitted is not None:
                     _apply_delta(session.form, admitted)
                 if operation == 'open':
+                    self._replica_protocol = protocol
                     created = session._event('oncreateatserver', [False, True])
                     if type(created[0]) is not bool or created[1] is not True:
                         raise ValueError('unsupported creation result')
