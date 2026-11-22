@@ -146,6 +146,15 @@ class _ErrorLocations:
         return self.lines
 
 
+def for_bound_unbound(error):
+    # An error raised by another routine or host callable has its own origin.
+    # Only the generated routine's direct local-variable load belongs here.
+    trace=error.__traceback__
+    if trace.tb_next is not None:
+        raise error
+    raise ValueError('Локальная переменная используется до присваивания').with_traceback(trace) from None
+
+
 def convert_error(error,filename,source,*,_context=None):
     """Convert only recoverable runtime errors, preserving nonrecoverable boundaries."""
     if (getattr(_context,'_async_scheduler',None) is not None

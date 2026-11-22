@@ -182,6 +182,34 @@ class DirectRuntimeLanguageContractsTests(unittest.TestCase):
         self.assertEqual(effects, [])
         self.assertNotIn('result', vm.variables)
 
+    def test_unbound_for_endpoint_is_catchable_before_counter_assignment(self):
+        vm = self.vm()
+        vm.execute("""Function F()
+            i = 7;
+            Try
+                For i = 1 To Missing + 1 Do
+                    i = 99;
+                EndDo;
+            Except
+                Return i;
+            EndTry;
+            Missing = 3;
+            Return 0;
+        EndFunction
+        result = F();""")
+        self.assertEqual(vm.variables['result'], 7)
+
+    def test_unbound_host_error_from_for_bound_keeps_its_type(self):
+        vm = self.vm(allow_extensions=True)
+        error = UnboundLocalError('host failure')
+        def bound():
+            raise error
+        vm.register_function('Bound', bound)
+        with self.assertRaises(UnboundLocalError) as raised:
+            vm.execute('Function F() For i=Bound() To 3 Do EndDo; Return i; '
+                       'EndFunction result=F();')
+        self.assertIs(raised.exception, error)
+
     def test_single_registered_effect_and_result(self):
         vm = self.vm(allow_extensions=True)
         effects = []
