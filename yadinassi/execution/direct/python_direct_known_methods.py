@@ -31,7 +31,7 @@ def analyze(program, *, database, local_slots=None):
     lexical=local_slots is not None
     entries = _TABLE_ENTRIES + (_QUERY_ENTRIES if database else ())
     methods = {(item.kind, name): item for item in entries for name in item.aliases}
-    calls, origins = {}, set()
+    calls, origins, selection_reads = {}, set(), set()
     loop_probes = {}
     # The lexical phase distinguishes kinds, not individual objects. Keep
     # the existing single-origin rule across the whole routine, including
@@ -109,6 +109,17 @@ def analyze(program, *, database, local_slots=None):
                 return 'table', True
             if lexical:raise _OpaqueLocal
             return None, False
+        if database and kind is ast.Attribute:
+            owner=node.object
+            while type(owner) is ast.Group:owner=owner.expression
+            # Only a tracked local/standalone name; do not walk or infer the
+            # effects of arbitrary dereference chains.
+            if type(owner) is ast.Name and facts.get(owner.name.casefold())=='query-selection':
+                if record:selection_reads.add(id(node))
+                # An admitted selection read doesn't execute SQL or mutate the
+                # cursor. The value itself may be a ref, NULL, a method, etc.
+                # Never use it as a scalar or a new receiver fact.
+                return 'selection-value', False
         if kind is ast.Call and type(node.callee) is ast.Attribute and not node.arguments:
             receiver, fresh = expression(node.callee.object,facts)
             entry = methods.get((receiver,node.callee.name.casefold()))
@@ -252,14 +263,18 @@ def analyze(program, *, database, local_slots=None):
         return facts
 
     statements(program,{})
-    return calls,origins
+    return calls,origins,selection_reads
 
 
 def _plain_abi(kind,methods):
     if kind.__getattribute__ is not object.__getattribute__ or hasattr(kind,'__getattr__'):
         return False
+    # These protocol entries were captured on the exact defining class.
+    # getattr(kind, name) would invoke a replacement descriptor even when
+    # this guard is preparing to decline that replacement.
+    attributes=vars(kind)
     for _,name,fn,code in methods:
-        if getattr(kind,name) is not fn or fn.__code__ is not code:return False
+        if attributes.get(name) is not fn or fn.__code__ is not code:return False
     return True
 
 
@@ -329,6 +344,30 @@ def detached_after_publication(context,value,kind):
             and 'select' not in vars(value) and 'get_method' not in vars(value) and _rows(result))
 
 
+def selection_read_protocol(context,value):
+    """An overridden member read can execute unknown Python; retire the proof."""
+    origin=context._known_method_origin
+    if (origin is not None and context.policy is None and type(value) is BSLQueryResultSelection
+            and _plain_abi(BSLQueryResultSelection,_SELECTION_READ_METHODS)
+            and vars(BSLObject).get('get_member') is _BASE_MEMBER
+            and _BASE_MEMBER.__code__ is _BASE_MEMBER_CODE):
+        state=vars(value)
+        if 'get_member' not in state and 'get_method' not in state and 'next' not in state:
+            # Inspect the canonical instance storage, not the actual field
+            # read: the generated read below must remain the only operation.
+            result=state.get('_result')
+            if (result is origin() and type(result) is BSLQueryResult
+                    and BSLQueryResult.__getattribute__ is object.__getattribute__
+                    and not hasattr(BSLQueryResult,'__getattr__')
+                    and type(state.get('_position')) is int):
+                detached=vars(result)
+                if type(detached.get('_columns')) is tuple and type(detached.get('_rows')) in (tuple,list):
+                    return True
+    context._known_methods_live=0
+    context._known_method_origin=None
+    return False
+
+
 def _table(value):
     return (type(value) is BSLValueTable and _plain_abi(BSLValueTable,_TABLE_METHODS)
             and 'count' not in vars(value) and 'get_method' not in vars(value) and type(value.rows) is list)
@@ -345,7 +384,9 @@ def construct_table(context,value):
 
 
 from yadinassi.db.query import queries as _query_module
-from yadinassi.db.query.queries import BSLQuery,BSLQueryResult,BSLQueryResultSelection,_DIRECT_METHODS
+from yadinassi.db.query.queries import (BSLQuery,BSLQueryResult,BSLQueryResultSelection,
+    _DIRECT_METHODS,_DIRECT_SELECTION_MEMBER,_DIRECT_SELECTION_BASE_MEMBER)
+from yadinassi.types.values import BSLObject
 from yadinassi.collections.value_tables import BSLValueTable,_DIRECT_REGION_ABI,_DIRECT_REGION_FUNCTIONS
 
 _QUERY_ENTRIES = (
@@ -359,6 +400,8 @@ _RESULT_METHODS,_SELECTION_CONSTRUCTOR_METHODS=(
     tuple(entry for entry in _QUERY_DETACHED_METHODS if entry[0] is kind)
     for kind in (BSLQueryResult,BSLQueryResultSelection))
 _SELECTION_METHODS=tuple(entry for entry in _SELECTION_CONSTRUCTOR_METHODS if entry[1]!='__init__')
+_SELECTION_READ_METHODS=(*_SELECTION_METHODS,(BSLQueryResultSelection,'get_member',*_DIRECT_SELECTION_MEMBER))
+_BASE_MEMBER,_BASE_MEMBER_CODE=_DIRECT_SELECTION_BASE_MEMBER
 _TABLE_METHODS=tuple((kind,name,fn,next(code for saved,code,*_ in _DIRECT_REGION_FUNCTIONS if saved is fn))
     for kind,_,attrs in _DIRECT_REGION_ABI if kind is BSLValueTable
     for name,fn in attrs if name in ('count','get_method'))

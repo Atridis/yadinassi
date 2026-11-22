@@ -240,7 +240,7 @@ class Emitter:
         self.has_goto=False;self.literal_reachability=False;self.goto_last_expression=None
         self.goto_destinations={};self.goto_transfers={};self.goto_dispatch=[]
         self.http_body_receiver=False
-        self.known_calls={};self.known_origins=()
+        self.known_calls={};self.known_origins=();self.known_selection_reads=set()
         self.local_field_facts={};self.integer_lane=False;self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.module_boundaries=0;self.range_indices={};self.external_actuals=0
         self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.current_module=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
         self.standalone_script=False;self.row_cell_references=False;self.link_imports=False;self.import_links=[]
@@ -801,7 +801,16 @@ class Emitter:
             receiver=self.temp()
             bind=self.node(py.NamedExpr,t,target=self.name(receiver,t,True),value=self.expr(node.object))
             read=self.member_read(node,receiver,t)
-            pair=self.node(py.Tuple,t,elts=[bind,read],ctx=py.Load())
+            if id(node) in self.known_selection_reads:
+                protocol=self.call('_known_selection_read_protocol',[self.name('_context',t),self.name(receiver,t)],t)
+                if self.scope is not None and 'known_phase' in self.scope:
+                    retire=self.node(py.NamedExpr,t,target=self.name(self.scope['known_phase'],t,True),value=self.const(0,t))
+                    protocol=self.node(py.BoolOp,t,op=py.Or(),values=[protocol,retire])
+                live=self.node(py.Compare,t,left=self.known_method_phase(t),ops=[py.Eq()],comparators=[self.const(1,t)])
+                check=self.node(py.BoolOp,t,op=py.And(),values=[live,protocol])
+                parts=[bind,check,read]
+            else:parts=[bind,read]
+            pair=self.node(py.Tuple,t,elts=parts,ctx=py.Load())
             return self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
         if k is bsl.Index:
             receiver=self.temp()
@@ -2065,9 +2074,9 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
                     ('query','запрос','valuetable','таблицазначений') for node in nodes))
     if known_methods:
         from yadinassi.execution.direct.python_direct_known_methods import analyze as analyze_known
-        emitter.known_calls,emitter.known_origins=analyze_known(
+        emitter.known_calls,emitter.known_origins,emitter.known_selection_reads=analyze_known(
             program,database=vm.database_context is not None)
-        if not emitter.known_calls:emitter.known_origins=set()
+        if not emitter.known_calls:emitter.known_origins=set();emitter.known_selection_reads.clear()
     if _profile is not None:
         module_names,external_names,constructors=_profile
         emitter.external_names={name.casefold() for name in external_names}
@@ -2230,11 +2239,12 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         if shadows and has_fragments:_reject('source implicit namespace shadow with Execute/Eval is not integrated')
         if known_methods and not imported and not has_fragments and routine.execution_context=='client' and not routine.is_dual:
             local_slots=(assigned|declarations)-parameters-globals_-emitter.scope['externals']-emitter.scope['boxed']-lexical
-            calls,origins=analyze_known(routine.body,database=vm.database_context is not None,local_slots=local_slots)
+            calls,origins,selection_reads=analyze_known(routine.body,database=vm.database_context is not None,local_slots=local_slots)
             if calls:
                 emitter.scope['known_phase']=emitter.temp()
                 emitter.known_calls.update(calls)
                 emitter.known_origins.update(origins)
+                emitter.known_selection_reads.update(selection_reads)
         routine_end,emitter.region_ops,emitter.region_states=(0,{}, {}) if routine.is_async or has_goto or emitter.authority or emitter.source_scopes else _routine_region(routine,emitter.scope)
         emitter.region_active=bool(routine_end)
         region_body=emitter.sequence(routine.body[:routine_end])
@@ -2450,6 +2460,9 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         namespace.update(_known_query_execute=execute,_known_construct_table=construct_table,
                          _known_detached_after_publication=detached_after_publication,
                          _known_generic_call=generic_call)
+    if emitter.known_selection_reads:
+        from yadinassi.execution.direct.python_direct_known_methods import selection_read_protocol
+        namespace['_known_selection_read_protocol']=selection_read_protocol
     if destinations:namespace['_GotoTransfer']=_GotoTransfer
     namespace['_nonconstructible_type'] = _nonconstructible_type
     if emitter.http_body_receiver:

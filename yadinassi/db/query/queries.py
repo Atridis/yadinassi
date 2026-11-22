@@ -479,3 +479,5 @@ _DIRECT_METHODS = tuple(
     for group in (((BSLQuery,('execute','get_method')),),
                   ((BSLQueryResult,('select','get_method')),
                    (BSLQueryResultSelection,('next','get_method','__init__')))))
+_DIRECT_SELECTION_MEMBER = BSLQueryResultSelection.get_member, BSLQueryResultSelection.get_member.__code__
+_DIRECT_SELECTION_BASE_MEMBER = BSLObject.get_member, BSLObject.get_member.__code__
