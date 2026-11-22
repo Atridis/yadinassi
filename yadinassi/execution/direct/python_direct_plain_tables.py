@@ -194,7 +194,7 @@ def fresh_closed_table(context,value,configured=False):
         columns=raw(data['columns'])
         if schema._index_search is not None or columns['_query_columns']:
             return False
-        from .python_direct_plain_map import _scalar_map_key
+        from .python_direct_table_references import _typed_conversion
         for column,default in zip(schema._metadata,schema._defaults):
             descriptor=raw(column)['value_type']
             if type(descriptor) is not runtime.BSLTypeDescription:
@@ -206,7 +206,8 @@ def fresh_closed_table(context,value,configured=False):
             if type(kinds) is not tuple or (kinds and (len(kinds)!=1 or kinds[0] is not BSLType.NUMBER)):
                 return False
             try:
-                _scalar_map_key(descriptor)
+                if not _typed_conversion(descriptor,fields):
+                    return False
             except TypeError:
                 return False
             if default is not None and type(default) is not Decimal:
