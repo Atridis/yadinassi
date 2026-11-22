@@ -75,6 +75,7 @@ class ReferenceArgumentTests(unittest.TestCase):
         self.output = []
         self.vm = Interpreter(output=self.output.append)
         self.vm.execute('''
+            Var trace, calls;
             Procedure SetValue(x) x = 99; EndProcedure
             Procedure ReadValue(x) Message(x); EndProcedure
             Procedure SetThenRaise(x) SetValue(x); Raise "stop"; EndProcedure
@@ -111,7 +112,7 @@ class ReferenceArgumentTests(unittest.TestCase):
 
     def test_nested_receiver_and_index_expressions_once_left_to_right(self):
         self.vm.execute('''
-            Var trace; trace = "";
+            trace = "";
             Function Owner(Val value) trace = trace + "R"; Return value; EndFunction
             Function Index() trace = trace + "I"; Return 0; EndFunction
             SetValue(Owner(a)[Index()]); Message(trace);
@@ -249,7 +250,7 @@ class ReferenceArgumentTests(unittest.TestCase):
 
     def test_wrong_arity_does_not_evaluate_receiver(self):
         self.vm.execute('''
-            Var calls; calls = 0;
+            calls = 0;
             Function Owner() calls = calls + 1; Return New Array(1); EndFunction
         ''')
         with self.assertRaises(BSLError):
@@ -258,7 +259,7 @@ class ReferenceArgumentTests(unittest.TestCase):
 
     def test_non_collection_index_rejected_without_index_effects(self):
         self.vm.execute('''
-            Var calls; calls = 0;
+            calls = 0;
             Function Index() calls = calls + 1; Return 0; EndFunction
         ''')
         with self.assertRaises(BSLError):

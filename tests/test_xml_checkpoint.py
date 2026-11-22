@@ -268,8 +268,8 @@ class XMLCheckpointTests(unittest.TestCase):
                          'ValueFromStringInternal(ValueToStringInternal(ОбработкаСтрокиXML))')
         output = []
         vm = Interpreter(output=output.append)
-        vm.execute(helpers())
         vm.execute("Перем ОбработкаСтрокиXML, XMLStringProcessing;")
+        vm.execute(helpers())
         # Host object intentionally has no supported internal codec. Both
         # observation errors are isolated, not replaced by a guessed record.
         vm.variables['xmlstringprocessing'] = BSLObject()
