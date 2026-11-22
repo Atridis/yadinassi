@@ -110,10 +110,10 @@ def validate_configuration(registers,catalogs,documents=(),*,error='invalid_inpu
 
 
 class RegisterView:
-    def __init__(self, view):
+    def __init__(self, view, *, runtime_schema=None):
         self._view=view;self.database_id=view.database_id
         self.configuration_generation=view.configuration_generation
-        self._schemas=view._backend._register_schemas
+        self._schemas=view._backend._register_schemas if runtime_schema is None else (runtime_schema,)
         self._outcome=None;self._scan=None;self._layouts={}
     @property
     def _connection(self): return self._view._connection

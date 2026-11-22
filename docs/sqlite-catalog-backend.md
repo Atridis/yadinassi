@@ -56,6 +56,18 @@ Ordinary manager admission is unchanged; only the existing format-16
 catalog code observer can borrow an owned explicit transaction. Raw and
 query scan ports retain their established broader integrity checks.
 
+Ordinary standalone BSL independent-register operations on native source-free
+SQLite layouts (8–10) use one same-transaction admission statement. The check
+compares the opened database identity and modes, exact selected register
+definition, live allocator, its physical tables and indexes, and catalog
+targets declared by its reference fields. It neither reparses unrelated
+catalog/document/register schemas nor reuses another connection's data facts.
+Register point operations, selections, periodic reads, and record sets use the
+same admission. Writes keep real SQLite transactions, row budgets, conflict and
+revision checks, matching foreign keys and rollback. Raw host ports, configured
+and extension paths, and explicit transaction units retain full admission.
+
+
 
 
 String and Decimal metadata [qualifiers are applied on assignment](catalog-qualifier-assignment.md), and direct backend create/update calls use the same conversion before SQL. Storage decoding remains strict and never converts persisted corruption into an accepted value. Code uniqueness applies to the converted code. This does not add fixed strings, new scalar types, UI behavior or general native catalog parity.

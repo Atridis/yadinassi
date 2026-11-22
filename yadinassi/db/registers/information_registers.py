@@ -101,10 +101,36 @@ class BSLInformationRegisterManager(BSLObject):
         m = self._registers._metadata
         if (view.database_id, view.configuration_generation, view.register_schema(self._schema.identity)) != (
                 m._database_id, m._generation, self._schema): raise BackendError('schema_changed')
+    def _open_storage(self,operation_id=None):
+        from types import MethodType
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _REGISTER_OPEN_ABI
+        from yadinassi.execution.direct.python_direct_transactions import _Owner, _ROOT_OWNER
+
+        backend = self._backend
+        name = 'begin_register_read' if operation_id is None else 'begin_register_write'
+        method = getattr(backend,name)
+        owner = _ROOT_OWNER.get()
+        if (type(backend) is SQLiteCatalogBackend and backend._register_runtime_data is not None
+                and type(owner) is _Owner and owner.token is None and owner.backend is backend
+                and owner.vm.allow_extensions is False and owner.vm._configuration_runtime is None
+                and owner.vm._information_registers is self._registers
+                and owner.vm._metadata._information_registers is self._registers._metadata
+                and owner.database is self._registers._context
+                and type(method) is MethodType and method.__self__ is backend
+                and method.__func__ is _REGISTER_OPEN_ABI[name]):
+            if operation_id is None:
+                read = backend.begin_read
+                if (type(read) is not MethodType or read.__self__ is not backend
+                        or read.__func__ is not _REGISTER_OPEN_ABI['begin_read']):
+                    return method()
+            owner.check(backend)
+            meta = self._registers._metadata
+            return backend._begin_register_data(self._schema,meta._database_id,meta._generation,operation_id)
+        return method() if operation_id is None else method(operation_id)
     def _view(self):
         from yadinassi.db.database_transactions import forbid_transfer
         forbid_transfer(self._backend)
-        view = self._backend.begin_register_read()
+        view = self._open_storage()
         try: self._check_view(view)
         except BaseException as error:
             try: view.close()
@@ -284,7 +310,7 @@ class BSLInformationRegisterRecordManager(BSLObject):
             transaction.stage(self, 'register_delete' if deleted else 'register_write',
                               draft, expected, (draft,expected,operation,deleted))
             return None
-        tx = m._backend.begin_register_write(operation); committing = False
+        tx = m._open_storage(operation); committing = False
         try:
             m._check_view(tx)
             if deleted: tx.delete(draft,expected)
@@ -474,7 +500,7 @@ class BSLInformationRegisterRecordSet(BSLObject):
         if transaction is not None:
             transaction.stage(self, 'register_set', draft, None, (draft,operation))
             return None
-        tx=m._backend.begin_register_write(operation);committing=False
+        tx=m._open_storage(operation);committing=False
         try:
             m._check_view(tx);tx.write_set(draft)
             self._pending=(draft,operation);committing=True

@@ -697,6 +697,11 @@ class SQLiteCatalogBackend:
                 from .sqlite_catalog_runtime_data import CatalogRuntimeData
                 self._catalog_runtime_data = CatalogRuntimeData(self)
             self._sqlite_schema_version = connection.execute('PRAGMA schema_version').fetchone()[0]
+            self._register_runtime_data = None
+            if (self.activated and not self.activation_issues
+                    and self.format_version in (8,9,10) and self._register_schemas):
+                from .sqlite_register_runtime_data import RegisterRuntimeData
+                self._register_runtime_data = RegisterRuntimeData(self,connection,_APPLICATION_ID,row)
             # The generic epoch descriptor must also notice DDL changes whose
             # writer deliberately restored schema_version to its old value.
             self._admission_ddl_snapshot = None
@@ -1627,9 +1632,26 @@ class SQLiteCatalogBackend:
         _uuid(operation_id)
         return self._register_view(operation_id)
 
-    def _register_view(self, operation_id):
-        view = self.begin_read() if operation_id is None else self._begin(operation_id)
-        try: return RegisterView(view)
+    @_boundary
+    def _begin_register_data(self,schema,database,generation,operation_id=None):
+        from .sqlite_register_runtime_data import RegisterRuntimeData
+        from yadinassi.db.database_transactions import forbid_transfer
+        data = self._register_runtime_data
+        if type(data) is not RegisterRuntimeData: raise BackendError('unsupported')
+        forbid_transfer(self)
+        if operation_id is not None:
+            if self.read_only: raise BackendError('unsupported')
+            _uuid(operation_id)
+        descriptor = data.descriptor(self,schema,database,generation)
+        return self._register_view(operation_id,descriptor=descriptor)
+
+    def _register_view(self, operation_id, *, descriptor=None):
+        if descriptor is None:
+            view = self.begin_read() if operation_id is None else self._begin(operation_id)
+        else:
+            view = self._begin(operation_id,_register_descriptor=descriptor)
+        try:
+            return RegisterView(view) if descriptor is None else RegisterView(view,runtime_schema=descriptor.schema)
         except BaseException as error:
             # A wrapper never admitted successfully; retain the original
             # physical-cleanup/poisoned-owner contract, not normal lease reuse.
@@ -1840,7 +1862,7 @@ class SQLiteCatalogBackend:
         run(self, update, write=True, authorizer=authorize_write)
 
     @lifecycle
-    def _begin(self, operation_id, *, _catalog_data=False):
+    def _begin(self, operation_id, *, _catalog_data=False, _register_descriptor=None):
         if self._closed: raise BackendError('closed')
         if self.storage_version == 5 or not self.activated: raise BackendError('unsupported')
         if self._active is not None: raise BackendError('busy')
@@ -1865,7 +1887,7 @@ class SQLiteCatalogBackend:
                 if connection.in_transaction:
                     raise BackendError('busy')
             catalog_data = self._catalog_runtime_data if _catalog_data else None
-            if catalog_data is not None and operation_id is not None:
+            if (catalog_data is not None or _register_descriptor is not None) and operation_id is not None:
                 from .sqlite_catalog_runtime_data import authorize_write
                 connection.set_authorizer(authorize_write)
             try:
@@ -1873,7 +1895,7 @@ class SQLiteCatalogBackend:
                 proofs = None
                 descriptor = None
                 admitted_catalogs = None
-                if handle is not None and catalog_data is None and self._read_admission_cache_allowed():
+                if handle is not None and catalog_data is None and _register_descriptor is None and self._read_admission_cache_allowed():
                     # BEGIN alone does not pin a snapshot. Reading sqlite_schema
                     # takes a real shared read lock before sampling data_version.
                     connection.execute('SELECT rootpage FROM sqlite_schema LIMIT 1').fetchone()
@@ -1885,7 +1907,12 @@ class SQLiteCatalogBackend:
                         if not _same(handle.admission, self._read_admission_descriptor()):
                             raise BackendError('schema_changed')
                         descriptor = handle.admission
-                if catalog_data is not None:
+                register_identity = None
+                if _register_descriptor is not None:
+                    if handle is not None: handle.invalidate()
+                    register_identity = self._register_runtime_data.admit(
+                        connection,_register_descriptor,readonly=operation_id is None)
+                elif catalog_data is not None:
                     if handle is not None and connection.execute('PRAGMA journal_mode').fetchone() != ('delete',):
                         raise BackendError('unsupported')
                 elif descriptor is None:
@@ -1909,12 +1936,12 @@ class SQLiteCatalogBackend:
                 # Ordinary data uses its open descriptor. The raw format-16
                 # lane independently proved this UUID and generation 1.
                 identity = (catalog_data.identity if catalog_data is not None else
-                            (UUID(int=self.database_id.int), 1) if self.format_version == 16 else None)
+                            (UUID(int=self.database_id.int), 1) if self.format_version == 16 else register_identity)
                 view = _View(self, connection, operation_id, admitted_identity=identity,
                              catalog_data=catalog_data, admitted_catalogs=admitted_catalogs)
                 if handle is not None:
                     view._read_handle = handle
-                if handle is not None and catalog_data is None:
+                if handle is not None and catalog_data is None and _register_descriptor is None:
                     view._validated_sources = handle.pin() if proofs is None else proofs
                     handle._pending_admission = descriptor
                     # Detached values, not authority: a new or changed SQL
@@ -3437,3 +3464,7 @@ _ORDINARY_MAIN_DEMO_WRITE_ABI = tuple((name, getattr(SQLiteCatalogBackend, name)
     'catalog_write_preparation', '_main_demo_write_source', '_main_demo_source_snapshot',
     'begin_write', '_begin', '_validate_transaction_admission',
 ))
+
+# Preserve host overrides and fault-injection adapters on the existing raw lane.
+_REGISTER_OPEN_ABI = {name:getattr(SQLiteCatalogBackend,name)
+                      for name in ('begin_read','begin_register_read','begin_register_write')}
