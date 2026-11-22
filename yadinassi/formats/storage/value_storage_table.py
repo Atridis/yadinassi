@@ -194,8 +194,8 @@ def _index_bounds(count, positions, rows):
         raise TableSnapshotError('table index budget exceeded')
 
 
-def _wire_index_definitions(table, indexes, columns):
-    """Verify the public handles exactly fit the existing positional subset."""
+def _wire_index_definitions(table, indexes, columns, *, preserve_order=False):
+    """Validate each public declaration against its canonical lookup signature."""
     state = _INDEX_FIELDS.__get__(indexes, BSLCollectionIndexes)
     if any(type(key) is not str for key in state):
         raise TableSnapshotError('invalid index field names')
@@ -203,6 +203,7 @@ def _wire_index_definitions(table, indexes, columns):
     if type(signatures) is not list or type(handles) is not list or len(handles) != len(signatures):
         raise TableSnapshotError('unsupported index declaration for serialization')
     positions = {id(col): i for i,col in enumerate(columns)}
+    definitions = [] if preserve_order else None
     for handle, signature in zip(handles, signatures):
         if (type(handle) is not BSLCollectionIndex
                 or type(signature) is not tuple or not 0 < len(signature) <= len(positions)):
@@ -213,50 +214,42 @@ def _wire_index_definitions(table, indexes, columns):
             raise TableSnapshotError('invalid public index handle for serialization')
         ordered = state.get('_columns')
         if (type(ordered) is not tuple or len(ordered) != len(signature)
-                or any(type(i) is not int for i in signature)
-                or any(positions.get(id(col)) != i for i, col in zip(signature, ordered))):
+                or any(type(i) is not int for i in signature)):
             raise TableSnapshotError('unsupported index declaration for serialization')
-    return signatures
+        if preserve_order:
+            definition = tuple(positions.get(id(col)) for col in ordered)
+            if None in definition or tuple(sorted(definition)) != signature:
+                raise TableSnapshotError('unsupported index declaration for serialization')
+            definitions.append(definition)
+        elif any(positions.get(id(col)) != i for i,col in zip(signature,ordered)):
+            raise TableSnapshotError('unsupported index declaration for serialization')
+    return tuple(definitions) if preserve_order else signatures
 
 
-def _take_indexes(indexes, column_count, row_count, reserve):
-    _index_bounds(len(indexes), 0, row_count)
-    definitions, seen, positions = [], set(), 0
-    reserve(len(indexes))
-    for definition in indexes:
-        if type(definition) is not tuple or not definition:
-            raise TableSnapshotError('invalid direct index definition')
-        positions += len(definition)
-        _index_bounds(len(indexes), positions, row_count)
-        reserve(len(definition))
-        for position in definition:
-            _integer(position, column_count - 1)
-        if tuple(sorted(set(definition))) != definition or definition in seen:
-            raise TableSnapshotError('duplicate or noncanonical index definition')
-        seen.add(definition)
-        definitions.append(definition)
-    # Cached buckets/keys/units are intentionally neither read nor copied.
-    return tuple(definitions)
-
-
-def _restore_indexes(indexes, columns, rows, reserve):
+def _snapshot_signatures(indexes, columns, rows, reserve):
+    # Snapshots record public column order. Lookup signatures have no order,
+    # and duplicates are still outside the supported snapshot subset.
     if type(indexes) is not tuple:
         raise TableSnapshotError('invalid table indexes snapshot')
     _index_bounds(len(indexes), 0, rows)
     reserve(len(indexes))
-    positions = 0
+    positions, seen = 0, set()
     for definition in indexes:
         if type(definition) is not tuple or not definition:
             raise TableSnapshotError('invalid index definition snapshot')
-        positions += max(1, len(definition))
+        positions += len(definition)
         _index_bounds(len(indexes), positions, rows)
         reserve(len(definition))
         for position in definition:
             _integer(position, columns - 1)
-        if tuple(sorted(set(definition))) != definition:
-            raise TableSnapshotError('noncanonical direct index snapshot')
-    if len(set(indexes)) != len(indexes):
-        raise TableSnapshotError('duplicate index snapshot')
+        unique = set(definition)
+        if len(unique) != len(definition):
+            raise TableSnapshotError('duplicate table index column')
+        signature = tuple(sorted(unique))
+        if signature in seen:
+            raise TableSnapshotError('duplicate table index definition')
+        seen.add(signature)
+    return seen
 
 
 def _cell_matches(description, value):
@@ -373,8 +366,8 @@ def take_table(table, *, encode, charge_text, reserve, charge_default_text=None)
             descriptions.append(description)
         if not plain:
             reserve(sum(_schema_extra(column[1]) for column in schema))
-        definitions = _take_indexes(_wire_index_definitions(table,indexes,col_items),
-                                    len(col_items), len(rows), reserve)
+        definitions = _wire_index_definitions(table,indexes,col_items,preserve_order=True)
+        signatures = _snapshot_signatures(definitions,len(col_items),len(rows),reserve)
         search = _field(table, '_search')
         if type(search) is not SearchIndexes or type(search.declarations) is not set:
             raise TableSnapshotError('invalid direct index declarations')
@@ -387,7 +380,7 @@ def take_table(table, *, encode, charge_text, reserve, charge_default_text=None)
             _index_bounds(len(search.declarations),declaration_positions,len(rows))
             if any(type(i) is not int for i in definition):
                 raise TableSnapshotError('invalid direct index declaration')
-        if search.declarations != set(definitions):
+        if search.declarations != signatures:
             raise TableSnapshotError('inconsistent direct index declarations')
         weights = [0] * len(col_items)
         for definition in definitions:
@@ -460,7 +453,7 @@ def restore_table(node, *, decode, charge_text, reserve, charge_default_text=Non
         _charge_fixed_default(description, charge_default_text)
         schema.append((name, description, title, width))
     definitions = node[3] if extended else ()
-    _restore_indexes(definitions, len(columns), len(rows), reserve)
+    _snapshot_signatures(definitions, len(columns), len(rows), reserve)
     for row in rows:
         if type(row) is not tuple or len(row) != len(columns):
             raise TableSnapshotError('invalid table row snapshot')

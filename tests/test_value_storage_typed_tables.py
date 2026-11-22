@@ -7,6 +7,7 @@ from uuid import UUID
 
 from yadinassi.formats.storage import value_storage as storage
 from yadinassi.formats.storage import value_storage_table as hooks
+from yadinassi.formats.storage.serialization import value_to_string_internal, value_from_string_internal
 from yadinassi.db.catalog.catalog_types import BSLCatalogType
 from yadinassi.temporal.dates import date
 from yadinassi.db.query.queries import BSLQuery, BSLQueryResult, _Column
@@ -225,6 +226,38 @@ class TypedIndexSnapshotTests(unittest.TestCase):
         self.assertEqual([tuple(result.columns.items[i].name for i in index)
                           for index in result.indexes.items],
                          [('Amount', 'Label'), ('Amount',)])
+
+    def test_reverse_index_order_is_private_snapshot_data_not_a_wire_extension(self):
+        source = table_with(None, (D(1), D(2)))
+        source.columns.add('Label')
+        source.rows[0].set(D(1), 'a')
+        handle = source.indexes.add('Label,Item')
+        self.assertEqual(tuple(handle), ('Label', 'Item'))
+        restored = storage.BSLValueStorage(source).get()
+        self.assertEqual(tuple(restored.indexes.get_index(D(0))), ('Label', 'Item'))
+        self.assertEqual(restored._search.declarations, {(0, 1)})
+        # The native internal-string codec still promises its old subset.
+        with self.assertRaises(ValueError):
+            value_to_string_internal(source)
+        source.indexes.clear()
+        source.indexes.add('Item,Label')
+        ordered = value_from_string_internal(value_to_string_internal(source))
+        self.assertEqual(tuple(ordered.indexes.get_index(D(0))), ('Item', 'Label'))
+
+    def test_differently_ordered_duplicate_signatures_still_fail_before_decode(self):
+        source = table_with()
+        source.columns.add('Label')
+        source.indexes.add('Item,Label')
+        source.indexes.add('Label,Item')
+        with self.assertRaises(storage.SnapshotError):
+            storage.capture(source)
+        for definitions in (((0, 1), (1, 0)), ((1, 1),), ((),)):
+            calls = []
+            with self.subTest(definitions=definitions), self.assertRaises(hooks.TableSnapshotError):
+                root = extended_root(source.copy_columns())
+                hooks.restore_table((*root[:3], definitions), decode=calls.append,
+                                    reserve=lambda n: None, charge_text=lambda s: None)
+            self.assertEqual(calls, [])
 
     def test_rebuilt_buckets_serve_lookup_and_subsequent_mutation(self):
         source = table_with(numeric(), (D(1), D(2), D(1)))
@@ -465,7 +498,12 @@ class NullableQuerySnapshotTests(unittest.TestCase):
         source = query_table(); source.indexes.add('Amount,Label')
         saved = storage.BSLValueStorage(source)
         one, two = saved.get(), saved.get()
-        self.assertEqual(one.find_rows(BSLStructure('Amount,Label', NULL, NULL)).items, [one.rows[1]])
+        self.assertEqual(tuple(one.indexes.get_index(D(0))), ('Amount', 'Label'))
+        self.assertEqual(one._search.declarations, {(0, 1)})
+        self.assertEqual(one._search.cache, {})
+        hits = one.find_rows(BSLStructure('Label,Amount', NULL, NULL)).items
+        self.assertEqual(len(hits), 1)
+        self.assertIs(hits[0], one.rows[1])
         one.rows[0].set(D(1), D(3))
         self.assertEqual(two.rows[0].get(D(1)), D('12.50'))
         self.assertIsNot(one.columns.items[1].value_type._query_scalar, two.columns.items[1].value_type._query_scalar)
