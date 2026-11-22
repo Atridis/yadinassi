@@ -9,7 +9,7 @@ from yadinassi.types.values import BSLObject, BSLArray, HostFunction
 from yadinassi.execution.direct.python_direct_plain_array import _DIRECT_PLAIN_ARRAY_TYPE
 from yadinassi.types.type_descriptions import BSLTypeDescription
 from .plain_table_search import SearchIndexes
-from .value_tables import _adjust, _default, _text
+from .value_tables import _adjust, _column_total, _default, _text
 from .value_table_group import _scalar_key, _total_values
 from .plain_table_storage import RowStorage, TableStorage, Schema, scalar_equal, validate_row
 
@@ -583,9 +583,9 @@ class BSLValueTable(BSLObject):
         name=self.columns.resolve(column).name
         for row,value in zip(self.rows,list.__iter__(values)):row.set_member(name,value)
     def total(self,column):
-        position=self._storage.schema.offset(self.columns.resolve(column).name)
-        result=sum((v for row in self.rows if type(v:=list.__getitem__(row,position)) in (int,Decimal)),0)
-        return public_cell(result)
+        descriptor=self.columns.resolve(_text(column))
+        position=self._storage.schema.offset(descriptor.name)
+        return _column_total(descriptor.value_type, (list.__getitem__(row,position) for row in self.rows))
     def sort(self,order,comparator=None):
         _writable(self)
         if comparator is not None:

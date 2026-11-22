@@ -15,6 +15,7 @@ from yadinassi.types.values import (BSLArray, BSLFixedCollection, BSLObject, BSL
 
 _MAX_TEXT = 1_000_000
 _MAX_TOTAL_PRECISION = 16_384
+_DESCRIPTION_STATE = vars(BSLObject)["__dict__"]
 _MAX_INDEXES = 256
 _MAX_INDEX_COLUMNS = 4096
 _MAX_INDEX_CELLS = 1_000_000
@@ -47,6 +48,44 @@ def _text(value):
         raise ValueError("ТаблицаЗначений: превышен предел ресурсов Yadinassi")
     return value
 
+
+
+def _column_total(description, values):
+    """Native scalar Total semantics, with no ambient Decimal rounding."""
+    if type(description) is not BSLTypeDescription:
+        raise TypeError("Ожидается ОписаниеТипов")
+    state = _DESCRIPTION_STATE.__get__(description, BSLTypeDescription)
+    if type(state) is not dict or any(type(key) is not str for key in state):
+        raise TypeError("Некорректное описание типов колонки")
+    types = state.get('types')
+    if type(types) is not tuple:
+        raise TypeError("Некорректный состав типов колонки")
+    if len(types) > 1 and not any(kind is BSLType.NUMBER for kind in types):
+        return None
+    numeric = []
+    single = len(types) == 1 and type(types[0]) is BSLType
+    for value in values:
+        kind = type(value)
+        if kind is int or kind is Decimal:
+            numeric.append(value)
+        elif single and (kind is str or kind is bool):
+            numeric.append(_number_value(value))
+    if all(type(value) is int for value in numeric):
+        return Decimal(sum(numeric))
+    numeric = [Decimal(value) if type(value) is int else value for value in numeric]
+    if any(not value.is_finite() or len(value.as_tuple().digits) > 4096
+           or abs(value.adjusted()) > 4096 for value in numeric):
+        raise ValueError("ТаблицаЗначений: превышен предел ресурсов Yadinassi")
+    # Sparse values can span thousands of places. Reserve carry digits too.
+    precision = (max(value.adjusted() for value in numeric)
+                 - min(value.as_tuple().exponent for value in numeric)
+                 + 1 + len(str(len(numeric))))
+    if precision > _MAX_TOTAL_PRECISION:
+        raise ValueError("ТаблицаЗначений: превышен предел ресурсов Yadinassi")
+    with localcontext() as ctx:
+        ctx.prec = max(1, precision)
+        ctx.Emax, ctx.Emin = 999999, -999999
+        return sum(numeric[1:], numeric[0])
 
 def _default(description):
     if description.types == (BSLType.STRING,):
@@ -864,30 +903,7 @@ class BSLValueTable(BSLObject):
 
     def total(self, column):
         column = self.columns.resolve(_text(column))
-        types = column.value_type.types
-        if len(types) > 1 and BSLType.NUMBER not in types:
-            return None
-        values = [r.cells[column] for r in self.rows]
-        if len(types) == 1:
-            values = [_number_value(v) if type(v) in (Decimal, str, bool) else Decimal(0) for v in values]
-        else:
-            values = [v for v in values if type(v) is Decimal]
-        # Preserve exact sums independently of the ambient Decimal context.
-        if not values:
-            return Decimal(0)
-        if any(not v.is_finite() or len(v.as_tuple().digits) > 4096 or abs(v.adjusted()) > 4096 for v in values):
-            raise ValueError("ТаблицаЗначений: превышен предел ресурсов Yadinassi")
-        # Coefficient length alone is insufficient: sparse values can span
-        # thousands of places between their most and least significant digits.
-        # Reserve decimal carry digits for the maximum number of addends.
-        precision = max(v.adjusted() for v in values) - min(v.as_tuple().exponent for v in values) + 1 + len(str(len(values)))
-        if precision > _MAX_TOTAL_PRECISION:
-            raise ValueError("ТаблицаЗначений: превышен предел ресурсов Yadinassi")
-        with localcontext() as ctx:
-            ctx.prec = max(1, precision)
-            ctx.Emax = 999999
-            ctx.Emin = -999999
-            return sum(values[1:], values[0])
+        return _column_total(column.value_type, (row.cells[column] for row in self.rows))
 
     def sort(self, columns, comparator=None):
         from .value_table_sort import sort_table

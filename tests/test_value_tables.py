@@ -233,6 +233,36 @@ class ValueTableTests(unittest.TestCase):
             t.add().set_member("Value",v)
         self.assertEqual(t.total("Value"),D(3))
 
+    def test_compiled_total_matches_native_scalar_records(self):
+        from yadinassi import Interpreter
+
+        # Total fields of the owner checkpoint table.typed.* records.
+        cases = (
+            ("String", '7', '{"N",7}'), ("Boolean", 'True', '{"N",1}'),
+            ("String", '"bad"', '{"N",0}'), ("String,Number", '"7"', '{"N",0}'),
+            ("Boolean,String", '"7"', '{"U"}'), ("Date", 'Date(2024,2,29)', '{"N",0}'),
+        )
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        for kind, value, expected in cases:
+            with self.subTest(kind=kind, value=value):
+                vm.execute(f'T=New ValueTable;T.Columns.Add("Value",New TypeDescription("{kind}"));'
+                           f'Row=T.Add();Row.Value={value};Result=ValueToStringInternal(T.Total("Value"));')
+                self.assertEqual(vm.variables['result'], expected)
+
+    def test_total_rejects_noncanonical_type_tuple_without_host_hooks(self):
+        class BadTypes(tuple):
+            def __len__(self):
+                raise AssertionError('Total invoked host length')
+
+        t = BSLValueTable()
+        description = TD("String")
+        t.columns.add("Value", description)
+        t.add().set_member("Value", "7")
+        vars(description)['types'] = BadTypes(description.types)
+        with self.assertRaises(TypeError):
+            t.total("Value")
+
     def test_total_is_exact_under_hostile_decimal_context(self):
         t = BSLValueTable()
         t.columns.add("Value")
