@@ -4,6 +4,7 @@ from types import MappingProxyType
 from dataclasses import dataclass
 
 from yadinassi.types.values import NULL
+from yadinassi.types.unique_identifiers import BSLUUID, _exact_uuid_text
 
 _UNSUPPORTED = object()
 _SCALAR_TYPES = (type(None), str, bool, int, Decimal, type(NULL))
@@ -11,6 +12,11 @@ _SCALAR_TYPES = (type(None), str, bool, int, Decimal, type(NULL))
 def token(value, typed):
     kind = type(value)
     if not any(kind is allowed for allowed in _SCALAR_TYPES):
+        if typed and kind is BSLUUID:
+            text = _exact_uuid_text(value)
+            if text is not None:
+                return BSLUUID, text
+        # Invalid/unknown domains keep the linear lane's reached-row errors.
         return _UNSUPPORTED
     if kind is Decimal and not value.is_finite():
         return _UNSUPPORTED

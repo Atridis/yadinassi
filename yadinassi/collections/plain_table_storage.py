@@ -11,6 +11,7 @@ from decimal import Decimal
 from yadinassi.temporal.dates import BSLDate, _sort_date_ticks
 from yadinassi.text.sort_keys import text_sort_key
 from yadinassi.types.values import BSLArray, BSLType, NULL
+from yadinassi.types.unique_identifiers import BSLUUID, _exact_uuid_text
 from yadinassi.execution.direct.python_direct_plain_array import _DIRECT_PLAIN_ARRAY_TYPE
 from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
 from .structures import BSLStructure
@@ -138,6 +139,17 @@ def scalar_equal(left, right):
     left_kind, right_kind = type(left), type(right)
     if (not any(left_kind is kind for kind in _SCALAR_TYPES)
             or not any(right_kind is kind for kind in _SCALAR_TYPES)):
+        if left_kind is BSLUUID:
+            left_text = _exact_uuid_text(left)
+            if left_text is None: raise TypeError('invalid exact UUID table value')
+            if right_kind is BSLUUID:
+                right_text = _exact_uuid_text(right)
+                if right_text is None: raise TypeError('invalid exact UUID table value')
+                return left_text == right_text
+            if any(right_kind is kind for kind in _SCALAR_TYPES): return False
+        elif right_kind is BSLUUID and any(left_kind is kind for kind in _SCALAR_TYPES):
+            if _exact_uuid_text(right) is None: raise TypeError('invalid exact UUID table value')
+            return False
         raise NotImplementedError('comparison of opaque values is not supported')
     if left_kind is not right_kind and not (
             left_kind in (int, Decimal) and right_kind in (int, Decimal)):

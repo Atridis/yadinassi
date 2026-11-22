@@ -1,9 +1,11 @@
 import unittest
+from unittest.mock import patch
 from decimal import Decimal
 from yadinassi import Interpreter
 from tests.recovered_bare_fixture import Interpreter as BareInterpreter
 from yadinassi.collections.plain_value_table_runtime import BSLValueTable
 from yadinassi.collections.structures import BSLStructure
+from yadinassi.types.unique_identifiers import BSLUUID
 
 SOURCE = '''Т=Новый ТаблицаЗначений;
 Т.Колонки.Добавить("Склад");Т.Колонки.Добавить("Товар");
@@ -43,6 +45,55 @@ class LinearFindRows(unittest.TestCase):
             def __eq__(self,other):raise AssertionError('foreign equality')
         t.rows[0].set_member('K',Opaque())
         with self.assertRaises(NotImplementedError):t.find_rows(BSLStructure('K',1))
+    def test_uuid_find_and_lazy_index_keep_type_value_and_current_order(self):
+        t=BSLValueTable();t.columns.add('K')
+        spelling='11111111-2222-4333-8444-abcdefabcdef'
+        uuid=BSLUUID(spelling);other=BSLUUID('aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee')
+        for value in (spelling,uuid,other,BSLUUID(spelling.upper())):
+            t.add().set_member('K',value)
+        text_row,first,unrelated,last=t.rows
+        wanted=BSLUUID(spelling);query=BSLStructure('K',wanted)
+        def no_callback(*args):raise AssertionError('UUID Python protocol must not run')
+        with patch.object(BSLUUID,'__eq__',no_callback),patch.object(BSLUUID,'__hash__',no_callback):
+            self.assertIs(t.find(wanted,'K'),first)
+            self.assertEqual(tuple(map(id,t.find_rows(query).items)),(id(first),id(last)))
+            t.indexes.add('K')
+            self.assertEqual(t._search.builds,0)
+            self.assertEqual(tuple(map(id,t.find_rows(query).items)),(id(first),id(last)))
+            self.assertEqual(t._search.builds,1)
+            self.assertIs(t.find(spelling,'K'),text_row)
+            self.assertIs(t.find(other,'K'),unrelated)
+            self.assertEqual(t._search.builds,1)
+            first.set_member('K',BSLUUID(spelling))
+            self.assertEqual(tuple(map(id,t.find_rows(query).items)),(id(last),id(first)))
+            self.assertIs(t.find(uuid,'K'),last)
+            self.assertEqual(t._search.builds,2)
+
+    def test_malformed_and_foreign_uuid_protocols_never_execute(self):
+        exact='aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+        good=BSLUUID(exact)
+        class HostText(str):
+            def lower(self):raise AssertionError('host text callback')
+            def __eq__(self,other):raise AssertionError('host text callback')
+        class ForeignUUID(BSLUUID):
+            def __eq__(self,other):raise AssertionError('foreign UUID equality')
+            def __hash__(self):raise AssertionError('foreign UUID hashing')
+        bad=object.__new__(BSLUUID)
+        object.__setattr__(bad,'text',HostText(exact))
+        uninitialized=object.__new__(BSLUUID)
+        for value,err in ((bad,TypeError),(uninitialized,TypeError),
+                          (ForeignUUID(exact),NotImplementedError)):
+            for indexed in (False,True):
+                with self.subTest(kind=type(value),indexed=indexed):
+                    t=BSLValueTable(); t.columns.add('K')
+                    first=t.add();first.set_member('K',good)
+                    t.add().set_member('K',value)
+                    if indexed:t.indexes.add('K')
+                    # A later invalid cell cannot preempt an earlier match.
+                    self.assertIs(t.find(BSLUUID(exact),'K'),first)
+                    with self.assertRaises(err):t.find_rows(BSLStructure('K',good))
+                    with self.assertRaises(err):t.find(value,'K')
+
     def test_bad_field_compiled(self):
         for cls in (Interpreter,BareInterpreter):
             with self.subTest(compiler=cls.__module__):

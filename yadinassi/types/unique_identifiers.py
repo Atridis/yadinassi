@@ -45,6 +45,19 @@ class BSLUUID(BSLObject):
         return self.text != _ZERO
 
 
+def _exact_uuid_text(value, *, _slot=vars(BSLUUID)['text'], _match=_CANONICAL.fullmatch):
+    """Passive token for exact BSL UUID values; never use their Python hooks."""
+    if type(value) is not BSLUUID:
+        return None
+    try:
+        text = _slot.__get__(value, BSLUUID)
+    except AttributeError:
+        return None
+    if type(text) is str and len(text) == 36 and text == text.lower() and _match(text) is not None:
+        return text
+    return None
+
+
 def canonical_codec_uuid(text):
     """Native fixed/zero codec forms only: lowercase canonical ASCII, no trim."""
     if type(text) is not str:
