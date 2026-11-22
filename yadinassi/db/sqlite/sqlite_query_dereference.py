@@ -316,7 +316,7 @@ def _order(bindings, witnesses, order):
 
 def _where(view, source, predicate):
     """Close the predicate over admitted base fields; no user-provided SQL."""
-    from .sqlite_ordered_predicates import ordered_where
+    from .sqlite_ordered_predicates import compound_where, ordered_where
 
     fields = set()
     atoms = 0
@@ -325,12 +325,7 @@ def _where(view, source, predicate):
         atoms += 1
         if atoms>64 or depth>8: raise BackendError('unsupported')
         if type(node) is CatalogPredicate:
-            if (type(node.kind) is not str or node.kind!='and'
-                    or type(node.terms) is not tuple or not node.terms):
-                raise BackendError('invalid_input')
-            terms = tuple(lower(term,depth+1) for term in node.terms)
-            return ('('+' AND '.join(sql for sql,_ in terms)+')',
-                    tuple(arg for _,args in terms for arg in args))
+            return compound_where(node,lambda term:lower(term,depth+1))
         if (type(node) is not CatalogComparison or type(node.field) not in (UUID,str)
                 or type(node.operator) is not str or node.field not in source.columns):
             raise BackendError('invalid_input')

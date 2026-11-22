@@ -9,15 +9,19 @@ from .sqlite_catalog_numbers import comparison
 _OPERATORS = {'eq':'=', 'ne':'!=', 'lt':'<', 'le':'<=', 'gt':'>', 'ge':'>='}
 
 
+def compound_where(predicate, lower):
+    if (type(predicate.kind) is not str or predicate.kind not in ('and','or')
+            or type(predicate.terms) is not tuple or not predicate.terms):
+        raise BackendError('invalid_input')
+    terms = tuple(lower(term) for term in predicate.terms)
+    joiner = ' AND ' if predicate.kind == 'and' else ' OR '
+    return '(' + joiner.join(part for part,_ in terms) + ')', tuple(v for _,args in terms for v in args)
+
+
 def ordered_where(predicate, fields):
     """Render exact scalar clauses against a provider-defined field map."""
     if type(predicate) is CatalogPredicate:
-        if (type(predicate.kind) is not str or predicate.kind not in ('and','or')
-                or type(predicate.terms) is not tuple or not predicate.terms):
-            raise BackendError('invalid_input')
-        terms = tuple(ordered_where(term, fields) for term in predicate.terms)
-        joiner = ' AND ' if predicate.kind == 'and' else ' OR '
-        return '(' + joiner.join(part for part,_ in terms) + ')', tuple(v for _,args in terms for v in args)
+        return compound_where(predicate,lambda term:ordered_where(term,fields))
     if (type(predicate) is not CatalogComparison or type(predicate.field) not in (str, UUID)
             or type(predicate.operator) is not str or predicate.operator not in _OPERATORS
             or predicate.field not in fields):

@@ -129,3 +129,31 @@ Q=Catalogs.Products.CreateItem(); Q.Code="B"; Q.Write();''')
             self.assertEqual(len(trace),1)
             plan = view._connection.execute('EXPLAIN QUERY PLAN '+trace[0]).fetchall()
             self.assertTrue(any('SEARCH s' in item[-1] and 'record_id=?' in item[-1] for item in plan),plan)
+
+
+    def test_or_across_typed_source_fields_matches_explicit_join_and_uses_one_sql(self):
+        from yadinassi.types.values import NULL
+        self.seed()
+        vm = self.vm
+        predicate = ('(D.Warehouse=&Warehouse AND D.Number="a") OR '
+                     '(D.Number="B" AND D.DeletionMark=False)')
+        dotted = ('SELECT D.Number, D.Warehouse.Description AS Caption FROM Document.Receipt AS D '
+                  'WHERE '+predicate+' ORDER BY D.Number')
+        joined = ('SELECT D.Number, W.Description AS Caption FROM Document.Receipt AS D '
+                  'LEFT JOIN Catalog.Склады AS W ON D.Warehouse=W.Ref '
+                  'WHERE '+predicate+' ORDER BY D.Number')
+        vm.variables['sql'] = joined
+        expected = vm.execute('Q=New Query(Sql);Q.SetParameter("Warehouse",W.Ref);Q.Execute()')._rows
+        self.assertEqual(expected,(('A','Warehouse'),('B',NULL)))
+        vm.variables['sql'] = dotted
+        vm.execute('Q=New Query(Sql);Q.SetParameter("Warehouse",W.Ref);')
+        trace=[]
+        connection = self.backend._read_handle.connection
+        connection.set_trace_callback(trace.append)
+        try:
+            self.assertEqual(vm.execute('Q.Execute()')._rows,expected)
+        finally:
+            connection.set_trace_callback(None)
+        self.assertEqual(len(trace),1,trace)
+        self.assertIn(' OR ',trace[0])
+        self.assertEqual(trace[0].count('LEFT JOIN "catalog_Склады"'),1)

@@ -128,9 +128,9 @@ def _where(plan):
     result = bind_scalar_predicate(plan, (
         'ref', 'code', 'description', 'deletion_mark', 'parent', 'is_folder',
         'number', 'date', 'posted', 'line_number', 'recorder', 'period', 'active',
-    ), allow_or=False, reference=key)
+    ), reference=key)
     if result is None:
-        raise ValueError('Query dereference WHERE requires source-field comparisons combined by AND')
+        raise ValueError('Query dereference WHERE requires source-field comparisons combined by AND or OR')
     return result
 
 def _converter(plan, expression, manager):
