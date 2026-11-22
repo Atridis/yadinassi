@@ -20,6 +20,7 @@ class _OpaqueLocal(Exception):
 
 
 _RETURNED = object()
+_MAX_LOOP_PROBES = 8
 
 
 def _common_facts(left, right):
@@ -31,10 +32,13 @@ def analyze(program, *, database, local_slots=None):
     entries = _TABLE_ENTRIES + (_QUERY_ENTRIES if database else ())
     methods = {(item.kind, name): item for item in entries for name in item.aliases}
     calls, origins = {}, set()
+    loop_probes = {}
     # The lexical phase distinguishes kinds, not individual objects. Keep
     # the existing single-origin rule across the whole routine, including
     # mutually exclusive arms; never relicense an earlier alias.
     constructed=executed=False
+    record=True
+    loop_depth=0
 
     def expression(node, facts):
         nonlocal constructed,executed
@@ -45,16 +49,20 @@ def analyze(program, *, database, local_slots=None):
             if lexical and fact is None:raise _OpaqueLocal
             return fact, lexical
         if kind is ast.Literal:
-            if not lexical:return None,False
             if (type(node.value) is str or type(node.value) is Decimal or type(node.value) is bool
                     or type(node.value) is int or node.value is None):
-                return 'scalar',True
-            raise _OpaqueLocal
-        if kind is ast.Unary and node.operator == 'NOT':
+                return 'scalar',lexical
+            if lexical:raise _OpaqueLocal
+            facts.clear()
+            return None,False
+        if kind is ast.Unary and node.operator in ('NOT','+','-'):
             operand,_=expression(node.operand,facts)
-            if lexical and operand != 'scalar':raise _OpaqueLocal
-            return 'scalar' if lexical else None,False
-        if kind is ast.Binary and node.operator in ('AND','OR','=','<>','<','<=','>','>='):
+            if operand != 'scalar':
+                if lexical:raise _OpaqueLocal
+                facts.clear()
+                return None,False
+            return 'scalar',False
+        if kind is ast.Binary and node.operator in ('AND','OR','=','<>','<','<=','>','>=','+','-','*','/','%'):
             left,_=expression(node.left,facts)
             if lexical and left != 'scalar':raise _OpaqueLocal
             if node.operator in ('AND','OR'):
@@ -65,8 +73,11 @@ def analyze(program, *, database, local_slots=None):
                 facts.update(common)
             else:
                 right,_=expression(node.right,facts)
-            if lexical and right != 'scalar':raise _OpaqueLocal
-            return 'scalar' if lexical else None,False
+            if left != 'scalar' or right != 'scalar':
+                if lexical:raise _OpaqueLocal
+                facts.clear()
+                return None,False
+            return 'scalar',False
         if kind is ast.Conditional:
             condition,_=expression(node.condition,facts)
             if lexical and condition != 'scalar':raise _OpaqueLocal
@@ -79,6 +90,13 @@ def analyze(program, *, database, local_slots=None):
             if lexical:raise _OpaqueLocal
             return None,False
         if kind is ast.New:
+            # Probes cannot carry a new origin around a backedge. Existing
+            # module body calls still get their guarded, intra-run lowering
+            # when actually recorded. A lexical phase is single-origin.
+            if loop_depth and (lexical or not record):
+                if lexical:raise _OpaqueLocal
+                facts.clear()
+                return None,False
             if lexical:
                 if constructed or any(expression(arg,facts)[0]!='scalar' for arg in node.arguments):
                     raise _OpaqueLocal
@@ -87,7 +105,7 @@ def analyze(program, *, database, local_slots=None):
             name=node.name.casefold()
             if database and name in ('query','запрос'):return 'query', False
             if not node.arguments and name in ('valuetable','таблицазначений'):
-                origins.add(id(node))
+                if record:origins.add(id(node))
                 return 'table', True
             if lexical:raise _OpaqueLocal
             return None, False
@@ -95,19 +113,89 @@ def analyze(program, *, database, local_slots=None):
             receiver, fresh = expression(node.callee.object,facts)
             entry = methods.get((receiver,node.callee.name.casefold()))
             if entry is not None:
-                if lexical and entry.effect=='database':
-                    if executed:raise _OpaqueLocal
-                    executed=True
-                calls[id(node)] = entry,fresh
+                if entry.effect=='database':
+                    if loop_depth and (lexical or not record):
+                        if lexical:raise _OpaqueLocal
+                        facts.clear()
+                        return None,False
+                    if lexical:
+                        if executed:raise _OpaqueLocal
+                        executed=True
+                if record:calls[id(node)] = entry,fresh
                 if entry.effect=='database':facts.clear()
-                return entry.result or ('scalar' if lexical else None),fresh or entry.effect=='database'
+                return entry.result or 'scalar',fresh or entry.effect=='database'
         # Opaque calls, dynamic expressions, and unmodeled state effects
         # cannot propagate a capability, even when they happen to return it.
         if lexical:raise _OpaqueLocal
         facts.clear()
         return None, False
 
-    def statements(block, facts):
+    def loop(node, incoming):
+        nonlocal record,loop_depth
+        counted=type(node) is ast.For
+        counter=None
+        if counted:
+            # Bounds are evaluated once, before the start value replaces the
+            # counter's old value. An opaque bound can invalidate the origin.
+            start,_=expression(node.start,incoming)
+            end,_=expression(node.end,incoming)
+            counter=node.name.casefold()
+            if lexical and (counter not in local_slots or start!='scalar' or end!='scalar'):
+                return None
+            if start!='scalar' or end!='scalar':incoming.clear()
+            else:incoming[counter]='scalar'
+
+        def pass_at(header):
+            body_facts=header.copy()
+            if not counted:
+                condition,_=expression(node.condition,body_facts)
+                if lexical and condition!='scalar':return None
+            exit_facts=body_facts.copy()
+            continued,broken=[],[]
+            fallthrough=statements(node.body,body_facts,(continued,broken))
+            if fallthrough is None:return None
+            if fallthrough is not _RETURNED:continued.append(fallthrough)
+            if counted:
+                # The actual increment can invoke unknown code if the
+                # iteration variable was rebound to an opaque value.
+                continued=[path if path.get(counter)=='scalar' else {} for path in continued]
+            return exit_facts,continued,broken
+
+        header=incoming.copy()
+        previous_record=record
+        loop_depth+=1
+        try:
+            try:
+                # Speculative visits cannot publish call sites: the first
+                # iteration may know a receiver that a backedge invalidates.
+                record=False
+                probes=loop_probes.setdefault(id(node),{})
+                while True:
+                    # Outer probes revisit nested loops with the same headers.
+                    # Bound distinct headers per syntax node as well: uncommon
+                    # deeper refinements can safely use ordinary dispatch.
+                    key=frozenset(header.items())
+                    if key not in probes:
+                        if len(probes)>=_MAX_LOOP_PROBES:return None
+                        probes[key]=pass_at(header)
+                    paths=probes[key]
+                    if paths is None:return None
+                    refined=header
+                    for edge in paths[1]:refined=_common_facts(refined,edge)
+                    if refined==header:break
+                    header=refined
+            finally:record=previous_record
+            if record:
+                # Record only stabilized call sites; intra-loop origins may
+                # lower local operations but do not alter the proven exits.
+                pass_at(header)
+            exit_facts,_,broken=paths
+            for edge in broken:exit_facts=_common_facts(exit_facts,edge)
+            # A caller may mutate its outgoing facts; never expose the memo.
+            return exit_facts if broken else exit_facts.copy()
+        finally:loop_depth-=1
+
+    def statements(block, facts, loop_edges=None):
         # None is an opaque fallthrough, not an empty set of proven facts:
         # the lexical proof may not restart after an unknown effect.
         try:
@@ -139,16 +227,25 @@ def analyze(program, *, database, local_slots=None):
                         if lexical and result != 'scalar':raise _OpaqueLocal
                         # The next ElseIf sees only this condition's
                         # fallthrough, never the preceding Then body.
-                        exits.append(statements(body,facts.copy()))
-                    exits.append(statements(node.otherwise,facts))
+                        exits.append(statements(body,facts.copy(),loop_edges))
+                    exits.append(statements(node.otherwise,facts,loop_edges))
                     live=[exit_facts for exit_facts in exits if exit_facts is not _RETURNED]
                     if not live:return _RETURNED
                     if any(exit_facts is None for exit_facts in live):return None
                     facts=live[0]
                     for incoming in live[1:]:facts=_common_facts(facts,incoming)
+                elif kind is ast.For or kind is ast.While:
+                    following=loop(node,facts)
+                    if following is None:
+                        if lexical:return None
+                        facts.clear()
+                    else:facts=following
+                elif loop_edges is not None and kind in (ast.Break,ast.Continue):
+                    loop_edges[int(kind is ast.Break)].append(facts.copy())
+                    return _RETURNED
                 elif lexical:raise _OpaqueLocal
                 else:
-                    if kind in (ast.For,ast.While,ast.ForEach):statements(node.body,{})
+                    if kind is ast.ForEach:statements(node.body,{})
                     facts.clear()
         except _OpaqueLocal:
             return None
