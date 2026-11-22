@@ -27,6 +27,24 @@ The database stores its format marker, logical database UUID, configuration gene
 
 The SQLite connection and catalog operations remain in `sqlite_catalog.py`; the physical-name registry and offline v1 migration are in SQLite-specific modules. `catalog_backend.py` exposes immutable logical schema/card/key/revision types and bounded operations. Runtime owns BSL CatalogObject semantics, UI owns edit/navigation state, and backend owns consistency and persistence. PostgreSQL and MongoDB are future adapter targets only: no dependencies or claimed engine support. Unsupported ordering/filter/transaction capabilities must refuse, not silently change behavior. Default catalog selection has an explicit limit and code/identity order; overflow refuses rather than displaying a truncated total. Typed scans support explicit ordering. These orders are not a claim of native collation parity.
 
+Ordinary SQLite BSL manager `Select()/Next()` on flat catalogs and document
+headers uses detached pages of 16 rows. `Select()` captures the first page so
+existing small selections retain their captured values; `Next()` fetches a
+subsequent page only on demand, in the same stable order (catalog code/identity;
+document date/number/identity). Pages never retain a SQLite connection, cursor
+or lock. A later page can see changes committed since the previous page:
+this is not a single snapshot of an entire traversal. A row moved across the
+order boundary can be skipped or revisited. Catalog selections expose only
+scalar fields; `GetObject()` still reads the live object, including tabular
+parts. Document pages detach full cards with parts and `GetObject()` uses the
+current captured card. A page refill is a new manager read and therefore is
+denied inside an explicit BSL transaction; already captured rows are usable
+without a read. The raw host eager APIs keep their existing full validation
+and result limits; BSL paging has no eager total-size cap and reports errors
+in visited data when it reaches that page. Hierarchical catalogs still use
+the original eager route because validation requires the complete parent graph.
+
+
 String and Decimal metadata [qualifiers are applied on assignment](catalog-qualifier-assignment.md), and direct backend create/update calls use the same conversion before SQL. Storage decoding remains strict and never converts persisted corruption into an accepted value. Code uniqueness applies to the converted code. This does not add fixed strings, new scalar types, UI behavior or general native catalog parity.
 
 ## Transactions and failures

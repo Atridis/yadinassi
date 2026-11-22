@@ -2249,6 +2249,29 @@ class _View:
         return (quote_identifier(self._catalog_layout.table_name(schema.identity)), 'record_id,revision,code,description,deletion_mark' + (',' + fields if fields else ''), '1', ())
 
     @_boundary
+    def _catalog_selection_page(self, catalog_id, after):
+        """One detached BSL manager page, without fetching tabular parts."""
+        from yadinassi.db.manager_selection import PAGE_SIZE, require_continuation
+
+        self._require()
+        if self._operation_id is not None: raise BackendError('unsupported')
+        schema = self.catalog_schema(catalog_id)
+        table, columns, where, args = self._source(schema)
+        if after is not None:
+            require_continuation(after,2)
+            # The admitted code column is already BINARY. Adding COLLATE
+            # inside the tuple prevents SQLite from seeking into its index.
+            where += ' AND (code,record_id)>(?,?)'
+            args += after
+        cursor = self._connection.execute(
+            'SELECT %s FROM %s WHERE %s ORDER BY code COLLATE BINARY,record_id LIMIT ?'
+            % (columns,table,where), args+(PAGE_SIZE,))
+        try: rows = cursor.fetchall()
+        finally: cursor.close()
+        records = tuple(self._scalar(catalog_id,row,schema=schema) for row in rows)
+        return records, (rows[-1][2],rows[-1][0]) if len(rows)==PAGE_SIZE else None
+
+    @_boundary
     def select_catalog(self, catalog_id, request=CatalogSelection()):
         self._require(); schema = self.catalog_schema(catalog_id)
         if type(request) is not CatalogSelection or type(request.limit) is not int or not 1 <= request.limit <= _MAX_ROWS or request.order != 'code_then_identity':
@@ -3258,7 +3281,7 @@ class _View:
             raise
 
 # The document port shares the same closed storage error boundary.
-for _document_method in ('_validate_query_source','documents','document_schema','read_document','read_document_values','select_documents','scan_documents','scan_document_values','ordered_document_values','ordered_document_part','find_document_number','_write_admitted','registers','register_schema','scan_register','ordered_register_records','periodic_records','create','update','commit'):
+for _document_method in ('_validate_query_source','documents','document_schema','read_document','read_document_values','select_documents','_document_selection_page','scan_documents','scan_document_values','ordered_document_values','ordered_document_part','find_document_number','_write_admitted','registers','register_schema','scan_register','ordered_register_records','periodic_records','create','update','commit'):
     setattr(DocumentView, _document_method, _boundary(getattr(DocumentView, _document_method)))
 
 install_boundaries(_boundary)

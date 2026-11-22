@@ -7,6 +7,7 @@ from decimal import Decimal
 from datetime import datetime
 from uuid import UUID, uuid4
 from yadinassi.temporal.dates import BSLDate, _date_from_datetime, _parts, TICKS_PER_SECOND
+from yadinassi.db.manager_selection import SelectionRows, current_selection_row
 from .catalog_types import BSLCatalogReference, BSLCatalogType
 from .catalog_backend import CatalogKey, CatalogDraft, CatalogSelection, CatalogScanRequest, CatalogComparison, Revision, BackendError, CatalogValuePage, CatalogValueRow, CatalogWriteOutcome
 from .catalog_sections import BSLCatalogSection, _MAX_ROWS as _MAX_SECTION_ROWS, _MAX_BUFFER_BYTES, _changed_sections
@@ -218,10 +219,29 @@ class BSLCatalogManager(BSLObject):
         result=self.create_item();result._values["isfolder"]=True
         return result
     def select(self):
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+        # Hierarchical groups currently validate one complete parent graph.
+        # Repeating that graph admission for every unopened page would be
+        # more expensive than the existing detached operation.
+        backend, schema = self._backend, self._schema
+        if type(backend) is SQLiteCatalogBackend and schema.hierarchy == 'none':
+            origin = (backend,schema)
+            page = BSLCatalogManager._selection_page(self,origin,None)
+            return BSLCatalogSelection(self, page=page, origin=origin)
         view=self._view()
         try:rows=view.select_catalog(self._schema.identity,CatalogSelection())
         finally:view.close()
         return BSLCatalogSelection(self,rows)
+    def _selection_page(self, origin, after):
+        if (type(origin) is not tuple or len(origin)!=2
+                or self._backend is not origin[0] or self._schema is not origin[1]):
+            raise BackendError('schema_changed')
+        from yadinassi.db.sqlite.sqlite_catalog import _View
+        view = BSLCatalogManager._view(self)
+        try:
+            if type(view) is not _View: raise BackendError('unsupported')
+            return _View._catalog_selection_page(view,origin[1].identity,after)
+        finally: view.close()
     def _find(self,field,value):
         from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
         from yadinassi.configuration.configuration_main_demo import MainDemoConfiguration
@@ -518,20 +538,30 @@ class BSLCatalogObject(BSLObject):
 
 
 class BSLCatalogSelection(BSLObject):
-    def __init__(self,manager,rows):
+    def __init__(self,manager,rows=(),*,page=None,origin=None):
         self._manager=manager;self._selection_type=manager._selection_type
-        self._rows=tuple(rows);self._position=-1;self._next_position=0
+        self._selection=SelectionRows((tuple(rows),None) if page is None else page,restart=True)
+        self._selection_origin=origin
     def next(self):
-        if self._next_position>=len(self._rows):self._next_position=0;return False
-        self._position=self._next_position;self._next_position+=1;return True
+        state = self._selection
+        if type(state) is not SelectionRows: raise BackendError('integrity')
+        after = SelectionRows.continuation(state)
+        if after is not None:
+            SelectionRows.install(state,BSLCatalogManager._selection_page(
+                self._manager,self._selection_origin,after))
+        return SelectionRows.next(state)
     def get_method(self,name):
         if name.casefold() in ('next','следующий'):return HostFunction(name,self.next)
         if name.casefold() in ('getobject','получитьобъект'):
-            return HostFunction(name,lambda:None if self._position<0 else self._manager._get_object(self._manager._ref(self._rows[self._position].key.record_id)))
+            def get_object():
+                card = current_selection_row(self._selection)
+                return None if card is None else self._manager._get_object(self._manager._ref(card.key.record_id))
+            return HostFunction(name,get_object)
         return super().get_method(name)
     def get_member(self,name):
-        if self._position<0:_field(self._manager._defaults(),name);return None
-        return _field(self._manager._fields(self._rows[self._position]),name)
+        card = current_selection_row(self._selection)
+        if card is None:_field(self._manager._defaults(),name);return None
+        return _field(self._manager._fields(card),name)
     def __str__(self):return str(self._selection_type)
 
 # Definition-time ABI for the direct live movement ownership traversal.

@@ -30,6 +30,27 @@ _RESERVED = {'number','номер','date','дата','posted','проведен'
              'metadata','метаданные','getobject','получитьобъект','setnewobjectref','установитьссылкунового'}
 
 
+def _bounded_value(column, limit):
+    # Never transfer an oversized physical value into Python. The invalid
+    # BLOB sentinel is rejected by the existing typed decoder (unlike NULL,
+    # which could be a valid EmptyRef here).
+    return f"CASE WHEN length(CAST({column} AS BLOB))>{limit} THEN x'' ELSE {column} END"
+
+
+def _physical_size(columns, overhead):
+    return '+'.join((str(overhead), *('COALESCE(length(CAST('+column+' AS BLOB)),0)' for column in columns)))
+
+
+def _bounded_attribute(column, field):
+    if field.kind == 'string':
+        limit = field.qualifiers[0] * 4
+    elif field.kind in ('catalog_ref','enum_ref'):
+        limit = 36
+    else:
+        limit = {'number':20,'boolean':1,'datetime':14}[field.kind]
+    return _bounded_value(column,limit)
+
+
 def _storage():
     # Lazy import keeps the shared application admission/import graph acyclic.
     from . import sqlite_catalog
@@ -329,12 +350,22 @@ class DocumentView:
         return read_posted(self._connection, self.database_id, key)
 
     def _record_sql(self, schema, *, where='r.document_id=?', order=False, limit=False,
-                    attributes=True, posted=True):
+                    attributes=True, posted=True, bounded=False):
         posted = posted and self._view._backend.format_version in (13,14,15,16)
         attributes = schema.fields if attributes is True else attributes or ()
         columns = ['r.record_id','r.revision','r.number','r.date','r.deletion_mark']
+        if bounded:
+            columns[0] = _bounded_value('r.record_id',36)
+            columns[2] = _bounded_value('r.number',36)
+            columns[3] = _bounded_value('r.date',14)
         columns.extend(('p.document_revision','p.posted') if posted else ('NULL','NULL'))
-        if attributes:
+        if bounded:
+            attribute_columns = tuple('a.'+quote_identifier(attribute_column(f)) for f in attributes)
+            if attributes:
+                columns.append(_bounded_value('a.record_id',36))
+                columns.extend(_bounded_attribute(column,f) for column,f in zip(attribute_columns,attributes))
+            columns.append(_physical_size(attribute_columns,0))
+        elif attributes:
             columns.append('a.record_id')
             columns.extend('a.'+quote_identifier(attribute_column(f)) for f in attributes)
         sql = 'SELECT '+','.join(columns)+' FROM document_record AS r'
@@ -359,14 +390,20 @@ class DocumentView:
     def _projected_attributes(schema, fields):
         return tuple(field for field in schema.fields if field.identity in fields)
 
-    def _part_rows(self, schema, rows, sections):
+    def _part_rows(self, schema, rows, sections, *, page_budget=None):
         owners = tuple(dict.fromkeys(row[0] for row in rows))
         contents = {owner:[] for owner in owners}
         totals = dict.fromkeys(owners,0)
         for section in sections:
             table = quote_identifier(section_table(schema,section))
             projected = ['record_id','row_id','row_number']
-            projected.extend(quote_identifier(attribute_column(f)) for f in section.fields)
+            if page_budget is not None:
+                columns = tuple(quote_identifier(attribute_column(f)) for f in section.fields)
+                projected[1] = _bounded_value('row_id',36)
+                projected.extend(_bounded_attribute(column,f) for column,f in zip(columns,section.fields))
+                projected.append(_physical_size(columns,52))
+            else:
+                projected.extend(quote_identifier(attribute_column(f)) for f in section.fields)
             result = {owner:[] for owner in owners}
             for start in range(0,len(owners),128):
                 batch = owners[start:start+128]
@@ -379,6 +416,12 @@ class DocumentView:
                         target = result.get(owner)
                         if target is None: raise BackendError('integrity')
                         totals[owner] += 1
+                        if page_budget is not None:
+                            if totals[owner]>1000: raise BackendError('unsupported')
+                            size = fields.pop()
+                            if size>_MAX_ROW: raise BackendError('integrity')
+                            page_budget[0] += size
+                            if page_budget[0]>_MAX_TOTAL: raise BackendError('unsupported')
                         if totals[owner] <= 1001:
                             target.append((raw_id,position,fields))
                 finally:
@@ -398,8 +441,8 @@ class DocumentView:
             sections.append([str(section.identity),selected])
         return sections
 
-    def _full_rows(self, schema, rows):
-        parts = self._part_rows(schema,rows,schema.tabular_sections)
+    def _full_rows(self, schema, rows, *, page_budget=None):
+        parts = self._part_rows(schema,rows,schema.tabular_sections,page_budget=page_budget)
         result = []
         for row in rows:
             try:
@@ -522,15 +565,46 @@ class DocumentView:
             (str(schema.identity),str(key.record_id))).fetchone()
         return None if row is None else self._project_header(schema,fields,self._projected_rows(schema,(row,),fields)[0])
 
-    def select_documents(self, identity, request):
-        schema = self.document_schema(identity)
+    def _selection_filter(self, schema, request):
         if type(request) is not DocumentSelection or type(request.limit) is not int or not 1 <= request.limit <= 1000: raise BackendError('invalid_input')
-        where = ['r.document_id=?']; args = [str(identity)]
+        where = ['r.document_id=?']; args = [str(schema.identity)]
         for value, operator in ((request.start,'>='),(request.end,'<=')):
             if value is not None:
                 encoded = _storage()._encode(value,_DATE_FIELD,self.database_id)[1]
                 where.append('r.date'+operator+'?'); args.append(encoded)
         if request.start is not None and request.end is not None and request.start > request.end: raise BackendError('invalid_input')
+        return where,args
+
+    def _document_selection_page(self, identity, request, after):
+        """Detach one bounded page's full cards in this single read snapshot."""
+        from yadinassi.db.manager_selection import PAGE_SIZE, require_continuation
+
+        if self._view._operation_id is not None: raise BackendError('unsupported')
+        schema = self.document_schema(identity)
+        where,args = self._selection_filter(schema, request)
+        if after is not None:
+            require_continuation(after,3)
+            where.append('(r.date,r.number,r.record_id)>(?,?,?)')
+            args.extend(after)
+        cursor = self._connection.execute(
+            self._record_sql(schema,where=' AND '.join(where),order=True,limit=True,bounded=True),
+            (*args,PAGE_SIZE))
+        try: rows = cursor.fetchall()
+        finally: cursor.close()
+        continuation = (rows[-1][3],rows[-1][2],rows[-1][0]) if len(rows)==PAGE_SIZE else None
+        used = 0
+        for row in rows:
+            if row[-1]>_MAX_ROW: raise BackendError('integrity')
+            # Number is bounded by the SQL projection above.
+            used += row[-1]+128+(len(row[2].encode('utf-8')) if type(row[2]) is str else 0)
+        if used>_MAX_TOTAL: raise BackendError('unsupported')
+        rows = self._full_rows(schema,tuple(row[:-1] for row in rows),page_budget=[used])
+        presence = self._record_presence(schema, rows)
+        return tuple(self._card(schema,row,presence=presence) for row in rows), continuation
+
+    def select_documents(self, identity, request):
+        schema = self.document_schema(identity)
+        where,args = self._selection_filter(schema, request)
         self._validate_query_source(schema, selection=request)
         rows = self._connection.execute(self._record_sql(schema,where=' AND '.join(where),order=True,limit=True),
                                         (*args,request.limit+1)).fetchall()

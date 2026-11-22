@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 from yadinassi.db.catalog.catalog_backend import BackendError, TabularSectionRows
 from yadinassi.db.catalog.catalogs import BSLCatalogManager
+from yadinassi.db.manager_selection import SelectionRows, current_selection_row
 from yadinassi.db.catalog.catalog_qualifiers import normalize_string, validate_string
 from yadinassi.db.catalog.catalog_sections import _MAX_ROWS, _MAX_BUFFER_BYTES, _changed_sections
 from yadinassi.temporal.dates import BSLDate, _date_from_datetime, _parts, TICKS_PER_SECOND
@@ -213,10 +214,26 @@ class BSLDocumentManager(BSLObject):
         return self.empty_ref() if key is None else self._ref(key.record_id)
     def select(self,start=None,end=None):
         request = DocumentSelection(None if start is None else _date(start),None if end is None else _date(end))
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+        backend, schema = self._backend, self._schema
+        if type(backend) is SQLiteCatalogBackend:
+            origin = (backend,schema,request)
+            page = BSLDocumentManager._selection_page(self,origin,None)
+            return BSLDocumentSelection(self,page=page,origin=origin)
         view = self._view()
         try: rows = view.select_documents(self._schema.identity,request)
         finally: view.close()
         return BSLDocumentSelection(self,rows)
+    def _selection_page(self, origin, after):
+        if (type(origin) is not tuple or len(origin)!=3
+                or self._backend is not origin[0] or self._schema is not origin[1]):
+            raise BackendError('schema_changed')
+        from yadinassi.db.sqlite.sqlite_documents import DocumentView
+        view = BSLDocumentManager._view(self)
+        try:
+            if type(view) is not DocumentView: raise BackendError('unsupported')
+            return DocumentView._document_selection_page(view,origin[1].identity,origin[2],after)
+        finally: view.close()
     def get_member(self,name):
         methods = {'emptyref':self.empty_ref,'пустаяссылка':self.empty_ref,'getref':self.get_ref,'получитьссылку':self.get_ref,
                    'createdocument':self.create_document,'создатьдокумент':self.create_document,
@@ -349,21 +366,31 @@ class BSLDocumentObject(BSLObject):
 
 
 class BSLDocumentSelection(BSLObject):
-    def __init__(self,manager,rows):
+    def __init__(self,manager,rows=(),*,page=None,origin=None):
         self._manager = manager; self._selection_type = manager._selection_type
-        self._rows = tuple(rows); self._position = -1
+        self._selection = SelectionRows((tuple(rows),None) if page is None else page)
+        self._selection_origin = origin
     def next(self):
-        if self._position < len(self._rows): self._position += 1
-        return self._position < len(self._rows)
+        state = self._selection
+        if type(state) is not SelectionRows: raise BackendError('integrity')
+        after = SelectionRows.continuation(state)
+        if after is not None:
+            SelectionRows.install(state,BSLDocumentManager._selection_page(
+                self._manager,self._selection_origin,after))
+        return SelectionRows.next(state)
     def get_method(self,name):
         if name.casefold() in ('next','следующий'): return HostFunction(name,self.next)
         if name.casefold() in ('getobject','получитьобъект'):
-            return HostFunction(name,lambda:BSLDocumentObject(self._manager,self._rows[self._position]) if 0 <= self._position < len(self._rows) else None)
+            def get_object():
+                card = current_selection_row(self._selection)
+                return None if card is None else BSLDocumentObject(self._manager,card)
+            return HostFunction(name,get_object)
         return super().get_method(name)
     def get_member(self,name):
-        if not 0 <= self._position < len(self._rows):
+        card = current_selection_row(self._selection)
+        if card is None:
             _field(self._manager._defaults(),name); return None
-        return _field(self._manager._fields(self._rows[self._position]),name)
+        return _field(self._manager._fields(card),name)
     def __str__(self): return str(self._selection_type)
 
 # Definition-time ABI for the direct live movement ownership traversal.
