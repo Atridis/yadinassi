@@ -6,18 +6,35 @@ from yadinassi import Interpreter
 from yadinassi.execution.direct.python_direct_collection_regions import analyze
 from yadinassi.collections.value_tables import BSLValueTable, BSLValueTableRow
 from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.collections.plain_value_list import PlainValueList, PlainValueListItem
 
 
 def snapshot(vm):
+    # Across VMs, compare observable aliases rather than the identities of
+    # freshly allocated rows/items themselves. Keep all names of a live owner.
+    by_identity = {}
+    for name, v in sorted(vm.variables.items()):
+        by_identity.setdefault(id(v), []).append(name)
+
+    def aliases(v):
+        return tuple(by_identity.get(id(v), ())) if v is not None else ()
+
+    def item_fields(item):
+        return (*tuple(item), item.get_id())
+
     def value(v):
         if type(v) is BSLValueTable:
             return ('table', tuple(c.name for c in v.columns.items), tuple(tuple(r.cells[c] for c in v.columns.items) for r in v.rows))
         if type(v) is BSLValueList:
             return ('list',tuple((i.value,i.presentation,i.check,i.get_id()) for i in v.items),v._next_id,v._revision,tuple(v._by_id))
+        if type(v) is PlainValueList:
+            return ('list',tuple((item_fields(item), aliases(item)) for item in v),aliases(v))
         if type(v) is BSLValueTableRow:
             return ('row',next((k for k,x in vm.variables.items() if x is v.table),None),v.table.rows.index(v))
         if type(v) is BSLValueListItem:
             return ('item',v.value,v.get_id())
+        if type(v) is PlainValueListItem:
+            return ('item',item_fields(v),aliases(v._membership.owner()),aliases(v))
         return v
     return {k:value(v) for k,v in vm.variables.items()}
 
@@ -44,9 +61,22 @@ class CollectionRegionsTests(unittest.TestCase):
     def test_list_full_graph_ids_and_suffix_mutation(self):
         values,error=self.paired('T=New ValueList;For I=0 To 8 Do Item=T.Add(I);EndDo;R=0;For I=0 To 8 Do R=R+T.Get(I).Value;EndDo;T.Delete(0);Same=(Item=T.Get(7));')
         self.assertIsNone(error);self.assertTrue(values['same']);self.assertEqual(values['r'],36)
+        self.assertEqual(tuple((fields[0], fields[4]) for fields,_ in values['t'][1]),
+                         tuple((i,i) for i in range(1,9)))
+
+    def test_snapshot_distinguishes_equal_items_from_different_owners(self):
+        snapshots = []
+        for name in ('A','B'):
+            vm=Interpreter();self.addCleanup(vm.close)
+            vm.execute('A=New ValueList; B=New ValueList; A.Add(7); B.Add(7); Item='+name+'.Get(0);')
+            snapshots.append(snapshot(vm))
+        self.assertNotEqual(*snapshots)
 
     def test_multiple_columns_and_fresh_collections(self):
-        self.paired('T=New ValueTable;T.Columns.Add("A");T.Columns.Add("B");L=New ValueList;For I=1 To 5 Do Row=T.Add();Row.A=I;Row.B=I*2;L.Add(Row.B);EndDo;')
+        values,error=self.paired('T=New ValueTable;T.Columns.Add("A");T.Columns.Add("B");L=New ValueList;For I=1 To 5 Do Row=T.Add();Row.A=I;Row.B=I*2;L.Add(Row.B);EndDo;')
+        self.assertIsNone(error)
+        self.assertEqual(values['t'][2],tuple((i,i*2) for i in range(1,6)))
+        self.assertEqual(tuple(fields[0] for fields,_ in values['l'][1]),(2,4,6,8,10))
 
     def test_partial_arithmetic_failure_retains_added_default_row(self):
         values,error=self.paired('T=New ValueTable;T.Columns.Add("N");For I=0 To 5 Do Row=T.Add();Row.N=1/(3-I);EndDo;')
@@ -64,16 +94,27 @@ class CollectionRegionsTests(unittest.TestCase):
 
     def test_fractional_negative_get_and_case_aliases(self):
         self.paired('Т=Новый ТаблицаЗначений;Т.Колонки.Добавить("Число");Для Инд=0 По 4 Цикл Стр=Т.Добавить();Стр.число=Инд;КонецЦикла;R=Т.Получить(1.9).ЧИСЛО;')
-        self.paired('T=New ValueList;For I=0 To 2 Do T.Add(I);EndDo;R=T.Get(-0.1).Value;')
+        values,error=self.paired('T=New ValueList;For I=0 To 2 Do T.Add(I);EndDo;R=T.Get(-0.1).Value;')
+        self.assertIsNone(error);self.assertEqual(values['r'],0)
 
     def test_unknown_call_ends_region_and_can_mutate(self):
         def install(vm):
             vm.register_function('Change',lambda:vm.variables['t'].clear())
-        self.paired('T=New ValueList;For I=0 To 2 Do T.Add(I);EndDo;Change();R=T.Get(0).Value;',install=install)
+        values,error=self.paired('T=New ValueList;For I=0 To 2 Do T.Add(I);EndDo;Change();R=T.Get(0).Value;',install=install)
+        self.assertEqual(values['t'][1],())
+        self.assertNotIn('r',values)
+        self.assertEqual(error[0],'BSLRuntimeError')
 
     def test_callback_inside_loop_disables_whole_loop(self):
-        def install(vm):vm.register_function('Callback',lambda:Decimal(2))
-        self.paired('T=New ValueList;For I=0 To 2 Do T.Add(Callback());EndDo;',install=install)
+        calls=[]
+        def install(vm):
+            calls.append([])
+            seen=calls[-1]
+            vm.register_function('Callback',lambda:seen.append('called') or Decimal(2))
+        values,error=self.paired('T=New ValueList;For I=0 To 2 Do T.Add(Callback());EndDo;',install=install)
+        self.assertIsNone(error)
+        self.assertEqual(tuple(fields[0] for fields,_ in values['t'][1]),(2,2,2))
+        self.assertEqual(calls,[['called']*3,['called']*3])
 
     def test_runtime_abi_change_selects_ordinary_direct(self):
         source='T=New ValueList;For I=0 To 2 Do T.Add(I);EndDo;'
@@ -125,7 +166,11 @@ class CollectionRegionsTests(unittest.TestCase):
         self.assertIsNone(values['t'][2][-1][0])
 
     def test_nested_loops_and_non_benchmark_names(self):
-        self.paired('Data=New ValueTable;Data.Columns.Add("Price");Items=New ValueList;For A=1 To 3 Do For B=1 To 4 Do Entry=Data.Add();Entry.Price=A*B;Items.Add(Entry.Price);EndDo;EndDo;')
+        values,error=self.paired('Data=New ValueTable;Data.Columns.Add("Price");Items=New ValueList;For A=1 To 3 Do For B=1 To 4 Do Entry=Data.Add();Entry.Price=A*B;Items.Add(Entry.Price);EndDo;EndDo;')
+        self.assertIsNone(error)
+        expected=tuple(a*b for a in range(1,4) for b in range(1,5))
+        self.assertEqual(values['data'][2],tuple((v,) for v in expected))
+        self.assertEqual(tuple(fields[0] for fields,_ in values['items'][1]),expected)
 
     def test_old_global_len_injection_selects_normal_boundary(self):
         from yadinassi.collections import value_tables as table
