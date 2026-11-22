@@ -1,4 +1,5 @@
 """Offline framing/template checks, never native form acceptance."""
+import os
 import unittest
 from pathlib import Path
 import xml.etree.ElementTree as ET
@@ -448,11 +449,20 @@ class EnumFormsNativeDiagnosticTests(unittest.TestCase):
         self.assertFalse(route.valid_launcher_progress(dict(phase='before_open',flow=1,path='secret')))
 
     def test_console_only_and_empty_out_are_finite(self):
+        from contextlib import nullcontext
         import sys,tempfile
+        from unittest.mock import patch
         sys.path.insert(0,str(ROOT.parent/'native_1c_bootstrap'))
         import diagnostics,full_suite
         from scripts.inventory_enum_forms_packet import failure_diagnostics as diagnostic
-        with tempfile.TemporaryDirectory(dir=ROOT.parent) as temp:
+        # These are synthetic offline logs, not native-container evidence.
+        # Match the native-stage harness: Windows does not provide the Linux
+        # descriptor/path stat contract used by the production reader.
+        reader = nullcontext()
+        if os.name == 'nt':
+            from test_native_1c_full_stage import portable_fixture_bytes
+            reader = patch.object(full_suite,'secure_bytes',new=portable_fixture_bytes)
+        with reader, tempfile.TemporaryDirectory(dir=ROOT.parent) as temp:
             root=Path(temp).resolve()
             (root/'enterprise.log').write_bytes(b'')
             (root/'enterprise-console.log').write_text('{Справочник.Products.Форма.Card.Форма(12, 4)}: Переменная не определена (ProbeFlow)', encoding='utf-8')
