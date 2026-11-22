@@ -106,11 +106,21 @@ class InnerPredicatePushdownTests(unittest.TestCase):
         table = quote_identifier(backend._layout.table_name(schema.identity))
         field = next(f for f in schema.fields if f.name == 'Amount')
         column = quote_identifier(backend._layout.field_name(schema.identity, field.identity))
+        query = ('SELECT P.Code AS A,Q.Code AS B FROM Catalog.Products AS P '
+                 'JOIN Catalog.Products AS Q ON P.Text=Q.Text WHERE P.Code="1"')
+        rows, scans = self.scans(query)
+        self.assertEqual(sorted(rows), [('1', '1'), ('1', '2'), ('1', '3')])
+        self.assertIsNotNone(scans[0][0])
+        statement = 'UPDATE '+table+' SET '+column+'=? WHERE code=?'
+        invalid = ('invalid', '3')
         with closing(sqlite3.connect(self.context.path)) as connection, connection:
-            connection.execute('UPDATE '+table+' SET '+column+'=? WHERE code=?', ('invalid', '3'))
+            with self.assertRaisesRegex(sqlite3.IntegrityError, 'CHECK constraint failed'):
+                connection.execute(statement, invalid)
+            # Bypass the CHECK only on this disposable fixture connection.
+            connection.execute('PRAGMA ignore_check_constraints=ON')
+            connection.execute(statement, invalid)
         with self.assertRaisesRegex(BackendError, 'integrity'):
-            self.execute('SELECT P.Code AS A,Q.Code AS B FROM Catalog.Products AS P '
-                         'JOIN Catalog.Products AS Q ON P.Text=Q.Text WHERE P.Code="1"')
+            self.execute(query)
 
     def test_many_conjuncts_use_bounded_subset_not_new_storage_refusal(self):
         result, scans=self.scans('SELECT P.Code AS A,Q.Code AS B FROM Catalog.Products AS P '

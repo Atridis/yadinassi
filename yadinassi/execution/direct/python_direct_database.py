@@ -58,7 +58,9 @@ from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.types.type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
                               BSLDateQualifiers, BSLBinaryDataQualifiers)
 
-NAMES=('metadata','метаданные','catalogs','справочники','documents','документы','informationregisters','регистрысведений','enums','перечисления','documentwritemode','режимзаписидокумента','accumulationrecordtype','виддвижениянакопления')
+DATABASE_ROOT_NAMES=('catalogs','справочники','documents','документы',
+                     'informationregisters','регистрысведений')
+NAMES=('metadata','метаданные',*DATABASE_ROOT_NAMES,'enums','перечисления','documentwritemode','режимзаписидокумента','accumulationrecordtype','виддвижениянакопления')
 
 # Canonical detached receivers only; child rows/items and database owners still
 # traverse live ownership validation. Public protocols retain resource guards.

@@ -34,6 +34,28 @@ Message(M.FindByDescription("Second",True)=M.FindByCode("20"));Message(M.FindByC
         vm=Interpreter()
         vm.execute('If False Then S=Catalogs.Products.Select();EndIf;Type("String");')
         with self.assertRaisesRegex(BSLRuntimeError,'db required'):vm.execute('Catalogs.Products;')
+    def test_db_root_names_resolve_lazily_without_reserving_bindings(self):
+        vm=Interpreter()
+        self.addCleanup(vm.close)
+        aliases=('Catalogs','Справочники','Documents','Документы',
+                 'InformationRegisters','РегистрыСведений')
+        for name in aliases:
+            with self.subTest(name=name):
+                vm.execute(f'If False Then Result={name}.Unknown; EndIf;')
+                with self.assertRaisesRegex(BSLRuntimeError,'db required'):
+                    vm.execute(f'{name}.Unknown;')
+                self.assertEqual(vm.execute(
+                    f'Function Read(Val {name}) Return {name}; EndFunction Read(17);'),17)
+        for fragment in ('Eval("Documents.Unknown")','Execute("Documents.Unknown;")'):
+            with self.subTest(fragment=fragment),self.assertRaisesRegex(BSLRuntimeError,'db required'):
+                vm.execute(fragment)
+        vm.execute('Documents=19;')
+        self.assertEqual(vm.execute('Documents;'),19)
+        for name in ('Metadata','Enums','UnknownName'):
+            with self.subTest(name=name),self.assertRaises(BSLRuntimeError) as raised:
+                vm.execute(name+';')
+            self.assertNotIn('db required',str(raised.exception))
+
     def test_foreign_database_reference_rejected(self):
         other=SQLiteDBContext.create(Path(self.temp.name)/'other.sqlite',import_configuration(configuration_files()))
         self.addCleanup(other.close)

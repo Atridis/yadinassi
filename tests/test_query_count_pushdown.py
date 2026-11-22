@@ -16,8 +16,10 @@ class CountPushdownTests(unittest.TestCase):
     tearDown=fixtures.CatalogQueryTests.tearDown
     def query(self,text='SELECT COUNT(*) AS N FROM Catalog.Products'):
         return BSLQuery(self.vm._catalogs,text).execute()
-    def sql(self,statement,args=()):
-        with closing(sqlite3.connect(self.context.path)) as c,c:return c.execute(statement,args).fetchall()
+    def sql(self,statement,args=(), *, corrupt=False):
+        with closing(sqlite3.connect(self.context.path)) as c,c:
+            if corrupt: c.execute('PRAGMA ignore_check_constraints=ON')
+            return c.execute(statement,args).fetchall()
     def table(self):
         self.manager=self.vm._catalogs.get_index('Products')
         return quote_identifier(self.context.backend._layout.table_name(self.manager._schema.identity))
@@ -56,7 +58,12 @@ class CountPushdownTests(unittest.TestCase):
         table=self.table();field=next(f for f in self.manager._schema.fields if f.name=='Amount')
         column=quote_identifier(self.context.backend._layout.field_name(self.manager._schema.identity,field.identity))
         self.assertEqual(self.query()._rows,((Decimal(3),),))
-        self.sql('UPDATE '+table+' SET '+column+'=?',('not-a-number',))
+        statement = 'UPDATE '+table+' SET '+column+'=? WHERE code=?'
+        invalid = ('not-a-number','3')
+        with self.assertRaisesRegex(sqlite3.IntegrityError,'CHECK constraint failed'):
+            self.sql(statement,invalid)
+        # Deliberate disk corruption, not a valid typed-storage write.
+        self.sql(statement,invalid,corrupt=True)
         self.assertEqual(self.query()._rows,((Decimal(3),),))
         with self.assertRaisesRegex(BackendError,'integrity'):
             self.query('SELECT Amount FROM Catalog.Products')

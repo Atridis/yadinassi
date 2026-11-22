@@ -1,6 +1,7 @@
 """Short readonly leases: actual-connection epochs, corruption and cleanup."""
 from contextlib import closing
 from dataclasses import replace
+from decimal import Decimal
 import os
 from pathlib import Path
 import shutil
@@ -66,13 +67,24 @@ class ReadHandleLifecycleTests(unittest.TestCase):
     def test_external_same_generation_commit_invalidates_hidden_scalar(self):
         self.seed(3); self.scan('0000')
         generation = self.backend.configuration_generation
-        column = quote_identifier(self.backend._layout.field_name(self.product.identity, self.product.fields[1].identity))
-        self.sql('UPDATE '+self.owner_table()+' SET '+column+'=? WHERE code=?', ('bad-number', '0002'))
+        field = self.product.fields[1].identity
+        column = quote_identifier(self.backend._layout.field_name(self.product.identity, field))
+        statement = 'UPDATE '+self.owner_table()+' SET '+column+'=? WHERE code=?'
+        invalid = ('bad-number', '0002')
+        self.assertTrue(self.backend._read_handle.proofs)
+        with self.assertRaisesRegex(sqlite3.IntegrityError, 'CHECK constraint failed'):
+            self.sql(statement, invalid)
+        self.sql(statement, invalid, corrupt=True)
         with self.assertRaisesRegex(BackendError, 'integrity'): self.scan('0000')
         self.assertEqual(self.backend.configuration_generation, generation)
         self.assertFalse(self.backend._read_handle.proofs)
-        self.sql('UPDATE '+self.owner_table()+' SET '+column+'=? WHERE code=?', ('12.30', '0002'))
+        # Restore with an actual constraint-checked commit on a new peer handle.
+        self.sql(statement, (4567, '0002'))  # Number(12,2) stores 45.67 as 4567.
         self.assertEqual(len(self.scan('0000').rows), 1)
+        with closing(self.backend.begin_read()) as view:
+            request = CatalogScanRequest(predicate=CatalogComparison('code', 'eq', '0002'))
+            self.assertEqual(view.scan_catalog_values(self.product.identity, request, (field,)).rows[0].values,
+                             (Decimal('45.67'),))
 
     def test_external_valid_commit_is_fresh_and_writer_not_blocked_between_calls(self):
         self.seed(2); self.scan()

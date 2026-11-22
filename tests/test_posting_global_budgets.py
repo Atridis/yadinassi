@@ -30,7 +30,7 @@ class GlobalMovementBudgetTests(unittest.TestCase):
             with self.assertRaises(BackendError) as caught:
                 f.port.replace(second)
             self.assertEqual(caught.exception.code,'unsupported')
-            movements.validate_database_budget(f.c)
+            movements.validate_database_budget(f.c,(f.schema,))
         self.assertEqual(f.port.read(f.reg,key),before)
         self.assertEqual(f.port.read(f.reg,f.key),first_partition)
         self.assertEqual(f.c.execute('SELECT COUNT(*) FROM recorder_partition').fetchone()[0],1)
@@ -45,7 +45,7 @@ class GlobalMovementBudgetTests(unittest.TestCase):
         f=self.f;f.port.replace(f.request())
         with patch.object(movements,'MAX_DATABASE_ROWS',1),patch.object(movements,'MAX_DATABASE_PARTITIONS',1):
             f.port.replace(f.request())
-            movements.validate_database_budget(f.c)
+            movements.validate_database_budget(f.c,(f.schema,))
     def test_budget_failure_does_not_poison_owner_transaction(self):
         self.reject_second('MAX_DATABASE_ROWS',1)
         f=self.f;f.port.replace(f.request(rows=()))
@@ -53,7 +53,7 @@ class GlobalMovementBudgetTests(unittest.TestCase):
     def test_aggregate_validator_matches_writer_limit(self):
         f=self.f;f.port.replace(f.request())
         with patch.object(movements,'MAX_DATABASE_ROWS',0):
-            with self.assertRaises(BackendError):movements.validate_database_budget(f.c)
+            with self.assertRaises(BackendError):movements.validate_database_budget(f.c,(f.schema,))
 
 class GlobalPostedBudgetTests(unittest.TestCase):
     def setUp(self):
