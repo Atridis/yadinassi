@@ -6,6 +6,7 @@ New runtime types must be added explicitly to the codec policy and its completen
 """
 
 from dataclasses import dataclass
+from types import MemberDescriptorType
 from weakref import ReferenceType
 
 from yadinassi.types.unique_identifiers import BSLUUID, canonical_codec_uuid
@@ -256,8 +257,26 @@ def _pattern_entry(kind: BSLType, value: BSLTypeDescription) -> str:
     return entry + '}'
 
 
+_UUID_WIRE_SLOT = vars(BSLUUID).get('text')
+_UUID_WIRE_TEXT = re.compile(r'[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}')
+
+
+def _uuid_wire_text(value):
+    slot = _UUID_WIRE_SLOT
+    if (type(value) is BSLUUID and type(slot) is MemberDescriptorType
+            and slot.__objclass__ is BSLUUID and slot.__name__ == 'text'):
+        try:
+            text = slot.__get__(value, BSLUUID)
+        except AttributeError:
+            pass
+        else:
+            if type(text) is str and len(text) == 36 and _UUID_WIRE_TEXT.fullmatch(text) is not None:
+                return text
+    raise TypeError("ЗначениеВСтрокуВнутр: недопустимое значение UUID")
+
+
 _NATIVE_MAP_SERIALIZABLE_KEYS = (type(None), bool, str, int, Decimal, BSLNull, BSLType, BSLDate,
-                                 BSLSearchDirection, BSLRoundMode)
+                                 BSLSearchDirection, BSLRoundMode, BSLUUID)
 
 
 def _native_map_entries(value, wrapped_keys=False):
@@ -395,7 +414,7 @@ class _Writer:
         elif kind is BSLType.DATE:
             self.emit('{"D",' + codec_text(value, nested=depth > 0) + '}')
         elif kind is BSLType.UUID:
-            self.emit('{"#",' + _TYPE_IDS[kind] + ',' + value.text + '}')
+            self.emit('{"#",' + _TYPE_IDS[kind] + ',' + _uuid_wire_text(value) + '}')
         elif kind is BSLType.TYPE:
             self.emit('{"T",' + _TYPE_IDS[value] + '}')
         elif kind in _ENUM_TYPES:

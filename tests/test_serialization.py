@@ -133,6 +133,48 @@ class InternalSerializationTests(unittest.TestCase):
                 self.assertEqual((vm.variables['booleanvalue'], vm.variables['numbervalue']),
                                  ("boolean", "number"))
 
+    def test_direct_uuid_map_keys_roundtrip_without_reordering_or_string_collision(self):
+        uuid='11111111-2222-4333-8444-abcdefabcdef'
+        vm=Interpreter()
+        self.addCleanup(vm.close)
+        source=(
+            f'Text="{uuid}"; U=New UUID(Text); Z=New UUID("00000000-0000-0000-0000-000000000000");'
+            'M=New Map;M.Insert(U,"uuid item");M.Insert(Text,"string item");M.Insert(Z,"zero item");'
+            'F=New FixedMap(M);MutableWire=ValueToStringInternal(M);FixedWire=ValueToStringInternal(F);'
+            'MR=ValueFromStringInternal(MutableWire);FR=ValueFromStringInternal(FixedWire);'
+            'MU=MR.Get(New UUID(Text));MS=MR.Get(Text);MZ=MR.Get(Z);'
+            'FU=FR.Get(New UUID(Text));FS=FR.Get(Text);FZ=FR.Get(Z);'
+        )
+        vm.execute_prepared(vm.prepare(source))
+        expected=('uuid item','string item','zero item')
+        for wire,prefix in (('mutablewire','m'),('fixedwire','f')):
+            data=vm.variables[wire]
+            self.assertEqual(tuple(vm.variables[prefix+s] for s in 'usz'),expected)
+            positions=tuple(data.index('"'+item+'"') for item in expected)
+            self.assertLess(positions[0],positions[1]);self.assertLess(positions[1],positions[2])
+
+    def test_direct_malformed_uuid_map_key_fails_without_callback_or_publication(self):
+        events=[]
+        class HostText(str):
+            def __eq__(self,other):events.append('equality');return True
+            def lower(self):events.append('lower');return str(self)
+            def __len__(self):events.append('length');return 36
+
+        vm=Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('U=New UUID("11111111-2222-4333-8444-abcdefabcdef");'
+                   'M=New Map;M.Insert("ordinary","before");M.Insert(U,"bad");F=New FixedMap(M);')
+        for bad in ('11111111-2222-4333-8444-ABCDEFABCDEF',
+                    HostText('11111111-2222-4333-8444-abcdefabcdef')):
+            object.__setattr__(vm.variables['u'],'text',bad)
+            for receiver in ('M','F'):
+                with self.subTest(kind=type(bad),receiver=receiver):
+                    vm.execute('Wire="unchanged";Caught=False;Try Wire=ValueToStringInternal('
+                               +receiver+');Except Caught=True;EndTry;')
+                    self.assertIs(vm.variables['caught'],True)
+                    self.assertEqual(vm.variables['wire'],'unchanged')
+                    self.assertEqual(events,[])
+
     def test_native_map_cycles_and_non_codec_keys_remain_unsupported(self):
         from yadinassi.execution.direct.python_direct_plain_map import PlainMap
         value = PlainMap()
