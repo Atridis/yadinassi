@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from tests.native_observations import extract_payload, inverse_stream, read_observation
 from yadinassi import Interpreter
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.formats.storage import serialization
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.collections.maps import BSLFixedMap, BSLMap
@@ -188,7 +189,9 @@ class SortDirectionIterationTests(unittest.TestCase):
                 alias = SortDirection; found = New Array;
                 Для Каждого item Из {name} Цикл found.Add(item); КонецЦикла;
             ''')
-            self.assertEqual(self.vm.variables['found'].items, [ASC, DESC])
+            self.assertEqual(self.vm.execute('Found.Count()'), Decimal(2))
+            self.assertIs(self.vm.execute('Found[0]'), ASC)
+            self.assertIs(self.vm.execute('Found[1]'), DESC)
         self.assertEqual(calls, [True])
 
     def test_nested_loops_break_continue_return_and_error_recovery(self):
@@ -227,18 +230,37 @@ class SortDirectionIterationTests(unittest.TestCase):
 
         class PretendNamespace(type):
             def __eq__(cls, other):
+                calls.append('class equality')
                 return True
+
+            def __hash__(cls):
+                calls.append('class hash')
+                return 0
 
         class HostObject(BSLObject, metaclass=PretendNamespace):
             def __iter__(self):
                 calls.append('host')
                 return iter([ASC])
 
-        for value in (ASC, DESC, HostNamespace(), HostObject(), [], (), {}, iter([ASC])):
+        self.vm.variables.update(values=[ASC, DESC], mapping={'asc': ASC})
+        self.vm.execute('''
+            For Each Item In Values Do Message(Item); EndDo;
+            For Each Item In Mapping Do Message(Item.Key); Message(Item.Value); EndDo;
+        ''')
+        self.assertEqual(self.output, ['По возрастанию', 'По убыванию', 'asc', 'По возрастанию'])
+
+        for value in (HostNamespace(), HostObject(), (), iter([ASC])):
             self.vm.variables['source'] = value
-            with self.subTest(kind=type(value).__name__), self.assertRaisesRegex(
-                    BSLRuntimeError, 'Для Каждого ожидает'):
-                self.vm.execute('For Each item In source Do EndDo;')
+            with self.subTest(kind=type(value).__name__), self.assertRaises(BoundaryViolation):
+                self.vm.execute('Try For Each item In source Do EndDo; Except EndTry;')
+        for value in (ASC, DESC):
+            with self.subTest(direction=value.name):
+                self.vm.variables['source'] = value
+                before = len(self.output)
+                self.vm.execute('Try For Each item In source Do EndDo; '
+                                'Except Message("caught"); EndTry;')
+                self.assertEqual(len(self.output), before + 1)
+                self.assertEqual(self.output[-1], 'caught')
         self.assertEqual(calls, [])
 
 
