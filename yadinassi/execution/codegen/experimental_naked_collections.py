@@ -18,7 +18,11 @@ _MAP_DATE_TYPE, _MAP_DATE_BOUNDARY = _DIRECT_EQUALITY_DATE_STATE
 _FIXED_MAP, _FIXED_MAP_STORAGE, _CANONICAL_VALUE_KEY_TYPES, _SINGLETON_KEY_TYPES = _DIRECT_FIXED_MAP_SNAPSHOT
 
 def _canonical_reference(value):
-    return _CanonicalReference(value.get,value.set)
+    reference=_CanonicalReference(value.get,value.set)
+    if type(value) is _CanonicalReference:
+        lend=getattr(value,'_direct_lent_address',None)
+        if lend is not None:reference._direct_lent_address=lend
+    return reference
 
 def _host_name_reference(getter,setter,name,storage=None):
     try:getter()

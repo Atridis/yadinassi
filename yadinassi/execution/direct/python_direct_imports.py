@@ -333,10 +333,11 @@ class ImportBoundary:
         if value is None:raise ValueError('Импортированное имя не найдено: '+'.'.join(path))
         return value
 
-    def _public_module(self,value):
+    def _public_module(self,value,*,_lent=None):
         # This lane resolves only actual module values. Unrelated members do
         # not acquire a new context check, and no Python member is looked up.
-        self._check_effect()
+        if _lent is None:self._check_effect()
+        else:self._check(_lent=_lent)
         if not self._imports_active:raise BoundaryViolation('module activation ended')
         _receiver_hooks(_CLASS_ABI[:1])
         child=value.interpreter
@@ -350,8 +351,13 @@ class ImportBoundary:
             raise BoundaryViolation('module storage or readiness changed')
         return child
 
-    def _public_field(self,value,name):
-        child=self._public_module(value)
+    def _public_field(self,value,name,*,_lent=None):
+        child=self._public_module(value,_lent=_lent)
+        if _lent is not None:
+            # A later actual/callback can mutate the same dictionary without
+            # replacing it. Check storage keys before any selected lookup.
+            for stored in child.variables:
+                if type(stored) is not str:raise BoundaryViolation('module field storage changed')
         key=name.casefold()
         public=_PUBLIC.get(child)
         if (not value.ready or key.startswith('_') or public is None or key not in public[1]
@@ -376,15 +382,24 @@ class ImportBoundary:
     def reference_member(self,value,name):
         if type(value) is not _Module:return super().reference_member(value,name)
         state,key=self._public_field(value,name)
+        def address(lend=None):
+            live,_=self._public_field(value,name,_lent=lend)
+            if live is not state:raise BoundaryViolation('module field storage changed')
+            return live
         def read():
-            live,_=self._public_field(value,name)
-            if live is not state:raise BoundaryViolation('module field storage changed')
-            return state[key]
+            return address()[key]
         def write(new_value):
-            live,_=self._public_field(value,name)
-            if live is not state:raise BoundaryViolation('module field storage changed')
-            state[key]=new_value
-        return Reference(read,write)
+            address()[key]=new_value
+        reference=Reference(read,write)
+        if value is self.vm._self_module and getattr(self,'_check_lent_reference',False) is True:
+            from .python_direct_lent_refs import remember
+            def read_lent(lend):
+                return address(lend)[key]
+            def write_lent(value,lend):
+                address(lend)[key]=value
+                self._check(_lent=lend)
+            remember(reference,self,read_lent,write_lent)
+        return reference
 
     def resolve_member(self,value,name):
         if type(value) is _Module:

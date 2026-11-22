@@ -477,8 +477,15 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=N
                 from .python_direct_transactions import check as check_transaction
                 check_transaction(_transaction_owner,database)
 
-        def _check(self):
+        _check_lent_reference=True
+
+        def _check(self,*,_lent=None):
             super()._check()
+            if _lent is not None:
+                from .python_direct_lent_refs import LendScope
+                if type(_lent) is not LendScope:
+                    raise BoundaryViolation('invalid dual reference lend')
+                _lent.check(self)
             if _parent_check is not None:_parent_check()
             if self._import_check_required or vm.imports or vm._family_owner is not vm:
                 check_live(vm)
@@ -486,7 +493,7 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=N
             if vm._family_closed:
                 raise BoundaryViolation('python-direct interpreter was closed during execution')
             if (vm._configuration_runtime is not None or vm.database_context is not database
-                    or vm.locals is not None or not vm._has_module_context
+                    or vm.locals is not None or (not vm._has_module_context and _lent is None)
                     or vm.execution_context!='client'
                     or safe_mode._CURRENT.get() is not None
                     or source_transactions._current.get() is not None

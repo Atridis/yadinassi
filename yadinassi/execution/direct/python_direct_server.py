@@ -292,13 +292,18 @@ def resolve_dual_client(parent,module,name,*,require_value,allow_references):
         parent._check_effect()
         context=ServerBoundary(parent,module_context=False,side='client')
         stack=vm._module_context_stack
+        lend=None
+        if references:
+            from .python_direct_lent_refs import scope
+            lend=scope(parent)
         stack.append(False)
         try:
             context.enter()
             try:
                 if not context._verify_context:context._check_role()
                 exports=module.dual_plan.function({},module.dual_plan.constants,[],context)
-                bound=tuple(_ForwardReference(value) if i in references and type(value) is Reference else value
+                bound=tuple(_ForwardReference(value if lend is None else lend.wrap(value))
+                            if i in references and type(value) is Reference else value
                             for i,value in enumerate(arguments))
                 try:
                     try:return exports[name](*bound)
@@ -310,6 +315,7 @@ def resolve_dual_client(parent,module,name,*,require_value,allow_references):
                 finally:context._check_effect()
             finally:context.leave()
         finally:
+            if lend is not None:lend.active=False
             stack.pop()
             parent._check_effect()
     function=HostFunction(name,invoke,reference_parameters=references,returns_value=module.signatures[name][0])

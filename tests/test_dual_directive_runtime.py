@@ -56,7 +56,10 @@ Message(D()); Observe(); Message(ContextServer()); Message(DetachedServer());
         self.assertEqual(seen, [('client', False), ('client', True),
                                ('server', False), ('server', True),
                                ('server', False), ('server', False)])
-        self.assertIsNot(self.vm.routines['d'].body, self.vm.server_routines['d'].body)
+        module=self.vm._direct_routine_modules['d']
+        self.assertIn('d',module.dual_names & module.nocontext_names)
+        self.assertIsNot(module.dual_plan,module.nocontext_plan)
+        self.assertIsNot(module.dual_plan.function,module.nocontext_plan.function)
         self.assert_restored()
 
     def test_same_side_reference_val_handle_return_alias_and_escaping_write_all_lanes(self):
@@ -151,11 +154,12 @@ Message(D()); Message(Server());
         self.assert_restored()
 
     def test_server_initializer_calls_dual_in_existing_activation(self):
+        from yadinassi.execution.direct.python_direct_server import ServerBoundary
         activations = []
-        original = Interpreter._new_server_activation
-        def create(owner, **kwargs):
-            activations.append(1)
-            return original(owner, **kwargs)
+        original = ServerBoundary.__init__
+        def create(boundary, parent, **kwargs):
+            original(boundary,parent,**kwargs)
+            activations.append((boundary.side,boundary.module_context))
         self.vm.execute('''&AtServer
 Var State;
 &AtClientAtServerNoContext
@@ -166,9 +170,9 @@ Function Server() Return State; EndFunction
 State=40; D(State);
 #EndIf
 ''')
-        with mock.patch.object(Interpreter, '_new_server_activation', create):
+        with mock.patch.object(ServerBoundary,'__init__',create):
             self.assertEqual(self.vm.execute('Server()'), Decimal(41))
-        self.assertEqual(activations, [1])
+        self.assertEqual(activations,[('server',True),('server',False)])
         self.assert_restored()
 
     def test_imported_ordinary_client_wrapper_calls_its_own_dual(self):

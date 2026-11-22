@@ -82,7 +82,19 @@ def host_reference(getter,setter,name,storage,activation,context):
         check();return getter()
     def set(value):
         check();setter(value);check()
-    return _host_name_reference(get,set,name)
+    reference=_host_name_reference(get,set,name)
+    if (getattr(context,'_check_lent_reference',False) is True
+            and (storage is None or type(storage) is list and len(storage)==1)):
+        from .python_direct_lent_refs import remember
+        def check_lend(lend):
+            context._check(_lent=lend)
+            if not activation[0]:raise BoundaryViolation('expired routine reference')
+        def read_lent(lend):
+            check_lend(lend);return getter()
+        def write_lent(value,lend):
+            check_lend(lend);setter(value);check_lend(lend)
+        remember(reference,context,read_lent,write_lent)
+    return reference
 
 
 class PublishedModuleCell:
