@@ -179,16 +179,41 @@ class DirectTableReferenceTests(unittest.TestCase):
                     with self.assertRaises(BoundaryViolation):refs[0].set(2)
                 self.assertEqual(seen,[]);self.assertEqual(next(iter(row.cells.values())),1)
 
-    def test_typed_and_indexed_reference_writes_are_explicitly_unsupported(self):
-        for kind in ('typed','indexed'):
-            vm=Interpreter()
-            if kind=='typed':vm.execute('T=New ValueTable;C=T.Columns.Add("A",New TypeDescription("Number"));R=T.Add();R.A=1;')
-            else:vm.execute(SETUP+'T.Indexes.Add("A");')
-            vm.execute('Function Read(Val X) Return X;EndFunction Procedure Change(X) X=2;EndProcedure Result=Read(R.A);')
-            self.assertEqual(vm.variables['result'],1)
-            with self.assertRaisesRegex(BoundaryViolation,kind):vm.execute('Change(R.A);')
-            self.assertEqual(vm.execute('R.A'),1)
-            vm.execute('R.A=3;');self.assertEqual(vm.execute('R.A'),3)
+    def test_persistent_routine_reference_writes_preserve_typing_and_indexes(self):
+        from yadinassi.execution.direct import python_direct_table_references as refs
+
+        for declaration in (None, 'A', 'B'):
+            with self.subTest(declaration=declaration):
+                vm=Interpreter()
+                self.addCleanup(vm.close)
+                vm.execute('T=New ValueTable;'
+                           'T.Columns.Add("A",New TypeDescription("Number",New NumberQualifiers(3,1)));'
+                           'T.Columns.Add("B");R=T.Add();R.A=1;R.B=2;'
+                           'Function Read(Val X) Return X;EndFunction '
+                           'Procedure Change(X) X=1.23;EndProcedure Result=Read(R.A);')
+                self.assertEqual(vm.variables['result'],1)
+                if declaration is not None:
+                    vm.execute(f'T.Indexes.Add("{declaration}");')
+                vm.execute('Old=T.FindRows(New Structure("A",1));'
+                           'Unrelated=T.FindRows(New Structure("B",2));')
+                row=vm.variables['r']
+                self.assertEqual(vm.variables['old'].items,[row])
+                self.assertEqual(vm.variables['unrelated'].items,[row])
+
+                # Separate compilation uses the live public binding protocol,
+                # not the compiler-known lexical address of a same-block call.
+                with (patch.object(refs,'bind',wraps=refs.bind) as bind,
+                      patch.object(refs,'_RowAddress',side_effect=AssertionError('unexpected lexical address'))):
+                    vm.execute('Change(R.A);')
+                bind.assert_called_once()
+                self.assertIs(bind.call_args.args[1],row)
+                self.assertEqual(row.get_member('A'),Decimal('1.2'))
+                vm.execute('Old=T.FindRows(New Structure("A",1));'
+                           'NewMatch=T.FindRows(New Structure("A",1.2));'
+                           'Unrelated=T.FindRows(New Structure("B",2));')
+                self.assertEqual(vm.variables['old'].items,[])
+                self.assertEqual(vm.variables['newmatch'].items,[row])
+                self.assertEqual(vm.variables['unrelated'].items,[row])
 
     def test_reference_checks_only_the_addressed_row(self):
         from yadinassi.execution.direct import python_direct_plain_tables as tables
