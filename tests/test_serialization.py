@@ -91,6 +91,20 @@ class InternalSerializationTests(unittest.TestCase):
         self.assertEqual(data, value_to_string_internal(boxed))
         self.assertEqual(value_to_string_internal(value_from_string_internal(data)), data)
 
+    def test_native_boolean_and_number_map_keys_roundtrip_without_storage_keys(self):
+        from yadinassi.collections.maps import BSLMap
+        from yadinassi.execution.direct.python_direct_plain_map import PlainMap
+        native = PlainMap()
+        native[True] = 'boolean'
+        native[Decimal(1)] = 'number'
+        boxed = BSLMap()
+        boxed.insert(True, 'boolean')
+        boxed.insert(Decimal(1), 'number')
+        data = value_to_string_internal(native)
+        self.assertEqual(data, value_to_string_internal(boxed))
+        restored = value_from_string_internal(data)
+        self.assertEqual((restored.get(True), restored.get(Decimal(1))), ('boolean', 'number'))
+
     def test_native_map_cycles_and_non_codec_keys_remain_unsupported(self):
         from yadinassi.execution.direct.python_direct_plain_map import PlainMap
         value = PlainMap()

@@ -84,14 +84,16 @@ class JSONFamilyTests(unittest.TestCase):
             W=New JSONWriter; W.SetString(New JSONWriterSettings(JSONLineBreak.None));
             WriteJSON(W,F); S=W.Close();''')
         self.assertEqual(self.vm.variables['s'], '{"Name":"ёж","name":7}')
-        mapping = PlainMap()
-        mapping[D(0)] = 'not a string property'
-        writer = BSLJSONWriter()
-        writer.set_string()
-        with self.assertRaisesRegex(TypeError, 'ожидается Строка'):
-            write_json(writer, PlainFixedMap(mapping))
-        write_json(writer, D(3))
-        self.assertEqual(writer.close(), '3')
+        for key in (D(0), False):
+            with self.subTest(key=key):
+                mapping = PlainMap()
+                mapping[key] = 'not a string property'
+                writer = BSLJSONWriter()
+                writer.set_string()
+                with self.assertRaisesRegex(TypeError, 'ожидается Строка'):
+                    write_json(writer, PlainFixedMap(mapping))
+                write_json(writer, D(3))
+                self.assertEqual(writer.close(), '3')
 
     def test_direct_fixed_map_codec_uses_native_slots_not_foreign_mappings(self):
         class ForeignMapping:

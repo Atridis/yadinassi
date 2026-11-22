@@ -1,4 +1,5 @@
 """Only the canonical mutable Array family receives an opaque display label."""
+from decimal import Decimal
 import unittest
 from unittest.mock import patch
 
@@ -63,3 +64,24 @@ class ArrayPresentationSecurityTests(unittest.TestCase):
         vm.register_function('CloseOwner',close)
         with self.assertRaises(BoundaryViolation):vm.execute('Message("type:"+CloseOwner());')
         self.assertEqual(output,['type:Массив'])
+
+    def test_extension_string_and_numeric_addition_in_prepared_routines(self):
+        source = '''
+Function AppendOne(Val Value)
+    Return Value + 1;
+EndFunction
+Result = AppendOne(Supply());
+'''
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter(allow_extensions=True)
+                self.addCleanup(vm.close)
+                value = iter(('prefix:', Decimal(2)))
+                vm.register_function('Supply', lambda: next(value))
+                plan = vm.prepare(source) if prepared else None
+                for expected in ('prefix:1', Decimal(3)):
+                    if plan is None:
+                        vm.execute(source)
+                    else:
+                        vm.execute_prepared(plan)
+                    self.assertEqual(vm.variables['result'], expected)

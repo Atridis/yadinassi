@@ -79,7 +79,7 @@ class DirectHTTPTests(unittest.TestCase):
             class Child(map_type):pass
             for value in ({},Child()):
                 with self.assertRaises(TypeError):_headers(value)
-            for pairs in ([('x','a'),('X','b')],[(Decimal(1),'x')],[('x','bad\r\n')]):
+            for pairs in ([('x','a'),('X','b')],[(Decimal(1),'x')],[(True,'x')],[('x','bad\r\n')]):
                 value=map_type()
                 for key,item in pairs:value[key]=item
                 with self.assertRaises((TypeError,ValueError)):_headers(value)

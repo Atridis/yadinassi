@@ -21,8 +21,10 @@ class DirectFixedMapTests(unittest.TestCase):
                 elif route=='ast':vm.execute_program(parse(source))
                 else:vm.execute_prepared(vm.prepare(source))
             self.assertIs(type(vm.variables['f']),PlainFixedMap)
-            self.assertEqual(vm.execute('F.Count()'),2)
-            self.assertEqual(vm.execute('F[True]'),'number');self.assertEqual(vm.execute('F[1]'),'number')
+            self.assertEqual(vm.execute('F.Count()'),3)
+            self.assertEqual(vm.execute('F[True]'),'bool');self.assertEqual(vm.execute('F[1]'),'number')
+            self.assertEqual(vm.execute('F.Get(True)'),'bool');self.assertEqual(vm.execute('F.Get(1.00)'),'number')
+            self.assertEqual(vm.execute('M[1]'),'changed')
             self.assertIsNone(vm.execute('F["1"]'));self.assertIsNone(vm.execute('F.Get("absent")'))
             with self.assertRaises(BSLError):vm.execute('F["absent"]')
 

@@ -11,16 +11,18 @@ from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryVi
 
 class PlainFixedMapTests(unittest.TestCase):
     def test_shallow_native_snapshot_and_reverse_copy(self):
-        child=[];source=PlainMap();source[True]=child;source[D(1)]=child
+        child=[];source=PlainMap();source[True]=child;source[D(1)]='number'
         fixed=construct(BSLFixedMap,(source,))
         self.assertIs(type(fixed._items),MappingProxyType)
-        self.assertEqual(len(fixed._items),1)
+        self.assertEqual(len(fixed._items),2)
         source[True]='changed';source['new']=2
-        self.assertIs(fixed.get(D(1)),child);self.assertIsNone(fixed.get('new'))
+        self.assertEqual(fixed.get(D(1)),'number');self.assertIsNone(fixed.get('new'))
+        self.assertEqual([type(pair.key) for pair in fixed], [bool, D])
         child.append(3);self.assertEqual(fixed.get(True),[3])
         with self.assertRaises(TypeError):fixed._items[True]=4
         copied=plain_map(fixed);self.assertIs(copied[True],child)
         copied[True]=5;self.assertIs(fixed.get(True),child)
+        self.assertEqual(copied[D(1)], 'number')
     def test_default_execute_and_prepared(self):
         source='''M=New Map;A=New Array;A.Add(1);M.Insert("K",A);
 F=New FixedMap(M);M.Insert("K",7);A.Add(2);

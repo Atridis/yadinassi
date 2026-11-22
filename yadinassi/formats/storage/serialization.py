@@ -41,7 +41,7 @@ from yadinassi.execution.codegen.experimental_naked_collections import (
 )
 from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure, structure_key
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
-from yadinassi.execution.direct.python_direct_plain_map import PlainMap
+from yadinassi.execution.direct.python_direct_plain_map import PlainMap, native_map_items
 from yadinassi.types.values import BSLArray, BSLFixedArray, BSLNull, BSLType, NULL, equal
 
 
@@ -254,7 +254,7 @@ _NATIVE_MAP_SERIALIZABLE_KEYS = (type(None), bool, str, int, Decimal, BSLNull, B
 
 
 def _native_map_entries(value):
-    for key, item in dict.items(value):
+    for key, item in native_map_items(value):
         if not any(type(key) is kind for kind in _NATIVE_MAP_SERIALIZABLE_KEYS):
             raise TypeError("ЗначениеВСтрокуВнутр: недопустимый ключ соответствия")
         yield key, item

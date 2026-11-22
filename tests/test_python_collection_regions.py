@@ -21,8 +21,8 @@ class PythonCollectionRegionTests(unittest.TestCase):
         self.assertEqual(result,(True,[1,9,3],6))
 
     def test_native_map_numeric_key_contract(self):
-        result=self.run_modes('M=New Map;M.Insert(True,11);M.Insert(1,22);N=M.Count();R=M.Get(True);Missing=M.Get("absent");',lambda vm:tuple(vm.variables[k] for k in ('n','r','missing')))
-        self.assertEqual(result,(1,22,None))
+        result=self.run_modes('M=New Map;M.Insert(True,11);M.Insert(1,22);N=M.Count();R=M.Get(True);Numeric=M[1];Missing=M.Get("absent");',lambda vm:tuple(vm.variables[k] for k in ('n','r','numeric','missing')))
+        self.assertEqual(result,(2,11,22,None))
 
     def test_structure_casefold_and_member_method_independence(self):
         result=self.run_modes('S=New Structure("Name,Count",1,7);S.NAME=2;S.Insert("nAmE",3);R=S.name+S.Count+S.Count();',lambda vm:vm.variables['r'])

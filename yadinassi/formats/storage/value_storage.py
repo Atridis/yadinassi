@@ -25,7 +25,7 @@ from yadinassi.collections.value_tables import BSLValueTable
 from .value_storage_table import TableSnapshotError, restore_table, take_table
 from yadinassi.types.values import BSLArray, BSLFixedArray, BSLObject, HostFunction, NULL
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray as _PlainArray
-from yadinassi.execution.direct.python_direct_plain_map import PlainMap as _PlainMap
+from yadinassi.execution.direct.python_direct_plain_map import PlainMap as _PlainMap, native_map_items, native_map_storage_key
 
 # Local defensive budgets, not platform limits. Nodes count occurrences,
 # including scalars and map keys; text/binary/digit totals count occurrences.
@@ -220,12 +220,12 @@ class _Capture:
                 if dict.__len__(value) > (MAX_NODES - self.nodes) // 2:
                     raise SnapshotError("invalid or oversized map")
                 entries = []
-                for key, item in dict.items(value):
+                for key, item in native_map_items(value):
                     if not _native_map_key(type(key)):
                         raise SnapshotError("invalid native map key")
                     entries.append((self.take(key, depth + 1), self.take(item, depth + 1)))
-                # Preserve native Python numeric-key equivalence on Get. The
-                # existing map tag uses BSLMap's distinct typed-key equality.
+                # Preserve direct-map numeric equivalence and the distinct
+                # Boolean domain. The existing map tag restores BSLMap.
                 return ("native_map", tuple(entries))
             if kind is self.direct_map:
                 if dict.__len__(value) > (MAX_NODES - self.nodes) // 2:
@@ -414,6 +414,7 @@ class _Restore:
                     key = self.take(pair[0], depth + 1)
                     if not _native_map_key(type(key)):
                         raise SnapshotError("invalid native map key")
+                    key = native_map_storage_key(key)
                     if dict.__contains__(result, key):
                         raise SnapshotError("duplicate map key")
                     dict.__setitem__(result, key, self.take(pair[1], depth + 1))
@@ -482,7 +483,7 @@ _DIRECT_VALUE_STORAGE_FIELDS=((BSLValueStorage,'_snapshot',vars(BSLValueStorage)
                               (BSLDate,'boundary',vars(BSLDate)['boundary']),
                               (BSLUUID,'text',vars(BSLUUID)['text']))
 _DIRECT_VALUE_STORAGE_FUNCTIONS=tuple((name,globals()[name]) for name in (
-    'capture','restore','_required_field','_bounded_decimal','_native_map_key','compression_degree',
+    'capture','restore','_required_field','_bounded_decimal','_native_map_key','native_map_items','native_map_storage_key','compression_degree',
     'compress_payload','expand_payload','map_key','structure_key','take_table','restore_table'))
 
 _DIRECT_VALUE_STORAGE_CLASSES=tuple((name,globals()[name]) for name in ('_Capture','_Restore','BSLValueStorage','Snapshot','BSLDate','BSLUUID'))
