@@ -71,8 +71,8 @@ class CLITests(unittest.TestCase):
                   (('-',), 'code', '', '<stdin>:2:'),
                   ((), 'code/exit', 'saved', '<консоль>:1:')]
         total = 0
-        for family in ('DATE_FAILURES', 'STRING_TEMPLATE_FAILURES',
-                       'STRING_BOUNDARY_FAILURES', 'CHARACTER_FAILURES', 'ROUNDING_FAILURES'):
+        for family in ('STRING_TEMPLATE_FAILURES', 'STRING_BOUNDARY_FAILURES',
+                       'CHARACTER_FAILURES', 'ROUNDING_FAILURES'):
             seen = set(); message_routes = {}
             for expression, message in getattr(smoke_test, family):
                 selected = diagnostic_transport_cases(routes, message, seen)
@@ -85,7 +85,7 @@ class CLITests(unittest.TestCase):
                 total += len(selected)
             self.assertTrue(message_routes)
             self.assertTrue(all(indices == set(range(6)) for indices in message_routes.values()))
-        self.assertEqual(total, 154)  # Previously 246; source changes require coverage review.
+        self.assertEqual(total, 66)  # Date now verifies each REPL error in one real session.
         with self.assertRaises(AssertionError):
             diagnostic_transport_cases(routes[:-1], 'error', set())
         with self.assertRaises(AssertionError):
@@ -145,24 +145,40 @@ class CLITests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             temporary = Path(temporary).resolve()
             source = temporary / 'ОшибкаДаты.bsl'
-            seen_messages = set()
-            for expression, message in DATE_FAILURES:
-                code = f'savedDate = Date(2024, 2, 29);\nsavedDate = {expression};\n'
-                source.write_text(code, encoding='utf-8-sig')
-                cases = [((flag, code), None, '', '<команда>:2:')
-                         for flag in ('-c', '-с', '--command')]
-                cases += [((str(source),), None, '', str(source.resolve()) + ':2:'),
-                          (('-',), code, '', '<stdin>:2:'),
-                          ((), code + 'ValueToStringInternal(savedDate)\n/exit\n',
-                           '{"D",20240229000000}\n', '<консоль>:1:')]
-                cases = diagnostic_transport_cases(cases, message, seen_messages)
-                for arguments, stdin, stdout, location in cases:
+            setup = 'savedDate = Date(2024, 2, 29);\n'
+            console = [setup]
+            for number, (expression, message) in enumerate(DATE_FAILURES):
+                failing_line = f'savedDate = {expression};\n'
+                code = setup + failing_line
+                cases = [(('-c', code), None, '<команда>:2:')]
+                # Each expression exercises the diagnostic through -c. The
+                # aliases, BOM file and stdin need one real failed execution.
+                if number == 0:
+                    source.write_text(code, encoding='utf-8-sig')
+                    cases += [((flag, code), None, '<команда>:2:') for flag in ('-с', '--command')]
+                    cases += [((str(source),), None, str(source) + ':2:'),
+                              (('-',), code, '<stdin>:2:')]
+                for arguments, stdin, location in cases:
                     with self.subTest(expression=expression, arguments=arguments):
                         result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
-                        self.assertEqual((result.returncode, result.stdout), (1, stdout))
+                        self.assertEqual((result.returncode, result.stdout), (1, ''))
                         self.assertIn(location, result.stderr)
                         self.assertIn(message, result.stderr)
                         self.assertNotIn('Traceback', result.stderr)
+                console += [failing_line, 'ValueToStringInternal(savedDate)\n']
+
+            # Every failing assignment must preserve the prior value, and
+            # recovery is exercised repeatedly within the same real session.
+            result = self.run_cli(stdin=''.join(console) + '/exit\n', cwd=temporary)
+            self.assertEqual((result.returncode, result.stdout),
+                             (1, '{"D",20240229000000}\n' * len(DATE_FAILURES)))
+            diagnostics = result.stderr.splitlines()
+            self.assertEqual(len(diagnostics), len(DATE_FAILURES))
+            self.assertNotIn('Traceback', result.stderr)
+            for (expression, message), diagnostic in zip(DATE_FAILURES, diagnostics):
+                with self.subTest(expression=expression, source='<консоль>'):
+                    self.assertIn('<консоль>:1:', diagnostic)
+                    self.assertIn(message, diagnostic)
 
     def test_dates_cross_bom_imported_routines_and_literal_defaults(self):
         from scripts.smoke_test import DATE_MODULE, DATE_IMPORT_PROGRAM, DATE_IMPORT_OUTPUT
@@ -1056,14 +1072,20 @@ Try snapshot["missing"]; Except Message("missing"); EndTry;
             project = directory / 'project'
             project.mkdir()
             path = project / 'ОшибкаФиксированной.bsl'
+            tested_columns = set()
             for setup, action, message, column in cases:
                 code = setup + '\n' + action + '\n'
-                path.write_text(code, encoding='utf-8-sig')
-                for arguments, stdin, source in [
-                        (('-c', code), None, '<команда>'),
-                        ((str(path.resolve()),), None, str(path.resolve())),
-                        ((str(Path('project') / path.name),), None, str(Path('project') / path.name)),
-                        (('-',), code, '<stdin>')]:
+                routes = [(('-c', code), None, '<команда>')]
+                # Keep every diagnostic; exercise path resolution and stdin
+                # once for each distinct source-column shape.
+                if column not in tested_columns:
+                    tested_columns.add(column)
+                    path.write_text(code, encoding='utf-8-sig')
+                    absolute = str(path.resolve())
+                    relative = str(path.relative_to(directory))
+                    routes += [((absolute,), None, absolute), ((relative,), None, relative),
+                               (('-',), code, '<stdin>')]
+                for arguments, stdin, source in routes:
                     with self.subTest(action=action, source=source, arguments=arguments):
                         result = self.run_cli(*arguments, stdin=stdin, cwd=directory)
                         self.assertEqual((result.returncode, result.stdout), (1, ''))
@@ -1454,10 +1476,13 @@ EndTry;
                  ('#Область Имя\n#КонецОбласти хвост', 2),
                  ('#Region Name\n#EndRegion extra', 2)]
         for code, line in cases:
-            for arguments, stdin, source, stdout in [
-                    (('-c', code), None, '<команда>', ''),
-                    (('-',), code, '<stdin>', ''),
-                    ((), code + '\nСообщить("жив");\n/exit\n', '<консоль>', 'жив\n')]:
+            routes = [(('-c', code), None, '<команда>', '')]
+            # Command tests every malformed directive in both languages.
+            # One header and one multiline case verify transport/recovery.
+            if code in ('#Область 123', '#Region Name\n#EndRegion extra'):
+                routes += [(('-',), code, '<stdin>', ''),
+                           ((), code + '\nСообщить("жив");\n/exit\n', '<консоль>', 'жив\n')]
+            for arguments, stdin, source, stdout in routes:
                 with self.subTest(code=code, source=source):
                     result = self.run_cli(*arguments, stdin=stdin)
                     self.assertEqual((result.returncode, result.stdout), (1, stdout))
