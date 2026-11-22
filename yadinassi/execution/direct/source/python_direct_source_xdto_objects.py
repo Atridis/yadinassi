@@ -24,6 +24,7 @@ _GET_LIST=_OBJECT.get_list
 _OBJECT_READS={}
 for _operation,_arity,_returns,_aliases in (
     ('type',(0,),True,('type','тип')),
+    ('factory',(0,),True,('factory','фабрика')),
     ('owner',(0,),True,('owner','владелец')),
     ('owning_property',(0,),True,('owningproperty','владеющеесвойство')),
     ('is_set',(1,),True,('isset','установлено')),
@@ -493,6 +494,7 @@ def resolve(boundary,value,name,*,require_value=False,argument_count=None,allow_
     def call(*args):
         owner,factory,records,items=check(len(args))
         if type(value) is _OBJECT and operation!='unset':
+            if operation=='factory':return factory
             if operation in ('is_set','get_list','get_xdto'):
                 prop=_property(items,args[0])
                 if operation=='get_xdto' and prop._upper!=1:

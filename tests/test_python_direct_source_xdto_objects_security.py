@@ -78,6 +78,20 @@ class FlatXDTOSecurity(unittest.TestCase):
             if replacement=='copy':obj._values=dict(obj._values)
             else:obj._values['Unknown']=None
             with self.subTest(replacement=replacement),self.assertRaises(basic.DENIED):vm.execute('V.Label;')
+    def test_object_factory_admission_rejects_arity_and_unowned_receivers_before_actuals(self):
+        app=self.prepared();other=self.prepared();vm=app.interpreter
+        vm.execute('Var Calls; Calls=0; Function Touch() Calls=Calls+1; Return Undefined; EndFunction;')
+        vm.variables['foreign']=other.interpreter.variables['v']
+        owned=vm.variables['v']
+        forged=object.__new__(type(owned));vars(forged).update(vars(owned))
+        vm.variables['forged']=forged
+        for code in ('V.Factory(Touch());','Foreign.Factory(Touch());','Forged.Фабрика(Touch());'):
+            with self.subTest(code=code),self.assertRaises(basic.DENIED):vm.execute(code)
+        self.assertEqual(vm.variables['calls'],0)
+        for code in ('Foreign.Factory();','Forged.Factory();'):
+            with self.subTest(code=code),self.assertRaises(basic.DENIED):vm.execute(code)
+        self.assertIs(vm.execute('V.Factory();'),app.xdto.factory)
+
     def test_scalar_child_mutation_denied(self):
         app=self.prepared();vm=app.interpreter;vm.execute('V.Label="ok";')
         obj=vm.variables['v'];obj._values['Label']._value='changed'
