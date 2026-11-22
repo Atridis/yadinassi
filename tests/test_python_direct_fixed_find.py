@@ -16,6 +16,24 @@ class DirectFixedFindTests(unittest.TestCase):
     def vm(self):
         vm=Interpreter();self.addCleanup(vm.close);return vm
 
+    def test_date_needles_match_exact_ticks_for_named_and_captured_find(self):
+        from yadinassi.temporal.dates import BSLDate, date
+        vm = self.vm()
+        vm.execute('''
+            Point = Date(2024, 2, 29, 12, 34, 56);
+            A = New Array;
+            A.Add(Point + 0.0001); A.Add(Point); A.Add(Point);
+            F = New FixedArray(A);
+            AF = A.Find; FF = F.Найти;
+        ''')
+        vm.variables['needle'] = date('20240229123456')
+        vm.variables['missing_date'] = date('20240229123457')
+        with patch.object(BSLDate, '__eq__', side_effect=AssertionError('date equality hook')):
+            for find in ('A.Find', 'AF', 'F.Find', 'FF'):
+                with self.subTest(find=find):
+                    self.assertEqual(vm.execute(f'{find}(Needle)'), Decimal(1))
+                    self.assertIsNone(vm.execute(f'{find}(Missing_Date)'))
+
     def test_source_ast_prepared_match_recorded_native_find_labels(self):
         native=(Path(__file__).resolve().parents[1]/'integrational_tests/fill_exclude_native/collections.out').read_text(encoding='utf-8')
         expected={line.split(': ',1)[0]:line.split(': ',1)[1] for line in native.splitlines() if '.find-' in line}

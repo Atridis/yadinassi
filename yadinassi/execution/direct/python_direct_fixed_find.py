@@ -3,7 +3,7 @@ from types import MethodType
 from yadinassi.types.values import HostFunction, _DIRECT_FIXED_ARRAY_TYPE as _FIXED, _DIRECT_FIXED_FIND_ABI
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.execution.codegen.experimental_naked_scalar_semantics import (
-    _FIND_DIRECT_COLLECTION_IDS, find_by_identity,
+    _DATE_TYPE, _FIND_DIRECT_COLLECTION_IDS, find_by_identity, find_date,
 )
 
 from .python_direct_plain_map import _DIRECT_PLAIN_MAP_FIND_TYPES
@@ -55,7 +55,10 @@ def _bind(boundary,receiver,operation,name,*,function=None,callback=None,allow_r
         if len(args)!=1:raise TypeError('Find requires one argument')
         needle=args[0]
         try:
-            if id(type(needle)) in _IDENTITY_NEEDLE_IDS:
+            kind=type(needle)
+            if kind is _DATE_TYPE:
+                return find_date(items,needle)
+            if id(kind) in _IDENTITY_NEEDLE_IDS:
                 return find_by_identity(items,needle)
             return _FIND(receiver,needle)
         finally:check()

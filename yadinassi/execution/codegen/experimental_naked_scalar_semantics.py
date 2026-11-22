@@ -75,10 +75,22 @@ def find_by_identity(items, needle):
     return None
 
 
+def find_date(items, needle):
+    """Find an exact Date by BSL ticks without invoking Python equality hooks."""
+    ticks = _date_order_ticks(needle)
+    sequence = tuple.__iter__(items) if type(items) is tuple else list.__iter__(items)
+    for index, item in enumerate(sequence):
+        if type(item) is _DATE_TYPE and _date_order_ticks(item) == ticks:
+            return Decimal(index)
+    return None
+
+
 def typed_find(array, value):
     if type(array) is not list and type(array) is not _PlainArray:
         raise UnsupportedScalarSemantics('typed_find requires a native array')
     value_type = type(value)
+    if value_type is _DATE_TYPE:
+        return find_date(array, value)
     if value_type is BSLUUID:
         # The UUID is a value, unlike a collection. Read only its exact slot;
         # never invoke comparison on a malformed or foreign host value.
