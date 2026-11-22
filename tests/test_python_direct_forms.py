@@ -33,6 +33,36 @@ class DirectFormTests(unittest.TestCase):
                     session._gate.release()
                 self.assertEqual(path.read_bytes(),before)
 
+    def test_scalar_qualifier_constructors_in_form(self):
+        from yadinassi.forms.form_runtime import FormSession
+        session=FormSession("""
+            &AtClient
+            Procedure Opened(Cancel)
+                N = New NumberQualifiers(5, 2);
+                S = New КвалификаторыСтроки(12);
+                D = New DateQualifiers;
+                B = New КвалификаторыДвоичныхДанных(4);
+                T = New TypeDescription("Number", N);
+                ThisObject.Title = "qualifiers constructed";
+            EndProcedure
+        """, bindings={'OnOpen':'Opened'})
+        self.addCleanup(session.interpreter.close)
+        session.open()
+        self.assertEqual(session.form.title,'qualifiers constructed')
+
+    def test_form_qualifier_constructor_rejects_replaced_registration(self):
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.forms.form_runtime import FormSession
+        session=FormSession('&AtClient\nProcedure Opened(Cancel) '
+                            'N = New NumberQualifiers(5, 2); EndProcedure',
+                            bindings={'OnOpen':'Opened'})
+        self.addCleanup(session.interpreter.close)
+        factory=session.interpreter.types['numberqualifiers']
+        with patch.object(factory, 'function', side_effect=AssertionError('foreign constructor')) as foreign:
+            with self.assertRaisesRegex(BoundaryViolation, 'canonical registration'):
+                session.open()
+            foreign.assert_not_called()
+
     def test_event_transaction_service_rejected_before_effect(self):
         from yadinassi.forms.form_runtime import FormSession
         source='&AtServer\nProcedure Created(Cancel, StandardProcessing) BeginTransaction(); EndProcedure'

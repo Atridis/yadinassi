@@ -8,6 +8,7 @@ from yadinassi.forms import form_runtime
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
 from .python_direct import REPAIRS, _snapshot
 from .python_direct_handlers import prepare_handlers
+from .python_direct_services import TYPE_QUALIFIER_CONSTRUCTORS
 from yadinassi.syntax import ast
 from .python_direct_configuration import ConfigurationBoundary, check_owner, _COMMAND_SCOPE
 from .python_direct_names import VALUE_LIST_CONSTRUCTOR_ALIASES
@@ -95,7 +96,29 @@ class FormBoundary(ConfigurationBoundary):
         if name in SYSTEM_NAMES or self.owner._configuration_runtime is not None and name in self.app._definitions: raise ValueError('Форма: поле только для чтения')
         self.session.form.set_member(name, value)
 
+    def _qualifier_constructor(self, name, expected):
+        from yadinassi.types.values import HostFunction
+        self._check()
+        factory=self.owner.types.get(name)
+        def validate():
+            if (self.owner.types.get(name) is not factory
+                    or type(factory) is not HostFunction or factory.function is not expected
+                    or type(factory.reference_parameters) is not frozenset or factory.reference_parameters
+                    or factory.returns_value is not True):
+                raise BoundaryViolation('form qualifier constructor requires canonical registration')
+        validate()
+        def construct(*values):
+            self._before('call_value',name)
+            validate()
+            return expected(*values)
+        construct.requires_reference=lambda index:False
+        return construct
+
     def resolve_service(self,*args,**kwargs):
+        if args and args[0].startswith('new:'):
+            name=args[0][4:].casefold()
+            qualifier=TYPE_QUALIFIER_CONSTRUCTORS.get(name)
+            if qualifier is not None:return self._qualifier_constructor(name,qualifier)
         if args and args[0].casefold() in user_messages.CONSTRUCTOR_SERVICES:
             return user_messages.constructor(self,args[0],**kwargs)
         if args and args[0].casefold() in VALUE_LIST_SERVICES:
@@ -405,7 +428,7 @@ def prepare_form(session, program, source, attributes, tables, *, install_metada
                          if type(node) is not ast.Routine or node.module_context]
                         if source_mode else program)
     prepared=prepare_handlers(executable_program, source_text=source if type(source) is str else '',
-                            external_names=names, constructors=CALLBACK_CONSTRUCTORS+DECLARATION_CONSTRUCTORS+user_messages.NAMES+(CONSTRUCTORS if source_mode else VALUE_LIST_CONSTRUCTOR_ALIASES),
+                            external_names=names, constructors=CALLBACK_CONSTRUCTORS+DECLARATION_CONSTRUCTORS+user_messages.NAMES+(CONSTRUCTORS if source_mode else (*VALUE_LIST_CONSTRUCTOR_ALIASES,*TYPE_QUALIFIER_CONSTRUCTORS)),
                             repairs=REPAIRS+('authority_checkpoints',),_source_routine_scopes=source_mode)
     if install_metadata and local_server_calls:
         vm=session.interpreter

@@ -65,6 +65,16 @@ _STREAM_CONSTRUCTOR_COUNTS = {
 _REGEX_IMPLEMENTATIONS=tuple(regex_functions.FUNCTIONS)
 _REGEX_IDENTITIES=frozenset(map(id,_REGEX_IMPLEMENTATIONS))
 
+_TYPE_QUALIFIER_FAMILIES = (
+    (('numberqualifiers','квалификаторычисла'),BSLNumberQualifiers),
+    (('stringqualifiers','квалификаторыстроки'),BSLStringQualifiers),
+    (('datequalifiers','квалификаторыдаты'),BSLDateQualifiers),
+    (('binarydataqualifiers','квалификаторыдвоичныхданных'),BSLBinaryDataQualifiers),
+)
+TYPE_QUALIFIER_CONSTRUCTORS = {
+    alias: factory for aliases,factory in _TYPE_QUALIFIER_FAMILIES for alias in aliases
+}
+
 CONSTRUCTORS = {
     alias: factory for aliases,factory in (
         (user_messages.NAMES,user_messages._FACTORY),
@@ -80,10 +90,7 @@ CONSTRUCTORS = {
         (('valuetablecolumncollection','коллекцияколоноктаблицызначений'),None),
         (('typedescription','описаниетипов'),BSLTypeDescription),
         (TEMP_TABLE_MANAGER_NAMES,BSLTempTablesManager),
-        (('numberqualifiers','квалификаторычисла'),BSLNumberQualifiers),
-        (('stringqualifiers','квалификаторыстроки'),BSLStringQualifiers),
-        (('datequalifiers','квалификаторыдаты'),BSLDateQualifiers),
-        (('binarydataqualifiers','квалификаторыдвоичныхданных'),BSLBinaryDataQualifiers),
+        *_TYPE_QUALIFIER_FAMILIES,
         (('textdocument','текстовыйдокумент'),BSLTextDocument),
         (('file','файл'),BSLFile),
         (('binarydata','двоичныеданные'),BSLBinaryData),
