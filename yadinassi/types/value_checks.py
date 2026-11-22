@@ -113,3 +113,6 @@ def value_is_filled(value: object) -> bool:
     # Other service values/configurations remain unmeasured. This deliberately
     # does not claim complete descriptor/qualifier/enum support.
     raise TypeError("ЗначениеЗаполнено для этого типа пока не поддерживается в Yadinassi")
+
+
+_DIRECT_VALUE_IS_FILLED_ABI = value_is_filled

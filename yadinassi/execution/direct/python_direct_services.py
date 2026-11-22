@@ -27,7 +27,7 @@ from yadinassi.collections.structures import BSLFixedStructure
 from yadinassi.collections.maps import BSLFixedMap
 from . import python_direct_fixed as fixed
 from .python_direct_plain_array import PlainArray
-from .python_direct_plain_map import PlainMap
+from .python_direct_plain_map import PlainMap, _DIRECT_FIXED_MAP_STORAGE
 from yadinassi.collections.plain_value_list import PlainValueList, PlainValueListItem
 from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.collections.value_tables import BSLValueTable
@@ -40,6 +40,7 @@ from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryVi
 from yadinassi.execution.codegen.experimental_naked_collections import _DIRECT_MAP_ENTRY_TYPE as _CanonicalMapEntry, _TypedMap as _DirectMapType
 from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure as _DirectStructureType
 from yadinassi.types.type_values import _DIRECT_TYPE_OF_ABI
+from yadinassi.types.value_checks import _DIRECT_VALUE_IS_FILLED_ABI
 from yadinassi.formats.storage.serialization import _DIRECT_VALUE_TO_STRING_ABI, _direct_value_to_string_internal
 from yadinassi.runtime import _eval_marker
 from . import python_direct_user_messages as user_messages
@@ -581,6 +582,33 @@ class ServicesBoundary:
                     if self._verify_context:self._check()
             if kwargs.get('allow_references',False):invoke.requires_reference=lambda index:index in function.reference_parameters
             return invoke
+        if (key in ('valueisfilled','значениезаполнено') and type(function) is HostFunction
+                and function.function is _DIRECT_VALUE_IS_FILLED_ABI):
+            # The canonical service knows boxed values. Its direct adapter
+            # observes native storage only; it never asks a payload for truth.
+            original=super().resolve_service(name,*args,**kwargs)
+            def filled(*arguments):
+                if len(arguments)!=1:return original(*arguments)
+                value=arguments[0];kind=type(value)
+                if kind is list or kind is PlainArray:
+                    length=list.__len__
+                elif kind is _DirectStructureType or kind is PlainMap or kind is _DirectMapType:
+                    length=dict.__len__
+                elif kind is fixed.PlainFixedMap:
+                    length=None  # Read the canonical snapshot slot below.
+                else:return original(*arguments)
+                self._before('call',key)
+                if not self._verify_context:self._check_effect()
+                try:
+                    if function.function is not _DIRECT_VALUE_IS_FILLED_ABI:
+                        raise BoundaryViolation('ValueIsFilled implementation changed during argument evaluation')
+                    if length is None:
+                        storage=_DIRECT_FIXED_MAP_STORAGE.__get__(value,fixed.PlainFixedMap)
+                        return dict.__len__(storage)!=0
+                    return length(value)!=0
+                finally:self._check_effect()
+            if kwargs.get('allow_references',False):filled.requires_reference=original.requires_reference
+            return filled
         if (not self._verify_context and type(function) is HostFunction
                 and id(function.function) in _FILE_EFFECTS):
             operation=function.function
