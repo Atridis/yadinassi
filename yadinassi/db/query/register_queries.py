@@ -114,13 +114,12 @@ def load_register(manager, columns, view, budget, *, source=None, parameters=Non
 
 
 
-def try_ordered_register(plan, view, budget=None):
+def try_ordered_register(plan, view, budget, projection):
     """Materialize a bounded native ORDER/TOP page from the exact register port."""
     from yadinassi.db.catalog.catalog_backend import CatalogOrder
     from yadinassi.db.registers.information_registers import BSLInformationRegisterManager
     from .queries import BSLQueryResult, _MAX_CELLS, _MAX_RESULT_TEXT
-    from .query_pushdown import bounded_projection
-    columns, project = bounded_projection(plan)
+    columns, project = projection
     manager = plan.managers[0]
     provider = getattr(view,'ordered_register_records',None)
     if provider is None or type(manager) is not BSLInformationRegisterManager:

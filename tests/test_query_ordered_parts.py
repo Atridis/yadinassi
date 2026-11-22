@@ -34,6 +34,20 @@ class OrderedCatalogPartTests(unittest.TestCase):
         self.assertEqual(len(trace),1,trace)
         self.assertTrue(trace[0].endswith('LIMIT 1'),trace)
 
+    def test_computed_projection_uses_same_typed_part_page(self):
+        self.seed()
+        text='SELECT TOP 1 Text, -(1.20+0.05) AS Marker FROM Catalog.Products.Lines ORDER BY Amount DESC'
+        with patch.object(_View,'ordered_catalog_part',return_value=None):
+            expected=self.query(text).execute()
+        trace,traced=self.actual_trace()
+        with traced, patch.object(_View,'scan_catalog_section',side_effect=AssertionError('full part')):
+            got=self.query(text).execute()
+        self.assertEqual(got._rows,expected._rows)
+        self.assertEqual(got._columns,expected._columns)
+        self.assertEqual(got._rows[0][1].as_tuple(),Decimal('-1.25').as_tuple())
+        self.assertEqual(len(trace),1,trace)
+        self.assertTrue(trace[0].endswith('LIMIT 1'),trace)
+
     def test_exact_filter_order_and_owner_one_select(self):
         self.seed()
         text = ('SELECT TOP 2 L.Ref AS Owner, L.Text AS Caption, L.Amount FROM Catalog.Products.Lines AS L '

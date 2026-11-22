@@ -95,6 +95,17 @@ class FlatWhereTests(unittest.TestCase):
             self.assertEqual(self.bound('SELECT TOP 2 Key FROM InformationRegister.Rates '
                                         'WHERE Stamp=&Moment ORDER BY Key',Moment=too_precise),())
 
+    def test_independent_register_uses_same_exact_constant_projection(self):
+        self.seed()
+        text=('SELECT TOP 2 Key, 1/3 AS Marker FROM InformationRegister.Rates '
+              'WHERE Enabled=TRUE ORDER BY Key')
+        self.verify(text,(("O'Reilly",Decimal('0.3333333333')),
+                          ('STRASSE',Decimal('0.3333333333'))))
+        from yadinassi.db.sqlite.sqlite_registers import RegisterView
+        with patch.object(RegisterView,'ordered_register_records',side_effect=AssertionError('row-dependent expression')):
+            self.assertEqual(self.rows('SELECT TOP 1 Amount+0 AS Marker FROM InformationRegister.Rates ORDER BY Amount'),
+                             ((Decimal(10),),))
+
     def test_selected_rows_are_validated_and_residual_keeps_its_own_checks(self):
         self.seed()
         backend = self.context.backend

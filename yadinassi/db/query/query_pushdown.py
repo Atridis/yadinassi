@@ -119,16 +119,51 @@ def try_numeric(plan, view, budget):
     return BSLQueryResult(plan.columns,(tuple(values),) if plan.query.limit else ())
 
 
+def _numeric_constant(plan, expression):
+    """Evaluate only a closed tree of exact Decimal arithmetic, once."""
+    pending = [expression]
+    while pending:
+        node = pending.pop()
+        if type(node) is Decimal:
+            continue
+        if (type(node) is not syntax.Expression or type(node.operator) is not str
+                or type(node.arguments) is not tuple):
+            return None
+        if node.operator in ('unary+', 'unary-'):
+            if len(node.arguments) != 1: return None
+        elif node.operator in ('+', '-', '*', '/'):
+            if len(node.arguments) != 2: return None
+        else:
+            return None
+        pending.extend(node.arguments)
+    try:
+        value = plan.value(expression, ())
+    except (ArithmeticError, ValueError):
+        # The residual evaluator raises at the ordinary point, if it reaches
+        # an input row at all. TOP on an empty source must not gain an error.
+        return None
+    return value if type(value) is Decimal else None
+
+
 def bounded_projection(plan):
-    """Bind selected fields and the constant projection once for the final page."""
+    """Prove and bind the final-page projection without changing descriptors."""
     from .relational_queries import _BoundField
+    from yadinassi.temporal.dates import BSLDate
+    from yadinassi.types.values import NULL
     columns = []
     recipe = []
     for expression in plan.projections:
-        if type(expression) is _BoundField:
+        kind = type(expression)
+        if kind is _BoundField:
+            if expression.source != 0: return None
             recipe.append((True, None))
             columns.append(expression.column)
         else:
+            if kind is syntax.Expression:
+                expression = _numeric_constant(plan, expression)
+                if expression is None: return None
+            elif not (expression is NULL or kind is str or kind is bool or kind is Decimal or kind is BSLDate):
+                return None
             recipe.append((False, expression))
     columns = tuple(columns)
     if len(columns) == len(recipe):
@@ -144,8 +179,6 @@ def bounded_projection(plan):
 def try_ordered_select(plan, view, budget=None):
     """Select a bounded physical page, then project only proven safe values."""
     from .relational_queries import _BoundField
-    from yadinassi.temporal.dates import BSLDate
-    from yadinassi.types.values import NULL
     q = plan.query
     if (type(q) is not syntax.Select or not 0 < q.limit < syntax.MAX_ROWS
             or len(plan.sources) != 1 or q.family not in ('catalog','document','information_register','accumulation_register')
@@ -153,22 +186,8 @@ def try_ordered_select(plan, view, budget=None):
             or q.virtual_condition is not None or q.joins or plan.grouped or q.having is not None
             or plan.memberships or plan.hierarchies):
         return None
-    if not q.order:
-        # One proven key equality can produce a bounded point page. Other
-        # unordered sources retain their existing input budgets.
-        keys = ('code','ref') if q.family=='catalog' else ('ref',) if q.family=='document' else ()
-        point = plan.predicate
-        if (not keys or q.section is not None or type(point) is not syntax.Comparison
-                or point.operator != 'eq' or type(point.field) is not _BoundField
-                or point.field.source != 0 or point.field.column.field not in keys):
-            return None
-    for expression in plan.projections:
-        kind = type(expression)
-        if kind is _BoundField:
-            if expression.source != 0: return None
-        elif not (expression is NULL or kind is str or kind is bool or kind is Decimal or kind is BSLDate):
-            # Dynamic expressions may fail on a row discarded by TOP.
-            return None
+    if not q.order and (q.family not in ('catalog','document') or q.section is not None):
+        return None
     if any(type(field) is not _BoundField or field.source != 0 for field, _ in plan.orders):
         return None
     if q.distinct:
@@ -180,25 +199,27 @@ def try_ordered_select(plan, view, budget=None):
                      if type(expression) is _BoundField}
         if q.limit != 1 or any(field.column.field not in projected for field, _ in plan.orders):
             return None
+    projection = bounded_projection(plan)
+    if projection is None: return None
     if q.section is not None:
         if q.family not in ('catalog','document'): return None
         from .query_ordered_parts import try_ordered_parts
-        return try_ordered_parts(plan,view,budget)
+        return try_ordered_parts(plan,view,budget,projection)
     if q.family in ('accumulation_register', 'information_register'):
         from .recorder_queries import RecorderQueryManager
         accumulation = q.family == 'accumulation_register'
         if accumulation or type(plan.managers[0]) is RecorderQueryManager:
             from .query_movement_order import try_ordered_movements
-            return try_ordered_movements(plan, view, budget, 'accumulation' if accumulation else 'recorder')
+            return try_ordered_movements(plan, view, budget, 'accumulation' if accumulation else 'recorder', projection)
     if q.family == 'information_register':
         from .register_queries import try_ordered_register
-        return try_ordered_register(plan,view,budget)
+        return try_ordered_register(plan,view,budget,projection)
     document = q.family == 'document'
     select = getattr(view, 'ordered_document_values' if document else 'ordered_catalog_values', None)
     if select is None: return None
     from uuid import UUID
     from yadinassi.db.catalog.catalog_backend import (
-        CatalogKey, CatalogOrder, CatalogPredicate, CatalogScanRequest, CatalogValuePage, CatalogValueRow,
+        CatalogKey, CatalogOrder, CatalogPredicate, CatalogScanRequest, CatalogValuePage, CatalogValueRow, _point_conjunction,
     )
     filtered = False
     if document:
@@ -206,6 +227,7 @@ def try_ordered_select(plan, view, budget=None):
         from .document_queries import _ordered_header_value
         predicates = plan.document_storage_predicate(plan.predicate, 0)
         if predicates is None:
+            if not q.order: return None
             from yadinassi.db.sqlite.sqlite_documents import DocumentView
             from .query_ordered_predicates import bind_scalar_predicate
             if (type(view) is not DocumentView or not view._view._query_language
@@ -219,9 +241,11 @@ def try_ordered_select(plan, view, budget=None):
             predicate = CatalogPredicate('and', predicates) if predicates else None
         page_type, row_type, key_type = DocumentValuePage, DocumentValueRow, DocumentKey
     else:
-        predicate = plan.storage_predicate(plan.predicate, 0, allow_or=True)
+        predicate = plan.storage_predicate(plan.predicate, 0, allow_or=bool(q.order))
         if plan.predicate is not None and predicate is None: return None
         page_type, row_type, key_type = CatalogValuePage, CatalogValueRow, CatalogKey
+    if not q.order and not _point_conjunction(predicate, ('ref',) if document else ('code','ref')):
+        return None
     from .queries import BSLQueryResult, _logical, _section_value, _MAX_CELLS, _MAX_RESULT_TEXT
 
     # All used fields are included so the provider validates selected sort and
@@ -252,7 +276,7 @@ def try_ordered_select(plan, view, budget=None):
             or len(page.rows) > q.limit or page.continuation is not None):
         raise BackendError('integrity')
     ordinals = {field: i for i, field in enumerate(fields)}
-    columns, project = bounded_projection(plan)
+    columns, project = projection
     positions = tuple(ordinals[column.field] for column in columns)
     rows, seen, text_units = [], set(), 0
     input_text = 0

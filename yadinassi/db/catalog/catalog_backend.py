@@ -180,6 +180,28 @@ class CatalogPredicate:
     terms: tuple
 
 
+def _point_conjunction(predicate, keys):
+    """A typed AND-only tree containing positive equality on an admitted key.
+
+    The caller still binds or validates every operand and applies the whole
+    predicate. This classification never extracts a separate filter.
+    """
+    pending = [predicate]
+    found = False
+    while pending:
+        term = pending.pop()
+        if type(term) is CatalogPredicate:
+            if type(term.kind) is not str or term.kind != 'and' or type(term.terms) is not tuple or not term.terms:
+                return False
+            pending.extend(term.terms)
+        elif type(term) is CatalogComparison:
+            if type(term.field) is str and term.field in keys and type(term.operator) is str and term.operator == 'eq':
+                found = True
+        else:
+            return False
+    return found
+
+
 @dataclass(frozen=True, slots=True)
 class CatalogOrder:
     field: str | UUID

@@ -7,10 +7,9 @@ from yadinassi.db.document.document_backend import DocumentKey, DocumentValuePag
 from .query_ordered_predicates import bind_scalar_predicate
 
 
-def try_ordered_parts(plan, view, budget):
+def try_ordered_parts(plan, view, budget, projection):
     from .queries import BSLQueryResult, _MAX_CELLS, _MAX_RESULT_TEXT, _section_row, _section_value
-    from .query_pushdown import bounded_projection
-    columns, project = bounded_projection(plan)
+    columns, project = projection
     document = plan.query.family == 'document'
     select = getattr(view,'ordered_document_part' if document else 'ordered_catalog_part',None)
     if select is None: return None

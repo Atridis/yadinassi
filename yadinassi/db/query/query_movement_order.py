@@ -4,10 +4,9 @@ from decimal import Decimal
 from yadinassi.db.catalog.catalog_backend import BackendError
 
 
-def try_ordered_movements(plan, view, budget, family):
+def try_ordered_movements(plan, view, budget, family, projection):
     from .query_ordered_predicates import bind_scalar_predicate
     from .queries import BSLQueryResult, _section_value, _MAX_CELLS, _MAX_RESULT_TEXT
-    from .query_pushdown import bounded_projection
     from yadinassi.db.sqlite.sqlite_movement_order import ordered_movements
 
     manager = plan.managers[0]
@@ -45,7 +44,7 @@ def try_ordered_movements(plan, view, budget, family):
         budget = [0, 0]
     from yadinassi.temporal.dates import _from_parts
     rows, text = [], 0
-    columns, project = bounded_projection(plan)
+    columns, project = projection
     has_recorder = any(column.field == 'recorder' for column in columns)
     has_period = any(column.field == 'period' for column in columns)
     for key, row in selected:

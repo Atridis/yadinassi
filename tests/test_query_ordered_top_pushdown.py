@@ -6,12 +6,12 @@ import datetime
 import sqlite3
 import unittest
 from unittest.mock import patch
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import test_main_demo_runtime as main
 import test_sqlite_catalog_sections as generic
 from yadinassi import Interpreter
-from yadinassi.db.catalog.catalog_backend import CatalogKey
+from yadinassi.db.catalog.catalog_backend import CatalogDraft, CatalogKey
 from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.db.sqlite.sqlite_catalog import _View
 from yadinassi.db.sqlite.sqlite_documents import DocumentView
@@ -78,6 +78,106 @@ class OrderedTopMainDemoTests(unittest.TestCase):
                 self.assertTrue(trace[0].endswith('LIMIT 1'),trace)
                 self.assertNotIn('literal',trace[0])
                 self.assertNotIn('constant',trace[0])
+
+    def seed_folded_codes(self, size=2):
+        manager = self.vm._catalogs.get_member('Склады')
+        backend = self.context.backend
+        records = [('CaseFold','first marked',True), ('casefold','second live',False)]
+        records += [(str(i),f'Warehouse {i:04}',False) for i in range(3,size+1)]
+        with closing(backend.begin_write(uuid4())) as writer:
+            for index,(code,description,marked) in enumerate(records,1):
+                key = CatalogKey(backend.database_id,manager._schema.identity,UUID(int=index))
+                writer.create(CatalogDraft(key,code,description,marked,()))
+            writer.commit()
+
+    def bound(self, text, **parameters):
+        from yadinassi.db.query.queries import BSLQuery
+        q = BSLQuery(self.vm._catalogs,text,self.vm._documents)
+        for name,value in parameters.items(): q.set_parameter(name,value)
+        return q
+
+    def test_folded_arithmetic_uses_one_top_page_and_keeps_decimal_descriptor(self):
+        from yadinassi.db.query import query_pushdown
+        from yadinassi.db.query.relational_queries import _Plan
+        self.seed_folded_codes()
+        query = self.bound('SELECT TOP 1 Description, (&Value+0.025)*2 AS Marker, 1/3 AS Fraction '
+                           'FROM Catalog.Склады ORDER BY Description', Value=Decimal('1.200'))
+        with patch.object(query_pushdown,'try_ordered_select',return_value=None):
+            expected = query.execute()
+        from yadinassi.db.query import query_parser
+        value = _Plan.value
+        evaluated = []
+        def watched(plan, expression, row, group=None):
+            if type(expression) is query_parser.Expression and expression.operator in ('/','*'):
+                evaluated.append((expression.operator,row))
+            return value(plan,expression,row,group)
+        trace,traced = self.actual_trace()
+        with traced, patch.object(_Plan,'load',side_effect=AssertionError('residual input')), \
+                patch.object(_View,'_validate_scan_scalars',side_effect=AssertionError('whole scan')), \
+                patch.object(_Plan,'value',watched):
+            got = query.execute()
+        self.assertEqual(evaluated,[('*',()),('/',())])
+        self.assertEqual(len(trace),1,trace)
+        self.assertTrue(trace[0].endswith('LIMIT 1'),trace)
+        self.assertNotIn('1.200',trace[0])
+        self.assertEqual(got._columns,expected._columns)
+        self.assertEqual(got._columns[1].qualifiers,(38,3,'Any'))
+        self.assertEqual(got._columns[2].qualifiers,(38,10,'Any'))
+        self.assertEqual(got._rows,(('first marked',Decimal('2.450'),Decimal('0.3333333333')),))
+        self.assertEqual(tuple(v.as_tuple() for v in got._rows[0][1:]),
+                         tuple(v.as_tuple() for v in expected._rows[0][1:]))
+
+    def test_faulting_or_row_dependent_projection_keeps_residual_errors(self):
+        from yadinassi.types.values import NULL
+        divide='SELECT TOP 1 1/0 AS Marker FROM Catalog.Склады ORDER BY Description'
+        with patch.object(DocumentView,'ordered_catalog_values',side_effect=AssertionError('unproven projection')):
+            self.assertEqual(self.query(divide),())  # No projection evaluation without a row.
+            self.seed_folded_codes()
+            with self.assertRaisesRegex(ValueError,'division by zero'):self.bound(divide).execute()
+            overflow=('SELECT TOP 1 99999999999999999999999999999999999999+1 AS Marker '
+                      'FROM Catalog.Склады ORDER BY Description')
+            with self.assertRaisesRegex(ValueError,'Number range exceeded'):self.bound(overflow).execute()
+            rows=self.query('SELECT TOP 1 Null+1 AS Marker FROM Catalog.Склады ORDER BY Description')
+            self.assertIs(rows[0][0],NULL)
+
+    def test_unordered_point_applies_full_and_before_limit(self):
+        from yadinassi.db.query import query_pushdown
+        from yadinassi.db.query.relational_queries import _Plan
+        self.seed_folded_codes()
+        start='SELECT TOP 1 Description FROM Catalog.Склады WHERE '
+        self.assertEqual(self.bound(start+'Code=&Key',Key='CASEFOLD').execute()._rows,(('first marked',),))
+        for condition in ('Code=&Key AND DeletionMark=FALSE',
+                          'DeletionMark=FALSE AND (Description<>"never" AND Code=&Key)'):
+            with self.subTest(condition=condition):
+                query=self.bound(start+condition,Key='CASEFOLD')
+                with patch.object(query_pushdown,'try_ordered_select',return_value=None):
+                    self.assertEqual(query.execute()._rows,(('second live',),))
+                trace,traced=self.actual_trace()
+                with traced, patch.object(_Plan,'load',side_effect=AssertionError('residual input')), \
+                        patch.object(_View,'_validate_scan_scalars',side_effect=AssertionError('whole scan')):
+                    self.assertEqual(query.execute()._rows,(('second live',),))
+                self.assertEqual(len(trace),1,trace)
+                where,sep,tail=trace[0].partition(' ORDER BY ')
+                self.assertIn('"code" COLLATE yadinassi_casefold_v1',where)
+                self.assertIn('"deletion_mark" COLLATE BINARY = 0',where)
+                self.assertTrue(sep and tail.endswith('LIMIT 1'),trace)
+
+    def test_unordered_point_does_not_accept_partial_or_negative_predicate(self):
+        self.seed_folded_codes()
+        start='SELECT TOP 1 Description FROM Catalog.Склады WHERE '
+        controls=(
+            ('Code=&Key AND (DeletionMark=FALSE OR Description="never")', 'second live'),
+            ('Code=&Key AND DeletionMark=FALSE AND Description=Description', 'second live'),
+            ('Code<>&Key AND DeletionMark=FALSE', None),
+        )
+        for condition, expected in controls:
+            with self.subTest(condition=condition), patch.object(
+                    DocumentView,'ordered_catalog_values',side_effect=AssertionError('partial predicate')):
+                self.assertEqual(self.bound(start+condition,Key='CASEFOLD').execute()._rows,
+                                 () if expected is None else ((expected,),))
+        # The configured source's own policy rejects NOT before scanning.
+        with self.assertRaisesRegex(ValueError,'NOT remains limited'):
+            self.bound(start+'Code=&Key AND NOT (DeletionMark=TRUE)',Key='CASEFOLD').execute()
 
     def test_distinct_top_one_preserves_concrete_casefold_representative(self):
         self.seed()
@@ -184,6 +284,18 @@ class OrderedTopGenericTests(unittest.TestCase):
                 with patch.object(_View,'_validate_scan_scalars',side_effect=AssertionError('whole scan')):
                     self.assertEqual(query.execute()._rows,(('1',),))
 
+    def test_unordered_key_not_stays_on_generic_residual(self):
+        self.create(self.draft(code='1'))
+        db=SQLiteDBContext(self.path)
+        self.addCleanup(db.close)
+        vm=Interpreter(database_context=db)
+        self.addCleanup(vm.close)
+        with patch.object(_View,'ordered_catalog_values',side_effect=AssertionError('partial predicate')):
+            q=vm.execute('New Query("SELECT TOP 1 Code FROM Catalog.Products '
+                         'WHERE Code=&Key AND NOT (DeletionMark=TRUE)")')
+            q.set_parameter('Key','1')
+            self.assertEqual(q.execute()._rows,(('1',),))
+
     def test_exact_numbers_dates_and_empty_reference_order(self):
         # Direct non-enum path, with custom physical columns and a reference.
         first = self.backend.begin_write(UUID(int=100))
@@ -269,6 +381,29 @@ EndDo;
                                         for operation in plan),plan)
                 self.vm.execute('Q.SetParameter("Key", Documents.Receipt.EmptyRef());')
                 self.assertEqual(self.vm.execute('Q.Execute()')._rows,())
+
+    def test_document_ref_and_header_filter_with_exact_arithmetic_projection(self):
+        from yadinassi.db.query import query_pushdown
+        from yadinassi.db.query.relational_queries import _Plan
+        self.seed()
+        marked=self.vm.variables['d']
+        self.vm.execute('Q=New Query("SELECT TOP 1 Number, 1.25+0.75 AS Marker FROM Document.Receipt '
+                        'WHERE DeletionMark=TRUE AND (Date>=&First AND Ref=&Key)");')
+        q=self.vm.variables['q']
+        q.set_parameter('Key',marked.get_member('Ref'))
+        q.set_parameter('First',self.vm.execute('Date(2024,1,1)'))
+        with patch.object(query_pushdown,'try_ordered_select',return_value=None):
+            expected=q.execute()
+        trace,traced=self.actual_trace()
+        with traced, patch.object(_Plan,'load',side_effect=AssertionError('residual input')):
+            got=q.execute()
+        self.assertEqual(got._rows,expected._rows)
+        self.assertEqual(got._rows,(('ignored',Decimal('2.00')),))
+        self.assertEqual(got._columns,expected._columns)
+        self.assertEqual(len(trace),1,trace)
+        self.assertIn('r.record_id COLLATE BINARY =',trace[0])
+        self.assertIn('r.deletion_mark = 1',trace[0])
+        self.assertTrue(trace[0].endswith('LIMIT 1'),trace)
 
     def test_document_top_ref_still_sees_owned_staged_record_and_rollback(self):
         self.vm.execute('''BeginTransaction();

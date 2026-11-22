@@ -678,7 +678,7 @@ class DocumentView:
 
     def ordered_document_values(self, identity, request, fields, *, scalar_filter=False):
         """One bounded query-language page over owned native columns."""
-        from yadinassi.db.catalog.catalog_backend import CatalogOrder, CatalogPredicate, CatalogScanRequest
+        from yadinassi.db.catalog.catalog_backend import CatalogComparison, CatalogOrder, CatalogPredicate, CatalogScanRequest, _point_conjunction
         from yadinassi.db.document.document_backend import DocumentValuePage
         view=self._view
         view._require()
@@ -732,10 +732,9 @@ class DocumentView:
             else:
                 return None
             if not request.order:
-                from yadinassi.db.catalog.catalog_backend import CatalogComparison
-                if (type(terms) is not tuple or len(terms)!=1 or type(terms[0]) is not CatalogComparison
-                        or type(terms[0].field) is not str or terms[0].field!='ref'
-                        or type(terms[0].operator) is not str or terms[0].operator!='eq'):
+                if (type(terms) is not tuple or len(terms) > 128
+                        or not all(type(term) is CatalogComparison for term in terms)
+                        or not _point_conjunction(predicate, ('ref',))):
                     return None
             where,args = self._document_where(schema,terms)
         _storage()._close_document_scan(view)

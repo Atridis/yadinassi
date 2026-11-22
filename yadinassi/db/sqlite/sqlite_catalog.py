@@ -46,7 +46,7 @@ from yadinassi.db.catalog.catalog_backend import (BackendError, Capabilities, Ca
                               CatalogOrder, CatalogScanRequest, CatalogPage, CatalogScalarRow,
                               CatalogValueRow, CatalogValuePage, TabularSectionSchema,
                               TabularRow, TabularSectionRows, CatalogSectionRecord, CatalogSectionPage, CatalogWriteOutcome,
-                              _TabularSectionChanges)
+                              _TabularSectionChanges, _point_conjunction)
 
 _APPLICATION_ID = 0x59414449
 _MAX_ROWS = 10000
@@ -2802,9 +2802,7 @@ class _View:
         except BackendError as error:
             if error.code != 'unsupported': raise
             return None
-        predicate = request.predicate
-        if not request.order and (type(predicate) is not CatalogComparison or predicate.operator != 'eq'
-                                  or predicate.field not in ('code', 'ref')):
+        if not request.order and not _point_conjunction(request.predicate, ('code','ref')):
             raise BackendError('invalid_input')
         plan = self._scan_sql(schema,request)
         if plan is None: return None
