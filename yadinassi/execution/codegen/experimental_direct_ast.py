@@ -34,7 +34,7 @@ from yadinassi.collections.plain_value_list import (PlainValueList, PlainValueLi
 from yadinassi.execution.direct.python_direct_execute import execute_fragment, local_binding, local_exists
 from yadinassi.execution.direct.python_direct_eval import bind_eval
 from yadinassi.execution.direct.python_direct import REPAIRS,PythonDirectUnsupported
-from yadinassi.execution.direct.python_direct_names import NAMES, CHARS_ALIASES, XML_CLEANUP_ALIASES
+from yadinassi.execution.direct.python_direct_names import NAMES, CHARS_ALIASES, XML_CLEANUP_ALIASES, VALUE_LIST_CONSTRUCTOR_ALIASES
 from yadinassi.execution.direct.python_direct_static_module import analyze as analyze_static, ordered_if, OTHERWISE, _simple_literal_boolean, table_schema_setup
 from yadinassi.types.errors import BSLRuntimeError
 from dataclasses import fields, replace
@@ -765,7 +765,8 @@ class Emitter:
             kindname=node.name.casefold()
             if self.owned_constructors and kindname in self.constructor_names:
                 key='new:'+kindname;self.required.add(key)
-                keywords=[self.node(py.keyword,t,arg='argument_count',value=self.const(len(node.arguments),t))] if self.source_scopes else []
+                shape=self.source_scopes or kindname in VALUE_LIST_CONSTRUCTOR_ALIASES
+                keywords=[self.node(py.keyword,t,arg='argument_count',value=self.const(len(node.arguments),t))] if shape else []
                 bound=self.invoke(self.attribute(self.name('_context',t),'resolve_service',t),[self.const(key,t)],t,keywords)
                 if any(type(arg) is bsl.OmittedArgument for arg in node.arguments):return self.dynamic_call(bound,node,references=False)
                 return self.invoke(bound,[self.expr(arg) for arg in node.arguments],t)

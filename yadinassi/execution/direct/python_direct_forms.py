@@ -1,5 +1,7 @@
 """Small direct managed-form event bridge; no AST execution fallback."""
 from contextlib import contextmanager
+from functools import partial
+from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
 from yadinassi.execution import safe_mode
 from yadinassi.db import source_transactions, database_transactions
 from yadinassi.forms import form_runtime
@@ -8,11 +10,14 @@ from .python_direct import REPAIRS, _snapshot
 from .python_direct_handlers import prepare_handlers
 from yadinassi.syntax import ast
 from .python_direct_configuration import ConfigurationBoundary, check_owner, _COMMAND_SCOPE
+from .python_direct_names import VALUE_LIST_CONSTRUCTOR_ALIASES
 from yadinassi.db.database_context import SQLiteDBContext
 from . import python_direct_user_messages as user_messages
 
 CALLBACK_CONSTRUCTORS=('callbackdescription','описаниеоповещения')
 DECLARATION_CONSTRUCTORS=('typedescription','описаниетипов','formattribute','реквизитформы')
+VALUE_LIST_SERVICES=tuple('new:'+name for name in VALUE_LIST_CONSTRUCTOR_ALIASES)
+CHOOSE_ITEM_NAMES=('showchooseitem','показатьвыборэлемента')
 
 SYSTEM_NAMES = ('thisobject','этотобъект','items','элементы','commands','команды',
                 'parameters','параметры','formfieldtype','видполяформы',
@@ -93,6 +98,21 @@ class FormBoundary(ConfigurationBoundary):
     def resolve_service(self,*args,**kwargs):
         if args and args[0].casefold() in user_messages.CONSTRUCTOR_SERVICES:
             return user_messages.constructor(self,args[0],**kwargs)
+        if args and args[0].casefold() in VALUE_LIST_SERVICES:
+            from yadinassi.types.values import HostFunction
+            name=args[0][4:].casefold()
+            self._check()
+            count=kwargs.get('argument_count')
+            if type(count) is not int or count != 0:
+                raise TypeError('ValueList constructor takes no arguments')
+            factory=self.owner.types.get(name)
+            if (type(factory) is not HostFunction or factory.function is not BSLValueList
+                    or type(factory.reference_parameters) is not frozenset
+                    or factory.reference_parameters or factory.returns_value is not True):
+                raise BoundaryViolation('form ValueList requires canonical constructor')
+            # The registration is a witness, not a mutable callable to replay
+            # after argument evaluation. The detached constructor is exact.
+            return BSLValueList
         if args:
             function=self._services.get(args[0].casefold())
             if (type(function) is user_messages.HostFunction and type(function.function) is user_messages.MethodType
@@ -215,6 +235,26 @@ class FormBoundary(ConfigurationBoundary):
     def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
         if type(value) is user_messages.BSLUserMessage:
             return user_messages.resolve(self,value,name,require_value=require_value,omitted=omitted)
+        kind=type(value)
+        if kind is BSLValueList or kind is BSLValueListItem:
+            if omitted:raise TypeError('form ValueList argument omission is unsupported')
+            if kind is BSLValueList and name.casefold() in CHOOSE_ITEM_NAMES:
+                self._check()
+                if require_value:raise TypeError('Процедура не возвращает значение: '+name)
+                if self.app is None:
+                    raise ValueError('ShowChooseItem requires an application-owned client dispatch')
+                self.app.require_value_selection(self.owner)
+                def choose(*arguments):
+                    self._check()
+                    try:return self.app.dispatch_value_selection(self.owner,value,arguments)
+                    finally:self._check()
+                return choose
+            # These native data methods carry no form or host authority.
+            # Form entry/exit still check the owning event; only the UI method
+            # above crosses an effect boundary.
+            method=kind.get_method(value,name)
+            self._validate_host_function(method,require_value)
+            return method
         return super().resolve_member_call(value,name,require_value=require_value,omitted=omitted)
 
     def resolve_callable(self,value,**kwargs):
@@ -241,6 +281,9 @@ class FormBoundary(ConfigurationBoundary):
 
     def get_member(self,value,name):
         if type(value) is user_messages.BSLUserMessage:return user_messages.get(self,value,name)
+        kind=type(value)
+        if kind is BSLValueList or kind is BSLValueListItem:
+            return kind.get_member(value,name)
         from . import python_direct_form_objects as objects
         if objects.recognized(value):return objects.get(self,value,name)
         from yadinassi.forms.form_dialogs import QUESTION_DIALOG_MODES,DIALOG_RETURN_CODES
@@ -286,6 +329,8 @@ class FormBoundary(ConfigurationBoundary):
 
     def resolve_set_member(self,value,name):
         if type(value) is user_messages.BSLUserMessage:return user_messages.setter(self,value,name)
+        if type(value) is BSLValueListItem:
+            return partial(BSLValueListItem.set_member,value,name)
         from . import python_direct_form_objects as objects
         if objects.recognized(value):return objects.setter(self,value,name)
         from yadinassi.forms.direct_form_parameters import is_parameters,bind_parameter_write
@@ -360,7 +405,7 @@ def prepare_form(session, program, source, attributes, tables, *, install_metada
                          if type(node) is not ast.Routine or node.module_context]
                         if source_mode else program)
     prepared=prepare_handlers(executable_program, source_text=source if type(source) is str else '',
-                            external_names=names, constructors=CALLBACK_CONSTRUCTORS+DECLARATION_CONSTRUCTORS+user_messages.NAMES+(CONSTRUCTORS if source_mode else ()),
+                            external_names=names, constructors=CALLBACK_CONSTRUCTORS+DECLARATION_CONSTRUCTORS+user_messages.NAMES+(CONSTRUCTORS if source_mode else VALUE_LIST_CONSTRUCTOR_ALIASES),
                             repairs=REPAIRS+('authority_checkpoints',),_source_routine_scopes=source_mode)
     if install_metadata and local_server_calls:
         vm=session.interpreter

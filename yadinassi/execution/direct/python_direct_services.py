@@ -46,6 +46,7 @@ from yadinassi.runtime import _eval_marker
 from . import python_direct_user_messages as user_messages
 from yadinassi.application.callbacks import callback_description_marker, run_callback_marker
 from . import python_direct_callback as callbacks
+from .python_direct_names import VALUE_LIST_CONSTRUCTOR_ALIASES
 from yadinassi.application.direct_callbacks import CallbackDescription as _CallbackDescription, construct as _new_callback, read as _callback_read
 
 _FILE_EFFECTS = frozenset(map(id, (
@@ -71,7 +72,7 @@ CONSTRUCTORS = {
         (('fixedmap','фиксированноесоответствие'),BSLFixedMap),
         (('fixedarray','фиксированныймассив'),BSLFixedArray),
         (('fixedstructure','фиксированнаяструктура'),BSLFixedStructure),
-        (('valuelist','списокзначений'),BSLValueList),
+        (VALUE_LIST_CONSTRUCTOR_ALIASES,BSLValueList),
         (('valuelistitem','элементсписказначений'),None),
         (('valuetable','таблицазначений'),BSLValueTable),
         (('valuetablerow','строкатаблицызначений'),None),

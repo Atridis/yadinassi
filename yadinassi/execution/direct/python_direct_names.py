@@ -19,6 +19,7 @@ from yadinassi.types.error_info import ERROR_CATEGORIES
 from yadinassi.formats.json.json_dates import JSON_DATE_FORMATS, JSON_DATE_WRITING_VARIANTS
 from yadinassi.formats.json.json_processing import JSON_LINE_BREAKS, JSON_VALUE_TYPES
 
+VALUE_LIST_CONSTRUCTOR_ALIASES = ("valuelist", "списокзначений")
 CHARS_ALIASES = ("chars", "символы")
 XML_CLEANUP_ALIASES = ("xmlstringprocessing", "обработкастрокиxml")
 

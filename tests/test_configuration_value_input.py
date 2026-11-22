@@ -310,6 +310,56 @@ class InputHostTests(InputFixture, unittest.TestCase):
             files[OWNER_MODULE] += ('\n&AtServer\nProcedure ServerAsk() '+call+' EndProcedure').encode()
             self.refused(files)
 
+    def test_server_list_choice_denied_before_candidate_callback_is_evaluated(self):
+        files = sources(showing='ServerAsk();', suffix='')
+        files[OWNER_MODULE] += b'''
+&AtServer
+Procedure ServerAsk()
+ Values = New ValueList;
+ Greeting = "before";
+ Try
+  Values.ShowChooseItem(Effect());
+ Except
+  If Greeting = "before" Then Greeting = "refused before effects"; EndIf;
+ EndTry;
+EndProcedure
+&AtServer
+Function Effect()
+ Greeting = "effect ran";
+ Return Undefined;
+EndFunction
+'''
+        _, app, _ = self.host(files)
+        owner = self.open(app)
+        result = self.event(app, owner)
+        self.assertIsNone(result['error'], result)
+        self.assertIsNone(result['form']['result']['error'], result)
+        self.assertEqual(result['inputs'], [])
+        self.assertEqual(self.greeting(app, owner), 'refused before effects')
+
+    def test_value_list_constructor_rejects_arguments_before_client_effects(self):
+        for name in ('ValueList', 'СписокЗначений'):
+            with self.subTest(name=name):
+                files = sources(showing=f'''Greeting="before";
+Try Options=New {name}(Effect());
+Except
+ If Greeting="before" Then Greeting=ErrorDescription(); EndIf;
+EndTry;''', suffix='')
+                files[OWNER_MODULE] += b'''
+&AtClient
+Function Effect()
+ Greeting = "effect ran";
+ Return 1;
+EndFunction
+'''
+                _, app, _ = self.host(files)
+                owner = self.open(app)
+                result = self.event(app, owner)
+                self.assertIsNone(result['error'], result)
+                self.assertIsNone(result['form']['result']['error'], result)
+                self.assertEqual(result['inputs'], [])
+                self.assertIn('ValueList constructor takes no arguments', self.greeting(app, owner))
+
     def test_same_context_common_modules_preserve_callback_and_item_owner(self):
         for choosing in (False, True):
             showing = PREPARE+'Tools.Ask(Options,Callback);' if choosing else 'Tools.Ask(Callback);'
