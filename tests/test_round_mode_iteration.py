@@ -3,6 +3,7 @@
 import unittest
 
 from yadinassi import Interpreter
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.numeric.round_modes import BSLRoundMode, BSLRoundModes, ROUND_MODES
 from yadinassi.types.values import BSLObject
@@ -131,12 +132,40 @@ class RoundModeIterationTests(unittest.TestCase):
         class HostNamespace(BSLRoundModes):
             def __iter__(self):
                 raise AssertionError('Host subclass iterator must not be invoked')
-        for value in [[], (), {}, 'abc', iter([1]), HostIterable(), HostNamespace(),
-                      BSLRoundMode.ROUND15_AS10, BSLRoundMode.ROUND15_AS20]:
+        class HostList(list):
+            def __iter__(self):
+                raise AssertionError('Host list iterator must not be invoked')
+
+        class HostDict(dict):
+            def __iter__(self):
+                raise AssertionError('Host dict iterator must not be invoked')
+
+            def items(self):
+                raise AssertionError('Host dict items must not be invoked')
+
+        # Exact built-ins are admitted Python-native BSL storage, even when
+        # provided by the embedding. This does not admit other iterables.
+        self.vm.variables.update(numbers=['one', 'two'], mapping={'key': 'value'})
+        self.vm.execute('''
+            For Each Item In Numbers Do Message(Item); EndDo;
+            For Each Item In Mapping Do Message(Item.Key + ":" + Item.Value); EndDo;
+        ''')
+        self.assertEqual(self.output, ['one', 'two', 'key:value'])
+
+        for value in ((), 'abc', iter([1]), HostIterable(), HostNamespace(),
+                      HostList([1]), HostDict({'a': 1})):
             with self.subTest(value=type(value).__name__):
                 self.vm.variables['source'] = value
-                with self.assertRaisesRegex(BSLRuntimeError, 'Для Каждого ожидает'):
-                    self.vm.execute('For Each item In source Do EndDo;')
+                with self.assertRaises(BoundaryViolation):
+                    self.vm.execute('Try For Each item In source Do EndDo; Except EndTry;')
+        for value in BSLRoundMode:
+            with self.subTest(mode=value.name):
+                self.vm.variables['source'] = value
+                before = len(self.output)
+                self.vm.execute('Try For Each item In source Do EndDo; '
+                                'Except Message("caught"); EndTry;')
+                self.assertEqual(len(self.output), before + 1)
+                self.assertEqual(self.output[-1], 'caught')
 
 
 if __name__ == '__main__':

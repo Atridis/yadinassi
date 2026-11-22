@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.collections.maps import BSLFixedMap, BSLMap
 from yadinassi.numeric.round_modes import BSLRoundMode, ROUND_MODES
@@ -47,7 +48,12 @@ class SearchDirectionValueTests(unittest.TestCase):
 
         class PretendNamespace(type):
             def __eq__(cls, other):
+                calls.append('class equality')
                 return True
+
+            def __hash__(cls):
+                calls.append('class hash')
+                return 0
 
         class HostObject(BSLObject, metaclass=PretendNamespace):
             def __iter__(self):
@@ -55,7 +61,7 @@ class SearchDirectionValueTests(unittest.TestCase):
                 return iter([BEGIN])
 
         self.vm.variables['host'] = HostObject()
-        with self.assertRaisesRegex(BSLRuntimeError, 'ожидает массив'):
+        with self.assertRaises(BoundaryViolation):
             self.vm.execute('For Each Item In host Do EndDo;')
         self.assertEqual(calls, [])
 
@@ -289,8 +295,6 @@ class SearchDirectionIterationTests(unittest.TestCase):
         self.assertEqual(self.output, ['С начала', 'С конца'])
 
     def test_host_iterables_subclasses_and_individual_values_remain_rejected(self):
-        self.vm.close()
-        self.vm = Interpreter(self.output.append, allow_extensions=True)
         class HostIterable(BSLObject):
             def __iter__(self):
                 raise AssertionError('Host iterable must not run')
@@ -299,11 +303,26 @@ class SearchDirectionIterationTests(unittest.TestCase):
             def __iter__(self):
                 raise AssertionError('Host namespace iterator must not run')
 
-        for value in [BEGIN, END, HostIterable(), HostNamespace(), [], (), {}, iter([BEGIN])]:
+        # Plain execution admits these exact storage types without extensions.
+        self.vm.variables.update(values=[BEGIN, END], mapping={'start': BEGIN})
+        self.vm.execute('''
+            For Each Item In Values Do Message(Item); EndDo;
+            For Each Item In Mapping Do Message(Item.Key); Message(Item.Value); EndDo;
+        ''')
+        self.assertEqual(self.output, ['С начала', 'С конца', 'start', 'С начала'])
+
+        for value in [HostIterable(), HostNamespace(), (), iter([BEGIN])]:
             self.vm.variables['source'] = value
-            with self.subTest(kind=type(value).__name__), self.assertRaisesRegex(
-                    BSLRuntimeError, 'Для Каждого ожидает'):
-                self.vm.execute('For Each item In source Do EndDo;')
+            with self.subTest(kind=type(value).__name__), self.assertRaises(BoundaryViolation):
+                self.vm.execute('Try For Each item In source Do EndDo; Except EndTry;')
+        for value in (BEGIN, END):
+            with self.subTest(direction=value.name):
+                self.vm.variables['source'] = value
+                before = len(self.output)
+                self.vm.execute('Try For Each item In source Do EndDo; '
+                                'Except Message("caught"); EndTry;')
+                self.assertEqual(len(self.output), before + 1)
+                self.assertEqual(self.output[-1], 'caught')
 
 
 class SearchDirectionCodecTests(unittest.TestCase):
