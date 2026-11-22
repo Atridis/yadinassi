@@ -8,6 +8,8 @@ import unittest
 from yadinassi.cli import main
 from yadinassi.configuration.configuration_modules import MODULE_RUNTIME, compile_module
 from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.configuration.configuration_xml import import_configuration
 from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
@@ -113,19 +115,30 @@ class ConfiguredCallsTests(unittest.TestCase):
         app.start()
         return app, output
 
+    def source_app(self, modules=(CLIENT,), application=''):
+        # General BSL calls use the source application. Keep self.app() for
+        # the distinct, deliberately narrow ConfigurationApplication API.
+        files = module_files(modules, application=application)
+        files.setdefault('Ext/ManagedApplicationModule.bsl', b'')
+        output = []
+        app = SourceApplication(import_source(files), output=output.append)
+        self.addCleanup(app.close)
+        app.start()
+        return app, output
+
     def test_named_export_private_routine_and_casefold(self):
         source = 'Function Hidden(X) Return X+1; EndFunction\nFunction Public(X) Export Return Hidden(X)*2; EndFunction'
-        app, output = self.app([('Tools', source, {})])
-        app.execute('Message(tOoLs.pUbLiC(3));')
+        app, output = self.source_app([('Tools', source, {})])
+        app.interpreter.execute('Message(tOoLs.pUbLiC(3));')
         self.assertEqual(output, ['8'])
-        with self.assertRaises(BSLError): app.execute('Tools.Hidden(1);')
+        with self.assertRaises(BSLError): app.interpreter.execute('Tools.Hidden(1);')
 
     def test_same_side_byref_defaults_and_procedure(self):
         source = 'Procedure Add(X, Val N = 2) Export X = X+N; EndProcedure'
-        app, output = self.app([('Tools', source, {})])
-        app.execute('X=1; Tools.Add(X,); Message(X);')
+        app, output = self.source_app([('Tools', source, {})])
+        app.interpreter.execute('X=1; Tools.Add(X,); Message(X);')
         self.assertEqual(output, ['3'])
-        with self.assertRaises(BSLError): app.execute('Y=Tools.Add(X);')
+        with self.assertRaises(BSLError): app.interpreter.execute('Y=Tools.Add(X);')
 
     def test_global_exports_call_private_helpers(self):
         source = 'Function Helper() Return 7; EndFunction\nFunction Public() Export Return Helper(); EndFunction'
@@ -144,34 +157,34 @@ class ConfiguredCallsTests(unittest.TestCase):
 
     def test_two_context_copies_selected_by_caller(self):
         source = '#If Client Then\nFunction Side() Export Return "client"; EndFunction\n#Else\nFunction Side() Export Return "server"; EndFunction\n#EndIf'
-        app, output = self.app([('Both', source, {'Server': 'true'}),
+        app, output = self.source_app([('Both', source, {'Server': 'true'}),
             ('Gateway', 'Function Go() Export Return Both.Side(); EndFunction', SERVER)])
-        app.execute('Message(Both.Side()); Message(Gateway.Go());')
+        app.interpreter.execute('Message(Both.Side()); Message(Gateway.Go());')
         self.assertEqual(output, ['client', 'server'])
 
     def test_global_two_context_copies(self):
         source = '#If Client Then\nFunction Side() Export Return "client"; EndFunction\n#Else\nFunction Side() Export Return "server"; EndFunction\n#EndIf'
-        app, output = self.app([('Both', source, {'Server': 'true', 'Global': 'true'}),
+        app, output = self.source_app([('Both', source, {'Server': 'true', 'Global': 'true'}),
             ('Gateway', 'Function Go() Export Return Side(); EndFunction', SERVER)])
-        app.execute('Message(Side()); Message(Gateway.Go());')
+        app.interpreter.execute('Message(Side()); Message(Gateway.Go());')
         self.assertEqual(output, ['client', 'server'])
 
     def test_servercall_copy_in_out_and_value_result(self):
         source = 'Function Change(X, Val Y) Export X.Add(2); Y.Add(3); Return X; EndFunction'
-        app, output = self.app([('Gateway', source, SERVER)])
-        app.execute('X=New Array; Y=X; R=Gateway.Change(X,Y); R.Add(4); Message(X.Count()); Message(Y.Count()); Message(R.Count());')
+        app, output = self.source_app([('Gateway', source, SERVER)])
+        app.interpreter.execute('X=New Array; Y=X; R=Gateway.Change(X,Y); R.Add(4); Message(X.Count()); Message(Y.Count()); Message(R.Count());')
         self.assertEqual(output, ['1', '0', '2'])
 
     def test_unsupported_crossing_argument_before_side_effects(self):
         source = 'Procedure P(Val A, B) Export EndProcedure'
-        app, output = self.app([('Gateway', source, SERVER)], 'Function Effect() Message("bad"); Return 1; EndFunction')
-        with self.assertRaises(BSLError): app.execute('Gateway.P(Effect(), New Structure);')
+        app, output = self.source_app([('Gateway', source, SERVER)], 'Function Effect() Message("bad"); Return 1; EndFunction')
+        with self.assertRaises(BSLError): app.interpreter.execute('Gateway.P(Effect(), New Structure);')
         self.assertEqual(output, [])
 
     def test_unavailable_context_before_argument_effects(self):
-        app, output = self.app([('Hidden', CLIENT[1], {'ClientManagedApplication': 'false', 'Server': 'true'})],
+        app, output = self.source_app([('Hidden', CLIENT[1], {'ClientManagedApplication': 'false', 'Server': 'true'})],
                               'Function Effect() Message("bad"); Return 1; EndFunction')
-        with self.assertRaises(BSLError): app.execute('Hidden.Double(Effect());')
+        with self.assertRaises(BSLError): app.interpreter.execute('Hidden.Double(Effect());')
         self.assertEqual(output, [])
 
     def test_server_cannot_enter_client_module(self):
@@ -180,8 +193,8 @@ class ConfiguredCallsTests(unittest.TestCase):
         self.assertEqual(output, [])
 
     def test_stored_receiver_eval_and_identity(self):
-        app, output = self.app()
-        app.execute('M=Eval("Tools"); Message(M=Tools); Message(M.Double(3));')
+        app, output = self.source_app()
+        app.interpreter.execute('M=Eval("Tools"); Message(M=Tools); Message(M.Double(3));')
         self.assertEqual(output, ['Да', '6'])
 
     def test_callback_by_receiver_and_string(self):
@@ -200,10 +213,10 @@ class ConfiguredCallsTests(unittest.TestCase):
     def test_application_exports_persistent_state_and_instance_isolation(self):
         source = 'Function Go() Export Return Next(); EndFunction'
         program = 'Var N;\nFunction Next() Export N=N+1; Return N; EndFunction\nN=0;'
-        app, output = self.app([('Tools', source, {})], program)
-        other, other_output = self.app([('Tools', source, {})], program)
-        app.execute('Message(Tools.Go()); Message(Tools.Go());')
-        other.execute('Message(Tools.Go());')
+        app, output = self.source_app([('Tools', source, {})], program)
+        other, other_output = self.source_app([('Tools', source, {})], program)
+        app.interpreter.execute('Message(Tools.Go()); Message(Tools.Go());')
+        other.interpreter.execute('Message(Tools.Go());')
         self.assertEqual(output, ['1', '2']); self.assertEqual(other_output, ['1'])
 
     def test_readonly_metadata_registry(self):
