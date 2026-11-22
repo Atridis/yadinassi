@@ -1,6 +1,6 @@
 """Bounded source-owned XDTO trees and lists, with finite descriptor reads."""
 from weakref import WeakKeyDictionary
-from types import MethodType
+from types import MappingProxyType, MethodType
 from decimal import Decimal
 from . import python_direct_source_xdto as shared
 from yadinassi.types.values import HostFunction
@@ -94,9 +94,18 @@ def admit_type(factory,kind):
 
 def _snapshot(value):
     fields=tuple(_fields(value).items())
-    if type(value) is _OBJECT:return fields,value._values,tuple(value._values.items())
-    if type(value) is _LIST:return fields,value._items,tuple(value._items)
-    return fields,None,()
+    if type(value) is _OBJECT:return value,fields,value._values,tuple(value._values.items()),None
+    if type(value) is _LIST:
+        entries=tuple(value._items)
+        # Mint from a canonical write/reader, never from an observed raw list.
+        # Repeated scalar/None values are legal; a repeated object is not.
+        positions={}
+        for index,child in enumerate(entries):
+            if type(child) is _OBJECT:
+                key=id(child)
+                positions[key]=index if key not in positions else -1
+        return value,fields,value._items,entries,MappingProxyType(positions)
+    return value,fields,None,(),None
 
 
 def _record(boundary,*values):
@@ -109,23 +118,131 @@ def _record(boundary,*values):
         if type(value) is shared._VALUE:shared._VALUES[value]=tuple(_fields(value).items())
 
 
-def _check(boundary,target):
+def _scope(boundary,target):
     owner,factory=shared._owner(boundary);_hooks()
     if not owns(target):raise BoundaryViolation('source XDTO receiver changed')
     records=_RECORDS.get(boundary.app)
-    if records is None or target not in records:raise BoundaryViolation('source XDTO receiver not produced here')
+    if type(records) is not dict or target not in records:raise BoundaryViolation('source XDTO receiver not produced here')
+    if len(records)>shared.values.MAX_NODES:raise BoundaryViolation('source XDTO value inventory exceeds bounds')
+    return owner,factory,records
+
+
+def _check(boundary,target):
+    owner,factory,records=_scope(boundary,target)
     types=_validate_records(factory,records)
     return owner,factory,types.get(target._type) if type(target) is _OBJECT else target._prop
+
+
+def _saved_fields(records,value):
+    record=records.get(value)
+    if type(record) is not tuple or len(record)!=5 or record[0] is not value:
+        raise BoundaryViolation('source XDTO value not produced here')
+    _,saved,container,entries,positions=record
+    current=_fields(value)
+    if len(current)!=len(saved) or any(current.get(k) is not v for k,v in saved):
+        raise BoundaryViolation('source XDTO value fields changed')
+    return container,entries,positions
+
+
+def _object_fields(factory,records,value):
+    container,entries,_=_saved_fields(records,value)
+    if value._factory is not factory:raise BoundaryViolation('source XDTO object ownership changed')
+    values=value._values
+    # Check the local mapping before any name lookup, including collisions.
+    if type(values) is not dict or values is not container or len(values)!=len(entries) or any(type(k) is not str for k in values):
+        raise BoundaryViolation('source XDTO value mapping changed')
+    if any(k not in values or values[k] is not v for k,v in entries):
+        raise BoundaryViolation('source XDTO properties changed')
+    return admit_type(factory,value._type)
+
+
+def _list_fields(records,value,prop,parent,saved=None):
+    container,entries,positions=_saved_fields(records,value) if saved is None else saved
+    items=value._items
+    if (value._owner is not parent or value._prop is not prop or type(items) is not list
+            or items is not container or len(items)!=len(entries) or prop._upper==1):
+        raise BoundaryViolation('source XDTO list fields changed')
+    live=parent._values.get(prop._name) is value
+    if not live and items:raise BoundaryViolation('source XDTO orphan list contains values')
+    cap=min(shared.values.MAX_LIST,prop._upper if prop._upper>=0 else shared.values.MAX_LIST)
+    if len(items)>cap:raise BoundaryViolation('source XDTO list exceeds bounds')
+    return entries,positions
+
+
+def _object_read(factory,records,value):
+    items=_object_fields(factory,records,value)
+    trail=value;properties=items;seen={id(trail)}
+    while trail._owner is not None:
+        parent=trail._owner;prop=trail._owning
+        if (type(parent) is not _OBJECT or id(parent) in seen
+                or len(seen)>min(shared.values.MAX_DEPTH,shared.io.MAX_DEPTH)):
+            raise BoundaryViolation('source XDTO cyclic or excessive ownership')
+        seen.add(id(parent))
+        properties=_object_fields(factory,records,parent)
+        if not any(prop is p for p in properties):raise BoundaryViolation('source XDTO owning property changed')
+        slot=parent._values.get(prop._name)
+        if prop._upper==1:
+            if slot is not trail:raise BoundaryViolation('source XDTO owner backlink changed')
+        elif type(slot) is _LIST:
+            entries,positions=_list_fields(records,slot,prop,parent)
+            index=positions.get(id(trail),-1)
+            if type(index) is not int or not 0<=index<len(entries) or entries[index] is not trail or slot._items[index] is not trail:
+                raise BoundaryViolation('source XDTO list backlink changed')
+        else:raise BoundaryViolation('source XDTO list backlink changed')
+        if trail._type is not prop._type:raise BoundaryViolation('source XDTO child type changed')
+        trail=parent
+    if trail._owning is not None:raise BoundaryViolation('source XDTO detached property changed')
+    return items
+
+
+def _list_read(factory,records,value):
+    saved=_saved_fields(records,value)
+    parent=value._owner;prop=value._prop
+    if type(parent) is not _OBJECT or not any(prop is p for p in _object_read(factory,records,parent)):
+        raise BoundaryViolation('source XDTO list ownership changed')
+    entries,_=_list_fields(records,value,prop,parent,saved)
+    return entries
+
+
+def _child(factory,records,parent,prop,child):
+    # Only the selected forward edge is observed. Its owner has just been
+    # proved, so rewalking the same backlink would check the same edge twice.
+    if child is None:
+        if not prop._nil:raise BoundaryViolation('source XDTO null changed')
+    elif type(child) is _OBJECT:
+        _object_fields(factory,records,child)
+        if child._type is not prop._type or child._owner is not parent or child._owning is not prop:
+            raise BoundaryViolation('source XDTO child ownership changed')
+    elif type(child) is shared._VALUE:
+        _saved_fields(records,child)
+        if child._factory is not factory or child._type is not prop._type:
+            raise BoundaryViolation('source XDTO child type changed')
+    else:raise BoundaryViolation('source XDTO unregistered child')
+
+
+def _select_item(factory,records,value,entries,index):
+    child=value._items[index]
+    if child is not entries[index]:raise BoundaryViolation('source XDTO list entries changed')
+    _child(factory,records,value._owner,value._prop,child)
+    return child
+
+
+def _property_read(factory,records,obj,prop):
+    if prop._name not in obj._values:return None
+    child=obj._values[prop._name]
+    if prop._upper==1:_child(factory,records,obj,prop,child)
+    elif type(child) is _LIST:_list_fields(records,child,prop,obj)
+    else:raise BoundaryViolation('source XDTO property list changed')
+    return child
 
 
 def _validate_records(factory,records):
     if len(records)>shared.values.MAX_NODES:raise BoundaryViolation('source XDTO value inventory exceeds bounds')
     types={}
     # Check the entire bounded private value inventory before native traversal.
-    for value,(saved,container,entries) in records.items():
-        current=_fields(value)
-        if len(current)!=len(saved) or any(current.get(k) is not v for k,v in saved):
-            raise BoundaryViolation('source XDTO value fields changed')
+    for value in records:
+        container,entries,_=_saved_fields(records,value)
+        current=vars(value)
         if type(value) is _OBJECT:
             if set(current)!={'_factory','_type','_owner','_owning','_values'} or value._factory is not factory:
                 raise BoundaryViolation('source XDTO object ownership changed')
@@ -243,19 +360,22 @@ def get_property(factory,prop,name):
 def _list(boundary,owner,factory,obj,prop):
     if prop._upper==1:raise ValueError('XDTO: свойство не является списком')
     if prop._name not in obj._values:
+        _check(boundary,obj)
         _budget(factory,1);result=_GET_LIST(obj,prop)
         _publish(boundary,owner,factory,obj,result);_check(boundary,obj)
     return obj._values[prop._name]
 
 
 def get(boundary,obj,name):
-    owner,factory,items=_check(boundary,obj)
+    owner,factory,records=_scope(boundary,obj)
     if type(obj) is _LIST:
+        _list_read(factory,records,obj)
         method,_,returns,_=_method(obj,name)
         return HostFunction(name,method.__get__(obj,_LIST),returns_value=returns)
-    prop=_property(items,name)
-    if prop._upper!=1:return _list(boundary,owner,factory,obj,prop)
-    return _native(obj._values.get(prop._name))
+    prop=_property(_object_read(factory,records,obj),name)
+    result=_property_read(factory,records,obj,prop)
+    if prop._upper!=1 and result is None:return _list(boundary,owner,factory,obj,prop)
+    return _native(result)
 
 
 def _input(boundary,owner,prop,value,old=None,present=False):
@@ -315,29 +435,51 @@ def _method(value,name):
 
 
 def resolve(boundary,value,name,*,require_value=False,argument_count=None,allow_references=False,validate=None):
-    admitted=_check(boundary,value)
     if name=="__iter__":
+        _,factory,records=_scope(boundary,value)
         if type(value) is not _LIST:raise ValueError("source XDTO object is not iterable")
+        _list_read(factory,records,value)
         return lambda:iterate(boundary,value)
+    # Admit the actual retained receiver, both before evaluation of arguments
+    # and again on entry to the bound call (args may perform host effects).
+    scope=_scope(boundary,value)
     method,arity,returns,operation=_method(value,name)
-    def check(count=None,result=None):
-        if result is None:result=_check(boundary,value)
+    whole=operation in _MUTATIONS or operation=='validate'
+    def check(count=None,scope=None):
+        if scope is None:scope=_scope(boundary,value)
+        owner,factory,records=scope
+        if whole:
+            types=_validate_records(factory,records)
+            items=types[value._type] if type(value) is _OBJECT else value._prop
+        elif type(value) is _OBJECT:items=_object_read(factory,records,value)
+        else:items=_list_read(factory,records,value)
         if validate is not None:validate()
         if require_value and not returns:raise ValueError('source XDTO procedure cannot be used as value')
         if count is not None and count not in arity:raise TypeError('source XDTO invalid method arity')
         if operation in _MUTATIONS and type(value) is _LIST and value._owner._values.get(value._prop._name) is not value:
             raise ValueError('source XDTO orphan list is read-only')
-        return result
-    check(argument_count,admitted)
+        return owner,factory,records,items
+    check(argument_count,scope)
     def call(*args):
-        owner,factory,items=check(len(args))
+        owner,factory,records,items=check(len(args))
         if type(value) is _OBJECT and operation!='unset':
             if operation in ('is_set','get_list','get_xdto'):
                 prop=_property(items,args[0])
-                if operation=='get_list':return _list(boundary,owner,factory,value,prop)
                 if operation=='get_xdto' and prop._upper!=1:
                     raise ValueError('source XDTO GetXDTO requires a single property')
+                result=_property_read(factory,records,value,prop)
+                if operation=='get_list':
+                    return _list(boundary,owner,factory,value,prop)
+                if operation=='get_xdto':return result
                 return method(value,prop)
+            return method(value)
+        if operation in ('get','get_xdto'):
+            if not(type(args[0]) is int or type(args[0]) is Decimal):raise ValueError('source XDTO index requires Number')
+            index=shared.values.index(args[0],len(items))
+            child=_select_item(factory,records,value,items,index)
+            return _native(child) if operation=='get' else child
+        if operation=='count':
+            for index in range(len(items)):_select_item(factory,records,value,items,index)
             return method(value)
         changed=[value];nodes=units=0
         if operation=='unset':
@@ -362,8 +504,6 @@ def resolve(boundary,value,name,*,require_value=False,argument_count=None,allow_
             if index<0:raise ValueError('XDTO: список пуст')
             changed.append(value._items[index])
         elif operation=='clear':changed.extend(value._items)
-        elif operation in ('get','get_xdto'):
-            if not(type(args[0]) is int or type(args[0]) is Decimal):raise ValueError('source XDTO index requires Number')
         _budget(factory,nodes,units)
         result=method(value,*args)
         if operation in _MUTATIONS:
@@ -393,10 +533,19 @@ def captured(boundary,function,**contract):
 
 
 def iterate(boundary,value):
-    _check(boundary,value)
+    _,factory,records=_scope(boundary,value)
     if type(value) is not _LIST:raise ValueError('source XDTO object is not iterable')
-    for child in tuple(value._items):
-        _check(boundary,value);yield _native(child)
+    # Like the original tuple snapshot, this retains the original selected
+    # objects across legal list edits, but never retains their admission.
+    snapshot=_list_read(factory,records,value)
+    for index,child in enumerate(snapshot):
+        _,factory,records=_scope(boundary,value)
+        current=_list_read(factory,records,value)
+        if index<len(current) and value._items[index] is not current[index]:
+            raise BoundaryViolation('source XDTO list entries changed')
+        if type(child) is _OBJECT:_object_read(factory,records,child)
+        else:_child(factory,records,value._owner,value._prop,child)
+        yield _native(child)
 
 
 def check_inventory(boundary):

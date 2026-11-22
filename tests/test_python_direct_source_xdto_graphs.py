@@ -258,3 +258,69 @@ class GraphXDTOTests(unittest.TestCase):
         self.assertIsNone(vm.variables['c']._owner)
         self.assertIsNone(vm.variables['d']._owner)
         self.assertEqual(vm.execute('L.Count();'),0)
+
+    def test_selected_reads_do_not_validate_unrelated_value_inventory(self):
+        from yadinassi.execution.direct.source import python_direct_source_xdto_objects as direct
+        app=self.prepared();vm=app.interpreter
+        vm.execute('C.Label="child";P.Child=C;L=P.Labels;L.Add("a");L.Add("b");')
+        vm.execute('For I=1 To 12 Do Extra=XDTOFactory.Create(F);EndDo;')
+        original=direct._validate_records
+        with patch.object(direct,'_validate_records',wraps=original) as audit:
+            vm.execute('For I=1 To 10 Do R=P.GetXDTO("Child").Label;EndDo;')
+            self.assertEqual(vm.variables['r'],'child')
+            self.assertTrue(vm.execute('P.Установлено("Labels");'))
+            self.assertIs(vm.execute('P.GetList("Labels");'),vm.variables['l'])
+            self.assertEqual(vm.execute('L[1];'),'b')
+            vm.execute('S="";For Each X In L Do S=S+X;EndDo;')
+            self.assertEqual(vm.variables['s'],'ab')
+            audit.assert_not_called()
+            vm.execute('P.Validate();')
+            self.assertGreater(audit.call_count,0)
+
+    def test_selected_reads_use_current_record_and_backlink(self):
+        app=self.prepared();vm=app.interpreter
+        vm.execute('C.Label="child";D.Label="other";L=P.Children;L.Add(C);L.Add(D);')
+        c,d=vm.variables['c'],vm.variables['d'];items=vm.variables['l']._items
+        # A valid object is not a valid replacement for another position.
+        items[1]=c
+        self.assertIs(vm.execute('L.Get(0);'),c)
+        for source in ('L.GetXDTO(1);','D.Label;','L.Count();'):
+            with self.subTest(source=source),self.assertRaises(basic.DENIED):vm.execute(source)
+        items[1]=d
+        self.assertEqual(vm.execute('L[1].Label;'),'other')
+
+    def test_selected_get_xdto_checks_receiver_again_after_arguments(self):
+        app=self.prepared();vm=app.interpreter
+        vm.execute('C.Label="original";P.Child=C;R="before";')
+        parent=vm.variables['p'];effects=[]
+        def touch():
+            effects.append('argument')
+            parent._values=dict(parent._values)
+            return 'Child'
+        vm.functions['touch']=HostFunction('Touch',touch)
+        with self.assertRaises(basic.DENIED):vm.execute('R=P.GetXDTO(Touch()).Label;')
+        self.assertEqual(effects,['argument'])
+        self.assertEqual(vm.variables['r'],'before')
+
+    def test_iterator_rechecks_selected_scalar_after_host_effect(self):
+        app=self.prepared();vm=app.interpreter
+        vm.execute('L=P.Labels;L.Add("a");L.Add("b");S="";')
+        calls=[]
+        def touch():
+            calls.append(True)
+            vm.variables['l']._items[1]._value='changed'
+        vm.functions['touch']=HostFunction('Touch',touch,returns_value=False)
+        with self.assertRaises(basic.DENIED):
+            vm.execute('For Each X In L Do S=S+X;Touch();EndDo;')
+        self.assertEqual(calls,[True])
+        self.assertEqual(vm.variables['s'],'a')
+
+    def test_selected_read_rejects_removed_or_mismatched_record(self):
+        from yadinassi.execution.direct.source import python_direct_source_xdto_objects as direct
+        app=self.prepared();vm=app.interpreter
+        vm.execute('C.Label="child";P.Child=C;')
+        child=vm.variables['c'];other=vm.variables['d'];records=direct._RECORDS[app]
+        del records[child]
+        with self.assertRaises(basic.DENIED):vm.execute('P.GetXDTO("Child");')
+        records[child]=records[other]
+        with self.assertRaises(basic.DENIED):vm.execute('P.Child;')
