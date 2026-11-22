@@ -152,16 +152,17 @@ class FillExcludeOrderCheckpointTests(unittest.TestCase):
         def observe_and_mutate(target, source, include, exclude):
             self.assertIsNone(include)
             self.assertEqual(exclude, 'Missing')
-            self.assertEqual(tuple(source._items), expected_orders[len(retained)])
-            self.assertEqual([value for _, value in target._items.values()], [1, 2, 3])
-            self.assertEqual({key: value for key, (_, value) in source._items.items()},
-                             {'first': 10, 'last': 20, 'copy': 30, 'missing': 40})
+            self.assertEqual(tuple(name.casefold() for name, _ in source.items()),
+                             expected_orders[len(retained)])
+            self.assertEqual([value for _, value in target.items()], [1, 2, 3])
+            self.assertEqual(dict(source.items()),
+                             {'First': 10, 'Last': 20, 'Copy': 30, 'Missing': 40})
             for previous in retained:
                 self.assertIsNot(target, previous[0])
                 self.assertIsNot(source, previous[1])
             retained.append((target, source))
-            target._items['copy'] = ('Copy', target._items['copy'][1] * 100)
-            source._items['copy'] = ('Copy', source._items['copy'][1] * 100)
+            target['copy'] *= 100
+            source['copy'] *= 100
             raise ValueError('synthetic failure after mutation')
 
         outer = ''.join(f'{name} = "outer-{index}";\n' for index, name in enumerate(LOCALS))
@@ -186,18 +187,18 @@ class FillExcludeOrderCheckpointTests(unittest.TestCase):
         def copy_then_validate(target, source, include, exclude):
             self.assertIsNone(include)
             self.assertEqual(exclude, 'Missing')
-            for key, (name, _) in tuple(target._items.items()):
-                if key in source._items:
-                    target._items[key] = name, source._items[key][1]
+            for name, _ in tuple(target.items()):
+                if name in source:
+                    target[name] = source[name]
             raise ValueError('synthetic missing target property')
 
         def source_insertion_order_traversal(target, source, include, exclude):
             self.assertIsNone(include)
             self.assertEqual(exclude, 'Missing')
-            for key, (_, value) in source._items.items():
-                if key not in target._items:
+            for name, value in source.items():
+                if name not in target:
                     raise ValueError('synthetic missing target property')
-                target._items[key] = target._items[key][0], value
+                target[name] = value
 
         probe = (PRESENTATION + self.old_helper + self.helper + self.body
                  + 'ПроверитьСписокИсключения("source-only.missing", "source-only", "Missing");\n')

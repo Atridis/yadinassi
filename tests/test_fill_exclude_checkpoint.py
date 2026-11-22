@@ -62,13 +62,12 @@ class FillExcludeCheckpointTests(unittest.TestCase):
         # Competing synthetic policies test observation power, not 1C semantics.
         def ignored(target, source, include, exclude):
             self.assertIsNone(include)
-            for key, (name, value) in tuple(target._items.items()):
-                if key in source._items and name not in exclude.split(','):
-                    target._items[key] = name, source._items[key][1]
+            for name, _ in tuple(target.items()):
+                if name in source and name not in exclude.split(','):
+                    target[name] = source[name]
         def partial(target, source, include, exclude):
             self.assertIsNone(include)
-            name, value = source._items['copy']
-            target._items['copy'] = name, value
+            target['copy'] = source['copy']
             raise ValueError('synthetic failure')
         # Execute only the real new helper and original presentation helper.
         presentation = 'Процедура Показать(Знач Метка, Знач Значение)\nСообщить(Метка + ": [" + Значение + "]");\nКонецПроцедуры\n'
