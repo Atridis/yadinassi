@@ -2733,20 +2733,24 @@ class _View:
             seen.add(item.field)
     @_boundary
     def ordered_catalog_values(self, catalog_id, request, fields):
-        """One projected ordered page on an ordinary query-only read view."""
+        """One bounded ordered or point page on a query-only read view."""
         self._require()
         if not self._query_language or self._operation_id is not None: return None
         if self._backend._active is not self: raise BackendError('closed')
         schema = self.catalog_schema(catalog_id)
         if self._backend.storage_version == 1 or schema.hierarchy != 'none': return None
         if (type(request) is not CatalogScanRequest or request.continuation is not None
-                or not request.order or type(fields) is not tuple or not 1 <= len(fields) <= 128):
+                or type(fields) is not tuple or not 1 <= len(fields) <= 128):
             raise BackendError('invalid_input')
         try:
             self._validate_catalog_scan(schema, request, fields, _MAX_ROWS)
         except BackendError as error:
             if error.code != 'unsupported': raise
             return None
+        predicate = request.predicate
+        if not request.order and (type(predicate) is not CatalogComparison or predicate.operator != 'eq'
+                                  or predicate.field not in ('code', 'ref')):
+            raise BackendError('invalid_input')
         plan = self._scan_sql(schema,request)
         if plan is None: return None
         if self._scan_cursor is not None:

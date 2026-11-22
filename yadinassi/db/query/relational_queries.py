@@ -1015,7 +1015,7 @@ class _Plan:
                 self.prepare_memberships(view, budget)
                 self.prepare_hierarchies(view, budget)
                 from .query_pushdown import try_count, try_numeric, try_ordered_select
-                pushed = try_ordered_select(self, view, budget) if self.query.order else None
+                pushed = try_ordered_select(self, view, budget)
                 if pushed is None:pushed = try_count(self, view, budget)
                 if pushed is None:pushed = try_numeric(self, view, budget)
                 if pushed is not None:return pushed

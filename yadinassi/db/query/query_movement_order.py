@@ -7,6 +7,7 @@ from yadinassi.db.catalog.catalog_backend import BackendError
 def try_ordered_movements(plan, view, budget, family):
     from .query_ordered_predicates import bind_scalar_predicate
     from .queries import BSLQueryResult, _section_value, _MAX_CELLS, _MAX_RESULT_TEXT
+    from .query_pushdown import bounded_projection
     from yadinassi.db.sqlite.sqlite_movement_order import ordered_movements
 
     manager = plan.managers[0]
@@ -44,7 +45,7 @@ def try_ordered_movements(plan, view, budget, family):
         budget = [0, 0]
     from yadinassi.temporal.dates import _from_parts
     rows, text = [], 0
-    columns = plan.columns
+    columns, project = bounded_projection(plan)
     has_recorder = any(column.field == 'recorder' for column in columns)
     has_period = any(column.field == 'period' for column in columns)
     for key, row in selected:
@@ -61,9 +62,9 @@ def try_ordered_movements(plan, view, budget, family):
             values['period'] = _from_parts((date.year, date.month, date.day, date.hour, date.minute, date.second))
         if has_recorder:
             values['recorder'] = manager._documents_by_id[key.document_id]._ref(key.record_id)
-        projected = tuple(values[column.field] for column in columns)
+        projected = project(values[column.field] for column in columns)
         rows.append(projected)
         text += sum(len(value) for value in projected if type(value) is str)
-        if len(rows) * len(columns) > _MAX_CELLS or text > _MAX_RESULT_TEXT:
+        if len(rows) * len(plan.columns) > _MAX_CELLS or text > _MAX_RESULT_TEXT:
             raise ValueError('Query result resource limit exceeded')
-    return BSLQueryResult(columns, tuple(rows))
+    return BSLQueryResult(plan.columns, tuple(rows))

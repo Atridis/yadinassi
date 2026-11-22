@@ -69,6 +69,19 @@ For I=1 To 3 Do
 EndDo;
 D=Documents.Orders.CreateDocument();D.Category=C.Ref;D.Amount=100;D.Write();''')
 
+    def test_ordered_top_register_with_literal_matches_residual(self):
+        from yadinassi.db.query.relational_queries import _Plan
+        from yadinassi.db.sqlite.sqlite_documents import DocumentView
+        self.seed()
+        # No reference projection or filter: use the existing scalar port.
+        text='SELECT TOP 1 Key, "tag" AS Marker FROM InformationRegister.Rates WHERE Enabled=TRUE ORDER BY Key'
+        with patch.object(DocumentView,'ordered_register_records',return_value=None) as decline:
+            expected=self.rows(text)
+        decline.assert_called_once()
+        self.assertEqual(expected,(('1','tag'),))
+        with patch.object(_Plan,'load',side_effect=AssertionError('materialized input')):
+            self.assertEqual(self.rows(text),expected)
+
     def test_english_bsl_report_and_exact_parameters(self):
         self.seed()
         self.vm.execute('''Q=New Query("SELECT Key,Amount*2 AS Gross FROM InformationRegister.Rates WHERE Enabled=TRUE AND Amount>=&Minimum ORDER BY Key DESC");

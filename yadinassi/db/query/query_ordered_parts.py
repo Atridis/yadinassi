@@ -9,6 +9,8 @@ from .query_ordered_predicates import bind_scalar_predicate
 
 def try_ordered_parts(plan, view, budget):
     from .queries import BSLQueryResult, _MAX_CELLS, _MAX_RESULT_TEXT, _section_row, _section_value
+    from .query_pushdown import bounded_projection
+    columns, project = bounded_projection(plan)
     document = plan.query.family == 'document'
     select = getattr(view,'ordered_document_part' if document else 'ordered_catalog_part',None)
     if select is None: return None
@@ -43,7 +45,7 @@ def try_ordered_parts(plan, view, budget):
     input_width = len(fields) if document else len(part.fields)
     for record in page.rows:
         if not document:
-            row = _section_row(manager,part,record,plan.columns,view,seen)
+            row = _section_row(manager,part,record,columns,view,seen)
             input_text += sum(len(value) for value in record.row.values if type(value) is str)
         else:
             if type(record) is not DocumentValueRow or type(record.key) is not DocumentKey:
@@ -57,7 +59,7 @@ def try_ordered_parts(plan, view, budget):
                 raise BackendError('integrity')
             seen.add((key.record_id,record.line_number))
             decoded = []
-            for column in plan.columns:
+            for column in columns:
                 value = record.values[indexes[column.field]]
                 if column.field=='ref':
                     if (type(value) is not DocumentKey or type(value.database_id) is not UUID
@@ -70,6 +72,7 @@ def try_ordered_parts(plan, view, budget):
                 decoded.append(value)
             row = tuple(decoded)
             input_text += sum(len(value) for value in record.values if type(value) is str)
+        row = project(row)
         rows.append(row)
         result_text += sum(len(value) for value in row if type(value) is str)
         if len(rows)*len(plan.columns)>_MAX_CELLS or result_text>_MAX_RESULT_TEXT:

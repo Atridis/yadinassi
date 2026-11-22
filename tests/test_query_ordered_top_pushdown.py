@@ -51,6 +51,60 @@ class OrderedTopMainDemoTests(unittest.TestCase):
             backend._read_handle.connection.set_trace_callback(statements.append)
         return statements, patch.object(backend,'_connect',side_effect=traced_connect)
 
+    def test_literal_projection_and_unordered_point_query_select_one_page(self):
+        self.seed()
+        texts = (
+            ('SELECT TOP 1 Description, "literal" AS Marker FROM Catalog.Склады ORDER BY Code', ('Straße','literal')),
+            ('SELECT TOP 1 Description, &Marker AS Mark FROM Catalog.Склады WHERE Code=&Key', ('STRASSE','param')),
+            ('SELECT TOP 1 Description FROM Catalog.Склады WHERE Code=&Key', ('STRASSE',)),
+            ('SELECT TOP 1 "constant" AS Marker FROM Catalog.Склады ORDER BY Code', ('constant',)),
+            ('SELECT TOP 1 "constant" AS Marker FROM Catalog.Склады WHERE Code="missing"', None),
+        )
+        from yadinassi.db.query.relational_queries import _Plan
+        for text, expected in texts:
+            with self.subTest(text=text):
+                self.vm.execute('Q=New Query("' + text.replace('"','""') + '");')
+                query=self.vm.variables['q']
+                if '&Key' in text:query.set_parameter('Key','2')
+                if '&Marker' in text:query.set_parameter('Marker','param')
+                trace,traced=self.actual_trace()
+                with traced, patch.object(_Plan,'load',side_effect=AssertionError('materialized input')), \
+                        patch.object(_View,'_validate_scan_scalars',side_effect=AssertionError('whole scan')):
+                    result=query.execute()
+                self.assertEqual(result._rows,() if expected is None else (expected,))
+                if '&Marker' in text:
+                    self.assertEqual((result._columns[1].name,result._columns[1].kind),('Mark','string'))
+                self.assertEqual(len(trace),1,trace)
+                self.assertTrue(trace[0].endswith('LIMIT 1'),trace)
+                self.assertNotIn('literal',trace[0])
+                self.assertNotIn('constant',trace[0])
+
+    def test_distinct_top_one_preserves_concrete_casefold_representative(self):
+        self.seed()
+        for suffix in (' ORDER BY Description ASC', ' ORDER BY Description DESC'):
+            with self.subTest(suffix=suffix):
+                text=('SELECT DISTINCT TOP 1 Description, "tag" AS Marker FROM Catalog.Склады '
+                      'WHERE Code<="2"'+suffix)
+                with patch.object(DocumentView,'ordered_catalog_values',return_value=None) as decline:
+                    expected=self.query(text)
+                decline.assert_called_once()
+                self.assertIn(expected,((('Straße','tag'),),(('STRASSE','tag'),)))
+                trace,traced=self.actual_trace()
+                with traced, patch.object(_View,'_validate_scan_scalars',side_effect=AssertionError('whole scan')):
+                    self.assertEqual(self.query(text),expected)
+                self.assertEqual(len(trace),1,trace)
+                self.assertNotIn('DISTINCT',trace[0])
+
+    def test_distinct_hidden_order_and_throwing_expression_stay_residual(self):
+        self.seed()
+        with patch.object(DocumentView,'ordered_catalog_values',side_effect=AssertionError('unsupported pushdown')):
+            with self.assertRaisesRegex(Exception,'DISTINCT ordering must use projected expressions'):
+                self.query('SELECT DISTINCT TOP 1 Description FROM Catalog.Склады ORDER BY Code')
+            self.assertEqual(len(self.query('SELECT DISTINCT TOP 2 Description FROM Catalog.Склады ORDER BY Description')),2)
+            with self.assertRaisesRegex(Exception,'division by zero'):
+                self.query('SELECT TOP 1 Code, CASE WHEN Code="1" THEN 1 ELSE 1/0 END AS Marker '
+                           'FROM Catalog.Склады ORDER BY Code')
+
     def test_qualified_multiple_keys_filter_and_top_in_one_query(self):
         self.seed()
         trace, traced = self.actual_trace()
@@ -111,6 +165,25 @@ class OrderedTopGenericTests(unittest.TestCase):
     draft = generic.CatalogSectionTests.draft
     create = generic.CatalogSectionTests.create
 
+    def test_unordered_point_on_non_enum_fast_catalog_path(self):
+        card = self.draft(code='1')
+        self.create(card)
+        self.create(self.draft(code='2'))
+        db = SQLiteDBContext(self.path)
+        self.addCleanup(db.close)
+        vm = Interpreter(database_context=db)
+        self.addCleanup(vm.close)
+        for key,text in (
+            ('1','SELECT TOP 1 Code FROM Catalog.Products WHERE Code=&Key'),
+            (vm._catalogs.get_index('Products')._ref(card.key.record_id),
+             'SELECT TOP 1 Code FROM Catalog.Products WHERE Ref=&Key'),
+        ):
+            with self.subTest(text=text):
+                vm.execute('Q=New Query("' + text + '");')
+                query=vm.variables['q'];query.set_parameter('Key',key)
+                with patch.object(_View,'_validate_scan_scalars',side_effect=AssertionError('whole scan')):
+                    self.assertEqual(query.execute()._rows,(('1',),))
+
     def test_exact_numbers_dates_and_empty_reference_order(self):
         # Direct non-enum path, with custom physical columns and a reference.
         first = self.backend.begin_write(UUID(int=100))
@@ -158,6 +231,19 @@ For N=1 To 5 Do
 EndDo;
 '''
         self.vm.execute(source)
+
+    def test_ordered_document_with_literal_matches_residual(self):
+        self.seed()
+        text='SELECT TOP 1 Number, "tag" AS Marker FROM Document.Receipt WHERE DeletionMark=FALSE ORDER BY Date,Number'
+        with patch.object(DocumentView,'ordered_document_values',return_value=None) as decline:
+            expected=self.query(text)
+        decline.assert_called_once()
+        trace,traced=self.actual_trace()
+        from yadinassi.db.query.relational_queries import _Plan
+        with traced, patch.object(_Plan,'load',side_effect=AssertionError('materialized input')):
+            self.assertEqual(self.query(text),expected)
+        self.assertEqual(len(trace),1,trace)
+        self.assertTrue(trace[0].endswith('LIMIT 1'),trace)
 
     def test_number_date_and_ref_same_as_residual_with_stable_ties(self):
         self.seed()

@@ -39,6 +39,22 @@ class RawMovementOrderTests(unittest.TestCase):
             query.set_parameter(name, value)
         return query.execute()._rows
 
+    def test_bounded_literal_projection_over_movements(self):
+        for module,case,source,field in (
+                (accumulation,accumulation.AccumulationQueryRuntimeTests,'AccumulationRegister.OwnedAccumulationRows','Item'),
+                (recorder,recorder.PostingRuntimeTests,'InformationRegister.OwnedPostingRows','Key')):
+            with self.subTest(source=source):
+                fixture=self.fixture(module,case)
+                text=f'SELECT TOP 1 {field}, "tag" AS Marker FROM {source} ORDER BY LineNumber'
+                with patch('yadinassi.db.query.query_movement_order.try_ordered_movements',return_value=None):
+                    expected=self.query(fixture,text)
+                self.assertEqual(len(expected),1)
+                from yadinassi.db.query.relational_queries import _Plan
+                with patch.object(_Plan,'load',side_effect=AssertionError('materialized input')):
+                    self.assertEqual(self.query(fixture,text),expected)
+                    result=fixture.vm.variables['q'].execute()
+                self.assertEqual((result._columns[1].name,result._columns[1].kind),('Marker','string'))
+
     def test_accumulation_ties_filters_and_python_page(self):
         fixture = self.fixture(accumulation, accumulation.AccumulationQueryRuntimeTests)
         sql = ('SELECT TOP 2 Item, Quantity FROM AccumulationRegister.OwnedAccumulationRows '

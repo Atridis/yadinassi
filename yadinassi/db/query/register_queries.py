@@ -119,6 +119,8 @@ def try_ordered_register(plan, view, budget=None):
     from yadinassi.db.catalog.catalog_backend import CatalogOrder
     from yadinassi.db.registers.information_registers import BSLInformationRegisterManager
     from .queries import BSLQueryResult, _MAX_CELLS, _MAX_RESULT_TEXT
+    from .query_pushdown import bounded_projection
+    columns, project = bounded_projection(plan)
     manager = plan.managers[0]
     provider = getattr(view,'ordered_register_records',None)
     if provider is None or type(manager) is not BSLInformationRegisterManager:
@@ -153,7 +155,7 @@ def try_ordered_register(plan, view, budget=None):
     rows, seen, digests, text = [], set(), set(), 0
     for record in page.rows:
         values = _record_values(manager,record,view,seen,digests,budget)
-        row = tuple(values[column.field] for column in plan.columns)
+        row = project(values[column.field] for column in columns)
         text += sum(len(value) for value in row if type(value) is str)
         rows.append(row)
         if len(rows)*len(plan.columns)>_MAX_CELLS or text>_MAX_RESULT_TEXT:

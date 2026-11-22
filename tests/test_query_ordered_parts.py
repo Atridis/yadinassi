@@ -21,6 +21,19 @@ class OrderedCatalogPartTests(unittest.TestCase):
     query = catalog.CatalogSectionQueryTests.query
     actual_trace = trace_fixture.OrderedTopMainDemoTests.actual_trace
 
+    def test_bounded_catalog_part_with_literal_projection(self):
+        self.seed()
+        text='SELECT TOP 1 Text, 7 AS Marker FROM Catalog.Products.Lines WHERE Active=FALSE ORDER BY Amount DESC'
+        with patch.object(_View,'ordered_catalog_part',return_value=None) as decline:
+            expected=self.query(text).execute()._rows
+        decline.assert_called_once()
+        self.assertEqual(len(expected),1)
+        trace,traced=self.actual_trace()
+        with traced, patch.object(_View,'scan_catalog_section',side_effect=AssertionError('full part')):
+            self.assertEqual(self.query(text).execute()._rows,expected)
+        self.assertEqual(len(trace),1,trace)
+        self.assertTrue(trace[0].endswith('LIMIT 1'),trace)
+
     def test_exact_filter_order_and_owner_one_select(self):
         self.seed()
         text = ('SELECT TOP 2 L.Ref AS Owner, L.Text AS Caption, L.Amount FROM Catalog.Products.Lines AS L '

@@ -119,19 +119,67 @@ def try_numeric(plan, view, budget):
     return BSLQueryResult(plan.columns,(tuple(values),) if plan.query.limit else ())
 
 
-def try_ordered_select(plan, view, budget=None):
-    """Execute closed field-only ORDER BY + TOP in one typed provider read."""
+def bounded_projection(plan):
+    """Bind selected fields and the constant projection once for the final page."""
     from .relational_queries import _BoundField
+    columns = []
+    recipe = []
+    for expression in plan.projections:
+        if type(expression) is _BoundField:
+            recipe.append((True, None))
+            columns.append(expression.column)
+        else:
+            recipe.append((False, expression))
+    columns = tuple(columns)
+    if len(columns) == len(recipe):
+        return columns, tuple
+
+    def assemble(values):
+        values = iter(values)
+        return tuple(next(values) if stored else literal for stored, literal in recipe)
+
+    return columns, assemble
+
+
+def try_ordered_select(plan, view, budget=None):
+    """Select a bounded physical page, then project only proven safe values."""
+    from .relational_queries import _BoundField
+    from yadinassi.temporal.dates import BSLDate
+    from yadinassi.types.values import NULL
     q = plan.query
-    if (type(q) is not syntax.Select or not q.order or not 0 < q.limit < syntax.MAX_ROWS
+    if (type(q) is not syntax.Select or not 0 < q.limit < syntax.MAX_ROWS
             or len(plan.sources) != 1 or q.family not in ('catalog','document','information_register','accumulation_register')
             or q.temporary or q.external or q.derived is not None or q.into is not None
             or q.virtual_condition is not None or q.joins or plan.grouped or q.having is not None
-            or q.distinct or plan.memberships or plan.hierarchies):
+            or plan.memberships or plan.hierarchies):
         return None
-    if any(type(field) is not _BoundField or field.source != 0
-           for field in (*plan.projections, *(field for field, _ in plan.orders))):
+    if not q.order:
+        # The ordinary catalog point lane already reads a bounded page in
+        # logical UUID order. Prove the whole predicate is one key equality
+        # before selecting early; other sources retain their input budgets.
+        point = plan.predicate
+        if (q.family != 'catalog' or q.section is not None or type(point) is not syntax.Comparison
+                or point.operator != 'eq' or type(point.field) is not _BoundField
+                or point.field.source != 0 or point.field.column.field not in ('code','ref')):
+            return None
+    for expression in plan.projections:
+        kind = type(expression)
+        if kind is _BoundField:
+            if expression.source != 0: return None
+        elif not (expression is NULL or kind is str or kind is bool or kind is Decimal or kind is BSLDate):
+            # Dynamic expressions may fail on a row discarded by TOP.
+            return None
+    if any(type(field) is not _BoundField or field.source != 0 for field, _ in plan.orders):
         return None
+    if q.distinct:
+        # With TOP 1, all instances of each distinct result must have the
+        # same sort key. Stable source ties then pick its first original
+        # representative, even when two spellings compare equal by casefold.
+        # A hidden ORDER field could otherwise select a later duplicate.
+        projected = {expression.column.field for expression in plan.projections
+                     if type(expression) is _BoundField}
+        if q.limit != 1 or any(field.column.field not in projected for field, _ in plan.orders):
+            return None
     if q.section is not None:
         if q.family not in ('catalog','document'): return None
         from .query_ordered_parts import try_ordered_parts
@@ -204,7 +252,8 @@ def try_ordered_select(plan, view, budget=None):
             or len(page.rows) > q.limit or page.continuation is not None):
         raise BackendError('integrity')
     ordinals = {field: i for i, field in enumerate(fields)}
-    positions = tuple(ordinals[column.field] for column in plan.columns)
+    columns, project = bounded_projection(plan)
+    positions = tuple(ordinals[column.field] for column in columns)
     rows, seen, text_units = [], set(), 0
     input_text = 0
     for record in page.rows:
@@ -227,12 +276,11 @@ def try_ordered_select(plan, view, budget=None):
         seen.add(key.record_id)
         if budget is not None:
             input_text += sum(len(value) for value in record.values if type(value) is str)
-        row = (tuple(_section_value(manager,column.custom,record.values[index]) if column.custom is not None
-                     else _ordered_header_value(manager,column.field,record.values[index])
-                     for column, index in zip(plan.columns,positions)) if document else
-               tuple(_section_value(manager, column.custom, record.values[index])
-                     if column.custom is not None else _logical(manager, column, record.values[index])
-                     for column, index in zip(plan.columns,positions)))
+        values = (_section_value(manager,column.custom,record.values[index]) if column.custom is not None
+                  else _ordered_header_value(manager,column.field,record.values[index]) if document
+                  else _logical(manager,column,record.values[index])
+                  for column, index in zip(columns,positions))
+        row = project(values)
         text_units += sum(len(value) for value in row if type(value) is str)
         rows.append(row)
         if len(rows)*len(plan.columns) > _MAX_CELLS or text_units > _MAX_RESULT_TEXT:
