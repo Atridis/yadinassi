@@ -452,6 +452,94 @@ class AsyncRuntimeTests(unittest.TestCase):
             EndProcedure Main();''',str(root/'Main.bsl'))
         self.assertEqual(self.output,['11','21','2'])
 
+    def test_sync_root_prepared_import_encounters_async_export_and_owns_pump(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'M.bsl').write_text('''
+            Var total Export;
+            Async Function F(x) Export
+                Await 0; total=total+x; Return total;
+            EndFunction
+            Async Function Private(x) Return x; EndFunction
+            total=1;
+            ''', encoding='utf-8')
+            source = '''// #Import M.bsl
+            Var total;
+            total=10; p=M.F(2);
+            Try M.Private(Effect()); Except Message("private"); EndTry;
+            '''
+            for prepared in (False, True):
+                output = []
+                vm = Interpreter(output.append, allow_extensions=True)
+                self.addCleanup(vm.close)
+                vm.register_function('Effect', lambda: output.append('actual'))
+                with self.subTest(prepared=prepared):
+                    name = str(root/'Main.bsl')
+                    if prepared:
+                        vm.execute_prepared(vm.prepare(source, name))
+                    else:
+                        vm.execute(source, name)
+                    self.assertEqual(vm.variables['total'], Decimal(10))
+                    self.assertEqual(vm.variables['p'].result, Decimal(3))
+                    self.assertEqual(vm.execute('M.total', name), Decimal(3))
+                    self.assertEqual(output, ['private'])
+                    self.assertEqual(vm.pending_promises, ())
+
+    def test_import_task_survives_caller_exit_but_cancel_releases_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'M.bsl').write_text('''
+            Async Function F() Export
+                Return Await Signal();
+            EndFunction
+            ''', encoding='utf-8')
+            signals = []
+            def signal():
+                p = self.vm._scheduler.new_pending()
+                signals.append(p)
+                return p
+            self.vm.register_function('Signal', signal)
+            name = str(root/'Main.bsl')
+            self.vm.execute('// #Import M.bsl\nP=M.F();', name)
+            promise = self.vm.variables['p']
+            self.assertEqual(promise.state, 'pending')
+            self.vm._scheduler.resolve(signals[0], Decimal(7))
+            self.vm.run_until_idle()
+            self.assertEqual(promise.result, Decimal(7))
+            self.vm.execute('P=M.F();', name)
+            cancelled = self.vm.variables['p']
+            self.vm.cancel_pending()
+            self.assertEqual(cancelled.state, 'rejected')
+            self.assertEqual(self.vm.pending_promises, ())
+            self.assertEqual(self.vm._scheduler._tasks, set())
+
+    def test_import_task_cannot_resume_after_owner_publication_is_revoked(self):
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'M.bsl').write_text('''
+            Async Function F() Export
+                Await Signal(); Message("must not resume"); Return 1;
+            EndFunction
+            ''', encoding='utf-8')
+            signals = []
+            def signal():
+                p = self.vm._scheduler.new_pending()
+                signals.append(p)
+                return p
+            self.vm.register_function('Signal', signal)
+            self.vm.execute('// #Import M.bsl\nP=M.F();', str(root/'Main.bsl'))
+            module = self.vm.imports.pop('m')
+            try:
+                self.vm._scheduler.resolve(signals[0])
+                with self.assertRaises(BoundaryViolation):
+                    self.vm.run_until_idle()
+                self.assertEqual(self.vm.variables['p'].state, 'failed')
+                self.assertEqual(self.output, [])
+            finally:
+                self.vm.imports['m'] = module
+            self.assertEqual(self.vm.pending_promises, ())
+
     def test_direct_ast_rejected_before_effects(self):
         program=parse('Message("wrong"); Async Function F() Return Await 1; EndFunction')
         program[-1].is_async=False

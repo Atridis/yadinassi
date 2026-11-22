@@ -12,18 +12,21 @@ def entry_mode(vm, program):
     if type(program) not in (list, tuple):
         return False
     incoming = any(type(node) is ast.Routine and node.is_async is True for node in program)
-    if not incoming and not any(module.async_names for module in
-                                getattr(vm, '_direct_routine_modules', {}).values()):
+    if (not incoming and not getattr(vm, '_direct_import_async', False)
+            and not any(module.async_names for module in
+                        getattr(vm, '_direct_routine_modules', {}).values())):
         return False
     from yadinassi.runtime import Interpreter
-    supported = (type(vm) is Interpreter and vm._family_owner is vm
-                 and vm.database_context is None and not vm.imports
+    from .python_direct_imports import owned_child
+    root = vm._family_owner
+    supported = (type(vm) is Interpreter and (root is vm or owned_child(vm))
+                 and vm.database_context is None and root.database_context is None
                  and not getattr(vm, '_direct_invocation_ports', None)
-                 and not any(type(node) is ast.Import for node in program)
-                 and type(vm._scheduler) is Scheduler)
+                 and not getattr(root, '_direct_invocation_ports', None)
+                 and type(vm._scheduler) is Scheduler and vm._scheduler is root._scheduler)
     if not supported:
         if incoming:
-            _reject('asynchronous routines require a standalone client module without imports')
+            _reject('asynchronous routines require a standalone client module')
         return False
     return True
 
@@ -41,19 +44,33 @@ def inline_root(vm, plan, boundary):
     return vm._scheduler.run_inline(run())
 
 
-def _activation_guard(vm, scheduler, generation, state, task, thread):
-    if (get_ident() != thread or vm._family_owner is not vm or vm._scheduler is not scheduler
-            or vm._family_generation != generation
-            or vm.variables is not state or vm._family_closed
-            or vm.imports or getattr(vm, '_direct_invocation_ports', None)
+def _activation_guard(vm, root, scheduler, generation, state, task, thread):
+    if (get_ident() != thread or vm._family_owner is not root
+            or vm._scheduler is not scheduler or root._scheduler is not scheduler
+            or vm._family_generation != generation or root._family_generation != generation
+            or vm.variables is not state or vm._family_closed or root._family_closed
+            or vm.database_context is not None or root.database_context is not None
+            or getattr(vm, '_direct_invocation_ports', None)
+            or getattr(root, '_direct_invocation_ports', None)
             or scheduler._active_task is not task):
         raise BoundaryViolation('direct async activation changed')
+    if vm is not root:
+        from .python_direct_imports import check_async_owner
+        check_async_owner(vm,root,published=task is not None)
 
 
 def root_guard(vm):
     scheduler, generation, state = vm._scheduler, vm._family_generation, vm.variables
-    thread = get_ident()
-    return lambda: _activation_guard(vm, scheduler, generation, state, None, thread)
+    root, thread = vm._family_owner, get_ident()
+    return lambda: _activation_guard(vm, root, scheduler, generation, state, None, thread)
+
+
+def import_guard(parent, child):
+    root = parent.vm._family_owner
+    scheduler = parent._async_scheduler
+    generation, state = child._family_generation, child.variables
+    task, thread = scheduler._active_task, get_ident()
+    return lambda: _activation_guard(child, root, scheduler, generation, state, task, thread)
 
 
 def bind_context(context, vm):
@@ -66,12 +83,16 @@ def bind_context(context, vm):
         # Bind code to a fresh activation, not to a root lease that is about
         # to end, and do not replay any initializers or source statements.
         context._check()
+        root = vm._family_owner
+        if vm is not root:
+            from .python_direct_imports import check_async_owner
+            check_async_owner(vm,root,published=True)
         generation, state, thread = vm._family_generation, vm.variables, get_ident()
 
         def run():
             task = scheduler._active_task
             def guard():
-                _activation_guard(vm, scheduler, generation, state, task, thread)
+                _activation_guard(vm, root, scheduler, generation, state, task, thread)
             boundary = make_boundary(vm, _async_guard=guard)
             boundary._async_task = True
             boundary.enter()

@@ -37,7 +37,7 @@ def _reject(message):
     raise PythonDirectUnsupported('python-direct: '+message)
 
 
-def _admit_vm(vm,*,_transaction_owner=None,_async_entry=False):
+def _admit_vm(vm,*,_transaction_owner=None,_async_entry=False,_async_guard=None):
     from yadinassi.runtime import Interpreter, _COMPILED_BASE_ABI_NAMES, _COMPILED_BASE_ABI, _DIRECT_VISITOR_ABI
     if type(vm) is not Interpreter:
         _reject('specialized Interpreter contexts are not integrated')
@@ -64,7 +64,10 @@ def _admit_vm(vm,*,_transaction_owner=None,_async_entry=False):
         from yadinassi.db.database_context import SQLiteDBContext
         if type(vm.database_context) is not SQLiteDBContext:
             _reject("direct database requires host-selected SQLiteDBContext")
-    if vm._scheduler.is_active or (vm._scheduler.pending and not _async_entry) or getattr(vm,'_direct_active',False):
+    if _async_guard is not None:_async_guard()
+    if ((vm._scheduler.is_active and _async_guard is None)
+            or (vm._scheduler.pending and not (_async_entry or _async_guard is not None))
+            or getattr(vm,'_direct_active',False)):
         _reject('nested or asynchronous execution is not integrated')
     from .python_direct_imports import check_live
     check_live(vm)
@@ -313,7 +316,7 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
     if exports is not None and exports.initializer_plan is not None:initializers+= (exports,)
     validate_calls(vm,calls,registry=prospective,layout=frozenset(vm.module_names)|declared,initializers=initializers)
     context=None
-    async_scheduler=vm._scheduler if mode else None
+    async_scheduler=None
     database=vm.database_context
     from yadinassi.runtime import _DIRECT_EXECUTION_SCOPE_ABI
     with _DIRECT_EXECUTION_SCOPE_ABI(vm):
@@ -335,6 +338,11 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
                 from yadinassi.db.database_transactions import admission as transaction_admission
                 with transaction_admission(False):
                     initialize(vm,incoming,facts=facts)
+                # A synchronous root may have just loaded an async module.
+                if not mode and getattr(vm,'_direct_import_async',False):
+                    mode=entry_mode(vm,incoming)
+                pump=mode and vm._family_owner is vm
+                if pump:async_scheduler=vm._scheduler
                 vm._transaction_activation_allowed=previous_transactions
                 from .python_direct_transactions import execution as transaction_execution
                 with transaction_execution(vm) as owner:
@@ -352,23 +360,23 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
                             from yadinassi.execution.codegen.experimental_direct_ast import compile_module
                             plan=compile_module(vm,program,nodes,plan.source_text,plan.source_name,
                                                 _retain_generated=False)
-                    if mode:
+                    if pump:
                         from .python_direct_async import inline_root
                         result=inline_root(vm,plan,context)
                     else:
                         result=plan.run(vm.variables,context=context)
-            if mode:context._check()
+            if pump:context._check()
             vm._self_module.ready=True
-            if mode:vm._pump_async()
+            if pump:vm._pump_async()
             vm._hybrid_stats['python_direct_modules']=vm._hybrid_stats.get('python_direct_modules',0)+1
-            if mode:
+            if pump:
                 error=async_scheduler.take_procedure_error()
                 if error is not None:raise error
             if returns_expression:return result
             return None if result is vm.variables else result
         finally:
             if context is not None:context._routine_exports.clear()
-            if mode:async_scheduler.procedure_errors.clear()
+            if async_scheduler is not None:async_scheduler.procedure_errors.clear()
             vm._direct_active=False
             vm._transaction_activation_allowed=previous_transactions
 

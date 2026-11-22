@@ -2013,7 +2013,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     emitter.routines={node.name.casefold():node for node in program if type(node) is bsl.Routine}
     async_bodies={}
     if any(node.is_async for node in emitter.routines.values()):
-        if _profile is not None or vm.database_context is not None or imported:
+        if _profile is not None or vm.database_context is not None:
             _reject('asynchronous routines require a standalone client module')
         from dataclasses import replace
         for name,node in tuple(emitter.routines.items()):

@@ -158,7 +158,29 @@ def loading_child(parent,child,path):
     except BaseException:
         _GRANTS.pop(child,None);_PUBLIC.pop(child,None);_SEALS.pop(child,None)
         raise
-    else:_GRANTS[child]=(*grant[:3],False,grant[4])
+    else:
+        _GRANTS[child]=(*grant[:3],False,grant[4])
+        if (getattr(child,'_direct_import_async',False)
+                or any(module.async_names for module in
+                       getattr(child,'_direct_routine_modules',{}).values())):
+            parent._direct_import_async=True
+
+
+def check_async_owner(child,root,*,published):
+    # A task must not retain its transient caller lease. Its owning module
+    # does retain the genuine import-grant chain for its entire lifetime.
+    for _ in range(_MAX_DEPTH):
+        grant=_GRANTS.get(child)
+        if grant is None or grant[1]() is not root or not owned_child(child):
+            break
+        parent=grant[0]()
+        if parent is None:break
+        if published and (grant[3] or child._self_module.ready is not True):
+            raise BoundaryViolation('async import is not published')
+        check_live(parent)
+        if parent is root:return
+        child=parent
+    raise BoundaryViolation('async import owner changed')
 
 
 def _tree(vm):
@@ -546,6 +568,7 @@ class ImportBoundary:
     def link_import_call(self,path,*,require_value,argument_count):
         """Bind a context-free export for this generated standalone activation."""
         vm=self.vm
+        if getattr(self,'_async_scheduler',None) is not None:return None
         if (vm.allow_extensions or vm._family_owner.__dict__.get('_standalone_script') is not True
                 or getattr(self,'_server_side',False)
                 or getattr(self,'module_context',True) is False):
@@ -618,14 +641,29 @@ class ImportBoundary:
         from .python_direct import _admit_vm
         from .python_direct_routines import validate_calls, resolve
         local=path is None and child is self.vm
-        if not local:_admit_vm(child,_transaction_owner=getattr(self,'_direct_transaction_owner',None))
+        async_guard=None
+        async_task=getattr(self,'_async_task',False)
+        if not local:
+            if getattr(self,'_async_scheduler',None) is not None:
+                from .python_direct_async import import_guard
+                async_guard=import_guard(self,child)
+            _admit_vm(child,_transaction_owner=getattr(self,'_direct_transaction_owner',None),
+                      _async_guard=async_guard)
         validate_calls(child,(name,))
         module=child._direct_routine_modules.get(name)
         if id(module)!=public[0] or module.signatures.get(name) is not public[1]:
             raise BoundaryViolation('module routine declaration changed')
+        if name in module.async_names:
+            if callback_only:
+                raise ValueError('Асинхронный обработчик обратного вызова пока не поддерживается')
+            if getattr(self,'_async_scheduler',None) is None:
+                raise ValueError('Асинхронный импорт требует активного клиентского запуска')
         if name in module.dual_names or ((path is None or callback_only) and name in module.server_names):
             raise ValueError('Двухконтекстная подпрограмма через объект модуля пока не поддерживается')
         returns_value,minimum,maximum,references=public[1]
+        if async_task and name in module.server_names and (
+                local or path is None or name not in module.nocontext_names or references):
+            raise ValueError('Серверный вызов из асинхронного задания пока не поддерживается')
         if require_value and not returns_value:raise TypeError('Процедура не возвращает значение: '+name)
         if argument_count is not None and not minimum<=argument_count<=maximum:
             raise TypeError('Неверное количество аргументов: '+name)
@@ -655,9 +693,16 @@ class ImportBoundary:
                 function=resolve(self,name,require_value=require_value,allow_references=True,argument_count=len(args))
                 try:return function(*args)
                 finally:validate()
-            _admit_vm(child,_transaction_owner=getattr(self,'_direct_transaction_owner',None));validate_calls(child,(name,))
+            _admit_vm(child,_transaction_owner=getattr(self,'_direct_transaction_owner',None),
+                      _async_guard=async_guard);validate_calls(child,(name,))
             from .python_direct import make_boundary
-            context=make_boundary(child,_parent_check=validate,_transaction_owner=getattr(self,'_direct_transaction_owner',None))
+            context=make_boundary(child,_parent_check=validate,
+                                  _transaction_owner=getattr(self,'_direct_transaction_owner',None),
+                                  _async_guard=async_guard)
+            if async_task:
+                context._async_task=True
+                if path is not None and name in module.nocontext_names and not references:
+                    context._async_import_nocontext=name
             if (not self._verify_context and not child.allow_extensions
                     and self.policy is None and child.database_context is None
                     and child._family_owner is self.vm._family_owner
