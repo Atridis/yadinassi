@@ -44,7 +44,7 @@ def _reject(message):
     raise PythonDirectUnsupported('direct-AST: '+message)
 
 
-def _nonconstructible_date(name,source,line,column):
+def _nonconstructible_type(name,source,line,column):
     raise BSLRuntimeError('Тип не определен: '+name,source,line,column)
 
 
@@ -743,10 +743,10 @@ class Emitter:
                 return self.invoke(bound,[self.expr(arg) for arg in node.arguments],t)
             native=kindname in ('array','массив','map','соответствие','structure','структура')
             if not native and kindname not in self.constructor_names:
-                # Date is a function, not a New constructor. This zero-argument
-                # form has a known runtime rejection, with no resolver or factory.
-                if kindname in ('date','дата') and not node.arguments:
-                    return self.call('_nonconstructible_date',[self.const(value,t) for value in
+                # A finite set of known nonconstructible names has a runtime
+                # rejection in its observed zero-argument form, not a factory.
+                if kindname in ('date','дата','sortdirection','направлениесортировки') and not node.arguments:
+                    return self.call('_nonconstructible_type',[self.const(value,t) for value in
                         (node.name,self.filename,t.line,t.column)],t)
                 _reject(f'constructor {node.name}; outside research subset')
             if any(type(arg) is bsl.OmittedArgument for arg in node.arguments):
@@ -2335,7 +2335,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
                          _known_detached_after_publication=detached_after_publication,
                          _known_generic_call=generic_call)
     if destinations:namespace['_GotoTransfer']=_GotoTransfer
-    namespace['_nonconstructible_date'] = _nonconstructible_date
+    namespace['_nonconstructible_type'] = _nonconstructible_type
     if emitter.http_body_receiver:
         from yadinassi.http.http_client import BSLHTTPRequest
         namespace['_HTTPRequest'] = BSLHTTPRequest

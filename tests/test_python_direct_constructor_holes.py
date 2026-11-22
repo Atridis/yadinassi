@@ -47,6 +47,23 @@ class DirectConstructorHolesTests(unittest.TestCase):
         for _ in range(2):vm.execute_prepared(plan)
         self.assertEqual(seen,[])
 
+    def test_known_sort_direction_has_a_catchable_zero_argument_constructor_error(self):
+        from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
+        for name in ('SortDirection','НаправлениеСортировки'):
+            vm=Interpreter();self.addCleanup(vm.close)
+            with self.subTest(name=name):
+                vm.execute(f'If False Then New {name}; EndIf; '
+                           f'Try New {name}; Except Direct=True; EndTry; '
+                           f'Try Execute("X=New {name};"); Except Fragment=True; EndTry;')
+                self.assertIs(vm.variables['direct'],True)
+                self.assertIs(vm.variables['fragment'],True)
+                self.assertNotIn('x',vm.variables)
+                with self.assertRaises(PythonDirectUnsupported):
+                    vm.execute(f'New {name}(1);')
+                with self.assertRaises(UnsupportedNakedSyntax):
+                    vm.execute('Try Execute("New UnknownCollection;"); Except Caught=True; EndTry;')
+                self.assertNotIn('caught',vm.variables)
+
     def test_registered_overrides_remain_rejected_without_host_effects(self):
         for constructor in ('Array','Map','Structure'):
             vm=Interpreter(allow_extensions=True);seen=[]
