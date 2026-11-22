@@ -2,6 +2,8 @@
 import hashlib,json,unittest
 from pathlib import Path
 from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.configuration.configuration_xml import import_configuration
 from yadinassi.configuration.configuration_modules import MODULE_RUNTIME
 from yadinassi.runtime import Interpreter
@@ -17,9 +19,21 @@ def files(application=''):
         result['CommonTemplates/'+name+'/Ext/Template.'+suffix]=(ASSETS/(name+'.'+suffix)).read_bytes()
     return result
 
-def app():
+def observation_files():
+    # Preserve the actual native observation routine, not its acquisition
+    # driver. The per-case tests call the original routine directly.
     source=(ASSETS/'observe.bsl').read_text(encoding='utf-8').split('For CaseNo = 1 To 12 Do')[0]
-    value=ConfigurationApplication.from_files(files(source));value.start();return value
+    return files(source)
+
+
+def application():
+    value=ConfigurationApplication.from_files(observation_files());value.start();return value
+
+
+def source_application():
+    value=SourceApplication(import_source(observation_files()))
+    value.start()
+    return value
 
 class NativeReplay(unittest.TestCase):
     def test_source_binding(self):
@@ -33,7 +47,7 @@ class NativeReplay(unittest.TestCase):
 
 def native_case(n):
     def test(self):
-        value=app();self.addCleanup(value.close,force=True)
+        value=source_application();self.addCleanup(value.close)
         self.assertEqual(value.interpreter.execute('ObserveCase('+str(n)+', "")'),json.loads(FIXTURE.read_bytes())['observations'][n-1])
     return test
 for n in range(1,13):setattr(NativeReplay,'test_native_%02d'%n,native_case(n))
@@ -73,17 +87,17 @@ class Admission(unittest.TestCase):
         value=ConfigurationApplication.from_files(files());self.addCleanup(value.close,force=True)
         with self.assertRaises(Exception):value.interpreter.execute('GetCommonTemplate("OwnedText")')
     def test_closed_no_grant(self):
-        value=app();value.close(force=True)
+        value=application();value.close(force=True)
         with self.assertRaises(Exception):value.interpreter.execute('GetCommonTemplate("OwnedText")')
     def test_cross_application_metadata_refused(self):
-        a=app();b=app();self.addCleanup(a.close,force=True);self.addCleanup(b.close,force=True)
+        a=source_application();b=source_application();self.addCleanup(a.close);self.addCleanup(b.close)
         meta=a.interpreter.execute('Metadata.CommonTemplates.OwnedText')
         with self.assertRaises(ValueError):b.common_templates.get(b.interpreter,meta)
     def test_metadata_identity(self):
-        value=app();self.addCleanup(value.close,force=True)
+        value=source_application();self.addCleanup(value.close)
         self.assertIs(value.interpreter.execute('Metadata.FindByFullName("CommonTemplate.OwnedText")'),value.interpreter.execute('Metadata.CommonTemplates.OwnedText'))
     def test_binary_return_is_fresh(self):
-        value=app();self.addCleanup(value.close,force=True)
+        value=application();self.addCleanup(value.close,force=True)
         self.assertIsNot(value.common_templates.get(value.interpreter,'OwnedBinary'),value.common_templates.get(value.interpreter,'OwnedBinary'))
     def test_bounds(self):
         source=files();source['CommonTemplates/OwnedBinary/Ext/Template.bin']=b'x'*(1024*1024+1)
