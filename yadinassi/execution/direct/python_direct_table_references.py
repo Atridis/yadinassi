@@ -211,13 +211,13 @@ class _RowAddress(_Reference):
 
 
 def local_member(context,row,name):
-    if context._verify_context or context.policy is not None:
+    if not context._known_method_local or context._verify_context or context.policy is not None:
         return context.reference_member(row,name)
     return _RowAddress(context,row,name,False)
 
 
 def local_index(context,row,key):
-    if (context._verify_context or context.policy is not None
+    if (not context._known_method_local or context._verify_context or context.policy is not None
             or (type(key) is not int and type(key) is not Decimal and type(key) is not str)):
         return context.reference_index(row,key)
     return _RowAddress(context,row,key,True)

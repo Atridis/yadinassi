@@ -229,3 +229,48 @@ else:
                 if extensions:
                     vm.execute(_STEP+'Step(Row[0],1);')
             self.assertEqual(vm.variables['row'].get(0),3 if extensions else 2)
+
+
+class SQLiteLocalTableCellTests(unittest.TestCase):
+    from test_main_demo_runtime import MainDemoRuntimeTests
+    setUp = MainDemoRuntimeTests.setUp
+    del MainDemoRuntimeTests
+
+    def test_detached_cells_use_same_local_address_with_sqlite_attached(self):
+        # Both local source execution and a prepared plan use the reference
+        # ABI already used by SQLite-attached routines, not the native-cell ABI.
+        from test_query_ordered_top_pushdown import OrderedTopMainDemoTests
+
+        for prepared in (False, True):
+            for address, expected in (('Row.X', (3, 10)), ('Row[0]', (1, 12))):
+                with self.subTest(prepared=prepared, address=address):
+                    source = _SETUP + _STEP + '''
+                        Function MoveColumn()
+                            T.Columns.Move("X",1); Return 2;
+                        EndFunction
+                        Step(''' + address + ''',MoveColumn()); X=Row.X; Y=Row.Y;
+                    '''
+                    plan = self.vm.prepare(source)
+                    generated = plan._plan.generated_source
+                    self.assertIn('_local_row_member' if address == 'Row.X' else '_local_row_index', generated)
+                    self.assertNotIn('_native_cells', generated)
+                    trace, traced = OrderedTopMainDemoTests.actual_trace(self)
+                    with traced, patch.object(refs, 'hooks', side_effect=AssertionError('full table audit')):
+                        if prepared:
+                            self.vm.execute_prepared(plan)
+                        else:
+                            self.vm.execute(source)
+                    self.assertEqual((self.vm.variables['x'], self.vm.variables['y']), expected)
+                    self.assertFalse(any(stmt.lstrip().upper().startswith(('SELECT', 'INSERT', 'UPDATE', 'DELETE'))
+                                         for stmt in trace), trace)
+
+    def test_sqlite_extension_mode_leaves_cell_dispatch_unchanged(self):
+        vm = Interpreter(database_context=self.context, allow_extensions=True)
+        self.addCleanup(vm.close)
+        for address in ('Row.X', 'Row[0]'):
+            with self.subTest(address=address):
+                plan = vm.prepare(_SETUP + _STEP + 'Step(' + address + ',2);')
+                self.assertNotIn('_local_row_', plan._plan.generated_source)
+                with patch.object(refs, '_RowAddress', side_effect=AssertionError('closed table address')):
+                    vm.execute_prepared(plan)
+                self.assertEqual(vm.variables['row'].get(0), 3)

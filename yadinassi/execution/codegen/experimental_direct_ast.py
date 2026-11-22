@@ -1131,7 +1131,11 @@ class Emitter:
                         arguments.append(actual)
                     elif self.import_path(plain) is not None:
                         arguments.append(self.call('_ForwardReference',[self.output_reference(plain)],node.callee.token))
-                    else:arguments.append(self.output_reference(plain,node.callee.token if type(plain) is not bsl.Name or self.external_name(plain.name) else None) if type(plain) in (bsl.Name,bsl.Index,bsl.Attribute) else self.call('_Cell',[self.expr(arg)],node.callee.token))
+                    elif type(plain) in (bsl.Name,bsl.Index,bsl.Attribute):
+                        reference_token=(node.callee.token if type(plain) is not bsl.Name
+                                         or self.external_name(plain.name) else None)
+                        arguments.append(self.output_reference(plain,reference_token,local_row=self.row_cell_references))
+                    else:arguments.append(self.call('_Cell',[self.expr(arg)],node.callee.token))
             function=self.name(self.routine_symbols[routine.name.casefold()],node.callee.token)
             if self.authority and (self.source_scopes or not self.standalone_script):
                 gate='_check_loop' if self.source_scopes else '_check'
@@ -2081,7 +2085,10 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
                 async_bodies[name]=emitter.temp()
 
     emitter.native_cells=bool(emitter.routines) and _profile is None and not imported and vm.database_context is None
-    emitter.row_cell_references=emitter.native_cells and emitter.standalone_script and not async_bodies
+    # The row address does not depend on the native-cell calling convention.
+    # SQLite-attached local routines keep their existing reference ABI.
+    emitter.row_cell_references=(bool(emitter.routines) and _profile is None and not imported
+                                 and emitter.standalone_script and not async_bodies)
     emitter.routine_symbols={key:emitter.temp() for key in emitter.routines}
     emitter.module_globals={name.casefold() for node in program if type(node) is bsl.Var for name in node.names}|{name.casefold() for name in module_names}
     collisions=emitter.external_names & (emitter.module_globals|emitter.routines.keys())
