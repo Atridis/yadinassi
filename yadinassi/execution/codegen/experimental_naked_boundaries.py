@@ -7,7 +7,8 @@ Post-call invalidation does not undo a service's already completed side effects.
 """
 from dataclasses import dataclass
 from decimal import Decimal
-from yadinassi.types.values import HostFunction, _DIRECT_INTERPRETER_CALL_TYPE
+from functools import partial
+from yadinassi.types.values import HostFunction, NULL, _DIRECT_INTERPRETER_CALL_TYPE
 from yadinassi.temporal.dates import BSLDate
 _MISSING=object()
 _SCALAR_TYPE_IDS = frozenset(map(id, (str, int, bool, Decimal, BSLDate, type(None))))
@@ -221,6 +222,15 @@ class BoundaryContext:
         """
         self.call_member(value, '__getitem__', index)
         return _HostIndexReference(self, value, index)
+
+    def bind_reference_index(self, value):
+        """Reject exact non-indexable BSL scalars before the index runs."""
+        if id(type(value)) in _SCALAR_TYPE_IDS or value is NULL:
+            if self._verify_context:self._check_effect()
+            raise TypeError('Индексирование для этого типа не поддерживается')
+        # Opaque/registered objects retain the existing reference and
+        # authority checks when their index is provided.
+        return partial(self.reference_index, value)
 
     def revoke(self):
         self._epoch += 1

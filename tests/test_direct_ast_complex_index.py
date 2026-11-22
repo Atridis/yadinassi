@@ -9,6 +9,19 @@ from yadinassi.syntax import ast as bsl
 from yadinassi.syntax.parser import parse
 
 class ComplexIndexTests(unittest.TestCase):
+    def test_dynamic_byref_scalar_rejects_before_index_in_both_index_shapes(self):
+        for operand in ('index', 'NextIndex()'):
+            with self.subTest(operand=operand):
+                vm=Interpreter(allow_extensions=True); events=[]
+                self.addCleanup(vm.close)
+                vm.register_function('Receiver',lambda:events.append('receiver') or Decimal(7))
+                vm.register_function('NextIndex',lambda:events.append('index') or Decimal(0))
+                vm.register_function('Capture',lambda arg:events.append('callee'),returns_value=False)
+                vm.functions['capture'].reference_parameters=frozenset({0})
+                vm.execute(f'index=0; Try Capture(Receiver()[{operand}]); Except Caught=True; EndTry;')
+                self.assertIs(vm.variables['caught'],True)
+                self.assertEqual(events,['receiver'])
+
     def test_index_finalizer_success_error_and_close(self):
         from yadinassi.types.values import BSLArray
         for byref in (False,True):

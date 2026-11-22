@@ -1258,7 +1258,7 @@ class Emitter:
         native=self.node(py.BoolOp,t,op=py.Or(),values=[exact(kind) for kind in kinds])
         if type(node) is bsl.Index:
             constructor=self.call('_partial',[self.name('_IndexRef',t),self.name(receiver,t)],t,[self.node(py.keyword,t,arg='checked',value=self.const(True,t))])
-            host=self.call('_partial',[self.attribute(self.name('_context',t),'reference_index',t),self.name(receiver,t)],t)
+            host=self.invoke(self.attribute(self.name('_context',t),'bind_reference_index',t),[self.name(receiver,t)],t)
             argument=self.expr(node.index)
         else:
             constructor=self.call('_partial',[self.name('_AttributeRef',t),self.name(receiver,t)],t)
@@ -1289,7 +1289,7 @@ class Emitter:
         dicts=('dict','_PlainMap','_TypedMap','_NakedMap','_DirectStructure')
         if type(node) is bsl.Index:
             reference=self.call('_partial',[self.name('_IndexRef',rt),self.name(receiver,rt)],rt,[self.node(py.keyword,rt,arg='checked',value=self.const(True,rt))])
-            host_ref=self.call('_partial',[self.attribute(self.name('_context',rt),'reference_index',rt),self.name(receiver,rt)],rt)
+            host_ref=self.invoke(self.attribute(self.name('_context',rt),'bind_reference_index',rt),[self.name(receiver,rt)],rt)
             reference=self.node(py.IfExp,rt,test=native_test(('list',*dicts),rt),body=reference,orelse=host_ref)
             read=self.call('_partial',[self.name('_native_getitem',t),self.name(receiver,t)],t)
             maps=native_test(('_PlainMap','dict','_TypedMap','_NakedMap'))

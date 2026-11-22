@@ -266,6 +266,23 @@ class ReferenceArgumentTests(unittest.TestCase):
             self.vm.execute('SetValue(7[Index()]);')
         self.assertEqual(self.vm.execute('calls'), Decimal(0))
 
+    def test_scalar_reference_rejection_runs_after_receiver_and_is_catchable(self):
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
+        with (patch.object(BoundaryContext,'_check',side_effect=AssertionError('Light check')),
+              patch.object(BoundaryContext,'_check_lease',side_effect=AssertionError('Light effect check'))):
+            self.vm.execute('''
+                trace = "";
+                Function Receiver() trace = trace + "R"; Return Undefined; EndFunction
+                Function Index() trace = trace + "I"; Return 0; EndFunction
+                Try
+                    trace = trace + "B"; SetValue(Receiver()[Index()]);
+                    trace = trace + "S";
+                Except
+                    trace = trace + "C";
+                EndTry;
+            ''')
+        self.assertEqual(self.vm.execute('trace'), 'BRC')
+
     def test_host_properties_are_explicitly_outside_current_reference_support(self):
         class Host(BSLObject):
             def get_member(self, name):
