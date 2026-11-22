@@ -497,7 +497,7 @@ class IndexSafetyTests(unittest.TestCase):
             self.assertEqual([list(row) for row in table], before)
             self.assertEqual(found(table, Key='a'), order)
 
-    def test_equal_decimal_rewrite_refreshes_cost_and_live_representative(self):
+    def test_equal_decimal_rewrite_refreshes_lazy_positions_and_live_value(self):
         table = BSLValueTable()
         for name in ('A', 'B', 'C'):
             table.columns.add(name)
@@ -505,25 +505,25 @@ class IndexSafetyTests(unittest.TestCase):
         row.set_member('A', D(1))
         row.set_member('B', 'x')
         row.set_member('C', 'xxxx')
-        with patch('yadinassi.collections.value_tables._MAX_INDEX_UNITS', 6):
-            index = table.indexes.add('A,B')
-            row.set_member('A', D('1.000'))
-            self.assertEqual(index._units, 5)
-            self.assertIs(next(iter(index._buckets)), index._keys[row])
-            with self.assertRaisesRegex(ValueError, 'содержимого ключей'):
-                table.indexes.add('C')
-            row.set_member('A', D(1))
-            self.assertEqual(index._units, 2)
-            self.assertIs(next(iter(index._buckets)), index._keys[row])
-            table.indexes.add('C')
-            table.columns.delete('B')
-            self.assertEqual(found(table, A=D(1)), [row])
-            self.assertEqual(names(table), [['A'], ['C']])
+        index = table.indexes.add('A,B')
+        self.assertEqual(found(table, A=D(1), B='x'), [row])
+        warmed = table._search.cache[(0, 1)]
+        value = D('1.000')
+        row.set_member('A', value)
+        self.assertIs(row.get_member('A'), value)
+        self.assertIs(table._search.cache[(0, 1)], warmed)  # No eager buckets rebuilt.
+        self.assertEqual(found(table, A=D(1), B='x'), [row])
+        self.assertIsNot(table._search.cache[(0, 1)], warmed)
+        self.assertEqual(tuple(table._search.cache[(0, 1)].buckets.values()), ((0,),))
+        table.indexes.add('C')
+        table.columns.delete('B')
+        self.assertEqual(list(index), ['A'])
+        self.assertEqual(names(table), [['A'], ['C']])
         other = table.add()
         other.set_member('A', D('1.00'))
         table.delete(row)
-        self.assertIs(next(iter(index._buckets)), index._keys[other])
-        self.assertEqual(index._units, 3)
+        self.assertEqual(found(table, A=D(1)), [other])
+        self.assertEqual(tuple(table._search.cache[(0,)].buckets.values()), ((0,),))
 
     def test_column_delete_preflights_all_index_changes(self):
         table = sample()
@@ -599,7 +599,10 @@ class IndexSafetyTests(unittest.TestCase):
         self.assertEqual(found(table), [])
         self.assertEqual(found(table, Key='a'), table.rows)
         self.assertIs(table.find('a', 'Key'), table.rows[0])
-        self.assertTrue(all(not index._keys and not index._buckets for index in table.indexes))
+        self.assertEqual(names(table), [[], [], []])
+        self.assertEqual(table._search.declarations, set())
+        self.assertEqual(table._search.cache, {})
+        self.assertEqual(table._search.builds, 0)
 
     def test_indexed_nonappend_insert_is_reserved_before_mutation(self):
         table = sample()
@@ -733,35 +736,49 @@ class IndexSafetyTests(unittest.TestCase):
                 table.load_column(array(*(rng.choice(values) for _ in table.rows)), 'Key')
             else:
                 table.fill_values(rng.choice(values), 'Second')
-            for index in table.indexes:
-                if not index.columns:
-                    self.assertEqual(index._keys, {})
-                    continue
-                self.assertEqual(index._units, sum(
-                    len(value) if kind is str else len(value.as_tuple().digits)
-                    if kind is D else 1 for key in index._keys.values() for kind, value in key))
-                self.assertEqual(set(index._keys), set(table.rows))
-                for row in table.rows:
-                    self.assertEqual(index._keys[row], index._key(row))
-                    self.assertIn(row, index._buckets[index._key(row)])
-            for value in values:
-                actual = found(table, Key=value)
-                expected = [row for row in table.rows if equal(row.get_member('Key'), value)]
+            for column in ('Key', 'Second'):
+                for value in values:
+                    actual = found(table, **{column: value})
+                    expected = [row for row in table.rows if equal(row.get_member(column), value)]
+                    self.assertEqual(set(actual), set(expected))
+                    self.assertEqual(len(actual), len(expected))
+            pairs = [(row.get_member('Key'), row.get_member('Second')) for row in table.rows]
+            pairs.append(('missing', 'missing'))
+            # Keep False and Decimal(0) as distinct lookup predicates.
+            predicates = {(type(key), key, type(second), second) for key, second in pairs}
+            for _, key, _, second in predicates:
+                actual = found(table, Key=key, Second=second)
+                expected = [row for row in table.rows if equal(row.get_member('Key'), key)
+                            and equal(row.get_member('Second'), second)]
                 self.assertEqual(set(actual), set(expected))
                 self.assertEqual(len(actual), len(expected))
+        self.assertEqual(names(table), [['Key'], ['Second'], ['Key', 'Second'], ['Key', 'Key'], []])
+        self.assertEqual(table._search.declarations, {(0,), (1,), (0, 1)})
 
     def test_only_current_rows_remain_referenced(self):
+        import gc
+        import weakref
+
         table = sample()
-        index = table.indexes.add('Key')
+        table.indexes.add('Key')
         first, second = table.rows
         first.set_member('Key', 'b')
         first.set_member('Key', 'a')
+        self.assertEqual(found(table, Key='a'), [second, first])
+        entry = table._search.cache[(0,)]
+        old, remaining = weakref.ref(first), weakref.ref(second)
         table.delete(first)
-        self.assertNotIn(first, index._keys)
-        self.assertEqual([row for bucket in index._buckets.values() for row in bucket], [second])
+        del first
+        gc.collect()
+        self.assertIsNone(old())  # Even with the stale cache entry alive.
+        self.assertEqual(found(table, Key='a'), [second])
+        self.assertIsNot(table._search.cache[(0,)], entry)
+        self.assertEqual(tuple(table._search.cache[(0,)].buckets.values()), ((0,),))
         table.clear()
-        self.assertEqual(index._keys, {})
-        self.assertEqual(index._buckets, {})
+        del second
+        gc.collect()
+        self.assertIsNone(remaining())
+        self.assertEqual(found(table, Key='a'), [])
 
 
 if __name__ == '__main__':
