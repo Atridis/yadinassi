@@ -99,11 +99,15 @@ class CatalogAtomicNumberingTests(unittest.TestCase):
         tx = self.backend.begin_write(uuid4())
         try:
             tx.create(first)
-            original = _View._replace_sections
-            def fail_after_rows(view, draft, schema, sections):
-                original(view, draft, schema, sections)
+            original = _View._write_sections
+            def fail_after_rows(view, draft, schema, sections, physical, *, create):
+                original(view, draft, schema, sections, physical, create=create)
+                card = view.read_catalog(failed.key)
+                self.assertIsNotNone(card)
+                self.assertEqual(card.code, '02')
+                self.assertEqual(card.tabular_sections, failed.tabular_sections)
                 raise BackendError('storage_error')
-            with patch.object(_View, '_replace_sections', fail_after_rows):
+            with patch.object(_View, '_write_sections', fail_after_rows):
                 with self.assertRaisesRegex(BackendError, 'storage_error'): tx.create(failed)
             self.assertIsNone(tx.read_catalog(failed.key))
             tx.create(last)
