@@ -35,6 +35,7 @@ from yadinassi.execution.direct.python_direct_execute import execute_fragment, l
 from yadinassi.execution.direct.python_direct_eval import bind_eval
 from yadinassi.execution.direct.python_direct import REPAIRS,PythonDirectUnsupported
 from yadinassi.execution.direct.python_direct_names import NAMES, CHARS_ALIASES, XML_CLEANUP_ALIASES
+from yadinassi.execution.direct.python_direct_static_module import analyze as analyze_static, ordered_if, OTHERWISE
 from yadinassi.types.errors import BSLRuntimeError
 from dataclasses import fields, replace
 
@@ -236,7 +237,7 @@ class Emitter:
     missing_metadata_roots=()
     def __init__(self,filename):
         self.filename=filename;self.constants=[];self.serial=0
-        self.has_goto=False;self.goto_last_expression=None
+        self.has_goto=False;self.literal_reachability=False;self.goto_last_expression=None
         self.goto_destinations={};self.goto_transfers={};self.goto_dispatch=[]
         self.http_body_receiver=False
         self.known_calls={};self.known_origins=()
@@ -1599,6 +1600,14 @@ class Emitter:
             recover=self.node(py.ExceptHandler,t,type=None,name=None,body=[cleanup,rethrow])
             result=[self.node(py.Try,t,body=result,handlers=[recover],orelse=[],finalbody=[])]
         return result
+    def without_module_facts(self, lower, node, *args):
+        # Still lower and validate the whole source. A proven-dead arm has
+        # neither closed facts nor a live register file to synchronize.
+        kinds,names,integer=self.static_module_kinds,self.static_module_names,self.integer_lane
+        self.static_module_kinds,self.static_module_names,self.integer_lane={},{},False
+        try:return lower(node,*args)
+        finally:self.static_module_kinds,self.static_module_names,self.integer_lane=kinds,names,integer
+
     def _statement(self,node):
         self.visits+=1;t=node.token;k=type(node)
         if k is bsl.Label:return []
@@ -1725,10 +1734,16 @@ class Emitter:
                 finally:
                     journals.pop();self.scope['initialized'].difference_update(changes)
                     initialized_paths.append(changes)
-            for condition,body in node.branches:
-                condition=self.truth(condition,t)
-                branches.append(self.node(py.If,t,test=condition,body=branch_sequence(body) or [self.node(py.Pass,t)],orelse=[]))
-            tail=branch_sequence(node.otherwise)
+            proven=bool(self.static_module_kinds and self.literal_reachability)
+            for condition,body,live_test,live_body in ordered_if(node,literal_reachability=proven):
+                if condition is not OTHERWISE:
+                    test=self.truth(condition,t) if live_test else self.without_module_facts(self.truth,condition,t)
+                emitted=(branch_sequence(body) if live_body else
+                         self.without_module_facts(branch_sequence,body))
+                if condition is OTHERWISE:
+                    tail=emitted
+                    break
+                branches.append(self.node(py.If,t,test=test,body=emitted or [self.node(py.Pass,t)],orelse=[]))
             if self.scope is not None:
                 common=initialized_paths[0].intersection(*initialized_paths[1:])
                 for key in common:self.initialize_local(key)
@@ -1765,6 +1780,8 @@ class Emitter:
                         if type(value) in (bsl.Attribute,bsl.Index):mutated=True
                         if type(value) in (bsl.Name,bsl.Binary,bsl.Unary) and id(value) not in self.scalar_kinds:mutated=True
                     if type(value) is bsl.Assign and (type(value.target) is bsl.Name or id(value) in self.local_field_facts):pending.append(value.value)
+                    elif type(value) is bsl.If and self.static_module_kinds and self.literal_reachability:
+                        pending.extend(_live_if_children(value))
                     elif isinstance(value,bsl.Node):pending.extend(getattr(value,f.name) for f in fields(value) if f.name!='token' and not (type(value) is bsl.Literal and f.name=='value'))
                     elif type(value) in (list,tuple):pending.extend(value)
                 if not mutated and type(start) is Decimal and type(end) is Decimal and start.is_finite() and end.is_finite() and start.as_tuple().exponent==0 and end.as_tuple().exponent==0:
@@ -1786,7 +1803,9 @@ class Emitter:
                             pending.append(value.object);continue
                         if type(value) is bsl.Call and type(value.callee) is bsl.Attribute and value.callee.name.casefold() in ('get','получить') and len(value.arguments)==1 and is_counter(value.arguments[0]) and self.static_module_kinds.get(id(value.callee.object))!='valuelist':
                             pending.append(value.callee.object);continue
-                        if isinstance(value,bsl.Node):pending.extend(getattr(value,f.name) for f in fields(value) if f.name!='token' and not (type(value) is bsl.Literal and f.name=='value'))
+                        if type(value) is bsl.If and self.static_module_kinds and self.literal_reachability:
+                            pending.extend(_live_if_children(value))
+                        elif isinstance(value,bsl.Node):pending.extend(getattr(value,f.name) for f in fields(value) if f.name!='token' and not (type(value) is bsl.Literal and f.name=='value'))
                         elif type(value) in (list,tuple):pending.extend(value)
                     raw=self.name(counter,t)
                     advance=([] if slot_counter else [self.assign_name(
@@ -1952,6 +1971,35 @@ def _routine_region(routine, scope):
     return end,operations,states
 
 
+def _live_if_children(node):
+    for condition,body,live_test,live_body in ordered_if(node,literal_reachability=True):
+        if live_test:yield condition
+        if live_body:yield from body
+
+
+def _module_registers(program, emitter, *, literal_reachability):
+    names=set();cells=set();pending=list(program)
+    while pending:
+        value=pending.pop()
+        if type(value) is bsl.Routine:continue
+        if type(value) is bsl.Call and type(value.callee) is bsl.Name and value.callee.name.casefold() in emitter.routines:
+            signature=emitter.routines[value.callee.name.casefold()]
+            for parameter,arg in zip(signature.parameters,value.arguments):
+                while type(arg) is bsl.Group:arg=arg.expression
+                if not parameter.by_value and type(arg) is bsl.Name:
+                    cells.add(arg.name.casefold());names.add(arg.name.casefold())
+        if type(value) is bsl.Assign and type(value.target) is bsl.Name:names.add(value.target.name.casefold())
+        if type(value) is bsl.For:names.add(value.name.casefold())
+        if type(value) is bsl.Var:names.update(name.casefold() for name in value.names)
+        if type(value) is bsl.If and literal_reachability:
+            pending.extend(_live_if_children(value))
+        elif isinstance(value,bsl.Node):
+            pending.extend(getattr(value,f.name) for f in fields(value) if f.name!='token' and not (type(value) is bsl.Literal and f.name=='value'))
+        elif type(value) in (list,tuple):pending.extend(value)
+    names-=emitter.external_names|emitter.module_globals|{'thisobject','этотобъект'}
+    return names,cells & names
+
+
 def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_whole_source=False,_require_last_expression=False,_profile=None,_source_scopes=False,_authority=False,_scalar_routines=False,_callable_externals=(),_shadowable=(),_configuration_calls=False,_host_bindings=False,_catalog_bounds=False,_lean_configuration=False,_retain_generated=True,_allow_pure_builtins=False,_current_module=False):
     """Lower a module, optionally auditing the generated Python source."""
     if not _native_partial_binding(partial):_reject('noncanonical partial binding is outside research contract')
@@ -1989,6 +2037,8 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     emitter.import_names=frozenset(imported);t=program[0].token
     emitter.standalone_script=_lean_configuration or (
         _profile is None and not _authority and not _source_scopes and not vm.allow_extensions)
+    emitter.literal_reachability=(emitter.standalone_script and _profile is None and not imported
+                                  and vm.database_context is None and not has_goto and not has_label)
     emitter.link_imports=bool(imported) and emitter.standalone_script and (
         vm._family_owner.__dict__.get('_standalone_script') is True)
     if _require_last_expression:emitter.require_last_expression=program[-1]
@@ -2215,7 +2265,6 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             routine_body=[emitter.node(py.Return,token,value=start)]
         definitions.append(emitter.node(py.FunctionDef,routine.token,name=emitter.routine_symbols[key],args=args,body=routine_body,decorator_list=[],returns=None,type_comment=None))
     # Module locals are the register file; dynamic edges explicitly synchronize.
-    from yadinassi.execution.direct.python_direct_static_module import analyze as analyze_static
     static_facts=None
     builtin_results=None
     if pure_bindings is not None:
@@ -2236,34 +2285,25 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
                     and stmt.target.name.casefold() in formals for stmt in routine.body):
                 address_routines[name]=routine
     if not async_bodies and _profile is None and not imported and not _exports and not _require_last_expression and vm.database_context is None:
-        names=set();pending=list(program)
-        while pending:
-            value=pending.pop()
-            if type(value) is bsl.Routine:continue
-            if type(value) is bsl.Call and type(value.callee) is bsl.Name and value.callee.name.casefold() in emitter.routines:
-                signature=emitter.routines[value.callee.name.casefold()]
-                for parameter,arg in zip(signature.parameters,value.arguments):
-                    while type(arg) is bsl.Group:arg=arg.expression
-                    if not parameter.by_value and type(arg) is bsl.Name:emitter.module_cells.add(arg.name.casefold());names.add(arg.name.casefold())
-            if type(value) is bsl.Assign and type(value.target) is bsl.Name:names.add(value.target.name.casefold())
-            if type(value) is bsl.For:names.add(value.name.casefold())
-            if type(value) is bsl.Var:names.update(name.casefold() for name in value.names)
-            if isinstance(value,bsl.Node):
-                pending.extend(getattr(value,f.name) for f in fields(value) if f.name!='token' and not (type(value) is bsl.Literal and f.name=='value'))
-            elif type(value) in (list,tuple):pending.extend(value)
-        names-=emitter.external_names|emitter.module_globals|{'thisobject','этотобъект'}
-        emitter.module_cells.intersection_update(names)
+        facts_reachability=emitter.literal_reachability
+        names,cells=_module_registers(program,emitter,literal_reachability=facts_reachability)
         builtin_external_names=() if pure_bindings is None else pure_bindings.names-names
+        if names or builtin_results or numeric_routines or address_routines:
+            static_facts=analyze_static(program,opaque_names=emitter.external_names|emitter.module_globals,
+               builtin_results=builtin_results,builtin_external_names=builtin_external_names,
+               numeric_routines=numeric_routines,address_routines=address_routines,
+               literal_reachability=facts_reachability)
+            emitter.static_module_kinds={} if static_facts is None else static_facts[1]
+        if static_facts is not None:names.update(static_facts[0])
+        elif facts_reachability:
+            names,cells=_module_registers(program,emitter,literal_reachability=False)
+            builtin_external_names=() if pure_bindings is None else pure_bindings.names-names
+        emitter.module_cells.update(cells)
+        emitter.static_module_names={key:emitter.temp() for key in sorted(names)}
         if not has_goto:
             opaque=emitter.external_names|emitter.module_globals|emitter.module_cells
             emitter.scalar_kinds=analyze_static(program,opaque_names=opaque,scalar_prefix=True,
                builtin_results=builtin_results,builtin_external_names=builtin_external_names)
-        if names or builtin_results or numeric_routines or address_routines:
-            static_facts=analyze_static(program,opaque_names=emitter.external_names|emitter.module_globals,
-               builtin_results=builtin_results,builtin_external_names=builtin_external_names,numeric_routines=numeric_routines,address_routines=address_routines)
-            emitter.static_module_kinds={} if static_facts is None else static_facts[1]
-            if static_facts is not None:names.update(static_facts[0])
-            emitter.static_module_names={key:emitter.temp() for key in sorted(names)}
         if (not has_goto and static_facts is None and not emitter.authority and not emitter.source_scopes
                 and not emitter.catalog_bounds and (not emitter.routines or emitter.native_cells)):
             from yadinassi.execution.direct.python_direct_local_facts import analyze as analyze_local

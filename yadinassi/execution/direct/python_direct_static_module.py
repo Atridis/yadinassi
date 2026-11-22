@@ -10,7 +10,24 @@ from yadinassi.syntax import ast as bsl
 class _Decline(Exception):pass
 
 
-def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=None, builtin_external_names=(), numeric_routines=None, address_routines=None):
+OTHERWISE=object()
+
+
+def ordered_if(node, *, literal_reachability):
+    """Yield every arm and whether its test and body can run in source order."""
+    reaches=True
+    for condition,body in node.branches:
+        literal=None
+        if literal_reachability:
+            leaf=condition
+            while type(leaf) is bsl.Group:leaf=leaf.expression
+            if type(leaf) is bsl.Literal and type(leaf.value) is bool:literal=leaf.value
+        yield condition,body,reaches,reaches and literal is not False
+        if literal is True:reaches=False
+    yield OTHERWISE,node.otherwise,False,reaches
+
+
+def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=None, builtin_external_names=(), numeric_routines=None, address_routines=None, literal_reachability=False):
     builtin_results = builtin_results or {}
     kinds={};names=set();opaque=set(opaque_names)|{'thisobject','этотобъект'}
     checked=set();active=set()
@@ -166,10 +183,10 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
                 require(all(nested.get(key)==kind for key,kind in env.items()))
             elif k is bsl.If:
                 branches=[]
-                for condition,body in node.branches:
-                    require(expression(condition,env) in ('number','bool'))
-                    nested=dict(env);sequence(body,nested);branches.append(nested)
-                nested=dict(env);sequence(node.otherwise,nested);branches.append(nested)
+                for condition,body,live_test,live_body in ordered_if(node,literal_reachability=literal_reachability):
+                    if live_test:require(expression(condition,env) in ('number','bool'))
+                    if live_body:
+                        nested=dict(env);sequence(body,nested);branches.append(nested)
                 merged={key:kind for key,kind in branches[0].items() if all(branch.get(key)==kind for branch in branches)}
                 env.clear();env.update(merged)
             elif k in (bsl.Break,bsl.Continue):pass
