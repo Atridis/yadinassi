@@ -127,6 +127,30 @@ class NullIntegrationTests(unittest.TestCase):
             with self.subTest(expression=expression), self.assertRaises(BSLError):
                 self.vm.execute(expression)
 
+    def test_member_and_index_errors_are_catchable_before_arguments(self):
+        program = parse("""
+            Var Called;
+            Function Argument()
+                Called = True;
+                Return 0;
+            EndFunction
+            Called = False;
+            MemberCaught = False; IndexCaught = False;
+            Try Null.Missing(Argument()); Except MemberCaught = True; EndTry;
+            Try Item = Null[Argument()]; Except IndexCaught = True; EndTry;
+        """)
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                if prepared:
+                    vm.execute_prepared(vm.prepare_program(program))
+                else:
+                    vm.execute_program(program)
+                self.assertIs(vm.variables['membercaught'], True)
+                self.assertIs(vm.variables['indexcaught'], True)
+                self.assertIs(vm.variables['called'], False)
+
     def test_default_parameters_and_dynamic_evaluation(self):
         self.vm.execute('''
             Function DefaultNull(value = Null) Return value; EndFunction

@@ -21,7 +21,7 @@ from yadinassi.streams.data_hashing import BSLDataHashing
 from yadinassi.formats.json.json_dates import BSLJSONSerializerSettings
 from yadinassi.formats.json.json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings, read_json, write_json, JSON_LINE_BREAKS
 from . import python_direct_json_memory as json_memory
-from yadinassi.types.values import HostFunction, BSLFixedArray, _DIRECT_TO_STRING_ABI
+from yadinassi.types.values import HostFunction, BSLFixedArray, NULL, _DIRECT_TO_STRING_ABI
 from yadinassi.db.query.query_packages import BSLTempTablesManager, TEMP_TABLE_MANAGER_NAMES
 from yadinassi.collections.structures import BSLFixedStructure
 from yadinassi.collections.maps import BSLFixedMap
@@ -199,7 +199,7 @@ class ServicesBoundary:
         if type(value) is _CallbackDescription:
             if self._verify_context:self._check()
             return _callback_read(value,name)
-        if value is None:
+        if value is None or value is NULL:
             if self._verify_context:self._check()
             raise ValueError('Значение не является значением объектного типа')
         from .python_direct_error_info import owns, read
@@ -213,7 +213,7 @@ class ServicesBoundary:
             if bound is not None:return bound
         if type(value) is user_messages.BSLUserMessage:return user_messages.resolve(self,value,name)
         if type(value) is fixed.PlainFixedMap:return fixed.resolve(self,value,name)
-        if value is None:
+        if value is None or value is NULL:
             if self._verify_context:self._check()
             raise ValueError('Значение не является значением объектного типа')
         from .python_direct_error_info import owns,resolve_query
@@ -248,7 +248,7 @@ class ServicesBoundary:
         if type(value) is fixed.PlainFixedMap:
             if omitted:raise TypeError('FixedMap method argument omission is unsupported')
             return fixed.resolve(self,value,name,require_value=require_value)
-        if value is None:
+        if value is None or value is NULL:
             if self._verify_context:self._check()
             raise ValueError('Значение не является значением объектного типа')
         from .python_direct_error_info import owns,resolve_query
