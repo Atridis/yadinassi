@@ -200,14 +200,25 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
         elif k is bsl.Call and type(node.callee) is bsl.Name:
             name=node.callee.name.casefold()
             if name in numeric_routines:
-                name=node.callee.name.casefold();routine=numeric_routines.get(name)
-                require(routine is not None and name not in active and len(node.arguments)==len(routine.parameters))
-                require(all(expression(arg,env)=='number' for arg in node.arguments))
+                routine=numeric_routines[name]
+                require(name not in active and len(node.arguments)<=len(routine.parameters))
+                for i,parameter in enumerate(routine.parameters):
+                    actual=node.arguments[i] if i<len(node.arguments) else None
+                    if actual is None or type(actual) is bsl.OmittedArgument:
+                        # Only substitute literal numeric defaults. In particular,
+                        # do not move a signed Decimal operation before later actuals.
+                        actual=parameter.default
+                        require(type(actual) is bsl.Literal and type(actual.value) is Decimal)
+                        require(expression(actual,{})=='number')
+                    else:
+                        require(expression(actual,env)=='number')
                 if name not in checked:
                     active.add(name)
                     try:
-                        result=expression(routine.body[0].value,{p.name.casefold():'number' for p in routine.parameters})
-                        require(result=='number')
+                        local={p.name.casefold():'number' for p in routine.parameters}
+                        for statement in routine.body[:-1]:
+                            local[statement.target.name.casefold()]=expression(statement.value,local)
+                        require(expression(routine.body[-1].value,local)=='number')
                     finally:active.remove(name)
                     checked.add(name)
                 kind='number'

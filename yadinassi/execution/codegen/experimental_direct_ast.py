@@ -1131,7 +1131,12 @@ class Emitter:
                 return self.call(address,actuals,node.callee.token)
             numeric=self.numeric_routine_symbols.get(routine.name.casefold())
             if numeric is not None and id(node) in self.scalar_kinds:
-                return self.call(numeric,[self.expr(arg) for arg in node.arguments],node.callee.token)
+                actuals=[]
+                for index,parameter in enumerate(routine.parameters):
+                    supplied=node.arguments[index] if index<len(node.arguments) else None
+                    value=parameter.default if supplied is None or type(supplied) is bsl.OmittedArgument else supplied
+                    actuals.append(self.expr(value))
+                return self.call(numeric,actuals,node.callee.token)
             arguments=[]
             for parameter,arg in zip(routine.parameters,node.arguments):
                 if type(arg) is bsl.OmittedArgument:arguments.append(self.name('_OMITTED_REF',arg.token))
@@ -2329,9 +2334,19 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     closed_with_declarations=emitter.literal_reachability
     if ((not async_bodies or closed_with_declarations) and _profile is None and not imported
             and not vm.allow_extensions and not _authority and not _source_scopes):
-        numeric_routines={name:routine for name,routine in emitter.routines.items()
-            if not routine.is_async and routine.is_function and all(p.by_value and p.default is None for p in routine.parameters)
-            and len(routine.body)==1 and type(routine.body[0]) is bsl.Return and routine.body[0].value is not None}
+        for name,routine in emitter.routines.items():
+            if (routine.is_async or not routine.is_function or not routine.body
+                    or not all(p.by_value for p in routine.parameters)
+                    or type(routine.body[-1]) is not bsl.Return or routine.body[-1].value is None
+                    or any(type(stmt) is not bsl.Assign or type(stmt.target) is not bsl.Name
+                           for stmt in routine.body[:-1])):
+                continue
+            formals={p.name.casefold() for p in routine.parameters}
+            locals_={stmt.target.name.casefold() for stmt in routine.body[:-1]}-formals
+            if ((locals_ | formals) & emitter.routines.keys()
+                    or locals_ & (emitter.external_names | emitter.module_globals | {'thisobject','этотобъект'})):
+                continue
+            numeric_routines[name]=routine
         for name,routine in emitter.routines.items():
             if (routine.is_async or routine.is_function or not routine.body
                     or not any(not p.by_value for p in routine.parameters)
@@ -2408,19 +2423,21 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         if emitter.integer_lane:
             emitter.scalar_kinds.update(static_facts[1])
             proven={name:routine for name,routine in numeric_routines.items()
-                    if id(routine.body[0].value) in static_facts[1]}
+                    if id(routine.body[-1].value) in static_facts[1]}
             emitter.numeric_routine_symbols={name:emitter.temp() for name in proven}
             # Only closed numeric calls use these definitions. The existing
             # generic definitions still own every persisted/exported signature.
             for name,routine in proven.items():
                 keys={p.name.casefold():emitter.temp() for p in routine.parameters}
+                for stmt in routine.body[:-1]:
+                    key=stmt.target.name.casefold()
+                    if key not in keys:keys[key]=emitter.temp()
                 emitter.scope={'slots':keys,'bindings':set(keys),'globals':set(),'externals':set(),
                                'boxed':set(),'local_declarations':set(keys),'initialized':set(keys)}
                 token=routine.token
                 arguments=py.arguments(posonlyargs=[],args=[emitter.node(py.arg,p.token,arg=keys[p.name.casefold()],annotation=None)
                                        for p in routine.parameters],vararg=None,kwonlyargs=[],kw_defaults=[],kwarg=None,defaults=[])
-                value=emitter.expr(routine.body[0].value)
-                body=[emitter.node(py.Return,routine.body[0].token,value=value)]
+                body=emitter.sequence(routine.body)
                 definitions.append(emitter.node(py.FunctionDef,token,name=emitter.numeric_routine_symbols[name],
                                                args=arguments,body=body,decorator_list=[],returns=None,type_comment=None))
             emitter.scope=None
