@@ -100,8 +100,10 @@ class DirectDatabaseTests(unittest.TestCase):
         for body,calls in (
                 ('Return S.Next();',1),
                 ('If (S.Next()) Then Return True; EndIf; Return False;',1),
+                # Only the reachable Next needs the direct cursor protocol.
+                # The one-row COUNT result below detects a spurious dead call.
                 ('If False And S.Next() Then Return False; '
-                 'ElsIf Not (S.Next() = False) Then Return True; EndIf; Return False;',2),
+                 'ElsIf Not (S.Next() = False) Then Return True; EndIf; Return False;',1),
                 ('Return ?(True,S, S).Next();',1),
         ):
             with self.subTest(body=body):
