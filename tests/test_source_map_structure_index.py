@@ -1,42 +1,15 @@
-"""Compare structural source mapping with the previous dump-based matcher."""
+"""Compare prepared direct AST and explicit whole-source position mapping."""
 import ast
+from contextlib import closing
 from pathlib import Path
 from types import CodeType
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.execution.codegen.experimental_naked_errors import SourceMap, _StructureIndex
-
-
-def dump_compile(self,generated,filename,body_offset):
-    """Independent reference for the pre-optimization expression matcher."""
-    tree=ast.parse(generated,filename=filename);rows={};normalized={}
-    for line,(token,expressions) in self.rows.items():
-        groups={}
-        for text,where in expressions:
-            if text not in normalized:
-                try:normalized[text]=ast.dump(ast.parse(text.strip(),mode='eval').body,include_attributes=False)
-                except SyntaxError:normalized[text]=text.strip()
-            groups.setdefault(normalized[text],[]).append(where)
-        rows[line+body_offset]=(token,groups,{key.partition('(')[0] for key in groups})
-    consumed={}
-    def visit(node,inherited=None,parent_line=None):
-        original=getattr(node,'lineno',None)
-        token=inherited if original==parent_line else None
-        row=rows.get(original)
-        if row:
-            token=token or row[0]
-            if isinstance(node,ast.expr) and type(node).__name__ in row[2]:
-                key=ast.dump(node,include_attributes=False);matches=row[1].get(key)
-                if matches:
-                    used=consumed.get((original,key),0)
-                    token=matches[min(used,len(matches)-1)];consumed[(original,key)]=used+1
-        for child in ast.iter_child_nodes(node):visit(child,token,original)
-        if token is not None and original is not None:
-            node.lineno=token.line;node.end_lineno=token.line
-            node.col_offset=max(0,token.column-1);node.end_col_offset=node.col_offset+1
-    visit(tree)
-    return compile(tree,filename,'exec')
+from yadinassi import runtime
+from yadinassi.execution.codegen import experimental_direct_ast as direct
+from yadinassi.execution.codegen.experimental_naked_errors import _StructureIndex
+from yadinassi.execution.direct import python_direct
 
 
 def signature(code):
@@ -48,56 +21,91 @@ def signature(code):
 
 
 class SourceMapStructureTests(unittest.TestCase):
-    def test_selective_auxiliary_compile_audit_denial_is_preserved(self):
-        # Audit hooks cannot be removed: isolate both registration and denial.
-        import subprocess,sys
-        code="""
-import sys
-from yadinassi import Interpreter
-from yadinassi.execution.codegen.experimental_naked_errors import SourceMap
-source='T=New ValueList;For I=0 To 2 Do T.Add(I);EndDo;'
-vm=Interpreter();default=SourceMap._allow_markers;SourceMap._allow_markers=False
-vm.execute(source,'audit.bsl')
-seen=[]
-def observe(event,args):
-    if event=='compile' and args[1]=='<unknown>' and type(args[0]) is bytes:seen.append(args[0])
-sys.addaudithook(observe)
-vm.execute(source,'audit.bsl')
-if not seen:raise AssertionError('baseline has no real auxiliary parses')
-target=b'_constants[0]'
-if target not in seen:raise AssertionError('target auxiliary parse absent')
-SourceMap._allow_markers=default;vm.variables.clear()
-def deny(event,args):
-    if event=='compile' and args[1]=='<unknown>' and args[0]==target:
-        raise RuntimeError('selective auxiliary compile denied')
-sys.addaudithook(deny)
-try:vm.execute(source,'audit.bsl')
-except RuntimeError as error:
-    if str(error)!='selective auxiliary compile denied':raise AssertionError(str(error))
-    if vm.variables:raise AssertionError(vm.variables)
-else:raise AssertionError('selective compile authorization bypassed')
-"""
-        result=subprocess.run([sys.executable,*(['-'+'O'*sys.flags.optimize] if sys.flags.optimize else []),'-c',code],capture_output=True,text=True)
-        self.assertEqual(result.returncode,0,result.stderr)
+    def test_real_compile_audit_streams(self):
+        self._check_audit_subprocess("observe")
 
-    def test_default_compile_audit_stream_matches_unmarked_baseline(self):
-        import subprocess,sys
-        code="""
+    def test_real_compile_audit_denial_before_effects(self):
+        # See also WholeSourceResearchTests.test_real_source_and_ast_denial_before_effects
+        # for the explicit route's AST denial and mutation controls.
+        for mode in ("default-ast", "explicit-source"):
+            with self.subTest(mode=mode):
+                self._check_audit_subprocess(mode)
+
+    def _check_audit_subprocess(self, mode):
+        import subprocess
+        import sys
+
+        script = """
+import ast
 import sys
+from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.execution.codegen.experimental_naked_errors import SourceMap
-source='T=New ValueTable;T.Columns.Add("N");For I=0 To 2 Do Row=T.Add();Row.N=I;EndDo;'
-vm=Interpreter();vm.execute(source,'audit.bsl');seen=[]
-def observe(event,args):
-    if event=='compile':seen.append((args[0] if type(args[0]) is bytes else type(args[0]).__name__,args[1]))
-sys.addaudithook(observe)
-vm.execute(source,'audit.bsl');current=list(seen);seen.clear()
-SourceMap._allow_markers=False
-vm.execute(source,'audit.bsl')
-if current!=seen:raise AssertionError('default audit stream differs from unmarked baseline')
+from yadinassi.execution.codegen import experimental_direct_ast as direct
+from yadinassi.execution.direct import python_direct
+
+source = 'T=New ValueList;For I=0 To 2 Do T.Add(I);EndDo; R=T.Count();'
+vm = Interpreter()
+vm.execute(source, 'warm.bsl')
+seen = []
+mode = sys.argv[1]
+
+def check(value):
+    if not value:
+        raise AssertionError((mode, seen))
+
+def hook(event, args):
+    if event != 'compile':
+        return
+    seen.append((type(args[0]).__name__, args[1]))
+    if ((mode == 'default-ast' and type(args[0]) is ast.Module) or
+        (mode == 'explicit-source' and type(args[0]) is bytes and args[1] == 'audit.bsl')):
+        raise RuntimeError('compile denied')
+
+sys.addaudithook(hook)
+for explicit in ([False, True] if mode == 'observe' else [mode == 'explicit-source']):
+    seen.clear()
+    vm.variables.clear()
+    try:
+        if explicit:
+            with patch.object(python_direct, '_compile', direct.compile_module_whole_source):
+                plan = vm.prepare(source, 'audit.bsl')
+        else:
+            plan = vm.prepare(source, 'audit.bsl')
+    except RuntimeError as error:
+        check(mode != 'observe' and str(error) == 'compile denied')
+        check(not vm.variables)
+    else:
+        check(mode == 'observe')
+        check(not vm.variables)
+    expected = [('Module', None)]
+    if explicit:
+        expected = [('bytes', 'audit.bsl')] + ([] if mode == 'explicit-source' else expected)
+    check(seen == expected)
+    if mode == 'observe':
+        vm.execute_prepared(plan)
+        check(vm.variables['r'] == 3)
 """
-        result=subprocess.run([sys.executable,*(['-'+'O'*sys.flags.optimize] if sys.flags.optimize else []),'-c',code],capture_output=True,text=True)
-        self.assertEqual(result.returncode,0,result.stderr)
+        flags = ["-" + "O" * sys.flags.optimize] if sys.flags.optimize else []
+        result = subprocess.run([sys.executable, *flags, "-c", script, mode],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def _compare(self, source, filename, *, execute=False):
+        with closing(Interpreter()) as default_vm, closing(Interpreter()) as explicit_vm:
+            default = default_vm.prepare(source, filename)
+            with patch.object(python_direct, "_compile", direct.compile_module_whole_source):
+                explicit = explicit_vm.prepare(source, filename)
+            self.assertEqual(default._plan._research_roundtrip_visits, 0)
+            self.assertGreater(explicit._plan._research_roundtrip_visits, 0)
+            self.assertEqual(signature(default._plan.function.__code__),
+                             signature(explicit._plan.function.__code__))
+            if default._exports and default._exports.server_plan:
+                self.assertEqual(signature(default._exports.server_plan.function.__code__),
+                                 signature(explicit._exports.server_plan.function.__code__))
+            if execute:
+                default_vm.execute_prepared(default)
+                explicit_vm.execute_prepared(explicit)
+                return default_vm.variables.copy(), explicit_vm.variables.copy()
 
     def test_structural_identity_matches_dump_identity(self):
         snippets=('x+x','x + y','x[1]','x[True]','x[1.0]','x["1"]','x[b"1"]',
@@ -128,14 +136,9 @@ if current!=seen:raise AssertionError('default audit stream differs from unmarke
             '&AtServer\nFunction F(Val X) Return X+1;EndFunction\nR=F(2);']
         for source in sources:
             with self.subTest(source=source[:40]):
-                direct=Interpreter().prepare(source,'mapping.bsl')
-                with patch.object(SourceMap,'_allow_markers',False),patch.object(SourceMap,'compile',dump_compile):
-                    reference=Interpreter().prepare(source,'mapping.bsl')
-                self.assertEqual(signature(direct._plan.function.__code__),signature(reference._plan.function.__code__))
-                if direct._exports and direct._exports.server_plan:
-                    self.assertEqual(signature(direct._exports.server_plan.function.__code__),signature(reference._exports.server_plan.function.__code__))
+                self._compare(source, 'mapping.bsl')
 
-    def test_collection_markers_preserve_exact_code_and_locations(self):
+    def test_collection_roundtrip_preserves_exact_code_locations_and_results(self):
         prefixes=[
             'T=New ValueTable;T.Columns.Add("N");For I=0 To 3 Do Row=T.Add();Row.N=I;EndDo;',
             'T=New ValueList;For I=0 To 3 Do Item=T.Add(I);EndDo;',
@@ -147,47 +150,68 @@ if current!=seen:raise AssertionError('default audit stream differs from unmarke
         for prefix in prefixes:
             for suffix in suffixes:
                 with self.subTest(prefix=prefix[:30],suffix=suffix[:30]):
-                    with patch.object(SourceMap,'_allow_markers',True):
-                        direct=Interpreter().prepare(prefix+suffix,'mixed.bsl')
-                    self.assertIn('_source_location_marker',direct._plan.generated_source)
-                    with patch.object(SourceMap,'_allow_markers',False),patch.object(SourceMap,'compile',dump_compile):
-                        reference=Interpreter().prepare(prefix+suffix,'mixed.bsl')
-                    self.assertEqual(signature(direct._plan.function.__code__),signature(reference._plan.function.__code__))
-                    self.assertNotIn('_source_location_marker',direct._plan.function.__code__.co_names)
+                    states = self._compare(prefix+suffix, 'mixed.bsl', execute=True)
+                    for state in states:
+                        collection = state['т'] if prefix.startswith('Т') else state['t']
+                        if 'For J=' in prefix:
+                            expected = (0, 0, 0, 0, 1, 2, 0, 2, 4)
+                        else:
+                            expected = (0, 1, 2, 3)
+                        self.assertEqual(collection.count(), len(expected))
+                        self.assertEqual(tuple(collection.get(i)[0] for i in range(len(expected))), expected)
+                        if suffix.startswith('\nTry'):
+                            self.assertTrue(state['text'].startswith('mixed.bsl:3:5: '), state['text'])
+                        elif suffix.startswith('\nA='):
+                            self.assertEqual(state['result'], 2)
+                        elif suffix.startswith('\nX='):
+                            self.assertEqual(state['y'], 2)
+                    if 'text' in states[0]:
+                        self.assertEqual(states[0]['text'], states[1]['text'])
 
-    def test_collection_markers_do_not_increase_arithmetic_nesting(self):
+    def test_whole_source_roundtrip_preserves_arithmetic_nesting(self):
         for depth in (5,30,60):
             source='T=New ValueList;For I=0 To 1 Do T.Add('+('1+('*depth)+'1'+(')'*depth)+');EndDo;'
-            with patch.object(SourceMap,'_allow_markers',True):direct=Interpreter().prepare(source)
-            with patch.object(SourceMap,'_allow_markers',False):reference=Interpreter().prepare(source)
-            self.assertEqual(signature(direct._plan.function.__code__),signature(reference._plan.function.__code__))
+            self._compare(source, 'nested.bsl')
 
-    def test_marker_metadata_not_retained_by_prepared_plan(self):
-        import gc,weakref
-        import yadinassi.execution.codegen.experimental_naked_errors as errors
-        refs=[]
-        def create():
-            value=SourceMap();refs.append(weakref.ref(value));return value
-        was_enabled=gc.isenabled();gc.disable()
-        try:
-            with patch.object(errors,'SourceMap',create):
-                plan=Interpreter().prepare('T=New ValueList;For I=0 To 2 Do T.Add(I);EndDo;')
-            self.assertTrue(refs);self.assertTrue(all(ref() is None for ref in refs))
-            self.assertNotIn('_source_location_marker',plan._plan.function.__globals__)
-        finally:
-            if was_enabled:gc.enable()
+    def test_parser_nodes_are_released_while_prepared_snapshot_is_live(self):
+        import weakref
 
-    def test_index_is_released_without_waiting_for_cyclic_gc(self):
-        import gc,weakref
-        import yadinassi.execution.codegen.experimental_naked_errors as errors
-        refs=[]
-        def create():
-            value=_StructureIndex();refs.append(weakref.ref(value));return value
-        was_enabled=gc.isenabled();gc.disable()
-        try:
-            with patch.object(SourceMap,'_use_markers',False),patch.object(errors,'_StructureIndex',create):
-                Interpreter().prepare('Function F(Val X) Return X+1;EndFunction R=F(2);')
+        refs = []
+        parse = runtime.parse
+
+        def record(*args, **kwargs):
+            nodes = parse(*args, **kwargs)
+            refs.extend(weakref.ref(node) for node in nodes)
+            return nodes
+
+        with closing(Interpreter()) as vm:
+            with patch.object(runtime, 'parse', record):
+                plan = vm.prepare('T=New ValueList;For I=0 To 2 Do T.Add(I);EndDo;')
             self.assertTrue(refs)
             self.assertTrue(all(ref() is None for ref in refs))
+            self.assertIsNotNone(plan._plan._generated_tree)
+            vm.execute_prepared(plan)
+            self.assertEqual(vm.variables['t'].count(), 3)
+
+    def test_generated_ast_is_released_after_first_display(self):
+        import gc
+        import weakref
+
+        was_enabled = gc.isenabled()
+        gc.disable()
+        try:
+            with closing(Interpreter()) as vm:
+                # A routine module can also hold a separate export-plan copy.
+                plan = vm.prepare('R=1+2;')
+                ref = weakref.ref(plan._plan._generated_tree)
+                self.assertIsNotNone(ref())
+                displayed = plan._plan.generated_source
+                self.assertIn('naked_module', displayed)
+                self.assertIsNone(ref())
+                with patch.object(ast, 'unparse', side_effect=AssertionError('already displayed')):
+                    self.assertEqual(plan._plan.generated_source, displayed)
+                vm.execute_prepared(plan)
+                self.assertEqual(vm.variables['r'], 3)
         finally:
-            if was_enabled:gc.enable()
+            if was_enabled:
+                gc.enable()
