@@ -2063,13 +2063,17 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             if type(value) is bsl.Execute or (type(callee) is bsl.Name and callee.name.casefold() in ('eval','вычислить')):has_fragments=True
             if type(value) is bsl.Call:
                 actuals=[]
+                # Imported calls use the dynamic routine ABI, including its
+                # by-reference branch, before native member-name lowering.
+                import_call=(type(callee) is bsl.Attribute and emitter.import_names
+                             and emitter.import_path(callee) is not None)
                 if type(callee) is bsl.Name and callee.name.casefold() in emitter.routines:
                     signature=emitter.routines[callee.name.casefold()]
                     actuals=[arg for parameter,arg in zip(signature.parameters,value.arguments) if not parameter.by_value]
-                elif (type(callee) is bsl.Attribute and not emitter.implicit_module_receiver(callee.object)
+                elif (not import_call and type(callee) is bsl.Attribute and not emitter.implicit_module_receiver(callee.object)
                       and _ALIASES.get(callee.name.casefold(),callee.name.casefold())=='property'):
                     actuals=value.arguments[1:2]
-                elif (type(callee) is not bsl.Attribute or emitter.source_scopes or emitter.host_bindings
+                elif (import_call or type(callee) is not bsl.Attribute or emitter.source_scopes or emitter.host_bindings
                       or emitter.implicit_module_receiver(callee.object)):
                     for arg in value.arguments:
                         while type(arg) is bsl.Group:arg=arg.expression

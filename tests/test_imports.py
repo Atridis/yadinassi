@@ -43,6 +43,38 @@ class ImportTests(unittest.TestCase):
         with self.assertRaisesRegex(BSLError, 'не определена'):
             self.vm.execute('Ответ()')
 
+    def test_imported_call_captures_routine_locals_in_both_argument_modes(self):
+        self.write('Side.bsl', """
+            Procedure Property(Target, Val Increment) Export
+                Target = Target + Increment;
+            EndProcedure
+        """)
+        source = """// #Import Side.bsl
+            Function Surprise()
+                Message("unexpected");
+                Return 0;
+            EndFunction
+            Function Caller(Val Increment)
+                Local = 40;
+                (Side.Property)(Local, Increment);
+                Try Side.Property(Local, Increment, Surprise());
+                Except Return Local; EndTry;
+                Return -1;
+            EndFunction
+            Caller(2)
+        """
+        self.main.write_text(source, encoding='utf-8')
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter(output=self.output.append)
+                self.addCleanup(vm.close)
+                if prepared:
+                    result = vm.execute_prepared(vm.prepare_program(parse(source, str(self.main))))
+                else:
+                    result = vm.execute(source, str(self.main))
+                self.assertEqual(result, Decimal(42))
+                self.assertEqual(self.output, [])
+
     def test_directive_ast_preserves_filename_and_source_position(self):
         source = str(self.main)
         directive = parse('\n  // #Импорт Побочное.bsl\n', source)[0]
