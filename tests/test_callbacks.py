@@ -1,4 +1,5 @@
 """Documented callback contract and local composition, not native captures."""
+from contextlib import closing
 from decimal import Decimal
 from pathlib import Path
 import tempfile
@@ -464,3 +465,47 @@ Async Procedure Work(R,E) Export t=Await 0; Raise "procedure callback"; EndProce
                 self.vm.execute('ValueToStringInternal('+value+')')
         with self.assertRaises(BSLError):
             self.vm.execute('ValueToStringInternal(New TypeDescription("CallbackDescription"))')
+
+
+class PassiveCallbackBoundaryTests(unittest.TestCase):
+    def test_passive_members_preserve_error_timing_and_never_gain_protocol(self):
+        for full in (False, True):
+            with self.subTest(full=full):
+                output = []
+                with closing(Interpreter(output.append, allow_extensions=full)) as vm:
+                    vm.execute("""
+                        Function Mark() Message("rhs"); Return 7; EndFunction
+                        c = New CallbackDescription("Keep", Undefined, 3);
+                        Try c.ИмяПроцедуры = Mark(); Except write = ErrorInfo().Description; EndTry;
+                        Try c.ProcedureName(Mark()); Except call = ErrorInfo().Description; EndTry;
+                        Try c.__class__; Except private = ErrorInfo().Description; EndTry;
+                        Try c[0]; Except indexed = ErrorInfo().Description; EndTry;
+                        Try For Each item In c Do Message("iterated"); EndDo;
+                        Except iterated = ErrorInfo().Description; EndTry;
+                        kept = c.ProcedureName; original = c.AdditionalParameters;
+                    """, "passive-callback.bsl")
+                    self.assertEqual(output, ["rhs"])
+                    self.assertIn("недоступно для записи", vm.variables["write"])
+                    self.assertIn("Метод объекта не обнаружен", vm.variables["call"])
+                    self.assertIn("Поле объекта не обнаружено", vm.variables["private"])
+                    self.assertTrue(vm.variables["indexed"])
+                    self.assertTrue(vm.variables["iterated"])
+                    self.assertEqual(vm.variables["kept"], "Keep")
+                    self.assertEqual(vm.variables["original"], Decimal(3))
+
+    def test_client_only_descriptor_rejects_at_server_before_constructor_arguments(self):
+        with closing(Interpreter()) as vm:
+            vm.execute("""
+                &AtServer
+                Function Probe() Raise "evaluated argument"; EndFunction
+                &AtServer
+                Function TryMake()
+                    Try
+                        Value = New ОписаниеОповещения(Probe());
+                    Except
+                        Return ErrorInfo().Description;
+                    EndTry;
+                    Return "constructed";
+                EndFunction
+            """, "client-only-callback.bsl")
+            self.assertIn("только на клиенте", vm.execute("TryMake()"))

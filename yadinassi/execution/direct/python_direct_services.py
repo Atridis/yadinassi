@@ -215,6 +215,9 @@ class ServicesBoundary:
             if bound is not None:return bound
         if type(value) is user_messages.BSLUserMessage:return user_messages.resolve(self,value,name)
         if type(value) is fixed.PlainFixedMap:return fixed.resolve(self,value,name)
+        if type(value) is _CallbackDescription:
+            if self._verify_context:self._check()
+            raise ValueError('Метод объекта не обнаружен: '+name)
         if value is None or value is NULL:
             if self._verify_context:self._check()
             raise ValueError('Значение не является значением объектного типа')
@@ -283,11 +286,11 @@ class ServicesBoundary:
                 text_resources.check(self,value)
                 raise ValueError('TextDocument property is not integrated: '+name)
             return unsupported
-        # Iterator pairs are direct scalar containers, not database receivers.
-        # Resolve before the RHS, but report readonly only after evaluating it.
-        # Exact identity admits no protocol, subclass, or payload authority.
+        # Passive values are not database receivers. Resolve before the RHS,
+        # but report readonly only after evaluating it.
         from .python_direct_error_info import owns
-        if type(value) is not _CanonicalMapEntry and not owns(value):
+        kind=type(value)
+        if kind is not _CanonicalMapEntry and kind is not _CallbackDescription and not owns(value):
             return super().resolve_set_member(value, name)
         if self._verify_context:self._check()
         def readonly(new_value):
@@ -524,6 +527,8 @@ class ServicesBoundary:
                         if self._verify_context:self._check()
                 bound=fixed_constructor
             if expected is callback_description_marker:
+                if getattr(self,'_server_side',False):
+                    raise ValueError('ОписаниеОповещения поддерживается только на клиенте')
                 def callback_constructor(*values):
                     if self._verify_context:self._check()
                     if factory.function is not expected:
