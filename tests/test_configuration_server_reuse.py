@@ -5,7 +5,7 @@ from unittest.mock import patch
 from yadinassi.configuration.configuration_runtime import ConfigurationApplication
 from yadinassi.types.errors import BSLError
 from configuration_runtime_fixture import module_files
-from test_server_module_reuse_native_replay import application, application_files, NATIVE
+from test_server_module_reuse_native_replay import application, application_files, NATIVE, replay_observations
 
 FLAGS={'ClientManagedApplication':'false','Server':'true','ServerCall':'true','ReturnValuesReuse':'DuringSession'}
 SOURCE='Function Token(Val Key) Export Return String(New UUID); EndFunction'
@@ -60,10 +60,8 @@ class ServerReuseTests(unittest.TestCase):
         with self.assertRaises(BSLError):app.execute('ServerInspector.RequestToken("x");Raise "stop"')
         self.assertIsNone(app.interpreter._scheduler.active_context.request_cache)
     def test_native_full_event_sequence(self):
-        app=self.app();expected=json.loads(NATIVE.read_bytes())['observations']
-        result=app.execute('Results=New Array;For I=1 To 15 Do Results.Add(Observe(I));EndDo;Results')
-        self.assertEqual(result.items,expected[:15])
-        self.assertEqual(app.execute('Bit(ClientToken=CachedServerCall.Token("lifetime"))+":"+Bit(SessionToken=ServerInspector.SessionToken("lifetime"))+":"+Bit(RequestToken=ServerInspector.RequestToken("lifetime"))'),expected[15])
+        expected=json.loads(NATIVE.read_bytes())['observations']
+        self.assertEqual(replay_observations(),expected)
     def test_bad_arity_has_no_argument_effect(self):
         app=self.app()
         self.assertEqual(app.execute('Calls=0;Try CachedServerCall.Token(ArgumentValue(),ArgumentValue());Except EndTry;Calls'),0)

@@ -2,6 +2,8 @@
 import hashlib,json,sys,unittest
 from pathlib import Path
 from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from configuration_runtime_fixture import module_files
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
@@ -20,6 +22,19 @@ def application_files():
 def application():
     app=ConfigurationApplication.from_files(application_files());app.start();return app
 
+def replay_observations():
+    # Native observations span two application events. The scalar command
+    # envelope cannot execute the first event's loop or retain its globals.
+    app=SourceApplication(import_source(application_files()))
+    try:
+        if not app.start():
+            raise AssertionError('Server reuse replay failed to start')
+        first=app.interpreter.execute('Results=New Array;For I=1 To 15 Do Results.Add(Observe(I));EndDo;Results')
+        last=app.interpreter.execute('Bit(ClientToken=CachedServerCall.Token("lifetime"))+":"+Bit(SessionToken=ServerInspector.SessionToken("lifetime"))+":"+Bit(RequestToken=ServerInspector.RequestToken("lifetime"))')
+        return [*first,last]
+    finally:
+        app.close()
+
 class NativeServerReuseReplay(unittest.TestCase):
     def test_source_binding(self):
         value=json.loads(NATIVE.read_bytes());self.assertEqual(value['run_id'],43165393593)
@@ -32,10 +47,7 @@ class NativeServerReuseReplay(unittest.TestCase):
 
 def case(number):
     def test(self):
-        app=application();self.addCleanup(app.close,force=True)
-        first=app.execute('Results=New Array;For I=1 To 15 Do Results.Add(Observe(I));EndDo;Results').items
-        last=app.execute('Bit(ClientToken=CachedServerCall.Token("lifetime"))+":"+Bit(SessionToken=ServerInspector.SessionToken("lifetime"))+":"+Bit(RequestToken=ServerInspector.RequestToken("lifetime"))')
-        actual=(*first,last)[number-1]
+        actual=replay_observations()[number-1]
         self.assertEqual(actual,json.loads(NATIVE.read_bytes())['observations'][number-1])
     return test
 for number in range(1,17):setattr(NativeServerReuseReplay,'test_native_%02d'%number,case(number))
