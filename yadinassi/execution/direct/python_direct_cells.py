@@ -6,6 +6,14 @@ from .python_direct_numbers import public_number
 
 def NativeCell(value=_UNSET_REF):return [value]
 
+
+def check_local_reference(context, vm, generation):
+    # This is an address lease, not an ambient context audit.
+    context._check_lease()
+    if (context.vm is not vm or vm._family_owner is not vm
+            or vm._family_generation != generation or vm._family_closed):
+        raise BoundaryViolation('local reference activation changed')
+
 class ReferenceCell:
     __slots__=('reference','context')
     def __init__(self,reference,context):self.reference=reference;self.context=context

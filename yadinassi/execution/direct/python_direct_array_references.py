@@ -5,6 +5,7 @@ from yadinassi.types.values import _DIRECT_ARRAY_TYPE as ARRAY
 from yadinassi.types.values import _DIRECT_ARRAY_ADDRESS_ABI, _DIRECT_COLLECTION_CLASS_ABI
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.execution.codegen.experimental_naked_collections import _Reference, _checked_array_index
+from .python_direct_cells import check_local_reference
 
 
 _BASE, _ARRAY_BASE, _ARRAY = _DIRECT_COLLECTION_CLASS_ABI[:3]
@@ -73,10 +74,7 @@ class _ArrayAddress(_Reference):
         self.offset = _checked_array_index(self.items, key)
 
     def _live(self):
-        self.context._check_lease()
-        if (self.context.vm is not self.vm or self.vm._family_owner is not self.vm
-                or self.vm._family_generation != self.generation or self.vm._family_closed):
-            raise BoundaryViolation('array reference activation changed')
+        check_local_reference(self.context,self.vm,self.generation)
 
     def _check(self, *, writing=False):
         self._live()

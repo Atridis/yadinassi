@@ -261,6 +261,12 @@ def _fill_structure_items(target_items, source_items, properties, exclude, *,
 # Captured before optional translated collection code is imported.
 _DIRECT_COLLECTION_CLASS_ABI = tuple((cls, cls.__mro__, tuple(vars(cls).items()))
     for cls in (_StructureBase, BSLStructure, BSLKeyAndValue))
+# Stable dot-address ABI for a restored canonical mutable Structure.
+_DIRECT_STRUCTURE_ADDRESS_ABI = tuple((cls, name, method, method.__code__, method.__defaults__)
+    for cls, name, method in ((_StructureBase, 'get_member', _StructureBase.get_member),
+                              (_StructureBase, 'get', _StructureBase.get),
+                              (_StructureBase, 'set_member', _StructureBase.set_member),
+                              (BSLStructure, 'set', BSLStructure.set)))
 _DIRECT_COLLECTION_TRIM_CHARS = trim_all.__globals__['_WHITESPACE']
 _DIRECT_COLLECTION_HELPER_ABI = tuple((name, globals()[name]) for name in (
     '_key', 'BSLStructure', 'BSLKeyAndValue', 'trim_all', '_DIRECT_COLLECTION_TRIM_CHARS'))
