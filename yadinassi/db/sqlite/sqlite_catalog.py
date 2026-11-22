@@ -2249,6 +2249,35 @@ class _View:
         return (quote_identifier(self._catalog_layout.table_name(schema.identity)), 'record_id,revision,code,description,deletion_mark' + (',' + fields if fields else ''), '1', ())
 
     @_boundary
+    def _find_catalog_ref_exact(self, catalog_id, field, value):
+        """Exact manager reference lookup; no whole-source scan validation."""
+        from .sqlite_single_statement import fetch_all
+
+        self._require()
+        if type(self) is _View:
+            if (self._backend._active is not self or self._operation_id is not None
+                    or self._connection is None):
+                raise BackendError('closed')
+            if not self._query_language and not self._connection.in_transaction:
+                raise BackendError('closed')
+        # The manager authenticates any registered lease before entering,
+        # and it still has its own _require() lifetime gate above.
+        if type(field) is not str or field not in ('code','description'):
+            raise BackendError('invalid_input')
+        self._scan_operand('string',None,value)
+        schema = self.catalog_schema(catalog_id)
+        if schema.hierarchy != 'none':
+            # Check parent membership/cycles, even on a miss. _scalar
+            # reuses the one graph held by this admitted view for any hit.
+            hierarchy_storage.load(self,schema)
+        table, columns, where, args = self._source(schema)
+        predicate = quote_identifier(field) + ' COLLATE BINARY = ?'
+        if where != '1': predicate = where + ' AND ' + predicate
+        rows = fetch_all(self._connection,'SELECT %s FROM %s WHERE %s LIMIT 2'
+                         % (columns,table,predicate),args+(value,))
+        return tuple(self._scalar(catalog_id,row,schema=schema).key for row in rows)
+
+    @_boundary
     def _catalog_selection_page(self, catalog_id, after):
         """One detached BSL manager page, without fetching tabular parts."""
         from yadinassi.db.manager_selection import PAGE_SIZE, require_continuation
@@ -3281,7 +3310,7 @@ class _View:
             raise
 
 # The document port shares the same closed storage error boundary.
-for _document_method in ('_validate_query_source','documents','document_schema','read_document','read_document_values','select_documents','_document_selection_page','scan_documents','scan_document_values','ordered_document_values','ordered_document_part','find_document_number','_write_admitted','registers','register_schema','scan_register','ordered_register_records','periodic_records','create','update','commit'):
+for _document_method in ('_validate_query_source','documents','document_schema','read_document','read_document_values','select_documents','_document_selection_page','scan_documents','scan_document_values','ordered_document_values','ordered_document_part','find_document_number','_find_document_number_point','_write_admitted','registers','register_schema','scan_register','ordered_register_records','periodic_records','create','update','commit'):
     setattr(DocumentView, _document_method, _boundary(getattr(DocumentView, _document_method)))
 
 install_boundaries(_boundary)

@@ -44,6 +44,19 @@ and result limits; BSL paging has no eager total-size cap and reports errors
 in visited data when it reaches that page. Hierarchical catalogs still use
 the original eager route because validation requires the complete parent graph.
 
+SQLite BSL exact manager lookups use a separate point-read route:
+`FindByCode`, `FindByDescription(..., True)`, `FindByNumber` and the
+complete-key information-register `Get` / record-manager `Read` bind the key
+to SQL and validate only the matching record (plus the established parent
+graph check for hierarchical catalogs). Exact text equality remains binary.
+Code, document number and register full keys use their existing key indexes;
+description can use a binary description index when already installed, or
+let SQLite scan to locate up to two matches. A lookup never installs an index.
+Ordinary manager admission is unchanged; only the existing format-16
+catalog code observer can borrow an owned explicit transaction. Raw and
+query scan ports retain their established broader integrity checks.
+
+
 
 String and Decimal metadata [qualifiers are applied on assignment](catalog-qualifier-assignment.md), and direct backend create/update calls use the same conversion before SQL. Storage decoding remains strict and never converts persisted corruption into an accepted value. Code uniqueness applies to the converted code. This does not add fixed strings, new scalar types, UI behavior or general native catalog parity.
 

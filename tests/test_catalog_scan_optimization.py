@@ -354,14 +354,27 @@ class ProjectionBoundaryTests(unittest.TestCase):
         for component in ('database_id', 'catalog_id', 'record_id'):
             invalid = replace(key, **{component: Hostile()})
             for bad_key, bad_value in ((invalid, key), (key, invalid)):
-                for mode in ('query', 'find'):
-                    with self.subTest(component=component, row_key=bad_key is invalid, mode=mode):
-                        page = CatalogValuePage((CatalogValueRow(bad_key, (bad_value,)),), None)
-                        with patch.object(_View, 'scan_catalog_values', return_value=page):
-                            with self.assertRaisesRegex(BackendError, 'integrity'):
-                                if mode == 'query':
-                                    BSLQuery(self.vm._catalogs, 'SELECT Ref FROM Catalog.Products').execute()
-                                else:
-                                    manager.find_by_code('1')
-                        with closing(self.context.backend.begin_read()):
-                            pass
+                with self.subTest(component=component, row_key=bad_key is invalid, mode='query'):
+                    page = CatalogValuePage((CatalogValueRow(bad_key, (bad_value,)),), None)
+                    with patch.object(_View, 'scan_catalog_values', return_value=page):
+                        with self.assertRaisesRegex(BackendError, 'integrity'):
+                            BSLQuery(self.vm._catalogs, 'SELECT Ref FROM Catalog.Products').execute()
+                    with closing(self.context.backend.begin_read()):
+                        pass
+            with self.subTest(component=component, mode='find'):
+                with patch.object(_View, '_find_catalog_ref_exact', return_value=(invalid,)):
+                    with self.assertRaisesRegex(BackendError, 'integrity'):
+                        manager.find_by_code('1')
+                with closing(self.context.backend.begin_read()):
+                    pass
+
+        for invalid in (
+                [key], (key,key,key), (object(),),
+                (replace(key,database_id=uuid4()),), (replace(key,catalog_id=uuid4()),),
+                (replace(key,record_id=UUID(int=0)),)):
+            with self.subTest(mode='find', result=invalid):
+                with patch.object(_View, '_find_catalog_ref_exact', return_value=invalid):
+                    with self.assertRaisesRegex(BackendError, 'integrity'):
+                        manager.find_by_code('1')
+                with closing(self.context.backend.begin_read()):
+                    pass

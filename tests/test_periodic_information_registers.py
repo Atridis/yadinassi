@@ -76,6 +76,19 @@ class PeriodicRegisterTests(unittest.TestCase):
         q=BSLQuery(self.vm._catalogs,text,self.vm._documents,self.vm._information_registers)
         if when is not None:q.set_parameter('At',when)
         return q
+    def test_exact_get_and_record_read_use_same_normalized_period_key(self):
+        self.seed()
+        from yadinassi.db.sqlite.sqlite_registers import RegisterView
+        from unittest.mock import patch
+
+        with patch.object(RegisterView,'_preflight',side_effect=AssertionError('whole register read')):
+            self.execute(
+                'X=InformationRegisters.Prices.Get(Date(2024,1,2,18,31,59),'
+                'New Structure("Item,Region","A","North"));Message(X.Price);'
+                'R=InformationRegisters.Prices.CreateRecordManager();'
+                'R.Item="A";R.Region="North";R.Period=Date(2024,1,2,7,8,9);R.Read();Message(R.Price);')
+        self.assertEqual(self.output,['20','20'])
+
     def test_explicit_v9_and_reopen(self):
         self.assertEqual(self.context.backend.storage_version,9)
         self.seed();self.context.close()

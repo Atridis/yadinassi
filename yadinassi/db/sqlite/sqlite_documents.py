@@ -12,7 +12,8 @@ from yadinassi.db.catalog.catalog_backend import BackendError, CatalogSchema, Fi
 from yadinassi.db.catalog.catalog_qualifiers import normalize_field, normalize_string, validate_string
 from .sqlite_catalog_layout import quote_identifier
 from .sqlite_document_layout import data_table, section_table
-from .sqlite_typed_rows import PhysicalFields, attribute_column, encode_typed_columns, decode_typed_columns
+from .sqlite_typed_rows import (PhysicalFields, attribute_column, encode_typed_columns, decode_typed_columns,
+                                bounded_value_sql, bounded_attribute_sql)
 from yadinassi.db.document.document_backend import (DocumentSchema, DocumentKey, DocumentRevision, DocumentCard,
                                DocumentDraft, DocumentWriteOutcome, DocumentSelection,
                                DocumentScanRequest, DocumentPage)
@@ -30,25 +31,9 @@ _RESERVED = {'number','номер','date','дата','posted','проведен'
              'metadata','метаданные','getobject','получитьобъект','setnewobjectref','установитьссылкунового'}
 
 
-def _bounded_value(column, limit):
-    # Never transfer an oversized physical value into Python. The invalid
-    # BLOB sentinel is rejected by the existing typed decoder (unlike NULL,
-    # which could be a valid EmptyRef here).
-    return f"CASE WHEN length(CAST({column} AS BLOB))>{limit} THEN x'' ELSE {column} END"
-
-
 def _physical_size(columns, overhead):
     return '+'.join((str(overhead), *('COALESCE(length(CAST('+column+' AS BLOB)),0)' for column in columns)))
 
-
-def _bounded_attribute(column, field):
-    if field.kind == 'string':
-        limit = field.qualifiers[0] * 4
-    elif field.kind in ('catalog_ref','enum_ref'):
-        limit = 36
-    else:
-        limit = {'number':20,'boolean':1,'datetime':14}[field.kind]
-    return _bounded_value(column,limit)
 
 
 def _storage():
@@ -355,15 +340,15 @@ class DocumentView:
         attributes = schema.fields if attributes is True else attributes or ()
         columns = ['r.record_id','r.revision','r.number','r.date','r.deletion_mark']
         if bounded:
-            columns[0] = _bounded_value('r.record_id',36)
-            columns[2] = _bounded_value('r.number',36)
-            columns[3] = _bounded_value('r.date',14)
+            columns[0] = bounded_value_sql('r.record_id',36)
+            columns[2] = bounded_value_sql('r.number',36)
+            columns[3] = bounded_value_sql('r.date',14)
         columns.extend(('p.document_revision','p.posted') if posted else ('NULL','NULL'))
         if bounded:
             attribute_columns = tuple('a.'+quote_identifier(attribute_column(f)) for f in attributes)
             if attributes:
-                columns.append(_bounded_value('a.record_id',36))
-                columns.extend(_bounded_attribute(column,f) for column,f in zip(attribute_columns,attributes))
+                columns.append(bounded_value_sql('a.record_id',36))
+                columns.extend(bounded_attribute_sql(column,f) for column,f in zip(attribute_columns,attributes))
             columns.append(_physical_size(attribute_columns,0))
         elif attributes:
             columns.append('a.record_id')
@@ -399,8 +384,8 @@ class DocumentView:
             projected = ['record_id','row_id','row_number']
             if page_budget is not None:
                 columns = tuple(quote_identifier(attribute_column(f)) for f in section.fields)
-                projected[1] = _bounded_value('row_id',36)
-                projected.extend(_bounded_attribute(column,f) for column,f in zip(columns,section.fields))
+                projected[1] = bounded_value_sql('row_id',36)
+                projected.extend(bounded_attribute_sql(column,f) for column,f in zip(columns,section.fields))
                 projected.append(_physical_size(columns,52))
             else:
                 projected.extend(quote_identifier(attribute_column(f)) for f in section.fields)
@@ -592,6 +577,9 @@ class DocumentView:
         try: rows = cursor.fetchall()
         finally: cursor.close()
         continuation = (rows[-1][3],rows[-1][2],rows[-1][0]) if len(rows)==PAGE_SIZE else None
+        return self._bounded_cards(schema,rows), continuation
+
+    def _bounded_cards(self, schema, rows):
         used = 0
         for row in rows:
             if row[-1]>_MAX_ROW: raise BackendError('integrity')
@@ -600,7 +588,7 @@ class DocumentView:
         if used>_MAX_TOTAL: raise BackendError('unsupported')
         rows = self._full_rows(schema,tuple(row[:-1] for row in rows),page_budget=[used])
         presence = self._record_presence(schema, rows)
-        return tuple(self._card(schema,row,presence=presence) for row in rows), continuation
+        return tuple(self._card(schema,row,presence=presence) for row in rows)
 
     def select_documents(self, identity, request):
         schema = self.document_schema(identity)
@@ -886,6 +874,39 @@ class DocumentView:
             except BaseException as cleanup:
                 if _storage()._interruption(cleanup) and not _storage()._interruption(error): raise
             raise
+
+    def _find_document_number_point(self, identity, number):
+        # Same indexed key and record integrity as the raw port, but never
+        # preflight unrelated document rows merely to return a reference.
+        from .sqlite_single_statement import fetch_all, fetch_one
+
+        self._view._require()
+        if (self._view._operation_id is not None or self._view._backend._active is not self._view
+                or not self._connection.in_transaction):
+            raise BackendError('unsupported')
+        schema = self.document_schema(identity)
+        validate_string(number,schema.number_length)
+        rows = fetch_all(self._connection,
+            ('SELECT '+bounded_value_sql('record_id',36)+' FROM document_record '
+             'WHERE document_id=? AND number=? COLLATE BINARY LIMIT 2'),
+            (str(identity),number))
+        if not rows: return None
+        if len(rows)>1: raise BackendError('integrity')
+        record, = rows[0]
+        if type(record) is not str or len(record)!=36: raise BackendError('integrity')
+        key = DocumentKey(self.database_id,identity,UUID(record))
+        _storage()._uuid(key.record_id)
+        if str(key.record_id)!=record: raise BackendError('integrity')
+        proof = self._record_proof_key(schema,key)
+        reusable = self._view._cache_validation_allowed()
+        if not reusable or (proof not in self._view._validated_sources and
+                ('document-full',schema.identity,schema) not in self._view._validated_sources):
+            row = fetch_one(self._connection,self._record_sql(schema,
+                where='r.document_id=? AND r.record_id=?',bounded=True),(str(identity),record))
+            if row is None: raise BackendError('integrity')
+            self._bounded_cards(schema,(row,))
+            if reusable: self._view._validated_sources[proof] = ()
+        return key
 
     def find_document_number(self, identity, number):
         schema = self.document_schema(identity); validate_string(number,schema.number_length)

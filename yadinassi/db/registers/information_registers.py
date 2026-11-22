@@ -112,6 +112,18 @@ class BSLInformationRegisterManager(BSLObject):
                 if (not isinstance(cleanup,Exception) or isinstance(cleanup,MemoryError)) and isinstance(error,Exception) and not isinstance(error,MemoryError): raise
             raise
         return view
+    def _read_key(self,key):
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _View
+        from yadinassi.db.sqlite.sqlite_registers import RegisterView
+        backend = self._backend
+        view = self._view()
+        try:
+            if (type(backend) is SQLiteCatalogBackend and type(view) is RegisterView
+                    and type(view._view) is _View and view._view._backend is backend):
+                return RegisterView._read_record_point(view,key)
+            return view.read_record(key)
+        finally:
+            view.close()
     def _writable(self):
         caps = self._backend.capabilities()
         return caps.atomic_transactions and caps.register_write
@@ -161,9 +173,7 @@ class BSLInformationRegisterManager(BSLObject):
             dimensions=args[0]
         pairs = self._filter(dimensions, complete=True)
         key = RegisterKey(self._registers._metadata._database_id,self._schema.identity,((self._stored(self._schema.period_field,when),) if self._schema.periodic else ())+tuple(v for _,v in pairs))
-        view = self._view()
-        try: record = view.read_record(key)
-        finally: view.close()
+        record = self._read_key(key)
         values = self._defaults() if record is None else self._fields(record)
         result = BSLStructure()
         for f in (*self._schema.resources,*self._schema.attributes): result.insert(f.name,values[f.name.casefold()])
@@ -237,9 +247,7 @@ class BSLInformationRegisterRecordManager(BSLObject):
         if self._pending is not None and not self._standalone_uncertain:
             raise BackendError('uncertain_commit')
         m = self._manager; key = m._record_key(self._values)
-        view = m._view()
-        try: record = view.read_record(key)
-        finally: view.close()
+        record = m._read_key(key)
         values = m._defaults() if record is None else m._fields(record)
         if record is None:
             for f in m._schema.key_fields: values[f.name.casefold()] = self._values[f.name.casefold()]

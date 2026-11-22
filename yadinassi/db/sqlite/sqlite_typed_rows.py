@@ -13,6 +13,23 @@ def attribute_column(field):
     return 'attr_' + field.identity.hex
 
 
+def bounded_value_sql(column, limit):
+    # Never transfer an oversized physical value into Python. The invalid
+    # BLOB sentinel is rejected by the existing typed decoder (unlike NULL,
+    # which could be a valid EmptyRef here).
+    return f"CASE WHEN length(CAST({column} AS BLOB))>{limit} THEN x'' ELSE {column} END"
+
+
+def bounded_attribute_sql(column, field):
+    if field.kind == 'string':
+        limit = field.qualifiers[0] * 4
+    elif field.kind in ('catalog_ref','enum_ref'):
+        limit = 36
+    else:
+        limit = {'number':20,'boolean':1,'datetime':14}[field.kind]
+    return bounded_value_sql(column,limit)
+
+
 def attribute_definitions(fields, catalog_layout, *, enum_domain=None):
     """Exact scalar storage; references use SQL NULL for the empty reference."""
     definitions = []

@@ -80,6 +80,33 @@ class InformationRegisterTests(unittest.TestCase):
     def test_record_roundtrip_update_get_and_delete(self):
         self.seed()
         self.assertEqual(self.execute('Message(R.Selected());R.Price=15;R.Write();S=InformationRegisters.Prices.Get(New Structure("Item,Region","A","North"));Message(S.Price);R.Delete();Message(R.Selected());R.Read();Message(R.Price);'),['Да','15','Нет','0'])
+    def test_exact_read_is_indexed_and_checks_only_the_matching_record(self):
+        self.seed()
+        self.execute('Q=InformationRegisters.Prices.CreateRecordManager();'
+                     'Q.Item="bad";Q.Region="South";Q.Price=3;Q.Write();')
+        with closing(sqlite3.connect(self.path)) as connection, connection:
+            connection.execute('PRAGMA ignore_check_constraints=ON')
+            item=attribute_column(self.schema.dimensions[0])
+            connection.execute(f'UPDATE {self.table} SET revision=0 WHERE "{item}"=?',('bad',))
+        trace=[]
+        self.context.backend._read_handle.connection.set_trace_callback(trace.append)
+        try:
+            self.assertEqual(self.execute('R.Read();Message(R.Price);'
+                'X=InformationRegisters.Prices.Get(New Structure("Item,Region","A","North"));Message(X.Price);'
+                'X=InformationRegisters.Prices.Get(New Structure("Item,Region","missing","North"));Message(X.Price);'),
+                ['12,5','12,5','0'])
+        finally:
+            self.context.backend._read_handle.connection.set_trace_callback(None)
+        reads=[sql for sql in trace if ' FROM '+self.table in sql or ' FROM "'+self.table+'"' in sql]
+        self.assertEqual(len(reads),3)
+        self.assertTrue(all('LIMIT 2' in sql for sql in reads))
+        plan=self.context.backend._read_handle.connection.execute('EXPLAIN QUERY PLAN '+reads[0]).fetchall()
+        self.assertTrue(any('SEARCH' in row[3] and '_dimensions' in row[3] for row in plan),plan)
+        with self.assertRaises(BSLRuntimeError):
+            self.execute('X=InformationRegisters.Prices.Get(New Structure("Item,Region","bad","South"));')
+        with closing(self.context.backend.begin_register_read()) as view:
+            with self.assertRaisesRegex(BackendError,'integrity'): view.read_record(self.key())
+
     def test_russian_aliases_and_metadata_types(self):
         self.assertEqual(self.execute('Р=РегистрыСведений.Prices.СоздатьМенеджерЗаписи();Р.Item="Б";Р.Region="В";Р.Price=4;Р.Записать();Р.Прочитать();Сообщить(Р.Выбран());Сообщить(Метаданные.РегистрыСведений.Prices.ПолноеИмя());Сообщить(ТипЗнч(Р)=Тип("РегистрСведенийМенеджерЗаписи.Prices"));'),['Да','РегистрСведений.Prices','Да'])
     def test_select_detached_filter_and_reopen(self):

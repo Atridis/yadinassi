@@ -249,13 +249,38 @@ class BSLCatalogManager(BSLObject):
         from yadinassi.configuration.configuration_inventory_enums import InventoryEnumConfiguration
         from yadinassi.db.database_transactions import query_view
         backend=self._backend
-        if (field=='code' and type(backend) is SQLiteCatalogBackend and backend.format_version==16
-                and type(backend.accumulation_configuration) in (InventoryEnumConfiguration, InventoryEnumApplicationConfiguration, MainDemoConfiguration)):
-            # The measured format16 observer resolves catalog keys inside the
-            # current owned transaction. Borrow its existing read lease only;
-            # this grants neither detached object transfer nor tx control.
-            view=query_view(self)
-        else:view=self._view()
+        # Retain the format16 transactional Code observer, including its
+        # existing lightweight query port outside a transaction.
+        borrowed_code = (field=='code' and type(backend) is SQLiteCatalogBackend
+            and backend.format_version==16 and type(backend.accumulation_configuration) in (
+                InventoryEnumConfiguration,InventoryEnumApplicationConfiguration,MainDemoConfiguration))
+        if type(backend) is SQLiteCatalogBackend:
+            from yadinassi.db.sqlite.sqlite_catalog import _View
+            from yadinassi.db.sqlite.sqlite_documents import DocumentView
+            view = query_view(self) if borrowed_code else self._view()
+            try:
+                owned = view._view if type(view) is DocumentView else view
+                if type(owned) is _View:
+                    if owned._backend is not backend: raise BackendError('unsupported')
+                else:
+                    from yadinassi.db.database_transactions import require_registered_query_lease
+                    require_registered_query_lease(backend,owned)
+                matches = _View._find_catalog_ref_exact(owned,self._schema.identity,field,value)
+                if type(matches) is not tuple or len(matches)>2:
+                    raise BackendError('integrity')
+                for key in matches:
+                    if (type(key) is not CatalogKey or any(
+                            type(component) is not UUID or type(getattr(component,'int',None)) is not int
+                            for component in (key.database_id,key.catalog_id,key.record_id))
+                            or key.database_id!=owned.database_id
+                            or key.catalog_id!=self._schema.identity
+                            or not 0<key.record_id.int<2**128):
+                        raise BackendError('integrity')
+            finally:
+                view.close()
+            if len(matches)>1: raise ValueError('ambiguous exact catalog lookup')
+            return self._ref(matches[0].record_id) if matches else self.empty_ref()
+        view=self._view()
         try:
             page=view.scan_catalog_values(self._schema.identity,CatalogScanRequest(
                 predicate=CatalogComparison(field,'eq',value),page_size=2),('ref',))

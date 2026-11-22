@@ -53,6 +53,27 @@ D=Catalogs.Products.CreateItem();D.Code="D";D.Write();''')
         q=BSLQuery(self.vm._catalogs,text,documents=self.vm._documents,information_registers=self.vm._information_registers)
         if root is not None:q.set_parameter('Root',root)
         return q.execute()._rows
+    def test_exact_lookup_checks_one_scalar_but_validates_parent_graph_on_miss(self):
+        from contextlib import closing
+        from unittest.mock import patch
+        import sqlite3
+        from yadinassi.db.sqlite.sqlite_catalog import _View
+
+        self.seed()
+        original = _View._scalar
+        checked = []
+        def scalar(view, identity, row, *, schema):
+            checked.append(row[2])
+            return original(view, identity, row, schema=schema)
+        with patch.object(_View,'_scalar',scalar):
+            self.assertEqual(self.vm.execute('Catalogs.Products.FindByCode("C")'),self.vm.execute('C.Ref'))
+        self.assertEqual(checked,['C'])
+        with closing(sqlite3.connect(self.path)) as c, c:
+            c.execute('UPDATE catalog_hierarchy SET parent_id=? WHERE record_id=?',
+                      (str(uuid4()),str(self.vm.execute('D.Ref').reference_uuid)))
+        with self.assertRaisesRegex(BackendError,'integrity'):
+            self.vm._catalogs.get_index('Products').find_by_code('missing')
+
     def test_explicit_v10(self):self.assertEqual(self.context.backend.storage_version,10)
     def test_folder_and_item_defaults(self):
         self.vm.execute('F=Catalogs.Products.CreateFolder();I=Catalogs.Products.CreateItem();Message(F.IsFolder);Message(I.IsFolder);Message(F.Parent.IsEmpty());')

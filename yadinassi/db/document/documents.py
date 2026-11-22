@@ -209,7 +209,14 @@ class BSLDocumentManager(BSLObject):
     def find_by_number(self,number):
         if type(number) is not str: raise TypeError('Number requires String')
         view = self._view()
-        try: key = view.find_document_number(self._schema.identity,number)
+        try:
+            from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _View
+            from yadinassi.db.sqlite.sqlite_documents import DocumentView
+            if (type(self._backend) is SQLiteCatalogBackend and type(view) is DocumentView
+                    and type(view._view) is _View and view._view._backend is self._backend):
+                key = DocumentView._find_document_number_point(view,self._schema.identity,number)
+            else:
+                key = view.find_document_number(self._schema.identity,number)
         finally: view.close()
         return self.empty_ref() if key is None else self._ref(key.record_id)
     def select(self,start=None,end=None):

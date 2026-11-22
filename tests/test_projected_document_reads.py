@@ -83,6 +83,9 @@ class ProjectedDocumentReadTests(unittest.TestCase):
     def test_custom_ref_field_reads_only_requested_column_after_selected_row_proof(self):
         self.seed(2); manager=self.manager(); ref=manager.find_by_number('000000001')
         field=self.schema.fields[0]
+        # Prime the existing direct getter's coarse-source proof separately.
+        # FindByNumber now proves only the selected record, not other cards.
+        manager._read_member(ref,'Number')
         trace=[]; self.context.backend._read_handle.connection.set_trace_callback(trace.append)
         with patch.object(DocumentView,'_sections',side_effect=AssertionError('sections')):
             manager._read_member(ref,field.name)
@@ -108,6 +111,8 @@ class ProjectedDocumentReadTests(unittest.TestCase):
         table=data_table(self.schema); attr=attribute_column(self.schema.fields[0])
         self.sql(f'UPDATE "{table}" SET "{attr}"=? WHERE record_id=(SELECT record_id FROM document_record WHERE number=?)',
                  ('x'*(1024*1024+1),'000000002'))
+        self.assertEqual(manager.find_by_number('000000001'),ref)
+        with self.assertRaisesRegex(BackendError,'integrity'): manager.find_by_number('000000002')
         with self.assertRaisesRegex(BackendError,'integrity'): manager._read_member(ref,'Number')
 
     def test_find_number_keeps_binary_exactness_and_no_warm_card_decode(self):

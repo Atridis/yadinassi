@@ -11,7 +11,7 @@ from yadinassi.db.registers.register_backend import (InformationRegisterSchema, 
                                RegisterRecord, RegisterDraft, RegisterOutcome, RegisterScanRequest, RegisterPage,
                                RegisterSetDraft, RegisterSetOutcome)
 
-from .sqlite_typed_rows import encode_typed_columns, decode_typed_columns
+from .sqlite_typed_rows import encode_typed_columns, decode_typed_columns, bounded_attribute_sql, bounded_value_sql
 from .sqlite_register_layout import RegisterLayout
 
 REGISTER_DDL = (
@@ -175,6 +175,24 @@ class RegisterView:
     def read_record(self,key):
         self._view._require();schema,_,keys=self._key_columns(key);self._preflight(schema)
         return self._lookup(schema,keys)
+    def _read_record_point(self,key):
+        from .sqlite_single_statement import fetch_all
+        view = self._view
+        view._require()
+        if (view._operation_id is not None or view._backend._active is not view
+                or not self._connection.in_transaction):
+            raise BackendError('unsupported')
+        schema,_,keys = self._key_columns(key)
+        layout = self._layout(schema)
+        columns = (bounded_value_sql('revision',20),
+                   *(bounded_attribute_sql(col,field) for col,field in zip(
+                       layout.keys+layout.values,schema.fields)), layout.bytes)
+        rows = fetch_all(self._connection,
+            f'SELECT {",".join(columns)} FROM {layout.table} WHERE {layout.where} LIMIT 2',keys)
+        if not rows: return None
+        if len(rows)>1 or rows[0][-1]>MAX_ROW: raise BackendError('integrity')
+        return self._record(schema,rows[0][:-1])
+
     def _ordered_rows(self,schema):
         layout=self._layout(schema)
         return self._connection.execute(f'SELECT {layout.columns} FROM {layout.table} ORDER BY {layout.key_order}')
@@ -420,5 +438,5 @@ class RegisterView:
 # Apply the same narrow error translation as the owning catalog application.
 # Installed by sqlite_catalog after its boundary helper has been defined.
 def install_boundaries(boundary):
-    for name in ('registers','register_schema','read_record','select_records','scan_register','ordered_register_records','periodic_records','read_set','write_set','write','delete','commit'):
+    for name in ('registers','register_schema','read_record','_read_record_point','select_records','scan_register','ordered_register_records','periodic_records','read_set','write_set','write','delete','commit'):
         setattr(RegisterView,name,boundary(getattr(RegisterView,name)))
