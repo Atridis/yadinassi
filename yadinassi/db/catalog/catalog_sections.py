@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 
 from .catalog_backend import BackendError, TabularRow, TabularSectionRows, _TabularSectionChanges
 from .catalog_types import BSLCatalogReference
+from yadinassi.db.tabular_row_positions import pop_row
 from yadinassi.temporal.dates import BSLDate
 from yadinassi.types.values import BSLObject, HostFunction
 
@@ -150,10 +151,7 @@ class BSLCatalogSection(BSLObject):
             index = value._position
         else:
             index = _index(value, len(self._rows))
-        row = self._rows.pop(index)
-        # Only the shifted suffix changes position; reads never scan.
-        for position in range(index, len(self._rows)):
-            self._rows[position]._position = position
+        row = pop_row(self._rows, index)
         row._attached = False; self._bytes -= row._bytes
         self._version += 1; self._dirty = True
 

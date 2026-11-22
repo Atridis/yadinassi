@@ -2,6 +2,7 @@
 from decimal import Decimal
 from yadinassi.types.values import BSLObject,HostFunction
 from yadinassi.db.metadata.source_constant_store import _encode
+from yadinassi.db.tabular_row_positions import pop_row
 from .source_document_section_store import _MAX_ROWS,_MAX_DOCUMENT_BYTES
 
 _METHODS={'add':'add','добавить':'add','get':'get','получить':'get','count':'count','количество':'count','clear':'clear','очистить':'clear','delete':'delete','удалить':'delete'}
@@ -11,13 +12,17 @@ def _index(value,length):
     return int(value)
 
 class SourceDocumentRow(BSLObject):
-    def __init__(self,section,values):self.section,self.values,self.live=section,dict(values),True
+    def __init__(self,section,values,position):
+        self.section,self.values,self.live=section,dict(values),True
+        self._position=position
     def authorize(self,caller):
         self.section.authorize(caller)
-        if not self.live or self not in self.section.rows:raise ValueError('detached section row unavailable')
+        rows,position=self.section.rows,self._position
+        if not self.live or type(position) is not int or not 0<=position<len(rows) or rows[position] is not self:
+            raise ValueError('detached section row unavailable')
     def property_read(self,caller,name):
         self.authorize(caller);key=name.casefold()
-        if key in ('linenumber','номерстроки'):return Decimal(self.section.rows.index(self)+1)
+        if key in ('linenumber','номерстроки'):return Decimal(self._position+1)
         if key not in self.section.fields:raise ValueError('unknown section field')
         if key not in self.values:raise ValueError('section field requires explicit assignment')
         return self.values[key]
@@ -38,7 +43,7 @@ class SourceDocumentSection(BSLObject):
     def __init__(self,owner,definition,rows=()):
         self.owner,self.definition,self.live=owner,definition,True
         self.fields={f.name.casefold():f for f in definition.fields}
-        self.rows=[SourceDocumentRow(self,row) for row in rows];self.version=0
+        self.rows=[SourceDocumentRow(self,row,index) for index,row in enumerate(rows)];self.version=0
     def authorize(self,caller):
         self.owner.authorize(caller)
         if not self.live or self.owner.sections.get(self.definition.name.casefold()) is not self:raise ValueError('detached document section unavailable')
@@ -80,7 +85,7 @@ class SourceDocumentSectionCall:
         if op=='count':return Decimal(len(section.rows))
         if op=='get':return section.get_index(caller,values[0])
         if op=='add':
-            row=SourceDocumentRow(section,{})
+            row=SourceDocumentRow(section,{},len(section.rows))
             section.rows.append(row)
             try:section.buffer_bound()
             except BaseException:section.rows.pop();row.live=False;raise
@@ -93,7 +98,7 @@ class SourceDocumentSectionCall:
             if type(value) is SourceDocumentRow:
                 value.authorize(caller)
                 if value.section is not section:raise ValueError('row belongs to another section')
-                index=section.rows.index(value)
+                index=value._position
             else:index=_index(value,len(section.rows))
-            section.rows.pop(index).live=False;section.version+=1;return None
+            pop_row(section.rows,index).live=False;section.version+=1;return None
         raise ValueError('unsupported section operation')
