@@ -29,6 +29,29 @@ class DirectHostValuesTests(unittest.TestCase):
         self.assertEqual((vm.variables['s'],vm.variables['r'],vm.variables['readonly']),(7,4,True))
         self.assertEqual(fixed.items,(Decimal(3),Decimal(4)))
 
+    def test_fixed_array_snapshots_plain_arrays_from_earlier_commands(self):
+        from yadinassi.execution.direct.python_direct_plain_array import PlainArray
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('Outer=New Array;')
+        vm.execute('Inner=New Array;')
+        vm.execute('Inner.Add(7);Outer.Add(Inner);')
+        self.assertIs(type(vm.variables['outer']),PlainArray)
+        self.assertIs(type(vm.variables['inner']),PlainArray)
+        with patch.object(PlainArray,'__iter__',side_effect=AssertionError('dynamic iteration')):
+            vm.execute('Snapshot=New FixedArray(Outer);')
+        vm.execute('Inner[0]=8;Outer.Add(9);')
+        self.assertEqual(vm.execute('Snapshot.Count()'),1)
+        self.assertEqual(vm.execute('Snapshot.Get(0).Get(0)'),7)
+        self.assertEqual(vm.execute('Outer.Count()'),2)
+
+        class ForeignArray(PlainArray):
+            def __iter__(self):
+                raise AssertionError('foreign iteration')
+        vm.variables['foreign'] = ForeignArray([Decimal(1)])
+        with self.assertRaisesRegex(BSLRuntimeError,'ожидает массив'):
+            vm.execute('New FixedArray(Foreign)')
+
     def test_host_array_indexes_keep_canonical_bounds_and_type_checks(self):
         vm=Interpreter();vm.execute('A=StrSplit("a,b",",");')
         for index in ('-1','0.5','True','2'):

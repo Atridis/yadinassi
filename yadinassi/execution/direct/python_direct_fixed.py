@@ -5,9 +5,11 @@ from yadinassi.collections.structures import BSLStructure, BSLFixedStructure, BS
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 from .python_direct_plain_map import PlainMap, PlainFixedMap
+from .python_direct_plain_array import _DIRECT_PLAIN_ARRAY_TYPE
 from .python_direct_numbers import public_number
 
 FACTORIES=(BSLFixedArray,BSLFixedStructure,BSLFixedMap)
+_MUTABLE_ARRAY_IDS = frozenset(map(id,(list,BSLArray,_DIRECT_PLAIN_ARRAY_TYPE)))
 
 def construct(factory,arguments):
     from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
@@ -31,10 +33,11 @@ def construct(factory,arguments):
         source._items=arguments[0]
         source._version=0
         return BSLFixedStructure(source)
-    if factory is BSLFixedArray and len(arguments)==1 and type(arguments[0]) not in (list,BSLArray):
-        raise TypeError('ФиксированныйМассив ожидает массив')
-    if factory is BSLFixedArray and len(arguments)==1 and type(arguments[0]) in (list,BSLArray):
-        return _freeze(arguments[0],set())
+    if factory is BSLFixedArray and len(arguments)==1:
+        source = arguments[0]
+        if id(type(source)) not in _MUTABLE_ARRAY_IDS:
+            raise TypeError('ФиксированныйМассив ожидает массив')
+        return _freeze(source,set())
     return factory(*arguments)
 
 def construct_source(factory, arguments):
@@ -57,9 +60,12 @@ def _freeze(source,active):
     if identity in active:raise ValueError('ФиксированныйМассив с циклическими вложенными массивами пока не поддерживается')
     active.add(identity)
     try:
-        values=source if type(source) is list else source.items
-        result=object.__new__(BSLFixedArray)
-        result.items=tuple(_freeze(value,active) if type(value) in (list,BSLArray) else value for value in values)
+        # A PlainArray persisted by a preceding direct/REPL command has the
+        # same backing list. Use the canonical descriptor, not user iteration.
+        values = source.items if type(source) is BSLArray else list.__iter__(source)
+        result = object.__new__(BSLFixedArray)
+        result.items = tuple(_freeze(value,active) if id(type(value)) in _MUTABLE_ARRAY_IDS else value
+                             for value in values)
         return result
     finally:active.remove(identity)
 
