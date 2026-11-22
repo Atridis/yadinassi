@@ -1278,7 +1278,7 @@ EndTry;
     def test_type_errors_have_clean_command_file_and_stdin_diagnostics(self):
         failures = [('Тип("НеизвестноеДерево")', 'Тип не поддерживается: НеизвестноеДерево'),
                     ('Type(1)', 'Имя типа должно быть строкой'),
-                    ('TypeOf(Message)', 'ТипЗнч для этого значения пока не поддерживается')]
+                    ('TypeOf(Message)', 'Переменная или функция не определена: Message')]
         with tempfile.TemporaryDirectory() as temporary:
             path = (Path(temporary) / 'ОшибкаТипа.bsl').resolve()
             for expression, message in failures:
@@ -1303,7 +1303,7 @@ EndTry;
         self.assertEqual((result.returncode, result.stdout), (1, 'Массив\nТип\nДа\n'))
         self.assertEqual(result.stderr.count('<консоль>:1:'), 2)
         self.assertIn('Тип не поддерживается: UnknownTree', result.stderr)
-        self.assertIn('ТипЗнч для этого значения пока не поддерживается', result.stderr)
+        self.assertIn('Переменная или функция не определена: Message', result.stderr)
         self.assertNotIn('Traceback', result.stderr)
 
     def test_type_values_cross_imported_routines_and_map_keys(self):
@@ -1331,8 +1331,10 @@ EndTry;
                                      (0, 'Массив\nТип\nСтрока\nДа\n', ''))
 
     def test_imported_type_errors_preserve_canonical_path_and_are_catchable(self):
-        failures = [('Type("UnknownTree")', 12, 'Тип не поддерживается: UnknownTree'),
-                    ('TypeOf(Message)', 14, 'ТипЗнч для этого значения пока не поддерживается')]
+        # Type lookup errors point at the callee; an unresolved
+        # argument points at the name, not the surrounding TypeOf call.
+        failures = [('Type("UnknownTree")', 8, 'Тип не поддерживается: UnknownTree'),
+                    ('TypeOf(Message)', 15, 'Переменная или функция не определена: Message')]
         for expression, column, message in failures:
             with self.subTest(expression=expression), tempfile.TemporaryDirectory() as temporary:
                 directory = Path(temporary)

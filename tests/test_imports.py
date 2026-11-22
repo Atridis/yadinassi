@@ -75,6 +75,41 @@ class ImportTests(unittest.TestCase):
                 self.assertEqual(result, Decimal(42))
                 self.assertEqual(self.output, [])
 
+    def test_capture_only_argument_names_are_not_lexical_bindings(self):
+        module = self.write('Side.bsl', """
+            Procedure Replace(Target) Export Target = 42; EndProcedure
+            Function Missing() Export Return TypeOf(NotDeclared); EndFunction
+            Function Shadow(Val Message) Export
+                Replace(Message);
+                Return TypeOf(Message) = Type("Number");
+            EndFunction
+        """)
+        source = "// #Import Side.bsl\nSide.Missing()"
+        self.main.write_text(source, encoding='utf-8')
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                with self.assertRaisesRegex(BSLError, 'не определена: NotDeclared') as error:
+                    if prepared:
+                        vm.execute_prepared(vm.prepare_program(parse(source, str(self.main))))
+                    else:
+                        vm.execute(source, str(self.main))
+                self.assertEqual(error.exception.source, str(module.resolve()))
+                self.assertEqual(error.exception.line, 3)
+                self.assertTrue(vm.execute('Side.Shadow("text")'))
+
+    def test_capture_only_name_cannot_become_a_writable_host_reference(self):
+        effects = []
+        self.vm.register_function('WriteRef', lambda reference: effects.append(reference))
+        self.vm.functions['writeref'].reference_parameters = frozenset({0})
+        with self.assertRaisesRegex(BSLError, 'не определена: Metadata'):
+            self.vm.execute("""Function Work()
+                Return WriteRef(Metadata);
+            EndFunction
+            Work()""")
+        self.assertEqual(effects, [])
+
     def test_directive_ast_preserves_filename_and_source_position(self):
         source = str(self.main)
         directive = parse('\n  // #Импорт Побочное.bsl\n', source)[0]

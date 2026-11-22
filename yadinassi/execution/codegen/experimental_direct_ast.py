@@ -1355,6 +1355,8 @@ class Emitter:
                     key=plain.name.casefold()
                     if self.external_name(key):return self.invoke(self.attribute(self.name('_context',t),'external_reference',t),[self.const(key,t)],t)
                     if self.scope is not None and key not in self.scope['globals']:
+                        if key not in self.scope['bindings']:
+                            return self.call('_missing',[self.const(plain.name,plain.token)],plain.token)
                         getter,setter=self.scope['host_helpers'][key]
                         args=[self.name(getter,plain.token),self.name(setter,plain.token),self.const(plain.name,plain.token)]
                         if key in self.scope['boxed']:args.append(self.name(self.scope['slots'][key],plain.token))
@@ -2092,9 +2094,13 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         emitter.scope['bindings'].update(addressable)
         for name in sorted(addressable):
             if name not in slots:slots[name]=emitter.temp()
-        # Unbound names are lexical missing values at execution, not a reason
-        # to reject an otherwise valid declaration-only handler factory.
-        emitter.scope['bindings'].update(lexical)
+        # Capture candidates aren't declarations. Ordinary value reads must
+        # still reach the BSL missing-name path for a capture-only name.
+        # Source/host profiles already give these slots an explicit sentinel.
+        if emitter.source_scopes or emitter.host_bindings:
+            emitter.scope['bindings'].update(lexical)
+        else:
+            lexical.intersection_update(emitter.scope['bindings'])
         emitter.scope['host_helpers']={}
         for name in sorted(lexical):
             if name not in slots:slots[name]=emitter.temp()
