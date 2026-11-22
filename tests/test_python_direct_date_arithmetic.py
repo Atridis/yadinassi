@@ -1,7 +1,10 @@
 """Native Python operators reuse measured Date tick algorithms, not VM dispatch."""
 from decimal import Decimal, localcontext, Rounded, Inexact
 import unittest
-from yadinassi import Interpreter
+from unittest.mock import patch
+from yadinassi import BSLRuntimeError, Interpreter
+from yadinassi.execution.codegen.experimental_naked_scalar_semantics import UnsupportedScalarSemantics, uca_order
+from yadinassi.syntax.parser import parse
 from yadinassi.temporal.dates import BSLDate, MAX_TICKS, UnsupportedDateRange, shift_date, date_difference
 
 class DirectDateArithmeticTests(unittest.TestCase):
@@ -59,3 +62,62 @@ class DirectDateArithmeticTests(unittest.TestCase):
         with localcontext() as context:
             context.prec=1;context.traps[Rounded]=True;context.traps[Inexact]=True
             self.assertEqual((BSLDate(123456789)-Decimal('0.1234')).ticks,123455555)
+
+    def test_date_order_all_operators_use_ticks_in_source_ast_and_prepared(self):
+        source = ('Early=Date("20240229123456"); Late=Early+0.0001; '
+                  'LT=Early<Late; LE=Early<=Early; GT=Late>Early; GE=Late>=Late; '
+                  'SameTick=Late>Late; Opposite=Late<Early;')
+        for route in ('source', 'ast', 'prepared'):
+            with self.subTest(route=route):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                if route == 'source': vm.execute(source)
+                elif route == 'ast': vm.execute_program(parse(source))
+                else: vm.execute_prepared(vm.prepare(source))
+                for name in ('lt', 'le', 'gt', 'ge'):
+                    self.assertIs(vm.variables[name], True)
+                self.assertIs(vm.variables['sametick'], False)
+                self.assertIs(vm.variables['opposite'], False)
+
+    def test_date_order_rejects_unproven_range_and_mixed_types(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('Low=Date(1,1,1); High=Date(9999,12,31,23,59,59); '
+                   'Before=Low+(-1); After=High+1;')
+        self.assertIs(vm.execute('Low<High'), True)
+        self.assertIs(vm.execute('High>=High'), True)
+        for comparison in ('Before<Low', 'Low<=Before', 'After>High', 'High>=After'):
+            with self.subTest(comparison=comparison):
+                with self.assertRaisesRegex(BSLRuntimeError, 'выхода за диапазон'):
+                    vm.execute(comparison)
+        for comparison in ('Low<1', '1<=High', 'Low>"date"', 'True>=High'):
+            with self.subTest(comparison=comparison):
+                with self.assertRaisesRegex(BSLRuntimeError, 'несовместимы'):
+                    vm.execute(comparison)
+
+    def test_date_order_reads_only_exact_canonical_slots(self):
+        def forbidden(*args):
+            raise AssertionError('Date hook was dispatched')
+
+        class ForeignDate(BSLDate):
+            __lt__ = forbidden
+            __gt__ = forbidden
+
+        early, late = BSLDate(1), BSLDate(2)
+        with (patch.object(BSLDate, 'ticks', property(forbidden)),
+              patch.object(BSLDate, 'boundary', property(forbidden)),
+              patch.object(BSLDate, 'require_known', forbidden),
+              patch.object(BSLDate, '__lt__', forbidden)):
+            self.assertIs(uca_order(early, late, '<'), True)
+        foreign = ForeignDate(1)
+        for left, right in ((early, foreign), (foreign, late), (foreign, foreign)):
+            with self.assertRaises(TypeError):
+                uca_order(left, right, '<')
+        for ticks, boundary in ((True, False), (-1, False), (MAX_TICKS + 1, False), (1, 0), (1, True)):
+            bad = BSLDate(1)
+            object.__setattr__(bad, 'ticks', ticks)
+            object.__setattr__(bad, 'boundary', boundary)
+            with self.assertRaises(UnsupportedScalarSemantics):
+                uca_order(early, bad, '<')
+        with self.assertRaises(UnsupportedScalarSemantics):
+            uca_order(object.__new__(BSLDate), late, '<')

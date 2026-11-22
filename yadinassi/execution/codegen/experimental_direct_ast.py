@@ -486,7 +486,7 @@ class Emitter:
         parts=self.node(py.Tuple,t,elts=[bind,check,self.name(result,t)],ctx=py.Load())
         return self.node(py.Subscript,t,value=parts,slice=self.const(-1,t),ctx=py.Load())
     def module_boundary(self,value,t,condition=None,primitive=None):
-        self.module_boundaries+=1;result=self.temp()
+        self.module_boundaries+=1
         def depth(change):
             updated=self.node(py.BinOp,t,left=self.name('_dynamic_depth',t),op=py.Add(),right=self.const(change,t))
             return self.node(py.NamedExpr,t,target=self.name('_dynamic_depth',t,True),value=updated)
@@ -503,8 +503,10 @@ class Emitter:
                     call=self.invoke(self.attribute(self.name('_context',t),'_check',t),[],t)
                     return self.node(py.IfExp,t,test=self.name(checked,t),body=call,orelse=self.const(None,t))
                 before.append(check());after.insert(0,check())
-        parts=[*prefix,*before,self.node(py.NamedExpr,t,target=self.name(result,t,True),value=value),*after,self.name(result,t)]
-        return self.node(py.Subscript,t,value=self.node(py.Tuple,t,elts=parts,ctx=py.Load()),slice=self.const(-1,t),ctx=py.Load())
+        # The tuple keeps the result alive during reload, without leaving a
+        # hidden reference in the module frame after a discarded expression.
+        parts=[*prefix,*before,value,*after]
+        return self.node(py.Subscript,t,value=self.node(py.Tuple,t,elts=parts,ctx=py.Load()),slice=self.const(-len(after)-1,t),ctx=py.Load())
     def receiver_statements(self,body,receiver,t):
         if self.static_module_kinds:return body
         if not self.static_module_names:

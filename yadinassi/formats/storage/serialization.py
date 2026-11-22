@@ -255,7 +255,8 @@ def _pattern_entry(kind: BSLType, value: BSLTypeDescription) -> str:
     return entry + '}'
 
 
-_NATIVE_MAP_SERIALIZABLE_KEYS = (type(None), bool, str, int, Decimal, BSLNull, BSLType, BSLDate)
+_NATIVE_MAP_SERIALIZABLE_KEYS = (type(None), bool, str, int, Decimal, BSLNull, BSLType, BSLDate,
+                                 BSLSearchDirection, BSLRoundMode)
 
 
 def _native_map_entries(value):

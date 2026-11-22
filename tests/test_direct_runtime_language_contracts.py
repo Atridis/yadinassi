@@ -130,6 +130,28 @@ class DirectRuntimeLanguageContractsTests(unittest.TestCase):
         vm.execute('Try Make();Raise "failure";Except x=1;EndTry;Check();')
         self.assertEqual(seen, [True])
 
+    def test_used_host_result_keeps_only_its_source_lifetime(self):
+        vm = self.vm(allow_extensions=True)
+        refs = []
+        alive = []
+
+        class Payload:
+            pass
+
+        def make():
+            value = Payload()
+            refs.append(weakref.ref(value))
+            return value
+
+        def check():
+            gc.collect()
+            alive.append(refs[-1]() is not None)
+
+        vm.register_function('Make', make)
+        vm.register_function('Check', check)
+        vm.execute('Kept=Make(); Check(); Kept=Undefined; Check();')
+        self.assertEqual(alive, [True, False])
+
     def test_for_upper_bound_is_evaluated_once(self):
         vm = self.vm()
         vm.execute('Function F(Val n=3) count=0;Var count;'

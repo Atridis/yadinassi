@@ -76,6 +76,7 @@ class BSLDate:
 # Canonical slot access for direct collection equality's date-boundary gate.
 # Capture at definition time; do not dispatch a mutable require_known hook.
 _DIRECT_EQUALITY_DATE_STATE = (BSLDate, vars(BSLDate)['boundary'])
+_DIRECT_ORDER_DATE_TICKS = (vars(BSLDate)['ticks'], MAX_TICKS)
 
 
 def _require_date(value):

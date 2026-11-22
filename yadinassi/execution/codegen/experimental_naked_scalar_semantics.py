@@ -8,7 +8,7 @@ from decimal import Decimal
 from yadinassi.text.strings import concatenate as _join
 from yadinassi.text.chars import CHARS
 from yadinassi.text.collation import _DIRECT_STRING_KEY_ABI as _string_key
-from yadinassi.temporal.dates import _DIRECT_EQUALITY_DATE_STATE, UnsupportedDateRange
+from yadinassi.temporal.dates import _DIRECT_EQUALITY_DATE_STATE, _DIRECT_ORDER_DATE_TICKS, UnsupportedDateRange
 from yadinassi.types.unique_identifiers import BSLUUID
 from yadinassi.types.values import BSLType, NULL, to_string, _DIRECT_TYPE_PRESENTATIONS, _DIRECT_ARRAY_TYPE, _DIRECT_FIXED_ARRAY_TYPE, _DIRECT_FIXED_COLLECTION_TYPE, divide as _divide
 from yadinassi.collections.structures import _DIRECT_FIXED_STRUCTURE_SNAPSHOT
@@ -129,8 +129,12 @@ def order(left, right, operator):
         left = Decimal(int(left)); left_type = Decimal
     elif left_type is Decimal and right_type is bool:
         right = Decimal(int(right)); right_type = Decimal
-    if left_type is not right_type or not (left_type is Decimal or left_type is bool or left_type is str):
+    if left_type is not right_type:
         raise TypeError('Значения несовместимы для сравнения')
+    if not (left_type is Decimal or left_type is bool or left_type is str):
+        if left_type is not _DATE_TYPE:
+            raise TypeError('Значения несовместимы для сравнения')
+        left, right = _date_order_ticks(left), _date_order_ticks(right)
     if operator == '<': return left < right
     if operator == '<=': return left <= right
     if operator == '>': return left > right
@@ -151,6 +155,29 @@ def uca_order(left, right, operator):
 
 
 _DATE_TYPE, _DATE_BOUNDARY_SLOT = _DIRECT_EQUALITY_DATE_STATE
+_DATE_TICKS_SLOT, _DATE_MAX_TICKS = _DIRECT_ORDER_DATE_TICKS
+
+
+def _date_order_ticks(value):
+    # Exact Date operands only. Read the canonical integer slots, not the
+    # Python comparison methods or replaceable class-level properties.
+    try:
+        ticks = _DATE_TICKS_SLOT.__get__(value, _DATE_TYPE)
+        boundary = _DATE_BOUNDARY_SLOT.__get__(value, _DATE_TYPE)
+    except AttributeError:
+        raise UnsupportedScalarSemantics('invalid exact date ordering state') from None
+    if (type(ticks) is not int or not 0 <= ticks <= _DATE_MAX_TICKS
+            or type(boundary) is not bool or (boundary and ticks not in (0, _DATE_MAX_TICKS))):
+        raise UnsupportedScalarSemantics('invalid exact date ordering state')
+    if boundary:
+        _raise_unproven_date_range()
+    return ticks
+
+
+def _raise_unproven_date_range():
+    raise UnsupportedDateRange(
+        'Дата: после выхода за диапазон известно только скалярное '
+        'внутреннее представление; дальнейшая операция пока не поддерживается')
 
 
 def _array_date_check(value):
@@ -159,9 +186,7 @@ def _array_date_check(value):
         if type(boundary) is not bool:
             raise UnsupportedScalarSemantics('invalid exact date boundary state')
         if boundary:
-            raise UnsupportedDateRange(
-                'Дата: после выхода за диапазон известно только скалярное '
-                'внутреннее представление; дальнейшая операция пока не поддерживается')
+            _raise_unproven_date_range()
 
 
 def array_equal(left, right):

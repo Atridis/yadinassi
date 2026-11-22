@@ -172,6 +172,27 @@ class SearchDirectionValueTests(unittest.TestCase):
         self.assertEqual(self.output, ['0', '1', 'Да', 'Да', '7', 'updated',
                                       'end', 'zero', 'one', 'false', 'true', 'round', 'Да'])
 
+    def test_direct_map_and_fixed_map_roundtrip_keep_enum_keys_distinct(self):
+        self.vm.execute("""
+            m = New Map;
+            m.Insert(SearchDirection.FromBegin, "begin");
+            m.Insert(SearchDirection.FromEnd, "end");
+            m.Insert(RoundMode.Round15as10, "round");
+            m.Insert(0, "zero");
+            m.Insert(False, "false");
+            f = New FixedMap(m);
+            a = ValueFromStringInternal(ValueToStringInternal(m));
+            b = ValueFromStringInternal(ValueToStringInternal(f));
+            Message(TypeOf(a) = Type("Map") And TypeOf(b) = Type("FixedMap"));
+            Message(a.Count()); Message(b.Count());
+            Message(a[SearchDirection.FromBegin]); Message(b[SearchDirection.FromBegin]);
+            Message(a[SearchDirection.FromEnd]); Message(b[SearchDirection.FromEnd]);
+            Message(a[RoundMode.Round15as10]); Message(b[RoundMode.Round15as10]);
+            Message(a[0]); Message(b[0]); Message(a[False]); Message(b[False]);
+        """)
+        self.assertEqual(self.output, ['Да', '5', '5', 'begin', 'begin', 'end', 'end',
+                                      'round', 'round', 'zero', 'zero', 'false', 'false'])
+
     def test_direct_arrays_and_maps_keep_native_enum_keys_distinct(self):
         self.vm.execute('''values = New Array;
             values.Add(directions.FromBegin); values.Add(RoundMode.Round15as10);
