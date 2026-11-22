@@ -28,6 +28,126 @@ class DirectValueTreeTests(unittest.TestCase):
                 else:vm.execute_prepared(vm.prepare(source))
             self.assertEqual(vm.variables['s'],'one');self.assertIs(type(vm.variables['t']),trees.BSLValueTree)
 
+    def test_find_uses_current_rows_and_depth_first_identity(self):
+        vm=self.vm();tree,first=self.setup_tree(vm)
+        second=tree.rows.add();second.cells[tree.columns.items[0]]='hit'
+        child=first.rows.add();child.cells[tree.columns.items[0]]='hit'
+        self.assertIs(vm.execute('T.Rows.Find("hit","name")'),second)
+        prepared=vm.prepare('T.Rows.Найти("hit"," Name, Name ",True)')
+        self.assertIs(vm.execute_prepared(prepared),child)
+        self.assertIs(vm.execute('R.Rows.Find("hit")'),child)
+        child.cells[tree.columns.items[0]]='gone'
+        self.assertIs(vm.execute_prepared(prepared),second)
+        self.assertIsNone(vm.execute('R.Rows.Find("hit","Name",True)'))
+
+    def test_find_checks_only_the_rows_it_reaches(self):
+        vm=self.vm();tree,first=self.setup_tree(vm)
+        last=tree.rows.add();last.cells={}
+        # Search stops at the first hit, without validating unrelated rows.
+        self.assertIs(vm.execute('T.Rows.Find("one","Name",True)'),first)
+        with self.assertRaises(BoundaryViolation):
+            vm.execute('T.Rows.Find("absent","Name",True)')
+        # A non-recursive search never visits the first row's children.
+        last.cells={tree.columns.items[0]:'hit'}
+        first.rows.items.append(None)
+        self.assertIs(vm.execute('T.Rows.Find("hit","Name")'),last)
+        with self.assertRaises(BoundaryViolation):
+            vm.execute('T.Rows.Find("hit","Name",True)')
+
+    def test_find_rechecks_live_row_membership_after_arguments(self):
+        vm=self.vm(allow_extensions=True);tree,row=self.setup_tree(vm)
+        vm.register_function('RemoveMembership',lambda:tree._all_rows.pop(row) or 'one')
+        with self.assertRaises(BoundaryViolation):
+            vm.execute('T.Rows.Find(RemoveMembership(),"Name")')
+        self.assertIs(tree.rows.items[0],row)
+
+    def test_find_rechecks_activation_after_arguments(self):
+        vm=self.vm(allow_extensions=True);self.setup_tree(vm)
+        vm.register_function('Close',lambda:vm.close() or 'one')
+        with self.assertRaises(BoundaryViolation):
+            vm.execute('T.Rows.Find(Close(),"Name")')
+
+    def test_read_projections_share_rows_and_only_visit_requested_depth(self):
+        from decimal import Decimal
+        vm=self.vm();tree,first=self.setup_tree(vm)
+        total=tree.columns.add('Amount')
+        name=tree.columns.items[0]
+        first.cells[total]=Decimal(3)
+        second=tree.rows.add()
+        second.cells.update({name:'one',total:Decimal(5)})
+        child=first.rows.add()
+        child.cells.update({name:'one',total:Decimal(11)})
+        selected=vm.execute('T.Rows.НайтиСтроки(New Structure("Name","one"),True)')
+        self.assertEqual(len(selected.items),3)
+        for actual,expected in zip(selected.items,(first,child,second)):
+            self.assertIs(actual,expected)
+        self.assertEqual(vm.execute('T.Rows.Итог("Amount",True)'),Decimal(19))
+
+        # Appending to the tree changes future searches, not the result array.
+        extra=tree.rows.add()
+        extra.cells[total]=Decimal(7)
+        self.assertEqual(len(selected.items),3)
+        self.assertEqual(vm.execute('T.Rows.ВыгрузитьКолонку("Amount")').items,
+                         [Decimal(3),Decimal(5),Decimal(7)])
+        child.cells={}
+        self.assertEqual(vm.execute('T.Rows.Total("Amount")'),Decimal(15))
+        local=vm.execute('T.Rows.FindRows(New Structure("Name","one"))')
+        self.assertIs(local.items[0],first)
+        self.assertIs(local.items[1],second)
+        for source in ('T.Rows.Total("Amount",True)',
+                       'T.Rows.FindRows(New Structure("Name","one"),True)',
+                       'R.Rows.UnloadColumn("Amount")'):
+            with self.subTest(source=source),self.assertRaises(BoundaryViolation):
+                vm.execute(source)
+        # Empty filters still produce an empty snapshot, with no row visited.
+        self.assertEqual(vm.execute('R.Rows.FindRows(New Structure)').items,[])
+
+    def test_read_projections_recheck_direct_arguments_and_cell_membership(self):
+        vm=self.vm(allow_extensions=True);tree,row=self.setup_tree(vm)
+        foreign_col=trees.BSLValueTree().columns.add('Name')
+        vm.register_function('ChangeCells',lambda: setattr(row,'cells',{foreign_col:'one'}) or 'Name')
+        for method in ('Total','UnloadColumn'):
+            row.cells={tree.columns.items[0]:'one'}
+            with self.subTest(method=method),self.assertRaises(BoundaryViolation):
+                vm.execute(f'T.Rows.{method}(ChangeCells())')
+        self.assertIs(tree.rows.items[0],row)
+
+    def test_prepared_positional_metadata_reads_do_not_walk_row_graph(self):
+        import sys
+        vm=self.vm();tree,row=self.setup_tree(vm)
+        column=tree.columns.items[0]
+        unrelated=tree.rows.add();unrelated.cells={}
+        tree.rows.items.reverse()
+        program=vm.prepare('C=T.Columns.Найти("name");'
+                           'CP=T.Columns.IndexOf(C);RP=T.Rows.Индекс(R);')
+        checks=[]
+        graph=trees.BSLValueTree._clear_graph.__code__;previous=sys.getprofile()
+        def profile(frame,event,argument):
+            if event=='call' and frame.f_code is graph:checks.append(1)
+        sys.setprofile(profile)
+        try:vm.execute_prepared(program)
+        finally:sys.setprofile(previous)
+        self.assertEqual(checks,[])
+        self.assertIs(vm.variables['c'],column)
+        self.assertEqual((vm.variables['cp'],vm.variables['rp']),(0,1))
+        self.assertIsNone(vm.execute('T.Columns.Find("missing")'))
+        other=trees.BSLValueTree();vm.variables['other']=other.rows.add()
+        self.assertEqual(vm.execute('T.Rows.IndexOf(Other)'),-1)
+        tree._all_rows.pop(row)
+        with self.assertRaises(BoundaryViolation): vm.execute('T.Rows.IndexOf(R)')
+        column._deleted=True
+        with self.assertRaises(BoundaryViolation):vm.execute('T.Columns.Find("name")')
+
+    def test_retained_deleted_child_reads_keep_catchable_model_error(self):
+        vm=self.vm();self.setup_tree(vm)
+        vm.execute('Retained=R.Rows;T.Rows.Delete(R);')
+        for expression in ('Find("one","Name")','FindRows(New Structure("Name","one"))',
+                           'Total("Name")','UnloadColumn("Name")','IndexOf(R)'):
+            with self.subTest(expression=expression):
+                vm.execute(f'Try Result=Retained.{expression};'
+                           'Except Result="caught";EndTry;')
+                self.assertEqual(vm.variables['result'],'caught')
+
     def test_forged_subclass_and_coherently_reparented_row_denied(self):
         vm=self.vm();tree,row=self.setup_tree(vm)
         other=trees.BSLValueTree();other.columns.add('Name')
@@ -84,6 +204,28 @@ class DirectValueTreeTests(unittest.TestCase):
         vm.register_function('Close',lambda:vm.close() or 0)
         with self.assertRaises(BoundaryViolation):vm.execute('T.Rows.Insert(Close())')
         self.assertEqual(len(tree.rows.items),1)
+
+    def test_copy_checks_complete_registry_before_allocating_result(self):
+        import sys
+        vm=self.vm();tree,first=self.setup_tree(vm)
+        copy=vm.prepare('T.Copy()')
+        self.assertIsNot(vm.execute_prepared(copy).rows.items[0],first)
+        orphan=tree.rows.add()
+        self.assertIs(tree.rows.items.pop(),orphan)
+        allocated=[]
+        constructor=trees.BSLValueTree.__init__.__code__
+        previous=sys.getprofile()
+        def profile(frame,event,argument):
+            if event=='call' and frame.f_code is constructor:
+                allocated.append(1)
+        sys.setprofile(profile)
+        try:
+            with self.assertRaises((BoundaryViolation,BSLError)):
+                vm.execute_prepared(copy)
+        finally:
+            sys.setprofile(previous)
+        self.assertEqual(allocated,[])
+        self.assertIs(tree.rows.items[0],first)
 
     def test_class_copy_bookkeeping_does_not_invalidate_live_tree(self):
         vm=self.vm();tree,row=self.setup_tree(vm)

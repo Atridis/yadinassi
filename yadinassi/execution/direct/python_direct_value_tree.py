@@ -19,6 +19,13 @@ _ENUM_MEMBER_IDS=frozenset(id(member) for member,_ in _ENUM_MEMBERS)
 _LIMITS=model._DIRECT_TREE_LIMITS
 _SCHEMA_BINDINGS=model._DIRECT_TREE_SCHEMA_BINDINGS+model._DIRECT_TREE_DEPENDENCY_BINDINGS
 _QUALIFIERS=model._direct_qualifiers
+_ROW_COLLECTION=object()
+_ROW_READS={alias: spec for aliases,spec in (
+    (('find','найти'),('_find',3,True)),
+    (('findrows','найтистроки'),('_find_rows',2,True)),
+    (('total','итог'),('_total',2,False)),
+    (('unloadcolumn','выгрузитьколонку'),('_unload_column',1,True)),
+) for alias in aliases}
 _FIELDS=(frozenset(('_all_rows','columns','rows')),
          frozenset(('tree','parent','items','_columns_clear_forward')),
          frozenset(('collection','tree','parent','depth','cells','rows','_deleted')),
@@ -79,7 +86,7 @@ def fields(value):
     for cls,allowed in zip(_CLASSES,_FIELDS):
         if kind is cls:
             data=vars(value)
-            if (any(type(k) is not str or k not in allowed for k in data)
+            if (type(data) is not dict or any(type(k) is not str or k not in allowed for k in data)
                     or not allowed.difference(('_columns_clear_reset',)).issubset(data)):
                 raise BoundaryViolation('ValueTree instance hooks changed')
             return data
@@ -158,6 +165,75 @@ def cell_keys(row,root):
     for key in row.cells:
         if type(key) is not _COLUMN or local(key) is not root:
             raise BoundaryViolation('ValueTree cell key changed')
+
+
+def row_read_admission(root, start, *, track_rows=True):
+    """A post-arguments seal for exactly the prefix the row reader consumes."""
+    entries = model._registry_owned_entries(root._all_rows, root)
+    weakref_type = model.ref
+    if entries is None:
+        raise BoundaryViolation('ValueTree registry changed')
+    start_data = fields(start)
+    parent = start_data['parent']
+    if parent is None:
+        attached = start is root.rows
+        start_depth = 0
+    else:
+        data = fields(parent)
+        saved = entries.get(id(parent))
+        attached = (type(saved) is weakref_type and saved() is parent
+                    and data['rows'] is start and data['_deleted'] is False)
+        start_depth = data['depth'] + 1
+    if not attached:
+        raise BoundaryViolation('ValueTree read receiver is not attached')
+    columns = root.columns.items
+    column_ids = {id(column) for column in columns}
+    if len(column_ids) != len(columns) or any(column._deleted is not False for column in columns):
+        raise BoundaryViolation('ValueTree read schema changed')
+    seen = set() if track_rows else None
+
+    def admit(collection, depth, row=_ROW_COLLECTION):
+        if row is _ROW_COLLECTION:
+            # Called only when the canonical DFS is about to descend.
+            if type(collection) is not _ROWS or local(collection) is not root:
+                raise BoundaryViolation('foreign ValueTree read child collection')
+            if (collection._columns_clear_forward is not False
+                    or type(collection.items) is not list or len(collection.items) > model._MAX_ROWS):
+                raise BoundaryViolation('ValueTree read child collection changed')
+            return
+        if type(row) is not _ROW or local(row) is not root:
+            raise BoundaryViolation('foreign ValueTree read row')
+        identity = id(row)
+        saved = entries.get(identity)
+        if (type(saved) is not weakref_type or saved() is not row
+                or (seen is not None and identity in seen)
+                or row.collection is not collection or row.parent is not collection.parent
+                or row._deleted is not False or type(row.depth) is not int
+                or row.depth != start_depth + depth or row.depth > model._MAX_DEPTH):
+            raise BoundaryViolation('ValueTree read row is not attached')
+        cells = row.cells
+        if (type(cells) is not dict or len(cells) != len(column_ids)
+                or any(type(key) is not _COLUMN or id(key) not in column_ids for key in cells)):
+            raise BoundaryViolation('ValueTree read cell keys changed')
+        if seen is not None:
+            seen.add(identity)
+
+    admit(start, 0)
+    return admit
+
+
+def admit_copy_row(row):
+    # Copy itself verifies the complete graph, schema keys and registry before
+    # allocating its result. Only add the direct boundary's instance/origin seal.
+    if type(row) is not _ROW:
+        raise BoundaryViolation('foreign ValueTree copy row')
+    local(row)
+    children = row.rows
+    if type(children) is not _ROWS:
+        raise BoundaryViolation('foreign ValueTree copy child collection')
+    local(children)
+    if children._columns_clear_forward is not False:
+        raise BoundaryViolation('detached ValueTree copy child collection')
 
 
 def description(value):
@@ -302,12 +378,23 @@ class ValueTreeBoundary:
             or kind is _COLUMNS and key in ('get','получить')
         )
         scalar_read=key in ('count','количество','owner','владелец','level','уровень')
-        local_call=(scalar_read or key in ('get','получить','__getitem__','__iter__')
+        row_read=_ROW_READS.get(key) if kind is _ROWS else None
+        copying=kind is _TREE and key in ('copy','скопировать')
+        row_index=kind is _ROWS and key in ('indexof','индекс')
+        column_lookup=(kind is _COLUMNS and value is root.columns
+                       and key in ('find','найти','indexof','индекс'))
+        local_call=(scalar_read or row_read is not None or copying or row_index or column_lookup or key in ('get','получить','__getitem__','__iter__')
                     or kind is _ROWS and key in ('add','добавить','insert','вставить'))
         def invoke(*arguments):
             if check(self,value,graph=not local_call) is not root or self._value_tree_epoch is not epoch:
                 raise BoundaryViolation('ValueTree owner changed')
             if not scalar_read and not positional_child:columns(root)
+            if column_lookup:
+                ids=set()
+                for column in value.items:
+                    if column._deleted or id(column) in ids:
+                        raise BoundaryViolation('ValueTree column lookup schema changed')
+                    ids.add(id(column))
             # Public operations validate wrong-collection arguments; preflight all
             # exact tree receivers first so host hooks cannot run inside them.
             for argument in arguments:
@@ -318,7 +405,27 @@ class ValueTreeBoundary:
                 position=1 if key in ('add','добавить') else 2
                 if len(arguments)>position and arguments[position] is not None:description(arguments[position])
             try:
-                result=function(*arguments)
+                if row_read is not None and 1 <= len(arguments) <= row_read[1]:
+                    if value.parent is not None and value.parent._deleted is True:
+                        # A retained child of a deleted row is still an exact
+                        # receiver. Preserve the model's catchable _live error
+                        # before any scan, not a bridge corruption exception.
+                        result=function(*arguments)
+                    else:
+                        method, _, track_rows = row_read
+                        result=getattr(_ROWS,method)(value,*arguments,
+                            admit=row_read_admission(root,value,track_rows=track_rows))
+                elif row_index and len(arguments)==1:
+                    # Nonmatching siblings are only compared by identity. Seal
+                    # the matching row before exposing its position.
+                    result=_ROWS._index_of(value,arguments[0],
+                        admit=lambda row:row_read_admission(root,value)(value,0,row))
+                elif copying and not arguments:
+                    if root.rows._columns_clear_forward is not False:
+                        raise BoundaryViolation('detached ValueTree copy root')
+                    result=_TREE._copy(value,admit=admit_copy_row)
+                else:
+                    result=function(*arguments)
                 if name=='__iter__':
                     def iterator():
                         for item in result:
@@ -340,7 +447,7 @@ class ValueTreeBoundary:
                     # These exact scalar readers cannot call user code after
                     # admission. Check the returned receiver's own provenance
                     # without auditing all Python classes a second time.
-                    validate=(admitted_receiver if scalar_read or positional_child else check)
+                    validate=(admitted_receiver if scalar_read or positional_child or row_read is not None or column_lookup else check)
                     if validate(self,result) is not root:
                         raise BoundaryViolation('foreign ValueTree result')
                 return result

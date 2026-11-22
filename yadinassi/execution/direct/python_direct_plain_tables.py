@@ -12,7 +12,10 @@ _SNAPSHOTS=tuple((vars(module),module._DIRECT_CLASSES,module._DIRECT_FUNCTIONS,m
                  for module in (storage,runtime,search))
 
 
-def raw(value):return _DICT.__get__(value,type(value))
+def raw(value):
+    fields=_DICT.__get__(value,type(value))
+    if type(fields) is not dict:fail()
+    return fields
 
 
 def fail():raise BoundaryViolation('plain table ownership or storage changed')
@@ -41,18 +44,33 @@ def hooks():
             if len(current)!=len(kwdefaults) or any(current.get(k) is not v for k,v in kwdefaults):fail()
 
 
-def row_check(row,table,schema,keys,pure=False):
+def row_check(row,table,schema,keys,pure=False,*,active=False):
     if type(row) is not _ROW:fail()
     data=raw(row)
-    if any(type(k) is not str for k in data):fail()
-    if set(data)!= {'schema','_owner','_deleted','table'}:fail()
-    if data['schema'] is not schema or data['_owner'] is not table or data['table'] is not table or type(data['_deleted']) is not bool:fail()
-    if list.__len__(row)!=len(keys):fail()
+    if len(data)!=4:fail()
+    for key in data:
+        if type(key) is not str:fail()
+    deleted=data.get('_deleted')
+    if (data.get('schema') is not schema or data.get('_owner') is not table
+            or data.get('table') is not table or type(deleted) is not bool):fail()
+    if list.__len__(row)!=len(keys) or (active and deleted):fail()
     if pure and any(v is not None and type(v) is not Decimal for v in list.__iter__(row)):return False
     return True
 
 
-def validate(value,pure=False,*,row_only=False):
+def column_check(column,table,names,metadata,index):
+    if type(column) is not _COLUMN:fail()
+    col=raw(column)
+    if any(type(k) is not str for k in col):fail()
+    if set(col)!={'table','_name','value_type','title','width','_deleted'}:fail()
+    if (col['table'] is not table or col['_deleted'] is not False
+            or type(col['_name']) is not str or type(names[index]) is not str
+            or col['_name']!=names[index] or metadata[index] is not column):
+        fail()
+    return col
+
+
+def validate(value,pure=False,*,row_only=False,iteration=False):
     hooks()
     kind=type(value)
     if kind is _TABLE:table=value
@@ -71,6 +89,22 @@ def validate(value,pure=False,*,row_only=False):
     if type(kernel) is not _STORAGE or type(rows) is not list or type(columns) is not _COLUMNS or type(indexes) is not _INDEXES:fail()
     if kernel.owner is not table or kernel.rows is not rows or kernel.row_factory is not _ROW or type(kernel.schema) is not _SCHEMA:fail()
     if type(kernel.epoch) is not int or kernel.epoch<0:fail()
+    if iteration:
+        # A read-only iterator need not admit indexes, names or row contents
+        # it will never consume. Bind the owners and shared storage here; each
+        # emitted item is checked against those identities at its read.
+        schema=kernel.schema
+        cols=raw(columns)
+        if (any(type(k) is not str for k in cols)
+                or set(cols)!={'table','_items','_query_columns'}
+                or cols['table'] is not table or type(cols['_items']) is not list
+                or type(schema._keys) is not list or type(schema._names) is not list
+                or type(schema._metadata) is not list
+                or len(cols['_items'])!=len(schema._keys)
+                or len(schema._names)!=len(schema._keys)
+                or len(schema._metadata)!=len(schema._keys)):
+            fail()
+        return table,schema,rows,columns,cols['_items']
     cache=data['_search']
     if type(cache) is not search.SearchIndexes:fail()
     if type(cache.declarations) is not set or type(cache.cache) is not dict or type(cache.builds) is not int:fail()
@@ -101,12 +135,7 @@ def validate(value,pure=False,*,row_only=False):
     if set(ix['items'])!=cache.declarations:fail()
     if len(cols['_items'])!=len(keys):fail()
     for i,column in enumerate(cols['_items']):
-        if type(column) is not _COLUMN:fail()
-        col=raw(column)
-        if any(type(k) is not str for k in col):fail()
-        if set(col)!={'table','_name','value_type','title','width','_deleted'}:fail()
-        if col['table'] is not table or col['_deleted'] is not False or type(col['_name']) is not str or col['_name']!=schema._names[i]:fail()
-        if schema._metadata[i] is not column:fail()
+        col=column_check(column,table,schema._names,schema._metadata,i)
         # Raw region stores are valid only for untyped cells. Typed tables
         # continue through the ordinary direct facade, never another engine.
         if pure:

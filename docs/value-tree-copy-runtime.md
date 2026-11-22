@@ -71,3 +71,8 @@ bounded native measurement claims.
 
 Sort, UI, XML/internal tree codecs, transport and arbitrary Copy parameters remain
 outside this feature. `FillValues` remains a ValueTable method, not a tree method.
+
+Direct BSL Copy checks row and child origins inside the existing complete copy
+preflight, not in a separate whole-tree pass. Registry completeness, resource
+limits and cell-key checks remain in the copy preflight before a result is
+allocated. Copies retain the existing independent topology and shared cell values.

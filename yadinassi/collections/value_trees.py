@@ -832,13 +832,24 @@ class BSLValueTreeRowCollection(BSLObject):
                   arguments[2] if len(arguments) > 2 else None)
 
     def index_of(self, row):
+        return self._index_of(row)
+
+    def _index_of(self, row, *, admit=None):
         self._live()
         if type(row) is not BSLValueTreeRow:
             raise TypeError("Ожидается строка дерева")
-        return Decimal(next((i for i, item in enumerate(self.items) if item is row), -1))
+        for i, item in enumerate(self.items):
+            if item is row:
+                if admit is not None:
+                    admit(row)
+                return Decimal(i)
+        return Decimal(-1)
 
     def find(self, value, columns="", recursive=False):
         """First scalar match in row-major, optionally depth-first hierarchy order."""
+        return self._find(value, columns, recursive)
+
+    def _find(self, value, columns="", recursive=False, *, admit=None):
         self._live()
         budget = _SearchBudget()
         query_units = _search_scalar(value, budget)
@@ -903,6 +914,8 @@ class BSLValueTreeRowCollection(BSLObject):
             if visited > _MAX_ROWS or cells > _MAX_CELLS:
                 raise ValueError("ДеревоЗначений: превышен предел ресурсов поиска Yadinassi")
             budget.charge(1)
+            if admit is not None:
+                admit(collection, len(pending) - 1, row)
             if type(row) is not BSLValueTreeRow or row.tree is not self.tree or row.collection is not collection:
                 raise ValueError("Строка не принадлежит коллекции поиска дерева")
             row._live()
@@ -920,6 +933,8 @@ class BSLValueTreeRowCollection(BSLObject):
                 return row
             if recursive:
                 children = row.rows
+                if admit is not None:
+                    admit(children, len(pending))
                 if (type(children) is not BSLValueTreeRowCollection
                         or children.tree is not self.tree or children.parent is not row
                         or type(children.items) is not list):
@@ -932,6 +947,9 @@ class BSLValueTreeRowCollection(BSLObject):
 
     def find_rows(self, filters, recursive=False):
         """Native-backed scalar search; membership snapshot, shared live rows."""
+        return self._find_rows(filters, recursive)
+
+    def _find_rows(self, filters, recursive=False, *, admit=None):
         self._live()
         if type(filters) is not BSLStructure:
             raise TypeError("Ожидается Структура отбора")
@@ -972,6 +990,8 @@ class BSLValueTreeRowCollection(BSLObject):
             if visited > _MAX_ROWS or cells > _MAX_CELLS:
                 raise ValueError("ДеревоЗначений: превышен предел ресурсов поиска Yadinassi")
             budget.charge(1)
+            if admit is not None:
+                admit(collection, len(pending) - 1, row)
             if type(row) is not BSLValueTreeRow or row.tree is not self.tree or row.collection is not collection:
                 raise ValueError("Строка не принадлежит коллекции поиска дерева")
             row._live()
@@ -987,10 +1007,14 @@ class BSLValueTreeRowCollection(BSLObject):
                 values.append(value)
             if all(equal(value, query) for value, (_, query, _) in zip(values, prepared)):
                 result.items.append(row)
-            if recursive and row.rows.items:
-                if len(pending) >= _MAX_DEPTH + 1:
-                    raise ValueError("ДеревоЗначений: превышена глубина поиска Yadinassi")
-                pending.append((row.rows, iter(row.rows.items)))
+            if recursive:
+                children = row.rows
+                if admit is not None:
+                    admit(children, len(pending))
+                if children.items:
+                    if len(pending) >= _MAX_DEPTH + 1:
+                        raise ValueError("ДеревоЗначений: превышена глубина поиска Yadinassi")
+                    pending.append((children, iter(children.items)))
         return result
 
     def load_column(self, source, column):
@@ -1051,6 +1075,9 @@ class BSLValueTreeRowCollection(BSLObject):
 
     def total(self, column, recursive=False):
         """Native32-backed totals; limits and corrupt-graph rejection are local policy."""
+        return self._total(column, recursive)
+
+    def _total(self, column, recursive=False, *, admit=None):
         if (type(self.tree) is not BSLValueTree
                 or (self.parent is not None and type(self.parent) is not BSLValueTreeRow)):
             raise ValueError("ДеревоЗначений: неверный получатель итога")
@@ -1127,6 +1154,8 @@ class BSLValueTreeRowCollection(BSLObject):
             budget.charge(1)
             if len(seen) >= min(_MAX_ROWS, _MAX_CELLS) or id(row) in seen:
                 raise ValueError("ДеревоЗначений: цикл или предел строк итога")
+            if admit is not None:
+                admit(collection, len(pending) - 1, row)
             if (type(row) is not BSLValueTreeRow or row.tree is not self.tree
                     or row.collection is not collection or row.parent is not collection.parent):
                 raise ValueError("ДеревоЗначений: чужая строка итога")
@@ -1163,6 +1192,8 @@ class BSLValueTreeRowCollection(BSLObject):
                     numbers.append(value)
             if recursive:
                 children = row.rows
+                if admit is not None:
+                    admit(children, len(pending))
                 if (type(children) is not BSLValueTreeRowCollection or children.tree is not self.tree
                         or children.parent is not row or type(children.items) is not list
                         or len(children.items) > _MAX_ROWS):
@@ -1188,6 +1219,9 @@ class BSLValueTreeRowCollection(BSLObject):
 
     def unload_column(self, column):
         """Local-row value snapshot; cells are shared, array membership is not."""
+        return self._unload_column(column)
+
+    def _unload_column(self, column, *, admit=None):
         self._live()
         columns = self.tree.columns.items
         if type(columns) is not list or type(self.items) is not list:
@@ -1226,6 +1260,8 @@ class BSLValueTreeRowCollection(BSLObject):
             raise ValueError("Колонка выгрузки дерева не найдена")
         result = BSLArray()
         for row in self.items:
+            if admit is not None:
+                admit(self, 0, row)
             if (type(row) is not BSLValueTreeRow or row.tree is not self.tree
                     or row.collection is not self):
                 raise ValueError("Строка не принадлежит коллекции выгрузки дерева")
@@ -1366,6 +1402,9 @@ class BSLValueTree(BSLObject):
         Preflight is iterative and never invokes a cell's equality/conversion/
         cloning hooks. No source object is modified, including on failure.
         """
+        return self._copy(*args)
+
+    def _copy(self, *args, admit=None):
         if args:
             raise TypeError("Слишком много параметров (Скопировать)")
         if (type(self) is not BSLValueTree
@@ -1413,6 +1452,8 @@ class BSLValueTree(BSLObject):
             except StopIteration:
                 pending.pop()
                 continue
+            if admit is not None:
+                admit(row)
             if (type(row) is not BSLValueTreeRow or id(row) in seen
                     or row.tree is not self or row.collection is not collection
                     or row.parent is not collection.parent or row._deleted is not False
