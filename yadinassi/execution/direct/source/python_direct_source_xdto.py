@@ -29,6 +29,7 @@ def _unique_class_requirements(abi):
 _HOOK_ABI=_unique_class_requirements(_ABI)
 _FACTORY=io.BSLXDTOFactory;_TYPE=values.BSLXDTOValueType;_VALUE=values.BSLXDTODataValue
 _OBJECT_TYPE=values.BSLXDTOObjectType
+_PROPERTY=values.BSLXDTOProperty
 _TYPE_NAMES=frozenset(('name','имя','namespaceuri','uriпространстваимен'))
 _SCALAR_TYPE_FIELDS=_TYPE_NAMES | {'basetype','базовыйтип'}
 _OBJECT_TYPE_FIELDS=_TYPE_NAMES | {'ordered','упорядоченный','abstract','абстрактный',
@@ -50,7 +51,7 @@ _VALUES=WeakKeyDictionary()
 
 def owns(value):
     kind=type(value)
-    return kind is _FACTORY or kind is _TYPE or kind is _VALUE or kind is values.BSLXDTOObjectType or kind is values.BSLXDTODataObject or kind is values.BSLXDTOList
+    return kind is _FACTORY or kind is _TYPE or kind is _VALUE or kind is values.BSLXDTOObjectType or kind is values.BSLXDTODataObject or kind is values.BSLXDTOList or kind is _PROPERTY
 
 
 def _hooks():
@@ -289,6 +290,7 @@ def get(boundary,value,name):
     from . import python_direct_source_xdto_objects as objects
     if objects.owns(value):return objects.get(boundary,value,name)
     _,factory=_owner(boundary)
+    if type(value) is _PROPERTY:return objects.get_property(factory,value,name)
     if value is factory:
         from . import python_direct_source_xdto_json as json
         method=json.factory_method(boundary,factory,name)

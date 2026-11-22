@@ -1,4 +1,4 @@
-"""Bounded source-owned XDTO trees and lists, without descriptor or IO grants."""
+"""Bounded source-owned XDTO trees and lists, with finite descriptor reads."""
 from weakref import WeakKeyDictionary
 from types import MethodType
 from decimal import Decimal
@@ -21,6 +21,18 @@ for _method,_arity,_returns,_names in (
     for _name in _names:_METHODS[_name]=(getattr(_LIST,_method),_arity,_returns,_method)
 _UNSET=_OBJECT.unset
 _GET_LIST=_OBJECT.get_list
+_OBJECT_READS={}
+for _operation,_arity,_returns,_aliases in (
+    ('type',(0,),True,('type','тип')),
+    ('owner',(0,),True,('owner','владелец')),
+    ('owning_property',(0,),True,('owningproperty','владеющеесвойство')),
+    ('is_set',(1,),True,('isset','установлено')),
+    ('get_list',(1,),True,('getlist','получитьсписок')),
+    ('get_xdto',(1,),True,('getxdto','получитьxdto')),
+    ('validate',(0,),False,('validate','проверить')),
+):
+    for _name in _aliases:
+        _OBJECT_READS[_name]=(getattr(_OBJECT,_operation),_arity,_returns,_operation)
 _SET=_OBJECT.set
 _MUTATIONS=frozenset(('add','insert','set','delete','clear','unset'))
 
@@ -206,17 +218,43 @@ def _property(items,name):
 def _native(value):return value._value if type(value) is shared._VALUE else value
 
 
+def get_property(factory,prop,name):
+    # The factory/descriptor seal has already been checked. A descriptor
+    # must also be an exact member of the current type, not a host copy.
+    data=_fields(prop)
+    owner=data.get('_owner')
+    fields=_fields(owner) if type(owner) is _TYPE else {}
+    uri,name_in_registry=fields.get('_uri'),fields.get('_name')
+    if (type(uri) is not str or type(name_in_registry) is not str
+            or factory._types.get((uri,name_in_registry)) is not owner):
+        raise BoundaryViolation('source XDTO property requires a current owning type')
+    items=owner._properties
+    if (type(items) is not _PROPERTIES or type(items._items) is not tuple
+            or not any(prop is candidate for candidate in items._items)):
+        raise BoundaryViolation('source XDTO property is not in its owning type')
+    key=name.casefold()
+    if key in ('name','имя'):result=data.get('_name')
+    elif key in ('namespaceuri','uriпространстваимен'):result=data.get('_uri')
+    else:raise ValueError('source XDTO property member not integrated')
+    if type(result) is not str:raise BoundaryViolation('source XDTO property string changed')
+    return result
+
+
+def _list(boundary,owner,factory,obj,prop):
+    if prop._upper==1:raise ValueError('XDTO: свойство не является списком')
+    if prop._name not in obj._values:
+        _budget(factory,1);result=_GET_LIST(obj,prop)
+        _publish(boundary,owner,factory,obj,result);_check(boundary,obj)
+    return obj._values[prop._name]
+
+
 def get(boundary,obj,name):
     owner,factory,items=_check(boundary,obj)
     if type(obj) is _LIST:
         method,_,returns,_=_method(obj,name)
         return HostFunction(name,method.__get__(obj,_LIST),returns_value=returns)
     prop=_property(items,name)
-    if prop._upper!=1:
-        if prop._name not in obj._values:
-            _budget(factory,1);result=_GET_LIST(obj,prop._name)
-            _publish(boundary,owner,factory,obj,result);_check(boundary,obj)
-        return obj._values[prop._name]
+    if prop._upper!=1:return _list(boundary,owner,factory,obj,prop)
     return _native(obj._values.get(prop._name))
 
 
@@ -267,7 +305,9 @@ def set_member(boundary,obj,name):
 def _method(value,name):
     if type(name) is not str:raise TypeError('source XDTO method requires String')
     if type(value) is _OBJECT:
-        if name.casefold() in ('unset','сбросить'):return _UNSET,(1,),False,'unset'
+        key=name.casefold()
+        if key in ('unset','сбросить'):return _UNSET,(1,),False,'unset'
+        if key in _OBJECT_READS:return _OBJECT_READS[key]
     else:
         key={'__getitem__':'get','__setitem__':'set'}.get(name,name.casefold())
         if key in _METHODS:return _METHODS[key]
@@ -275,22 +315,31 @@ def _method(value,name):
 
 
 def resolve(boundary,value,name,*,require_value=False,argument_count=None,allow_references=False,validate=None):
-    _check(boundary,value)
+    admitted=_check(boundary,value)
     if name=="__iter__":
         if type(value) is not _LIST:raise ValueError("source XDTO object is not iterable")
         return lambda:iterate(boundary,value)
     method,arity,returns,operation=_method(value,name)
-    def check(count=None):
-        result=_check(boundary,value)
+    def check(count=None,result=None):
+        if result is None:result=_check(boundary,value)
         if validate is not None:validate()
         if require_value and not returns:raise ValueError('source XDTO procedure cannot be used as value')
         if count is not None and count not in arity:raise TypeError('source XDTO invalid method arity')
         if operation in _MUTATIONS and type(value) is _LIST and value._owner._values.get(value._prop._name) is not value:
             raise ValueError('source XDTO orphan list is read-only')
         return result
-    check(argument_count)
+    check(argument_count,admitted)
     def call(*args):
-        owner,factory,items=check(len(args));changed=[value];nodes=units=0
+        owner,factory,items=check(len(args))
+        if type(value) is _OBJECT and operation!='unset':
+            if operation in ('is_set','get_list','get_xdto'):
+                prop=_property(items,args[0])
+                if operation=='get_list':return _list(boundary,owner,factory,value,prop)
+                if operation=='get_xdto' and prop._upper!=1:
+                    raise ValueError('source XDTO GetXDTO requires a single property')
+                return method(value,prop)
+            return method(value)
+        changed=[value];nodes=units=0
         if operation=='unset':
             prop=_property(items,args[0]);old=value._values.get(prop._name)
             if type(old) is _LIST:changed.extend(old._items);changed.append(old)

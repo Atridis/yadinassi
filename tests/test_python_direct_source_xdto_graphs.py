@@ -18,6 +18,55 @@ class GraphXDTOTests(unittest.TestCase):
     def prepared(self):
         app=self.app();app.interpreter.execute('T=XDTOFactory.Type("urn:owned:records","Tree");F=XDTOFactory.Type("urn:owned:records","Flat");P=XDTOFactory.Create(T);C=XDTOFactory.Create(F);D=XDTOFactory.Create(F);')
         return app
+    def test_named_object_reads_preserve_live_lists_and_single_value_identity(self):
+        app=self.prepared();vm=app.interpreter;factory=app.xdto.factory
+        before=factory._nodes
+        self.assertFalse(vm.execute('P.IsSet("Children");'))
+        self.assertIsNone(vm.execute('P.GetXDTO("Child");'))
+        self.assertEqual(factory._nodes,before)
+        vm.execute('L=P.GetList("Children");')
+        self.assertEqual(factory._nodes,before+1)
+        self.assertIs(vm.execute('P.ПолучитьСписок("Children");'),vm.variables['l'])
+        self.assertIs(vm.execute('P.Children;'),vm.variables['l'])
+        self.assertFalse(vm.execute('P.Установлено("Children");'))
+        vm.execute('L.Add(C);P.Child=Undefined;')
+        self.assertTrue(vm.execute('P.IsSet("Child");'))
+        self.assertTrue(vm.execute('P.IsSet("Children");'))
+        self.assertIs(vm.execute('C.Владелец();'),vm.variables['p'])
+        self.assertEqual(vm.execute('C.ВладеющееСвойство().Имя;'),'Children')
+        self.assertEqual(vm.execute('C.OwningProperty().URIПространстваИмен;'),
+                         vm.variables['c']._owning._uri)
+        self.assertIs(vm.execute('C.Тип();'),vm.variables['f'])
+        vm.execute('P.Child=D;')
+        self.assertIs(vm.execute('P.ПолучитьXDTO("Child");'),vm.variables['d'])
+        for code in ('P.GetList("Child");','P.GetXDTO("Children");','P.IsSet("child");',
+                     'P.IsSet("Child/Label");'):
+            with self.subTest(code=code),self.assertRaises(basic.DENIED):vm.execute(code)
+
+    def test_named_validation_is_a_procedure_and_checks_required_descendants(self):
+        app=self.prepared();vm=app.interpreter
+        vm.execute('P.Child=C;')
+        with self.assertRaisesRegex(basic.DENIED,'обязательное свойство'):
+            vm.execute('P.Validate();')
+        vm.execute('C.Label="valid";P.Проверить();')
+        with self.assertRaisesRegex(basic.DENIED,'procedure cannot be used as value'):
+            vm.execute('Result=P.Validate();')
+
+    def test_owning_property_metadata_requires_current_descriptor_identity(self):
+        app=self.prepared();other=self.prepared();vm=app.interpreter
+        for owner in (app,other):owner.interpreter.execute('P.Child=C;')
+        vm.execute('Descriptor=C.OwningProperty();')
+        descriptor=vm.variables['descriptor']
+        vm.variables['foreign']=other.interpreter.variables['c']._owning
+        copy=object.__new__(type(descriptor));vars(copy).update(vars(descriptor))
+        vm.variables['forged']=copy
+        self.assertEqual(vm.execute('Descriptor.Name;'),'Child')
+        for code in ('Foreign.Name;','Forged.NamespaceURI;','Descriptor.Type;',
+                     'Descriptor.Name="Other";'):
+            with self.subTest(code=code),self.assertRaises(basic.DENIED):vm.execute(code)
+        with patch.object(descriptor,'_name','changed'):
+            with self.assertRaises(basic.DENIED):vm.execute('Descriptor.Name;')
+
     def test_nested_attach_replace_and_detach(self):
         app=self.prepared();vm=app.interpreter
         vm.execute('C.Label="child";P.Child=C;')
