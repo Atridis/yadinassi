@@ -1,7 +1,4 @@
 """Source-owned closed temporary storage, not a native source-host parity claim."""
-import hashlib
-import json
-from pathlib import Path
 import unittest
 from unittest import mock
 from test_source_server_call import configuration
@@ -42,23 +39,8 @@ class SourceTemporaryTests(unittest.TestCase):
         self.execute(app,f'ServerAPI.Delete("{address}")')
         with self.assertRaises(BSLError):self.put(app,'1','"'+address+'"')
 
-    def test_native_closed_profile_replay(self):
-        root=Path(__file__).resolve().parents[1]
-        raw=(root/'tests/fixtures/native_temporary_storage_43056863128.json').read_bytes()
-        self.assertEqual(hashlib.sha256(raw).hexdigest(),'0f475f9e8184890bdfa7f0d3e676970035586f7948365b0a1067275ba91486e7')
-        source=(root/'scripts/temporary_storage_behavior/observe.bsl').read_bytes()
-        self.assertEqual(hashlib.sha256(source).hexdigest(),'a5d1cdce77f24f6801a55328812fc442c3978e5daae13fdebef807b355f520e7')
-        declarations=source.decode().split('For CaseNo = 1 To 16 Do')[0]
-        declarations+='\nFunction Run(Val CaseNo) Export Stage="read"; Return ObserveCase(CaseNo,Stage); EndFunction'
-        app=self.app(declarations);expected=json.loads(raw)
-        for n in range(1,17):
-            with self.subTest(case=n):
-                code=f'ServerAPI.Run({n})'
-                if n==11:
-                    with self.assertRaises(BSLError):self.execute(app,code)
-                elif n in (12,15):self.assertEqual(self.execute(app,code),'error')
-                else:self.assertEqual(self.execute(app,code),expected[n-1])
-
+    # The pinned full native replay lives in test_application_temporary_storage.
+    # This suite tests the source bridge's distinct policy and boundary paths.
     def test_cross_application_isolation(self):
         app,other=self.app(),self.app();address=self.put(app)
         self.assertIsNone(self.get(other,address))
