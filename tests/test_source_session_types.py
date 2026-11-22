@@ -30,7 +30,9 @@ class SourceSessionTypesTests(unittest.TestCase):
     def test_value_storage_snapshot_isolation(self):
         app=self.run_source('M=New Map; M.Insert("key",1); SessionParameters.State=New ValueStorage(M); M.Insert("key",2);','<v8:Type>v8:ValueStorage</v8:Type>')
         stored=app.session_parameters._values['state']
-        first=stored.get();first.insert('key',Decimal(3))
+        first=stored.get()
+        first['key']=Decimal(3)
+        self.assertEqual(first['key'],Decimal(3))
         self.assertEqual(stored.get().get('key'),Decimal(1))
 
     def test_type_description(self):
