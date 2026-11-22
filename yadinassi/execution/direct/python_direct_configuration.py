@@ -338,6 +338,9 @@ def install(app,owner,program,source_text=''):
     else:
         external_names=tuple(app._definitions)+sqlite_names+(enums.NAMES+('metadata','метаданные')
             if app.configuration.enumerations else ())
+        if app.configuration.session_parameters and owner.execution_context=='server':
+            from .python_direct_configuration_sessions import NAMES
+            external_names+=NAMES
         constructors=('uuid','уникальныйидентификатор')+sqlite_constructors
     plan=compile_owned(owned,retain_generated=False,source_text=source_text,source_name=program[0].token.source if program else '<configuration>',
         external_names=external_names,constructors=constructors,
@@ -412,6 +415,9 @@ def invoke_routine(app,owner,routine,arguments):
     if session_owner:
         from .python_direct_configuration_sessions import SessionStartup
         context=SessionStartup(app,owner,routine)
+    elif routine.execution_context=='server' and app.configuration.session_parameters:
+        from .python_direct_configuration_sessions import SessionServer
+        context=SessionServer(app,owner,routine)
     elif (scope is not None and app._client_sqlite is not None
             and owner is not app.interpreter and routine.execution_context=='client'):
         from .python_direct_configuration_commands import _Scope

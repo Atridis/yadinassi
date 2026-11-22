@@ -114,3 +114,74 @@ class DirectConfigurationSessionTests(unittest.TestCase):
             self.assertTrue(app.session_parameters._values['ready'])
             counts.append(len(calls))
         self.assertEqual(counts,[2,2])
+
+    def endpoint(self,app):
+        from yadinassi.execution.invocation import InvocationPort, InvocationServer
+        self.assertTrue(app.start())
+        server=InvocationServer.from_handlers(app.server_endpoints,message_scope=app.event_messages)
+        port=InvocationPort(server.exchange)
+        bindings={binding.name:binding for binding in app.server_bindings}
+        return lambda name,*arguments:port.invoke(bindings[name],list(arguments))
+
+    def test_explicit_server_reads_and_writes_its_own_session(self):
+        from yadinassi.execution.invocation import InvocationError
+        files=files_for_session()
+        first=self.app(files,side='server')
+        second=self.app(files,side='server')
+        invoke=self.endpoint(first)
+        other=self.endpoint(second)
+        self.assertIs(invoke('Read','Ready'),True)
+        self.assertIs(invoke('Read','Flag'),False)
+        self.assertIs(invoke('Read','FLAG'),False)
+        self.assertEqual(invoke('Read','Calls'),Decimal(1))
+        with self.assertRaisesRegex(InvocationError,'server_error'):
+            invoke('Read','Missing')
+        self.assertEqual(invoke('Read','Calls'),Decimal(1))
+
+        invoke('Write','Text','value')
+        with self.assertRaisesRegex(InvocationError,'server_error'):
+            invoke('Write','Text',Decimal(3))
+        self.assertEqual(invoke('Read','Text'),'value')
+        self.assertEqual(other('Read','Calls'),Decimal(0))
+        with self.assertRaisesRegex(InvocationError,'server_error'):
+            other('Read','Text')
+        with self.assertRaisesRegex(InvocationError,'result_unavailable'):
+            invoke('Handle') # the existing transport must never export the namespace
+        self.assertEqual(first.session_parameters._initializing,set())
+        self.assertEqual(second.session_parameters._initializing,set())
+
+    def test_explicit_server_lazy_failure_releases_initializer(self):
+        from yadinassi.execution.invocation import InvocationError
+        app=self.app(files_for_session('''Procedure SessionParametersSetting(P)
+        If P<>Undefined Then
+            SessionParameters.Calls=SessionParameters.Calls+1;
+            X=ПараметрыСеанса.Flag;
+        Else
+            SessionParameters.Calls=0;
+        EndIf;
+        EndProcedure'''),side='server')
+        invoke=self.endpoint(app)
+        for expected in (1,2):
+            with self.assertRaisesRegex(InvocationError,'server_error'):
+                invoke('Read','Flag')
+            self.assertEqual(app.session_parameters._initializing,set())
+            self.assertEqual(invoke('Read','Calls'),Decimal(expected))
+        app.close(force=True)
+        with self.assertRaisesRegex(InvocationError,'server_error'):
+            invoke('Read','Calls')
+
+    def test_explicit_server_rejects_another_applications_session_store(self):
+        from yadinassi.execution.invocation import InvocationError
+        first=self.app(files_for_session(''),side='server')
+        second=self.app(files_for_session(''),side='server')
+        invoke=self.endpoint(first)
+        other=self.endpoint(second)
+        other('Write','Flag',False)
+        with patch.object(first,'session_parameters',second.session_parameters):
+            with self.assertRaisesRegex(InvocationError,'server_error'):
+                invoke('Read','Flag')
+            with self.assertRaisesRegex(InvocationError,'server_error'):
+                invoke('Write','Flag',True)
+        self.assertIs(other('Read','Flag'),False)
+        with self.assertRaisesRegex(InvocationError,'server_error'):
+            invoke('Read','Flag')
