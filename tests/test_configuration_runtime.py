@@ -18,6 +18,12 @@ from yadinassi.runtime import Interpreter
 from configuration_runtime_fixture import CLIENT, SERVER, module_files
 
 
+def source_application(files, output):
+    files = dict(files)
+    files.setdefault('Ext/ManagedApplicationModule.bsl', b'')
+    return SourceApplication(import_source(files), output=output)
+
+
 class ModuleValidationTests(unittest.TestCase):
     def test_import_is_opt_in_and_keeps_exact_source(self):
         files = module_files([CLIENT])
@@ -118,10 +124,8 @@ class ConfiguredCallsTests(unittest.TestCase):
     def source_app(self, modules=(CLIENT,), application=''):
         # General BSL calls use the source application. Keep self.app() for
         # the distinct, deliberately narrow ConfigurationApplication API.
-        files = module_files(modules, application=application)
-        files.setdefault('Ext/ManagedApplicationModule.bsl', b'')
         output = []
-        app = SourceApplication(import_source(files), output=output.append)
+        app = source_application(module_files(modules, application=application), output.append)
         self.addCleanup(app.close)
         app.start()
         return app, output
@@ -370,16 +374,21 @@ class AdditionalConfigurationBoundaryTests(unittest.TestCase):
         with self.assertRaises(BSLError): interpreter.execute('Message(Metadata.CommonModules.Count());')
 
     def test_server_error_has_no_partial_copyback(self):
-        app = ConfigurationApplication.from_files(module_files([('Gateway',
-            'Procedure Fail(X) Export X.Add(1); Raise "bad"; EndProcedure', SERVER)]))
-        self.addCleanup(app.close, force=True); app.start()
-        app.execute('A=New Array; Try Gateway.Fail(A); Except EndTry;')
-        self.assertEqual(len(app.interpreter.variables['a'].items), 0)
+        output = []
+        app = source_application(module_files([('Gateway',
+            'Procedure Fail(X) Export X.Add(1); Raise "bad"; EndProcedure', SERVER)]), output.append)
+        self.addCleanup(app.close); app.start()
+        app.interpreter.execute('A=New Array; Try Gateway.Fail(A); Except Message(ErrorDescription()); EndTry; Message(A.Count());')
+        self.assertEqual(len(output), 2)
+        self.assertIn('bad', output[0])
+        self.assertEqual(output[1], '0')
 
     def test_dynamic_assignment_does_not_replace_module(self):
-        app = ConfigurationApplication.from_files(module_files([CLIENT]))
-        self.addCleanup(app.close, force=True); app.start()
-        app.execute('Execute("Tools=7;"); Result=Tools.Double(2);')
+        app = source_application(module_files([CLIENT]), lambda _: None)
+        self.addCleanup(app.close); app.start()
+        with self.assertRaisesRegex(BSLError, 'namespace is read-only'):
+            app.interpreter.execute('Execute("Tools=7;");')
+        app.interpreter.execute('Result=Tools.Double(2);')
         self.assertEqual(app.interpreter.variables["result"], 4)
 
     def test_host_interpreter_binding_reuses_module_state_and_exports(self):
@@ -402,12 +411,12 @@ class AdditionalConfigurationBoundaryTests(unittest.TestCase):
 
     def test_global_unavailable_on_client_rejected_before_effect(self):
         out = []
-        app = ConfigurationApplication.from_files(module_files([('G',
+        app = source_application(module_files([('G',
             'Function Public(Val X) Export Return X; EndFunction',
             {'Global': 'true', 'ClientManagedApplication': 'false', 'Server': 'true'})],
-            application='Function Effect() Message("bad"); Return 1; EndFunction'), output=out.append)
-        self.addCleanup(app.close, force=True); app.start()
-        with self.assertRaises(BSLError): app.execute('Public(Effect());')
+            application='Function Effect() Message("bad"); Return 1; EndFunction'), out.append)
+        self.addCleanup(app.close); app.start()
+        with self.assertRaises(BSLError): app.interpreter.execute('Public(Effect());')
         self.assertEqual(out, [])
 
     def test_closed_lifetime_cannot_be_used_through_bound_child(self):
@@ -444,8 +453,8 @@ class ModuleOnlyConfigurationTests(unittest.TestCase):
 
     def test_application_only_configuration(self):
         output = []
-        app = ConfigurationApplication.from_files(self.files(application='Message("start");'), output=output.append)
-        self.addCleanup(app.close, force=True); self.assertEqual(output, [])
+        app = source_application(self.files(application='Message("start");'), output.append)
+        self.addCleanup(app.close); self.assertEqual(output, [])
         app.start(); self.assertEqual(output, ['start'])
 
     def test_default_importer_and_storage_zero_inventory_stay_closed(self):
