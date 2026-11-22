@@ -889,23 +889,13 @@ class Emitter:
             args=[self.const(None,arg.token) if type(arg) is bsl.OmittedArgument else self.expr(arg) for arg in node.arguments]
             if callee.name.casefold() in ('property','свойство') and len(args)>1:
                 output=node.arguments[1]
-                args[1]=self.call('_canonical_reference',[self.output_reference(output,node.token) if type(output) is not bsl.OmittedArgument else self.const(None,t)],t)
+                args[1]=self.call('_canonical_reference',[self.property_output(output,node.token) if type(output) is not bsl.OmittedArgument else self.const(None,t)],t)
             call=self.node(py.IfExp,t,test=native,body=self.call('_host_omission_error',[],t),orelse=self.invoke(bound,args,t))
             call=self.receiver_boundary(call,receiver,t)
             pair=self.node(py.Tuple,t,elts=[bind,call],ctx=py.Load())
             return self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
         if k is bsl.Call and type(node.callee) is bsl.Attribute and node.callee.name.casefold() in ('property','свойство'):
             callee=node.callee
-            if not 1<=len(node.arguments)<=2 or type(node.arguments[0]) is bsl.OmittedArgument:
-                _reject('Property arity outside research subset')
-            output=None
-            if len(node.arguments)==2:
-                output=node.arguments[1]
-                while type(output) is bsl.Group:output=output.expression
-                if type(output) not in (bsl.Name,bsl.Index,bsl.Attribute):_reject('Property output shape outside research subset')
-            location=callee
-            while type(location) in (bsl.Attribute,bsl.Group,bsl.Call):
-                location=location.object if type(location) is bsl.Attribute else location.expression if type(location) is bsl.Group else location.callee
             t=node.token;receiver=self.temp()
             bind=self.node(py.NamedExpr,t,target=self.name(receiver,t,True),value=self.expr(callee.object))
             def exact(kind):return self.exact_native(kind,self.name(receiver,t),t)
@@ -915,10 +905,13 @@ class Emitter:
             native=self.node(py.IfExp,t,test=exact('_DirectStructure'),body=native,orelse=fail)
             host=self.member_call(receiver,callee.name,require_value,(),len(node.arguments),t)
             selected=self.node(py.IfExp,t,test=native_test,body=native,orelse=host)
-            args=[self.expr(node.arguments[0])]
-            if output is not None:
+            if len(node.arguments)==2:
                 converter=self.node(py.IfExp,t,test=exact('_DirectStructure'),body=self.name('_identity_reference',t),orelse=self.name('_canonical_reference',t))
-                args.append(self.invoke(converter,[self.output_reference(output,node.token if type(output) is not bsl.Name or self.external_name(output.name) else None)],node.token))
+                args=[self.expr(node.arguments[0]),self.invoke(converter,[self.property_output(node.arguments[1],t)],t)]
+            else:
+                # Resolve the actual receiver and let its method enforce arity
+                # at runtime, rather than rejecting the containing BSL module.
+                args=[self.expr(arg) for arg in node.arguments]
             call=self.invoke(selected,args,t)
             call=self.receiver_boundary(call,receiver,t)
             pair=self.node(py.Tuple,t,elts=[bind,call],ctx=py.Load())
@@ -1227,6 +1220,15 @@ class Emitter:
             bound=self.invoke(self.attribute(self.name('_context',t),'resolve_extension_value',t),[self.expr(node.callee)],t,[self.node(py.keyword,t,arg='require_value',value=self.const(require_value,t)),self.node(py.keyword,t,arg='allow_references',value=self.const(True,t))])
             return self.dynamic_call(bound,node,call_token=t)
         _reject('unsupported expression '+k.__name__)
+    def property_output(self,node,token):
+        while type(node) is bsl.Group:node=node.expression
+        if type(node) in (bsl.Name,bsl.Index,bsl.Attribute):
+            reference_token=None if type(node) is bsl.Name and not self.external_name(node.name) else token
+            return self.output_reference(node,reference_token)
+        # A non-addressable actual has a disposable output slot. Its
+        # expression still runs exactly once, at the original argument point.
+        return self.call('_Cell',[self.expr(node)],token)
+
     def output_reference(self,node,reference_token=None,*,local_row=False):
         while type(node) is bsl.Group:node=node.expression
         t=reference_token or node.token
