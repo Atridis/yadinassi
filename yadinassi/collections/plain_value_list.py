@@ -41,6 +41,31 @@ def _normalize_check(value):
 
 _ITEM_NORMALIZERS = MappingProxyType({1: _normalize_presentation, 2: _normalize_check})
 
+# Finite BSL call signatures for the native receiver arm. This is consumed
+# when compiling a call, not consulted by an item or in a sort loop.
+_METHODS = MappingProxyType({
+    alias: (method, returns_value)
+    for method, russian, returns_value in (
+        ('add', 'добавить', True),
+        ('get', 'получить', True),
+        ('count', 'количество', True),
+        ('insert', 'вставить', True),
+        ('index_of', 'индекс', True),
+        ('find_by_value', 'найтипозначению', True),
+        ('find_by_id', 'найтипоидентификатору', True),
+        ('unload_values', 'выгрузитьзначения', True),
+        ('copy', 'скопировать', True),
+        ('delete', 'удалить', False),
+        ('clear', 'очистить', False),
+        ('fill_checks', 'заполнитьпометки', False),
+        ('load_values', 'загрузитьзначения', False),
+        ('move', 'сдвинуть', False),
+        ('sort_by_value', 'сортироватьпозначению', False),
+        ('sort_by_presentation', 'сортироватьпопредставлению', False),
+    )
+    for alias in (method.replace('_', ''), russian)
+})
+
 def _item(item):
     if type(item) is not PlainValueListItem:
         raise TypeError('ValueList contains a foreign item')

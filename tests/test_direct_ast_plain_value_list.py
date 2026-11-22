@@ -119,6 +119,28 @@ class DirectPlainValueListTests(unittest.TestCase):
                     self.assertIs(owner[0],vm.variables['a'])
                     self.assertIs(owner[1],vm.variables['b'])
 
+    def test_value_list_procedure_in_value_position_binds_receiver_but_not_arguments(self):
+        vm=self.vm()
+        vm.execute('Var L, Seen; L=New ValueList; First=L.Add(2,"b"); L.Add(1,"a"); Seen=New Array; '
+                   'Function Receiver() Seen.Add("receiver"); Return L; EndFunction; '
+                   'Function Argument() Seen.Add("argument"); Return 0; EndFunction;')
+        owner=vm.variables['l']
+        for call in ('Delete(Argument())','Очистить()','Сдвинуть(Argument(),Argument())',
+                     'FillChecks(Argument())','ЗагрузитьЗначения(Argument())',
+                     'SortByValue(Argument())','СортироватьПоПредставлению()'):
+            with self.subTest(call=call):
+                vm.execute(f'Try Out=Receiver().{call}; Caught=False; Except Caught=True; EndTry;')
+                self.assertIs(vm.variables['caught'],True)
+                self.assertNotIn('out',vm.variables)
+                self.assertEqual(len(owner),2)
+                self.assertIs(owner[0],vm.variables['first'])
+                self.assertEqual(owner[0][2],False)
+        self.assertEqual(vm.variables['seen'],['receiver']*7)
+        vm.execute('Receiver().SortByValue(); Added=Receiver().Add(3);')
+        self.assertEqual(owner[0][0],D(1))
+        self.assertIs(owner[2],vm.variables['added'])
+        self.assertEqual(vm.variables['seen'],['receiver']*9)
+
     def test_hostile_index_and_equality_do_not_gain_callbacks(self):
         vm=self.vm();seen=[]
         class Hostile:

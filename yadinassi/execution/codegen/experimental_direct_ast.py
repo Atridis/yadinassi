@@ -30,7 +30,7 @@ from yadinassi.execution.direct.python_direct_error_info import raise_error, rai
 from yadinassi.execution.direct.python_direct_dynamic_new import construct as dynamic_construct
 from yadinassi.execution.direct.python_direct_plain_map import plain_map, PlainMap
 from yadinassi.collections.plain_value_list import (PlainValueList, PlainValueListItem, _FIELDS as _VALUE_LIST_ITEM_FIELDS,
-    _normalize_presentation, _normalize_check)
+    _METHODS as _VALUE_LIST_METHODS, _normalize_presentation, _normalize_check)
 from yadinassi.execution.direct.python_direct_execute import execute_fragment, local_binding, local_exists
 from yadinassi.execution.direct.python_direct_eval import bind_eval
 from yadinassi.execution.direct.python_direct import REPAIRS,PythonDirectUnsupported
@@ -1004,9 +1004,16 @@ class Emitter:
                 selected=self.node(py.IfExp,t,test=choose,body=native_callable,orelse=host)
                 guard=self.node(py.IfExp,t,test=self.name(mode,t),body=self.call('_invalid_native_arity',[self.const(message,t)],t),orelse=self.const(None,t))
             if not dynamic:
-                names={'add':'add','добавить':'add','get':'get','получить':'get','count':'count','количество':'count','insert':'insert','вставить':'insert','delete':'delete','удалить':'delete','clear':'clear','очистить':'clear','indexof':'index_of','индекс':'index_of','findbyvalue':'find_by_value','найтипозначению':'find_by_value','findbyid':'find_by_id','найтипоидентификатору':'find_by_id','fillchecks':'fill_checks','заполнитьпометки':'fill_checks','loadvalues':'load_values','загрузитьзначения':'load_values','unloadvalues':'unload_values','выгрузитьзначения':'unload_values','copy':'copy','скопировать':'copy','move':'move','сдвинуть':'move','sortbyvalue':'sort_by_value','сортироватьпозначению':'sort_by_value','sortbypresentation':'sort_by_presentation','сортироватьпопредставлению':'sort_by_presentation'}
-                name=names.get(callee.name.casefold())
-                direct=self.attribute(self.name(receiver,t),name,t) if name is not None else self.call('_native_method_missing',[self.name(receiver,t),self.const(callee.name,t)],t)
+                signature=_VALUE_LIST_METHODS.get(callee.name.casefold())
+                if signature is None:
+                    direct=self.call('_native_method_missing',[self.name(receiver,t),self.const(callee.name,t)],t)
+                elif require_value and not signature[1]:
+                    # Evaluate the receiver, but reject before resolving the
+                    # native method or evaluating its arguments, just like a
+                    # source procedure in a value position.
+                    direct=self.call('_procedure_value_error',[self.const(callee.name,t)],t)
+                else:
+                    direct=self.attribute(self.name(receiver,t),signature[0],t)
                 if invalid_arity:
                     mark=self.node(py.NamedExpr,t,target=self.name(mode,t,True),value=self.const(False,t))
                     direct=self.node(py.Subscript,t,value=self.node(py.Tuple,t,elts=[mark,direct],ctx=py.Load()),slice=self.const(-1,t),ctx=py.Load())
