@@ -644,8 +644,11 @@ class FixedCollectionTests(unittest.TestCase):
             self.assertIs(self.vm.execute(f'fixedRoot[0][{index}]'), self.vm.variables[name])
             if index != 3:
                 self.assertIs(self.vm.execute(f'copy[0][{index}]'), self.vm.variables[name])
-        self.assertIsInstance(self.vm.execute('copy[0][3]'), BSLArray)
+        self.assertIs(self.vm.execute('TypeOf(copy[0][3])'), self.vm.execute('Type("Array")'))
         self.assertIsNot(self.vm.execute('copy[0][3]'), self.vm.variables['child'])
+        self.vm.execute('copy[0][3][0] = 10;')
+        self.assertEqual(self.vm.execute('fixedRoot[0][3][0]'), Decimal(7))
+        self.assertEqual(self.vm.execute('child[0]'), Decimal(8))
 
     def test_cyclic_direct_array_paths_remain_explicit_unverified_limitations(self):
         # The native scenario does not probe cycles. Keep this a subset contract.

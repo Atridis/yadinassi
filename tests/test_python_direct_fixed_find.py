@@ -80,16 +80,27 @@ class DirectFixedFindTests(unittest.TestCase):
             FM=New FixedMap(M); FC=New FixedMap(Copy); D=New Array;
             D.Add(M); D.Add(FM); D.Add(A); F=New FixedArray(D);
             DF=D.Find; FF=F.Find; M[1]=8;
+            FrozenA=F[2]; SeparateSnapshot=New FixedArray(A); A[0]=9;
         """)
+        # Native nested.freeze / nested.is-fixed-array / nested.after-source-write:
+        # array cells are independently frozen; maps stay the original objects.
+        self.assertIs(vm.execute('(TypeOf(F[2]) = Type("FixedArray"))'),True)
+        self.assertEqual(vm.execute('F[2][0]'),Decimal(1))
+        self.assertEqual(vm.execute('D[2][0]'),Decimal(9))
+        self.assertIs(vm.execute('F[0]'),vm.variables['m'])
+        self.assertIs(vm.execute('F[1]'),vm.variables['fm'])
         vm.variables['other_a']=PlainArray([Decimal(1)])
         def hostile(*args): raise AssertionError('needle equality')
         with patch.object(PlainMap,'__eq__',hostile),patch.object(PlainFixedMap,'__eq__',hostile,create=True),patch.object(PlainArray,'__eq__',hostile):
             for receiver in ('D.Find','DF','F.Find','FF'):
-                for i,needle in enumerate(('M','FM','A')):
+                fixed=receiver in ('F.Find','FF')
+                for i,needle in enumerate(('M','FM','FrozenA' if fixed else 'A')):
                     with self.subTest(receiver=receiver, needle=needle):
                         self.assertEqual(vm.execute(f'{receiver}({needle})'),Decimal(i))
-                for other in ('Copy','FC','Other_A'):
-                    self.assertIsNone(vm.execute(f'{receiver}({other})'))
+                opposite=('A','SeparateSnapshot') if fixed else ('FrozenA',)
+                for other in ('Copy','FC','Other_A',*opposite):
+                    with self.subTest(receiver=receiver, needle=other):
+                        self.assertIsNone(vm.execute(f'{receiver}({other})'))
 
     def test_exact_fixed_values_ignore_payload_and_equality_hooks(self):
         events=[]
