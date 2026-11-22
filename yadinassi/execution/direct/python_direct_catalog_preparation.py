@@ -10,6 +10,7 @@ from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
 from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
 from yadinassi.execution.codegen.experimental_naked_errors import convert_error
 from .python_direct import REPAIRS
+from .python_direct_catalog_reference_query import ReferenceQuery, ReferenceResult, ReferenceCursor
 from yadinassi.types.values import Reference, HostFunction
 from yadinassi.db.catalog.catalogs import BSLCatalogObject
 from yadinassi.db.catalog.catalog_types import BSLCatalogReference
@@ -98,6 +99,14 @@ class CatalogPreparationBoundary(BoundaryContext):
         return _ForwardReference(Reference(lambda:self.external_get(name),lambda value:self.external_set(name,value)))
 
     def resolve_service(self,*args,**kwargs):
+        if args[0].casefold() in ('new:запрос','new:query'):
+            self._check()
+            def construct(text):
+                self._check()
+                query=ReferenceQuery(text)
+                self._owned[id(query)]=query
+                return query
+            return construct
         bound=super().resolve_service(*args,**kwargs)
         def invoke(*values):
             if (self._transaction_scope is not None
@@ -124,6 +133,9 @@ class CatalogPreparationBoundary(BoundaryContext):
 
     def get_member(self,value,name):
         self._receiver(value)
+        if type(value) is ReferenceCursor:return self._adopt(value.field(name.casefold()))
+        if type(value) in (ReferenceQuery, ReferenceResult):
+            raise ValueError('catalog preparation: unavailable query member')
         from yadinassi.db.catalog.catalog_object_preparation import _METHODS
         if self._transaction_scope is not None and type(value) is BSLCatalogReference:
             raise ValueError('catalog transaction preparation: use GetObject for reference reads')
@@ -135,7 +147,8 @@ class CatalogPreparationBoundary(BoundaryContext):
 
     def resolve_set_member(self,value,name):
         self._receiver(value)
-        if name.casefold() not in self.vm.member_names:
+        if (type(value) in (ReferenceQuery, ReferenceResult, ReferenceCursor)
+                or name.casefold() not in self.vm.member_names):
             raise ValueError('catalog preparation: unavailable assignment')
         def write(new):
             self._receiver(value)
@@ -153,6 +166,37 @@ class CatalogPreparationBoundary(BoundaryContext):
     def resolve_member(self,value,name):
         self._receiver(value)
         key=name.casefold()
+        kind=type(value)
+        if kind is BSLCatalogSection and key in ('unloadcolumn','выгрузитьколонку'):
+            def unload_column(name):
+                self._receiver(value)
+                field=value._fields.get(name.casefold()) if type(name) is str else None
+                if field is None or field.kind!='catalog_ref':
+                    raise ValueError('catalog preparation: reference section column required')
+                references=[]
+                for row in BSLCatalogSection.__iter__(value):
+                    if type(row) is not BSLCatalogSectionRow or row._section is not value:
+                        raise ValueError('catalog preparation: foreign section row')
+                    references.append(BSLCatalogSectionRow.get_member(row,name))
+                self._receiver(value)
+                return references
+            return unload_column
+        if kind in (ReferenceQuery, ReferenceResult, ReferenceCursor):
+            if kind is ReferenceQuery and key in ('setparameter','установитьпараметр'):
+                method=value.set_parameter
+            elif kind is ReferenceQuery and key in ('execute','выполнить'):
+                method=lambda: value.execute(self)
+            elif kind is ReferenceResult and key in ('select','выбрать'):
+                method=value.select
+            elif kind is ReferenceCursor and key in ('next','следующий'):
+                method=value.next
+            else:raise ValueError('catalog preparation: unavailable query method')
+            def call(*args):
+                self._receiver(value)
+                result=method(*args)
+                if type(result) in (ReferenceResult,ReferenceCursor):self._owned[id(result)]=result
+                return result
+            return call
         if key=='__iter__':
             if type(value) is not BSLCatalogSection:raise TypeError('catalog preparation: unsupported iteration')
             def iterate():
@@ -181,7 +225,7 @@ from dataclasses import dataclass
 
 # This fixed constructor set matches _ObjectInterpreter's closed allowlist.
 # Changing that profile requires changing these compiler options together.
-_VALIDATOR_CONSTRUCTORS=('соответствие','сообщениепользователю')
+_VALIDATOR_CONSTRUCTORS=('соответствие','сообщениепользователю','запрос','query')
 _VALIDATOR_EXTRA_REPAIRS=('authority_checkpoints',)
 
 @dataclass(frozen=True,slots=True)

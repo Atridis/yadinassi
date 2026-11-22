@@ -95,3 +95,15 @@ formatter suppresses numeric zero, so its first-row message field is
 `Склады[].Склад`, not `Склады[0].Склад`. The bridge preserves this original BSL
 output. Message fields are inert strings, not automatic navigation paths. A
 source correction and native check are separate from this change.
+
+The MainDemo product validator reads warehouse references in a batch through
+ordinary BSL: `Склады.ВыгрузитьКолонку("Склад")`, followed by a Query selecting
+only `Ссылка` and `ПометкаУдаления` with `Ссылка В (&Ссылки)`. The owned
+preparation adapter admits that closed shape for same-catalog references
+from the same metadata snapshot. It borrows the existing writer, registered
+read lease, or form/list read view; it does not activate the general Query
+API in a handler. SQLite reads only the reference and deletion mark, using
+one parameterized statement unless the connection's bind limit requires more.
+The BSL row pass still produces the same messages in row order. This source
+change applies to MainDemo; the historical demo fixtures keep their archived
+module bytes and reference outputs.

@@ -30,7 +30,7 @@ SOURCE_SHA256 = {'AccumulationRegisters/Stock.xml': '6be17bba9f7b407faa04569c890
  'Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента/Ext/Form.xml': '3d5d1cdf429fbc5ece392c4bc4df6621c8753f152c8260a1aa5a83557a2a088d',
  'Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента/Ext/Form/Module.bsl': '1362d0c9ab909625f98648a719e87422dd7665634e2cc2e55ce01517a198f53f',
  'Catalogs/Номенклатура.xml': '6418b0b403932a38b24c75bb5db5496837cef396897225fa0bc5b80f905fa156',
- 'Catalogs/Номенклатура/Ext/ObjectModule.bsl': 'b329bc9a92db51032415bc62f779672acff65beb081237105adedab0f16edec9',
+ 'Catalogs/Номенклатура/Ext/ObjectModule.bsl': 'f704cb0888cb44fbe74f6896e81b89fbdf83cbbd17fe9e2a201e5e9a3734b4a7',
  'Catalogs/Номенклатура/Forms/ФормаСписка.xml': 'ce2e8373aab443a70990c7c1a7f1166e2efc45f025952959ae48de4553f474c2',
  'Catalogs/Номенклатура/Forms/ФормаСписка/Ext/Form.xml': '192dcb7c76a5805afdff477c9bc27f1f67149f1aa53be5a0894dcae931c4afc6',
  'Catalogs/Номенклатура/Forms/ФормаСписка/Ext/Form/Module.bsl': 'cedc20b94809fc639f72ee65d180eb5e6dadb647e02a2ed02d85af7dd1533127',

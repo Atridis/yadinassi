@@ -6,6 +6,8 @@ from yadinassi.configuration.configuration_main_demo import (
     PROFILE, MainDemoConfiguration, import_main_demo_configuration, canonical)
 from yadinassi.configuration.configuration_xml import _DEMO_KINDS_SOURCE_SHA256
 from hashlib import sha256
+from yadinassi.configuration.demos.main_demo_source import SOURCE_SHA256
+from legacy_demo_fixture import HANDLER
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -26,10 +28,13 @@ class MainDemoConfigurationTests(unittest.TestCase):
         self.assertEqual({x.name for x in c.enumerations},{'Units','States'})
         self.assertEqual(len(c.commands),6);self.assertEqual(len(c.reports),4)
 
-    def test_original_eighteen_nonroot_files_are_identical(self):
+    def test_shared_historical_components_unchanged_except_intentional_batch_handler(self):
         files=source()
         for path,digest in _DEMO_KINDS_SOURCE_SHA256.items():
-            if path!='Configuration.xml':self.assertEqual(sha256(files[path]).hexdigest(),digest)
+            if path not in ('Configuration.xml', HANDLER):
+                self.assertEqual(sha256(files[path]).hexdigest(),digest)
+        self.assertNotEqual(SOURCE_SHA256[HANDLER], _DEMO_KINDS_SOURCE_SHA256[HANDLER])
+        self.assertEqual(sha256(files[HANDLER]).hexdigest(), SOURCE_SHA256[HANDLER])
         self.assertEqual(len(files),47)
 
     def test_original_reference_section_and_callback_not_erased(self):

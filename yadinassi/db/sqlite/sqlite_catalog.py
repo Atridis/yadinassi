@@ -3092,6 +3092,37 @@ class _View:
         return None if row is None else self._card(key.catalog_id,row,schema=schema)
 
     @_boundary
+    def _read_catalog_reference_marks(self, schema, identities):
+        """Ref and DeletionMark only, over this already-owned catalog view."""
+        self._require()
+        if (type(identities) is not tuple or len(identities)>_MAX_SECTION_ROWS
+                or any(type(identity) is not UUID or not identity.int for identity in identities)):
+            raise BackendError('invalid_input')
+        if not identities:return ()
+        selected = {str(identity): identity for identity in identities}
+        table, _, source, args = self._source(schema)
+        from .sqlite_section_delta import _limit
+        capacity = _limit(self._connection) - len(args)
+        if capacity < 1: raise BackendError('unsupported')
+        rows = []
+        keys = tuple(selected)
+        for start in range(0, len(keys), capacity):
+            chunk = keys[start:start + capacity]
+            where = source + ' AND record_id IN (%s)' % ','.join('?' for _ in chunk)
+            cursor = self._connection.execute(
+                'SELECT record_id,deletion_mark FROM %s WHERE %s' % (table,where), args+chunk)
+            try:
+                for raw, marked in cursor:
+                    if type(raw) is not str or type(marked) is not int or marked not in (0,1):
+                        raise BackendError('integrity')
+                    identity = selected.pop(raw,None)
+                    if identity is None:raise BackendError('integrity')
+                    rows.append((identity,bool(marked)))
+            finally:cursor.close()
+        self._require()
+        return tuple(rows)
+
+    @_boundary
     def read_catalog_values(self, key, fields):
         """Point projection after full selected-record integrity admission.
 

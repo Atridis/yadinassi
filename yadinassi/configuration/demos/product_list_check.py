@@ -11,7 +11,7 @@ from yadinassi.db.catalog.catalog_backend import BackendError
 from yadinassi.db.catalog.catalogs import BSLCatalogObject
 from yadinassi.db.catalog.catalog_object_preparation import _ObjectInterpreter
 from yadinassi.forms.form_event_simulation import FormEventMessage
-from yadinassi.configuration.configuration_xml import _DEMO_KINDS_SOURCE_SHA256
+from yadinassi.configuration.demos.main_demo_source import product_event_source_digest
 from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse
 from yadinassi.types.type_values import type_of
@@ -62,7 +62,7 @@ def check_product_list(manager, reference, view, list_source, object_source):
     base = 'Catalogs/Номенклатура/'
     for source, path in ((list_source, base + 'Forms/ФормаСписка/Ext/Form/Module.bsl'),
                          (object_source, base + 'Ext/ObjectModule.bsl')):
-        if type(source) is not bytes or sha256(source).hexdigest() != _DEMO_KINDS_SOURCE_SHA256[path]:
+        if type(source) is not bytes or sha256(source).hexdigest() != product_event_source_digest(manager._backend, path):
             raise BackendError('schema_changed')
     if (manager._schema.name != 'Номенклатура'
             or view.catalog_schema(manager._schema.identity) != manager._schema

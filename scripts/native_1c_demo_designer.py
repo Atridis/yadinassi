@@ -28,6 +28,8 @@ CHECK_FLAGS = ('-ConfigLogIntegrity', '-IncorrectReferences', '-ThinClient', '-S
 # Retired historical acquisition: offline comparison still uses exact old bytes.
 SOURCE_ROOT = 'examples/demo'
 HISTORICAL_ROOT = 'tests/fixtures/legacy_demo_root.xml'
+HISTORICAL_HANDLER = 'tests/fixtures/legacy_demo_object_module.bsl'
+HANDLER = 'Catalogs/Номенклатура/Ext/ObjectModule.bsl'
 SOURCE_FILES = (
     'Catalogs/ВидыНоменклатуры.xml',
     'Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента.xml',
@@ -50,8 +52,8 @@ SOURCE_FILES = (
     'Subsystems/НормативнаяИнформация.xml',
 )
 INPUTS = ('scripts/native_1c_demo_designer.py', 'scripts/native_1c_demo_designer.sh',
-          'tests/legacy_demo_fixture.py', HISTORICAL_ROOT,
-          *(SOURCE_ROOT + '/' + name for name in SOURCE_FILES if name != 'Configuration.xml'))
+          'tests/legacy_demo_fixture.py', HISTORICAL_ROOT, HISTORICAL_HANDLER,
+          *(SOURCE_ROOT + '/' + name for name in SOURCE_FILES if name not in ('Configuration.xml', HANDLER)))
 PHASES = ('inputs', 'create', 'load', 'check', 'update', 'redump', 'witness', 'complete')
 FAILURES = ('none', 'invalid_input', 'process_failed', 'timeout', 'invalid_result', 'witness_mismatch')
 

@@ -1,10 +1,10 @@
-"""Only one root XML remains historical; original forms/handlers are canonical."""
+"""Historical root and object handler retain their original bytes."""
 from hashlib import sha256
 from pathlib import Path
 import tempfile
 import unittest
 
-from legacy_demo_fixture import (ROOT, HISTORICAL_ROOT, SOURCE_SHA256,
+from legacy_demo_fixture import (ROOT, HISTORICAL_SOURCES, SOURCE_SHA256,
     legacy_demo_files, materialize_legacy_demo)
 from yadinassi.configuration.configuration_xml import _DEMO_KINDS_SOURCE_SHA256
 
@@ -17,7 +17,7 @@ class LegacyDemoFixtureTests(unittest.TestCase):
         self.assertEqual(len(files), 19)
         self.assertFalse((ROOT / 'tests/fixtures/demo_cf').exists())
         for name, raw in files.items():
-            if name != 'Configuration.xml':
+            if name not in HISTORICAL_SOURCES:
                 self.assertEqual(raw, (ROOT / 'examples/demo' / name).read_bytes())
 
     def test_owned_materialization_keeps_old_root_and_refuses_existing_destination(self):
@@ -35,7 +35,7 @@ class LegacyDemoFixtureTests(unittest.TestCase):
             with self.subTest(path=changed), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 for name, raw in legacy_demo_files().items():
-                    path = root / (HISTORICAL_ROOT if name == 'Configuration.xml' else 'examples/demo/' + name)
+                    path = root / (HISTORICAL_SOURCES.get(name, 'examples/demo/' + name))
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_bytes(raw + (b'\n' if name == changed else b''))
                 with self.assertRaises(ValueError):

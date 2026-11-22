@@ -5,7 +5,7 @@ SOURCE_SHA256 = {'AccumulationRegisters/Stock.xml': '6be17bba9f7b407faa04569c890
  'Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента/Ext/Form.xml': '3d5d1cdf429fbc5ece392c4bc4df6621c8753f152c8260a1aa5a83557a2a088d',
  'Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента/Ext/Form/Module.bsl': '1362d0c9ab909625f98648a719e87422dd7665634e2cc2e55ce01517a198f53f',
  'Catalogs/Номенклатура.xml': '6418b0b403932a38b24c75bb5db5496837cef396897225fa0bc5b80f905fa156',
- 'Catalogs/Номенклатура/Ext/ObjectModule.bsl': 'b329bc9a92db51032415bc62f779672acff65beb081237105adedab0f16edec9',
+ 'Catalogs/Номенклатура/Ext/ObjectModule.bsl': 'f704cb0888cb44fbe74f6896e81b89fbdf83cbbd17fe9e2a201e5e9a3734b4a7',
  'Catalogs/Номенклатура/Forms/ФормаСписка.xml': 'ce2e8373aab443a70990c7c1a7f1166e2efc45f025952959ae48de4553f474c2',
  'Catalogs/Номенклатура/Forms/ФормаСписка/Ext/Form.xml': '192dcb7c76a5805afdff477c9bc27f1f67149f1aa53be5a0894dcae931c4afc6',
  'Catalogs/Номенклатура/Forms/ФормаСписка/Ext/Form/Module.bsl': 'cedc20b94809fc639f72ee65d180eb5e6dadb647e02a2ed02d85af7dd1533127',
@@ -46,3 +46,15 @@ SOURCE_SHA256 = {'AccumulationRegisters/Stock.xml': '6be17bba9f7b407faa04569c890
  'InventoryApplication.xml': 'f5e2f1e13d63484bf536d150b6e9eddbd83058f1422657d7aec11442a235993a',
  'Languages/Русский.xml': 'e0438b24e18c15da067173886270b2a4806aff1ea97031b2211c3f586181cf3c',
  'Subsystems/НормативнаяИнформация.xml': 'e824868068ac9018757c8fea8adbe4eee1c597a82e0fd6d8215c8d2f94858412'}
+
+
+def product_event_source_digest(backend, path):
+    """Select the source pin for the admitted configuration, not by input bytes."""
+    from yadinassi.configuration.configuration_main_demo import MainDemoConfiguration
+    from yadinassi.configuration.configuration_xml import _DEMO_KINDS_SOURCE_SHA256
+    from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+
+    if (type(backend) is SQLiteCatalogBackend and backend.format_version == 16
+            and type(backend.accumulation_configuration) is MainDemoConfiguration):
+        return SOURCE_SHA256[path]
+    return _DEMO_KINDS_SOURCE_SHA256[path]

@@ -6,19 +6,24 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'examples/demo'
-from legacy_demo_fixture import legacy_demo_files
+from legacy_demo_fixture import HANDLER, HISTORICAL_SOURCES, legacy_demo_files
 M = '{http://v8.1c.ru/8.3/MDClasses}'
 I = '{urn:yadinassi:inventory-application:1}'
 
 
 class MainDemoSourceTests(unittest.TestCase):
-    def test_original_catalog_forms_handlers_and_identities_are_preserved(self):
+    def test_original_catalog_and_form_modules_are_preserved_with_a_batched_product_handler(self):
         originals = legacy_demo_files()
         self.assertEqual(len(originals), 19)
         for name, raw in originals.items():
-            if name != 'Configuration.xml':
+            if name not in HISTORICAL_SOURCES:
                 with self.subTest(path=name):
                     self.assertEqual((SOURCE / name).read_bytes(), raw)
+        handler = (SOURCE / HANDLER).read_text(encoding='utf-8-sig')
+        self.assertEqual(handler.count('Новый Запрос('), 1)
+        self.assertIn('Склады.ВыгрузитьКолонку("Склад")', handler)
+        self.assertIn('ВЫБРАТЬ Ссылка, ПометкаУдаления ИЗ Справочник.Склады ГДЕ Ссылка В (&Ссылки)', handler)
+        self.assertNotIn('Склад.ПолучитьОбъект()', handler)
 
     def test_one_configuration_declares_all_scenarios_without_duplicate_catalogs(self):
         root = ET.parse(SOURCE / 'Configuration.xml').getroot().find(M+'Configuration')

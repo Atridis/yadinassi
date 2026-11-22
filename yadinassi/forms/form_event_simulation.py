@@ -468,7 +468,7 @@ def simulate_product_form_event(form_source, object_source, receiver, *, event,
     Row UUIDs identify current buffer rows, never native line numbers.
     """
     from yadinassi.db.catalog.catalogs import BSLCatalogObject
-    from yadinassi.configuration.configuration_xml import _DEMO_KINDS_SOURCE_SHA256
+    from yadinassi.configuration.demos.main_demo_source import product_event_source_digest
     from yadinassi.syntax.parser import parse
     from yadinassi.types.values import BSLObject
     import re
@@ -491,7 +491,7 @@ def simulate_product_form_event(form_source, object_source, receiver, *, event,
     base = 'Catalogs/Номенклатура/'
     for source, path in ((form_source, base + 'Forms/ФормаЭлемента/Ext/Form/Module.bsl'),
                          (object_source, base + 'Ext/ObjectModule.bsl')):
-        if type(source) is not bytes or sha256(source).hexdigest() != _DEMO_KINDS_SOURCE_SHA256[path]:
+        if type(source) is not bytes or sha256(source).hexdigest() != product_event_source_digest(receiver._manager._backend, path):
             raise ValueError('product form: original source required')
     schema = receiver._manager._schema
     if (schema.name != 'Номенклатура' or len(schema.fields) != 1

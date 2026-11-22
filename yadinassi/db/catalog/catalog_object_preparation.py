@@ -25,6 +25,8 @@ _ALIASES = frozenset(('code', 'код', 'description', 'наименование
 _METHODS = frozenset(('getobject', 'получитьобъект', 'count', 'количество',
                       'get', 'получить', 'insert', 'вставить',
                       'setdata', 'установитьданные', 'message', 'сообщить'))
+_REFERENCE_QUERY_METHODS = frozenset(('unloadcolumn', 'выгрузитьколонку', 'setparameter', 'установитьпараметр',
+    'execute', 'выполнить', 'select', 'выбрать', 'next', 'следующий'))
 _MESSAGE_FIELDS = frozenset(('text', 'текст', 'field', 'поле'))
 
 
@@ -115,7 +117,7 @@ class _ObjectInterpreter(Interpreter):
 
     def call(self, node, *, require_value, _evaluation=None):
         callee = self.ungroup(node.callee)
-        if syntax_kind(callee) is ast.Attribute and callee.name.casefold() not in _METHODS:
+        if syntax_kind(callee) is ast.Attribute and callee.name.casefold() not in _METHODS | _REFERENCE_QUERY_METHODS:
             raise ValueError('catalog preparation: unavailable method')
         if (self.write_view is not None and syntax_kind(callee) is ast.Attribute
                 and callee.name.casefold() in ('getobject', 'получитьобъект')):
@@ -209,22 +211,22 @@ def _admit_catalog_object_source(source, schema):
         raise ValueError('catalog preparation: routine collision')
     allowed = (ast.Routine, ast.Parameter, ast.Literal, ast.Name, ast.Attribute,
         ast.Call, ast.New, ast.Assign, ast.If, ast.Return, ast.ExpressionStatement,
-        ast.Binary, ast.Unary, ast.ForEach, ast.Continue)
+        ast.Binary, ast.Unary, ast.ForEach, ast.While, ast.Continue)
     def inspect(value):
         if isinstance(value, (list, tuple)):
             for item in value: inspect(item)
         elif isinstance(value, ast.Node):
             if type(value) not in allowed:
                 raise ValueError('catalog preparation: unsupported node')
-            if type(value) is ast.New and value.name.casefold() not in ('соответствие', 'сообщениепользователю'):
+            if type(value) is ast.New and value.name.casefold() not in ('соответствие', 'сообщениепользователю', 'запрос', 'query'):
                 raise ValueError('catalog preparation: unsupported constructor')
-            if type(value) is ast.Attribute and value.name.casefold() not in readable_members | _MESSAGE_FIELDS | _METHODS:
+            if type(value) is ast.Attribute and value.name.casefold() not in readable_members | _MESSAGE_FIELDS | _METHODS | _REFERENCE_QUERY_METHODS:
                 raise ValueError('catalog preparation: unavailable member')
             if type(value) is ast.Call:
                 callee = value.callee
                 if type(callee) is ast.Name and callee.name.casefold() not in functions | routines:
                     raise ValueError('catalog preparation: unavailable call')
-                if type(callee) is ast.Attribute and callee.name.casefold() not in _METHODS:
+                if type(callee) is ast.Attribute and callee.name.casefold() not in _METHODS | _REFERENCE_QUERY_METHODS:
                     raise ValueError('catalog preparation: unavailable method')
                 if type(callee) not in (ast.Name, ast.Attribute):
                     raise ValueError('catalog preparation: indirect call forbidden')
