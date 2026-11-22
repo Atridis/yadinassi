@@ -555,6 +555,33 @@ class Emitter:
                 and key not in self.module_globals
                 and (self.scope is None or key not in self.scope['local_declarations']))
 
+    def member_read(self,node,receiver,t):
+        def exact(kind):return self.exact_native(kind,self.name(receiver,t),t)
+        host=self.invoke(self.attribute(self.name('_context',t),'get_member',t),[self.name(receiver,t),self.const(node.name,t)],t)
+        maps=self.node(py.BoolOp,t,op=py.Or(),values=[exact('_PlainMap'),exact('dict'),exact('_TypedMap'),exact('_NakedMap')])
+        host=self.node(py.IfExp,t,test=maps,body=self.call('_native_property_missing',[self.const(node.name,t)],t),orelse=host)
+        field={'key':'key','ключ':'key','value':'value','значение':'value'}.get(node.name.casefold())
+        if field is not None:
+            item=self.call('_dynamic_public_number',[self.attribute(self.name(receiver,t),field,t)],t)
+            host=self.node(py.IfExp,t,test=exact('_MapEntry'),body=item,orelse=host)
+        host=self.node(py.IfExp,t,test=exact('list'),body=self.call('_array_member',[self.name(receiver,t),self.const(node.name,t)],t),orelse=host)
+        structure=self.call('_structure_get_known',[self.name(receiver,t),self.const(node.name.casefold(),t),self.const(node.name,t)],t)
+        host=self.node(py.IfExp,t,test=exact('_DirectStructure'),body=structure,orelse=host)
+        dictionary=self.node(py.Subscript,t,value=self.name(receiver,t),slice=self.const(node.name,t),ctx=py.Load())
+        read=self.node(py.IfExp,t,test=exact('dict'),body=dictionary,orelse=host)
+        field={'value':0,'значение':0,'presentation':1,'представление':1,'check':2,'пометка':2,'picture':3,'картинка':3}.get(node.name.casefold())
+        if field is not None:
+            item=self.node(py.Subscript,t,value=self.name(receiver,t),slice=self.const(field,t),ctx=py.Load())
+            read=self.node(py.IfExp,t,test=exact('_PlainValueListItem'),body=item,orelse=read)
+        operation=self.region_ops.get(id(node)) if self.region_active else None
+        if operation in ('row_get','item_get'):
+            arguments=[self.name('_context',t),self.name(receiver,t)]
+            if operation=='row_get':arguments.append(self.const(node.name,t))
+            fast=self.invoke(self.region_helper(operation,t),arguments,t)
+            read=self.node(py.IfExp,t,test=self.name('_collection_fast',t),body=fast,orelse=read)
+        read=self.receiver_boundary(read,receiver,t)
+        return read
+
     def member_call(self,receiver,name,require_value,omitted,count,t):
         method='resolve_configuration_member_call' if self.configuration_calls else 'resolve_member_call'
         keywords=[self.node(py.keyword,t,arg='require_value',value=self.const(require_value,t)),self.node(py.keyword,t,arg='omitted',value=self.const(omitted,t))]
@@ -755,30 +782,7 @@ class Emitter:
                 return self.call('_structure_get_known',[self.expr(node.object),self.const(node.name.casefold(),t),self.const(node.name,t)],t)
             receiver=self.temp()
             bind=self.node(py.NamedExpr,t,target=self.name(receiver,t,True),value=self.expr(node.object))
-            def exact(kind):return self.exact_native(kind,self.name(receiver,t),t)
-            host=self.invoke(self.attribute(self.name('_context',t),'get_member',t),[self.name(receiver,t),self.const(node.name,t)],t)
-            maps=self.node(py.BoolOp,t,op=py.Or(),values=[exact('_PlainMap'),exact('dict'),exact('_TypedMap'),exact('_NakedMap')])
-            host=self.node(py.IfExp,t,test=maps,body=self.call('_native_property_missing',[self.const(node.name,t)],t),orelse=host)
-            field={'key':'key','ключ':'key','value':'value','значение':'value'}.get(node.name.casefold())
-            if field is not None:
-                item=self.call('_dynamic_public_number',[self.attribute(self.name(receiver,t),field,t)],t)
-                host=self.node(py.IfExp,t,test=exact('_MapEntry'),body=item,orelse=host)
-            host=self.node(py.IfExp,t,test=exact('list'),body=self.call('_array_member',[self.name(receiver,t),self.const(node.name,t)],t),orelse=host)
-            structure=self.call('_structure_get_known',[self.name(receiver,t),self.const(node.name.casefold(),t),self.const(node.name,t)],t)
-            host=self.node(py.IfExp,t,test=exact('_DirectStructure'),body=structure,orelse=host)
-            dictionary=self.node(py.Subscript,t,value=self.name(receiver,t),slice=self.const(node.name,t),ctx=py.Load())
-            read=self.node(py.IfExp,t,test=exact('dict'),body=dictionary,orelse=host)
-            field={'value':0,'значение':0,'presentation':1,'представление':1,'check':2,'пометка':2,'picture':3,'картинка':3}.get(node.name.casefold())
-            if field is not None:
-                item=self.node(py.Subscript,t,value=self.name(receiver,t),slice=self.const(field,t),ctx=py.Load())
-                read=self.node(py.IfExp,t,test=exact('_PlainValueListItem'),body=item,orelse=read)
-            operation=self.region_ops.get(id(node)) if self.region_active else None
-            if operation in ('row_get','item_get'):
-                arguments=[self.name('_context',t),self.name(receiver,t)]
-                if operation=='row_get':arguments.append(self.const(node.name,t))
-                fast=self.invoke(self.region_helper(operation,t),arguments,t)
-                read=self.node(py.IfExp,t,test=self.name('_collection_fast',t),body=fast,orelse=read)
-            read=self.receiver_boundary(read,receiver,t)
+            read=self.member_read(node,receiver,t)
             pair=self.node(py.Tuple,t,elts=[bind,read],ctx=py.Load())
             return self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
         if k is bsl.Index:
@@ -912,7 +916,23 @@ class Emitter:
             invalid_arity=method in arities and not arities[method][0]<=len(node.arguments)<=arities[method][1]
             if any(type(arg) is bsl.OmittedArgument for arg in node.arguments):
                 _reject('omitted method arguments outside research subset')
-            receiver=self.temp();bind=self.node(py.NamedExpr,t,target=self.name(receiver,t,True),value=self.expr(callee.object))
+            structural=self.standalone_script and not self.owned_constructors and method=='count' and not node.arguments
+            projected=callee.object
+            while type(projected) is bsl.Group:projected=projected.expression
+            projection=None
+            if (structural and type(projected) is bsl.Attribute and self.import_path(projected) is None
+                    and not self.local_field_facts.get(id(projected))):
+                projection={'rows':'rows','строки':'rows','columns':'columns','колонки':'columns',
+                            'indexes':'indexes','индексы':'indexes'}.get(projected.name.casefold())
+            receiver=self.temp()
+            if projection is None:
+                bind=self.node(py.NamedExpr,t,target=self.name(receiver,t,True),value=self.expr(callee.object))
+                structural_receiver=receiver
+            else:
+                structural_receiver=self.temp()
+                base=self.node(py.NamedExpr,t,target=self.name(structural_receiver,t,True),value=self.expr(projected.object))
+                read=self.member_read(projected,structural_receiver,projected.token)
+                bind=self.node(py.NamedExpr,t,target=self.name(receiver,t,True),value=read)
             def exact(kind):return self.exact_native(kind,self.name(receiver,t),t)
             native_test=self.node(py.BoolOp,t,op=py.Or(),values=[exact(kind) for kind in ('list','dict','_PlainMap','_TypedMap','_NakedMap','_DirectStructure')])
             host=self.member_call(receiver,callee.name,require_value,(),len(node.arguments),t)
@@ -1006,6 +1026,21 @@ class Emitter:
                 release=self.node(py.IfExp,t,test=exact('_HTTPRequest'),body=release,orelse=self.const(None,t))
                 pair=self.node(py.Tuple,t,elts=[bind,call,release],ctx=py.Load())
                 return self.node(py.Subscript,t,value=pair,slice=self.const(1,t),ctx=py.Load())
+            if structural:
+                projected_value=self.name(structural_receiver,t)
+                args=[self.name('_context',t),projected_value,self.const(projection,t)]
+                ids=self.node(py.Subscript,t,value=self.name('_structural_count_ids',t),
+                    slice=self.const(projection,t),ctx=py.Load())
+                kind=self.call('id',[self.call('type',[projected_value],t)],t)
+                candidate=self.node(py.Compare,t,left=kind,ops=[py.In()],comparators=[ids])
+                test=self.node(py.BoolOp,t,op=py.And(),values=[candidate,self.call('_select_structural_read',args,t)])
+                fast=self.call('_structural_count',[*args,self.const(callee.name,t)],t)
+                fast=self.receiver_boundary(fast,structural_receiver,t)
+                if projection is not None:
+                    pair=self.node(py.Tuple,t,elts=[bind,call],ctx=py.Load())
+                    call=self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
+                    bind=base
+                call=self.node(py.IfExp,t,test=test,body=fast,orelse=call)
             pair=self.node(py.Tuple,t,elts=[bind,call],ctx=py.Load())
             return self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
         if k is bsl.Call and type(node.callee) is bsl.Name and node.callee.name.casefold() in self.routines:
@@ -2264,7 +2299,8 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         _vt.BSLCollectionIndexes,_vt.BSLCollectionIndex,_vl.BSLValueList,_vl.BSLValueListItem)
     from yadinassi.execution.direct.python_direct_numbers import divide, remainder, sign, public_number
     from yadinassi.collections.plain_table_storage import RowStorage
-    namespace=dict(_raw_table_value=RowStorage.get_value,_raw_table_positional=_vt.BSLValueTableRow._positional_value,_dynamic_remainder=remainder,_dynamic_divide=divide,_dynamic_sign=sign,_dynamic_public_number=public_number,_plain_array_loop=_plain_array_loop,_plain_append_receiver=_plain_append_receiver,_list_append=list.append,_native_host_reference=_native_host_reference,_native_cell_reference=_native_cell_reference,_native_fragment_binding=_native_fragment_binding,_NativeCell=_NativeCell,_PublishedModuleCell=_PublishedModuleCell,_adapt_native_cell=_adapt_native_cell,_PrivateTable=_vt.BSLValueTable,_PrivateValueList=PlainValueList,_PlainValueList=PlainValueList,_PlainValueListItem=PlainValueListItem,_module_primitive_type_ids=frozenset(id(kind) for kind in (list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure)),_module_data_types=data_types,_module_data_type_ids=frozenset(id(kind) for kind in data_types),_native_dict_get=dict.get,_native_dict_setitem=dict.__setitem__,_PlainArray=_PlainArray,_Decimal=Decimal,_PlainMap=PlainMap,_plain_map=plain_map,_execute_fragment=execute_fragment,_fragment_binding=_fragment_binding,_bind_eval=bind_eval,_raise_arity_error=raise_arity_error,_host_omission_error=_host_omission_error,_host_omission_values=_host_omission_values,_dynamic_construct=dynamic_construct,_invalid_native_arity=_invalid_native_arity,_typed_find=scalar.typed_find,_list_delete=_list_delete,_native_ubound=_native_ubound,_readonly=readonly,_array_set_checked=_array_set_checked,_bounded_insert=bounded_insert,_structure_insert=structure_insert,_array_constructor_bounds=bounded_array,_new_structure=new_structure,_structure_from_schema=structure_from_schema,_host_name_reference=_host_name_reference,_Cell=_Cell,_ForwardReference=_ForwardReference,_as_ref=_as_ref,_bound_ref=_bound_ref,_UNSET_REF=_UNSET_REF,_OMITTED_REF=_OMITTED_REF,_argument_count_error=_argument_count_error,_routine_value_error=_routine_value_error,_procedure_value_error=_procedure_value_error,_identity_reference=_identity_reference,_IndexRef=_IndexRef,_AttributeRef=_AttributeRef,_SlotReference=live_state._SlotReference,_source_reference=source_reference,_canonical_reference=_canonical_reference,_structure_property=structure_property,_native_method_missing=_native_method_missing,_native_count=_native_count,_MapEntry=_MapEntry,_array_member=_array_member,_native_property_missing=_native_property_missing,_structure_get_known=structure_get_known,_structure_set_known=structure_set_known,_native_property_write_missing=_native_property_write_missing,_checked_array_index=_checked_array_index,_checked_literal_array_index=_checked_literal_array_index,_partial=partial,_native_getitem=_NATIVE_GETITEM,_list_get=_list_get,_TypedMap=_TypedMap,_NakedMap=_NakedMap,_DirectStructure=_DirectStructure,_host_reference=host_reference,_UNSET=UNSET,_missing=missing,_native_add=_NATIVE_ADD,_concatenate=scalar.concatenate,_divide=scalar.decimal_divide,_sign=scalar.decimal_sign,_order=scalar.uca_order,_truth=scalar.truth,_equal=equal,_not_equal=not_equal,_MISSING=_MISSING,_handled_error=handled_error,_reraise_handled=reraise_handled,_raise_error=raise_error,_presentation=scalar.presentation,_BSLRuntimeError=BSLRuntimeError)
+    from yadinassi.execution.direct.python_direct_structural_reads import TARGET_IDS, selects, count as structural_count
+    namespace=dict(_structural_count_ids=TARGET_IDS,_select_structural_read=selects,_structural_count=structural_count,_raw_table_value=RowStorage.get_value,_raw_table_positional=_vt.BSLValueTableRow._positional_value,_dynamic_remainder=remainder,_dynamic_divide=divide,_dynamic_sign=sign,_dynamic_public_number=public_number,_plain_array_loop=_plain_array_loop,_plain_append_receiver=_plain_append_receiver,_list_append=list.append,_native_host_reference=_native_host_reference,_native_cell_reference=_native_cell_reference,_native_fragment_binding=_native_fragment_binding,_NativeCell=_NativeCell,_PublishedModuleCell=_PublishedModuleCell,_adapt_native_cell=_adapt_native_cell,_PrivateTable=_vt.BSLValueTable,_PrivateValueList=PlainValueList,_PlainValueList=PlainValueList,_PlainValueListItem=PlainValueListItem,_module_primitive_type_ids=frozenset(id(kind) for kind in (list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure)),_module_data_types=data_types,_module_data_type_ids=frozenset(id(kind) for kind in data_types),_native_dict_get=dict.get,_native_dict_setitem=dict.__setitem__,_PlainArray=_PlainArray,_Decimal=Decimal,_PlainMap=PlainMap,_plain_map=plain_map,_execute_fragment=execute_fragment,_fragment_binding=_fragment_binding,_bind_eval=bind_eval,_raise_arity_error=raise_arity_error,_host_omission_error=_host_omission_error,_host_omission_values=_host_omission_values,_dynamic_construct=dynamic_construct,_invalid_native_arity=_invalid_native_arity,_typed_find=scalar.typed_find,_list_delete=_list_delete,_native_ubound=_native_ubound,_readonly=readonly,_array_set_checked=_array_set_checked,_bounded_insert=bounded_insert,_structure_insert=structure_insert,_array_constructor_bounds=bounded_array,_new_structure=new_structure,_structure_from_schema=structure_from_schema,_host_name_reference=_host_name_reference,_Cell=_Cell,_ForwardReference=_ForwardReference,_as_ref=_as_ref,_bound_ref=_bound_ref,_UNSET_REF=_UNSET_REF,_OMITTED_REF=_OMITTED_REF,_argument_count_error=_argument_count_error,_routine_value_error=_routine_value_error,_procedure_value_error=_procedure_value_error,_identity_reference=_identity_reference,_IndexRef=_IndexRef,_AttributeRef=_AttributeRef,_SlotReference=live_state._SlotReference,_source_reference=source_reference,_canonical_reference=_canonical_reference,_structure_property=structure_property,_native_method_missing=_native_method_missing,_native_count=_native_count,_MapEntry=_MapEntry,_array_member=_array_member,_native_property_missing=_native_property_missing,_structure_get_known=structure_get_known,_structure_set_known=structure_set_known,_native_property_write_missing=_native_property_write_missing,_checked_array_index=_checked_array_index,_checked_literal_array_index=_checked_literal_array_index,_partial=partial,_native_getitem=_NATIVE_GETITEM,_list_get=_list_get,_TypedMap=_TypedMap,_NakedMap=_NakedMap,_DirectStructure=_DirectStructure,_host_reference=host_reference,_UNSET=UNSET,_missing=missing,_native_add=_NATIVE_ADD,_concatenate=scalar.concatenate,_divide=scalar.decimal_divide,_sign=scalar.decimal_sign,_order=scalar.uca_order,_truth=scalar.truth,_equal=equal,_not_equal=not_equal,_MISSING=_MISSING,_handled_error=handled_error,_reraise_handled=reraise_handled,_raise_error=raise_error,_presentation=scalar.presentation,_BSLRuntimeError=BSLRuntimeError)
     if emitter.known_calls:
         from yadinassi.execution.direct.python_direct_known_methods import execute, construct_table, detached_after_publication, generic_call
         namespace.update(_known_query_execute=execute,_known_construct_table=construct_table,

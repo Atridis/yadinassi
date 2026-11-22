@@ -1,7 +1,9 @@
 """Exact detached ValueTree protocols, with live provenance and no DB authority."""
 from yadinassi.collections import value_trees as model
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.types.values import HostFunction
+from decimal import Decimal
+from weakref import ReferenceType
+from yadinassi.types.values import BSLObject, HostFunction
 
 CONSTRUCTOR_NAMES=('valuetree','деревозначений','valuetreerow','строкадеревазначений',
                    'valuetreecolumn','колонкадеревазначений','valuetreerowcollection','коллекциястрокдеревазначений')
@@ -156,6 +158,148 @@ def admitted_receiver(boundary,value,*,graph=False):
         for column in root.columns.items:local(column)
         for row in rows:local(row);local(row.rows);cell_keys(row,root)
     return root
+
+
+# Structural reads consume only live birth links and an exact list length.
+# The full model seal contains payload/enum/default/output hooks that this
+# operation cannot reach. Keep the low-level provenance inputs pinned even
+# when the model is first supplied by an embedding.
+_INSTANCE_DICT=vars(BSLObject)['__dict__']
+_STRUCTURAL_REGISTRY_TYPE=dict(model._ROW_REGISTRY_BINDINGS)['_RowRegistry']
+_STRUCTURAL_REGISTRY=dict(model._ROW_REGISTRY_BINDINGS)['_ROW_REGISTRY_STATE']
+_STRUCTURAL_MRO={cls:mro for cls,mro,_ in model._DIRECT_TREE_CLASS_ABI}
+_STRUCTURAL_FIELDS=dict(zip(_CLASSES,_FIELDS))
+_STRUCTURAL_LIMITS=tuple((name,maxval) for name,maxval in _LIMITS
+                         if name in ('_MAX_ROWS','_MAX_COLUMNS','_MAX_CELLS','_MAX_DEPTH'))
+_STRUCTURAL_METHODS={cls:tuple((name,method) for name,method in methods
+    if name in ('get_member','get_method','count','_clear_target','_live','_budget'))
+    for cls,_,methods in model._DIRECT_TREE_CLASS_ABI}
+_DELETED_ROW='Строка дерева удалена; доступ к отсоединенным строкам не поддерживается'
+
+
+def _structural_fields(value,kind):
+    # The weak origin lookup hashes canonical identities. Inspect the slots
+    # passively before hashing so an embedding cannot supply hash/eq hooks.
+    mro=_STRUCTURAL_MRO[kind]
+    expected=_STRUCTURAL_FIELDS[kind]
+    for cls in mro[:-1]:
+        current=vars(cls)
+        if ('__hash__' in current or '__eq__' in current or '__getattr__' in current
+                or '__getattribute__' in current or not expected.isdisjoint(current.keys())):
+            raise BoundaryViolation('ValueTree structural identity hooks changed')
+    if kind.__mro__ is not mro:
+        raise BoundaryViolation('ValueTree structural identity hooks changed')
+    data=_INSTANCE_DICT.__get__(value,kind)
+    if (type(data) is not dict or len(data)!=len(expected)
+            or any(type(key) is not str or key not in expected for key in data)):
+        raise BoundaryViolation('ValueTree structural state changed')
+    return data
+
+
+def structural_count(boundary,value,projection,spelling):
+    if not boundary._value_tree_active:
+        raise BoundaryViolation('ValueTree activation expired')
+    if (model._ROW_REGISTRY_STATE is not _STRUCTURAL_REGISTRY or model._RowRegistry is not _STRUCTURAL_REGISTRY_TYPE
+            or model._DIRECT_TREE_ORIGINS is not _ORIGINS):
+        raise BoundaryViolation('ValueTree structural provenance changed')
+    kind=type(value)
+    # Only the effective receiver/projection semantics may be consulted.
+    # Stable private operations are never invoked from this fast lane.
+    checked=(kind,) if projection is None else (kind,_ROWS if projection=='rows' else _COLUMNS)
+    for cls in checked:
+        current=vars(cls)
+        if any(current.get(name) is not method for name,method in _STRUCTURAL_METHODS[cls]):
+            raise BoundaryViolation('ValueTree structural methods changed')
+    limits={}
+    for name,maximum in _STRUCTURAL_LIMITS:
+        current=vars(model).get(name)
+        if type(current) is not int or not 0<current<=maximum:
+            raise BoundaryViolation('ValueTree quota changed')
+        limits[name]=current
+    root=value if kind is _TREE else _structural_fields(value,kind).get('table' if kind is _COLUMNS else 'tree')
+    if type(root) is not _TREE:
+        raise BoundaryViolation('foreign ValueTree root')
+    root_data=_structural_fields(root,_TREE)
+    root_rows=root_data.get('rows');columns=root_data.get('columns');registry=root_data.get('_all_rows')
+    origin(root,(columns,root_rows,registry))
+    state=_STRUCTURAL_REGISTRY.get(id(registry))
+    if (type(registry) is not _STRUCTURAL_REGISTRY_TYPE or type(state) is not list or len(state)!=4
+            or type(state[0]) is not ReferenceType or state[0]() is not registry
+            or type(state[1]) is not ReferenceType or state[1]() is not root
+            or type(state[2]) is not dict or state[3] is not False
+            or type(root_rows) is not _ROWS or type(columns) is not _COLUMNS):
+        raise BoundaryViolation('ValueTree root storage changed')
+    root_rows_data=_structural_fields(root_rows,_ROWS);column_data=_structural_fields(columns,_COLUMNS)
+    if (root_rows_data.get('tree') is not root or root_rows_data.get('parent') is not None
+            or column_data.get('table') is not root):
+        raise BoundaryViolation('ValueTree root collections changed')
+    origin(root_rows,(root,None));origin(columns,(root,))
+    column_items=column_data.get('items');root_items=root_rows_data.get('items')
+    if type(column_items) is not list or type(root_items) is not list:
+        raise BoundaryViolation('ValueTree root collections changed')
+    rows=len(state[2]);width=len(column_items)
+    if rows>limits['_MAX_ROWS'] or width>limits['_MAX_COLUMNS'] or rows*width>limits['_MAX_CELLS']:
+        raise ValueError('ДеревоЗначений: превышен предел ресурсов Yadinassi')
+
+    if (kind is _TREE and projection=='columns') or value is columns:return Decimal(width)
+    if (kind is _TREE and projection=='rows') or value is root_rows:
+        if root_rows_data['_columns_clear_forward'] is not False:
+            return boundary._tree_method(root_rows,spelling)()
+        return Decimal(len(root_items))
+    if kind is _COLUMNS:
+        extra=_structural_fields(value,_COLUMNS)
+        origin(value,(root,))
+        items=extra.get('items')
+        if type(items) is not list:raise BoundaryViolation('ValueTree column collection storage changed')
+        return Decimal(len(items))
+
+    if kind is _ROW:
+        data=_structural_fields(value,_ROW)
+        collection=data.get('rows')
+        if type(collection) is not _ROWS:
+            raise BoundaryViolation('foreign ValueTree child collection')
+        projected_parent=value
+    else:collection=value;projected_parent=None
+    current=collection;direct_parent=None;items=None;depth=0
+    first_deleted=False;forward=False
+    while current is not root_rows:
+        if type(current) is not _ROWS or depth>limits['_MAX_DEPTH']:
+            raise BoundaryViolation('ValueTree ancestor changed')
+        current_data=_structural_fields(current,_ROWS)
+        parent=current_data.get('parent')
+        if current_data.get('tree') is not root or (parent is not None and type(parent) is not _ROW):
+            raise BoundaryViolation('foreign ValueTree child collection')
+        origin(current,(root,parent))
+        if parent is None:
+            # The public constructor is not exposed to BSL. Keep the prior
+            # disposition of other model-born, parentless host wrappers.
+            return boundary._tree_method(collection,spelling)()
+        data=_structural_fields(parent,_ROW);up=data.get('collection')
+        if data.get('tree') is not root:
+            raise BoundaryViolation('ValueTree ancestor changed')
+        deleted=data.get('_deleted');parent_depth=data.get('depth')
+        if type(deleted) is not bool or type(parent_depth) is not int or not 0<=parent_depth<=limits['_MAX_DEPTH'] or type(up) is not _ROWS:
+            raise BoundaryViolation('ValueTree row storage changed')
+        origin(parent,(root,up,data.get('parent'),data.get('rows')))
+        current_items=current_data.get('items')
+        if type(current_items) is not list:
+            raise BoundaryViolation('ValueTree row collection storage changed')
+        if items is None:
+            if projected_parent is not None and (parent is not projected_parent or data.get('rows') is not current):
+                raise BoundaryViolation('foreign ValueTree child collection')
+            first_deleted=deleted;forward=current_data.get('_columns_clear_forward') is not False
+            items=current_items
+        elif direct_parent != parent_depth+1:
+            raise BoundaryViolation('ValueTree depth changed')
+        direct_parent=parent_depth;current=up;depth+=1
+    if direct_parent is not None and direct_parent!=0:
+        raise BoundaryViolation('ValueTree depth changed')
+    # Row.Rows itself is invalid after deletion even when a previously
+    # retained Rows wrapper can redirect Count to a live root.
+    if first_deleted and projected_parent is not None:raise ValueError(_DELETED_ROW)
+    if forward:return boundary._tree_method(collection,spelling)()
+    if first_deleted:raise ValueError(_DELETED_ROW)
+    return Decimal(len(root_items if items is None else items))
 
 
 def cell_keys(row,root):
