@@ -102,6 +102,10 @@ _DESCRIPTION_ACCESS=('types','number_qualifiers','string_qualifiers','date_quali
 _DESCRIPTION_CLASSES=tuple((cls,mro,dict(fields)) for cls,mro,fields in
                            (*descriptions._DIRECT_LIVE_METADATA_CLASSES,*qualifiers._DIRECT_LIVE_METADATA_CLASSES)
                            if cls is not object)
+_ABSENT_MEMBER=object()
+_DESCRIPTION_READER_ABI=tuple((cls,mro,fields.get('__getattribute__',_ABSENT_MEMBER),fields.get('types',_ABSENT_MEMBER))
+                              for cls,mro,fields in _DESCRIPTION_CLASSES
+                              if any(base is cls for base in _TYPE_DESCRIPTION.__mro__))
 _TOUCH=dict(search._DIRECT_CLASSES[0][2])['touch']
 _TOUCH_INNER=dict(search._DIRECT_CLASSES[0][2])['_touch']
 _SEARCH_FUNCTIONS={fn:(code,defaults) for fn,code,defaults,_ in search._DIRECT_FUNCTIONS}
@@ -134,7 +138,11 @@ def _admit_bound_write(root, row, key, indexed):
     description=raw(column)['value_type']
     if type(description) is not _TYPE_DESCRIPTION:fail()
     fields=raw(description)
-    if any(type(k) is not str for k in fields) or 'types' in vars(_TYPE_DESCRIPTION):fail()
+    if any(type(k) is not str for k in fields):fail()
+    for cls,mro,getattribute,types_member in _DESCRIPTION_READER_ABI:
+        current=vars(cls)
+        if (cls.__mro__ is not mro or current.get('__getattribute__',_ABSENT_MEMBER) is not getattribute
+                or current.get('types',_ABSENT_MEMBER) is not types_member):fail()
     types=fields.get('types')
     if type(types) is not tuple:fail()
     if types:_typed_conversion(description,fields)
