@@ -1,7 +1,7 @@
 """Partition discovered unittest module suites; history affects placement, never coverage.
 
-Unknown tests keep their whole fixture group in Light unless a matching Linux
-measurement covers the complete group. Original module
+Unknown tests keep their whole fixture group in Light unless a matching
+supplemental measurement covers the complete group. Original module
 suite objects (including load_tests suites) are retained, not flattened/rebuilt.
 """
 import argparse
@@ -9,8 +9,6 @@ from dataclasses import dataclass
 import json
 import math
 import os
-import platform
-import sys
 from pathlib import Path
 import unittest
 
@@ -61,8 +59,8 @@ def validate_weights(weights):
 
 
 def load_linux_placement(path):
-    """Supplemental placement only, not an official timing profile."""
-    if sys.platform != 'linux' or path is None or not Path(path).exists():
+    """Read Linux measurement evidence for the common fixture placement rule."""
+    if path is None or not Path(path).exists():
         return {}
     from scripts.ci_test_gate import read_json, sha
     data = read_json(path)
@@ -76,9 +74,6 @@ def load_linux_placement(path):
             or type(data['groups']) is not list):
         raise ValueError('invalid Linux placement envelope')
     sha(data['source']['commit']); sha(data['source']['tree'])
-    if (platform.machine() != data['source']['machine']
-            or data['source']['python'].split('.')[:2] != [str(n) for n in sys.version_info[:2]]):
-        return {}
     groups, seen = {}, set()
     for entry in data['groups']:
         if (type(entry) is not dict or set(entry) != {'report_sha256', 'tests'}
@@ -127,21 +122,22 @@ class Plan:
             raise ValueError('invalid shard index')
         selected = [g for g in self.groups if tier == 'all' or g['tier'] == tier]
         bins, totals = [[] for _ in range(shard_count)], [0.0] * shard_count
-        linux_totals = [0.0] * shard_count
-        measured = [g for g in selected if g['linux_seconds']]
-        ordinary = [g for g in selected if not g['linux_seconds']]
-        # Longest-processing-time first, stable identity and index tie breaks.
-        for group in sorted(ordinary, key=lambda g: (-g['intel_seconds'], g['ids'][0])):
+        # Keep actual Intel history for balancing whenever available. Linux
+        # durations select tiers only; they are not weights for any runner.
+        unweighted = []
+        for group in sorted(selected, key=lambda g: (-g['intel_seconds'], g['ids'][0])):
+            if group['linux_seconds'] and not group['intel_seconds']:
+                unweighted.append(group)
+                continue
             index = min(range(shard_count), key=lambda i: (totals[i], i))
             bins[index].append(group)
             totals[index] += group['intel_seconds']
-        # Balance only this extra Linux work against itself. Intel history
-        # remains a separate estimate and is only a tie-breaker here.
-        for group in sorted(measured, key=lambda g: (-g['linux_seconds'], g['ids'][0])):
-            index = min(range(shard_count), key=lambda i: (linux_totals[i], totals[i], i))
+        # Spread extra groups without Intel history by count, then Intel load.
+        added = [0] * shard_count
+        for group in unweighted:
+            index = min(range(shard_count), key=lambda i: (added[i], totals[i], i))
             bins[index].append(group)
-            totals[index] += group['intel_seconds']
-            linux_totals[index] += group['linux_seconds']
+            added[index] += 1
         chosen = bins[shard_index]
         indexes = {index for group in chosen for index in group['nodes']}
         suite = unittest.TestSuite(node for index, node in enumerate(self.nodes) if index in indexes)
@@ -151,7 +147,7 @@ class Plan:
         unknown_ids = [name for names in self.ids for name in names if name in unknown]
         return suite, {'tier': tier, 'shard_count': shard_count, 'shard_index': shard_index,
                        'selected_ids': selected_ids, 'estimated_intel_seconds': totals[shard_index],
-                       'estimated_linux_supplement_seconds': linux_totals[shard_index],
+                       'linux_placement_evidence_seconds': sum(group['linux_seconds'] for group in chosen),
                        'discovered_ids': [name for names in self.ids for name in names],
                        'unknown_ids': unknown_ids, 'unknown_count': len(unknown_ids),
                        'unknown_fraction': len(unknown_ids) / sum(map(len, self.ids))
@@ -275,8 +271,8 @@ def write_summary(report, path):
             f"({report['unknown_fraction']:.2%}).\n"
             f"- Unknown IDs selected: {report['selected_unknown_count']}; "
             f"selected fixture groups: {report['selected_group_count']}.\n"
-            f"- Supplemental Linux placement: {report['estimated_linux_supplement_seconds']:.3f} s "
-            "(local per-test measurements; not Intel estimates).\n"
+            f"- Linux placement evidence: {report['linux_placement_evidence_seconds']:.3f} s "
+            "(local per-test measurements for selection only; not a runner estimate).\n"
             f"- Discovery wall time: {report['discovery_seconds']:.3f} s.\n"
             f"- Partition wall time: {report['partition_wall_seconds']:.3f} s "
             "(includes class/module fixtures, cleanups and runner reporting).\n"
@@ -292,7 +288,7 @@ def main(argv=None):
     parser.add_argument('--shard-index', type=int, default=0)
     parser.add_argument('--history', default='scripts/test_durations.json')
     parser.add_argument('--linux-placement', default=LINUX_PLACEMENT,
-                        help='Linux-only fixture group measurements; empty path disables')
+                        help='Linux measurement evidence for shared placement; empty path disables')
     parser.add_argument('--report')
     parser.add_argument('--plan-output')
     parser.add_argument('--plan-only', action='store_true')

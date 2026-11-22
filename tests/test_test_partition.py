@@ -67,8 +67,8 @@ class PartitionTests(unittest.TestCase):
         self.assertEqual(set(first['selected_ids']), names(old, new))
         self.assertEqual(set(second['selected_ids']), names(other))
         self.assertEqual((first['estimated_intel_seconds'], second['estimated_intel_seconds']), (9, 0))
-        self.assertEqual((first['estimated_linux_supplement_seconds'],
-                          second['estimated_linux_supplement_seconds']), (8, 6))
+        self.assertEqual((first['linux_placement_evidence_seconds'],
+                          second['linux_placement_evidence_seconds']), (8, 6))
         self.assertEqual(set(light['selected_ids'] + first['selected_ids'] + second['selected_ids']),
                          set(p.select('all')[1]['selected_ids']))
         extra = case('completed', 'Added')
@@ -77,28 +77,36 @@ class PartitionTests(unittest.TestCase):
         self.assertEqual(set(p.select('light')[1]['selected_ids']), names(old, new, extra, smoke))
         self.assertEqual(set(p.select('heavy')[1]['selected_ids']), names(other))
 
-    def test_linux_placement_data_is_exact_and_never_loaded_on_other_platforms(self):
+    def test_linux_placement_data_is_exact_and_shared_by_all_platforms(self):
         source = dict(commit='a'*40, tree='b'*40, platform='linux', machine='x86_64',
-                      python='.'.join(map(str, sys.version_info[:3])))
+                      python='3.12.14')
         group = dict(report_sha256='c'*64, tests={'module.Case.test_body': 4.1})
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / 'linux.json'
             profile = {'schema': 1, 'source': source, 'groups': [group]}
-            with mock.patch.object(partition.sys, 'platform', 'linux'), \
-                 mock.patch.object(partition.platform, 'machine', return_value='x86_64'):
-                path.write_text(json.dumps(profile), encoding='utf-8')
-                self.assertEqual(partition.load_linux_placement(path),
-                                 {frozenset(group['tests']): 4.1})
-                profile['groups'].append(group)
-                path.write_text(json.dumps(profile), encoding='utf-8')
-                with self.assertRaisesRegex(ValueError, 'invalid Linux placement group'):
-                    partition.load_linux_placement(path)
-            for platform in ('win32', 'darwin'):
-                with mock.patch.object(partition.sys, 'platform', platform):
-                    self.assertEqual(partition.load_linux_placement(path), {})
-            with mock.patch.object(partition.sys, 'platform', 'linux'), \
-                 mock.patch.object(partition.platform, 'machine', return_value='aarch64'):
-                self.assertEqual(partition.load_linux_placement(path), {})
+            path.write_text(json.dumps(profile), encoding='utf-8')
+            for platform in ('linux', 'win32', 'darwin'):
+                with self.subTest(platform=platform), mock.patch.object(sys, 'platform', platform):
+                    self.assertEqual(partition.load_linux_placement(path),
+                                     {frozenset(group['tests']): 4.1})
+            profile['groups'].append(group)
+            path.write_text(json.dumps(profile), encoding='utf-8')
+            with self.assertRaisesRegex(ValueError, 'invalid Linux placement group'):
+                partition.load_linux_placement(path)
+
+    def test_linux_selection_seconds_do_not_influence_any_shard_assignment(self):
+        tests = [case(module, 'Case') for module in ('first', 'second', 'third', 'fourth')]
+        ids = [partition.identity(test)[0] for test in tests]
+        loads = weights(tests[:1], seconds=1, intel=9)
+        def shards(seconds):
+            evidence = {frozenset((name,)): weight for name, weight in zip(ids, seconds)}
+            plan = partition.partition_suite(unittest.TestSuite(
+                unittest.TestSuite([test]) for test in tests), loads, linux_placement=evidence)
+            return [plan.select('heavy',2,index)[1] for index in (0, 1)]
+        first, second = shards((5, 100, 40, 9)), shards((100, 5, 9, 40))
+        self.assertEqual([r['selected_ids'] for r in first], [r['selected_ids'] for r in second])
+        self.assertEqual(sorted(len(r['selected_ids']) for r in first), [2, 2])
+        self.assertEqual([r['estimated_intel_seconds'] for r in first], [9, 0])
 
     def test_four_shards_preserve_fixture_groups_exact_union_and_balance(self):
         tests = [case('module_%d' % i, 'Case') for i in range(9)]
