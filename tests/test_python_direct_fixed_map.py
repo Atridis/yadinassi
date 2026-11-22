@@ -1,11 +1,13 @@
 """FixedMap canonical snapshots without losing direct keys or mutable aliases."""
 import unittest
+import gc
+import weakref
 from decimal import Decimal
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.syntax.parser import parse
 from yadinassi.collections.maps import BSLMap, BSLFixedMap
-from yadinassi.execution.direct.python_direct_plain_map import PlainFixedMap
+from yadinassi.execution.direct.python_direct_plain_map import PlainFixedMap, PlainMap
 from yadinassi.types.unique_identifiers import BSLUUID
 from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
@@ -28,16 +30,96 @@ class DirectFixedMapTests(unittest.TestCase):
             self.assertIsNone(vm.execute('F["1"]'));self.assertIsNone(vm.execute('F.Get("absent")'))
             with self.assertRaises(BSLError):vm.execute('F["absent"]')
 
-    def test_scalar_key_shallow_values_and_unsupported_object_key(self):
+    def test_scalar_key_shallow_values_and_unsupported_host_key(self):
         vm=Interpreter();self.addCleanup(vm.close)
         vm.execute('V=New Array;M=New Map;M.Insert("child",V);F=New FixedMap(M);V.Add(2);M.Clear();R=F.Get("child");')
         self.assertIs(vm.variables['r'],vm.variables['v']);self.assertEqual(vm.execute('R[0]'),2)
-        vm.execute('K=New Array;After=False;')
+        class HostKey(list):
+            def __hash__(self):raise AssertionError('hash')
+            def __eq__(self, other):raise AssertionError('eq')
+        vm.variables['k']=HostKey()
+        vm.execute('After=False;')
         with self.assertRaisesRegex(BSLError, 'scalar Python value'):
             vm.execute('M.Insert(K,V);After=True;')
         self.assertIs(vm.variables['after'],False)
         self.assertEqual(vm.execute('M.Count()'),0)
         self.assertIs(vm.variables['f'].get('child'),vm.variables['v'])
+
+    def test_collection_keys_have_the_same_identity_across_writes_and_snapshots(self):
+        script = """
+            M=New Map; A=New Array; S=New Structure("X", 1); Other=New Map;
+            FA=New FixedArray(A); FS=New FixedStructure(S); FM=New FixedMap(Other);
+            M.Insert(A, "array"); M[S]="structure"; M[Other]=Undefined;
+            M[FA]="fixed-array"; M.Insert(FS,"fixed-structure"); M.Insert(FM,"fixed-map");
+            M[M]="self"; M[True]="bool"; M[1]="number";
+            A.Add(7); S.X=2; Other[1]=2;
+            F=New FixedMap(M); Copy=New Map(F); M.Delete(A); M.Clear();
+        """
+        for route in ('source','ast','prepared'):
+            with self.subTest(route=route):
+                vm=Interpreter(); self.addCleanup(vm.close)
+                if route=='source': vm.execute(script)
+                elif route=='ast': vm.execute_program(parse(script))
+                else: vm.execute_prepared(vm.prepare(script))
+                for name, expected in (
+                    ('A','array'),('S','structure'),('Other',None),('FA','fixed-array'),
+                    ('FS','fixed-structure'),('FM','fixed-map'),('M','self'),
+                    ('True','bool'),('1.00','number'),
+                ):
+                    self.assertEqual(vm.execute(f'F[{name}]'),expected)
+                    self.assertEqual(vm.execute(f'Copy.Get({name})'),expected)
+                self.assertEqual(vm.execute('F.Count()'),9)
+                self.assertEqual(vm.execute('String(Copy)'), 'Соответствие')
+                self.assertEqual(vm.execute_prepared(vm.prepare('String(F)')),
+                                 'ФиксированноеСоответствие')
+                self.assertEqual(vm.execute('M.Count()'),0)
+                self.assertIsNone(vm.execute('F.Get(New FixedArray(A))'))
+                with self.assertRaisesRegex(BSLError,'Ключ фиксированного соответствия не найден'):
+                    vm.execute('F[New FixedArray(A)]')
+                self.assertIsNone(vm.execute('Copy[New Array]'))
+                self.assertEqual(vm.execute("""
+                    Found=False;
+                    For Each Pair In F Do
+                        If Pair.Value="array" Then Pair.Key.Add(8); Found=True; EndIf;
+                    EndDo;
+                    Found
+                """),True)
+                self.assertEqual(vm.execute('A[1]'),8)
+                vm.execute('Copy.Delete(A);')
+                self.assertEqual(vm.execute('F[A]'),'array')
+                self.assertEqual(vm.execute('Copy.Count()'),8)
+
+    def test_identity_keys_stay_live_only_while_an_entry_is_retained(self):
+        class Payload: pass
+        marker=Payload(); ref=weakref.ref(marker); key=[marker]
+        data=PlainMap(); data.setdefault(key,'item')
+        self.assertIs(next(iter(data)),key)
+        self.assertIs(next(iter(data.copy().items()))[0],key)
+        self.assertIs(next(iter(PlainMap(data).keys())),key)
+        fixed=PlainFixedMap(data)
+        taken, value = data.popitem()
+        self.assertIs(taken,key)
+        self.assertEqual(value,'item')
+        del taken, key, marker
+        gc.collect()
+        self.assertIsNotNone(ref())
+        del fixed
+        gc.collect()
+        self.assertIsNone(ref())
+
+    def test_identity_key_codecs_still_reject_unserializable_keys(self):
+        vm=Interpreter(); self.addCleanup(vm.close)
+        from yadinassi.formats.storage.value_storage import capture, SnapshotError
+        vm.execute('M=New Map; K=New Array; M[K]=7; F=New FixedMap(M); W=New JSONWriter; W.SetString();')
+        for name in ('M','F'):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(BSLError,'недопустимый ключ соответствия'):
+                    vm.execute(f'ValueToStringInternal({name})')
+        with self.assertRaisesRegex(SnapshotError, 'invalid native map key'):
+            capture(vm.variables['m'], _source_direct=True)
+        with self.assertRaisesRegex(BSLError, 'JSON: ожидается Строка'):
+            vm.execute('WriteJSON(W,F);')
+        self.assertEqual(vm.execute('WriteJSON(W,7); W.Close()'),'7')
 
     def test_canonical_host_map_retains_object_identity_keys(self):
         key=[];child=[];mapping=BSLMap();mapping.insert(key,child)

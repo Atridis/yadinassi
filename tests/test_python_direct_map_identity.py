@@ -52,14 +52,13 @@ class DirectMapIdentityTests(unittest.TestCase):
 
 
     def test_boolean_key_domain_is_distinct_and_equal_numbers_replace(self):
-        from yadinassi import BSLError
         vm=Interpreter();self.addCleanup(vm.close)
         vm.execute('M=New Map;M.Insert(True,3);M.Insert(1,4);M.Insert(1.00,5);M.Insert("1",6);Boolean=M[True];Number=M[1];Text=M["1"];Count=M.Count();')
         self.assertEqual(tuple(vm.variables[k] for k in ('boolean','number','text','count')),(3,5,6,3))
-        with self.assertRaisesRegex(BSLError, 'scalar Python value'):
-            vm.execute('M.Insert(New Map,7);After=True;')
-        self.assertNotIn('after',vm.variables)
-        self.assertEqual(vm.execute('M.Count()'),3)
+        vm.execute('K=New Map;M.Insert(K,7);K[1]=8;')
+        self.assertEqual(vm.execute('M[K]'),7)
+        self.assertIsNone(vm.execute('M[New Map]'))
+        self.assertEqual(vm.execute('M.Count()'),4)
 
     def test_date_boundary_and_operand_effect_order(self):
         from yadinassi.temporal.dates import BSLDate,MAX_TICKS,UnsupportedDateRange

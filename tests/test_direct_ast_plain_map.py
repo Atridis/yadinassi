@@ -31,9 +31,11 @@ class PlainMapTests(unittest.TestCase):
             self.assertIsNone(vm.execute('M.Get(False)'))
             self.assertEqual(tuple(type(key) for key in vm.variables['seen']), (bool, Decimal, Decimal))
             self.assertEqual(vm.variables['seen'], [True,Decimal(1),Decimal(0)])
-            with self.assertRaisesRegex(Exception,'scalar Python value'):
-                vm.execute('M=New Map;A=New Array;M.Insert(A,1);')
-            self.assertEqual(len(vm.variables['m']),0)
+            vm.execute('A=New Array;M.Insert(A,8);')
+            self.assertEqual(vm.execute('M.Get(A)'),8)
+            self.assertEqual(vm.execute('M[1]'),5)
+            self.assertEqual(vm.execute('M[True]'),4)
+            self.assertEqual(len(vm.variables['m']),4)
         finally:vm.close()
 
     def test_python_mapping_exposes_logical_keys_and_preserves_copy(self):

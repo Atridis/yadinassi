@@ -407,7 +407,7 @@ class _Restore:
                     result.insert(name, self.take(pair[1], depth + 1))
                 return result if tag == "structure" else BSLFixedStructure(result)
             if tag == "native_map":
-                result = dict.__new__(_PlainMap)
+                result = _PlainMap()
                 for pair in body:
                     if type(pair) is not tuple or len(pair) != 2:
                         raise SnapshotError("invalid map snapshot")

@@ -148,7 +148,7 @@ def _string_callable(context,function,*,name=None,require_value=False,allow_refe
             if kind is _CallbackDescription:return 'ОписаниеОповещения'
             if kind is list:return 'Массив'
             if kind is _DirectStructureType:return 'Структура'
-            if kind is _DirectMapType:return 'Соответствие'
+            if kind is PlainMap or kind is _DirectMapType:return 'Соответствие'
             if kind is _CanonicalMapEntry:return 'КлючИЗначение'
             # Preserve the existing canonical service for all other values.
             # Non-scalar presentation may invoke an embedding value's __str__.

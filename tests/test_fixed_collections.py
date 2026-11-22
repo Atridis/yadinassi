@@ -863,10 +863,10 @@ class FixedCollectionTests(unittest.TestCase):
             with self.subTest(expression=expression), self.assertRaisesRegex(
                     BSLRuntimeError, 'Ключ фиксированного соответствия не найден'):
                 self.vm.execute(expression)
-        with self.assertRaisesRegex(BSLRuntimeError, 'requires a scalar Python value'):
-            self.vm.execute('fm.Get(a)')
-        with self.assertRaisesRegex(BSLRuntimeError, 'requires a scalar Python value'):
-            self.vm.execute('m.Insert(a, 7);')
+        self.assertIsNone(self.vm.execute('fm.Get(a)'))
+        self.vm.execute('m.Insert(a, 7); newSnapshot=New FixedMap(m);')
+        self.assertIsNone(self.vm.execute('fm.Get(a)'))
+        self.assertEqual(self.vm.execute('newSnapshot[a]'),7)
 
     def test_direct_fixed_map_assignment_reports_readonly_after_rhs(self):
         self.vm.execute("""
