@@ -36,6 +36,37 @@ class InventoryEnumRuntimeBindingTests(unittest.TestCase):
         self.assertIs(self.vm.execute('C.Ref.GetObject().Unit'),self.ref)
         self.assertIs(self.vm.execute('Catalogs.Products.CreateItem().Unit'),self.vm.execute('Enums.Units.EmptyRef()'))
 
+    def test_detached_document_enum_conversion_does_not_open_read_views(self):
+        backend = self.context.backend
+        self.vm._documents.get_index('Receipt')  # separately admitted document metadata
+        self.vm._metadata._enum_storage = None  # exercise first conversion, too
+        with mock.patch.object(backend, 'begin_read',
+                               side_effect=AssertionError('detached read view')):
+            d = self.vm.execute('D=Documents.Receipt.CreateDocument();'
+                                'D.State=Enums.States.Approved; D')
+            draft = d._draft()
+        field = next(f for f in d._manager._schema.fields if f.name == 'State')
+        index = d._manager._schema.fields.index(field)
+        self.assertEqual(draft.values[index].enum_id, field.target_enum_id)
+        self.assertEqual(draft.values[index].value_id, d._values['state'].reference_uuid)
+
+    def test_detached_conversion_rejects_foreign_lease_and_stale_file(self):
+        from yadinassi.configuration.demos.inventory_enum_runtime import read_snapshot
+        backend = self.context.backend
+        with closing(Interpreter(database_context=self.context)) as other:
+            scope = other._metadata._enum_storage_scope
+            from yadinassi.configuration.demos.inventory_enum_runtime import binding
+            foreign = binding(scope.metadata, detached=True)
+            with closing(backend.begin_document_read()) as view:
+                with read_snapshot(self.vm._metadata, view):
+                    with self.assertRaisesRegex(BackendError, 'unsupported'):
+                        foreign.detached_empty(self.units)
+        with mock.patch.object(backend, '_check_file', side_effect=BackendError('schema_changed')):
+            with self.assertRaisesRegex(BackendError, 'schema_changed'):
+                self.bridge.key(self.ref, self.units, detached=True)
+        with self.assertRaises(BackendError):
+            self.bridge.assigned(replace(self.ref), self.units, detached=True)
+
     def test_document_header_and_line_roundtrip(self):
         self.vm.execute('D=Documents.Receipt.CreateDocument();D.Number="R";D.Date=Date(2024,2,10);D.State=Enums.States.Approved;L=D.Lines.Add();L.Unit=Enums.Units.Piece;D.Write();')
         self.assertIs(self.vm.execute('D.Ref.GetObject().State'),self.vm.execute('Enums.States.Approved'))

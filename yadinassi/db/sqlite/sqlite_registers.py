@@ -147,8 +147,9 @@ class RegisterView:
         return schema,raw
     def _preflight(self,schema):
         layout=self._layout(schema)
-        invalid=self._connection.execute(f"SELECT 1 FROM {layout.table} WHERE typeof(revision)!='integer' OR revision<1 OR ({layout.bytes})>? LIMIT 1",(MAX_ROW,)).fetchone()
-        count,size=self._connection.execute(f'SELECT COUNT(*),COALESCE(SUM({layout.bytes}+64),0) FROM {layout.table}').fetchone()
+        invalid,count,size=self._connection.execute(
+            f"SELECT COALESCE(MAX(typeof(revision)!='integer' OR revision<1 OR ({layout.bytes})>?),0),"
+            f"COUNT(*),COALESCE(SUM({layout.bytes}+64),0) FROM {layout.table}",(MAX_ROW,)).fetchone()
         if invalid: raise BackendError('integrity')
         if count>MAX_ROWS or size>MAX_TOTAL: raise BackendError('unsupported')
         return count
@@ -345,7 +346,8 @@ class RegisterView:
             for keys,values in physical:
                 self._connection.execute(f'INSERT INTO {layout.table}({layout.columns}) VALUES({layout.insert_params})',(revision,*keys,*values));revision+=1
             self._connection.execute('UPDATE information_register_sequence SET next_value=? WHERE register_id=?',(revision,str(schema.identity)))
-            self._preflight(schema)
+            # _scope already checks post-write bounds before reading the
+            # new snapshot, on this same locked writer/savepoint.
             result_rows,result_snapshot=self._scope(schema,draft.filters)
             outcome=RegisterSetOutcome(schema.identity,result_snapshot,len(result_rows))
         self._outcome=outcome

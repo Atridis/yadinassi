@@ -64,12 +64,15 @@ def stage_posted(connection,database_id,intent):
     key=intent.recorder
     if type(key) is not DocumentKey or key.database_id!=database_id or any(type(v) is not UUID or not v.int for v in (database_id,key.document_id,key.record_id)):raise BackendError('invalid_input')
     if not connection.in_transaction:raise BackendError('closed')
-    current=connection.execute('SELECT revision FROM document_record WHERE document_id=? AND record_id=?',(str(key.document_id),str(key.record_id))).fetchone()
-    if current!=(intent.document_revision,):raise BackendError('conflict')
-    count=connection.execute('SELECT COUNT(*) FROM document_posting_state').fetchone()[0]
-    exists=connection.execute('SELECT 1 FROM document_posting_state WHERE document_id=? AND record_id=?',(str(key.document_id),str(key.record_id))).fetchone()
+    fields = (str(key.document_id),str(key.record_id))
+    current, count, exists = connection.execute(
+        'SELECT (SELECT revision FROM document_record WHERE document_id=? AND record_id=?),'
+        '(SELECT COUNT(*) FROM document_posting_state),'
+        'EXISTS(SELECT 1 FROM document_posting_state WHERE document_id=? AND record_id=?)',
+        fields+fields).fetchone()
+    if current!=intent.document_revision:raise BackendError('conflict')
     if count+(0 if exists else 1)>MAX_POSTED_RECORDS:raise BackendError('unsupported')
-    connection.execute('INSERT INTO document_posting_state VALUES(?,?,?,?) ON CONFLICT(document_id,record_id) DO UPDATE SET document_revision=excluded.document_revision,posted=excluded.posted',(str(key.document_id),str(key.record_id),intent.document_revision,int(intent.posted)))
+    connection.execute('INSERT INTO document_posting_state VALUES(?,?,?,?) ON CONFLICT(document_id,record_id) DO UPDATE SET document_revision=excluded.document_revision,posted=excluded.posted',(*fields,intent.document_revision,int(intent.posted)))
     return intent
 
 

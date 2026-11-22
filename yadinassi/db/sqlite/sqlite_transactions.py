@@ -1,6 +1,6 @@
 """Host-owned ordered multi-port staging with one durable commit boundary."""
 from contextlib import contextmanager
-from yadinassi.db.catalog.catalog_backend import BackendError, Revision, _TabularSectionChanges
+from yadinassi.db.catalog.catalog_backend import BackendError, Revision
 from yadinassi.db.document.document_backend import DocumentRevision, DocumentWriteOutcome
 from yadinassi.db.transaction_backend import TransactionRequest, StagedTicket, TransactionOutcome
 from .sqlite_documents import DocumentView
@@ -58,23 +58,41 @@ def _posting_port(view):
     return _accumulation_port(view) if view._backend.format_version in (14,15,16) else _recorder_port(view)
 
 
-def _describe(view, request):
-    if type(request) is not TransactionRequest or request.kind not in KINDS:
-        raise BackendError('invalid_input')
+def _posting_schemas(view):
+    """Capture the source witness only on the newly admitted SQLite writer."""
+    backend = view._backend
+    storage = _storage()
+    if (type(view) is storage._View and type(backend) is storage.SQLiteCatalogBackend
+            and backend._active is view and view._operation_id is not None
+            and view._catalog_data is None and type(view._connection) is storage.sqlite3.Connection
+            and view._connection.in_transaction and backend.format_version in (13,14,15,16)):
+        configuration = backend.posting_configuration if backend.format_version == 13 else backend.accumulation_configuration
+        schemas = backend._recorder_schemas if backend.format_version == 13 else backend._accumulation_schemas
+        if type(schemas) is not tuple or not schemas or configuration is None or configuration.registers is not schemas:
+            raise BackendError('schema_changed')
+        return configuration, schemas
+
+
+def _describe(view, request, posting_source):
     kind,draft,expected = request.kind,request.draft,request.expected
     if kind=='document_set_posted':
         if expected is not None:raise BackendError('invalid_input')
-        port=_posting_port(view)
+        if posting_source is None:
+            schemas = _posting_port(view).schemas.values()
+        else:
+            current = _posting_schemas(view)
+            if current is None or current[0] is not posting_source[0] or current[1] is not posting_source[1]:
+                raise BackendError('schema_changed')
+            schemas = posting_source[1]
         from .sqlite_document_posting_state import describe_posted
         described=describe_posted(view.database_id,view.configuration_generation,draft)
-        if draft.recorder.document_id not in {d for schema in port.schemas.values() for d in schema.recorder_documents}:raise BackendError('unsupported')
+        if not any(draft.recorder.document_id in schema.recorder_documents for schema in schemas):
+            raise BackendError('unsupported')
         return described
     if kind in ('recorder_replace','accumulation_replace'):
         if expected is not None:raise BackendError('invalid_input')
         port=_recorder_port(view) if kind=='recorder_replace' else _accumulation_port(view)
         return port.describe(draft)
-    if kind.endswith('_create') and expected is not None: raise BackendError('invalid_input')
-    if kind.endswith('_update') and expected is None: raise BackendError('invalid_input')
     if kind.startswith('catalog_'):
         draft,values,schema = view._draft(draft); sections = view._draft_sections(draft,schema)
         if expected is not None and (type(expected) is not Revision or (expected.database_id,expected.configuration_generation,expected.catalog_id,expected.record_id)!=(view.database_id,view.configuration_generation,draft.key.catalog_id,draft.key.record_id)): raise BackendError('conflict')
@@ -83,10 +101,6 @@ def _describe(view, request):
                      hierarchy=schema.hierarchy != 'none')
         identity = ('catalog',draft.key.catalog_id,draft.key.record_id)
         return len(_json(intent).encode('utf-8')), identity
-    if kind.startswith('document_'):
-        port = DocumentView(view)
-        _,_,(size,_) = port._intent(draft,expected)
-        return size,('document',draft.key.document_id,draft.key.record_id)
     port = RegisterView(view)
     if kind == 'register_set':
         if expected is not None: raise BackendError('invalid_input')
@@ -125,6 +139,9 @@ class UnitOfWork:
         self._view = view; self.operation_id = view._operation_id
         self._requests = (); self._results = (); self._identities = frozenset()
         self._bytes = 0; self.state = 'open'; self._savepoint_depth=0
+        # This tuple belongs to the current locked writer only; it carries
+        # recorder membership, never movements, query state or an open port.
+        self._posting_source = _posting_schemas(view)
 
     @property
     def requests(self): return self._requests
@@ -136,13 +153,25 @@ class UnitOfWork:
     def stage(self, request):
         self._open()
         if len(self._requests) >= MAX_OPERATIONS: raise BackendError('unsupported')
-        view = self._view
-        size,identity = _describe(view,request)
-        if identity in self._identities and request.kind not in ('recorder_replace','accumulation_replace'): raise BackendError('unsupported')
-        total = self._bytes + size
-        if total > MAX_BYTES: raise BackendError('unsupported')
+        if type(request) is not TransactionRequest or request.kind not in KINDS:
+            raise BackendError('invalid_input')
         index = len(self._requests)
         kind,draft,expected = request.kind,request.draft,request.expected
+        if kind.endswith('_create') and expected is not None: raise BackendError('invalid_input')
+        if kind.endswith('_update') and expected is None: raise BackendError('invalid_input')
+        view = self._view
+        document_port = None
+        if kind in ('document_create','document_update'):
+            document_port = DocumentView(view)
+            document_intent = document_port._intent(draft,expected)
+            size = document_intent[2][0]
+            identity = ('document',draft.key.document_id,draft.key.record_id)
+        else:
+            size,identity = _describe(view,request,self._posting_source)
+        if identity in self._identities and kind not in ('recorder_replace','accumulation_replace'):
+            raise BackendError('unsupported')
+        total = self._bytes + size
+        if total > MAX_BYTES: raise BackendError('unsupported')
         if kind=='document_set_posted':_require_staged_document(draft,view,self._requests,self._results)
         # Commit row changes and stage bookkeeping together under the savepoint.
         with view._atomic_record():
@@ -153,14 +182,13 @@ class UnitOfWork:
             elif kind=='document_set_posted':
                 from .sqlite_document_posting_state import stage_posted
                 result = stage_posted(view._connection,view.database_id,draft)
-            elif kind.startswith('document_'):
-                port = DocumentView(view)
-                if type(draft.tabular_sections) is _TabularSectionChanges:
-                    size = port._write(draft,expected,max_intent=MAX_BYTES-self._bytes)
-                    total = self._bytes + size
-                elif expected is None: port.create(draft)
-                else: port.update(draft,expected)
-                result = port._outcome
+            elif document_port is not None:
+                # No callback, mutation or lease switch between preparing
+                # the intent and writing it on this locked writer.
+                size = document_port._write_admitted(draft,expected,document_intent,
+                    max_intent=MAX_BYTES-self._bytes, protected=True)
+                total = self._bytes + size
+                result = document_port._outcome
             elif kind=='recorder_replace':
                 result = _recorder_port(view).replace(draft)
             elif kind=='accumulation_replace':

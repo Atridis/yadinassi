@@ -116,7 +116,7 @@ class BSLCatalogManager(BSLObject):
     def _stored(self,field,value):
         if field.kind=='enum_ref':
             from yadinassi.configuration.demos.inventory_enum_runtime import binding
-            return binding(self._catalogs._metadata._root).key(value,field.target_enum_id)
+            return binding(self._catalogs._metadata._root,detached=True).key(value,field.target_enum_id,detached=True)
         if field.kind=='datetime':
             if type(value) is not BSLDate:raise TypeError('Date field requires Date')
             value.require_known()
@@ -133,15 +133,15 @@ class BSLCatalogManager(BSLObject):
     def _field_default(self,field):
         if field.kind=='enum_ref':
             from yadinassi.configuration.demos.inventory_enum_runtime import binding
-            bridge=binding(self._catalogs._metadata._root)
-            return bridge.value(bridge._domain.empty(field.target_enum_id),field.target_enum_id)
+            bridge=binding(self._catalogs._metadata._root,detached=True)
+            return bridge.detached_empty(field.target_enum_id)
         if field.kind=='catalog_ref':return self._catalogs._manager_by_metadata_uuid(field.target_catalog_id).empty_ref()
         if field.kind=='datetime':return BSLDate(0)
         return {'string':'','number':Decimal(0),'boolean':False}[field.kind]
     def _assigned(self,field,value):
         if field.kind=='enum_ref':
             from yadinassi.configuration.demos.inventory_enum_runtime import binding
-            return binding(self._catalogs._metadata._root).assigned(value,field.target_enum_id)
+            return binding(self._catalogs._metadata._root,detached=True).assigned(value,field.target_enum_id,detached=True)
         self._stored(field,value)
         return normalize_field(value,field)
     def _defaults(self,ref=None):
@@ -380,7 +380,9 @@ class BSLCatalogObject(BSLObject):
         outcomes=caps.catalog_write_outcomes
         if m._schema.numbering!='explicit' and not outcomes:raise BackendError('unsupported')
         policy = getattr(m._backend, 'catalog_write_preparation', None)
-        selected_source = policy(m._schema.identity) if policy is not None else None
+        deferred_source = (sqlite_backend and active is None and preparation is None
+            and m._backend._defer_main_demo_write_source(m._schema.identity, policy))
+        selected_source = policy(m._schema.identity) if policy is not None and not deferred_source else None
         if selected_source is not None:
             if preparation is not None and preparation[0] != selected_source:
                 raise BackendError('schema_changed')
@@ -391,6 +393,12 @@ class BSLCatalogObject(BSLObject):
         from yadinassi.db.database_transactions import current
         transaction = current(m._backend)
         if transaction is not None:
+            if deferred_source:
+                # A late owner cannot consume the ordinary standalone choice.
+                # Explicit execution must still use its registered lease.
+                selected_source = policy(m._schema.identity)
+                if selected_source is not None:
+                    preparation = (selected_source, False)
             if preparation is not None:
                 from yadinassi.execution.direct.python_direct_transaction_preparation import stage_selected_source
                 return stage_selected_source(self,preparation,selected_source)
@@ -403,7 +411,7 @@ class BSLCatalogObject(BSLObject):
             if current_backend() == 'python-direct':
                 from yadinassi.execution.direct.python_direct_catalog_preparation import prepared_validator as prepare_validator
                 prepared_validator=prepare_validator(m,preparation[0])
-        data_backend = m._runtime_data_backend() if preparation is None else None
+        data_backend = m._runtime_data_backend() if preparation is None and not deferred_source else None
         if data_backend is not None and expected is not None and outcomes:
             from yadinassi.db.sqlite.sqlite_catalog import _single_catalog_scalar_schema
             if _single_catalog_scalar_schema(m._schema):
@@ -421,6 +429,8 @@ class BSLCatalogObject(BSLObject):
         messages=()
         try:
             if tx.database_id!=self._key.database_id or tx.configuration_generation!=m._catalogs._metadata._generation or tx.catalog_schema(m._schema.identity)!=m._schema:raise BackendError('schema_changed')
+            if deferred_source:
+                preparation = (m._backend._main_demo_write_source_on_owner(m._schema.identity, tx, operation), False)
             if preparation is not None:
                 from .catalog_object_preparation import _prepare_catalog_object, CatalogWriteRefused
                 cancel,messages=_prepare_catalog_object(preparation[0],self,

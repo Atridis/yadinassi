@@ -48,10 +48,16 @@ class EnumStorageBinding:
     _hook_owner: object
     _hook_function: object
 
-    def __init__(self, domain, definitions, namespace, *, require_live):
+    def __init__(self, domain, definitions, namespace, *, require_live, detached=False):
         if type(require_live) is not MethodType:
             raise BackendError('invalid_input')
-        require_live()
+        if detached:
+            from yadinassi.configuration.demos.inventory_enum_runtime import _EnumScope
+            if type(require_live.__self__) is not _EnumScope or require_live.__func__ is not _EnumScope.require_live:
+                raise BackendError('invalid_input')
+            require_live.__self__._require_conversion()
+        else:
+            require_live()
         if type(domain) is not EnumValueDomain or type(namespace) is not BSLEnumerations:
             raise BackendError('invalid_input')
         rebuilt = EnumValueDomain(domain.database_id, definitions)
@@ -116,7 +122,7 @@ class EnumStorageBinding:
         hook()
         self._require_namespace()
 
-    def _require_detached(self):
+    def _require_detached(self, *, conversion=False):
         """Integrity/owner only; detached report operations acquire no lease."""
         from yadinassi.configuration.demos.inventory_enum_runtime import _EnumScope
         hook = self._hook
@@ -125,7 +131,8 @@ class EnumStorageBinding:
                 or hook.__func__ is not _EnumScope.require_live
                 or self._hook_function is not _EnumScope.require_live):
             raise BackendError('closed')
-        self._hook_owner._require_owner()
+        if conversion: self._hook_owner._require_conversion()
+        else: self._hook_owner._require_owner()
         self._require_namespace()
 
     def _require_namespace(self):
@@ -163,8 +170,9 @@ class EnumStorageBinding:
                 return entry
         raise BackendError('invalid_input')
 
-    def key(self, value, enum_id):
-        self._live()
+    def key(self, value, enum_id, *, detached=False):
+        if detached: self._require_detached(conversion=True)
+        else: self._live()
         entry = self._entry(enum_id)
         if type(value) is not BSLEnumReference:
             raise BackendError('invalid_input')
@@ -183,7 +191,7 @@ class EnumStorageBinding:
                     return EnumKey(self._domain.database_id,entry[0],identity)
         raise BackendError('invalid_input')
 
-    def assigned(self, value, enum_id):
+    def assigned(self, value, enum_id, *, detached=False):
         """Measured format16 assignment adjustment, never a storage decoder.
 
         Foreign/fabricated enum objects are rejected before coercion. Only
@@ -192,7 +200,8 @@ class EnumStorageBinding:
         """
         from decimal import Decimal
         from yadinassi.db.catalog.catalog_qualifiers import bound_number
-        self._live()
+        if detached: self._require_detached(conversion=True)
+        else: self._live()
         target=self._entry(enum_id)
         if type(value) is BSLEnumReference:
             # Membership scan avoids trusting even a fabricated type/UUID.
@@ -209,6 +218,10 @@ class EnumStorageBinding:
             except (ValueError,TypeError):raise BackendError('invalid_input') from None
             return target[7][0]
         raise BackendError('invalid_input')
+
+    def detached_empty(self, enum_id):
+        self._require_detached(conversion=True)
+        return self._entry(enum_id)[7][0]
 
     def value(self, key, enum_id):
         self._live()

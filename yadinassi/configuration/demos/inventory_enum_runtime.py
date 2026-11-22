@@ -53,6 +53,29 @@ class _EnumScope:
                 or view.configuration_generation!=self.configuration_generation):
             raise BackendError('schema_changed')
 
+    def _require_conversion(self):
+        # Converting a detached enum symbol uses the open family definition;
+        # no row or executable source is read. Keep file/foreign ownership
+        # checks and honor any point view already supplied by the caller.
+        self._require_owner()
+        captured = _POINT_READ.get()
+        if captured is not None:
+            owner, view = captured
+            if owner is not self: raise BackendError('unsupported')
+            self._require_snapshot(view)
+            return
+        from yadinassi.db.database_transactions import current
+        transaction = current(self.backend)
+        if transaction is not None:
+            if transaction.unit.state != 'open': raise BackendError('uncertain_commit')
+            view = transaction.unit._view
+            if self.backend._active is not view: raise BackendError('closed')
+            view._require()
+            self._require_identity(view)
+        elif self.backend._active is not None:
+            raise BackendError('busy')
+        self.backend._check_file()
+
     def require_live(self):
         self._require_owner()
         captured=_POINT_READ.get()
@@ -111,17 +134,20 @@ def bind(interpreter,metadata):
     # binder only after the normal family reopen sequence has completed.
 
 
-def binding(metadata):
+def binding(metadata, *, detached=False):
     from yadinassi.configuration.metadata import BSLMetadata
     if type(metadata) is not BSLMetadata or type(metadata._enum_storage_scope) is not _EnumScope:
         raise BackendError('unsupported')
     scope=metadata._enum_storage_scope
-    scope.require_live()
+    if not detached: scope.require_live()
     if metadata._enum_storage is None:
         metadata._enum_storage=EnumStorageBinding(scope.backend._enum_domain,
-            scope.configuration.enumerations,scope.namespace,require_live=scope.require_live)
-    if type(metadata._enum_storage) is not EnumStorageBinding:raise BackendError('unsupported')
-    return metadata._enum_storage
+            scope.configuration.enumerations,scope.namespace,require_live=scope.require_live,
+            detached=detached)
+    storage = metadata._enum_storage
+    if type(storage) is not EnumStorageBinding or (detached and storage._hook_owner is not scope):
+        raise BackendError('unsupported')
+    return storage
 
 
 def query_binding(catalogs):

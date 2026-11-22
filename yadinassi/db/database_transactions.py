@@ -298,7 +298,15 @@ class Transaction:
                 return super()._require()
         if self.unit.state != 'open': raise BackendError('uncertain_commit')
         writer = self.unit._view
+        if (type(writer) is not _View or self.backend._active is not writer
+                or writer._backend is not self.backend or writer._connection is None
+                or not writer._connection.in_transaction):
+            raise BackendError('closed')
+        writer._require(True)
+        # Reuse the exact writer's already-admitted identity. The read lease
+        # borrows this same locked connection, not a fresh database snapshot.
         lease = Lease(self.backend, writer._connection, None,
+                      admitted_identity=(writer.database_id, writer.configuration_generation),
                       admitted_catalogs=writer._admitted_catalogs)
         entry = (Lease, lease)
         previous_count = self.leases

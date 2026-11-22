@@ -1171,6 +1171,69 @@ class SQLiteCatalogBackend:
         finally:
             connection.close()
 
+    def _defer_main_demo_write_source(self, catalog_id, policy):
+        """Select a candidate only; this does not supply executable source."""
+        if self.format_version != 16 or self._active is not None or self._closed:
+            return False
+        from types import MethodType
+        from yadinassi.configuration.configuration_main_demo import MainDemoConfiguration
+        from .sqlite_catalog_runtime_data import CatalogRuntimeData
+
+        data = self._catalog_runtime_data
+        config = self.accumulation_configuration
+        if (type(config) is not MainDemoConfiguration or type(data) is not CatalogRuntimeData
+                or data.config is not config or data.handlers is not config.catalog_handlers
+                or type(catalog_id) is not UUID or type(catalog_id.int) is not int
+                or catalog_id.int not in data.handler_ids):
+            return False
+        for name, canonical in _ORDINARY_MAIN_DEMO_WRITE_ABI:
+            actual = policy if name == 'catalog_write_preparation' else getattr(self, name)
+            if (type(actual) is not MethodType or actual.__self__ is not self
+                    or actual.__func__ is not canonical):
+                return False
+        return True
+
+    def _main_demo_write_source_on_owner(self, catalog_id, writer, operation):
+        """Consume the exact source just re-admitted by this ordinary writer."""
+        if (type(writer) is not _View or self._active is not writer or writer._backend is not self
+                or writer._operation_id != operation or writer._catalog_data is not None
+                or writer._admitted_catalogs is None or not writer._connection.in_transaction):
+            raise BackendError('unsupported')
+        writer._require(True)
+        schema = writer._admitted_catalogs.get(catalog_id.int)
+        if type(schema) is not CatalogSchema:
+            raise BackendError('schema_changed')
+        source = self._main_demo_policy_text(self.accumulation_configuration, catalog_id,
+                                             writer_schema=schema)
+        if source is None:
+            raise BackendError('schema_changed')
+        return source
+
+    def _main_demo_policy_text(self, config, catalog_id, *, expected=None, writer_schema=None):
+        owner = next((c for c in config.catalog_sources if c.identity == catalog_id), None)
+        if owner is None: raise BackendError('not_found')
+        grant = next((g for g in config.catalog_handlers if g[0] == catalog_id), None)
+        if grant is None: return None
+        if writer_schema is not None:
+            # The locked writer copied the exact schema during admission.
+            # Pin the chosen bytes to the MainDemo grant for that catalog, not
+            # to a replacement in-memory grant with a matching forged digest.
+            from yadinassi.configuration.demos.main_demo_source import SOURCE_SHA256
+            path = 'Catalogs/' + writer_schema.name + '/Ext/ObjectModule.bsl'
+            if (type(grant[1]) is not str or grant[1] != path or type(grant[2]) is not str
+                    or grant[2] != SOURCE_SHA256.get(path)):
+                raise BackendError('schema_changed')
+        form = next(f for f in owner.forms if owner.default_object_form ==
+                    'Catalog.' + owner.name + '.Form.' + f.name)
+        identity = ConfigurationSourceIdentity(self.database_id, config.identity,
+            self.configuration_generation, config.source_digest, owner.identity, form.identity)
+        if expected is not None and (type(expected) is not ConfigurationSourceIdentity or expected != identity):
+            raise BackendError('schema_changed')
+        raw = dict(config.files)[grant[1]]
+        if hashlib.sha256(raw).hexdigest() != grant[2]:
+            raise BackendError('integrity')
+        return raw.decode('utf-8-sig')
+
     def _main_demo_source_snapshot(self, connection):
         from yadinassi.configuration.configuration_main_demo import MainDemoConfiguration, PROFILE, _same
         from .sqlite_inventory_enum_profile import read_source
@@ -1214,19 +1277,7 @@ class SQLiteCatalogBackend:
             if lease is None: connection.execute('BEGIN')
             config = self._main_demo_source_snapshot(connection)
             if lease is not None: require_registered_query_lease(self, lease)
-            owner = next((c for c in config.catalog_sources if c.identity == catalog_id), None)
-            if owner is None: raise BackendError('not_found')
-            grant = next((g for g in config.catalog_handlers if g[0] == catalog_id), None)
-            if grant is None: return None
-            form = next(f for f in owner.forms if owner.default_object_form ==
-                        'Catalog.' + owner.name + '.Form.' + f.name)
-            identity = ConfigurationSourceIdentity(self.database_id, config.identity,
-                self.configuration_generation, config.source_digest, owner.identity, form.identity)
-            if expected is not None and (type(expected) is not ConfigurationSourceIdentity or expected != identity):
-                raise BackendError('schema_changed')
-            raw = dict(config.files)[grant[1]]
-            if hashlib.sha256(raw).hexdigest() != grant[2]: raise BackendError('integrity')
-            return raw.decode('utf-8-sig')
+            return self._main_demo_policy_text(config, catalog_id, expected=expected)
         finally:
             if lease is not None: lease.close()
             else: connection.close()
@@ -3207,7 +3258,7 @@ class _View:
             raise
 
 # The document port shares the same closed storage error boundary.
-for _document_method in ('_validate_query_source','documents','document_schema','read_document','read_document_values','select_documents','scan_documents','scan_document_values','ordered_document_values','ordered_document_part','find_document_number','registers','register_schema','scan_register','ordered_register_records','periodic_records','create','update','commit'):
+for _document_method in ('_validate_query_source','documents','document_schema','read_document','read_document_values','select_documents','scan_documents','scan_document_values','ordered_document_values','ordered_document_part','find_document_number','_write_admitted','registers','register_schema','scan_register','ordered_register_records','periodic_records','create','update','commit'):
     setattr(DocumentView, _document_method, _boundary(getattr(DocumentView, _document_method)))
 
 install_boundaries(_boundary)
@@ -3327,3 +3378,10 @@ _DIRECT_MOVEMENT_PARENT_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
 
 # Exact source-selection entry for bounded explicit-transaction preparation.
 _TRANSACTION_PREPARATION_POLICY_ABI=(SQLiteCatalogBackend,SQLiteCatalogBackend._main_demo_write_source)
+
+# Only the ordinary writer that performs full same-lock admission may consume
+# its opened-source candidate. Preserve custom selection and writer hooks.
+_ORDINARY_MAIN_DEMO_WRITE_ABI = tuple((name, getattr(SQLiteCatalogBackend, name)) for name in (
+    'catalog_write_preparation', '_main_demo_write_source', '_main_demo_source_snapshot',
+    'begin_write', '_begin', '_validate_transaction_admission',
+))

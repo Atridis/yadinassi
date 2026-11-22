@@ -48,6 +48,18 @@ class MainDemoRuntimeTests(unittest.TestCase):
         self.vm.execute('Message(Прочитано.Склады.Количество());')
         self.assertEqual(self.output,['1'])
 
+    def test_ordinary_document_write_does_not_construct_movement_port_for_membership(self):
+        from unittest.mock import patch
+        self.vm.execute('W=Catalogs.Склады.CreateItem();W.Description="Warehouse";W.Write();'
+                        'D=Documents.Receipt.CreateDocument();D.Date=Date(2024,1,1);'
+                        'D.Number="R1";D.Warehouse=W.Ref;D.State=Enums.States.Draft;')
+        with patch('yadinassi.db.sqlite.sqlite_transactions._posting_port',
+                   side_effect=AssertionError('storage port is not needed for membership')):
+            self.vm.execute('D.Write();')
+        document = self.vm.variables['d']
+        self.assertFalse(document.is_new())
+        self.assertIs(self.context.backend.read_document_posted(document._key), False)
+
     def test_posted_inventory_uses_same_russian_catalogs(self):
         self.vm.execute(SEED+'''D=Documents.Receipt.CreateDocument();D.Number="r1";D.Date=Date(2024,1,1);
 D.Warehouse=Склад.Ссылка;L=D.Lines.Add();L.Product=Карточка.Ссылка;L.Quantity=5;L.Amount=10;

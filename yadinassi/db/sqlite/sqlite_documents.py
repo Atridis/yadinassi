@@ -3,6 +3,7 @@
 Distinct document tables/keys; catalog layouts remain distinct.
 The closed tagged scalar codec is shared, never exposed as a native codec.
 """
+from contextlib import nullcontext
 from decimal import Decimal
 import json
 from uuid import UUID, uuid4
@@ -156,9 +157,15 @@ class DocumentView:
         if self._view._cache_validation_allowed() and cache_key in self._view._validated_sources:
             return self._view._validated_sources[cache_key][0]
         args = (str(schema.identity),)
-        invalid = self._connection.execute("SELECT 1 FROM document_record WHERE document_id=? AND (typeof(record_id)!='text' OR length(CAST(record_id AS BLOB))!=36 OR typeof(revision)!='integer' OR revision<1 OR typeof(number)!='text' OR length(CAST(number AS BLOB))>36 OR typeof(date)!='text' OR length(date)!=14 OR typeof(deletion_mark)!='integer' OR deletion_mark NOT IN(0,1)) LIMIT 1", args).fetchone()
-        count, size = self._connection.execute(
-            'SELECT COUNT(*),COALESCE(SUM(length(CAST(number AS BLOB))+128),0) FROM document_record WHERE document_id=?', args).fetchone()
+        # The count/byte total already visits every header. Check the same
+        # storage invariants in that pass rather than scanning headers twice.
+        count, size, invalid = self._connection.execute(
+            "SELECT COUNT(*),COALESCE(SUM(length(CAST(number AS BLOB))+128),0),"
+            "COALESCE(MAX(CASE WHEN typeof(record_id)!='text' OR length(CAST(record_id AS BLOB))!=36 "
+            "OR typeof(revision)!='integer' OR revision<1 OR typeof(number)!='text' "
+            "OR length(CAST(number AS BLOB))>36 OR typeof(date)!='text' OR length(date)!=14 "
+            "OR typeof(deletion_mark)!='integer' OR deletion_mark NOT IN(0,1) THEN 1 ELSE 0 END),0) "
+            "FROM document_record WHERE document_id=?", args).fetchone()
         if invalid: raise BackendError('integrity')
         tables = ([(data_table(schema),schema.fields,0)] if schema.fields else [])
         tables.extend((section_table(schema,section),section.fields,52) for section in schema.tabular_sections)
@@ -884,10 +891,15 @@ class DocumentView:
                 ((document,record,raw_id,n,*encode_typed_columns(data,section,enum_domain=domain))
                  for n,(raw_id,data) in enumerate(rows,1)))
 
-    def _write(self, draft, expected, *, max_intent=None):
+    def _write(self, draft, expected):
         self._view._require(True)
         if self._outcome is not None: raise BackendError('unsupported')
-        schema,intent,(intent_size,envelope) = self._intent(draft,expected)
+        return self._write_admitted(draft, expected, self._intent(draft,expected))
+
+    def _write_admitted(self, draft, expected, admitted, *, max_intent=None, protected=False):
+        # Raw writes own their savepoint. A unit of work already covers
+        # the entire stage, including outcome creation, in its savepoint.
+        schema,intent,(intent_size,envelope) = admitted
         _,document,record,number,date,mark,values,sections,auto,_ = intent
         count = self._preflight(schema)
         row = self._load_record(schema,draft.key)
@@ -900,7 +912,7 @@ class DocumentView:
         else:
             if old is None or old.revision != expected: raise BackendError('conflict')
             revision = int(expected.token)+1
-        with self._view._atomic_record():
+        with nullcontext() if protected else self._view._atomic_record():
             if auto:
                 next_value = self._connection.execute('SELECT next_value FROM document_sequence WHERE document_id=?',(document,)).fetchone()[0]
                 while next_value < 10**schema.number_length:

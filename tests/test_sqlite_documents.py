@@ -71,6 +71,28 @@ class SQLiteDocumentTests(unittest.TestCase):
             for connection in connections:
                 connection.close()
 
+    def test_document_preflight_checks_count_size_and_header_in_one_scan(self):
+        self.vm.execute('D=Documents.Orders.CreateDocument();D.Date=Date(2026,11,9);D.Write();')
+        backend = self.context.backend
+        with closing(backend.begin_document_write(uuid4())) as view:
+            statements = []
+            view._connection.set_trace_callback(statements.append)
+            try:
+                self.assertEqual(view._preflight(self.schema), 1)
+            finally:
+                view._connection.set_trace_callback(None)
+            header = [sql for sql in statements if 'FROM document_record WHERE document_id=' in sql]
+            self.assertEqual(len(header), 1)
+        with closing(backend.begin_document_write(uuid4())) as view:
+            with patch('yadinassi.db.sqlite.sqlite_documents._MAX_TOTAL', 128):
+                with self.assertRaisesRegex(BackendError, 'unsupported'):
+                    view._preflight(self.schema)
+        self.sql("UPDATE document_record SET date='short'")
+        with closing(backend.begin_document_write(uuid4())) as view:
+            with patch('yadinassi.db.sqlite.sqlite_documents._MAX_TOTAL', 128):
+                with self.assertRaisesRegex(BackendError, 'integrity'):
+                    view._preflight(self.schema)
+
     def test_bsl_create_read_update_reopen_with_catalog_reference(self):
         result = self.execute('''C=Catalogs.Categories.CreateItem();C.Code="C";C.Description="Customer";C.Write();
 D=Documents.Orders.CreateDocument();Message(D.IsNew());Message(D.Ref.IsEmpty());D.Date=Date(2026,11,9,12,30,5);

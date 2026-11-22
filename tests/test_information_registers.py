@@ -126,6 +126,81 @@ class InformationRegisterTests(unittest.TestCase):
         self.execute('S.Clear();X=S.Add();X.Item="C";X.Region="South";X=S.Add();X.Item="A";X.Region="North";')
         with self.assertRaises(BSLRuntimeError):self.execute('S.Write(False);')
         self.assertEqual(len(self.sql(f'SELECT * FROM {self.table}')),2)
+    def test_writer_checks_register_capacity_once_before_and_after_mutation(self):
+        self.seed()
+        backend=self.context.backend; connect=backend._connect
+        def capture(write):
+            statements=[]
+            def traced(*args,**kwargs):
+                connection=connect(*args,**kwargs)
+                connection.set_trace_callback(statements.append)
+                return connection
+            with patch.object(backend,'_connect',side_effect=traced):
+                self.execute(write)
+            scans=[sql for sql in statements if f'FROM "{self.table}"' in sql
+                   and ('COUNT(*)' in sql or "typeof(revision)" in sql)]
+            self.assertEqual(len(scans),2,scans)
+            self.assertTrue(all('COUNT(*)' in sql and 'typeof(revision)' in sql for sql in scans),scans)
+            mutation=next(i for i,sql in enumerate(statements)
+                          if sql.startswith((f'UPDATE "{self.table}"',f'DELETE FROM "{self.table}"')))
+            self.assertLess(statements.index(scans[0]),mutation)
+            self.assertGreater(len(statements)-1-statements[::-1].index(scans[1]),mutation)
+
+        capture('R.Price=19;R.Write();')
+        self.execute('S=InformationRegisters.Prices.CreateRecordSet();'
+                     'S.Filter.Region.Set("North");X=S.Add();X.Item="C";X.Price=44;')
+        capture('S.Write();')
+        self.assertEqual(self.execute('S.Read();Message(S[0].Price);'),['44'])
+
+    def test_register_set_over_capacity_rolls_back_sequence_and_edit_buffer(self):
+        from yadinassi.db.sqlite.sqlite_register_layout import RegisterLayout
+        self.seed()
+        for i in range(6):
+            self.execute(f'R.Clear();R.Item="existing-{i}";R.Region="North";R.Write();')
+        self.execute('S=InformationRegisters.Prices.CreateRecordSet();'
+                     'S.Filter.Region.Set("South");X=S.Add();X.Item="new";X.Price=44;')
+        layout=RegisterLayout(self.schema)
+        size=self.sql(f'SELECT SUM({layout.bytes}+64) FROM {layout.table}')[0][0]
+        before=self.sql(f'SELECT {layout.columns} FROM {layout.table} ORDER BY {layout.key_order}')
+        sequence=self.sql('SELECT next_value FROM information_register_sequence')
+        preflight=RegisterView._preflight; checks=[]
+        def check(view,schema):
+            try: count=preflight(view,schema)
+            except BackendError as error:
+                checks.append(error.code)
+                raise
+            checks.append(count)
+            return count
+        with patch('yadinassi.db.sqlite.sqlite_registers.MAX_TOTAL',size), \
+                patch.object(RegisterView,'_preflight',check),self.assertRaises(BSLRuntimeError):
+            self.execute('S.Write();')
+        self.assertEqual(checks,[len(before),'unsupported'])
+        self.assertEqual(self.sql(f'SELECT {layout.columns} FROM {layout.table} ORDER BY {layout.key_order}'),before)
+        self.assertEqual(self.sql('SELECT next_value FROM information_register_sequence'),sequence)
+        self.assertIsNone(self.context.backend._active)
+        self.assertEqual(self.execute('Message(S.Count());Message(X.Price);'),['1','44'])
+        self.execute('S.Write();')
+        self.assertEqual(len(self.sql(f'SELECT * FROM {self.table}')),len(before)+1)
+
+    def test_point_and_record_set_refuse_corrupt_unrelated_revision_before_write(self):
+        self.seed()
+        self.execute('Q=InformationRegisters.Prices.CreateRecordManager();'
+                     'Q.Item="bad";Q.Region="South";Q.Price=3;Q.Write();'
+                     'S=InformationRegisters.Prices.CreateRecordSet();'
+                     'S.Filter.Region.Set("North");X=S.Add();X.Item="replacement";')
+        with closing(sqlite3.connect(self.path)) as connection, connection:
+            connection.execute('PRAGMA ignore_check_constraints=ON')
+            item=attribute_column(self.schema.dimensions[0])
+            connection.execute(f'UPDATE {self.table} SET revision=0 WHERE "{item}"=?',('bad',))
+        sequence=self.sql('SELECT next_value FROM information_register_sequence')
+        for write in ('R.Price=99;R.Write();','S.Write();'):
+            with self.subTest(write=write),self.assertRaises(BSLRuntimeError):
+                self.execute(write)
+            self.assertIsNone(self.context.backend._active)
+            self.assertEqual(self.sql('SELECT next_value FROM information_register_sequence'),sequence)
+        price=attribute_column(self.schema.resources[0])
+        self.assertEqual(self.sql(f'SELECT "{price}" FROM {self.table} WHERE "{item}"=?',('A',)),[(1250,)])
+
     def test_recordset_scope_mismatch_rolls_back(self):
         self.seed();self.execute('S=InformationRegisters.Prices.CreateRecordSet();S.Filter.Region.Set("North");X=S.Add();X.Item="B";X.Region="South";')
         with self.assertRaises(BSLRuntimeError):self.execute('S.Write();')

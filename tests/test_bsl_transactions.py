@@ -36,6 +36,34 @@ CommitTransaction();Message(C.IsNew());Message(D.IsNew());Message(R.Selected());
         self.assertEqual(self.output, ['Да','Да','Нет','Нет','Да'])
         self.assertEqual(self.vm.execute('Catalogs.Products.FindByCode("A").Code'), 'A')
 
+    def test_document_stage_normalizes_once_and_failed_stage_keeps_prior_document(self):
+        from yadinassi.db.sqlite.sqlite_documents import DocumentView
+
+        first = self.vm.execute(
+            'D=Documents.Orders.CreateDocument();D.Number="A";D.Date=Date(2026,1,1);D')
+        second = self.vm.execute(
+            'D=Documents.Orders.CreateDocument();D.Number="A";D.Date=Date(2026,1,1);D')
+        calls = []
+        original = DocumentView._intent
+        def intent(view, draft, expected):
+            calls.append(draft.key)
+            return original(view, draft, expected)
+
+        with execution(self.backend):
+            begin(self.backend)
+            transaction = current(self.backend)
+            statements = []
+            transaction.unit._view._connection.set_trace_callback(statements.append)
+            with patch.object(DocumentView, '_intent', intent):
+                first.write()
+                with self.assertRaisesRegex(BackendError, 'duplicate_number'): second.write()
+            self.assertEqual(calls, [first._key, second._key])
+            self.assertEqual(sum(sql.startswith('SAVEPOINT ') for sql in statements), 2)
+            self.assertEqual(len(transaction.unit.requests), 1)
+            commit(self.backend)
+        self.assertFalse(first.is_new())
+        self.assertTrue(second.is_new())
+
     def test_rollback_keeps_edits_not_revision(self):
         self.vm.execute('C=Catalogs.Products.CreateItem();C.Code="A";BeginTransaction();C.Write();RollbackTransaction();Message(C.IsNew());Message(C.Code);')
         self.assertEqual(self.output, ['Да','A'])
@@ -97,6 +125,24 @@ CommitTransaction();''')
             self.assertEqual(current(self.backend).unit.state, 'open')
             commit(self.backend)
         self.assertFalse(obj.is_new())
+
+    def test_read_lease_reuses_its_own_locked_writer_identity(self):
+        from contextlib import closing
+        from contextvars import Context
+
+        with execution(self.backend):
+            begin(self.backend)
+            writer = current(self.backend).unit._view
+            statements = []
+            writer._connection.set_trace_callback(statements.append)
+            with self.assertRaisesRegex(BackendError, 'unsupported'):
+                Context().run(self.backend.begin_read)
+            with closing(self.backend.begin_read()) as lease:
+                self.assertIs(lease._connection, writer._connection)
+                self.assertEqual((lease.database_id,lease.configuration_generation),
+                                 (writer.database_id,writer.configuration_generation))
+            self.assertEqual(statements, [])
+            rollback(self.backend)
 
     def test_open_lease_blocks_commit_and_stage(self):
         obj = self.catalog()
