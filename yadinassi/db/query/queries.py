@@ -318,8 +318,9 @@ class BSLQuery(BSLObject):
         if relational_queries.required(query):
             return relational_queries.execute(query, self._catalogs, parameters, self._documents, self._information_registers)
         # The fast scan and relational/package paths share the exact same binder.
-        plan = relational_queries._Plan(query, self._catalogs, parameters)
-        if plan.enum_binding is not None:return plan.execute()
+        plan = relational_queries._Plan(query, self._catalogs, parameters, documents=self._documents,
+                                        information_registers=self._information_registers)
+        if plan.enum_binding is not None or plan.dereference is not None:return plan.execute()
         manager, section = plan.managers[0], plan.sections[0]
         columns = plan.columns
         predicate = plan.storage_predicate(plan.predicate, 0, allow_or=True)

@@ -121,6 +121,10 @@ class DocumentView:
         # already used by enum/report packages; acquire no new connection.
         aggregate = self._view.aggregate_catalog
         return None if aggregate is None else aggregate(identity, request)
+    def query_dereference(self,source,paths,order,limit,*,predicate=None):
+        from .sqlite_query_dereference import project
+        return project(self,source,paths,order,limit,predicate=predicate)
+
     def ordered_catalog_values(self, identity, request, fields):
         return self._view.ordered_catalog_values(identity, request, fields)
 

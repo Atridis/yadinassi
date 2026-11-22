@@ -6,11 +6,11 @@ from yadinassi.db.catalog.catalog_backend import CatalogComparison, CatalogPredi
 from yadinassi.temporal.dates import BSLDate, TICKS_PER_SECOND, _parts
 
 
-def bind_scalar_predicate(plan, standard=()):
+def bind_scalar_predicate(plan, standard=(), *, allow_or=True, reference=None):
     from .relational_queries import _BoundField
 
     def bind(node):
-        if type(node) is syntax.Predicate and node.kind in ('and', 'or'):
+        if type(node) is syntax.Predicate and node.kind in (('and', 'or') if allow_or else ('and',)):
             terms = tuple(bind(term) for term in node.terms)
             if terms and all(term is not None for term in terms):
                 return CatalogPredicate(node.kind, terms)
@@ -31,6 +31,9 @@ def bind_scalar_predicate(plan, standard=()):
         elif column.kind == 'datetime' and type(value) is BSLDate:
             if value.boundary or value.ticks % TICKS_PER_SECOND: return None
             value = _parts(value)
+        elif reference is not None and column.kind in ('catalog_ref', 'document_ref') and node.operator in ('eq', 'ne'):
+            value = reference(node.field, value)
+            if value is None: return None
         else:
             return None
         return CatalogComparison(column.field,node.operator,value)

@@ -239,6 +239,8 @@ class _Parser:
         parts = [self.take('name')]
         if self.accept('.'):
             parts.append(self.take('name'))
+            if self.accept('.'):
+                parts.append(self.take('name'))
         return Field(tuple(parts))
 
     def expression_node(self, operator, arguments):

@@ -20,6 +20,7 @@ from yadinassi.db.document.document_types import BSLDocumentReference
 from yadinassi.db.metadata.enum_types import BSLEnumReference
 from yadinassi.temporal.dates import BSLDate
 from yadinassi.types.values import NULL
+from . import query_dereference as deref
 
 MAX_JOIN_PAIRS = 1000000
 MAX_INTERMEDIATE_ROWS = 10000
@@ -132,6 +133,7 @@ class _Plan:
         # Import here to keep the existing result/cursor API in one module.
         from .queries import _Column, _field
         self.query, self.parameters = query, parameters
+        self._has_paths = False
         self.catalogs, self.documents = catalogs, documents
         self.information_registers = information_registers
         from yadinassi.configuration.demos.inventory_enum_runtime import query_binding
@@ -245,7 +247,9 @@ class _Plan:
             raise ValueError('DISTINCT ordering must use projected expressions')
         columns = []
         for projection, expression in zip(query.projections, self.projections):
-            if type(expression) is _BoundField:
+            if type(expression) is deref.BoundPath:
+                column = replace(expression.column, name=projection.alias, explicit_alias=projection.explicit_alias)
+            elif type(expression) is _BoundField:
                 column = expression.column
                 name = ('Код' if not projection.explicit_alias and column.field == 'code' else projection.alias)
                 column = replace(column, name=name, explicit_alias=projection.explicit_alias)
@@ -266,9 +270,10 @@ class _Plan:
             columns.append(column)
         if len({c.name.casefold() for c in columns}) != len(columns): raise ValueError('Duplicate localized query output column')
         self.columns = tuple(columns)
+        self.dereference = deref.Dereference(self) if self._has_paths else None
         # COUNT(*) still binds a source field so rows and identity are validated.
         for i, fields in enumerate(self.fields):
-            if not fields and not (self.sources[i].temporary or self.sources[i].external or self.sources[i].derived is not None):
+            if not fields and not (self._has_paths or self.sources[i].temporary or self.sources[i].external or self.sources[i].derived is not None):
                 if self.sources[i].family == 'accumulation_register':
                     from .accumulation_queries import fallback_field
                     fields.append(fallback_field(self.managers[i], self.sources[i]))
@@ -369,17 +374,32 @@ class _Plan:
                     raise TypeError('MIN/MAX require String, Number or Date')
             return _BoundAggregate(expression.function, field, expression.distinct)
         if type(expression) is not syntax.Field: return expression
+        parts = expression.parts
+        if len(parts) == 3:
+            return self._bind_path(expression)
         matches = []
+        qualifier = parts[0].casefold() if len(parts) == 2 else None
+        known_qualifier = False
         for i, source in enumerate(self.sources[:source_limit]):
-            if len(expression.parts) == 2 and expression.parts[0].casefold() != source.alias.casefold(): continue
+            if qualifier is not None:
+                if qualifier != source.alias.casefold(): continue
+                known_qualifier = True
             try: column = self.resolve_field(i, expression)
             except BackendError: raise
             except ValueError: continue
             matches.append(_BoundField(i, column))
+        if qualifier is not None and not known_qualifier:
+            return self._bind_path(expression)
         if len(matches) != 1: raise ValueError('Unknown or ambiguous query field')
         result = matches[0]
         if result.column not in self.fields[result.source]: self.fields[result.source].append(result.column)
         return result
+
+    def _bind_path(self, expression):
+        if not self._has_paths:
+            deref.require_shape(self.query)
+            self._has_paths = True
+        return deref.bind(self, expression)
 
     def condition(self, node, *, aggregates=True, source_limit=None):
         if node is None: return None
@@ -612,6 +632,8 @@ class _Plan:
         for child in self.children(expression): self.check_grouped(child)
 
     def reference_identity(self, expression):
+        if type(expression) is deref.BoundPath:
+            return expression.column.reference_identity
         if type(expression) is _BoundField:
             if expression.column.reference_identity is not None:
                 return expression.column.reference_identity
@@ -640,7 +662,7 @@ class _Plan:
         from .queries import _Column
         def column(kind, qualifiers=(), custom=None):
             return _Column('', None, kind, qualifiers, custom)
-        if type(expression) is _BoundField: return expression.column
+        if type(expression) in (_BoundField, deref.BoundPath): return expression.column
         if type(expression) is _BoundAggregate:
             original = None if expression.field is None else self.describe(expression.field)
             if expression.function in ('count', 'sum', 'avg'):
@@ -988,6 +1010,8 @@ class _Plan:
             witness=(read_snapshot(self.catalogs._metadata._root,view)
                      if self.enum_binding is not None and not owns_witness else nullcontext())
             with witness:
+                if self.dereference is not None:
+                    return self.dereference.execute(self, view, budget)
                 self.prepare_memberships(view, budget)
                 self.prepare_hierarchies(view, budget)
                 from .query_pushdown import try_count, try_numeric, try_ordered_select
