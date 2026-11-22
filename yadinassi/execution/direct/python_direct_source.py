@@ -624,7 +624,11 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         if query.supports(value):return query.get_member(self,value,name)
         if storage.owns(value):return storage.get(self,value,name)
         if self._metadata(value) or self._module(value) is not None:
-            try:return value.get_member(name)
+            try:
+                if name.casefold() in ('type','тип'):
+                    description=sessions.metadata_type(self,value)
+                    if description is not None:return description
+                return value.get_member(name)
             finally:self._check()
         raise ValueError('direct source receiver is not integrated')
     def resolve_source_member(self,value,name,*,require_value=False,argument_count=None,allow_references=False):

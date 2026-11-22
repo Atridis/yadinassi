@@ -1,6 +1,10 @@
 """Finite actual-caller source session-parameter access, without VM dispatch."""
 from weakref import ReferenceType
+from uuid import UUID
 from yadinassi.application.session_parameters import BSLSessionParameters,_DIRECT_SESSION_PARAMETERS_ABI
+from yadinassi.configuration.configuration_source_metadata import SourceMetadataObject, SourceMetadata
+from yadinassi.configuration.configuration_session_parameters import SessionParameterDefinition
+from yadinassi.configuration.metadata import _scalar_description
 from yadinassi.types.values import HostFunction
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from .python_direct_source_storage import finish
@@ -8,6 +12,7 @@ from yadinassi.db import source_transactions
 from yadinassi.execution import safe_mode
 
 _NAMES=('sessionparameters','параметрысеанса')
+_SCALAR_QUALIFIERS={'boolean':(), 'string':(int,), 'number':(int,int,str), 'datetime':(str,)}
 
 
 def owns(value):return type(value) is BSLSessionParameters
@@ -30,6 +35,44 @@ def check(boundary,value):
         raise BoundaryViolation('source session parameter scope changed')
     # Preserve canonical wrong-side/closed-family messages, before any access.
     value._authorize(caller)
+
+
+def metadata_type(boundary, value):
+    """Read the selected declared scalar, never the live session namespace."""
+    if type(value) is not SourceMetadataObject:
+        return None
+    entry=value._entry
+    if (type(entry) is not SourceMetadata or type(entry.family) is not str
+            or entry.family!='SessionParameter'):
+        return None
+    root=boundary.app.metadata
+    if (value._root is not root or type(entry.path) is not str or type(entry.name) is not str
+            or type(root._objects) is not dict or type(root._inventory) is not dict
+            or root._objects.get(entry.path) is not value
+            or root._inventory.get(entry.path) is not entry or value._name is not entry.name):
+        raise BoundaryViolation('source session metadata owner changed')
+    store=boundary.app.session_parameters
+    if (type(store) is not BSLSessionParameters
+            or type(store._application) is not ReferenceType or store._application() is not boundary.app
+            or type(store._definitions) is not dict):
+        raise BoundaryViolation('source session metadata declarations changed')
+    definition=store._definitions.get(entry.name.casefold())
+    if definition is None:
+        raise ValueError('unsupported source session metadata type')
+    if (type(definition) is not SessionParameterDefinition or type(definition.name) is not str
+            or definition.name!=entry.name or type(entry.identity) is not UUID
+            or type(definition.identity) is not UUID or type(definition.identity.int) is not int
+            or type(entry.identity.int) is not int or definition.identity.int!=entry.identity.int
+            or type(definition.kind) is not str or type(definition.qualifiers) is not tuple):
+        raise BoundaryViolation('source session metadata declaration changed')
+    kind,qualifiers=definition.kind,definition.qualifiers
+    expected=_SCALAR_QUALIFIERS.get(kind)
+    if expected is None:
+        raise ValueError('unsupported source session metadata type')
+    if (len(qualifiers)!=len(expected)
+            or any(type(field) is not scalar for field,scalar in zip(qualifiers,expected))):
+        raise BoundaryViolation('source session metadata qualifiers changed')
+    return _scalar_description(kind,qualifiers)
 
 
 def namespace(boundary,name):

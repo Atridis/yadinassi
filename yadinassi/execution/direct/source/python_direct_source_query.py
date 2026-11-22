@@ -1,4 +1,5 @@
 """Finite source Query bridge; detached result data carries no storage grant."""
+from decimal import Decimal
 from types import MethodType
 from weakref import ReferenceType
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
@@ -8,17 +9,38 @@ from yadinassi.db.query.queries import BSLQueryResult, BSLQueryResultSelection
 from yadinassi.db.query.query_packages import BSLTempTablesManager
 from yadinassi.collections.value_tables import BSLValueTable, BSLValueTableRow, BSLValueTableColumn, BSLValueTableColumnCollection
 from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.type_qualifiers import (
+    BSLAllowedLength, BSLAllowedSign, BSLDateFractions, BSLDateQualifiers,
+    BSLNumberQualifiers, BSLStringQualifiers,
+)
 from yadinassi.types.values import HostFunction, BSLArray, BSLFixedArray
 
 CONSTRUCTOR_NAMES=('query','запрос','temptablesmanager','менеджервременныхтаблиц',
                    'typedescription','описаниетипов','valuetable','таблицазначений')
+# Portable qualifier data only. No constructor, arbitrary member or
+# reference/write surface is added to the source boundary.
+_QUALIFIER_FIELDS={
+    id(BSLNumberQualifiers): {
+        'digits':('digits',Decimal), 'разрядность':('digits',Decimal),
+        'fractiondigits':('fraction_digits',Decimal), 'разрядностьдробнойчасти':('fraction_digits',Decimal),
+        'allowedsign':('allowed_sign',BSLAllowedSign), 'допустимыйзнак':('allowed_sign',BSLAllowedSign),
+    },
+    id(BSLStringQualifiers): {
+        'length':('length',Decimal), 'длина':('length',Decimal),
+        'allowedlength':('allowed_length',BSLAllowedLength), 'допустимаядлина':('allowed_length',BSLAllowedLength),
+    },
+    id(BSLDateQualifiers): {
+        'datefractions':('date_fractions',BSLDateFractions), 'частидаты':('date_fractions',BSLDateFractions),
+    },
+}
 _TYPES=(SourceConstantQuery,BSLQueryResult,BSLQueryResultSelection,BSLValueTable,
         BSLValueTableRow,BSLValueTableColumn,BSLValueTableColumnCollection,
         BSLTempTablesManager,BSLTypeDescription,BSLArray,BSLFixedArray)
+_TYPE_IDS=frozenset(map(id,_TYPES)) | frozenset(_QUALIFIER_FIELDS)
 _ITERABLE=(BSLValueTable,BSLValueTableRow,BSLValueTableColumnCollection,BSLArray,BSLFixedArray)
 
 
-def supports(value):return type(value) in _TYPES
+def supports(value):return id(type(value)) in _TYPE_IDS
 
 
 def owns(boundary,value):
@@ -37,7 +59,7 @@ def owns(boundary,value):
         if type(value.table) is not BSLValueTable:raise BoundaryViolation('invalid detached table parent')
     elif kind is BSLQueryResultSelection:
         if type(value._result) is not BSLQueryResult:raise BoundaryViolation('invalid detached query result parent')
-    elif kind not in _TYPES:return False
+    elif id(kind) not in _TYPE_IDS:return False
     return True
 
 
@@ -94,6 +116,18 @@ def resolve_constructor(boundary,name,*,require_value=True,argument_count=None,a
 
 def get_member(boundary,value,name):
     _require(boundary,value);_public(name)
+    fields=_QUALIFIER_FIELDS.get(id(type(value)))
+    if fields is not None:
+        selected=fields.get(name.casefold())
+        if selected is None:raise ValueError('unknown source qualifier property: '+name)
+        state=object.__getattribute__(value,'__dict__')
+        if type(state) is not dict or any(type(key) is not str for key in state):
+            raise BoundaryViolation('source qualifier state changed')
+        key,expected=selected
+        result=state.get(key)
+        if type(result) is not expected:
+            raise BoundaryViolation('source qualifier field changed')
+        return result
     try:return value.get_member(name)
     finally:boundary._check()
 
@@ -114,6 +148,8 @@ def resolve_set_member(boundary,value,name):
 
 def resolve_member(boundary,value,name,*,require_value=False,argument_count=None,allow_references=False):
     _require(boundary,value)
+    if id(type(value)) in _QUALIFIER_FIELDS:
+        raise ValueError('source qualifier has no callable members')
     if name in ('__getitem__','__setitem__','__iter__'):
         if name=='__iter__':
             if type(value) not in _ITERABLE:raise ValueError('source query data is not iterable')

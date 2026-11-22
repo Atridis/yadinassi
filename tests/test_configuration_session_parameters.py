@@ -166,10 +166,24 @@ EndProcedure'''
         self.assertEqual(app.interpreter.execute('Access.Read("Calls")'),Decimal(0))
 
     def test_parameter_metadata_exposes_qualified_type_not_runtime_value(self):
-        app=self.application()
-        self.assertTrue(app.execute('Metadata.SessionParameters.Flag.Type.ContainsType(Type("Boolean"))'))
-        self.assertEqual(app.execute('Metadata.SessionParameters.Text.Type.StringQualifiers.Length'),Decimal(64))
-        self.assertEqual(app.execute('Metadata.SessionParameters.Calls.Type.NumberQualifiers.Digits'),Decimal(8))
+        app=self.source_application()
+        vm=app.interpreter
+        self.assertTrue(vm.execute('Metadata.SessionParameters.Flag.Type.ContainsType(Type("Boolean"))'))
+        self.assertEqual(vm.execute('Metadata.SessionParameters.Text.Type.StringQualifiers.Length'),Decimal(64))
+        self.assertEqual(vm.execute('Metadata.SessionParameters.Calls.Type.NumberQualifiers.Digits'),Decimal(8))
+
+    def test_source_parameter_metadata_type_is_readonly_and_does_not_initialize(self):
+        app=self.source_application()
+        before=dict(app.session_parameters._values)
+        vm=app.interpreter
+        self.assertFalse(vm.execute('Метаданные.ПараметрыСеанса["Flag"].Тип.СодержитТип(Тип("String"))'))
+        self.assertEqual(vm.execute('Metadata.SessionParameters.Calls.Type.NumberQualifiers.FractionDigits'),Decimal(0))
+        vm.execute('D=Metadata.SessionParameters.Text.Type;')
+        self.assertEqual(vm.execute('D.StringQualifiers.Length'),Decimal(64))
+        with self.assertRaisesRegex(BSLRuntimeError,'read-only'):
+            vm.execute('D.StringQualifiers.Length=1;')
+        self.assertEqual(vm.execute('D.StringQualifiers.Length'),Decimal(64))
+        self.assertEqual(app.session_parameters._values,before)
 
     def test_parameter_metadata_lookup_and_readonly(self):
         app=self.application()
