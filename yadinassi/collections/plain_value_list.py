@@ -11,6 +11,7 @@ from types import MappingProxyType
 from weakref import ReferenceType, ref
 
 from yadinassi.types.values import to_string
+from yadinassi.temporal.dates import BSLDate, _sort_date_ticks
 from .sort_directions import _sort_descending
 
 
@@ -70,6 +71,13 @@ def _item(item):
     if type(item) is not PlainValueListItem:
         raise TypeError('ValueList contains a foreign item')
     return item
+
+
+def _date_item_sort_key(item):
+    value = list.__getitem__(_item(item), 0)
+    if type(value) is not BSLDate:
+        raise TypeError('ValueList date sorting requires only dates')
+    return _sort_date_ticks(value)
 
 
 def _index(index):
@@ -304,6 +312,12 @@ class PlainValueList(list):
                 raise TypeError('ValueList contains a foreign item')
             kind = type(list.__getitem__(item, field))
             if kind is not str and kind is not int and kind is not Decimal and kind is not bool:
+                if field == 0 and kind is BSLDate:
+                    # Validate every date key before mutating the owner.
+                    # The sorted references retain item identity and ties.
+                    ordered = sorted(list.__iter__(self), key=_date_item_sort_key, reverse=descending)
+                    list.__setitem__(self, slice(None), ordered)
+                    return
                 raise TypeError('ValueList sorting requires scalar values')
         list.sort(self, key=lambda item: list.__getitem__(item, field), reverse=descending)
 

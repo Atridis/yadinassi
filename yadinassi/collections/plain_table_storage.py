@@ -8,7 +8,7 @@ opaque references. There is no qualifier coercion, codec or index engine here.
 """
 from decimal import Decimal
 
-from yadinassi.temporal.dates import BSLDate, MAX_TICKS
+from yadinassi.temporal.dates import BSLDate, _sort_date_ticks
 from yadinassi.text.sort_keys import text_sort_key
 from yadinassi.types.values import BSLArray, BSLType, NULL
 from yadinassi.execution.direct.python_direct_plain_array import _DIRECT_PLAIN_ARRAY_TYPE
@@ -16,8 +16,6 @@ from yadinassi.execution.codegen.experimental_naked_structure import _DirectStru
 from .structures import BSLStructure
 
 _SCALAR_TYPES = (type(None), str, bool, int, Decimal, type(NULL))
-_SORT_DATE_TICKS = vars(BSLDate)["ticks"]
-_SORT_DATE_BOUNDARY = vars(BSLDate)["boundary"]
 
 
 class StorageError(ValueError):
@@ -172,16 +170,7 @@ def _sort_value(value):
     if value is NULL:
         return 0, 1, 0
     if kind is BSLDate:
-        try:
-            ticks = _SORT_DATE_TICKS.__get__(value, kind)
-            boundary = _SORT_DATE_BOUNDARY.__get__(value, kind)
-        except AttributeError:
-            raise ValueError('invalid sort date payload') from None
-        if type(ticks) is not int or not 0 <= ticks <= MAX_TICKS or type(boundary) is not bool:
-            raise ValueError('invalid sort date payload')
-        if boundary:
-            raise NotImplementedError('sorting unknown dates is not supported')
-        return 1, 3, ticks
+        return 1, 3, _sort_date_ticks(value)
     raise NotImplementedError('sorting opaque values is not supported')
 
 

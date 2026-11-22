@@ -79,6 +79,21 @@ _DIRECT_EQUALITY_DATE_STATE = (BSLDate, vars(BSLDate)['boundary'])
 _DIRECT_ORDER_DATE_TICKS = (vars(BSLDate)['ticks'], MAX_TICKS)
 
 
+def _sort_date_ticks(value, _ticks=_DIRECT_ORDER_DATE_TICKS[0],
+                     _boundary=_DIRECT_EQUALITY_DATE_STATE[1], _maximum=MAX_TICKS):
+    """Return a checked inert sort key for an already selected exact Date."""
+    try:
+        ticks = _ticks.__get__(value)
+        boundary = _boundary.__get__(value)
+    except AttributeError:
+        raise ValueError('invalid sort date payload') from None
+    if type(ticks) is not int or not 0 <= ticks <= _maximum or type(boundary) is not bool:
+        raise ValueError('invalid sort date payload')
+    if boundary:
+        raise NotImplementedError('sorting unknown dates is not supported')
+    return ticks
+
+
 def _require_date(value):
     if type(value) is not BSLDate:
         raise TypeError("Ожидается дата")

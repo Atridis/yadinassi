@@ -124,4 +124,25 @@ class PlainValueListTests(unittest.TestCase):
         self.assertEqual(values.get(D(-1))[0], 1)
         self.assertEqual(values.get(D('0.5'))[0], 3)
 
+    def test_date_sort_rejects_malformed_unknown_and_mixed_dates_atomically(self):
+        from yadinassi.temporal.dates import BSLDate
+        malformed=BSLDate(0)
+        object.__setattr__(malformed,'ticks',True)
+        known=BSLDate(20)
+        for keys,error in (((known,malformed),ValueError),
+                           ((known,BSLDate(0,True)),NotImplementedError),
+                           ((known,0),TypeError),
+                           ((0,known),TypeError)):
+            with self.subTest(error=error,keys=tuple(map(type,keys))):
+                values=PlainValueList()
+                first=values.add(keys[0],'b')
+                second=values.add(keys[1],'a')
+                with self.assertRaises(error):
+                    values.sort_by_value()
+                self.assertIs(values[0],first)
+                self.assertIs(values[1],second)
+                values.sort_by_presentation()
+                self.assertIs(values[0],second)
+                self.assertIs(values[1],first)
+
 if __name__ == '__main__': unittest.main()

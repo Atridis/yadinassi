@@ -119,6 +119,21 @@ class DirectPlainValueListTests(unittest.TestCase):
                     self.assertIs(owner[0],vm.variables['a'])
                     self.assertIs(owner[1],vm.variables['b'])
 
+    def test_value_list_sorts_exact_dates_by_ticks_and_retains_equal_item_order(self):
+        vm=self.vm()
+        vm.execute('L=New ValueList; Base=Date(2024,1,1); A=L.Add(Base+0.0002); '
+                   'B=L.Add(Base); C=L.Add(Base+0.0001); D=L.Add(Base+0.0001);')
+        owner=vm.variables['l']
+        items=tuple(vm.variables[name] for name in ('a','b','c','d'))
+        identifiers=tuple(item.get_id() for item in items)
+        for code, order in (('L.SortByValue();',(1,2,3,0)),
+                            ('L.СортироватьПоЗначению(НаправлениеСортировки.Убыв);',(0,2,3,1))):
+            vm.execute(code)
+            self.assertIs(vm.variables['l'],owner)
+            for i,j in enumerate(order):
+                self.assertIs(owner[i],items[j])
+            self.assertEqual(tuple(item.get_id() for item in items),identifiers)
+
     def test_value_list_procedure_in_value_position_binds_receiver_but_not_arguments(self):
         vm=self.vm()
         vm.execute('Var L, Seen; L=New ValueList; First=L.Add(2,"b"); L.Add(1,"a"); Seen=New Array; '
