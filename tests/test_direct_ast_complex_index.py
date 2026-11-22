@@ -44,6 +44,14 @@ class ComplexIndexTests(unittest.TestCase):
                     vm.register_function('Capture',lambda arg:events.append(('capture',arg.get() if byref else arg)))
                     vm.functions['capture'].reference_parameters=frozenset({0}) if byref else frozenset()
                     source='Try Capture(A[Index()]);Except Caught=1;EndTry;Done=1;'
+                    if not byref and action=='error':
+                        # An explicit host call is a publication boundary. Mark
+                        # the handler and next effect rather than relying on
+                        # unrelated BSL locals being visible to __del__.
+                        vm.register_function('Observe',lambda label:events.append(
+                            (label,vm.variables.get('caught'),vm.variables.get('done'))))
+                        source=('Try Capture(A[Index()]);Except Caught=1;Observe("handler");'
+                                'EndTry;Done=1;Observe("after");')
                     if action=='close' or (byref and action in ('normal','error')):
                         message='closed during execution' if action=='close' else 'unregistered host member'
                         with self.assertRaisesRegex(BoundaryViolation,message):
@@ -59,7 +67,9 @@ class ComplexIndexTests(unittest.TestCase):
                             self.assertEqual(events,['index',('capture',None)])
                         else:
                             self.assertEqual(vm.variables['caught'],Decimal(1))
-                            self.assertEqual(events,['index',('del',Decimal(1),Decimal(1))])
+                            self.assertEqual(events,['index',('handler',Decimal(1),None),
+                                                     ('del',Decimal(1),None),
+                                                     ('after',Decimal(1),Decimal(1))])
     def test_nested_index_emitted_once(self):
         original=direct.Emitter.expr
         for depth in (4,8,16):
