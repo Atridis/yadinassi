@@ -131,6 +131,80 @@ class StructuralReadTests(unittest.TestCase):
                    'Caught=False;Try V=Old.Get(0);Except Caught=True;EndTry;')
         self.assertIs(vm.variables['caught'],True)
 
+    def test_prepared_tree_iteration_uses_current_row_and_column_admission(self):
+        vm=self.vm()
+        vm.execute('T=New ValueTree;T.Columns.Add("X");T.Columns.Add("Y");'
+                   'P=T.Rows.Add();P.X=1;P.Rows.Add().X=2;P.Rows.Add().X=3;')
+        plan=vm.prepare('Sum=0; Text=""; For Each R In P.Rows Do Sum=Sum+R.X;EndDo;'
+                        'For Each C In T.Columns Do Text=Text+C.Name;EndDo;')
+        with patch.object(direct_tree,'hooks',side_effect=AssertionError('full model audit')):
+            vm.execute_prepared(plan)
+        self.assertEqual((vm.variables['sum'],vm.variables['text']),(5,'XY'))
+
+    def test_tree_row_cell_iteration_keeps_existing_payload_snapshot(self):
+        vm=self.vm()
+        vm.execute('T=New ValueTree;T.Columns.Add("X");T.Columns.Add("Y");R=T.Rows.Add();R.X=1;R.Y=2;')
+        with patch.object(direct_tree,'_structural_iter',side_effect=AssertionError('not a collection cursor')):
+            vm.execute('S="";For Each Cell In R Do S=S+String(Cell);R.Y=9;EndDo;')
+        self.assertEqual(vm.variables['s'],'12')
+        self.assertEqual(vm.execute('R.Y;'),9)
+
+    def test_tree_live_cursor_keeps_append_delete_move_and_clear_semantics(self):
+        for mutation, expected in (
+            ('T.Rows.Add().X=4;', '1234'), ('T.Rows.Delete(R);', '13'),
+            ('T.Rows.Move(R,1);', '113'), ('T.Rows.Clear();', '1'),
+            ('T.Columns.Clear();', '1'),
+        ):
+            with self.subTest(mutation=mutation):
+                vm=self.vm(native_target=LINUX_8_3_27_1508)
+                vm.execute('T=New ValueTree;T.Columns.Add("X");'
+                           'For I=1 To 3 Do T.Rows.Add().X=I;EndDo;'
+                           'S="";First=True;For Each R In T.Rows Do S=S+String(R.X);'
+                           'If First Then First=False;'+mutation+'EndIf;EndDo;')
+                self.assertEqual(vm.variables['s'],expected)
+        vm=self.vm(native_target=LINUX_8_3_27_1508)
+        vm.execute('T=New ValueTree;T.Columns.Add("X");P=T.Rows.Add();Child=P.Rows;Child.Add().X=4;'
+                   'S="";For Each R In Child Do S=S+String(R.X);T.Columns.Clear();T.Rows.Add();EndDo;'
+                   'Caught=False;Try For Each R In Child Do S="item";EndDo;Except Caught=True;EndTry;')
+        self.assertEqual(vm.variables['s'],'4');self.assertIs(vm.variables['caught'],True)
+
+    def test_tree_iteration_rechecks_real_output_effect_before_next_row(self):
+        seen=[]
+        def output(message):
+            seen.append(message)
+            if len(seen)==1:
+                tree,other=(vm.variables[name] for name in ('t','u'))
+                tree.rows.items[1]=other.rows.items[0]
+        vm=self.vm(output=output)
+        vm.execute('T=New ValueTree;T.Columns.Add("X");T.Rows.Add().X=1;T.Rows.Add().X=2;'
+                   'U=New ValueTree;U.Columns.Add("X");U.Rows.Add().X=9;')
+        with self.assertRaises(BoundaryViolation):
+            vm.execute('For Each R In T.Rows Do Message(R.X);EndDo;')
+        self.assertEqual(seen,['1'])
+
+    def test_tree_iterator_checks_reached_hooks_and_keeps_sticky_exhaustion(self):
+        vm=self.vm()
+        vm.execute('T=New ValueTree;T.Rows.Add();T.Rows.Add();U=New ValueTree;')
+        tree,empty=(vm.variables[name] for name in ('t','u'))
+        context=make_boundary(vm);context.enter()
+        try:
+            retained=context.resolve_member(tree.rows,'__iter__')()
+            exhausted=context.resolve_member(empty.rows,'__iter__')()
+            with self.assertRaises(StopIteration):next(exhausted)
+            empty.rows.add()
+            self.assertIs(next(retained),tree.rows.items[0])
+            events=[]
+            with patch.object(value_trees.BSLValueTreeRowCollection,'__iter__',lambda self:events.append('hook')):
+                with self.assertRaises(BoundaryViolation):next(retained)
+            self.assertEqual(events,[])
+            retained=context.resolve_member(tree.rows,'__iter__')()
+        finally:context.leave()
+        context.enter()
+        try:
+            with self.assertRaises(StopIteration):next(exhausted)
+            with self.assertRaises(BoundaryViolation):next(retained)
+        finally:context.leave()
+
     def test_evaluated_projections_keep_live_structural_reads_in_both_contexts(self):
         from test_query_ordered_top_pushdown import OrderedTopMainDemoTests
         from yadinassi.execution.direct import python_direct_structural_reads as structural

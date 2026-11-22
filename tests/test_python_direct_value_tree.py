@@ -349,7 +349,8 @@ class DirectValueTreeTests(unittest.TestCase):
         from yadinassi.execution.direct.python_direct import make_boundary
         from yadinassi.execution.direct import python_direct_value_tree as bridge
 
-        vm=self.vm();tree,first=self.setup_tree(vm)
+        # The explicit Python-extension path retains its full model audit.
+        vm=self.vm(allow_extensions=True);tree,first=self.setup_tree(vm)
         second=tree.rows.add()
         context=make_boundary(vm);context.enter()
         try:

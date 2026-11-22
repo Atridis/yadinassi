@@ -399,6 +399,14 @@ def _column_state(root,column):
     return data
 
 
+def _column_items(root,collection):
+    data=_structural_fields(collection,_COLUMNS)
+    origin(collection,(root,))
+    items=data['items']
+    if type(items) is not list:raise BoundaryViolation('ValueTree column collection storage changed')
+    return items
+
+
 def _named_column(root,columns,name):
     limit=vars(_NAME_LIMIT_MODULE).get('_MAX_TEXT')
     if type(limit) is not int or not 0<limit<=_MAX_NAME_TEXT:
@@ -419,6 +427,20 @@ def _row_cells(state,data):
     if len(cells)>state[-1]['_MAX_COLUMNS']:raise BoundaryViolation('ValueTree cell budget changed')
     for column in cells:_column_state(state[0],column)
     return cells
+
+
+def _read_row_item(state,collection,data,item):
+    raw=_row_state(state,item);parent=data['parent']
+    if (raw['collection'] is not collection or raw['parent'] is not parent or raw['_deleted']
+            or raw['depth']!=(0 if parent is None else _row_state(state,parent)['depth']+1)):
+        raise BoundaryViolation('foreign ValueTree row result')
+    _row_cells(state,raw)
+    return item
+
+
+def _read_column_item(root,item):
+    if _column_state(root,item)['_deleted']:raise BoundaryViolation('deleted ValueTree column result')
+    return item
 
 
 def _structural_member(boundary,value,kind,key,name):
@@ -465,8 +487,7 @@ def _positional_read(boundary,value,kind,key,name):
         # A deleted parent is a model error at invocation, after arguments.
         if _rows_state(state,value,binding=True) is _READ_UNAVAILABLE:return None
     else:
-        data=_structural_fields(value,_COLUMNS);origin(value,(root,))
-        if type(data['items']) is not list:raise BoundaryViolation('ValueTree column collection storage changed')
+        _column_items(root,value)
     epoch=boundary._value_tree_epoch
     def invoke(*args):
         boundary._check_effect()
@@ -487,24 +508,67 @@ def _positional_read(boundary,value,kind,key,name):
                 # A legal column clear can change forwarding during argument
                 # evaluation. Keep the already captured receiver and actuals.
                 return boundary._tree_method(value,name,_canonical=selected)(*args)
-            items=data['items'];row=items[_read_position(index,len(items))]
-            raw=_row_state(live,row)
-            parent=data['parent']
-            if (raw['collection'] is not value or raw['parent'] is not parent or raw['_deleted']
-                    or raw['depth']!=(0 if parent is None else _row_state(live,parent)['depth']+1)):
-                raise BoundaryViolation('foreign ValueTree row result')
-            _row_cells(live,raw)
-            return row
-        data=_structural_fields(value,_COLUMNS);origin(value,(root,))
-        items=data['items']
-        if type(items) is not list:raise BoundaryViolation('ValueTree column collection storage changed')
+            items=data['items']
+            return _read_row_item(live,value,data,items[_read_position(index,len(items))])
+        items=_column_items(root,value)
         if subscript and type(index) is str:
             _read_methods(_COLUMNS,'find')
             return _named_column(root,items,index)
-        column=items[_read_position(index,len(items))]
-        if _column_state(root,column)['_deleted']:raise BoundaryViolation('deleted ValueTree column result')
-        return column
+        return _read_column_item(root,items[_read_position(index,len(items))])
     return invoke
+
+
+def _structural_iter(boundary,value,kind):
+    boundary._check_effect()
+    names=('__iter__','_live') if kind is _ROWS else ('__iter__',)
+    selected=_READ_METHODS[kind]['__iter__'][0]
+    _read_methods(kind,*names)
+    state=_structural_state(boundary,value,kind);root=state[0]
+    if kind is _ROWS:
+        if _rows_state(state,value,binding=True) is _READ_UNAVAILABLE:return None
+    else:_column_items(root,value)
+    epoch=boundary._value_tree_epoch
+
+    def admit():
+        if epoch is not boundary._value_tree_epoch or not _ordinary_read(boundary):
+            raise BoundaryViolation('ValueTree iterator activation expired')
+        boundary._check_effect()
+        _read_methods(kind,*names)
+        live=_structural_state(boundary,value,kind)
+        if live[0] is not root:raise BoundaryViolation('ValueTree iterator owner changed')
+        return live
+
+    def start(*args):
+        live=admit()
+        if args:return boundary._tree_method(value,'__iter__',_canonical=selected)(*args)
+        if kind is _ROWS:
+            data=_rows_state(live,value)
+            if data is _READ_UNAVAILABLE:
+                # The captured receiver may have changed before invocation;
+                # its native iterator still uses _live, never Get forwarding.
+                return boundary._tree_method(value,'__iter__',_canonical=selected)()
+            items=data['items']
+        else:items=_column_items(root,value)
+        cursor=list.__iter__(items)
+
+        def iterator():
+            # Preserve Python's live list position and sticky exhaustion.
+            # No admission result is carried across a yield or into BSL.
+            for item in cursor:
+                current=admit()
+                if kind is _ROWS:
+                    data=_rows_state(current,value)
+                    if data is _READ_UNAVAILABLE:
+                        raise BoundaryViolation('ValueTree iterator row collection changed')
+                    _read_row_item(current,value,data,item)
+                    del data
+                else:
+                    _column_items(root,value)
+                    _read_column_item(root,item)
+                del current
+                yield item
+        return iterator()
+    return start
 
 
 def cell_keys(row,root):
@@ -717,8 +781,8 @@ class ValueTreeBoundary:
     def _tree_method(self,value,name,*,require_value=False,_canonical=None):
         key=name.casefold();kind=type(value)
         if (_canonical is None and (kind is _ROWS or kind is _COLUMNS)
-                and (key in _GET_NAMES or name=='__getitem__') and _ordinary_read(self)):
-            method=_positional_read(self,value,kind,key,name)
+                and (key in _GET_NAMES or name in ('__getitem__','__iter__')) and _ordinary_read(self)):
+            method=_structural_iter(self,value,kind) if name=='__iter__' else _positional_read(self,value,kind,key,name)
             if method is not None:return method
         root=check(self,value)
         epoch=self._value_tree_epoch
