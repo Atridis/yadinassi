@@ -133,6 +133,21 @@ class CharsTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('Pick(Chars)'), '\n')
         self.assertEqual(self.vm.execute('Pick(Символы)'), '\n')
 
+    def test_builtin_namespace_reference_cannot_rebind_the_namespace(self):
+        self.vm.execute('''Function Forward(Receiver)
+    Return Receiver.LF;
+EndFunction
+Procedure Replace(Receiver)
+    Receiver = New Structure("LF", "replacement");
+EndProcedure
+Read = Forward(Chars);
+Denied = False;
+Try Replace(Символы); Except Denied = True; EndTry;
+After = Chars.LF;''')
+        self.assertEqual(self.vm.variables['read'],'\n')
+        self.assertIs(self.vm.variables['denied'],True)
+        self.assertEqual(self.vm.variables['after'],'\n')
+
     def test_variable_parameter_routine_and_host_function_shadowing(self):
         self.vm.execute('Chars = New Structure("LF", "local");')
         self.assertEqual(self.vm.execute('chars.LF'), 'local')

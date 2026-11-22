@@ -45,7 +45,7 @@ from yadinassi.collections.plain_value_list import PlainValueList, PlainValueLis
 from yadinassi.formats.json.json_dates import BSLJSONSerializerSettings
 from yadinassi.formats.json.json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings
 from .python_direct_json_memory import verify_metadata as _verify_json_metadata
-from .python_direct_names import (NAMES as SYSTEM_NAMES, VALUE_IDS as SYSTEM_VALUE_IDS,
+from .python_direct_names import (CHARS_ALIASES, NAMES as SYSTEM_NAMES, VALUE_IDS as SYSTEM_VALUE_IDS,
     ITERABLE_IDS, OPAQUE_ENUM_IDS, FIELD_ONLY_NAMESPACE_IDS, METHODLESS_NAMESPACE_IDS)
 from yadinassi.configuration.metadata import (BSLMetadata, BSLCatalogMetadataCollection, BSLCatalogMetadata,
     BSLInformationRegisterMetadata, BSLInformationRegisterMetadataCollection)
@@ -276,6 +276,24 @@ class CatalogBoundary:
     def external_set(self,name,value):
         self._check_effect()
         raise ValueError('catalog namespace is read-only')
+
+    def external_reference(self,name):
+        if name not in CHARS_ALIASES:
+            return super().external_reference(name)
+        # The built-in value is readable, not a writable component of the
+        # host namespace. Forwarding through an ordinary BSL routine must not
+        # acquire access to a form attribute, database root or module store.
+        from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference, readonly
+        from yadinassi.types.values import Reference
+
+        def read():
+            self._check_effect()
+            return CHARS
+        def write(_):
+            self._check_effect()
+            readonly(name)
+        read()
+        return _ForwardReference(Reference(read,write))
 
     def get_member(self,value,name):
         if type(value) is PlainValueList:
