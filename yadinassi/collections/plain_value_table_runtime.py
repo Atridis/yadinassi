@@ -4,6 +4,7 @@ Native compatibility is intentionally incomplete. Receiver ownership is not
 relaxed: the compiler/native boundary still admits only these exact classes.
 """
 from decimal import Decimal, ROUND_DOWN
+from itertools import repeat
 from types import MappingProxyType
 from yadinassi.types.values import BSLObject, BSLArray, HostFunction
 from yadinassi.execution.direct.python_direct_plain_array import _DIRECT_PLAIN_ARRAY_TYPE
@@ -585,7 +586,8 @@ class BSLValueTable(BSLObject):
     def total(self,column):
         descriptor=self.columns.resolve(_text(column))
         position=self._storage.schema.offset(descriptor.name)
-        return _column_total(descriptor.value_type, (list.__getitem__(row,position) for row in self.rows))
+        rows=self.rows
+        return _column_total(descriptor.value_type, lambda: map(list.__getitem__,list.__iter__(rows),repeat(position)))
     def sort(self,order,comparator=None):
         _writable(self)
         if comparator is not None:

@@ -2,7 +2,7 @@
 
 Expected state is independent of the active native output presentation format.
 """
-from decimal import Decimal, Inexact, Rounded, localcontext
+from decimal import Decimal, Inexact, Rounded, ROUND_FLOOR, localcontext
 import unittest
 from unittest.mock import patch
 
@@ -287,6 +287,15 @@ class ValueTableTests(unittest.TestCase):
         with patch("yadinassi.collections.value_tables._MAX_TOTAL_PRECISION", 20):
             with self.assertRaises(ValueError):
                 t.total("Value")
+
+    def test_total_mixed_column_preserves_decimal_signed_scaled_zero(self):
+        t = BSLValueTable()
+        t.columns.add("Value")
+        for value in (1, -1, D("-0.00")):
+            t.add()[0] = value
+        with localcontext() as ctx:
+            ctx.rounding = ROUND_FLOOR
+            self.assertEqual(t.total("Value").as_tuple(), D("-0.00").as_tuple())
 
     def test_documented_method_selector_bounds(self):
         t = sample()

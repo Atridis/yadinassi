@@ -50,7 +50,7 @@ def _text(value):
 
 
 
-def _column_total(description, values):
+def _column_total(description, cells):
     """Native scalar Total semantics, with no ambient Decimal rounding."""
     if type(description) is not BSLTypeDescription:
         raise TypeError("Ожидается ОписаниеТипов")
@@ -62,17 +62,27 @@ def _column_total(description, values):
         raise TypeError("Некорректный состав типов колонки")
     if len(types) > 1 and not any(kind is BSLType.NUMBER for kind in types):
         return None
-    numeric = []
     single = len(types) == 1 and type(types[0]) is BSLType
-    for value in values:
+    integer = 0
+    for value in cells():
         kind = type(value)
-        if kind is int or kind is Decimal:
+        if kind is int:
+            integer += value
+        elif kind is Decimal or (single and (kind is str or kind is bool)):
+            break
+    else:
+        return Decimal(integer)
+    # Only the mixed/Decimal lane needs operand ranges and carry precision.
+    # Re-read the raw cells to retain each integer's range and Decimal quantum.
+    numeric = []
+    for value in cells():
+        kind = type(value)
+        if kind is Decimal:
             numeric.append(value)
+        elif kind is int:
+            numeric.append(Decimal(value))
         elif single and (kind is str or kind is bool):
             numeric.append(_number_value(value))
-    if all(type(value) is int for value in numeric):
-        return Decimal(sum(numeric))
-    numeric = [Decimal(value) if type(value) is int else value for value in numeric]
     if any(not value.is_finite() or len(value.as_tuple().digits) > 4096
            or abs(value.adjusted()) > 4096 for value in numeric):
         raise ValueError("ТаблицаЗначений: превышен предел ресурсов Yadinassi")
@@ -903,7 +913,7 @@ class BSLValueTable(BSLObject):
 
     def total(self, column):
         column = self.columns.resolve(_text(column))
-        return _column_total(column.value_type, (row.cells[column] for row in self.rows))
+        return _column_total(column.value_type, lambda: (row.cells[column] for row in self.rows))
 
     def sort(self, columns, comparator=None):
         from .value_table_sort import sort_table
