@@ -664,6 +664,13 @@ class DocumentView:
                 column = 'r.date'
             elif field == 'deletion_mark' and type(value) is bool and term.operator in ('eq','ne'):
                 value, column = int(value), 'r.deletion_mark'
+            elif field == 'ref' and term.operator=='eq' and type(value) is DocumentKey:
+                if (any(type(key) is not UUID or type(key.int) is not int
+                        for key in (value.database_id,value.document_id,value.record_id))
+                        or value.database_id!=self.database_id or value.document_id!=schema.identity
+                        or not 0<=value.record_id.int<2**128):
+                    raise BackendError('invalid_input')
+                value, column = str(value.record_id), 'r.record_id COLLATE BINARY'
             else: raise BackendError('invalid_input')
             where.append(column + ' ' + {'eq':'=','ne':'!=','lt':'<','le':'<=','gt':'>','ge':'>='}[term.operator] + ' ?')
             args.append(value)
@@ -683,7 +690,7 @@ class DocumentView:
                       'date':'r.date COLLATE BINARY','deletion_mark':'r.deletion_mark'}
         if (type(request) is not CatalogScanRequest or type(request.page_size) is not int
                 or not 1 <= request.page_size <= 10000 or request.continuation is not None
-                or type(request.order) is not tuple or not 1 <= len(request.order) <= 16
+                or type(request.order) is not tuple or len(request.order)>16
                 or type(request.string_comparison) is not str or request.string_comparison != 'casefold_v1'
                 or type(fields) is not tuple):
             raise BackendError('invalid_input')
@@ -709,6 +716,7 @@ class DocumentView:
         order.extend(('r.date ASC','r.number COLLATE BINARY ASC','r.record_id ASC'))
         predicate = request.predicate
         if scalar_filter:
+            if not request.order: return None
             from .sqlite_ordered_predicates import ordered_where
             definitions = {'number':'string', 'date':'datetime', 'deletion_mark':'boolean'}
             definitions.update((field.identity, field) for field in attributes
@@ -723,6 +731,12 @@ class DocumentView:
                 terms = predicate.terms
             else:
                 return None
+            if not request.order:
+                from yadinassi.db.catalog.catalog_backend import CatalogComparison
+                if (type(terms) is not tuple or len(terms)!=1 or type(terms[0]) is not CatalogComparison
+                        or type(terms[0].field) is not str or terms[0].field!='ref'
+                        or type(terms[0].operator) is not str or terms[0].operator!='eq'):
+                    return None
             where,args = self._document_where(schema,terms)
         _storage()._close_document_scan(view)
         view._scan_cursor = None

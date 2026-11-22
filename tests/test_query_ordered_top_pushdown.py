@@ -245,6 +245,42 @@ EndDo;
         self.assertEqual(len(trace),1,trace)
         self.assertTrue(trace[0].endswith('LIMIT 1'),trace)
 
+    def test_document_top_ref_matches_indexed_point_with_or_without_order(self):
+        from yadinassi.db.query.relational_queries import _Plan
+        self.seed()
+        self.vm.execute('R=Documents.Receipt.FindByNumber("Straße");')
+        for suffix in ('',' ORDER BY D.Date'):
+            with self.subTest(order=suffix):
+                text=('SELECT TOP 1 D.Number,1 AS Marker FROM Document.Receipt AS D WHERE D.Ref=&Key'+suffix)
+                self.vm.execute('Q=New Query("'+text+'"); Q.SetParameter("Key",R);')
+                with patch.object(DocumentView,'ordered_document_values',return_value=None) as decline:
+                    self.assertEqual(self.vm.execute('Q.Execute()')._rows,(('Straße',Decimal(1)),))
+                decline.assert_called_once()
+                trace,traced = self.actual_trace()
+                with traced, patch.object(_Plan,'load',side_effect=AssertionError('materialized input')):
+                    self.assertEqual(self.vm.execute('Q.Execute()')._rows,(('Straße',Decimal(1)),))
+                self.assertEqual(len(trace),1,trace)
+                self.assertIn('r.record_id COLLATE BINARY =',trace[0])
+                self.assertTrue(trace[0].endswith('LIMIT 1'),trace)
+                with closing(sqlite3.connect(self.path)) as raw:
+                    register_query_collations(raw)
+                    plan = tuple(row[-1] for row in raw.execute('EXPLAIN QUERY PLAN '+trace[0]))
+                    self.assertTrue(any('SEARCH r' in operation and 'record_id=?' in operation
+                                        for operation in plan),plan)
+                self.vm.execute('Q.SetParameter("Key", Documents.Receipt.EmptyRef());')
+                self.assertEqual(self.vm.execute('Q.Execute()')._rows,())
+
+    def test_document_top_ref_still_sees_owned_staged_record_and_rollback(self):
+        self.vm.execute('''BeginTransaction();
+K=Documents.Receipt.GetRef(New UUID());
+D=Documents.Receipt.CreateDocument();D.SetNewObjectRef(K);
+D.Number="pending";D.Date=Date(2024,1,1);D.Write();
+Q=New Query("SELECT TOP 1 D.Number,1 AS Mark FROM Document.Receipt AS D WHERE D.Ref=&Key");
+Q.SetParameter("Key",K);Result=Q.Execute();RollbackTransaction();
+''')
+        self.assertEqual(self.vm.variables['result']._rows,(('pending',Decimal(1)),))
+        self.assertEqual(self.vm.execute('Q.Execute()')._rows,())
+
     def test_number_date_and_ref_same_as_residual_with_stable_ties(self):
         self.seed()
         text = ('SELECT TOP 4 D.Ref AS R, D.Number AS N, D.Date FROM Document.Receipt AS D '

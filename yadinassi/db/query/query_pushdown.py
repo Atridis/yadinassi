@@ -154,13 +154,13 @@ def try_ordered_select(plan, view, budget=None):
             or plan.memberships or plan.hierarchies):
         return None
     if not q.order:
-        # The ordinary catalog point lane already reads a bounded page in
-        # logical UUID order. Prove the whole predicate is one key equality
-        # before selecting early; other sources retain their input budgets.
+        # One proven key equality can produce a bounded point page. Other
+        # unordered sources retain their existing input budgets.
+        keys = ('code','ref') if q.family=='catalog' else ('ref',) if q.family=='document' else ()
         point = plan.predicate
-        if (q.family != 'catalog' or q.section is not None or type(point) is not syntax.Comparison
+        if (not keys or q.section is not None or type(point) is not syntax.Comparison
                 or point.operator != 'eq' or type(point.field) is not _BoundField
-                or point.field.source != 0 or point.field.column.field not in ('code','ref')):
+                or point.field.source != 0 or point.field.column.field not in keys):
             return None
     for expression in plan.projections:
         kind = type(expression)

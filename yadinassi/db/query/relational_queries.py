@@ -487,6 +487,12 @@ class _Plan:
             if value.ticks % TICKS_PER_SECOND: return None
             value = _parts(value)
         elif field == 'deletion_mark' and type(value) is bool: pass
+        elif field == 'ref' and node.operator == 'eq' and type(value) is BSLDocumentReference:
+            manager = self.managers[source]
+            if (value.value_type is not manager._value_type
+                    or value.metadata is not manager._metadata):
+                return None
+            value = manager._key(value.reference_uuid)
         else: return None
         return (CatalogComparison(field, node.operator, value),)
 
