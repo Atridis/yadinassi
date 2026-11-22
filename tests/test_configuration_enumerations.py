@@ -137,9 +137,26 @@ class ConfigurationEnumerationTests(unittest.TestCase):
                 self.assertTrue(app.interpreter.execute('(D.AdjustValue(Enums.Status.Active)=Enums.Status.Active)'))
 
     def test_named_description_dynamic_constructor(self):
-        app=self.application()
-        app.execute('Args=New Array; Args.Add("EnumRef.Status"); D=New (Type("TypeDescription"), Args);')
-        self.assertTrue(app.execute('D.ContainsType(TypeOf(Enums.Status.Active))'))
+        app=self.source_application()
+        app.interpreter.execute('Args=New Array; Args.Add("EnumRef.Status"); D=New (Type("TypeDescription"), Args);')
+        self.assertTrue(app.interpreter.execute('D.ContainsType(TypeOf(Enums.Status.Active))'))
+
+    def test_source_dynamic_constructor_remains_closed(self):
+        app=self.source_application();run=app.interpreter.execute
+        with self.assertRaisesRegex(BoundaryViolation,'requires a standalone direct boundary'):
+            run('New ("Structure")')
+        class ForeignArray(list):
+            def __iter__(self):
+                raise AssertionError('foreign argument protocol used')
+        app.interpreter.variables['arguments']=ForeignArray(['EnumRef.Status'])
+        with self.assertRaisesRegex(BSLRuntimeError,'ожидается массив аргументов'):
+            run('New ("TypeDescription", Arguments)')
+        from yadinassi.types.values import HostFunction
+        effects=[]
+        app.interpreter.types['typedescription']=HostFunction('TypeDescription',lambda *values:effects.append(values))
+        with self.assertRaises(BoundaryViolation):
+            run('New ("TypeDescription")')
+        self.assertEqual(effects,[])
 
     def test_named_description_common_module_context(self):
         files=enum_files()
