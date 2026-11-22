@@ -723,6 +723,12 @@ _DIRECT_DYNAMIC_TYPE_NAMES = tuple((member, member.value) for member in BSLType)
 
 # Stable identity for bounded direct fixed-collection lookup.
 _DIRECT_ARRAY_TYPE = BSLArray
+# A compiler-owned element address does not grant general host indexing.
+# Retain the precise public methods it replaces before the lazy bridge loads.
+_DIRECT_ARRAY_ADDRESS_ABI = tuple((cls, name, method, method.__code__, method.__defaults__)
+    for cls, name, method in ((_ArrayBase, 'get', _ArrayBase.get),
+                              (_ArrayBase, 'checked_index', _ArrayBase.checked_index),
+                              (BSLArray, 'set', BSLArray.set)))
 _DIRECT_FIXED_ARRAY_TYPE = BSLFixedArray
 _DIRECT_FIXED_FIND_ABI=(_ArrayBase.find,tuple((cls,cls.__mro__,tuple(vars(cls).items()))
     for cls in BSLFixedArray.__mro__))
