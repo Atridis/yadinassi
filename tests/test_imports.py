@@ -224,6 +224,59 @@ Message(Side.F());
                                        'A:B:C', 'A::Z', ':B:C'])
         self.assertIsNone(self.vm.locals)
 
+    def test_imported_omissions_preserve_effect_order_and_local_default_reference(self):
+        self.write('Side.bsl', """
+            Procedure Update(Target, Val Delta, Skipped = 20, Val Extra) Export
+                Message(Skipped);
+                Skipped = -1;
+                Target = Target + Delta + Extra;
+            EndProcedure
+        """)
+        source = """// #Import Side.bsl
+            Var Trace;
+            Function Touch(Val Marker, Val Value)
+                Trace = Trace + Marker;
+                Return Value;
+            EndFunction
+            Function Work()
+                Local = 4;
+                Side.Update(Local, Touch("D", 3), , Touch("E", 5));
+                // Presence of a hole does not permit missing the trailing
+                // required argument position or evaluating any prior actual.
+                Try Side.Update(Local, Touch("bad", 0), );
+                Except Return Local; EndTry;
+                Return -1;
+            EndFunction
+            Trace = "";
+            Result = Work();
+            Trace + ":" + String(Result)
+        """
+        self.main.write_text(source, encoding='utf-8')
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                output = []
+                vm = Interpreter(output=output.append)
+                self.addCleanup(vm.close)
+                if prepared:
+                    result = vm.execute_prepared(vm.prepare_program(parse(source, str(self.main))))
+                else:
+                    result = vm.execute(source, str(self.main))
+                self.assertEqual(result, 'DE:12')
+                self.assertEqual(output, ['20'])
+
+    def test_omitted_imported_server_argument_is_denied_before_effects(self):
+        self.write('Side.bsl', """
+            &AtServer
+            Function Sum(Val A = 1, Val B = 2) Export
+                Return A + B;
+            EndFunction
+        """)
+        self.assertEqual(self.execute('// #Import Side.bsl\nSide.Sum(3, 4)'), Decimal(7))
+        self.vm.execute('Function Touch() Message("unexpected"); Return 4; EndFunction')
+        with self.assertRaisesRegex(BSLError, 'omitted imported .*routine argument is unsupported'):
+            self.vm.execute('Side.Sum(, Touch())')
+        self.assertEqual(self.output, [])
+
     def test_reference_aliases_and_value_snapshots_are_bound_in_caller_order(self):
         self.write('Side.bsl', '''
             Procedure Show(Val snapshot, reference, unused) Export

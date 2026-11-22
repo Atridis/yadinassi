@@ -564,7 +564,6 @@ class ImportBoundary:
     def resolve_import_call(self,path,*,require_value,argument_count,omitted=()):
         owner,prefix,names=self._split_import(path)
         if len(names)==1:
-            if omitted:raise TypeError('omitted imported routine argument is unsupported')
             return self._resolve_public_call(owner,names[0],require_value=require_value,
                                              argument_count=argument_count,path=prefix)
         receiver=self._import_data_receiver(owner,names[:-1])
@@ -666,6 +665,10 @@ class ImportBoundary:
         invoke.requires_reference=lambda index:index in references
         def omissions(bound,positions,count):
             validate()
+            if name in module.server_names:
+                # Local exported defaults use the generated routine marker;
+                # the client/server transfer must not see that private value.
+                raise TypeError('omitted imported server routine argument is unsupported')
             from yadinassi.execution.codegen.experimental_naked_collections import _OMITTED_REF
             return bound,{index:_OMITTED_REF for index in positions}
         invoke.prepare_omissions=omissions
