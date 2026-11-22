@@ -27,7 +27,7 @@ def ordered_if(node, *, literal_reachability):
     yield OTHERWISE,node.otherwise,False,reaches
 
 
-def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=None, builtin_external_names=(), numeric_routines=None, address_routines=None, literal_reachability=False):
+def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=None, builtin_external_names=(), numeric_routines=None, address_routines=None, literal_reachability=False, module_declarations=False):
     builtin_results = builtin_results or {}
     kinds={};names=set();opaque=set(opaque_names)|{'thisobject','этотобъект'}
     checked=set();active=set()
@@ -203,6 +203,9 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
                 while len(kinds)>committed:kinds.popitem()
                 break
         return kinds
+    # Declarations are still lowered into their original export and scheduler
+    # entry points. They are not execution edges of a closed module body.
+    if module_declarations:program=(node for node in program if type(node) is not bsl.Routine)
     try:sequence(program,{})
     except _Decline:return None
     if 'address_call' in kinds.values():

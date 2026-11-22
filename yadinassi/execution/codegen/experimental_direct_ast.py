@@ -2271,12 +2271,14 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         from yadinassi.execution.direct.python_direct_pure_builtins import result_kinds
         builtin_results=result_kinds(pure_bindings.services)
     numeric_routines={};address_routines={}
-    if not async_bodies and _profile is None and not imported and not vm.allow_extensions and not _authority and not _source_scopes:
+    closed_with_declarations=emitter.literal_reachability
+    if ((not async_bodies or closed_with_declarations) and _profile is None and not imported
+            and not vm.allow_extensions and not _authority and not _source_scopes):
         numeric_routines={name:routine for name,routine in emitter.routines.items()
-            if routine.is_function and all(p.by_value and p.default is None for p in routine.parameters)
+            if not routine.is_async and routine.is_function and all(p.by_value and p.default is None for p in routine.parameters)
             and len(routine.body)==1 and type(routine.body[0]) is bsl.Return and routine.body[0].value is not None}
         for name,routine in emitter.routines.items():
-            if (routine.is_function or not routine.body
+            if (routine.is_async or routine.is_function or not routine.body
                     or not any(not p.by_value for p in routine.parameters)
                     or any(p.default is not None for p in routine.parameters)):
                 continue
@@ -2284,7 +2286,8 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             if all(type(stmt) is bsl.Assign and type(stmt.target) is bsl.Name
                     and stmt.target.name.casefold() in formals for stmt in routine.body):
                 address_routines[name]=routine
-    if not async_bodies and _profile is None and not imported and not _exports and not _require_last_expression and vm.database_context is None:
+    if ((not async_bodies or closed_with_declarations) and _profile is None and not imported
+            and not _exports and not _require_last_expression and vm.database_context is None):
         facts_reachability=emitter.literal_reachability
         names,cells=_module_registers(program,emitter,literal_reachability=facts_reachability)
         builtin_external_names=() if pure_bindings is None else pure_bindings.names-names
@@ -2292,23 +2295,27 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             static_facts=analyze_static(program,opaque_names=emitter.external_names|emitter.module_globals,
                builtin_results=builtin_results,builtin_external_names=builtin_external_names,
                numeric_routines=numeric_routines,address_routines=address_routines,
-               literal_reachability=facts_reachability)
+               literal_reachability=facts_reachability,module_declarations=closed_with_declarations)
             emitter.static_module_kinds={} if static_facts is None else static_facts[1]
-        if static_facts is not None:names.update(static_facts[0])
-        elif facts_reachability:
-            names,cells=_module_registers(program,emitter,literal_reachability=False)
-            builtin_external_names=() if pure_bindings is None else pure_bindings.names-names
-        emitter.module_cells.update(cells)
-        emitter.static_module_names={key:emitter.temp() for key in sorted(names)}
-        if not has_goto:
-            opaque=emitter.external_names|emitter.module_globals|emitter.module_cells
-            emitter.scalar_kinds=analyze_static(program,opaque_names=opaque,scalar_prefix=True,
-               builtin_results=builtin_results,builtin_external_names=builtin_external_names)
-        if (not has_goto and static_facts is None and not emitter.authority and not emitter.source_scopes
-                and not emitter.catalog_bounds and (not emitter.routines or emitter.native_cells)):
-            from yadinassi.execution.direct.python_direct_local_facts import analyze as analyze_local
-            emitter.local_field_facts,local_scalars=analyze_local(program,opaque_names=opaque,routines=emitter.routines)
-            emitter.scalar_kinds.update(local_scalars)
+        # Starting a task (directly or through a reachable same-module
+        # routine), Eval, and all opaque edges decline this closed proof.
+        # Preserve the original dictionary-backed async module for them.
+        if not async_bodies or static_facts is not None:
+            if static_facts is not None:names.update(static_facts[0])
+            elif facts_reachability:
+                names,cells=_module_registers(program,emitter,literal_reachability=False)
+                builtin_external_names=() if pure_bindings is None else pure_bindings.names-names
+            emitter.module_cells.update(cells)
+            emitter.static_module_names={key:emitter.temp() for key in sorted(names)}
+            if not has_goto:
+                opaque=emitter.external_names|emitter.module_globals|emitter.module_cells
+                emitter.scalar_kinds=analyze_static(program,opaque_names=opaque,scalar_prefix=True,
+                   builtin_results=builtin_results,builtin_external_names=builtin_external_names)
+            if (not has_goto and static_facts is None and not emitter.authority and not emitter.source_scopes
+                    and not emitter.catalog_bounds and (not emitter.routines or emitter.native_cells)):
+                from yadinassi.execution.direct.python_direct_local_facts import analyze as analyze_local
+                emitter.local_field_facts,local_scalars=analyze_local(program,opaque_names=opaque,routines=emitter.routines)
+                emitter.scalar_kinds.update(local_scalars)
     if static_facts is not None and not emitter.module_cells and not emitter.authority and not emitter.catalog_bounds:
         emitter.integer_lane=bool(static_facts[1]) and all(
             kind in ('number','bool','string','table','row','columns','column','map','map_insert')

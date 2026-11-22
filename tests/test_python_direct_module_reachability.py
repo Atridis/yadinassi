@@ -93,3 +93,66 @@ class ModuleReachabilityTests(unittest.TestCase):
         self.assertEqual(vm.variables['r'],5)
         with self.assertRaises(BSLError):
             vm.prepare('Goto ~Inner; If False Then ~Inner: R=1; EndIf;')
+
+
+ASYNC = '''
+Async Function Deferred()
+    Message("start");
+    X=Await 1;
+    Message("resume");
+    Return X+6;
+EndFunction
+'''
+
+
+class ModuleDeclarationReachabilityTests(unittest.TestCase):
+    def vm(self):
+        output=[]
+        vm=Interpreter(output=output.append)
+        self.addCleanup(vm.close)
+        return vm,output
+
+    def test_uncalled_routines_keep_closed_module_and_publish_exports(self):
+        for declaration in (ASYNC, 'Procedure Deferred() Message("start"); EndProcedure'):
+            with self.subTest(declaration=declaration):
+                vm,output=self.vm()
+                plan=vm.prepare(TABLE+declaration)
+                self.assertIn('_PrivateTable()',plan._plan.generated_source)
+                vm.execute_prepared(plan)
+                self.assertEqual(vm.variables['r'],210)
+                self.assertEqual(output,[])
+                if 'Async' in declaration:
+                    self.assertIn('_AwaitRequest',plan._plan.generated_source)
+                    vm.execute('P=Deferred(); Message("caller");')
+                    self.assertEqual(output,['start','caller','resume'])
+                    self.assertEqual(vm.variables['p'].result,7)
+                else:
+                    vm.execute('Deferred();')
+                    self.assertEqual(output,['start'])
+
+    def test_reachable_direct_transitive_and_opaque_calls_stay_generic(self):
+        for suffix in ('P=Deferred(); Message("caller");',
+                       'Procedure StartIt() Deferred(); EndProcedure StartIt(); Message("caller");',
+                       'Execute("Deferred()"); Message("caller");'):
+            with self.subTest(suffix=suffix):
+                vm,output=self.vm()
+                plan=vm.prepare(TABLE+ASYNC+suffix)
+                self.assertNotIn('_PrivateTable()',plan._plan.generated_source)
+                self.assertNotIn('_publish_module',plan._plan.generated_source)
+                vm.execute_prepared(plan)
+                self.assertEqual(vm.variables['r'],210)
+                self.assertEqual(output,['start','caller','resume'])
+
+    def test_dead_async_call_does_not_start_or_remove_any_declaration(self):
+        vm,output=self.vm()
+        source=TABLE+ASYNC+'''
+            Function Increment(Val N) Return N+1; EndFunction
+            If True Then M=Increment(2); Else Deferred(); EndIf;
+        '''
+        plan=vm.prepare(source)
+        self.assertIn('_PrivateTable()',plan._plan.generated_source)
+        vm.execute_prepared(plan)
+        self.assertEqual((vm.variables['r'],vm.variables['m']),(210,3))
+        self.assertEqual(output,[])
+        vm.execute('P=Deferred();')
+        self.assertEqual(output,['start','resume'])
