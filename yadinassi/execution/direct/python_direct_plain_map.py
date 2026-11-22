@@ -272,6 +272,7 @@ class PlainFixedMap:
 _DIRECT_FIXED_MAP_STORAGE = vars(PlainFixedMap)['_snapshot']
 
 # Identity keys confer no new receiver or payload operations.
+_DIRECT_PLAIN_MAP_FIND_TYPES = (PlainMap, PlainFixedMap)
 _IDENTITY_KEY_TYPES = (list, PlainArray, _DirectStructure, PlainMap,
                        BSLFixedArray, BSLFixedStructure, PlainFixedMap)
 _IDENTITY_KEY_TYPE_IDS = frozenset(id(kind) for kind in _IDENTITY_KEY_TYPES)

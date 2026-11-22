@@ -3,7 +3,7 @@
 No VM dispatch, ownership scan, or per-node guard. Exact supported values only:
 host callbacks require an explicit boundary rather than accidental str/equality.
 """
-from yadinassi.execution.direct.python_direct_plain_array import PlainArray as _PlainArray
+from yadinassi.execution.direct.python_direct_plain_array import _DIRECT_PLAIN_ARRAY_TYPE as _PlainArray
 from decimal import Decimal
 from yadinassi.text.strings import concatenate as _join
 from yadinassi.text.chars import CHARS
@@ -33,7 +33,10 @@ _FIND_IDENTITY_TYPES = (_DIRECT_FIXED_ARRAY_TYPE, _DIRECT_FIXED_STRUCTURE_SNAPSH
 _SCALAR_TYPE_IDS=tuple(map(id,_SCALAR_TYPES))
 _COLLECTION_TYPE_IDS=tuple(map(id,_COLLECTION_TYPES))
 _SUPPORTED_TYPE_IDS=_SCALAR_TYPE_IDS+_COLLECTION_TYPE_IDS
-_FIND_IDENTITY_TYPE_IDS=_COLLECTION_TYPE_IDS+tuple(map(id,_FIND_IDENTITY_TYPES))
+_FIND_DIRECT_COLLECTION_IDS = frozenset(map(id, (
+    _PlainArray, _NakedMap, _TypedMap, _DirectStructure,
+)))
+_FIND_IDENTITY_TYPE_IDS=frozenset(_COLLECTION_TYPE_IDS+tuple(map(id,_FIND_IDENTITY_TYPES))) | _FIND_DIRECT_COLLECTION_IDS
 
 _TYPE_PRESENTATIONS = {id(member): (member, label, error)
                        for member, label, error in _DIRECT_TYPE_PRESENTATIONS}
@@ -63,8 +66,17 @@ def _supported(value):
         raise UnsupportedScalarSemantics('host value requires an explicit scalar boundary')
 
 
+def find_by_identity(items, needle):
+    # Both call sites pass exact list/PlainArray or verified exact tuple storage.
+    sequence = tuple.__iter__(items) if type(items) is tuple else list.__iter__(items)
+    for index, item in enumerate(sequence):
+        if item is needle:
+            return Decimal(index)
+    return None
+
+
 def typed_find(array, value):
-    if type(array) is not list:
+    if type(array) is not list and type(array) is not _PlainArray:
         raise UnsupportedScalarSemantics('typed_find requires a native array')
     value_type = type(value)
     if value_type is BSLUUID:
@@ -73,7 +85,7 @@ def typed_find(array, value):
         needle = _UUID_TEXT.__get__(value, BSLUUID)
         if type(needle) is not str:
             raise UnsupportedScalarSemantics('invalid UUID text')
-        for index, item in enumerate(array):
+        for index, item in enumerate(list.__iter__(array)):
             if type(item) is BSLUUID:
                 text = _UUID_TEXT.__get__(item, BSLUUID)
                 if type(text) is not str:
@@ -83,13 +95,20 @@ def typed_find(array, value):
         return None
     # Fixed descendants and the admitted enum singletons use identity.
     # This grants no fields, methods, equality hooks or payload traversal.
-    identity = id(value_type) in _FIND_IDENTITY_TYPE_IDS or _fixed_identity(value)
-    if not identity:_supported(value)
-    for index, item in enumerate(array):
+    if id(value_type) in _FIND_IDENTITY_TYPE_IDS or _fixed_identity(value):
+        return find_by_identity(array,value)
+    if id(value_type) not in _SUPPORTED_TYPE_IDS and value is not NULL:
+        # PlainMap imports numeric helpers from this module. Resolve its
+        # definition-time identities only on the non-scalar needle path.
+        from yadinassi.execution.direct.python_direct_plain_map import _DIRECT_PLAIN_MAP_FIND_TYPES
+        mutable, fixed = _DIRECT_PLAIN_MAP_FIND_TYPES
+        if value_type is mutable or value_type is fixed:
+            return find_by_identity(array,value)
+        _supported(value)
+    for index, item in enumerate(list.__iter__(array)):
         # Different exact types cannot compare equal and need no callback.
-        if type(item) is value_type:
-            if (item is value) if identity else (item == value):
-                return Decimal(index)
+        if type(item) is value_type and item == value:
+            return Decimal(index)
     return None
 
 

@@ -1,12 +1,15 @@
 """FixedArray.Find retains identity of direct mutable collection payloads."""
-from decimal import Decimal
 from types import MethodType
 from yadinassi.types.values import HostFunction, _DIRECT_FIXED_ARRAY_TYPE as _FIXED, _DIRECT_FIXED_FIND_ABI
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
-from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
+from yadinassi.execution.codegen.experimental_naked_scalar_semantics import (
+    _FIND_DIRECT_COLLECTION_IDS, find_by_identity,
+)
+
+from .python_direct_plain_map import _DIRECT_PLAIN_MAP_FIND_TYPES
 
 _FIND,_ABI=_DIRECT_FIXED_FIND_ABI
+_IDENTITY_NEEDLE_IDS = _FIND_DIRECT_COLLECTION_IDS | frozenset(map(id,_DIRECT_PLAIN_MAP_FIND_TYPES))
 
 
 def owns(value,name):
@@ -52,10 +55,8 @@ def _bind(boundary,receiver,operation,name,*,function=None,callback=None,allow_r
         if len(args)!=1:raise TypeError('Find requires one argument')
         needle=args[0]
         try:
-            if type(needle) is _DirectStructure or type(needle) is _TypedMap:
-                for index,item in enumerate(items):
-                    if item is needle:return Decimal(index)
-                return None
+            if id(type(needle)) in _IDENTITY_NEEDLE_IDS:
+                return find_by_identity(items,needle)
             return _FIND(receiver,needle)
         finally:check()
     if allow_references:invoke.requires_reference=lambda index:False

@@ -5,14 +5,19 @@ insert/find/delete semantics; no hidden VM adapter or capability registry exists
 """
 from decimal import Decimal
 from yadinassi.types.values import HostFunction
+from yadinassi.execution.direct.python_direct_plain_array import _DIRECT_PLAIN_ARRAY_TYPE
 
 _ALIASES={'количество':'count','вграница':'ubound','добавить':'add','очистить':'clear',
           'получить':'get','установить':'set','вставить':'insert','удалить':'delete','найти':'find'}
 
 
 def array_method_value(receiver,name,*,index=None,insert=None,find=None,delete=None):
-    if type(receiver) is not list:raise TypeError('Ожидается массив')
+    receiver_type=type(receiver)
+    if receiver_type is not list and receiver_type is not _DIRECT_PLAIN_ARRAY_TYPE:
+        raise TypeError('Ожидается массив')
     method=_ALIASES.get(name.casefold(),name.casefold())
+    if receiver_type is _DIRECT_PLAIN_ARRAY_TYPE and method!='find':
+        raise TypeError('Ожидается массив')
     index_function=index
     if method=='count':
         def call():return Decimal(len(receiver))

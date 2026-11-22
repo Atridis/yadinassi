@@ -32,6 +32,47 @@ class DirectFixedFindTests(unittest.TestCase):
                     self.assertIsNone(vm.variables['s']);self.assertEqual(expected['fixed-'+kind+'.find-copy'],'[]')
                     self.assertIs(type(vm.variables['r']),Decimal)
 
+    def test_published_plain_array_named_and_captured_find_use_storage_not_hooks(self):
+        from yadinassi.execution.direct.python_direct_plain_array import PlainArray
+        vm=self.vm()
+        # A closed module publishes the actual optimized Array representation.
+        vm.execute('A=New Array;For I=1 To 4 Do A.Add(I);EndDo;')
+        self.assertIs(type(vm.variables['a']),PlainArray)
+        plan=vm.prepare('Named=A.Find(2); Saved=A.Найти; Captured=Saved(2);')
+        def hostile(*args): raise AssertionError('PlainArray payload hook')
+        with patch.object(PlainArray,'__iter__',hostile),patch.object(PlainArray,'__eq__',hostile):
+            vm.execute_prepared(plan)
+            self.assertIsNone(vm.execute('A.Find(True)'))
+            self.assertEqual(vm.execute('Saved(4)'),Decimal(3))
+        self.assertEqual(vm.variables['named'],Decimal(1))
+        self.assertEqual(vm.variables['captured'],Decimal(1))
+        # Native stored numerics in this lane are Decimal, not private integers.
+        self.assertTrue(all(type(i) is Decimal for i in list.__iter__(vm.variables['a'])))
+        with self.assertRaisesRegex(Exception,'Ожидается массив'):
+            vm.execute('Other=A.Add;')
+
+    def test_direct_collection_needles_are_identity_only_on_both_receivers(self):
+        from yadinassi.execution.direct.python_direct_plain_array import PlainArray
+        from yadinassi.execution.direct.python_direct_plain_map import PlainMap, PlainFixedMap
+        vm=self.vm()
+        vm.execute('A=New Array;A.Add(1);')
+        self.assertIs(type(vm.variables['a']),PlainArray)
+        vm.execute("""
+            M=New Map; M[1]=7; Copy=New Map; Copy[1]=7;
+            FM=New FixedMap(M); FC=New FixedMap(Copy); D=New Array;
+            D.Add(M); D.Add(FM); D.Add(A); F=New FixedArray(D);
+            DF=D.Find; FF=F.Find; M[1]=8;
+        """)
+        vm.variables['other_a']=PlainArray([Decimal(1)])
+        def hostile(*args): raise AssertionError('needle equality')
+        with patch.object(PlainMap,'__eq__',hostile),patch.object(PlainFixedMap,'__eq__',hostile,create=True),patch.object(PlainArray,'__eq__',hostile):
+            for receiver in ('D.Find','DF','F.Find','FF'):
+                for i,needle in enumerate(('M','FM','A')):
+                    with self.subTest(receiver=receiver, needle=needle):
+                        self.assertEqual(vm.execute(f'{receiver}({needle})'),Decimal(i))
+                for other in ('Copy','FC','Other_A'):
+                    self.assertIsNone(vm.execute(f'{receiver}({other})'))
+
     def test_exact_fixed_values_ignore_payload_and_equality_hooks(self):
         events=[]
         class Evil:
