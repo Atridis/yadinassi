@@ -1035,20 +1035,28 @@ class Emitter:
                 pair=self.node(py.Tuple,t,elts=[bind,call,release],ctx=py.Load())
                 return self.node(py.Subscript,t,value=pair,slice=self.const(1,t),ctx=py.Load())
             if structural:
-                projected_value=self.name(structural_receiver,t)
-                args=[self.name('_context',t),projected_value,self.const(projection,t)]
-                ids=self.node(py.Subscript,t,value=self.name('_structural_count_ids',t),
-                    slice=self.const(projection,t),ctx=py.Load())
-                kind=self.call('id',[self.call('type',[projected_value],t)],t)
-                candidate=self.node(py.Compare,t,left=kind,ops=[py.In()],comparators=[ids])
-                test=self.node(py.BoolOp,t,op=py.And(),values=[candidate,self.call('_select_structural_read',args,t)])
-                fast=self.call('_structural_count',[*args,self.const(callee.name,t)],t)
-                fast=self.receiver_boundary(fast,structural_receiver,t)
+                def structural_case(value_slot, field, fallback):
+                    value=self.name(value_slot,t)
+                    args=[self.name('_context',t),value,self.const(field,t)]
+                    ids=self.node(py.Subscript,t,value=self.name('_structural_count_ids',t),
+                        slice=self.const(field,t),ctx=py.Load())
+                    kind=self.call('id',[self.call('type',[value],t)],t)
+                    candidate=self.node(py.Compare,t,left=kind,ops=[py.In()],comparators=[ids])
+                    test=self.node(py.BoolOp,t,op=py.And(),values=[candidate,self.call('_select_structural_read',args,t)])
+                    fast=self.call('_structural_count',[*args,self.const(callee.name,t)],t)
+                    fast=self.receiver_boundary(fast,value_slot,t)
+                    return self.node(py.IfExp,t,test=test,body=fast,orelse=fallback)
+
+                # A projected receiver is not necessarily the model's own
+                # Rows/Columns/Indexes (for example, a Structure field).
+                # If the fused read cannot apply, evaluate the member normally
+                # and classify the exact value that will receive Count.
+                call=structural_case(receiver,None,call)
                 if projection is not None:
                     pair=self.node(py.Tuple,t,elts=[bind,call],ctx=py.Load())
-                    call=self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
+                    fallback=self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
+                    call=structural_case(structural_receiver,projection,fallback)
                     bind=base
-                call=self.node(py.IfExp,t,test=test,body=fast,orelse=call)
             pair=self.node(py.Tuple,t,elts=[bind,call],ctx=py.Load())
             return self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
         if k is bsl.Call and type(node.callee) is bsl.Name and node.callee.name.casefold() in self.routines:

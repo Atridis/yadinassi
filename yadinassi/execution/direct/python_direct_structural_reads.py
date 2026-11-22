@@ -46,7 +46,9 @@ def _plain_class(kind):
 def selects(context, value, projection):
     kind = type(value)
     key = (id(kind), projection)
-    if (key not in _TARGETS or not context._known_method_local or context._known_method_db
+    # A plain SQLite attachment is not database authority for these exact
+    # detached receivers. The operation still checks its owning activation.
+    if (key not in _TARGETS or not context._known_method_local
             or context._verify_context or context.policy is not None):
         return False
     if key in _TREE_TARGETS:
@@ -104,8 +106,7 @@ def count(context, value, projection, spelling):
     # invokes a user callback nor mutates/publishes externally visible state.
     context._check_effect()
     key = (id(type(value)), projection)
-    if (not context._known_method_local or context._known_method_db
-            or context._verify_context or context.policy is not None):
+    if (not context._known_method_local or context._verify_context or context.policy is not None):
         raise tree.BoundaryViolation('structural read context changed')
     if key in _TREE_TARGETS:
         return tree.structural_count(context, value, projection, spelling)

@@ -45,6 +45,95 @@ class StructuralReadTests(unittest.TestCase):
         vm.execute_prepared(program)
         self.assertEqual(vm.variables['r'], 8)
 
+    def test_evaluated_projections_keep_live_structural_reads_in_both_contexts(self):
+        from test_query_ordered_top_pushdown import OrderedTopMainDemoTests
+        from yadinassi.execution.direct import python_direct_structural_reads as structural
+        from collections import Counter
+        source = ('R=T.Rows.Count()+Rows.Count()+Holder.Rows.Count()+Holder.Columns.Count()'
+                  '+Holder.Indexes.Count()+Table.Count();')
+        for database in (False, True):
+            with self.subTest(database=database):
+                if database:
+                    fixture=OrderedTopMainDemoTests()
+                    fixture.setUp()
+                    self.addCleanup(fixture.doCleanups)
+                    vm=fixture.vm
+                else:
+                    vm=self.vm()
+                vm.execute('T=New ValueTree;T.Columns.Add("N");T.Rows.Add();'
+                           'Table=New ValueTable;Table.Columns.Add("N");Table.Add();'
+                           'Table.Indexes.Add("N");'
+                           'Holder=New Structure("Rows,Columns,Indexes",T.Rows,T.Columns,Table.Indexes);'
+                           'Rows=Holder.Rows;')
+                plan=vm.prepare(source)
+                if database:trace,traced=fixture.actual_trace()
+                else:
+                    from contextlib import nullcontext
+                    trace,traced=[],nullcontext()
+                calls=Counter()
+                codes={direct_tree.hooks.__code__:'hooks',structural.count.__code__:'count'}
+                def profile(frame,event,arg):
+                    if event=='call' and frame.f_code in codes:calls[codes[frame.f_code]]+=1
+                with traced:
+                    previous=sys.getprofile()
+                    sys.setprofile(profile)
+                    try:
+                        vm.execute(source)
+                        self.assertEqual(vm.variables['r'],6)
+                        vm.execute_prepared(plan)
+                    finally:sys.setprofile(previous)
+                self.assertEqual(calls,{'count':12})
+                self.assertEqual(trace,[])
+                vm.execute('Rows.Add();Holder.Rows=Rows;')
+                vm.execute_prepared(plan)
+                self.assertEqual(vm.variables['r'],9)
+
+    def test_fallback_member_is_evaluated_once_and_extensions_keep_dispatch(self):
+        from yadinassi.execution.direct import python_direct_structural_reads as structural
+        local=self.vm()
+        local.execute('Var Calls,Holder;Calls=0;T=New ValueTree;T.Rows.Add();'
+                      'Holder=New Structure("Rows",T.Rows);'
+                      'Function Supply() Calls=Calls+1;Return Holder;EndFunction;'
+                      'N=Supply().Rows.Count();')
+        self.assertEqual((local.variables['calls'],local.variables['n']),(1,1))
+
+        vm=self.vm(allow_extensions=True)
+        vm.execute('T=New ValueTree;T.Rows.Add();Holder=New Structure("Rows",T.Rows);')
+        seen=[]
+        vm.register_function('Supply',lambda:seen.append('supply') or vm.variables['holder'])
+        with patch.object(structural,'count',side_effect=AssertionError('extension fast lane')):
+            self.assertEqual(vm.execute('Supply().Rows.Count()'),Decimal(1))
+        self.assertEqual(seen,['supply'])
+        holder=vm.variables['holder']
+        vm.register_function('CloseSupply',lambda:vm.close() or holder)
+        with self.assertRaises(BoundaryViolation):
+            vm.execute('CloseSupply().Rows.Count()')
+
+    def test_imported_value_counts_preserve_import_resolution(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        vm=self.vm()
+        with TemporaryDirectory() as directory:
+            main=str(Path(directory)/'Main.bsl')
+            (Path(directory)/'Side.bsl').write_text(
+                'Var Holder Export;T=New ValueTree;T.Rows.Add();Holder=New Structure("Rows",T.Rows);',
+                encoding='utf-8')
+            vm.execute('// #Import Side.bsl\n',main)
+            source='Local=Side.Holder;Local.Rows.Count()'
+            program=vm.prepare(source,main)
+            self.assertEqual(vm.execute_prepared(program),Decimal(1))
+            self.assertEqual(vm.execute(source,main),Decimal(1))
+
+    def test_actual_database_receiver_stays_on_its_existing_dispatch(self):
+        from test_query_ordered_top_pushdown import OrderedTopMainDemoTests
+        from yadinassi.execution.direct import python_direct_structural_reads as structural
+        fixture=OrderedTopMainDemoTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        fixture.vm.execute('D=Documents.Receipt.CreateDocument();')
+        with patch.object(structural,'count',side_effect=AssertionError('database fast lane')):
+            self.assertEqual(fixture.vm.execute('D.Lines.Count()'),Decimal(0))
+
     def test_plain_table_root_columns_indexes_and_generic_native_count(self):
         vm = self.vm()
         vm.execute('T=New ValueTable;T.Columns.Add("X");T.Add();T.Indexes.Add("X");Cols=T.Columns;')
