@@ -260,6 +260,32 @@ print('guarded')
         self.assertEqual(vm.execute("item.GetID()"), D(0))
         self.assertEqual(vm.execute("owner.Count()"), D(1))
 
+    def test_direct_scalar_and_opaque_item_text_have_no_host_fallback(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('L=New ValueList; N=L.Add(1234); Empty=L.Add(Null); '
+                   'D=L.Add(Date(2024,2,29)); B=L.Add(True); S=L.Add(" "); '
+                   'Texts=New Array; For Each I In L Do Texts.Add(Строка(I)); EndDo;')
+        self.assertEqual(list(vm.variables['texts']),
+                         ["1\u00a0234", "<Пустое значение>", "29.02.2024 0:00:00", "Да", " "])
+        # Using the exact item string endpoint directly exercises its stored
+        # value rather than the separate policy for arbitrary String arguments.
+        called = []
+        class Opaque:
+            def __repr__(self):
+                called.append('repr')
+                return 'opaque'
+            def __str__(self):
+                called.append('str')
+                return 'opaque'
+        owner = vm.variables['l']
+        item = owner.add(Opaque())
+        with self.assertRaises(ValueError):
+            str(item)
+        item.set_member('Presentation', ' ')
+        self.assertEqual(str(item), ' ')
+        self.assertEqual(called, [])
+
 
 if __name__ == "__main__":
     unittest.main()

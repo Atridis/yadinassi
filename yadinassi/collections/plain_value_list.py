@@ -10,7 +10,7 @@ from decimal import Decimal
 from types import MappingProxyType
 from weakref import ReferenceType, ref
 
-from yadinassi.types.values import to_string
+from yadinassi.types.values import NULL, to_string
 from yadinassi.temporal.dates import BSLDate, _sort_date_ticks
 from .sort_directions import _sort_descending
 
@@ -115,6 +115,25 @@ class PlainValueListItem(list):
     Generated code addresses these slots directly.
     """
     __slots__ = ('_id', '_membership')
+
+    def __str__(self):
+        label = list.__getitem__(self, 1)
+        if type(label) is not str:
+            raise ValueError('Недопустимое представление элемента списка значений')
+        if label:
+            return label
+        value = list.__getitem__(self, 0)
+        if value is None or value is NULL:
+            return '<Пустое значение>'
+        kind = type(value)
+        if kind is str:
+            return value
+        if kind is int:
+            return to_string(Decimal(value))
+        if kind is Decimal or kind is bool or kind is BSLDate:
+            return to_string(value)
+        # No object fallback: some values can invoke embedded Python formatters.
+        raise ValueError('Строковое представление этого типа значения элемента пока не поддерживается')
 
     def __eq__(self, other):
         return self is other
