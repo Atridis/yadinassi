@@ -373,3 +373,132 @@ class FormTableTests(unittest.TestCase):
         session = make(create='A = GetAttributes(); Status = String(A.Count());'); snap = session.open()
         self.assertEqual(dict(snap.attributes)['Status'], '1')
         self.assertEqual(tuple(session.form._attributes), ('status',))
+
+
+class IncrementalFormBudgetTests(unittest.TestCase):
+    def assert_usage_matches_full_transport(self, session):
+        import json
+        from yadinassi.forms.form_table_replication import pack_tables
+        form = session.form
+        packed = pack_tables(form)
+        packet = [[entry['id'], entry['rows']] for entry in packed]
+        dumped = lambda value: len(json.dumps(value, ensure_ascii=False, separators=(',', ':'),
+                                                allow_nan=False).encode('utf-8'))
+        self.assertEqual(2 + max(0, len(packed) - 1)
+                         + sum(table._wire_size for table in form._tables.values()), dumped(packet))
+        self.assertEqual(form._data.text_size,
+                         sum(len(value) for value in form._data.values() if type(value) is str))
+        for table, raw in zip(form._tables.values(), packet):
+            self.assertEqual(table._wire_size, dumped(raw))
+            self.assertEqual(table._text_size, sum(len(value) for row in table._rows
+                                                  for value in row._data.values() if type(value) is str))
+        return dumped(packet)
+
+    def test_add_cell_delete_clear_and_bulk_adoption_match_exact_wire_bytes(self):
+        other = FormTableSchema('Other', (column('Text'),))
+        session = make(tables=(SCHEMA, other)); self.addCleanup(session.interpreter.close)
+        with active(session):
+            lines, aux = session.form._tables.values()
+            for _ in range(10): lines.add()
+            row = lines._rows[-1]
+            row.set_member('Label', 'é😀\n"\\')
+            row.set_member('Quantity', Decimal('-3.125'))
+            other_row = aux.add()
+            other_row.set_member('Text', 'аб')
+            session.form.set_member('Status', 'initial')
+            wire = self.assert_usage_matches_full_transport(session)
+            previous = row._data.copy()
+            with patch('yadinassi.forms.form_tables.MAX_TABLE_DATA_BYTES', wire - 1):
+                with self.assertRaisesRegex(ValueError, 'передаваемых данных'):
+                    row.set_member('Label', previous['label'])
+                with self.assertRaisesRegex(ValueError, 'передаваемых данных'):
+                    lines.add()
+            self.assertEqual(row._data, previous)
+            self.assertEqual(lines._allocated, 10)
+            self.assertEqual(self.assert_usage_matches_full_transport(session), wire)
+            # Outbound transport still validates the actual packet rather than
+            # treating the operational ledger as an external admission proof.
+            from yadinassi.forms.form_table_replication import pack_tables
+            with patch.object(lines, '_wire_size', 0), \
+                 patch('yadinassi.forms.form_tables.MAX_TABLE_DATA_BYTES', wire - 1):
+                with self.assertRaisesRegex(ValueError, 'передаваемых данных'):
+                    pack_tables(session.form)
+            lines.delete(lines.get(Decimal(0)))
+            self.assertIs(lines._rows[-1], row)
+            self.assert_usage_matches_full_transport(session)
+            held = row._data
+            row._data = {**held, 'label': 'preview\\é'}
+            self.assert_usage_matches_full_transport(session)
+            row._data = held
+            self.assert_usage_matches_full_transport(session)
+            lines.clear()
+            self.assertTrue(row._removed)
+            self.assert_usage_matches_full_transport(session)
+            aux._replace_rows(((1, ('\\é',)), (2, ('😀',))), 2)
+            self.assertIs(aux._rows[0], other_row)
+            self.assert_usage_matches_full_transport(session)
+
+    def test_scalar_projection_install_restore_and_following_limits(self):
+        session = make(); self.addCleanup(session.interpreter.close)
+        with active(session):
+            row = session.form._tables['lines'].add()
+            row.set_member('Label', 'ééé')
+            form = session.form
+            form.set_member('Status', 'initial')
+            saved = form._data.copy()
+            form._data = {'status': 'longer installed'}
+            form._data.update({'status': 'preview'})
+            self.assert_usage_matches_full_transport(session)
+            form._data = saved
+            self.assert_usage_matches_full_transport(session)
+            with patch('yadinassi.forms.form_model.MAX_TOTAL_TEXT', 10), \
+                 patch('yadinassi.forms.form_tables.MAX_TOTAL_TEXT', 10):
+                form.set_member('Status', 'archive')
+                with self.assertRaisesRegex(ValueError, 'предел данных'):
+                    form.set_member('Status', 'too long')
+                with self.assertRaisesRegex(ValueError, 'предел данных'):
+                    row.set_member('Label', 'éééé')
+            self.assertEqual(form.get_member('Status'), 'archive')
+            self.assertEqual(row.get_member('Label'), 'ééé')
+            self.assert_usage_matches_full_transport(session)
+
+    def test_real_form_handler_does_not_validate_untouched_tables(self):
+        session = make(work='R=Lines[0];For I=1 To 10 Do R.Quantity=I; EndDo; Lines.Add();',
+                       create='For I=2 To 8 Do Lines.Add();EndDo;')
+        self.addCleanup(session.interpreter.close)
+        session.open()
+        with patch('yadinassi.forms.form_tables._validate_rows',
+                   side_effect=AssertionError('whole-row validation inside local mutation')):
+            snapshot = session.dispatch('command', revision=session.revision, control='RunButton')
+        self.assertEqual(snapshot.tables[0].rows[0][1][1], Decimal(10))
+        self.assertEqual(len(snapshot.tables[0].rows), 9)
+        self.assert_usage_matches_full_transport(session)
+
+    def test_server_reference_presentation_is_validated_when_it_can_change(self):
+        from test_form_references import scopes
+        from yadinassi.forms.form_references import FormReferenceBinding
+        server, _, _, reference = scopes()
+        binding = server.targets[1]
+        presentation = ['old']
+        server.targets[1] = FormReferenceBinding(binding.value_type, binding.empty, binding.validate,
+                                                 lambda value: '' if value.is_empty() else presentation[0])
+        references = FormTableSchema('References', (FormTableColumn('Ref', server.descriptor(1)),))
+        session = FormSession('', tables=(SCHEMA, references), reference_scope=server)
+        self.addCleanup(session.interpreter.close)
+        lines, refs = session.form._tables.values()
+        with active(session):
+            row = lines.add()
+            refs.add().set_member('Ref', reference)
+            with patch('yadinassi.forms.form_tables.MAX_TABLE_DATA_BYTES', 512):
+                row.set_member('Quantity', Decimal(1))
+                presentation[0] = 'ё' * 300  # Only the host presentation changed.
+                with self.assertRaisesRegex(ValueError, 'передаваемых данных'):
+                    row.set_member('Quantity', Decimal(2))
+                with self.assertRaisesRegex(ValueError, 'передаваемых данных'):
+                    lines.add()
+                self.assertEqual(row.get_member('Quantity'), Decimal(1))
+                self.assertEqual(lines.count(), Decimal(1))
+                self.assertEqual(lines._allocated, 1)
+                refs.clear()  # No deleted reference should be re-encoded.
+                row.set_member('Quantity', Decimal(2))
+        validate_table_data(session.form)

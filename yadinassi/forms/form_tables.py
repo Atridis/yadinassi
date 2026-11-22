@@ -79,9 +79,53 @@ def _position(value, count):
 
 
 def table_text_size(form):
-    return sum(len(value) for table in form._tables.values()
-               for row in table._rows for value in row._data.values()
-               if type(value) is str)
+    return sum(table._text_size for table in form._tables.values())
+
+
+def _wire_bytes(tagged):
+    return len(json.dumps(tagged, ensure_ascii=False, separators=(',', ':'),
+                          allow_nan=False).encode('utf-8'))
+
+
+def _cell_packet(column, value):
+    from yadinassi.ui.protocol import encode_value
+    return encode(column.value_type, value, encode_value)
+
+
+def _row_usage(table, identity, values):
+    cells = [_cell_packet(column, value) for column, value in zip(table.schema.columns, values)]
+    return sum(len(value) for value in values if type(value) is str), _wire_bytes([identity, cells])
+
+
+def _has_variable_wire(form):
+    # A server binding can re-present an unchanged reference via a host
+    # callback; no local row generation certifies its encoded byte length.
+    return form._session.reference_scope is not None and any(
+        table._variable_wire for table in form._tables.values())
+
+
+def _admit_usage(table, text_size, wire_size, count):
+    form = table._form
+    if len(form._tables) > MAX_TABLES:
+        raise ValueError('ТаблицаФормы: превышен предел таблиц')
+    if count > MAX_TABLE_ROWS:
+        raise ValueError('ТаблицаФормы: превышен предел строк')
+    cells = count * len(table.schema.columns)
+    text_size += form._data.text_size
+    wire_size += 2 + max(0, len(form._tables) - 1)
+    for other in form._tables.values():
+        if other is table:
+            continue
+        other_count = len(other._rows)
+        if other_count > MAX_TABLE_ROWS:
+            raise ValueError('ТаблицаФормы: превышен предел строк')
+        cells += other_count * len(other.schema.columns)
+        text_size += other._text_size
+        wire_size += other._wire_size
+    if cells > MAX_TABLE_CELLS or text_size > MAX_TOTAL_TEXT:
+        raise ValueError('ТаблицаФормы: превышен предел данных')
+    if wire_size > MAX_TABLE_DATA_BYTES:
+        raise ValueError('ТаблицаФормы: превышен предел передаваемых данных')
 
 
 def _validate_rows(table, rows):
@@ -127,15 +171,14 @@ def validate_table_data(form, replacements=None, scalar_data=None):
     total_text = sum(len(value) for value in data.values() if type(value) is str)
     cells = 0; packet = []
     for key, table in form._tables.items():
-        rows = replacements.get(key, table._snapshot().rows)
+        rows = replacements[key] if key in replacements else table._snapshot().rows
         encoded_rows, row_text = _validate_rows(table, rows)
         cells += len(rows) * len(table.schema.columns)
         total_text += row_text
         packet.append([table._identity, encoded_rows])
     if cells > MAX_TABLE_CELLS or total_text > MAX_TOTAL_TEXT:
         raise ValueError('ТаблицаФормы: превышен предел данных')
-    if len(json.dumps(packet, ensure_ascii=False, separators=(',', ':'),
-                      allow_nan=False).encode('utf-8')) > MAX_TABLE_DATA_BYTES:
+    if _wire_bytes(packet) > MAX_TABLE_DATA_BYTES:
         raise ValueError('ТаблицаФормы: превышен предел передаваемых данных')
 
 
@@ -151,6 +194,14 @@ class BSLFormDataCollection(_Owned):
         for column in schema.columns: require_scope(column.value_type, form._session)
         self.schema, self._identity = schema, identity
         self._rows = []; self._by_id = {}; self._allocated = 0
+        self._text_size = 0
+        self._variable_wire = any(is_reference(column.value_type) and column.value_type.scope.server
+                                  for column in schema.columns)
+        self._empty_wire_size = None if self._variable_wire else len(str(identity)) + 5  # [identity,[]]
+        self._wire_size = self._empty_wire_size
+
+    def _commit_usage(self, text_size, wire_size):
+        self._text_size, self._wire_size = text_size, wire_size
 
     def _check(self, server=False):
         super()._check(server)
@@ -180,7 +231,8 @@ class BSLFormDataCollection(_Owned):
         """
         if type(allocated) is not int or not self._allocated <= allocated <= MAX_TABLE_ALLOCATED:
             raise ValueError('ТаблицаФормы: неверный счетчик строк')
-        _validate_rows(self, rows)
+        encoded, text_size = _validate_rows(self, rows)
+        wire_size = None if self._variable_wire else _wire_bytes([self._identity, encoded])
         for identity, values in rows:
             if identity > allocated or identity not in self._by_id and identity <= self._allocated:
                 raise ValueError('ТаблицаФормы: повторное использование строки')
@@ -188,14 +240,17 @@ class BSLFormDataCollection(_Owned):
         for identity, values in rows:
             row = self._by_id.get(identity)
             if row is None: row = BSLFormDataCollectionItem(self, identity)
-            row._data = {column.name.casefold(): value
-                         for column, value in zip(self.schema.columns, values)}
-            result.append(row)
-        retained = {row._row_id for row in result}
+            data = {column.name.casefold(): value for column, value in zip(self.schema.columns, values)}
+            result.append((row, data))
+        retained = {row._row_id for row, _ in result}
+        for row, data in result:
+            row._values = data
         for row in self._rows:
             if row._row_id not in retained: row._removed = True
-        self._rows = result; self._by_id = {row._row_id: row for row in result}
+        self._rows = [row for row, _ in result]
+        self._by_id = {row._row_id: row for row in self._rows}
         self._allocated = allocated
+        self._commit_usage(text_size, wire_size)
         self._clear_removed_selection()
 
     def _clear_removed_selection(self):
@@ -211,10 +266,22 @@ class BSLFormDataCollection(_Owned):
             raise ValueError('ТаблицаФормы: превышен предел строк')
         identity = self._allocated + 1
         values = tuple(adjust(c.value_type) for c in self.schema.columns)
-        rows = self._snapshot().rows + ((identity, values),)
-        validate_table_data(self._form, {self.schema.name.casefold(): rows})
-        self._replace_rows(rows, identity)
-        return self._by_id[identity]
+        if _has_variable_wire(self._form):
+            rows = self._snapshot().rows + ((identity, values),)
+            validate_table_data(self._form, {self.schema.name.casefold(): rows})
+            self._replace_rows(rows, identity)
+            return self._by_id[identity]
+        row_text, row_wire = _row_usage(self, identity, values)
+        text_size = self._text_size + row_text
+        wire_size = self._wire_size + row_wire + bool(self._rows)
+        _admit_usage(self, text_size, wire_size, len(self._rows) + 1)
+        row = BSLFormDataCollectionItem(self, identity)
+        row._values = {column.name.casefold(): value for column, value in zip(self.schema.columns, values)}
+        self._rows.append(row)
+        self._by_id[identity] = row
+        self._allocated = identity
+        self._commit_usage(text_size, wire_size)
+        return row
 
     def get(self, index):
         self._check(); return self._rows[_position(index, len(self._rows))]
@@ -232,10 +299,28 @@ class BSLFormDataCollection(_Owned):
         if (type(row) is not BSLFormDataCollectionItem or row._table is not self or
                 self._by_id.get(row._row_id) is not row or row._removed):
             raise ValueError('ТаблицаФормы: чужая или удаленная строка')
-        self._replace_rows(tuple(record for record in self._snapshot().rows if record[0] != row._row_id), self._allocated)
+        if self._variable_wire:
+            rows = tuple(record for record in self._snapshot().rows if record[0] != row._row_id)
+            self._replace_rows(rows, self._allocated)
+            return
+        values = tuple(row._data[c.name.casefold()] for c in self.schema.columns)
+        row_text, row_wire = _row_usage(self, row._row_id, values)
+        text_size = self._text_size - row_text
+        wire_size = self._wire_size - row_wire - (len(self._rows) > 1)
+        self._rows.remove(row)
+        del self._by_id[row._row_id]
+        row._removed = True
+        self._commit_usage(text_size, wire_size)
+        self._clear_removed_selection()
 
     def clear(self):
-        self._check(True); self._replace_rows((), self._allocated)
+        self._check(True)
+        for row in self._rows:
+            row._removed = True
+        self._rows.clear()
+        self._by_id.clear()
+        self._commit_usage(0, self._empty_wire_size)
+        self._clear_removed_selection()
 
     def __iter__(self):
         self._check()
@@ -249,7 +334,35 @@ class BSLFormDataCollectionItem(_Owned):
 
     def __init__(self, table, identity):
         super().__init__(table._form)
-        self._table, self._row_id, self._data = table, _row_identity(identity), {}
+        self._table, self._row_id, self._values = table, _row_identity(identity), {}
+
+    @property
+    def _data(self):
+        return self._values
+
+    @_data.setter
+    def _data(self, data):
+        # Configured reference choice previews and adopts a whole owned row.
+        # Restore the ledger on its temporary replacement as well as on the
+        # final install. Whole-table replicas fill their staged values directly.
+        old = self._values
+        if old is data:
+            return
+        table = self._table
+        if table._by_id.get(self._row_id) is self and not self._removed:
+            if table._variable_wire:
+                old_text = sum(len(value) for value in old.values() if type(value) is str)
+                row_text = sum(len(value) for value in data.values() if type(value) is str)
+                wire_size = None
+            else:
+                keys = tuple(column.name.casefold() for column in table.schema.columns)
+                old_text, old_wire = _row_usage(table, self._row_id, tuple(old[key] for key in keys))
+                row_text, row_wire = _row_usage(table, self._row_id, tuple(data[key] for key in keys))
+                wire_size = table._wire_size - old_wire + row_wire
+            self._values = data
+            table._commit_usage(table._text_size - old_text + row_text, wire_size)
+        else:
+            self._values = data
 
     def _check(self, server=False):
         self._table._check(server)
@@ -271,8 +384,20 @@ class BSLFormDataCollectionItem(_Owned):
         if is_reference(column.value_type) and not column.value_type.scope.server:
             raise ValueError("client reference cells are read-only")
         value = adjust(column.value_type, value)
-        rows = tuple((r._row_id, tuple(value if r is self and c.name.casefold() == key
-                    else r._data[c.name.casefold()] for c in self._table.schema.columns))
-                    for r in self._table._rows)
-        validate_table_data(self._form, {self._table.schema.name.casefold(): rows})
-        self._data[key] = value
+        old = self._values[key]
+        table = self._table
+        text_size = table._text_size - (len(old) if type(old) is str else 0)
+        text_size += len(value) if type(value) is str else 0
+        variable_wire = _has_variable_wire(self._form)
+        if variable_wire:
+            rows = tuple((row._row_id, tuple(value if row is self and c.name.casefold() == key
+                          else row._data[c.name.casefold()] for c in table.schema.columns))
+                         for row in table._rows)
+            validate_table_data(self._form, {table.schema.name.casefold(): rows})
+        wire_size = (None if table._variable_wire else
+                     table._wire_size - _wire_bytes(_cell_packet(column, old))
+                     + _wire_bytes(_cell_packet(column, value)))
+        if not variable_wire:
+            _admit_usage(table, text_size, wire_size, len(table._rows))
+        self._values[key] = value
+        table._commit_usage(text_size, wire_size)

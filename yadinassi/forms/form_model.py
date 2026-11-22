@@ -332,6 +332,27 @@ class BSLFormCommands(BSLFormCollection):
     def __init__(self, form): super().__init__(form, True)
 
 
+class _FormScalarData(dict):
+    """Owned scalar cache; detached copies remain ordinary dictionaries."""
+
+    def __init__(self, data):
+        super().__init__(data)
+        self.text_size = sum(len(value) for value in self.values() if type(value) is str)
+
+    def __setitem__(self, key, value):
+        old = self.get(key)
+        change = (len(value) if type(value) is str else 0) - (len(old) if type(old) is str else 0)
+        super().__setitem__(key, value)
+        self.text_size += change
+
+    def update(self, changes):
+        # The form's configured write continuation installs a validated
+        # projection through this private dictionary API.
+        for key, value in changes.items():
+            self[key] = value
+
+
+
 class BSLClientApplicationForm(_Owned):
     _methods = _methods(('change_attributes', False, 'ChangeAttributes ИзменитьРеквизиты'),
                         ('get_attributes', True, 'GetAttributes ПолучитьРеквизиты'),
@@ -346,6 +367,16 @@ class BSLClientApplicationForm(_Owned):
         self._layout = (); self._layout_parents = {}
         self.items = BSLFormItems(self); self.commands = BSLFormCommands(self)
         self.actions = {}; self.title = ''
+    @property
+    def _data(self):
+        return self._scalar_data
+
+    @_data.setter
+    def _data(self, data):
+        # A validated detached replica already owns its counters. Whole
+        # document/host installs and rollback dictionaries rebuild once.
+        self._scalar_data = data if type(data) is _FormScalarData else _FormScalarData(data)
+
     def _check(self, server=False):
         if self._session.closed: raise ValueError('Форма закрыта')
         if not self._session._busy: raise ValueError('Форма: нет активного обработчика')
@@ -409,9 +440,15 @@ class BSLClientApplicationForm(_Owned):
             if is_reference(kind) and not kind.scope.server:
                 raise ValueError("client reference fields are read-only")
             value = adjust_form_value(kind, value)
-            total = sum(len(x) for k,x in self._data.items() if k != key and type(x) is str)
-            if total + self._table_text_size() + (len(value) if type(value) is str else 0) > MAX_TOTAL_TEXT: raise ValueError('Форма: превышен предел данных')
-            self._data[key] = value
+            data = self._scalar_data
+            old = data[key]
+            total = data.text_size - (len(old) if type(old) is str else 0)
+            total += len(value) if type(value) is str else 0
+            if total + self._table_text_size() > MAX_TOTAL_TEXT: raise ValueError('Форма: превышен предел данных')
+            # The committed total is already known; don't compute the scalar
+            # delta again through the backing dict's general write API.
+            dict.__setitem__(data, key, value)
+            data.text_size = total
         elif key in self._tables: raise ValueError('ТаблицаФормы: замена коллекции запрещена')
         elif key in ('title','заголовок'): self.title = text(value, 1024)
         else: return super().set_member(member, value)
