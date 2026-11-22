@@ -56,9 +56,11 @@ graph check for hierarchical catalogs). Exact text equality remains binary.
 Code, document number and register full keys use their existing key indexes;
 description can use a binary description index when already installed, or
 let SQLite scan to locate up to two matches. A lookup never installs an index.
-Ordinary manager admission is unchanged; only the existing format-16
-catalog code observer can borrow an owned explicit transaction. Raw and
-query scan ports retain their established broader integrity checks.
+Ordinary owned format-16 flat catalog exact description lookup also uses
+one detached statement, as code lookup already does outside transactions.
+Only the existing catalog code observer can borrow an owned explicit
+transaction. Other manager admission and raw/query scan integrity checks
+are unchanged.
 
 Ordinary standalone BSL independent-register operations on native source-free
 SQLite layouts (8–10) use one same-transaction admission statement. The check
@@ -71,18 +73,16 @@ same admission. Writes keep real SQLite transactions, row budgets, conflict and
 revision checks, matching foreign keys and rollback. Raw host ports, configured
 and extension paths, and explicit transaction units retain full admission.
 
-On ordinary owned BSL format-16 document references, `Posted` reads one live
-header/state statement without a new transaction. The statement checks the
-selected document declaration, database identity/generation, the header and
-posting revision, and the presence of its required attribute row. It does not
-load attribute values, parts or unrelated source. Empty and missing references
-return false. This uses the opened layout: external physical schema/source
-changes still require reopening; raw/managed document reads and preexisting
-transaction-transfer restrictions are unchanged.
-
-
-
-
+On ordinary owned BSL format-16 document references, `Number`, `Date`,
+`DeletionMark`, `Posted` and declared typed header attributes read one live
+statement without a new transaction. The statement checks the selected
+document declaration, database identity/generation, the header and posting
+revision, and presence of its required attribute row. It reads only the
+requested attribute value, and verifies a nonempty catalog reference
+against its declared target in the same statement. Empty and missing
+document references retain their typed defaults. This uses the opened
+layout: external physical schema/source changes still require reopening;
+raw/managed reads and explicit transaction-transfer restrictions are unchanged.
 
 String and Decimal metadata [qualifiers are applied on assignment](catalog-qualifier-assignment.md), and direct backend create/update calls use the same conversion before SQL. Storage decoding remains strict and never converts persisted corruption into an accepted value. Code uniqueness applies to the converted code. This does not add fixed strings, new scalar types, UI behavior or general native catalog parity.
 

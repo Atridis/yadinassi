@@ -242,6 +242,23 @@ class BSLCatalogManager(BSLObject):
             if type(view) is not _View: raise BackendError('unsupported')
             return _View._catalog_selection_page(view,origin[1].identity,after,size)
         finally: view.close()
+    def _point_find_backend(self):
+        from types import MethodType
+        from yadinassi.db.sqlite.sqlite_catalog import _CATALOG_DATA_OPEN_ABI
+        from yadinassi.execution.direct.python_direct_transactions import _Owner, _ROOT_OWNER
+
+        owner = _ROOT_OWNER.get()
+        if (type(owner) is not _Owner or owner.vm.allow_extensions is not False
+                or owner.vm._configuration_runtime is not None):
+            return None
+        backend = self._runtime_data_backend()
+        if backend is not None:
+            opener = backend._begin_catalog_data
+            if (type(opener) is MethodType and opener.__self__ is backend
+                    and opener.__func__ is _CATALOG_DATA_OPEN_ABI):
+                return backend
+        return None
+
     def _find(self,field,value):
         from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
         from yadinassi.configuration.configuration_main_demo import MainDemoConfiguration
@@ -255,6 +272,12 @@ class BSLCatalogManager(BSLObject):
             and backend.format_version==16 and type(backend.accumulation_configuration) in (
                 InventoryEnumConfiguration,InventoryEnumApplicationConfiguration,MainDemoConfiguration))
         if type(backend) is SQLiteCatalogBackend:
+            if (field=='description' and type(self) is BSLCatalogManager
+                    and self._schema.hierarchy=='none' and self._point_find_backend() is backend):
+                meta = self._catalogs._metadata
+                matches = backend._find_catalog_scalar(
+                    self._schema,meta._database_id,meta._generation,field,value)
+                return self._exact_find_result(matches,meta._database_id)
             from yadinassi.db.sqlite.sqlite_catalog import _View
             from yadinassi.db.sqlite.sqlite_documents import DocumentView
             view = query_view(self) if borrowed_code else self._view()
@@ -266,20 +289,9 @@ class BSLCatalogManager(BSLObject):
                     from yadinassi.db.database_transactions import require_registered_query_lease
                     require_registered_query_lease(backend,owned)
                 matches = _View._find_catalog_ref_exact(owned,self._schema.identity,field,value)
-                if type(matches) is not tuple or len(matches)>2:
-                    raise BackendError('integrity')
-                for key in matches:
-                    if (type(key) is not CatalogKey or any(
-                            type(component) is not UUID or type(getattr(component,'int',None)) is not int
-                            for component in (key.database_id,key.catalog_id,key.record_id))
-                            or key.database_id!=owned.database_id
-                            or key.catalog_id!=self._schema.identity
-                            or not 0<key.record_id.int<2**128):
-                        raise BackendError('integrity')
+                return self._exact_find_result(matches,owned.database_id)
             finally:
                 view.close()
-            if len(matches)>1: raise ValueError('ambiguous exact catalog lookup')
-            return self._ref(matches[0].record_id) if matches else self.empty_ref()
         view=self._view()
         try:
             page=view.scan_catalog_values(self._schema.identity,CatalogScanRequest(
@@ -301,6 +313,19 @@ class BSLCatalogManager(BSLObject):
         finally:view.close()
         if len(matches)>1:raise ValueError('ambiguous exact catalog lookup')
         return self._ref(matches[0].key.record_id) if matches else self.empty_ref()
+    def _exact_find_result(self,matches,database):
+        if type(matches) is not tuple or len(matches)>2:
+            raise BackendError('integrity')
+        for key in matches:
+            if (type(key) is not CatalogKey or any(
+                    type(component) is not UUID or type(getattr(component,'int',None)) is not int
+                    for component in (key.database_id,key.catalog_id,key.record_id))
+                    or key.database_id!=database or key.catalog_id!=self._schema.identity
+                    or not 0<key.record_id.int<2**128):
+                raise BackendError('integrity')
+        if len(matches)>1: raise ValueError('ambiguous exact catalog lookup')
+        return self._ref(matches[0].record_id) if matches else self.empty_ref()
+
     def find_by_code(self,code):
         if type(code) is not str:raise TypeError('String Code required')
         return self._find('code',code)

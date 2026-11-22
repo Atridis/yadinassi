@@ -225,6 +225,13 @@ class EnumStorageBinding:
 
     def value(self, key, enum_id):
         self._live()
+        return self._value(key,enum_id)
+
+    def detached_value(self, key, enum_id):
+        self._require_detached(conversion=True)
+        return self._value(key,enum_id)
+
+    def _value(self, key, enum_id):
         entry = self._entry(enum_id)
         key = self._domain.require_key(key, enum_id)
         for reference, identity in zip(entry[7], entry[8]):

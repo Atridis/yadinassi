@@ -1533,21 +1533,19 @@ class SQLiteCatalogBackend:
         try: return read_posted(view._connection, self.database_id, key)
         finally: view.close()
 
-    def _read_document_posted_detached(self,key,*,header=None):
+    def _read_document_posted_detached(self,key):
         from .sqlite_document_posting_state import read_posted_statement
         from .sqlite_single_statement import run
 
-        def point(connection):
-            value = read_posted_statement(connection,self.database_id,key,header=header)
-            if header is not None: self._check_file()
-            return value
-        return run(self,point)
+        return run(self,lambda connection:read_posted_statement(connection,self.database_id,key))
 
     @_boundary
-    def _read_document_posted_scalar(self,schema,key,generation):
+    def _read_document_header_scalar(self,schema,key,generation,field):
         from yadinassi.db.database_transactions import forbid_transfer
         from yadinassi.db.document.document_backend import DocumentKey
         from .sqlite_catalog_runtime_data import CatalogRuntimeData
+        from .sqlite_document_header import read_field
+        from .sqlite_single_statement import run
 
         forbid_transfer(self)
         data = self._catalog_runtime_data
@@ -1558,8 +1556,15 @@ class SQLiteCatalogBackend:
         if (type(generation) is not int or (key.database_id,generation)!=data.identity
                 or (self.database_id,self.configuration_generation)!=data.identity):
             raise BackendError('schema_changed')
-        header = data.posted_document(self,schema,key.document_id)
-        return self._read_document_posted_detached(key,header=(generation,*header))
+        header, selected = data.document_header(self,schema,key.document_id,field)
+        target = (quote_identifier(data.layout.table_name(selected.target_catalog_id))
+                  if type(selected) is FieldSchema and selected.kind=='catalog_ref' else None)
+
+        def point(connection):
+            result = read_field(connection,key,generation,header,selected,domain=data.domain,target=target)
+            self._check_file()
+            return result
+        return run(self,point)
 
     @_boundary
     def read_recorder(self, register_id, key):
@@ -1843,6 +1848,32 @@ class SQLiteCatalogBackend:
             self._check_file()
             return result
         return run(self, read)
+
+    @_boundary
+    def _find_catalog_scalar(self,schema,database,generation,field,value):
+        from yadinassi.db.database_transactions import forbid_transfer
+        from .sqlite_catalog_runtime_data import CatalogRuntimeData
+        from .sqlite_single_statement import run
+
+        forbid_transfer(self)
+        data = self._catalog_runtime_data
+        if (self.format_version!=16 or type(data) is not CatalogRuntimeData
+                or type(schema) is not CatalogSchema or schema.hierarchy!='none'):
+            raise BackendError('unsupported')
+        _uuid(database); _uuid(schema.identity)
+        admitted = data.catalog(schema.identity)
+        if (type(generation) is not int or data.identity!=(database,generation)
+                or data.identity!=(self.database_id,self.configuration_generation)
+                or admitted!=schema):
+            raise BackendError('schema_changed')
+        codec = _View(self,None,None,admitted_identity=data.identity,catalog_data=data)
+        codec._find_catalog_operand(field,value)
+
+        def point(connection):
+            result = codec._find_catalog_matches(connection,admitted,field,value)
+            self._check_file()
+            return result
+        return run(self,point)
 
     @_boundary
     def _update_catalog_scalar(self, draft, expected, schema, generation, operation_id,
@@ -2304,8 +2335,6 @@ class _View:
     @_boundary
     def _find_catalog_ref_exact(self, catalog_id, field, value):
         """Exact manager reference lookup; no whole-source scan validation."""
-        from .sqlite_single_statement import fetch_all
-
         self._require()
         if type(self) is _View:
             if (self._backend._active is not self or self._operation_id is not None
@@ -2315,20 +2344,28 @@ class _View:
                 raise BackendError('closed')
         # The manager authenticates any registered lease before entering,
         # and it still has its own _require() lifetime gate above.
-        if type(field) is not str or field not in ('code','description'):
-            raise BackendError('invalid_input')
-        self._scan_operand('string',None,value)
+        _View._find_catalog_operand(self,field,value)
         schema = self.catalog_schema(catalog_id)
         if schema.hierarchy != 'none':
             # Check parent membership/cycles, even on a miss. _scalar
             # reuses the one graph held by this admitted view for any hit.
             hierarchy_storage.load(self,schema)
+        return _View._find_catalog_matches(self,self._connection,schema,field,value)
+
+    def _find_catalog_operand(self,field,value):
+        if type(field) is not str or field not in ('code','description'):
+            raise BackendError('invalid_input')
+        self._scan_operand('string',None,value)
+
+    def _find_catalog_matches(self,connection,schema,field,value):
+        from .sqlite_single_statement import fetch_all
+
         table, columns, where, args = self._source(schema)
         predicate = quote_identifier(field) + ' COLLATE BINARY = ?'
         if where != '1': predicate = where + ' AND ' + predicate
-        rows = fetch_all(self._connection,'SELECT %s FROM %s WHERE %s LIMIT 2'
+        rows = fetch_all(connection,'SELECT %s FROM %s WHERE %s LIMIT 2'
                          % (columns,table,predicate),args+(value,))
-        return tuple(self._scalar(catalog_id,row,schema=schema).key for row in rows)
+        return tuple(self._scalar(schema.identity,row,schema=schema).key for row in rows)
 
     @_boundary
     def _catalog_selection_page(self, catalog_id, after, size):
@@ -3545,5 +3582,8 @@ _REGISTER_OPEN_ABI = {name:getattr(SQLiteCatalogBackend,name)
                       for name in ('begin_read','begin_register_read','begin_register_write')}
 
 # A host-overridden public read path keeps its admitted document view.
-_DOCUMENT_POSTED_OPEN_ABI = {name:getattr(SQLiteCatalogBackend,name)
+_DOCUMENT_HEADER_OPEN_ABI = {name:getattr(SQLiteCatalogBackend,name)
                              for name in ('begin_document_read','begin_read')}
+
+# An overridden ordinary catalog data adapter keeps its original admitted view.
+_CATALOG_DATA_OPEN_ABI = SQLiteCatalogBackend._begin_catalog_data

@@ -21,6 +21,7 @@ _ZERO = UUID(int=0)
 _OMITTED = object()
 _ALIASES = {'номер':'number','дата':'date','проведен':'posted','проведён':'posted',
             'ссылка':'ref','пометкаудаления':'deletionmark'}
+_HEADER_FIELDS = {'number':'number','date':'date','deletionmark':'deletion_mark','posted':'posted','ref':'ref'}
 
 
 def _name(name):
@@ -177,9 +178,9 @@ class BSLDocumentManager(BSLObject):
         view = self._view()
         try: return view.read_document(self._key(record))
         finally: view.close()
-    def _posted_data_backend(self, ref):
+    def _header_data_backend(self, ref):
         from types import MethodType
-        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _DOCUMENT_POSTED_OPEN_ABI
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _DOCUMENT_HEADER_OPEN_ABI
         from yadinassi.execution.direct.python_direct_transactions import _Owner, _ROOT_OWNER
 
         if type(self) is not BSLDocumentManager: return None
@@ -200,14 +201,14 @@ class BSLDocumentManager(BSLObject):
         if (type(callback) is not MethodType or callback.__self__ is not self
                 or callback.__func__ is not BSLDocumentManager._read_member):
             return None
-        for name, function in _DOCUMENT_POSTED_OPEN_ABI.items():
+        for name, function in _DOCUMENT_HEADER_OPEN_ABI.items():
             live = getattr(backend,name)
             if type(live) is not MethodType or live.__self__ is not backend or live.__func__ is not function:
                 return None
         owner.check(backend)
         from yadinassi.configuration.demos.inventory_enum_runtime import query_owner
-        # A Boolean does not need an enum conversion or read lease, but the
-        # existing format16 owner/namespace witness must still be live.
+        # The existing format16 owner/namespace witness still applies to
+        # the detached physical read and any subsequent typed conversion.
         scope = query_owner(self._catalogs)
         meta = self._documents._metadata
         if (scope is None or scope.backend is not backend or scope.context is not owner.database
@@ -219,14 +220,28 @@ class BSLDocumentManager(BSLObject):
     def _read_member(self,ref,name):
         from yadinassi.db.sqlite.sqlite_documents import DocumentView
         key = _name(name)
-        if key=='posted':
-            backend = self._posted_data_backend(ref)
-            if backend is not None:
-                result = backend._read_document_posted_scalar(self._schema,self._key(ref.reference_uuid),
-                                                               self._documents._metadata._generation)
-                return False if result is None else result
-        standard = {'number':'number','date':'date','deletionmark':'deletion_mark','posted':'posted','ref':'ref'}
+        standard = _HEADER_FIELDS
         definition = next((field for field in self._schema.fields if field.name.casefold()==key),None)
+        if key in standard or definition is not None:
+            backend = self._header_data_backend(ref)
+            if backend is not None:
+                field = standard[key] if definition is None else definition
+                value = backend._read_document_header_scalar(self._schema,self._key(ref.reference_uuid),
+                    self._documents._metadata._generation,field)
+                if definition is not None:
+                    if value is None: return self._field_default(definition)
+                    if definition.kind=='enum_ref':
+                        from yadinassi.configuration.demos.inventory_enum_runtime import binding
+                        return binding(self._catalogs._metadata._root,detached=True).detached_value(
+                            value,definition.target_enum_id)
+                    return self._logical(definition,value)
+                if value is None:
+                    if key=='ref': return ref
+                    if key=='date': return BSLDate(0)
+                    return '' if key=='number' else False
+                if key=='date': return _date_from_datetime(value)
+                if key=='ref': return self._ref(value.record_id)
+                return value
         view = self._view()
         projected = (type(view) is DocumentView and view._view._operation_id is None
                      and (key in standard or definition is not None))

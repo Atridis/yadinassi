@@ -18,7 +18,7 @@ class DocumentPostedStatementTests(unittest.TestCase):
     def seed(self):
         self.vm.execute(demo.SEED + '''
 D=Documents.Receipt.CreateDocument(); D.Number="r1"; D.Date=Date(2024,1,1);
-D.Warehouse=Склад.Ссылка; L=D.Lines.Add(); L.Product=Карточка.Ссылка;
+D.Warehouse=Склад.Ссылка; D.State=Enums.States.Draft; L=D.Lines.Add(); L.Product=Карточка.Ссылка;
 L.Quantity=5; L.Amount=10; L.Unit=Enums.Units.Piece;
 D.Write(DocumentWriteMode.Posting);
 ''')
@@ -152,3 +152,85 @@ StillOwn=TransactionActive();RollbackTransaction();''')
             peer.execute('DELETE FROM "'+data_table(schema)+'" WHERE record_id=?',(str(key.record_id),))
         with self.assertRaises(BSLRuntimeError): self.vm.execute('D.Ref.Posted')
         self.assertIsNone(self.context.backend._active)
+
+    def test_live_typed_document_fields_share_one_statement_per_access(self):
+        self.seed()
+        vm = self.vm
+        vm.variables['missing_ref'] = str(uuid4())
+        wanted = (
+            ('D.Ref.Номер','r1'),
+            ('(D.Ref.Дата=Date(2024,1,1))',True),
+            ('D.Ref.ПометкаУдаления',False),
+            ('(D.Ref.Warehouse=Склад.Ref)',True),
+            ('(D.Ref.State=Enums.States.Draft)',True),
+            ('Documents.Receipt.EmptyRef().Number',''),
+            ('(Documents.Receipt.EmptyRef().Date=Date(1,1,1))',True),
+            ('Documents.Receipt.EmptyRef().Warehouse.IsEmpty()',True),
+            ('Documents.Receipt.GetRef(New UUID(Missing_Ref)).State.IsEmpty()',True),
+        )
+        self.assertEqual(vm.execute('D.Ref.Number'),'r1')
+        backend = self.context.backend
+        connection = backend._read_handle.connection
+        trace = []
+        connection.set_trace_callback(trace.append)
+        try:
+            with patch.object(backend,'_validate_transaction_admission',
+                              side_effect=AssertionError('full document admission')):
+                for expression,result in wanted:
+                    with self.subTest(expression=expression):
+                        self.assertEqual(vm.execute(expression),result)
+        finally:
+            connection.set_trace_callback(None)
+        self.assertEqual(len(trace),len(wanted),trace)
+        self.assertTrue(all(sql.startswith('SELECT') and 'document_part_' not in sql for sql in trace),trace)
+        self.assertIn('EXISTS(SELECT 1 FROM main."catalog_',trace[3])
+        self.assertIsNone(backend._active)
+        self.assertFalse(connection.in_transaction)
+
+    def test_selected_warehouse_keeps_live_reference_presence_validation(self):
+        from yadinassi import BSLRuntimeError
+        from yadinassi.db.sqlite.sqlite_document_layout import data_table
+        from yadinassi.db.sqlite.sqlite_typed_rows import attribute_column
+        key = self.seed()
+        schema = self.vm._documents.get_index('Receipt')._schema
+        field = next(field for field in schema.fields if field.name=='Warehouse')
+        column = attribute_column(field)
+        table = data_table(schema)
+        with closing(sqlite3.connect(self.path)) as peer, peer:
+            peer.execute(f'UPDATE "{table}" SET "{column}"=? WHERE record_id=?',
+                         (str(uuid4()),str(key.record_id)))
+        with self.assertRaises(BSLRuntimeError):
+            self.vm.execute('D.Ref.Warehouse')
+        self.assertIsNone(self.context.backend._active)
+        # Number still validates its header, but not a different attribute.
+        self.assertEqual(self.vm.execute('D.Ref.Number'),'r1')
+        with closing(sqlite3.connect(self.path)) as peer, peer:
+            peer.execute(f'UPDATE "{table}" SET "{column}"=NULL WHERE record_id=?',
+                         (str(key.record_id),))
+        self.assertTrue(self.vm.execute('D.Ref.Warehouse.IsEmpty()'))
+
+    def test_catalog_exact_description_detached_duplicate_and_owned_code(self):
+        vm = self.vm
+        vm.execute("""W=Catalogs.Склады.CreateItem();W.Code="abc";W.Description="Point";W.Write();""")
+        backend = self.context.backend
+        self.assertTrue(vm.execute('(Catalogs.Склады.FindByDescription("Point",True)=W.Ref)'))
+        connection = backend._read_handle.connection
+        trace = []
+        connection.set_trace_callback(trace.append)
+        try:
+            self.assertTrue(vm.execute('Catalogs.Склады.FindByDescription("point",True).IsEmpty()'))
+            self.assertTrue(vm.execute('(Catalogs.Склады.FindByCode("abc")=W.Ref)'))
+        finally:
+            connection.set_trace_callback(None)
+        self.assertEqual(len(trace),2,trace)
+        self.assertTrue(all(sql.startswith('SELECT') and sql.endswith('LIMIT 2') for sql in trace),trace)
+        vm.execute("""V=Catalogs.Склады.CreateItem();V.Code="def";V.Description="Point";V.Write();""")
+        from yadinassi import BSLRuntimeError
+        with self.assertRaises(BSLRuntimeError):
+            vm.execute('Catalogs.Склады.FindByDescription("Point",True)')
+        self.assertIsNone(backend._active)
+        vm.execute("""BeginTransaction();X=Catalogs.Склады.CreateItem();X.Code="stu";X.Description="Staged";X.Write();
+StagedCode=Not Catalogs.Склады.FindByCode("stu").IsEmpty();
+Denied=False;Try R=Catalogs.Склады.FindByDescription("Staged",True);Except Denied=True;EndTry;
+RollbackTransaction();""")
+        self.assertTrue(vm.execute('StagedCode And Denied And Catalogs.Склады.FindByCode("stu").IsEmpty()'))
