@@ -11,6 +11,7 @@ from yadinassi.types.values import BSLType, equal
 from yadinassi.types.type_values import type_of
 from yadinassi.types.value_checks import value_is_filled
 from yadinassi.collections.maps import BSLMap, BSLFixedMap
+from yadinassi.execution.direct.python_direct_plain_map import PlainMap, PlainFixedMap
 
 A = '01234567-89ab-4cde-8f01-23456789abcd'
 B = '01234567-89ab-4cde-8f01-23456789abce'
@@ -69,6 +70,59 @@ class UUIDCandidateTests(unittest.TestCase):
         self.assertEqual(BSLFixedMap(m).get_index(BSLUUID(A)), 'second')
         m.delete(BSLUUID(A)); self.assertEqual(len(m._items), 1)
         self.assertEqual(m.get(A), 'string')
+
+    def test_direct_map_and_fixed_map_key_domains(self):
+        source = f'''
+u = New UUID("{A}");
+same = New UUID("{A.upper()}");
+other = New UUID("{B}");
+m = New Map;
+m.Insert(u, 1); m.Insert(same, 2); m.Insert("{A}", 3); m[other] = 4;
+f = New FixedMap(m);
+m.Delete(same);
+r = New Array;
+r.Add(m.Count()); r.Add(f.Count()); r.Add(f.Get(same)); r.Add(f[u]);
+r.Add(f.Get("{A}")); r.Add(f[other]); r.Add(m.Get(u));
+'''
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                if prepared:
+                    vm.execute_prepared(vm.prepare(source))
+                else:
+                    vm.execute(source)
+                self.assertEqual(vm.variables['r'], [2, 3, 2, 2, 3, 4, None])
+                fixed = vm.variables['f']
+                self.assertIs(type(fixed), PlainFixedMap)
+                keys = [pair.key for pair in fixed]
+                self.assertIs(keys[0], vm.variables['u'])
+                self.assertIs(type(keys[1]), str)
+                self.assertIs(keys[2], vm.variables['other'])
+
+    def test_direct_uuid_map_keys_do_not_invoke_host_payload_hooks(self):
+        class Hostile(str):
+            def __eq__(self, other):
+                raise AssertionError('foreign equality hook')
+            def __hash__(self):
+                raise AssertionError('foreign hash hook')
+            def lower(self):
+                raise AssertionError('foreign lower hook')
+
+        corrupt = BSLUUID(A)
+        object.__setattr__(corrupt, 'text', Hostile(A))
+        mapping = PlainMap()
+        with self.assertRaisesRegex(TypeError, 'invalid UUID state'):
+            mapping[corrupt] = 1
+        self.assertEqual(len(mapping), 0)
+        mapping[BSLUUID(A)] = 2
+        fixed = PlainFixedMap(mapping)
+        with self.assertRaisesRegex(TypeError, 'invalid UUID state'):
+            fixed.get(corrupt)
+        with patch.object(BSLUUID, '__hash__', side_effect=AssertionError('UUID hash hook')), \
+             patch.object(BSLUUID, '__eq__', side_effect=AssertionError('UUID equality hook')):
+            self.assertEqual(mapping.get(BSLUUID(A.upper())), 2)
+            self.assertEqual(fixed.get(BSLUUID(A.upper())), 2)
 
     def test_static_dynamic_constructors_aliases_and_collection_find(self):
         self.vm.execute(f'''u = New UUID("{A}");

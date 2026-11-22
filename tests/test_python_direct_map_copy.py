@@ -63,16 +63,26 @@ Args=New Array;Args.Add(F);T=New("Map",Args);T.Insert("K",2);R=F.Get("K");V=T.Ge
         self.assertIs(copy.get(key),value);self.assertIsNone(copy.get(other));self.assertEqual(events,[])
         del copy[key];self.assertIs(fixed.get(key),value)
 
-    def test_value_key_domains_explicitly_reject_atomically(self):
-        keys=(BSLUUID('11111111-1111-1111-1111-111111111111'),
-            BSLCatalogReference(BSLCatalogType(UUID(int=1),'Catalog',object()),UUID(int=2)))
-        for key in keys:
-            with self.subTest(kind=type(key)):
-                source=BSLMap();source.insert('first',1);source.insert(key,2)
-                fixed=BSLFixedMap(source);vm=self.vm();vm.variables.update(f=fixed,saved=7)
-                with self.assertRaisesRegex(BSLError,'scalar Python value'):vm.execute('Saved=New Map(F);')
-                self.assertEqual(vm.variables['saved'],7);self.assertEqual(len(fixed._items),2)
-                self.assertEqual(fixed.get(key),2)
+    def test_catalog_reference_key_domain_rejects_copy_atomically(self):
+        key=BSLCatalogReference(BSLCatalogType(UUID(int=1),'Catalog',object()),UUID(int=2))
+        source=BSLMap();source.insert('first',1);source.insert(key,2)
+        fixed=BSLFixedMap(source);vm=self.vm();vm.variables.update(f=fixed,saved=7)
+        with self.assertRaisesRegex(BSLError,'scalar Python value'):vm.execute('Saved=New Map(F);')
+        self.assertEqual(vm.variables['saved'],7);self.assertEqual(len(fixed._items),2)
+        self.assertEqual(fixed.get(key),2)
+
+    def test_copy_translates_native_fixed_uuid_key_by_value(self):
+        text='11111111-1111-1111-1111-111111111111'
+        key=BSLUUID(text)
+        source=BSLMap();source.insert(key,2);source.insert(text,3)
+        fixed=BSLFixedMap(source);vm=self.vm();vm.variables['f']=fixed
+        vm.execute('M=New Map(F);')
+        copy=vm.variables['m']
+        self.assertEqual(copy.get(BSLUUID(text)),2)
+        self.assertEqual(copy.get(text),3)
+        del copy[BSLUUID(text)]
+        self.assertIsNone(copy.get(key))
+        self.assertEqual(fixed.get(key),2)
 
     def test_canonical_fixed_scalar_descriptor_key_thaws_by_value(self):
         source = BSLMap()

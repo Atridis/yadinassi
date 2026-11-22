@@ -2,7 +2,7 @@
 
 Copy construction is an explicit canonical input boundary, not arbitrary Python
 iterable expansion. Scalar keys stay in the native dict; supported collection
-keys use opaque identity and scalar TypeDescription keys use value tokens.
+keys use opaque identity; UUID and scalar TypeDescription keys use value tokens.
 """
 from yadinassi.collections.maps import BSLFixedMap
 from yadinassi.collections.structures import BSLFixedStructure
@@ -13,6 +13,7 @@ from yadinassi.numeric.round_modes import BSLRoundMode
 from yadinassi.temporal.dates import BSLDate, MAX_TICKS, _DIRECT_EQUALITY_DATE_STATE
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.types.values import BSLFixedArray, BSLNull, BSLObject, BSLType
+from yadinassi.types.unique_identifiers import BSLUUID, _CANONICAL as _UUID_TEXT_PATTERN
 from yadinassi.types.type_descriptions import BSLTypeDescription, _ORDER, _MAX_NUMBER_DIGITS, _MAX_STRING_UNITS
 from yadinassi.types.type_qualifiers import (
     BSLAllowedLength, BSLAllowedSign, BSLBinaryDataQualifiers, BSLDateFractions,
@@ -30,6 +31,7 @@ _KEY_TYPE_IDS=frozenset(id(kind) for kind in _KEY_TYPES)
 _DATE_TICKS = vars(BSLDate)['ticks']
 _DATE_BOUNDARY = _DIRECT_EQUALITY_DATE_STATE[1]
 _DATE_HASH, _DATE_EQ, _DATE_KNOWN = BSLDate.__hash__, BSLDate.__eq__, BSLDate.require_known
+_UUID_TEXT = vars(BSLUUID)['text']
 
 
 _TRUE_KEY, _FALSE_KEY = object(), object()
@@ -111,22 +113,22 @@ def _scalar_map_key(value):
     return (types, digits, fraction, id(sign), length, id(length_mode), id(fractions))
 
 
-class _DescriptorKey:
+class _ScalarKey:
     __slots__ = ('value', 'token')
 
-    def __init__(self, value):
+    def __init__(self, value, token):
         self.value = value
-        self.token = _scalar_map_key(value)
+        self.token = token
 
     def __hash__(self):
         return hash(self.token)
 
     def __eq__(self, other):
-        return type(other) is _DescriptorKey and self.token == other.token
+        return type(other) is _ScalarKey and self.token == other.token
 
 
 def native_map_public_key(key):
-    if type(key) is _IdentityKey or type(key) is _DescriptorKey:
+    if type(key) is _IdentityKey or type(key) is _ScalarKey:
         return key.value
     return True if key is _TRUE_KEY else False if key is _FALSE_KEY else key
 
@@ -161,8 +163,19 @@ def _admit_extended_key(key):
         if type(ticks) is not int or not 0 <= ticks <= MAX_TICKS:
             raise BoundaryViolation('invalid exact date key state')
         return key
+    if type(key) is BSLUUID:
+        try:
+            text = _UUID_TEXT.__get__(key, BSLUUID)
+        except AttributeError:
+            raise TypeError('Map key has invalid UUID state') from None
+        if (type(text) is not str or len(text) != 36 or text != text.lower()
+                or _UUID_TEXT_PATTERN.fullmatch(text) is None):
+            raise TypeError('Map key has invalid UUID state')
+        # The exact string token stays wrapped, separate from ordinary
+        # string keys and from the tuple tokens of TypeDescription keys.
+        return _ScalarKey(key, text)
     if type(key) is BSLTypeDescription:
-        return _DescriptorKey(key)
+        return _ScalarKey(key, _scalar_map_key(key))
     if id(type(key)) in _IDENTITY_KEY_TYPE_IDS:
         return _IdentityKey(key)
     raise TypeError("Map key requires a scalar Python value")
@@ -206,7 +219,7 @@ class PlainMap(dict):
     def setdefault(self,key,default=None):
         if id(type(key)) not in _KEY_TYPE_IDS:
             key=_admit_extended_key(key)
-            if type(key) is _IdentityKey or type(key) is _DescriptorKey:self._identity_keys=True
+            if type(key) is _IdentityKey or type(key) is _ScalarKey:self._identity_keys=True
         return dict.setdefault(self,key,default)
 
     def __ior__(self,other):
@@ -261,7 +274,7 @@ class PlainMap(dict):
     def __setitem__(self,key,value):
         if id(type(key)) not in _KEY_TYPE_IDS:
             key=_admit_extended_key(key)
-            if type(key) is _IdentityKey or type(key) is _DescriptorKey:self._identity_keys=True
+            if type(key) is _IdentityKey or type(key) is _ScalarKey:self._identity_keys=True
         dict.__setitem__(self,key,value)
 
     def get(self,key,default=None):
