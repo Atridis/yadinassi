@@ -92,6 +92,94 @@ class DirectDatabaseTests(unittest.TestCase):
             self.assertEqual(self.vm.execute(source),0)
             self.assertEqual(self.vm.execute_prepared(plan),0)
 
+    def test_routine_query_conditions_match_direct_return_and_short_circuit(self):
+        from yadinassi.execution.direct.python_direct_database import CatalogBoundary
+        from yadinassi.syntax.parser import parse
+        prefix=('Function Work() Q=New Query("SELECT COUNT(*) AS N FROM Catalog.Склады"); '
+                'S=Q.Execute().Select(); ')
+        for body,calls in (
+                ('Return S.Next();',1),
+                ('If (S.Next()) Then Return True; EndIf; Return False;',1),
+                ('If False And S.Next() Then Return False; '
+                 'ElsIf Not (S.Next() = False) Then Return True; EndIf; Return False;',2),
+                ('Return ?(True,S, S).Next();',1),
+        ):
+            with self.subTest(body=body):
+                source=prefix+body+' EndFunction\nWork()'
+                plan=self.vm.prepare_program(parse(source))
+                self.assertEqual(plan._plan.generated_source.count('.next()'),calls)
+                with patch.object(CatalogBoundary,'resolve_member',side_effect=AssertionError('generic query method')):
+                    self.assertIs(self.vm.execute(source),True)
+                    self.assertEqual([self.vm.execute_prepared(plan) for _ in range(10)],[True]*10)
+
+    def test_routine_query_conditional_join_only_keeps_proven_fallthrough(self):
+        from yadinassi.execution.direct.python_direct_database import CatalogBoundary
+        from yadinassi.syntax.parser import parse
+        prefix=('Procedure Touch() EndProcedure\n'
+                'Function Work() Q=New Query("SELECT COUNT(*) AS N FROM Catalog.Склады"); '
+                'S=Q.Execute().Select(); ')
+        original=CatalogBoundary.resolve_member
+        for body,direct,generic in (
+                ('If S.Next() Then A=S; Else A=S; EndIf; Return A.Next();',2,[]),
+                ('If Not S.Next() Then Return False; Else A=S; EndIf; Return A.Next();',2,[]),
+                ('If Not S.Next() Then Return S.N; EndIf; Return S.Next();',2,[]),
+                ('If S.Next() Then A=S; Else A=0; EndIf; Return A.Next();',1,['next']),
+                ('If S.Next() Then Touch(); EndIf; Return S.Next();',1,['next']),
+        ):
+            with self.subTest(body=body):
+                source=prefix+body+' EndFunction\nWork()'
+                plan=self.vm.prepare_program(parse(source))
+                self.assertEqual(plan._plan.generated_source.count('.next()'),direct)
+                seen=[]
+                def observe(context,value,name):
+                    seen.append(name.casefold())
+                    return original(context,value,name)
+                with patch.object(CatalogBoundary,'resolve_member',observe):
+                    self.assertIs(self.vm.execute_prepared(plan),False)
+                self.assertEqual(seen,generic)
+
+    def test_routine_query_condition_preserves_rebound_method_and_extension_dispatch(self):
+        from yadinassi.db.query.queries import BSLQueryResultSelection
+        from yadinassi.syntax.parser import parse
+        from yadinassi.types.values import HostFunction
+        source=('Function Work() Q=New Query("SELECT COUNT(*) AS N FROM Catalog.Склады"); '
+                'S=Q.Execute().Select(); If S.Next() Then Return True; EndIf; Return False; EndFunction\nWork()')
+        original=BSLQueryResultSelection.get_method
+        seen=[]
+        def changed(value,name):
+            if name.casefold()=='next':
+                seen.append(name)
+                return HostFunction(name,lambda:False)
+            return original(value,name)
+        for vm in (self.vm,self.interpreter(allow_extensions=True)):
+            with self.subTest(extensions=vm is not self.vm):
+                plan=vm.prepare_program(parse(source))
+                with patch.object(BSLQueryResultSelection,'get_method',changed):
+                    self.assertIs(vm.execute_prepared(plan),False)
+                self.assertIs(vm.execute_prepared(plan),True)
+        self.assertEqual(seen,['Next','Next'])
+
+    def test_module_query_branch_and_routine_transaction_keep_the_active_view(self):
+        from yadinassi.execution.direct.python_direct_database import CatalogBoundary
+        from yadinassi.syntax.parser import parse
+        text='SELECT Code FROM Catalog.Склады WHERE Code = ""17""'
+        routine=('Function Work() Q=New Query("'+text+'"); S=Q.Execute().Select(); '
+                 'If S.Next() Then Return True; EndIf; Return False; EndFunction\n')
+        transaction=('BeginTransaction(); Item=Catalogs.Склады.CreateItem(); Item.Code="17"; '
+                     'Item.Description="Only in transaction"; Item.Write(); '
+                     'Staged=Work(); RollbackTransaction(); Outside=Work();')
+        module=('Q=New Query("'+text+'"); S=Q.Execute().Select(); '
+                'If S.Next() Then Found=True; Else Found=False; EndIf;')
+        with patch.object(CatalogBoundary,'resolve_member',autospec=True,side_effect=CatalogBoundary.resolve_member) as generic:
+            self.vm.execute(routine+transaction)
+            self.assertIs(self.vm.variables['staged'],True)
+            self.assertIs(self.vm.variables['outside'],False)
+            plan=self.vm.prepare_program(parse(module))
+            self.assertEqual(plan._plan.generated_source.count('.next()'),1)
+            self.vm.execute_prepared(plan)
+            self.assertIs(self.vm.variables['found'],False)
+        self.assertNotIn('next',[call.args[2].casefold() for call in generic.call_args_list])
+
     def test_second_routine_origin_does_not_relicense_an_earlier_result_alias(self):
         from yadinassi.execution.direct.python_direct_database import CatalogBoundary
         source=('Function Work() Q=New Query("SELECT COUNT(*) AS N FROM Catalog.Склады"); '

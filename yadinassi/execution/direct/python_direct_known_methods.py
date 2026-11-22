@@ -19,11 +19,21 @@ class _OpaqueLocal(Exception):
     pass
 
 
+_RETURNED = object()
+
+
+def _common_facts(left, right):
+    return {name: kind for name, kind in left.items() if right.get(name) == kind}
+
+
 def analyze(program, *, database, local_slots=None):
     lexical=local_slots is not None
     entries = _TABLE_ENTRIES + (_QUERY_ENTRIES if database else ())
     methods = {(item.kind, name): item for item in entries for name in item.aliases}
     calls, origins = {}, set()
+    # The lexical phase distinguishes kinds, not individual objects. Keep
+    # the existing single-origin rule across the whole routine, including
+    # mutually exclusive arms; never relicense an earlier alias.
     constructed=executed=False
 
     def expression(node, facts):
@@ -40,6 +50,34 @@ def analyze(program, *, database, local_slots=None):
                     or type(node.value) is int or node.value is None):
                 return 'scalar',True
             raise _OpaqueLocal
+        if kind is ast.Unary and node.operator == 'NOT':
+            operand,_=expression(node.operand,facts)
+            if lexical and operand != 'scalar':raise _OpaqueLocal
+            return 'scalar' if lexical else None,False
+        if kind is ast.Binary and node.operator in ('AND','OR','=','<>','<','<=','>','>='):
+            left,_=expression(node.left,facts)
+            if lexical and left != 'scalar':raise _OpaqueLocal
+            if node.operator in ('AND','OR'):
+                reached=facts.copy()
+                right,_=expression(node.right,reached)
+                common=_common_facts(facts,reached)
+                facts.clear()
+                facts.update(common)
+            else:
+                right,_=expression(node.right,facts)
+            if lexical and right != 'scalar':raise _OpaqueLocal
+            return 'scalar' if lexical else None,False
+        if kind is ast.Conditional:
+            condition,_=expression(node.condition,facts)
+            if lexical and condition != 'scalar':raise _OpaqueLocal
+            true_facts,false_facts=facts.copy(),facts.copy()
+            left,left_fresh=expression(node.when_true,true_facts)
+            right,right_fresh=expression(node.when_false,false_facts)
+            facts.clear()
+            facts.update(_common_facts(true_facts,false_facts))
+            if left==right:return left,left_fresh and right_fresh
+            if lexical:raise _OpaqueLocal
+            return None,False
         if kind is ast.New:
             if lexical:
                 if constructed or any(expression(arg,facts)[0]!='scalar' for arg in node.arguments):
@@ -70,48 +108,53 @@ def analyze(program, *, database, local_slots=None):
         return None, False
 
     def statements(block, facts):
-        for node in block:
-            kind = type(node)
-            if kind is ast.Assign and type(node.target) is ast.Name:
-                result,_=expression(node.value,facts)
-                # A named result is a type hint, but un-published old storage
-                # may retain Python objects. Detached methods need a fresh
-                # result in the same expression, not merely the same type.
-                if result:facts[node.target.name.casefold()]=result
-                else:facts.clear()
-            elif kind is ast.ExpressionStatement:
-                expression(node.expression,facts)
-            elif kind in (ast.For,ast.While,ast.ForEach):
-                statements(node.body,{})
-                facts.clear()
-            elif kind is ast.If:
-                for _,body in node.branches:statements(body,{})
-                statements(node.otherwise,{})
-                facts.clear()
-            else:facts.clear()
-    if lexical:
-        # Only an uninterrupted prefix of unboxed routine-local storage is
-        # eligible. It contains no previous opaque value whose release could
-        # invoke Python, and no alias can escape to a mutable host slot.
-        facts={}
+        # None is an opaque fallthrough, not an empty set of proven facts:
+        # the lexical proof may not restart after an unknown effect.
         try:
-            for node in program:
+            for node in block:
                 kind=type(node)
-                if kind is ast.Assign and type(node.target) is ast.Name and node.target.name.casefold() in local_slots:
-                    facts[node.target.name.casefold()]=expression(node.value,facts)[0]
+                if kind is ast.Assign and type(node.target) is ast.Name:
+                    name=node.target.name.casefold()
+                    if lexical and name not in local_slots:raise _OpaqueLocal
+                    result,_=expression(node.value,facts)
+                    # A module name is only a hint, not a fresh detached
+                    # result: publication of old host storage may run Python.
+                    if result is not None:facts[name]=result
+                    else:facts.clear()
                 elif kind is ast.ExpressionStatement:
                     expression(node.expression,facts)
-                elif kind is ast.Var and all(name.casefold() in local_slots for name in node.names):
+                elif kind is ast.Var and lexical and all(name.casefold() in local_slots for name in node.names):
                     for name in node.names:facts.setdefault(name.casefold(),'scalar')
                 elif kind is ast.Return:
-                    if node.value is not None:expression(node.value,facts)
-                    break
+                    if node.value is not None:
+                        try:expression(node.value,facts)
+                        except _OpaqueLocal:pass
+                    # Even an opaque return expression cannot fall through
+                    # to the lexical suffix (it returns a value or raises).
+                    return _RETURNED
+                elif kind is ast.If:
+                    exits=[]
+                    for condition,body in node.branches:
+                        result,_=expression(condition,facts)
+                        if lexical and result != 'scalar':raise _OpaqueLocal
+                        # The next ElseIf sees only this condition's
+                        # fallthrough, never the preceding Then body.
+                        exits.append(statements(body,facts.copy()))
+                    exits.append(statements(node.otherwise,facts))
+                    live=[exit_facts for exit_facts in exits if exit_facts is not _RETURNED]
+                    if not live:return _RETURNED
+                    if any(exit_facts is None for exit_facts in live):return None
+                    facts=live[0]
+                    for incoming in live[1:]:facts=_common_facts(facts,incoming)
+                elif lexical:raise _OpaqueLocal
                 else:
-                    break
+                    if kind in (ast.For,ast.While,ast.ForEach):statements(node.body,{})
+                    facts.clear()
         except _OpaqueLocal:
-            pass
-    else:
-        statements(program,{})
+            return None
+        return facts
+
+    statements(program,{})
     return calls,origins
 
 
