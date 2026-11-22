@@ -1810,6 +1810,11 @@ class Emitter:
             iterable=self.node(py.IfExp,t,test=dictionary,body=generator,orelse=self.name(receiver,t))
             native=self.node(py.BoolOp,t,op=py.Or(),values=[exact(kind) for kind in ('list','dict','_PlainMap','_TypedMap','_NakedMap','_DirectStructure')])
             host=self.invoke(self.invoke(self.attribute(self.name('_context',t),'resolve_member',t),[self.name(receiver,t),self.const('__iter__',t)],t),[],t)
+            if not self.owned_constructors:
+                # Keep the live item identities and ordinary list traversal.
+                # Bind the exact storage operation, not a host __iter__ hook.
+                plain=self.invoke(self.attribute(self.name('list',t),'__iter__',t),[self.name(receiver,t)],t)
+                host=self.node(py.IfExp,t,test=exact('_PlainValueList'),body=plain,orelse=host)
             selected=self.node(py.IfExp,t,test=native,body=self.call('iter',[iterable],t),orelse=host)
             result=[assign(receiver,self.expr(node.collection)),assign(bound,selected),assign(iterator,self.call('iter',[self.name(bound,t)],t))]
             changes=set();journals=self.scope.setdefault('initialization_journals',[]) if self.scope is not None else None

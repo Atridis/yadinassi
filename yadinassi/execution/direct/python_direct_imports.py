@@ -436,7 +436,12 @@ class ImportBoundary:
         from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure,structure_get
         from yadinassi.collections.plain_value_list import PlainValueList,PlainValueListItem,_field
         if type(value) is _DirectStructure:return structure_get(value,name)
-        if name.startswith('_') or type(value) is list or type(value) is PlainValueList:
+        if type(value) is PlainValueList:
+            from .python_direct_database import _PLAIN_VALUE_LIST_DEFAULT_PROPERTIES
+            if name.casefold() in _PLAIN_VALUE_LIST_DEFAULT_PROPERTIES:
+                return self.get_member(value,name)
+            raise ValueError('Поле объекта не обнаружено: '+name)
+        if name.startswith('_') or type(value) is list:
             raise ValueError('Поле объекта не обнаружено: '+name)
         if type(value) is PlainValueListItem:return list.__getitem__(value,_field(name))
         return self.get_member(value,name)

@@ -1,5 +1,6 @@
 import unittest
 from decimal import Decimal as D
+from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.collections.plain_value_list import PlainValueList,PlainValueListItem
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
@@ -40,6 +41,44 @@ class DirectPlainValueListTests(unittest.TestCase):
                 self.assertIs(type(result), type(expected))
                 self.assertEqual(effects, ['receiver'])
                 self.assertEqual(list(original), [D(10), 'old', True, 'image'])
+
+    def test_foreach_uses_live_value_list_items_without_rebinding_receiver(self):
+        vm=self.vm()
+        source=('L=New ValueList; First=L.Add(1); L.Add(2); Alias=L; Seen=New Array; '
+                'For Each Item In L Do '
+                'If Item.Value=1 Then Alias.Add(3); L=New ValueList; Item.Value=10; EndIf; '
+                'Seen.Add(Item.Value); EndDo; '
+                'Empty=New ValueList; For Each Item In Empty Do Seen.Add(99); EndDo;')
+        from yadinassi.syntax.parser import parse
+        plan=vm.prepare_program(parse(source))
+        with patch.object(PlainValueList,'__iter__',side_effect=AssertionError('non-native iterator'),create=True):
+            vm.execute_prepared(plan)
+        self.assertEqual(vm.variables['seen'],[D(10),D(2),D(3)])
+        self.assertEqual(len(vm.variables['l']),0)
+        original=vm.variables['alias']
+        self.assertIs(vm.variables['first'],original[0])
+        self.assertIs(vm.variables['item'],original[2])
+
+    def test_foreach_in_routine_uses_an_evaluated_bilingual_value_list(self):
+        vm=self.vm()
+        source=('Функция СуммаСписка() Список=Вычислить("Новый СписокЗначений"); '
+                'Список.Добавить(2); Список.Добавить(5); Р=0; '
+                'Для Каждого Элемент Из Список Цикл Р=Р+Элемент.Значение; КонецЦикла; '
+                'Возврат Р; КонецФункции\nВычислить("СуммаСписка()")')
+        self.assertEqual(vm.execute(source),D(7))
+
+    def test_value_list_index_replacement_is_catchable_after_operand_evaluation(self):
+        vm=self.vm()
+        vm.execute('Var Calls; Function Arg(Val Tag) Calls.Add(Tag); Return 0; EndFunction\n'
+                   'Calls=New Array; L=New ValueList; First=L.Add(4); '
+                   'Caught=0; Try L[Arg("index")]=Arg("value"); Except Caught=Caught+1; EndTry; '
+                   'Try Execute("L[0]=7;"); Except Caught=Caught+1; EndTry; '
+                   'Try L[0]=New ValueList; Except Caught=Caught+1; EndTry;')
+        self.assertEqual(vm.variables['calls'],['index','value'])
+        self.assertEqual(vm.variables['caught'],D(3))
+        self.assertEqual(len(vm.variables['l']),1)
+        self.assertIs(vm.variables['l'][0],vm.variables['first'])
+        self.assertEqual(vm.variables['first'][0],D(4))
 
     def test_hostile_index_and_equality_do_not_gain_callbacks(self):
         vm=self.vm();seen=[]

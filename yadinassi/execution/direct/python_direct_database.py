@@ -81,6 +81,10 @@ _PURE_COLLECTION_TYPE_IDS=frozenset(map(id,(
 def _verify_collection(boundary,value):
     return id(type(value)) not in _PURE_COLLECTION_TYPE_IDS or getattr(boundary,'_verify_context',True) is not False
 
+
+def _readonly_value_list_index(index, value):
+    raise ValueError('Элемент списка значений нельзя заменить по индексу')
+
 _REGISTER_TYPES = frozenset(map(id, (
     BSLInformationRegisters, BSLInformationRegisterManager, BSLInformationRegisterRecordManager,
     BSLInformationRegisterSelection, BSLInformationRegisterRecordSet, BSLInformationRegisterRecord,
@@ -146,6 +150,8 @@ def _check_register_owner(boundary, value):
 
 
 _XML_CLEANUP_NAMES=('deletedisallowedxmlcharacters','удалитьнедопустимыесимволыxml')
+_PLAIN_VALUE_LIST_TYPE_PROPERTIES = frozenset(('valuetype', 'типзначения'))
+_PLAIN_VALUE_LIST_DEFAULT_PROPERTIES = _PLAIN_VALUE_LIST_TYPE_PROPERTIES | {'availablevalues', 'доступныезначения'}
 
 
 class CatalogBoundary:
@@ -272,6 +278,11 @@ class CatalogBoundary:
         raise ValueError('catalog namespace is read-only')
 
     def get_member(self,value,name):
+        if type(value) is PlainValueList:
+            key = name.casefold()
+            if key in _PLAIN_VALUE_LIST_DEFAULT_PROPERTIES:
+                if self._verify_context: self._check()
+                return BSLTypeDescription() if key in _PLAIN_VALUE_LIST_TYPE_PROPERTIES else None
         if id(type(value)) in zip_reader.TYPE_IDS:return zip_reader.get(self,value,name)
         if id(value) in OPAQUE_ENUM_IDS:
             if self._verify_context:self._check()
@@ -479,6 +490,9 @@ class CatalogBoundary:
                 raise ValueError('Метод объекта не обнаружен: '+name)
             return self.resolve_callable(HostFunction(name,delete_disallowed_xml_characters))
         if id(type(value)) in zip_reader.TYPE_IDS:return zip_reader.resolve(self,value,name,syntax=True)
+        if name=='__setitem__' and type(value) is PlainValueList:
+            if self._verify_context:self._check()
+            return _readonly_value_list_index
         if name in ('__iter__','__getitem__','__setitem__'):
             identity=id(value)
             if (identity in OPAQUE_ENUM_IDS or identity in FIELD_ONLY_NAMESPACE_IDS
