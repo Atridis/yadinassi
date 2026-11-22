@@ -128,6 +128,8 @@ ORDINARY_CONSTRUCTORS = {
     'zipfilereader': BSLZipFileReader, 'чтениеzipфайла': BSLZipFileReader,
     'xmlstringprocessingmanager': None, 'менеджеробработкистрокиxml': None,
     'chars': None, 'символы': None,
+    # Authenticated UUID observation: this spelling is rejected, not an alias.
+    'uniqueidentifier': None,
 }
 OPTIONAL_STREAM_CONSTRUCTORS = frozenset(
     name for name,value in ORDINARY_CONSTRUCTORS.items() if value in _STREAM_CONSTRUCTOR_COUNTS)
