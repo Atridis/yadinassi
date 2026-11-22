@@ -363,17 +363,17 @@ Function Rebind() Export Box=New Structure("Field",2); Return Undefined; EndFunc
         self.vm.execute('Side.Box.Field=17;')
         self.assertEqual(self.vm.execute('Side.Box.Field'),17)
 
-    def test_private_imported_chains_and_unrelated_omissions_fail_before_actuals(self):
+    def test_private_imported_chains_reject_before_actuals_and_exported_defaults_work(self):
         self.write('Side.bsl', MODULE+'Var PrivateItems; PrivateItems=New Array;')
         self.execute('// #Import Side.bsl\nFunction Touch() Raise "must not evaluate"; EndFunction')
         for code,error in (
                 ('Side.PrivateItems.Add(Touch());','Поле объекта'),
                 ('Side.Items.append(Touch());','Метод объекта'),
-                ('Side.Items.Add(, Touch());','количество аргументов'),
-                ('Side.Defaults(, Touch());','omitted imported routine')):
+                ('Side.Items.Add(, Touch());','количество аргументов')):
             with self.subTest(code=code),self.assertRaisesRegex(BSLError,error):
                 self.vm.execute(code)
         self.assertEqual(self.vm.execute('Side.Items.Count()'),1)
+        self.assertEqual(self.vm.execute('Side.Defaults(, "C")'), 'AC')
 
     def test_imported_table_and_list_optional_arguments_use_real_field_storage(self):
         self.write('Package/Collections.bsl', '''

@@ -35,6 +35,8 @@ _OBJECT_TYPE_FIELDS=_TYPE_NAMES | {'ordered','упорядоченный','abstr
     'open','открытый','sequenced','последовательный','mixed','смешанный'}
 _SCALAR_TYPE_GET=_TYPE.get_member
 _OBJECT_TYPE_GET=_OBJECT_TYPE.get_member
+_IS_DESCENDANT=_TYPE.is_descendant
+_VALUE_TYPE=_VALUE.type
 _LOADER=source.SourceXDTOPackages;_LOAD=_LOADER.load
 _TYPE_CALL=_FACTORY.type;_CREATE_CALL=_FACTORY.create
 _METHODS={'type':_TYPE_CALL,'тип':_TYPE_CALL,'create':_CREATE_CALL,'создать':_CREATE_CALL}
@@ -270,6 +272,17 @@ def _kind(factory,kind):
     if primitive._uri!=values.XS or primitive._name not in _SCALARS:raise ValueError('source XDTO scalar type not integrated')
 
 
+def _check_value(factory,value):
+    fields=_field_keys(value)
+    saved=_VALUES.get(value)
+    if saved is None or len(fields)!=len(saved) or any(fields.get(name) is not old for name,old in saved):
+        raise BoundaryViolation('source XDTO value was not produced here or changed')
+    _kind(factory,value._type)
+    if value._factory is not factory:raise BoundaryViolation('foreign source XDTO value')
+    if not any(type(value._value) is cls for cls in (str,bool,Decimal)) or type(value._lexical) is not str:
+        raise BoundaryViolation('source XDTO value fields changed')
+
+
 def get(boundary,value,name):
     from . import python_direct_source_xdto_local as local
     if local.registered(value):return local.get(boundary,value,name)
@@ -286,9 +299,14 @@ def get(boundary,value,name):
         key=name.casefold()
         if key not in _METHODS:raise ValueError('source XDTO factory member not integrated')
         return HostFunction(name,_METHODS[key].__get__(factory,_FACTORY))
-    if type(value) is _TYPE and name.casefold() in _SCALAR_TYPE_FIELDS:
-        _kind(factory,value)
-        return _SCALAR_TYPE_GET(value,name)
+    if type(value) is _TYPE:
+        key=name.casefold()
+        if key in _SCALAR_TYPE_FIELDS:
+            _kind(factory,value)
+            return _SCALAR_TYPE_GET(value,name)
+        if key in ('isdescendant','этопотомок'):
+            _kind(factory,value)
+            return HostFunction(name,_IS_DESCENDANT.__get__(value,_TYPE))
     if type(value) is _OBJECT_TYPE and name.casefold() in _OBJECT_TYPE_FIELDS:
         _field_keys(value)
         if (value._factory is not factory or type(value._uri) is not str or type(value._name) is not str
@@ -296,14 +314,11 @@ def get(boundary,value,name):
             raise BoundaryViolation('source XDTO requires a current object type from this factory')
         return _OBJECT_TYPE_GET(value,name)
     if type(value) is _VALUE:
-        _field_keys(value);fields=vars(value)
-        saved=_VALUES.get(value)
-        if saved is None or len(fields)!=len(saved) or any(fields.get(name) is not old for name,old in saved):
-            raise BoundaryViolation('source XDTO value was not produced here or changed')
-        _kind(factory,value._type)
-        if value._factory is not factory:raise BoundaryViolation('foreign source XDTO value')
-        if not any(type(value._value) is cls for cls in (str,bool,Decimal)) or type(value._lexical) is not str:raise BoundaryViolation('source XDTO value fields changed')
-        if name.casefold() in ('value','значение'):return value._value
+        _check_value(factory,value)
+        key=name.casefold()
+        if key in ('value','значение'):return value._value
+        if key in ('lexicalvalue','лексическоезначение'):return value._lexical
+        if key in ('type','тип'):return HostFunction(name,_VALUE_TYPE.__get__(value,_VALUE))
     raise ValueError('source XDTO member not integrated')
 
 
@@ -335,9 +350,13 @@ def captured(boundary,function,*,require_value=False,argument_count=None,allow_r
     bound=local.captured(boundary,function,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
     if bound is not None:return bound
     if type(function) is not HostFunction or type(function.function) is not MethodType:return None
-    callback=function.function;factory=callback.__self__
-    if type(factory) is not _FACTORY:return None
+    callback=function.function;receiver=callback.__self__
     operation=callback.__func__
+    if type(receiver) is _TYPE or type(receiver) is _VALUE:
+        return _captured_scalar_read(boundary,function,callback,receiver,operation,
+                                     argument_count,allow_references)
+    if type(receiver) is not _FACTORY:return None
+    factory=receiver
     if operation is not _TYPE_CALL and operation is not _CREATE_CALL:raise BoundaryViolation('source XDTO method not integrated')
     def check(count=None):
         owner,current=_owner(boundary)
@@ -389,5 +408,29 @@ def captured(boundary,function,*,require_value=False,argument_count=None,allow_r
         if type(result) is not _VALUE:raise BoundaryViolation('source XDTO constructor result changed')
         _VALUES[result]=tuple((name,getattr(result,name)) for name in ('_factory','_type','_value','_lexical'))
         check();get(boundary,result,'Value');return result
+    if allow_references:call.requires_reference=lambda index:False
+    return call
+
+
+def _captured_scalar_read(boundary,function,callback,receiver,operation,argument_count,allow_references):
+    descriptor=type(receiver) is _TYPE
+    if operation is not (_IS_DESCENDANT if descriptor else _VALUE_TYPE):
+        raise BoundaryViolation('source XDTO scalar method not integrated')
+    def check(count):
+        _,factory=_owner(boundary)
+        _field_keys(function)
+        if (function.function is not callback or function.returns_value is not True
+                or type(function.reference_parameters) is not frozenset or function.reference_parameters):
+            raise BoundaryViolation('source XDTO saved method changed')
+        if descriptor:_kind(factory,receiver)
+        else:_check_value(factory,receiver)
+        if count is not None and count!=int(descriptor):
+            raise TypeError('source XDTO scalar read method arity')
+        return factory
+    check(argument_count)
+    def call(*args):
+        factory=check(len(args))
+        if descriptor:_kind(factory,args[0])
+        return operation(receiver,*args)
     if allow_references:call.requires_reference=lambda index:False
     return call

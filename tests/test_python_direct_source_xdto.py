@@ -56,6 +56,42 @@ class SourceScalarXDTOTests(unittest.TestCase):
         vm.variables['t']._name='Changed'
         with self.assertRaises(BoundaryViolation):vm.execute('T.Name;')
 
+    def test_scalar_read_methods_preserve_registered_identity_and_aliases(self):
+        vm=self.app().interpreter
+        vm.execute('A=XDTOFactory.Type("urn:owned:records","Code"); '
+                   'B=A.BaseType; V=XDTOFactory.Create(A,"я😀"); '
+                   'SavedType=V.Тип; SavedDescendant=B.ЭтоПотомок;')
+        self.assertTrue(vm.execute('(SavedType()=A) And SavedDescendant(A) And Not A.IsDescendant(B);'))
+        self.assertEqual(vm.execute('V.ЛексическоеЗначение;'),'я😀')
+        for code in ('V.Factory();','V.LexicalValue="different";','A.Validate("x");'):
+            with self.subTest(code=code),self.assertRaises(DENIED):vm.execute(code)
+
+    def test_scalar_read_methods_recheck_receiver_after_arguments_and_reject_foreign(self):
+        app=self.app(allow_extensions=True);other=self.app();vm=app.interpreter
+        script=('A=XDTOFactory.Type("urn:owned:records","Code"); '
+                'V=XDTOFactory.Create(A,"x");')
+        vm.execute(script+' Saved=A.IsDescendant;')
+        other.interpreter.execute(script)
+        vm.variables['foreign']=other.interpreter.variables['a']
+        vm.variables['other_value']=other.interpreter.variables['v']
+        vm.variables['forged']=object.__new__(xdto_values.BSLXDTODataValue)
+        vm.variables['fake_type']=xdto_values.BSLXDTOValueType(app.xdto.factory,'Code','urn:owned:records')
+        for code in ('A.IsDescendant(Foreign);','Foreign.IsDescendant(A);',
+                     'A.IsDescendant(Fake_Type);','Other_Value.Type();','Forged.LexicalValue;'):
+            with self.subTest(code=code),self.assertRaises(BoundaryViolation):vm.execute(code)
+        calls=[]
+        def touch():
+            calls.append('arg')
+            vm.variables['a']._name='replaced'
+            return vm.variables['a']
+        vm.register_function('Touch',touch)
+        with patch.object(xdto_values.BSLXDTOValueType,'is_descendant',lambda *args:calls.append('hook')):
+            with self.assertRaises(BoundaryViolation):vm.execute('Saved(Touch());')
+        with self.assertRaises(DENIED):vm.execute('V.Type(Touch());')
+        self.assertEqual(calls,[])
+        with self.assertRaises(BoundaryViolation):vm.execute('Saved(Touch());')
+        self.assertEqual(calls,['arg'])
+
     def test_foreign_types_and_closed_saved_context(self):
         a=self.app();b=self.app();foreign=b.xdto.factory.type(xdto_values.XS,'string')
         a.interpreter.variables['foreign']=foreign
