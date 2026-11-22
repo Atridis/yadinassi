@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
-from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLError, BSLRuntimeError
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 SOURCE='''
@@ -65,10 +65,14 @@ A=New Array; A.Add(1); X=New Structure("A",A); R=S(X); R.A.Add(3);
         vm.execute('&AtServer\nProcedure S() Close(); EndProcedure')
         with self.assertRaises(BoundaryViolation):vm.execute('S();')
     def test_unsupported_declarations_and_duplicate_refuse_before_effect(self):
-        for declaration in ('Async Function S() Return 1; EndFunction',
-            'Function S() Return 1; EndFunction\n&AtServer\nFunction S() Return 2; EndFunction'):
+        for declaration, error in (
+                ('&AtServer\nAsync Function S() Return 1; EndFunction', BSLError),
+                ('&AtServerNoContext\nAsync Function S() Return 1; EndFunction', BSLError),
+                ('Function S() Return 1; EndFunction\n&AtServer\nFunction S() Return 2; EndFunction',
+                 PythonDirectUnsupported)):
             vm=Interpreter()
-            with self.assertRaises(PythonDirectUnsupported):vm.execute('Effect=1;\n'+declaration)
+            with self.subTest(declaration=declaration), self.assertRaises(error):
+                vm.execute('Effect=1;\n'+declaration)
             self.assertEqual(vm.variables,{})
     def test_cycle_rejected_and_next_call_recovers(self):
         vm=Interpreter();vm.execute('&AtServer\nFunction S(Val X) Return X; EndFunction A=New Array; A.Add(A);')

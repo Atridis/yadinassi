@@ -408,17 +408,33 @@ Procedure Proc(P,V,E,C) Export Count=Count+1; EndProcedure
         self.assertEqual(self.vm.variables['count'], D(0))
 
     def test_async_handler_declaration_is_rejected_without_consuming(self):
-        from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
-
-        reader = self.reader('1')
-        self.writer()
-        for parameters in ('P,V,E', 'P,V,E,C'):
-            with self.subTest(parameters=parameters), self.assertRaisesRegex(
-                    PythonDirectUnsupported, 'async source routines'):
-                self.vm.execute(f'Async Function H({parameters}) Export Return V; EndFunction')
-        self.assertEqual(reader._position, -1)
-        self.vm.execute('WriteJSON(writer,1);')
-        self.assertEqual(self.vm.execute('writer.Close()'), '1')
+        handlers = '''
+Async Function ReadAsync(P,V,E) Export Count=Count+1; Await 0; Return V; EndFunction
+Async Function WriteAsync(P,V,E,C) Export Count=Count+1; Await 0; Return String(V); EndFunction
+'''
+        self.vm.execute(handlers)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'Handlers.bsl').write_text('Var Count Export;\n'+handlers+'\nCount=0;', encoding='utf-8')
+            source = str(root/'Main.bsl')
+            self.vm.execute('// #Import Handlers.bsl', source)
+            for target in ('ThisObject', 'Handlers'):
+                with self.subTest(target=target):
+                    reader = self.reader('1')
+                    self.writer()
+                    reason = 'экспортной функц' if target == 'ThisObject' else 'Асинхронный обработчик'
+                    with self.assertRaisesRegex(BSLError, reason):
+                        self.vm.execute(f'ReadJSON(reader,,,,"ReadAsync",{target})', source)
+                    self.assertEqual(reader._position, -1)
+                    self.assertIsNone(reader._tokens)
+                    with self.assertRaisesRegex(BSLError, reason):
+                        self.vm.execute(f'WriteJSON(writer,id,,"WriteAsync",{target});', source)
+                    self.assertEqual(self.vm.pending_promises, ())
+                    self.assertEqual(self.vm.execute('ReadJSON(reader)', source), D(1))
+                    self.vm.execute('WriteJSON(writer,2);', source)
+                    self.assertEqual(self.vm.execute('writer.Close()', source), '2')
+            self.assertEqual(self.vm.variables['count'], D(0))
+            self.assertEqual(self.vm.execute('Handlers.Count', source), D(0))
 
     def test_handler_name_and_module_validation_never_evaluates_strings(self):
         for name, module in (('1', 'ThisObject'), ('""', 'ThisObject'),

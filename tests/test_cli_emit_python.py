@@ -82,12 +82,20 @@ class EmitPythonTests(unittest.TestCase):
         self.assertTrue(marker.is_file())
 
     def test_unsupported_fails_without_partial_output_or_fallback(self):
-        self.write('Message("before"); Async Function F() Return 1;EndFunction')
+        self.write('Message("before"); X=New UnknownEmitterFixture;')
         result = self.cli(self.script, '--emit-python', self.out)
         self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn('async', result.stderr)
+        self.assertIn('UnknownEmitterFixture', result.stderr)
         self.assertNotIn('before', result.stdout)
         self.assertFalse(self.out.exists())
+
+    def test_client_async_emits_a_generator_without_executing(self):
+        self.write('Async Function F() Message("async body"); Return Await 1; EndFunction P=F();')
+        result = self.cli(self.script, '--emit-python', self.out)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('async body', result.stdout)
+        emitted = (self.out / (self.script.stem + '.py')).read_text(encoding='utf-8')
+        self.assertTrue(any(isinstance(node, ast.Yield) for node in ast.walk(ast.parse(emitted))))
 
     def test_syntax_failure_and_missing_input(self):
         self.write('If ???')

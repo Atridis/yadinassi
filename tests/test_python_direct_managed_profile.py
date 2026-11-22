@@ -3,7 +3,7 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from yadinassi import Interpreter
+from yadinassi import BSLError, Interpreter
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.syntax.parser import parse
@@ -41,10 +41,10 @@ class DirectManagedProfileTests(unittest.TestCase):
             self.assertEqual(vm.variables,{})
 
     def test_unsupported_runtime_sides_still_refuse_before_effects(self):
-        for declaration in ('&AtServer\nVar State;',
-                            'Async Function F() Return 1; EndFunction'):
+        for declaration, error in (('&AtServer\nVar State;', PythonDirectUnsupported),
+                                   ('&AtServer\nAsync Function F() Return 1; EndFunction', BSLError)):
             vm=Interpreter(compilation_profile=PROFILE)
-            with self.subTest(declaration=declaration),self.assertRaises(PythonDirectUnsupported):
+            with self.subTest(declaration=declaration), self.assertRaises(error):
                 vm.execute('Effect=1;\n'+declaration)
             self.assertEqual(vm.variables,{})
 
