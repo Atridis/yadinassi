@@ -258,9 +258,9 @@ class StringTests(unittest.TestCase):
     def test_join_converts_array_elements_and_does_not_mutate(self):
         self.vm.execute('a = New Array; a.Add(12.50); a.Add(True); '
                         'a.Add(Undefined); a.Add("x"); a.Add(New Array);')
-        items = list(self.vm.variables['a'].items)
+        items = list(self.vm.variables['a'])
         self.assertEqual(self.evaluate('StrConcat(a, "|")'), '12,5|Да||x|Массив')
-        self.assertEqual(self.vm.variables['a'].items, items)
+        self.assertEqual(list(self.vm.variables['a']), items)
 
     def test_join_accepts_fixed_arrays_with_bilingual_names_and_default_separator(self):
         # collections.bsl/out at 1c4e20f: fixed-array.join is [а;б].

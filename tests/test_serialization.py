@@ -105,6 +105,34 @@ class InternalSerializationTests(unittest.TestCase):
         restored = value_from_string_internal(data)
         self.assertEqual((restored.get(True), restored.get(Decimal(1))), ('boolean', 'number'))
 
+    def test_direct_fixed_map_roundtrip_preserves_distinct_key_types(self):
+        from yadinassi.collections.maps import BSLFixedMap, BSLMap
+        mutable = BSLMap()
+        mutable.insert(True, "boolean")
+        mutable.insert(Decimal(1), "number")
+        expected = value_to_string_internal(BSLFixedMap(mutable))
+        source = (
+            'M = New Map; M.Insert(True, "boolean"); M.Insert(1, "number"); '
+            'F = New FixedMap(M); M.Insert(1, "changed"); '
+            'S = ValueToStringInternal(F); R = ValueFromStringInternal(S); '
+            'Kind = TypeOf(R); BooleanValue = R.Get(True); NumberValue = R.Get(1);'
+        )
+        for route in ('ordinary', 'prepared', 'captured'):
+            with self.subTest(route=route):
+                vm = Interpreter(allow_extensions=route == 'captured')
+                self.addCleanup(vm.close)
+                if route == 'captured':
+                    vm.variables['saved'] = vm.functions['valuetostringinternal']
+                    vm.execute(source.replace('ValueToStringInternal(F)', 'Saved(F)'))
+                elif route == 'prepared':
+                    vm.execute_prepared(vm.prepare(source))
+                else:
+                    vm.execute(source)
+                self.assertEqual(vm.variables['s'], expected)
+                self.assertIs(vm.variables['kind'], BSLType.FIXED_MAP)
+                self.assertEqual((vm.variables['booleanvalue'], vm.variables['numbervalue']),
+                                 ("boolean", "number"))
+
     def test_native_map_cycles_and_non_codec_keys_remain_unsupported(self):
         from yadinassi.execution.direct.python_direct_plain_map import PlainMap
         value = PlainMap()
@@ -186,20 +214,12 @@ class InternalSerializationTests(unittest.TestCase):
         observed = set()
         for expression in expressions:
             with self.subTest(expression=expression):
-                original = vm.execute(expression)
-                if expression in ('New Array', 'New Structure', 'New Map'):
-                    # Interpreter TypeOf admits exact mutable direct shapes;
-                    # the Python metadata registry describes the boxed types.
-                    kind = vm.execute(f'TypeOf({expression})')
-                    if type(original) is list:
-                        # Bare lists belong to the trusted direct caller, not
-                        # the public Python value_to_string_internal API.
-                        stream = vm.execute(f'ValueToStringInternal({expression})')
-                    else:
-                        stream = value_to_string_internal(original)
-                else:
-                    kind = type_values.type_of(original)
-                    stream = value_to_string_internal(original)
+                # Exercise the BSL type and encoder together. The Python
+                # decoder still verifies readback through the boxed registry.
+                vm.execute(f"ProbeValue = {expression}; ProbeType = TypeOf(ProbeValue); "
+                           "ProbeStream = ValueToStringInternal(ProbeValue);")
+                kind = vm.variables['probetype']
+                stream = vm.variables['probestream']
                 restored = value_from_string_internal(stream)
                 if kind in (BSLType.ROUND_MODES, BSLType.SEARCH_DIRECTIONS,
                             BSLType.XML_STRING_PROCESSING_MANAGER,

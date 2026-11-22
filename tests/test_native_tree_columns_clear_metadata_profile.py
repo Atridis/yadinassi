@@ -119,7 +119,7 @@ class MetadataProfileTests(unittest.TestCase):
         source=(ROOT/spec().source).read_text(encoding='utf-8').encode()
         module=tree.client_module(source,(ROOT/full.CLIENT_SOURCE).read_text(encoding='utf-8').encode(),profile=PROFILE)
         vm=Interpreter();vm.execute(module.decode('utf-8-sig'));vm.execute('Result = ВычислитьПробу();')
-        self.assertEqual(('\n'.join(vm.variables['result'].items)+'\n').encode(),emit())
+        self.assertEqual(('\n'.join(vm.variables['result'])+'\n').encode(),emit())
         raw=maximum_output();hashes={spec().source:spec().source_sha256};runner=mock.Mock(return_value=(0,raw,b''))
         with tempfile.TemporaryDirectory() as tmp, budget.synthetic_inventory_reader():
             root=Path(tmp).resolve(strict=True);path=root/spec().source;path.parent.mkdir(parents=True)

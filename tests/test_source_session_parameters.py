@@ -57,9 +57,10 @@ class SourceSessionTests(unittest.TestCase):
     def test_non_text_source_and_standalone_keep_plain_lookup(self):
         _, output = self.run_source(package("""
             M = New Map; M.Insert(1, "number");
-            Fixed = New FixedMap(M); Message(Fixed.Get(True));
+            Fixed = New FixedMap(M); Message(Fixed.Get(True) = Undefined);
+            Message(Fixed.Get(1));
         """))
-        self.assertEqual(output, ['number'])
+        self.assertEqual(output, ['Да', 'number'])
         vm = Interpreter()
         self.addCleanup(vm.close)
         vm.execute('M=New Map; M.Insert("key",42); F=New FixedMap(M);')

@@ -75,9 +75,9 @@ P=New Array; P.Add(X); P.Add(A[0]); P.Add(E); P.Add(R=A); P.Add(Text); Return P;
             '&AtServerNoContext\nFunction NoContextLane() ' + body + ' EndFunction\n')
         for caller in ('ClientLane', 'ServerLane', 'NoContextLane'):
             with self.subTest(caller=caller):
-                result = self.vm.execute(caller + '()')
-                self.assertEqual(result.items[:4], [Decimal(11), Decimal(32), Decimal(17), True])
-                self.assertIn('dual-escape', result.items[4])
+                result = list(self.vm.execute(caller + '()'))
+                self.assertEqual(result[:4], [Decimal(11), Decimal(32), Decimal(17), True])
+                self.assertIn('dual-escape', result[4])
                 self.assert_restored()
 
     def test_nested_dual_recursion_and_same_storage_alias(self):

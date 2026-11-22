@@ -81,7 +81,7 @@ class ColumnsClearProfileTests(unittest.TestCase):
         module=tree.client_module(source,template,profile=PROFILE)
         runtime=Interpreter();runtime.execute(module.decode('utf-8-sig'))
         runtime.execute('Result = ВычислитьПробу();')
-        actual=('\n'.join(runtime.variables['result'].items)+'\n').encode()
+        actual=('\n'.join(runtime.variables['result'])+'\n').encode()
         self.assertEqual(actual,emit())
         self.assertEqual(len(tree.validate_observations(actual,profile=PROFILE)),12)
         old_hashes={'tree-v1':'e43224c91c76a1c92dc6c2bf4e6c90a07fe23fbf4aa42d1c6a17630de70a937a',

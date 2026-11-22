@@ -59,7 +59,7 @@ class BinaryStreamFamilyProfileTests(unittest.TestCase):
         vm=Interpreter(native_target=LINUX_8_3_27_1508)
         with tempfile.TemporaryDirectory(prefix='binary-stream-client-') as tmp, mock.patch('tempfile.gettempdir', return_value=tmp):
             vm.execute(module.decode('utf-8-sig'));vm.execute('Result = ВычислитьПробу();')
-        self.assertEqual(('\n'.join(vm.variables['result'].items)+'\n').encode(),emit())
+        self.assertEqual(('\n'.join(vm.variables['result'])+'\n').encode(),emit())
         for bad in (source+b'\n',source.replace(b'\n',b'\r\n')):
             with self.assertRaises(full.FullError):tree.client_module(bad,(ROOT/full.CLIENT_SOURCE).read_bytes(),profile=PROFILE)
 

@@ -97,7 +97,7 @@ class DateAcquisitionProfileTests(unittest.TestCase):
                 vm.register_function('Формат', witness)
                 vm.execute(module.decode('utf-8-sig'))
                 vm.execute('Result = ВычислитьПробу();')
-                self.assertEqual(('\n'.join(vm.variables['result'].items) + '\n').encode(), emit(kind, witness))
+                self.assertEqual(('\n'.join(vm.variables['result']) + '\n').encode(), emit(kind, witness))
             for bad in (raw_source + b'\n', raw_source.replace(b'\n', b'\r\n')):
                 with self.assertRaises(full.FullError):
                     tree.client_module(bad, template, profile=profile(kind))

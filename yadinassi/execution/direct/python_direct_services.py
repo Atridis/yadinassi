@@ -306,20 +306,21 @@ class ServicesBoundary:
         if type(value) is HostFunction and value.function is _DIRECT_VALUE_TO_STRING_ABI:
             if self._verify_context:self._check()
             self._validate_host_function(value,require_value,allow_references)
-            def serialize_pair(argument):
+            def serialize_captured(argument):
                 self._before('call_value',value.name.casefold())
                 try:
                     if value.function is not _DIRECT_VALUE_TO_STRING_ABI:
                         raise BoundaryViolation('serialization implementation changed during argument evaluation')
                     # Only native representations with a finite captured codec.
-                    if type(argument) is _CanonicalMapEntry or type(argument) is PlainValueList:
+                    kind = type(argument)
+                    if kind is _CanonicalMapEntry or kind is PlainValueList or kind is fixed.PlainFixedMap:
                         return _direct_value_to_string_internal(argument)
                     return _DIRECT_VALUE_TO_STRING_ABI(argument)
                 except PermissionError as error:raise BoundaryViolation(str(error)) from error
                 finally:
                     if self._verify_context:self._check()
-            if allow_references:serialize_pair.requires_reference=lambda index:index in value.reference_parameters
-            return serialize_pair
+            if allow_references:serialize_captured.requires_reference=lambda index:index in value.reference_parameters
+            return serialize_captured
         from .python_direct_fill import resolve_fill
         bound=resolve_fill(self,value,require_value=require_value,allow_references=allow_references)
         if bound is not None:return bound

@@ -41,7 +41,7 @@ from yadinassi.execution.codegen.experimental_naked_collections import (
 )
 from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure, structure_key
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
-from yadinassi.execution.direct.python_direct_plain_map import PlainMap, native_map_items
+from yadinassi.execution.direct.python_direct_plain_map import PlainFixedMap, PlainMap, native_map_items
 from yadinassi.types.values import BSLArray, BSLFixedArray, BSLNull, BSLType, NULL, equal
 
 
@@ -60,6 +60,7 @@ FORMAT_ERROR = "Ошибка преобразования: Ошибка форм
 # These are implementation resource budgets, not inferred native limits.
 _PLAIN_LIST_NEXT_ID = vars(PlainValueList)['_next_id']
 _PLAIN_LIST_ITEM_ID = vars(PlainValueListItem)['_id']
+_PLAIN_FIXED_MAP_STORAGE = vars(PlainFixedMap)['_snapshot']
 
 _TYPE_IDS = {
     # Authenticated Linux PR112 run40240060498, records433..435.
@@ -323,6 +324,11 @@ class _Writer:
             kind, direct_items, entry_count = BSLType.ARRAY, list.__iter__(value), list.__len__(value)
         elif value_type is PlainMap:
             kind, direct_items, entry_count = BSLType.MAP, _native_map_entries(value), dict.__len__(value)
+        elif self.direct and value_type is PlainFixedMap:
+            storage = _PLAIN_FIXED_MAP_STORAGE.__get__(value, PlainFixedMap)
+            if type(storage) is not dict:
+                raise TypeError("ЗначениеВСтрокуВнутр: недопустимое состояние фиксированного соответствия")
+            kind, direct_items, entry_count = BSLType.FIXED_MAP, _native_map_entries(storage), dict.__len__(storage)
         elif value_type is _DirectStructure:
             kind, direct_items = BSLType.STRUCTURE, _native_structure_entries(value)
             entry_count = dict.__len__(value)

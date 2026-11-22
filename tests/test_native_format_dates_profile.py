@@ -61,7 +61,7 @@ class FormatProfileTests(unittest.TestCase):
             if witness:
                 vm.register_function('Format',witness);vm.register_function('Формат',witness)
             vm.execute(module.decode('utf-8-sig'));vm.execute('Result = ВычислитьПробу();')
-            self.assertEqual(('\n'.join(vm.variables['result'].items)+'\n').encode(),emit(witness))
+            self.assertEqual(('\n'.join(vm.variables['result'])+'\n').encode(),emit(witness))
         for bad in (source+b'\n',source.replace(b'\n',b'\r\n')):
             with self.assertRaises(full.FullError):tree.client_module(bad,(ROOT/full.CLIENT_SOURCE).read_bytes(),profile=PROFILE)
 

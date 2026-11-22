@@ -86,7 +86,7 @@ class ValueStorageProfileTests(unittest.TestCase):
         vm=Interpreter(native_target=LINUX_8_3_27_1508)
         vm.execute(with_synthetic_case(module))
         vm.execute('Result = ВычислитьПробу();')
-        client=vm.variables['result'].items
+        client=list(vm.variables['result'])
         self.assertEqual(client,server)
         self.assertIn('VS-09: [construct-error]',client)
         self.assertIn('VS-10: [inspect-error]',client)

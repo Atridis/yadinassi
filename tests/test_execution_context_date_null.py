@@ -67,7 +67,7 @@ class ExecutionContextDateNullTests(unittest.TestCase):
         self.assertEqual(sha256(source).hexdigest(), CORE_SHA256)
         self.vm.execute(source.decode('utf-8'))
         observed = self.vm.execute('DNCollect()')
-        self.assertEqual(observed.items, [Decimal(2)] * 6 + [Decimal(7)] * 2)
+        self.assertEqual(list(observed), [Decimal(2)] * 6 + [Decimal(7)] * 2)
         self.vm.variables['observed'] = observed
         self.assertEqual(self.vm.execute('DNEncode(observed)'), 'dn.v1:22222277')
         self.assertEqual(self.messages, [])
@@ -117,18 +117,18 @@ leaves=New Array; leaves.Add(Date(2024,1,2,3,4,5)); leaves.Add(Null);
 x=New Structure("Leaves",leaves); old=x; valresult=Swap(x); result=Change(x);
 ''')
         old = self.vm.variables['old']
-        self.assert_date(old.get('Leaves').items[0], DATE_A)
-        self.assertIs(old.get('Leaves').items[1], NULL)
+        self.assert_date(old.get('Leaves')[0], DATE_A)
+        self.assertIs(old.get('Leaves')[1], NULL)
         outputs = [self.vm.variables[name] for name in ('valresult', 'x', 'result')]
         for output in outputs:
             self.assertIsNot(output, old)
             self.assertIsNot(output.get('Leaves'), old.get('Leaves'))
-            self.assertIs(output.get('Leaves').items[0], NULL)
-            self.assert_date(output.get('Leaves').items[1], DATE_B)
+            self.assertIs(output.get('Leaves')[0], NULL)
+            self.assert_date(output.get('Leaves')[1], DATE_B)
         self.assertEqual(len({id(value) for value in outputs}), 3)
         self.assertEqual(len({id(value.get('Leaves')) for value in outputs}), 3)
-        outputs[0].get('Leaves').items[0] = Decimal(9)
-        self.assertIs(outputs[1].get('Leaves').items[0], NULL)
+        outputs[0].get('Leaves')[0] = Decimal(9)
+        self.assertIs(outputs[1].get('Leaves')[0], NULL)
         self.assert_restored()
 
     def test_shared_children_and_packet_roots_remain_independent(self):

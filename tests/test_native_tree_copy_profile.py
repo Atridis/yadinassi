@@ -75,7 +75,7 @@ class CopyProfileTests(unittest.TestCase):
         module = tree.client_module(source, template, profile=PROFILE)
         runtime = Interpreter(); runtime.execute(module.decode('utf-8-sig'))
         runtime.execute('Result = ВычислитьПробу();')
-        actual = ('\n'.join(runtime.variables['result'].items)+'\n').encode()
+        actual = ('\n'.join(runtime.variables['result'])+'\n').encode()
         self.assertEqual(actual, emit())
         self.assertIn('ПараметрыЗаписиJSON(ПереносСтрокJSON.Нет, " ", Истина)'.encode(),module)
         self.assertIn(b'Code = 47',module)
