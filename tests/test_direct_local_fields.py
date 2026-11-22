@@ -17,18 +17,19 @@ class LocalFieldsTests(unittest.TestCase):
         self.assertNotIn('_context._check', source)
         self.assertEqual(vm.execute_prepared(plan), D(18))
 
-    def test_unresolved_addition_uses_python_not_dynamic_string_coercion(self):
+    def test_unresolved_addition_follows_runtime_left_type(self):
         vm = Interpreter()
         self.addCleanup(vm.close)
-        vm.variables['left'] = 'value: '
-        vm.variables['right'] = D(2)
         plan = vm.prepare('R=Left+Right;')
-        generated = plan._plan.generated_source
-        self.assertNotIn('_native_add', generated)
-        self.assertNotIn('_concatenate', generated)
-        with self.assertRaisesRegex(Exception, 'str|Decimal'):
-            vm.execute_prepared(plan)
-        self.assertNotIn('r', vm.variables)
+        # Native numbers.out observes string-left addition with a number.
+        for left, right, expected in (('value: ', D(2), 'value: 2'),
+                                       (D(40), D(2), D(42)),
+                                       ('\ud83d', '\ude00', '😀')):
+            with self.subTest(left=repr(left)):
+                vm.variables.update(left=left, right=right)
+                vm.execute_prepared(plan)
+                self.assertEqual(vm.variables['r'], expected)
+        self.assertNotIn('_context._check', plan._plan.generated_source)
 
     def test_field_loop_uses_range_and_native_add_together(self):
         vm = Interpreter()
@@ -83,10 +84,12 @@ class LocalFieldsTests(unittest.TestCase):
         vm.execute_prepared(plan);self.assertEqual(vm.variables['r'],'x')
 
     def test_loop_field_type_changes_are_not_specialized_from_first_iteration(self):
-        vm,plan,source=self.prepare('S=New Structure("N",1);For I=1 To 2 Do R=S.N+2;S.N="x";EndDo;')
-        with self.assertRaisesRegex(Exception,'str|Decimal'):
-            vm.execute_prepared(plan)
-        self.assertEqual(vm.variables['r'],D(3))
+        vm,plan,source=self.prepare(
+            'S=New Structure("N",1); '
+            'For I=1 To 2 Do R=S.N+2; If I=1 Then First=R; EndIf; S.N="x"; EndDo;')
+        vm.execute_prepared(plan)
+        self.assertEqual(vm.variables['first'],D(3))
+        self.assertEqual(vm.variables['r'],'x2')
         self.assertIn('_context.get_member',source)
 
     def test_dynamic_operand_keeps_owner_revocation_boundary(self):
