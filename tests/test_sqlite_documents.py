@@ -184,6 +184,60 @@ D.Lines.Delete(A);Message(B.LineNumber);Try Message(A.Flag);Except Message("deta
 D.Write();O=D.Ref.GetObject();Message(O.Lines.Count());O.Lines.Clear();O.Write();Message(D.Ref.GetObject().Lines.Count());''')
         self.assertEqual(result,['1','2','2','1','detached','1','0'])
 
+    def test_document_section_payload_delta_binds_one_row(self):
+        from yadinassi.db.sqlite.sqlite_document_layout import section_table
+        self.vm.execute('D=Documents.Orders.CreateDocument();'
+                        'For I=1 To 200 Do D.Lines.Add(); EndDo; D.Write();')
+        doc = self.vm.execute('D')
+        old = doc._manager._read(doc._key.record_id)
+        table = section_table(self.schema,self.schema.tabular_sections[0])
+        backend = self.context.backend
+        connect = backend._connect
+        trace = []
+        def traced_connect(**kwargs):
+            connection = connect(**kwargs)
+            connection.set_trace_callback(trace.append)
+            return connection
+        with patch.object(backend,'_connect',side_effect=traced_connect):
+            self.vm.execute('D.Lines[31].Flag=True;D.Write();')
+        mutations = [sql for sql in trace if table in sql and sql.startswith(('INSERT','UPDATE','DELETE'))]
+        self.assertEqual(len(mutations),1)
+        self.assertIn('DO UPDATE SET',mutations[0])
+        self.assertIn(str(old.tabular_sections[0].rows[31].identity),mutations[0])
+        self.assertNotIn(str(old.tabular_sections[0].rows[30].identity),mutations[0])
+        new = doc._manager._read(doc._key.record_id)
+        rows = old.tabular_sections[0].rows
+        expected = (*rows[:31],replace(rows[31],values=(True,)),*rows[32:])
+        self.assertEqual(new.tabular_sections[0].rows,expected)
+        self.assertNotEqual(old.revision,new.revision)
+
+    def test_document_part_reorder_keeps_uuid_and_position(self):
+        self.vm.execute('D=Documents.Orders.CreateDocument();'
+                        'D.Lines.Add().Flag=True;D.Lines.Add();D.Lines.Add().Flag=True;D.Write();')
+        doc = self.vm.execute('D')
+        manager = doc._manager
+        card = manager._read(doc._key.record_id)
+        old = card.tabular_sections[0]
+        first, second, _ = old.rows
+        added = TabularRow(uuid4(),(False,))
+        desired = (TabularSectionRows(old.section_id,(second,added,first)),)
+        draft = DocumentDraft(card.key,card.number,card.date,card.deletion_mark,card.values,desired)
+        tx = self.context.backend.begin_document_write(uuid4())
+        try:
+            tx.update(draft,card.revision)
+            outcome = tx.commit()
+        finally:
+            tx.close()
+        current = manager._read(doc._key.record_id)
+        self.assertEqual(current.tabular_sections,desired)
+        self.assertEqual(current.revision,outcome.revision)
+        tx = self.context.backend.begin_document_write(uuid4())
+        try:
+            with self.assertRaisesRegex(BackendError,'conflict'): tx.update(draft,card.revision)
+        finally:
+            tx.close()
+        self.assertEqual(manager._read(doc._key.record_id),current)
+
     def test_section_and_owner_changes_roll_back_together(self):
         obj = self.object(); obj.get_member('Lines').add().set_member('Flag',True); obj.write()
         from sqlite_document_physical_fixture import table_snapshot

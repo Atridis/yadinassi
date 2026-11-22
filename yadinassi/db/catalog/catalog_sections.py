@@ -50,8 +50,9 @@ def _changed_sections(sections):
 
 
 class BSLCatalogSectionRow(BSLObject):
-    def __init__(self, section, identity, values):
+    def __init__(self, section, identity, values, position):
         self._section = section
+        self._position = position
         self._identity = identity
         self._values = dict(values)
         self._attached = True
@@ -66,7 +67,7 @@ class BSLCatalogSectionRow(BSLObject):
         if type(name) is not str: raise TypeError('tabular field name requires String')
         key = name.casefold()
         if key in ('linenumber', 'номерстроки'):
-            return Decimal(self._section._rows.index(self) + 1)
+            return Decimal(self._position + 1)
         if key not in self._values: return super().get_member(name)
         return self._values[key]
 
@@ -106,7 +107,7 @@ class BSLCatalogSection(BSLObject):
                 raise BackendError('integrity')
             seen.add(row.identity)
             values = {f.name.casefold(): owner._manager._logical(f, v) for f, v in zip(schema.fields, row.values)}
-            loaded = self._row_class(self, row.identity, values)
+            loaded = self._row_class(self, row.identity, values, len(self._rows))
             self._rows.append(loaded); self._bytes += loaded._bytes
             if self._bytes > _MAX_BUFFER_BYTES: raise BackendError('unsupported')
 
@@ -128,7 +129,7 @@ class BSLCatalogSection(BSLObject):
         if self._owner._section_row_count() >= _MAX_ROWS:
             raise ValueError('tabular section row limit')
         values = {f.name.casefold(): self._owner._manager._field_default(f) for f in self._schema.fields}
-        row = self._row_class(self, uuid4(), values)
+        row = self._row_class(self, uuid4(), values, len(self._rows))
         if self._owner._section_buffer_bytes() + row._bytes > _MAX_BUFFER_BYTES:
             raise ValueError('tabular section buffer limit')
         self._rows.append(row); self._bytes += row._bytes
@@ -146,10 +147,13 @@ class BSLCatalogSection(BSLObject):
         if type(value) is self._row_class:
             if value._section is not self or not value._attached:
                 raise ValueError('tabular row belongs to another section or is detached')
-            index = self._rows.index(value)
+            index = value._position
         else:
             index = _index(value, len(self._rows))
         row = self._rows.pop(index)
+        # Only the shifted suffix changes position; reads never scan.
+        for position in range(index, len(self._rows)):
+            self._rows[position]._position = position
         row._attached = False; self._bytes -= row._bytes
         self._version += 1; self._dirty = True
 

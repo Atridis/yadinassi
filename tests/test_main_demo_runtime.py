@@ -48,6 +48,37 @@ class MainDemoRuntimeTests(unittest.TestCase):
         self.vm.execute('Message(Прочитано.Склады.Количество());')
         self.assertEqual(self.output,['1'])
 
+    def test_catalog_and_document_line_positions_survive_load_and_removal(self):
+        self.vm.execute(SEED + """
+            For I=2 To 3 Do
+                W=Catalogs.Склады.CreateItem(); W.Description="Склад " + String(I); W.Write();
+                L=Карточка.Склады.Add(); L.Склад=W.Ref;
+            EndDo;
+            Карточка.Write();
+            C=Карточка.Ref.GetObject();
+            D=Documents.Receipt.CreateDocument(); D.Number="line positions"; D.Date=Date(2024,1,1);
+            D.Warehouse=Склад.Ref; D.State=Enums.States.Draft;
+            For I=1 To 3 Do
+                L=D.Lines.Add(); L.Product=Карточка.Ref; L.Quantity=I; L.Amount=I;
+                L.Unit=Enums.Units.Piece;
+            EndDo;
+            D.Write(); D=D.Ref.GetObject();
+        """)
+        for expression in ('C.Склады', 'D.Lines'):
+            with self.subTest(expression=expression):
+                section = self.vm.execute(expression)
+                rows = tuple(section)
+                self.assertEqual([r.get_member('НомерСтроки') for r in rows], [1, 2, 3])
+                section.delete(rows[0])
+                self.assertIs(next(iter(section)), rows[1])
+                self.assertEqual([r.get_member('LineNumber') for r in section], [1, 2])
+                with self.assertRaisesRegex(ValueError, 'detached'):
+                    rows[0].get_member('LineNumber')
+                section.delete(self.vm.execute('1'))
+                self.assertEqual(section.add().get_member('LineNumber'), 2)
+                section.clear()
+                self.assertEqual(section.add().get_member('LineNumber'), 1)
+
     def test_ordinary_document_write_does_not_construct_movement_port_for_membership(self):
         from unittest.mock import patch
         self.vm.execute('W=Catalogs.Склады.CreateItem();W.Description="Warehouse";W.Write();'

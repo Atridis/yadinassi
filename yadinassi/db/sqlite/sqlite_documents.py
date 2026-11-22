@@ -973,22 +973,25 @@ class DocumentView:
             sql = 'UPDATE '+table+' SET '+','.join(column+'=?' for column in cols)+' WHERE document_id=? AND record_id=?'
             if self._connection.execute(sql,(*raw,document,record)).rowcount != 1: raise BackendError('integrity')
 
-    def _write_parts(self, schema, document, record, sections):
+    def _write_parts(self, schema, document, record, sections, previous):
         if not sections: return
+        from .sqlite_section_delta import write_section
+
         values = dict(sections)
         domain = self._view._backend._enum_domain
+        owner_columns = ('document_id','record_id')
+        owner = (document,record)
         for section in schema.tabular_sections:
-            rows = values.get(str(section.identity))
+            identity = str(section.identity)
+            rows = values.get(identity)
             if rows is None: continue
             table = quote_identifier(section_table(schema,section))
-            self._connection.execute('DELETE FROM '+table+' WHERE document_id=? AND record_id=?',(document,record))
-            if not rows: continue
-            columns = ('document_id','record_id','row_id','row_number',
-                       *(quote_identifier(attribute_column(field)) for field in section.fields))
-            sql = 'INSERT INTO '+table+'('+','.join(columns)+') VALUES('+','.join('?' for _ in columns)+')'
-            self._connection.executemany(sql,
-                ((document,record,raw_id,n,*encode_typed_columns(data,section,enum_domain=domain))
-                 for n,(raw_id,data) in enumerate(rows,1)))
+            columns = tuple(quote_identifier(attribute_column(field)) for field in section.fields)
+            old_rows = () if previous is None else (
+                (row_id,n,data) for n,(row_id,data) in enumerate(previous[identity],1))
+            write_section(self._connection,table,owner_columns,owner,columns,rows,
+                          create=previous is None,max_rows=1000,previous=old_rows,
+                          encode=lambda data:encode_typed_columns(data,section,enum_domain=domain))
 
     def _write(self, draft, expected):
         self._view._require(True)
@@ -1039,7 +1042,9 @@ class DocumentView:
             else:
                 self._connection.execute('UPDATE document_record SET revision=?,number=?,date=?,deletion_mark=? WHERE document_id=? AND record_id=?',scalars)
             self._write_attributes(schema,document,record,values,old is None)
-            self._write_parts(schema,document,record,changed_sections)
+            if changed_sections:
+                self._write_parts(schema,document,record,changed_sections,
+                                  None if stored is None else dict(stored[6]))
             self._preflight(schema)
             # Allocate the result while rollback still covers this row
             # and its sequence. After RELEASE install only existing references.

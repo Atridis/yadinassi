@@ -138,6 +138,59 @@ class CatalogSectionTests(unittest.TestCase):
         self.assertEqual(card.tabular_sections, self.expected(second, first))
         self.assertEqual(card.revision, revision)
 
+    def test_single_cell_edit_of_200_rows_binds_only_that_uuid(self):
+        rows = tuple(self.row(str(i)) for i in range(200))
+        draft = self.draft((self.section(*rows),))
+        revision = self.create(draft)
+        edited = replace(rows[31], values=self.values('updated'))
+        desired = (*rows[:31],edited,*rows[32:])
+        tx = self.backend.begin_write(uuid4())
+        actual = []
+        def trace(conn,sql,args):
+            if sql.startswith(('INSERT','UPDATE','DELETE')) and self.table() in sql:
+                actual.append((sql,args))
+            return conn.execute(sql,args)
+        tx._connection = ConnectionFault(tx._connection,trace)
+        try:
+            tx.update(replace(draft,tabular_sections=(self.section(*desired),)),revision)
+            self.assertEqual(len(actual),1)
+            self.assertIn('DO UPDATE SET',actual[0][0])
+            self.assertEqual(len(actual[0][1]),3+len(self.lines.fields))
+            self.assertEqual(actual[0][1][:3],(str(draft.key.record_id),str(edited.identity),32))
+            tx.commit()
+        finally:
+            tx.close()
+        self.reopen()
+        self.assertEqual(self.read(draft.key).tabular_sections,self.expected(*desired))
+
+    def test_delta_reorder_insert_delete_is_owner_local(self):
+        first, second, removed, tail, added = (self.row(str(i)) for i in range(5))
+        note = TabularRow(uuid4(),('same note',))
+        draft = self.draft(self.expected(first,second,removed,tail,notes=(note,)))
+        revision = self.create(draft)
+        # Stable row IDs are owner's keys, not globally unique.
+        other = self.draft(draft.tabular_sections,code='20')
+        self.create(other)
+        result = self.expected(second,added,first,tail,notes=(note,))
+        tx = self.backend.begin_write(uuid4())
+        trace = []
+        tx._connection.set_trace_callback(trace.append)
+        try:
+            tx.update(replace(draft,tabular_sections=result),revision)
+            revision2, = tx.commit()
+        finally:
+            tx.close()
+        mutations = [sql for sql in trace if sql.startswith(('INSERT','UPDATE','DELETE'))]
+        self.assertEqual([sql.split()[0] for sql in mutations if self.table() in sql],
+                         ['DELETE','UPDATE','INSERT'])
+        self.assertFalse(any(self.table(self.notes) in sql for sql in mutations))
+        self.reopen()
+        self.assertEqual(self.read(draft.key).tabular_sections,result)
+        self.assertEqual(self.read(other.key).tabular_sections,other.tabular_sections)
+        with self.assertRaisesRegex(BackendError,'conflict'):
+            self.update(draft,revision)
+        self.assertEqual(self.read(draft.key).revision,revision2)
+
     def test_bsl_clear_replaces_dirty_section_only(self):
         from yadinassi import Interpreter
         from yadinassi.db.database_context import SQLiteDBContext
@@ -225,15 +278,17 @@ class CatalogSectionTests(unittest.TestCase):
         return seen
 
     def test_midway_update_failure_is_atomic_and_transaction_can_continue(self):
-        draft = self.draft((self.section(self.row()),))
+        first = self.row()
+        draft = self.draft((self.section(first),))
         revision = self.create(draft)
         before = self.read(draft.key)
         tx = self.backend.begin_write(uuid4())
         seen = self.install_second_insert_fault(tx)
         try:
-            with self.assertRaisesRegex(BackendError, 'storage_error'):
+            with patch('yadinassi.db.sqlite.sqlite_section_delta._limit',return_value=3+len(self.lines.fields)), \
+                    self.assertRaisesRegex(BackendError, 'storage_error'):
                 tx.update(replace(draft, description='Must roll back',
-                    tabular_sections=(self.section(self.row(), self.row()),)), revision)
+                    tabular_sections=(self.section(self.row(), first),)), revision)
             self.assertEqual(len(seen), 2)
             self.assertEqual(tx.read_catalog(draft.key), before)
             survivor = self.draft(code='20')
@@ -250,7 +305,8 @@ class CatalogSectionTests(unittest.TestCase):
         tx = self.backend.begin_write(uuid4())
         seen = self.install_second_insert_fault(tx)
         try:
-            with self.assertRaisesRegex(BackendError, 'storage_error'):
+            with patch('yadinassi.db.sqlite.sqlite_section_delta._limit',return_value=3+len(self.lines.fields)), \
+                    self.assertRaisesRegex(BackendError, 'storage_error'):
                 tx.create(draft)
             self.assertEqual(len(seen), 2)
             self.assertIsNone(tx.read_catalog(draft.key))
@@ -463,6 +519,36 @@ class CatalogSectionTests(unittest.TestCase):
         with self.assertRaises(BackendError):
             SQLiteCatalogBackend(self.path)
 
+    def test_section_checks_group_reference_presence_and_keep_error_order(self):
+        keys = tuple(CatalogKey(self.backend.database_id,self.category.identity,uuid4()) for _ in range(3))
+        for code, key in enumerate(keys):
+            self.create(CatalogDraft(key,str(code),'Category',False,()))
+        rows = tuple(TabularRow(uuid4(),(*self.values()[:-1],key)) for key in (*keys,*keys))
+        draft = self.draft((self.section(*rows),))
+        tx = self.backend.begin_write(uuid4())
+        requests = []
+        table = quote_identifier(self.backend._layout.table_name(self.category.identity))
+        def trace(conn,sql,args):
+            if sql.startswith('SELECT') and table in sql and 'record_id IN' in sql:
+                requests.append(args)
+            return conn.execute(sql,args)
+        tx._connection = ConnectionFault(tx._connection,trace)
+        try:
+            tx.create(draft)
+            self.assertEqual(requests,[tuple(sorted(str(key.record_id) for key in keys))])
+            revision, = tx.commit()
+        finally:
+            tx.close()
+
+        missing = replace(keys[0],record_id=uuid4())
+        invalid = TabularRow(uuid4(),())
+        missing_row = replace(rows[0],values=(*rows[0].values[:-1],missing))
+        before = self.read(draft.key)
+        for bad, code in (((missing_row,invalid),'not_found'),((invalid,missing_row),'invalid_input')):
+            with self.subTest(code=code),self.assertRaisesRegex(BackendError,code):
+                self.update(replace(draft,tabular_sections=(self.section(*bad),)),revision)
+            self.assertEqual(self.read(draft.key),before)
+
     def test_nonempty_reference_in_section_roundtrips(self):
         key = CatalogKey(self.backend.database_id, self.category.identity, uuid4())
         category = CatalogDraft(key, 'C1', 'Category', False, ())
@@ -637,7 +723,8 @@ class CatalogSectionTests(unittest.TestCase):
                     raise sqlite3.OperationalError('section insertion refused')
             return connection.execute(sql, args)
         tx._connection = ConnectionFault(tx._connection, fail)
-        with self.assertRaisesRegex(BackendError, 'storage_error'):
+        with patch('yadinassi.db.sqlite.sqlite_section_delta._limit',return_value=3+len(self.lines.fields)), \
+                self.assertRaisesRegex(BackendError, 'storage_error'):
             tx.update(replace(draft, description='Uncommitted',
                 tabular_sections=(self.section(self.row(), self.row()),)), revision)
         self.assertEqual(len(inserts), 2)

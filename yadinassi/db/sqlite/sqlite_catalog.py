@@ -3101,13 +3101,36 @@ class _View:
         table, _, where, args = self._source(schema)
         return self._connection.execute('SELECT 1 FROM %s WHERE %s AND record_id=?' % (table, where), args + (str(key.record_id),)).fetchone() is not None
 
-    def _draft_sections(self, draft, schema):
+    def _draft_sections(self, draft, schema, *, physical=None):
         sections = draft.tabular_sections
         if sections is None: return None
         sparse = type(sections) is _TabularSectionChanges
         if sparse: sections = sections.sections
         if type(sections) is not tuple or len(sections) > _MAX_SECTIONS: raise BackendError('invalid_input')
         if self._backend.storage_version not in (3, 4, 6, 7, 8, 9, 10) and sections: raise BackendError('unsupported')
+        references = []
+        try:
+            result = self._encode_draft_sections(schema,sections,sparse,physical,references)
+        except BackendError:
+            # An earlier row's missing reference still takes precedence
+            # over a later malformed row or exhausted payload budget.
+            self._require_section_references(references)
+            raise
+        self._require_section_references(references)
+        return result
+
+    def _require_section_references(self, references):
+        if not references: return
+        from .sqlite_catalog_layout import reference_presence
+
+        def source(identity):
+            table, _, where, args = self._source(self.catalog_schema(identity))
+            return table, where, args
+
+        present = reference_presence(self._connection,references,source)
+        if not all(present.values()): raise BackendError('not_found')
+
+    def _encode_draft_sections(self, schema, sections, sparse, physical, references):
         by_id = {s.identity: s for s in schema.tabular_sections}
         supplied = {}; count = 0; size = 0; stored_size = 0
         for section in sections:
@@ -3119,6 +3142,7 @@ class _View:
             if count > _MAX_SECTION_ROWS: raise BackendError('invalid_input')
             definition = by_id[section.section_id]
             seen = set(); rows = []
+            encoded_rows = [] if physical is not None else None
             for row in section.rows:
                 if type(row) is not TabularRow: raise BackendError('invalid_input')
                 identity = _uuid(row.identity)
@@ -3128,16 +3152,16 @@ class _View:
                 try:
                     values = [_encode(normalize_field(v, f), f, self.database_id, enum_domain=self._catalog_domain) for v, f in zip(row.values, definition.fields)]
                 except (ValueError, TypeError): raise BackendError('invalid_input') from None
-                for value in row.values:
-                    if type(value) is CatalogKey and value.record_id.int and not self._reference_exists(value):
-                        raise BackendError('not_found')
+                references.extend(value for value in row.values if type(value) is CatalogKey and value.record_id.int)
                 encoded_row = [identity, values]
                 size += len(_json(encoded_row)) + 1
                 columns = encode_typed_columns(values, definition, enum_domain=self._catalog_domain)
                 stored_size += 52 + sum(len(value.encode('utf-8')) if type(value) is str else (1 if type(value) is int else 0) for value in columns)
                 if size > _MAX_ROW_BYTES or stored_size > _MAX_ROW_BYTES: raise BackendError('invalid_input')
                 rows.append(encoded_row)
+                if encoded_rows is not None: encoded_rows.append((identity,columns))
             supplied[section.section_id] = rows
+            if physical is not None: physical[section.section_id] = encoded_rows
         # Canonical order is UUID-based, independent of mutable metadata names
         # and caller ordering of sections. Row sequence remains significant.
         targets = supplied if sparse else by_id
@@ -3145,20 +3169,21 @@ class _View:
         if len(_json(result)) > _MAX_ROW_BYTES: raise BackendError('invalid_input')
         return result
 
-    def _replace_sections(self, draft, schema, sections):
+    def _write_sections(self, draft, schema, sections, physical, *, create):
         if sections is None or not schema.tabular_sections: return
-        contents = dict(sections)
+        from .sqlite_section_delta import read_physical_rows, write_section
+
+        owner_columns = ('owner_id',)
+        owner = (str(draft.key.record_id),)
+        included = {identity for identity,_ in sections}
         for section in schema.tabular_sections:
-            identity = str(section.identity)
-            if identity not in contents: continue
+            if str(section.identity) not in included: continue
+            rows = physical.get(section.identity,())
             table, fields = self._section_source(schema, section)
-            # Only explicit replacement removes section rows. The owner is
-            # never deleted, including when its deletion mark is set.
-            self._connection.execute('DELETE FROM %s WHERE owner_id=?' % table, (str(draft.key.record_id),))
-            for position, (row_id, encoded) in enumerate(contents[identity], 1):
-                values = (str(draft.key.record_id), row_id, position) + encode_typed_columns(encoded, section, enum_domain=self._catalog_domain)
-                columns = ['owner_id', 'row_id', 'row_number'] + fields
-                self._connection.execute('INSERT INTO %s (%s) VALUES(%s)' % (table, ','.join(columns), ','.join('?' for _ in values)), values)
+            previous = () if create or not rows else read_physical_rows(
+                self._connection,table,owner_columns,owner,fields,section.fields,_MAX_SECTION_ROWS)
+            write_section(self._connection,table,owner_columns,owner,fields,rows,
+                          create=create,max_rows=_MAX_SECTION_ROWS,previous=previous)
 
     @contextmanager
     def _atomic_record(self):
@@ -3213,7 +3238,8 @@ class _View:
     @_boundary
     def create(self,draft):
         self._require(True, mutate=True); draft, values, schema = self._draft(draft)
-        sections = self._draft_sections(draft, schema); self._section_write_budget(sections)
+        physical = {}
+        sections = self._draft_sections(draft, schema, physical=physical); self._section_write_budget(sections)
         table, columns, where, args = self._source(schema)
         clause = '' if where == '1' and not args else ' WHERE ' + where
         if self._connection.execute('SELECT COUNT(*) FROM %s%s' % (table,clause),args).fetchone()[0] >= _MAX_ROWS:
@@ -3231,14 +3257,15 @@ class _View:
             except sqlite3.IntegrityError:
                 raise BackendError('duplicate_identity' if self._reference_exists(draft.key) else 'duplicate_code') from None
             hierarchy_storage.store(self,schema,draft,creating=True)
-            self._replace_sections(draft, schema, sections)
+            self._write_sections(draft,schema,sections,physical,create=True)
             self._record_change(draft,1,sections)
 
     @_boundary
     def update(self,draft,expected_revision):
         self._require(True, mutate=True); draft, values, schema = self._draft(draft)
         if draft.auto_number: raise BackendError('invalid_input')
-        sections = self._draft_sections(draft, schema); self._section_write_budget(sections)
+        physical = {}
+        sections = self._draft_sections(draft, schema, physical=physical); self._section_write_budget(sections)
         revision = self._expected_revision(draft, expected_revision)
         with self._atomic_record():
             try:
@@ -3248,7 +3275,7 @@ class _View:
             except sqlite3.IntegrityError: raise BackendError('duplicate_code') from None
             if cursor.rowcount != 1: raise BackendError('conflict')
             hierarchy_storage.store(self,schema,draft,creating=False)
-            self._replace_sections(draft, schema, sections)
+            self._write_sections(draft,schema,sections,physical,create=False)
             self._record_change(draft,revision+1,sections)
 
     def _expected_revision(self, draft, revision):
