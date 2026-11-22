@@ -118,7 +118,9 @@ class SourceXDTOPackages:
                 kind._factory = self.factory
         self.factory._types = candidate._types
         self.factory._roots = candidate._roots
-        self.factory._packages = candidate._packages
+        # Source readers may retain the collection while another named
+        # package loads. Publish only the new tuple after staging succeeds.
+        self.factory._packages._items = candidate._packages._items
         self._loaded.update(pending)
         self._bytes += added_bytes
 

@@ -342,6 +342,13 @@ def _property(items,name):
 def _native(value):return value._value if type(value) is shared._VALUE else value
 
 
+_PROPERTY_FIELDS={
+    'name':('_name',str),'имя':('_name',str),'namespaceuri':('_uri',str),'uriпространстваимен':('_uri',str),
+    'lowerbound':('_lower',int),'нижняяграница':('_lower',int),'upperbound':('_upper',int),'верхняяграница':('_upper',int),
+    'nillable':('_nil',bool),'возможнопустое':('_nil',bool),
+}
+
+
 def get_property(factory,prop,name):
     # The factory/descriptor seal has already been checked. A descriptor
     # must also be an exact member of the current type, not a host copy.
@@ -357,11 +364,19 @@ def get_property(factory,prop,name):
             or not any(prop is candidate for candidate in items._items)):
         raise BoundaryViolation('source XDTO property is not in its owning type')
     key=name.casefold()
-    if key in ('name','имя'):result=data.get('_name')
-    elif key in ('namespaceuri','uriпространстваимен'):result=data.get('_uri')
-    else:raise ValueError('source XDTO property member not integrated')
-    if type(result) is not str:raise BoundaryViolation('source XDTO property string changed')
-    return result
+    if key in ('qualified','квалифицированное'):
+        uri=data.get('_uri')
+        if type(uri) is not str:raise BoundaryViolation('source XDTO property namespace changed')
+        return bool(uri)
+    if key in ('form','форма'):
+        flag=data.get('_attribute')
+        if type(flag) is not bool:raise BoundaryViolation('source XDTO property form changed')
+        return shared.ATTRIBUTE_FORM if flag else shared.ELEMENT_FORM
+    field=_PROPERTY_FIELDS.get(key)
+    if field is None:raise ValueError('source XDTO property member not integrated')
+    attr,kind=field;result=data.get(attr)
+    if type(result) is not kind:raise BoundaryViolation('source XDTO property field changed')
+    return Decimal(result) if kind is int else result
 
 
 def _list(boundary,owner,factory,obj,prop):

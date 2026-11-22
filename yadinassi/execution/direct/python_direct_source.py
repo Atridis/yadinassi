@@ -42,7 +42,7 @@ _SOURCE_NAMES = frozenset((
     'sessionparameters','параметрысеанса','enums','перечисления',
     'configurationextensions','расширенияконфигурации',
     'configurationextensionssource','источникрасширенийконфигурации',
-))
+)) | xdto.FORM_NAMES
 
 
 def check_owner(owner):
@@ -368,6 +368,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         namespace=storage.namespace(self,name)
         if namespace is not None:return namespace
         if name in ('xdtofactory','фабрикаxdto'):return xdto.namespace(self,name)
+        if name in xdto.FORM_NAMES:return xdto.FORM_NAMESPACE
         if name in ('metadata','метаданные'):return self.app.metadata
         if name in self.app.modules:return self.app.module(name,self.vm)
         from yadinassi.execution.source_application_exports import variable

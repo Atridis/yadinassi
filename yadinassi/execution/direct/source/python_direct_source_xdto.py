@@ -1,4 +1,4 @@
-"""Finite source-owned XDTO scalar operations and read-only type metadata."""
+"""Finite source-owned XDTO scalar operations and named read-only metadata."""
 from types import MethodType
 from weakref import ReferenceType,WeakKeyDictionary
 from decimal import Decimal
@@ -30,6 +30,20 @@ _HOOK_ABI=_unique_class_requirements(_ABI)
 _FACTORY=io.BSLXDTOFactory;_TYPE=values.BSLXDTOValueType;_VALUE=values.BSLXDTODataValue
 _OBJECT_TYPE=values.BSLXDTOObjectType
 _PROPERTY=values.BSLXDTOProperty
+_PROPERTIES=values.BSLXDTOPropertyCollection
+_PACKAGE=values.BSLXDTOPackage
+_PACKAGES=values.BSLXDTOPackageCollection
+FORM_NAMESPACE=io.XML_FORMS
+FORM_NAMES=frozenset(('xmlform','формаxml'))
+ELEMENT_FORM=io.BSLXMLForm.ELEMENT
+ATTRIBUTE_FORM=io.BSLXMLForm.ATTRIBUTE
+_FORM_MEMBERS={'element':ELEMENT_FORM,'элемент':ELEMENT_FORM,
+               'attribute':ATTRIBUTE_FORM,'атрибут':ATTRIBUTE_FORM}
+_PACKAGE_FIELDS={
+    'namespaceuri':('_uri',str),'uriпространстваимен':('_uri',str),
+    'elementformqualified':('_element_qualified',bool),'квалифицированнаяформаэлемента':('_element_qualified',bool),
+    'attributeformqualified':('_attribute_qualified',bool),'квалифицированнаяформаатрибута':('_attribute_qualified',bool),
+}
 _TYPE_NAMES=frozenset(('name','имя','namespaceuri','uriпространстваимен'))
 _SCALAR_TYPE_FIELDS=_TYPE_NAMES | {'basetype','базовыйтип'}
 _OBJECT_TYPE_FIELDS=_TYPE_NAMES | {'ordered','упорядоченный','abstract','абстрактный',
@@ -49,9 +63,13 @@ _SEALS=WeakKeyDictionary()
 _VALUES=WeakKeyDictionary()
 
 
+_RECEIVER_TYPES=(_FACTORY,_TYPE,_VALUE,_OBJECT_TYPE,values.BSLXDTODataObject,values.BSLXDTOList,
+                 _PROPERTY,_PROPERTIES,_PACKAGES,_PACKAGE)
+_RECEIVER_IDS=frozenset(map(id,_RECEIVER_TYPES))
+
+
 def owns(value):
-    kind=type(value)
-    return kind is _FACTORY or kind is _TYPE or kind is _VALUE or kind is values.BSLXDTOObjectType or kind is values.BSLXDTODataObject or kind is values.BSLXDTOList or kind is _PROPERTY
+    return id(type(value)) in _RECEIVER_IDS or value is FORM_NAMESPACE
 
 
 def _hooks():
@@ -284,14 +302,79 @@ def _check_value(factory,value):
         raise BoundaryViolation('source XDTO value fields changed')
 
 
+def _load_descriptor(boundary,owner,factory,operation,*args):
+    try:result=operation(*args)
+    except Exception:
+        # The namespace inventory may be initialized even on a rejected
+        # candidate. Keep the previously published descriptor-graph seal.
+        previous=_SEALS[boundary.app]
+        if previous[12] is None:
+            _SEALS[boundary.app]=previous[:12]+(owner._inventory,)+previous[13:16]+(_inventory_seal(owner._inventory),previous[17])
+        raise
+    _SEALS[boundary.app]=_seal(owner,boundary.app,factory)
+    return result
+
+
+def _descriptor_receiver(factory,value):
+    kind=type(value)
+    if kind is _PACKAGES and factory._packages is value:return
+    if kind is _PACKAGE and any(value is item for item in factory._packages._items):return
+    if kind is _PROPERTIES and any(type(item) is _OBJECT_TYPE and item._properties is value
+                                   for item in factory._types.values()):return
+    raise BoundaryViolation('source XDTO descriptor is not current in this factory')
+
+
+def _metadata_method(boundary,value,name,argument_count,allow_references):
+    owner,factory=_owner(boundary)
+    _descriptor_receiver(factory,value)
+    kind=type(value);name=name.casefold()
+    if kind is _PACKAGE and name in ('count','количество'):arity=0
+    elif (kind is _PACKAGES or kind is _PROPERTIES) and name in ('get','получить'):arity=1
+    else:raise ValueError('source XDTO descriptor method not integrated')
+    if argument_count is not None and argument_count!=arity:raise TypeError('source XDTO descriptor method arity')
+    def call(*args):
+        if len(args)!=arity:raise TypeError('source XDTO descriptor method arity')
+        current,current_factory=_owner(boundary)
+        if current is not owner or current_factory is not factory:raise BoundaryViolation('source XDTO descriptor owner changed')
+        _descriptor_receiver(factory,value)
+        if kind is _PACKAGE:
+            types=value._types
+            if type(types) is not tuple:raise BoundaryViolation('source XDTO package types changed')
+            return Decimal(len(types))
+        key=args[0]
+        if type(key) is not str:raise TypeError('source XDTO descriptor Get requires a name')
+        if len(key)>values.MAX_TEXT:raise ValueError('XDTO: превышен предел строки')
+        if kind is _PACKAGES and key not in owner._loaded and key!=values.XS:
+            try:_load_descriptor(boundary,owner,factory,_LOAD,owner,key)
+            finally:_owner(boundary)
+        # Exact descriptor graph and owner lease were checked above, including
+        # after any loader publication. No dynamic descriptor method executes.
+        if kind is _PROPERTIES:return next((prop for prop in value._items if prop._name==key),None)
+        return next((package for package in value._items if package._uri==key),None)
+    if allow_references:call.requires_reference=lambda index:False
+    return call
+
+
 def get(boundary,value,name):
     from . import python_direct_source_xdto_local as local
     if local.registered(value):return local.get(boundary,value,name)
     from . import python_direct_source_xdto_objects as objects
     if objects.owns(value):return objects.get(boundary,value,name)
+    if value is FORM_NAMESPACE:
+        member=_FORM_MEMBERS.get(name.casefold())
+        if member is None:raise ValueError('source XML form not integrated')
+        return member
     _,factory=_owner(boundary)
     if type(value) is _PROPERTY:return objects.get_property(factory,value,name)
+    if type(value) is _PACKAGE:
+        _descriptor_receiver(factory,value)
+        field=_PACKAGE_FIELDS.get(name.casefold())
+        if field is None:raise ValueError('source XDTO package member not integrated')
+        attr,kind=field;result=_field_keys(value).get(attr)
+        if type(result) is not kind:raise BoundaryViolation('source XDTO package field changed')
+        return result
     if value is factory:
+        if name.casefold() in ('packages','пакеты'):return factory._packages
         from . import python_direct_source_xdto_json as json
         method=json.factory_method(boundary,factory,name)
         if method is not None:return method
@@ -309,11 +392,12 @@ def get(boundary,value,name):
         if key in ('isdescendant','этопотомок'):
             _kind(factory,value)
             return HostFunction(name,_IS_DESCENDANT.__get__(value,_TYPE))
-    if type(value) is _OBJECT_TYPE and name.casefold() in _OBJECT_TYPE_FIELDS:
+    if type(value) is _OBJECT_TYPE and (name.casefold() in _OBJECT_TYPE_FIELDS or name.casefold() in ('properties','свойства')):
         _field_keys(value)
         if (value._factory is not factory or type(value._uri) is not str or type(value._name) is not str
                 or factory._types.get((value._uri,value._name)) is not value):
             raise BoundaryViolation('source XDTO requires a current object type from this factory')
+        if name.casefold() in ('properties','свойства'):return value._properties
         return _OBJECT_TYPE_GET(value,name)
     if type(value) is _VALUE:
         _check_value(factory,value)
@@ -329,6 +413,9 @@ def resolve(boundary,value,name,*,require_value=False,argument_count=None,allow_
     if objects.owns(value):return objects.resolve(boundary,value,name,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
     from . import python_direct_source_xdto_local as local
     if local.registered(value):return local.resolve(boundary,value,name,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
+    kind=type(value)
+    if kind is _PACKAGES or kind is _PACKAGE or kind is _PROPERTIES:
+        return _metadata_method(boundary,value,name,argument_count,allow_references)
     function=get(boundary,value,name)
     if type(function) is not HostFunction:raise ValueError('source XDTO member is not callable')
     return captured(boundary,function,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
@@ -373,19 +460,8 @@ def captured(boundary,function,*,require_value=False,argument_count=None,allow_r
         owner=check(len(args))
         if operation is _TYPE_CALL:
             if any(type(v) is not str for v in args):raise TypeError('source XDTO Type requires strings')
-            try:result=operation(factory,*args)
-            except Exception:
-                # Namespace inventory is a legitimate cache even when the
-                # candidate graph fails. Preserve the old published graph seal.
-                previous=_SEALS[boundary.app]
-                if previous[12] is None:
-                    _SEALS[boundary.app]=previous[:12]+(owner._inventory,)+previous[13:16]+(_inventory_seal(owner._inventory),previous[17])
-                check()
-                raise
-            # Canonical loader completed its atomic publication. Accept only its
-            # new graph; old descriptor identities were validated before entry.
-            _SEALS[boundary.app]=_seal(owner,boundary.app,factory)
-            check()
+            try:result=_load_descriptor(boundary,owner,factory,operation,factory,*args)
+            finally:check()
             if type(result) is values.BSLXDTOObjectType:
                 from . import python_direct_source_xdto_objects as objects
                 objects.admit_type(factory,result)

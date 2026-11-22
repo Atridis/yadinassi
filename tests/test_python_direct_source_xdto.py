@@ -38,7 +38,7 @@ class SourceScalarXDTOTests(unittest.TestCase):
         self.assertEqual(vm.execute('O.Name+":"+O.NamespaceURI;'),'Envelope:urn:owned:envelope')
         self.assertTrue(vm.execute('O.Ordered And Not O.Open And Not O.Abstract '
                                    'And Not O.Sequenced And Not O.Mixed;'))
-        for code in ('T.Name="renamed";', 'O.Ordered=False;', 'O.Properties;', 'T.Name();'):
+        for code in ('T.Name="renamed";', 'O.Ordered=False;', 'O.Properties.Count();', 'T.Name();'):
             with self.subTest(code=code),self.assertRaises(DENIED):
                 vm.execute(code)
         self.assertEqual(vm.execute('T.Name+":"+O.Name;'),'Code:Envelope')
@@ -120,9 +120,49 @@ class SourceScalarXDTOTests(unittest.TestCase):
         app=self.app();key=(xdto_values.XS,'string')
         app.xdto.factory._types[key]=xdto_values.BSLXDTOValueType(app.xdto.factory,'string')
         with self.assertRaises(DENIED):app.interpreter.execute('XDTOFactory.Type("x","y");')
+    def test_source_named_package_get_is_lazy_and_keeps_current_exact_handle(self):
+        mapping=existing.SourceXDTOTests().mapping();mapping[existing.E]=b'<unsupported/>'
+        app=self.app(mapping);vm=app.interpreter
+        raw=app.xdto.factory._packages
+        vm.execute('Packages=ФабрикаXDTO.Пакеты;')
+        self.assertIs(vm.variables['packages'],raw)
+        self.assertEqual(app.xdto._loaded,set())
+        self.assertIsNone(app.xdto._inventory)
+        vm.execute('P=Packages.Получить("urn:owned:records");')
+        self.assertEqual(app.xdto._loaded,{'urn:owned:records'})
+        self.assertEqual(vm.execute('P.NamespaceURI;'),'urn:owned:records')
+        self.assertEqual(vm.execute('P.Количество();'),3)
+        stable=raw._items
+        with self.assertRaises(DENIED):
+            vm.execute('Packages.Get("urn:owned:envelope");')
+        self.assertIs(raw._items,stable)
+        self.assertIs(vm.execute('Packages.Get("urn:owned:records");'),vm.variables['p'])
+        self.assertIs(vm.execute('XDTOFactory.Packages;'),raw)
+
+    def test_source_descriptor_get_rejects_foreign_aliases_and_late_mutation(self):
+        mapping=existing.SourceXDTOTests().mapping(False)
+        app=self.app(mapping,allow_extensions=True);other=self.app(mapping);vm=app.interpreter
+        code=('T=XDTOFactory.Type("urn:owned:records","Record");'
+              'Props=T.Properties; Pkgs=XDTOFactory.Packages;P=Pkgs.Get("urn:owned:records");')
+        for current in (app,other):current.interpreter.execute(code)
+        self.assertTrue(vm.execute('(Props.Get("Title").Форма=ФормаXML.Элемент);'))
+        self.assertIsNone(vm.execute('Props.Get("absent");'))
+        for name in ('props','pkgs','p'):
+            vm.variables['foreign'+name]=other.interpreter.variables[name]
+        props=vm.variables['props'];fake=type(props)(props._items)
+        vm.variables['fake']=fake
+        for operation in ('ForeignProps.Get("Title");','ForeignPkgs.Get("urn:owned:records");',
+                          'ForeignP.Count();','Fake.Get("Title");'):
+            with self.subTest(operation=operation),self.assertRaises(BoundaryViolation):vm.execute(operation)
+        def change():
+            props._items=props._items[:-1]
+            return 'Title'
+        vm.register_function('Change',change)
+        with self.assertRaises(BoundaryViolation):vm.execute('Props.Get(Change());')
+
     def test_unsupported_surface_and_preloaded_packages(self):
         app=self.app()
-        for code in ('XDTOFactory.Packages;','XDTOFactory.Type("urn:owned:envelope","Envelope").Properties; ',
+        for code in ('XDTOFactory.Packages.Count();','XDTOFactory.Type("urn:owned:envelope","Envelope").Properties.Get(0);',
                      'XDTOFactory.WriteXML(Undefined,Undefined);','New XDTOFactory(Undefined);'):
             with self.subTest(code=code),self.assertRaises(DENIED):app.interpreter.execute(code)
         app=self.app();app.xdto.factory.type('urn:owned:records','Code')
