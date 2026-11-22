@@ -63,6 +63,66 @@ class CharacterTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('КодСимвола("😀", 2)'), Decimal(56832))
         self.assertEqual(self.vm.execute('СтрДлина(Char(55357) + Char(56832))'), Decimal(2))
 
+    def test_concat_joins_utf16_across_runtime_and_static_values(self):
+        for prepared in (False, True):
+            for expression in (
+                'Char(55357) + Char(56832)',
+                'Left("😀", 1) + Right("😀", 1)',
+                'A + B',
+            ):
+                with self.subTest(prepared=prepared, expression=expression):
+                    vm = Interpreter()
+                    self.addCleanup(vm.close)
+                    vm.execute('A = Char(55357); B = Char(56832);')
+                    source = 'Result = ' + expression + ';'
+                    if prepared:
+                        vm.execute_prepared(vm.prepare(source))
+                    else:
+                        vm.execute(source)
+                    self.assertEqual(vm.variables['result'], '😀')
+                    self.assertEqual(vm.execute('Char(56832) + Char(55357)'), '\ude00\ud83d')
+
+    def test_dynamic_add_evaluates_operands_once_in_order(self):
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                output = []
+                vm = Interpreter(output.append)
+                self.addCleanup(vm.close)
+                source = (
+                    'Function First(Val Input) Message("left"); Return Input; EndFunction '
+                    'Function Second(Val Input) Message("right"); Return Input; EndFunction '
+                    'Joined = First(Char(55357)) + Second(Char(56832)); '
+                    'Mixed = First("x") + 2; Numeric = First(19) + Second(23);'
+                )
+                if prepared:
+                    vm.execute_prepared(vm.prepare(source))
+                else:
+                    vm.execute(source)
+                self.assertEqual(output, ['left', 'right', 'left', 'left', 'right'])
+                self.assertEqual(vm.variables['joined'], '😀')
+                self.assertEqual(vm.variables['mixed'], 'x2')
+                self.assertEqual(vm.variables['numeric'], Decimal(42))
+
+    def test_known_numeric_loop_uses_direct_add(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        source = (
+            'Function Inc(Val X) Return X + 1; EndFunction '
+            'R = 0; For I = 1 To 4 Do R = R + Inc(I); EndDo;'
+        )
+        plan = vm.prepare(source)
+        generated = plan._plan.generated_source
+        self.assertRegex(generated, r'return _temporary_\d+ \+ 1')
+        self.assertNotIn('_concatenate', generated.split('def _publish_module', 1)[1])
+        vm.execute_prepared(plan)
+        self.assertEqual(vm.variables['r'], Decimal(14))
+
+    def test_concat_keeps_existing_reassembly_inside_an_operand(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.variables["value"] = "a\ud83d\ude00b"
+        self.assertEqual(vm.execute('Value + "!"'), "a😀b!")
+
     def test_character_composes_with_utf16_string_operations(self):
         self.assertEqual(self.vm.execute('CharCode("A😀B", 4)'), Decimal(66))
         self.assertEqual(self.vm.execute('CharCode(Left("😀", 1))'), Decimal(55357))

@@ -115,7 +115,7 @@ def presentation(value):
 def concatenate(left, right):
     if type(left) is not str:
         raise TypeError('Ожидается строка')
-    return _join(left, presentation(right))
+    return _join(left, right if type(right) is str else presentation(right))
 
 
 def order(left, right, operator):

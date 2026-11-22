@@ -48,7 +48,16 @@ def _text(units: str) -> str:
 
 def concatenate(left: str, right: str) -> str:
     """Rejoin surrogate halves as well as ordinary strings (also used by +)."""
-    return _text(left + right)
+    joined = left + right
+    if str.isascii(joined):
+        return joined
+    try:
+        # Strict encoding detects real surrogate code points. Ordinary BMP
+        # and supplementary characters need no decode and no second string.
+        str.encode(joined, "utf-16-le")
+    except UnicodeEncodeError:
+        return _text(joined)
+    return joined
 
 
 def _index(value: object, minimum: int, maximum: int) -> int:

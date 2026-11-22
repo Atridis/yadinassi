@@ -239,7 +239,7 @@ class Emitter:
         self.http_body_receiver=False
         self.known_calls={};self.known_origins=()
         self.local_field_facts={};self.integer_lane=False;self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.module_boundaries=0;self.range_indices={};self.external_actuals=0
-        self.extension_values=False;self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.current_module=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
+        self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.current_module=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
         self.standalone_script=False;self.link_imports=False;self.import_links=[]
         self.import_names=frozenset();self.require_last_expression=None;self.region_active=False;self.region_ops={};self.region_states={};self.routines={};self.routine_symbols={};self.numeric_routine_symbols={};self.address_routine_symbols={};self.module_globals=set();self.scope=None;self.source_refs={};self.loop_increments=[];self.required=set();self.pure_builtins={};self.visits=0;self.python_nodes=0
     def node(self,kind,token,**fields):
@@ -615,7 +615,10 @@ class Emitter:
                 return self.call('_array_constructor_bounds',[],t)
             if k is bsl.New:return self.call({'map':'_PlainMap','array':'_PlainArray','table':'_PrivateTable','valuelist':'_PrivateValueList'}[self.static_module_kinds[id(node)]],[],t)
             if k is bsl.Binary and node.operator=='+':
-                return self.node(py.BinOp,t,left=self.expr(node.left),op=py.Add(),right=self.expr(node.right))
+                left,right=self.expr(node.left),self.expr(node.right)
+                if self.static_module_kinds[id(node)]=='string':
+                    return self.call('_concatenate',[left,right],t)
+                return self.node(py.BinOp,t,left=left,op=py.Add(),right=right)
             if k is bsl.Attribute:
                 owner=self.static_module_kinds[id(node.object)];receiver=self.expr(node.object)
                 if owner=='table':return self.attribute(receiver,'columns',t)
@@ -709,9 +712,7 @@ class Emitter:
                     if relation is not None:
                         return self.node(py.Compare,t,left=left,ops=[relation()],comparators=[right])
             if op=='+':
-                if (type(node.left) is bsl.Literal and type(node.left.value) is not str) or (self.native_cells and not self.extension_values and type(node.right) is bsl.Literal and type(node.right.value) is Decimal):
-                    return self.node(py.BinOp,t,left=left,op=py.Add(),right=right)
-                if not (self.owned_constructors or self.authority or self.source_scopes or self.catalog_bounds or self.host_bindings or self.extension_values):
+                if left_kind in ('number','bool') or type(left_value) is bsl.Literal:
                     return self.node(py.BinOp,t,left=left,op=py.Add(),right=right)
                 # Preserve ordinary-direct left-temporary lifetime, evaluate
                 # the type decision before RHS, and emit RHS only once.
@@ -1941,7 +1942,6 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     emitter.has_goto=has_goto
     emitter.goto_destinations=destinations;emitter.goto_transfers=transfers
     emitter.current_module=_profile is None or _current_module
-    emitter.extension_values=vm is not None and vm.allow_extensions
     emitter.owned_constructors=_profile is not None;emitter.configuration_calls=_configuration_calls;emitter.host_bindings=_host_bindings;emitter.catalog_bounds=_catalog_bounds;emitter.source_scopes=_source_scopes;emitter.authority=_authority;emitter.scalar_routines=_scalar_routines
     emitter.callable_externals=frozenset(_callable_externals);emitter.shadowable=frozenset(_shadowable)
     emitter.import_names=frozenset(imported);t=program[0].token
