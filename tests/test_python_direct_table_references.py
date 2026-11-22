@@ -196,10 +196,13 @@ class DirectTableReferenceTests(unittest.TestCase):
         vm.execute(SETUP+'For I=1 To 128 Do T.Add();EndDo;')
         plan=vm.prepare('Procedure Change(X) X=X+1;EndProcedure Change(R.A);Change(R[0]);')
         target=vm.variables['r']
-        with patch.object(tables,'row_check',wraps=tables.row_check) as check:
+        with (patch.object(tables,'row_check',wraps=tables.row_check) as check,
+              patch.object(tables,'hooks',side_effect=AssertionError('whole table protocol audit'))):
             vm.execute_prepared(plan)
         self.assertEqual(vm.execute('R.A'),3)
-        self.assertEqual(check.call_count,4)
+        # Address binding, actual read, and actual write each check their
+        # own row, never the unrelated inventory or the whole protocol.
+        self.assertEqual(check.call_count,6)
         self.assertTrue(all(call.args[0] is target for call in check.call_args_list))
 
     def test_reference_does_not_admit_other_rows_or_remove_iteration_validation(self):
