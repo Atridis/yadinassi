@@ -7,7 +7,7 @@ import sqlite3
 import tempfile
 import unittest
 
-from test_configuration_forms import sources, pair
+from test_configuration_forms import contextual_counter_sources, sources, pair
 from test_configuration_catalog_profile import catalog_form_sources
 from document_form_fixture import sources as document_sources
 from test_form_tables import active
@@ -16,6 +16,7 @@ from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.types.type_values import type_by_name, type_of
 from yadinassi.formats.storage.serialization import value_to_string_internal
 from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.configuration.configuration_forms import load_configuration_forms
 from yadinassi.configuration.configuration_xml import import_catalog_forms_configuration
 from yadinassi.configuration.configuration_document_profile import import_document_forms_configuration
@@ -83,9 +84,14 @@ class ConfigurationFormLayoutTests(unittest.TestCase):
 
     def test_nominal_group_does_not_authorize_constructor_or_dynamic_add(self):
         vm = Interpreter(); self.addCleanup(vm.close)
-        for expression in ('New FormGroup', 'New ГруппаФормы', 'New (Type("FormGroup"))'):
-            with self.subTest(expression=expression), self.assertRaises(BSLRuntimeError): vm.execute(expression)
-        server, client = pair(load_configuration_forms(sources('counter')).resolve('CommonForm.Counter'))
+        # Named constructors remain unsupported at compilation. Only the
+        # dynamic type expression reaches the BSL runtime denial.
+        for name in ('FormGroup', 'ГруппаФормы'):
+            with self.subTest(name=name), self.assertRaisesRegex(PythonDirectUnsupported, f'constructor {name}'):
+                vm.execute(f'New {name}')
+        with self.assertRaises(BSLRuntimeError):
+            vm.execute('New (Type("FormGroup"))')
+        server, client = pair(load_configuration_forms(contextual_counter_sources()).resolve('CommonForm.Counter'))
         self.addCleanup(server.session.interpreter.close); self.addCleanup(client.interpreter.close)
         client.open()
         with active(server.session):
@@ -200,17 +206,18 @@ class ConfigurationFormLayoutTests(unittest.TestCase):
             with self.assertRaises(ValueError): server.session.form.items._values['names'].get_member('DataPath')
 
     def test_flat_programmatic_model_unchanged(self):
-        server, client = pair(load_configuration_forms(sources('counter')).resolve('CommonForm.Counter'))
+        server, client = pair(load_configuration_forms(contextual_counter_sources()).resolve('CommonForm.Counter'))
         self.addCleanup(server.session.interpreter.close); self.addCleanup(client.interpreter.close)
         client.open(); self.assertEqual(client.form._layout, ())
         with active(server.session): self.assertEqual(server.session.form.items.add('Extra', BSLType.FORM_FIELD).name, 'Extra')
 
     def test_flat_legacy_button_dispatch_readonly_semantics_unchanged(self):
-        server, client = pair(load_configuration_forms(sources('counter')).resolve('CommonForm.Counter'))
+        server, client = pair(load_configuration_forms(contextual_counter_sources()).resolve('CommonForm.Counter'))
         self.addCleanup(server.session.interpreter.close); self.addCleanup(client.interpreter.close)
         client.open(); client.form.items._values['incrementbutton'].read_only = True
         client.dispatch('command', revision=client.revision, control='IncrementButton')
         self.assertEqual(client.form._data['count'], 1)
+        self.assertEqual(server.session.form._data['count'], 1)
 
     def test_unknown_nested_behavior_is_not_ignored(self):
         for fragment in ('<AutoSave>true</AutoSave>', '<Events/>', '<CurrentPage>NotesPage</CurrentPage>', '<DataPath>FirstName</DataPath>'):

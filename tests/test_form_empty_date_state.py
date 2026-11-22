@@ -6,11 +6,11 @@ from yadinassi.forms.form_replication import _encode_form_scalar, _decode_form_s
 from yadinassi.execution.invocation import _encode_scalar, _decode_scalar, InvocationServer, PROTOCOL
 from yadinassi.ui.form_app import FormController, PROTOCOL as FORM_PROTOCOL
 from yadinassi.ui.protocol import encode_line, decode_line, UIError
-from test_configuration_forms import sources, pair
+from test_configuration_forms import contextual_counter_sources, pair
 
 class EmptyDateStateTests(unittest.TestCase):
     def definition(self):
-        files = sources('counter')
+        files = contextual_counter_sources()
         path = 'CommonForms/Counter/Ext/Form.xml'
         files[path] = files[path].replace(b'</Attributes>', b'<Attribute name="Moment" id="9"><Type><v8:Type>xs:dateTime</v8:Type><v8:DateQualifiers><v8:DateFractions>DateTime</v8:DateFractions></v8:DateQualifiers></Type></Attribute></Attributes>')
         files[path] = files[path].replace(b'</ChildItems>', b'<InputField name="MomentInput" id="9"><DataPath>Moment</DataPath></InputField></ChildItems>')
@@ -23,9 +23,15 @@ class EmptyDateStateTests(unittest.TestCase):
         client.dispatch('change',revision=client.revision,control='MomentInput',value=BSLDate(10000000))
         client.dispatch('command',revision=client.revision,control='IncrementButton')
         self.assertEqual(server.session.form._data['moment'],BSLDate(10000000))
+        self.assertEqual(client.form._data['moment'],BSLDate(10000000))
+        self.assertEqual(server.session.form._data['count'],1)
+        self.assertEqual(client.form._data['count'],1)
         client.dispatch('change',revision=client.revision,control='MomentInput',value=BSLDate(0))
         client.dispatch('command',revision=client.revision,control='IncrementButton')
         self.assertEqual(server.session.form._data['moment'],BSLDate(0))
+        self.assertEqual(client.form._data['moment'],BSLDate(0))
+        self.assertEqual(server.session.form._data['count'],2)
+        self.assertEqual(client.form._data['count'],2)
 
     def test_typed_form_event_accepts_plain_empty_date_not_boundary(self):
         definition=self.definition(); server=definition.create_server()

@@ -17,6 +17,21 @@ def sources(app='welcome'):
     return {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob('*') if p.is_file()}
 
 
+def contextual_counter_sources():
+    """Keep the Counter layout and RPC, without testing detached dispatch here."""
+    files = sources('counter')
+    files['CommonForms/Counter/Ext/Form/Module.bsl'] = b'''&AtClient
+Procedure IncrementClick(Command)
+ IncrementAtServer();
+EndProcedure
+&AtServer
+Procedure IncrementAtServer()
+ Count = Count + 1;
+EndProcedure
+'''
+    return files
+
+
 def pair(definition, parameters=None):
     server = definition.create_server(parameters=parameters)
     program = definition.program
