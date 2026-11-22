@@ -78,6 +78,7 @@ class BSLValueTableColumn(BSLObject):
 
 class BSLValueTableColumnCollection(BSLObject):
     def __init__(self,table):self.table=table;self._items=[];self._query_columns=0
+    def __str__(self):return 'КоллекцияКолонокТаблицыЗначений'
     @property
     def items(self):return tuple(self._items)
     def __iter__(self):return iter(self._items)

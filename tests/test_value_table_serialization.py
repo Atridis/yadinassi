@@ -12,6 +12,7 @@ import re
 import unittest
 from unittest.mock import patch
 
+from yadinassi import Interpreter
 from yadinassi.formats.storage.serialization import value_from_string_internal as read
 from yadinassi.formats.storage.serialization import value_to_string_internal as write
 from yadinassi.types.type_descriptions import BSLTypeDescription
@@ -62,6 +63,15 @@ class ValueTableNativeCodecTests(unittest.TestCase):
                 restored = read(native.get("Write"))
                 if label in ('columns', 'column', 'row'):
                     self.assertIsNone(restored)
+
+    def test_bsl_table_columns_use_native_text_regardless_of_contents(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        expected = self.native('table.codec.columns').get('Text')
+        vm.execute('T=New ValueTable; C=T.Columns; Empty=String(C); '
+                   'C.Add("Number"); Populated=Строка(T.Columns); C.Clear(); EmptyAgain=String(C);')
+        self.assertEqual((vm.variables['empty'], vm.variables['populated'], vm.variables['emptyagain']),
+                         (expected, expected, expected))
 
     def test_inverse_table_has_fresh_owned_rows_and_columns(self):
         table = sample()
