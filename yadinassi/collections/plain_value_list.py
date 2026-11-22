@@ -2,7 +2,7 @@
 
 Values are kept in four-position records in a native list. Items share one
 small membership record with a weak reference to their list. There is no ID
-dictionary, mutation revision, render cache or recursive admission. Identifier lookup is linear.
+dictionary, separate mutation revision or recursive admission. Identifier lookup is linear.
 Native Python ordering replaces 1C collation. Typed lists/UI/serialization remain
 separate capabilities; this module does not grant access to them.
 """
@@ -11,7 +11,7 @@ from types import MappingProxyType
 from weakref import ReferenceType, ref
 
 from yadinassi.types.values import NULL, to_string
-from yadinassi.temporal.dates import BSLDate
+from yadinassi.temporal.dates import BSLDate, _exact_date_text
 from .plain_table_storage import _sort_value
 from .sort_directions import _sort_descending
 
@@ -129,7 +129,9 @@ class PlainValueListItem(list):
             return value
         if kind is int:
             return to_string(Decimal(value))
-        if kind is Decimal or kind is bool or kind is BSLDate:
+        if kind is BSLDate:
+            return _exact_date_text(value)
+        if kind is Decimal or kind is bool:
             return to_string(value)
         # No object fallback: some values can invoke embedded Python formatters.
         raise ValueError('Строковое представление этого типа значения элемента пока не поддерживается')
@@ -180,14 +182,32 @@ _FIELDS = MappingProxyType({'value': 0, 'значение': 0,
            'presentation': 1, 'представление': 1,
            'check': 2, 'пометка': 2, 'picture': 3, 'картинка': 3})
 
+_ITEM_TEXT = PlainValueListItem.__str__
+
 
 class PlainValueList(list):
-    __slots__ = ('_next_id', '_membership', '__weakref__')
+    __slots__ = ('_next_id', '_membership', '_text_cache', '__weakref__')
 
     def __init__(self):
         list.__init__(self)
         self._next_id = 0
         self._membership = None
+        self._text_cache = None
+
+    def __str__(self):
+        # Native String retains even an empty warm result across item field
+        # changes. Add/Insert already advance the identity counter, so those
+        # hot paths need no cache invalidation or extra revision writes.
+        serial, cached = self._next_id, self._text_cache
+        if type(serial) is not int:
+            raise TypeError('Invalid ValueList identifier counter')
+        if (type(cached) is tuple and len(cached) == 2
+                and type(cached[0]) is int and cached[0] == serial
+                and type(cached[1]) is str):
+            return cached[1]
+        text = '; '.join(_ITEM_TEXT(_item(item)) for item in list.__iter__(self))
+        self._text_cache = (serial, text)
+        return text
 
     def _start_membership(self):
         state = self._membership = _ItemMembership(self)
@@ -257,14 +277,18 @@ class PlainValueList(list):
 
     def delete(self, item_or_index):
         position = self._position(item_or_index)
+        if not 0 <= position < list.__len__(self):
+            raise IndexError('ValueList index out of bounds')
         item = _item(list.__getitem__(self, position))
         list.__delitem__(self, position)
         item._id = -1
+        self._text_cache = None
 
     def clear(self):
         state = self._membership
         if state is not None:
             state.cleared_before = self._next_id
+        self._text_cache = None
         list.clear(self)
 
     def move(self, item_or_index, offset):
@@ -274,8 +298,12 @@ class PlainValueList(list):
             position += len(self)
         if not 0 <= position < len(self):
             raise IndexError('ValueList index out of bounds')
+        destination = max(0, min(position + shift, len(self) - 1))
+        if destination == position:
+            return
         item = list.pop(self, position)
-        list.insert(self, max(0, min(position + shift, len(self))), item)
+        list.insert(self, destination, item)
+        self._text_cache = None
 
     def find_by_value(self, value):
         for item in self:
@@ -339,11 +367,16 @@ class PlainValueList(list):
                 # the owner. Python's stable sort then preserves ties and IDs.
                 ordered = sorted(list.__iter__(self), key=_scalar_item_sort_key, reverse=descending)
                 list.__setitem__(self, slice(None), ordered)
+                if len(ordered) > 1:
+                    self._text_cache = None
                 return
             if not simple:
                 raise TypeError('ValueList sorting requires scalar values')
             prior = kind
         list.sort(self, key=lambda item: list.__getitem__(item, field), reverse=descending)
+        # Both native singleton sorts preserve already warmed presentation.
+        if list.__len__(self) > 1:
+            self._text_cache = None
 
 
 _DIRECT_PLAIN_METHODS = (PlainValueList.add, PlainValueList.insert, PlainValueList.get, PlainValueList.count)

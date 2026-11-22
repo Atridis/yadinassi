@@ -21,6 +21,8 @@ from yadinassi.formats.storage import serialization
 from yadinassi.collections import value_lists
 from yadinassi.collections.structures import BSLStructure
 from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.collections.plain_value_list import PlainValueList
+from yadinassi.temporal.dates import BSLDate, UnsupportedDateRange, literal_date
 from yadinassi.types.values import BSLArray, NULL, to_string
 
 
@@ -266,6 +268,46 @@ class LinuxFinalValueListStringTests(unittest.TestCase):
 
 
 class ValueListStringBoundaryTests(unittest.TestCase):
+    def test_plain_list_cold_date_text_requires_known_inert_ticks(self):
+        known = literal_date("20240229040506")
+        owner = PlainValueList()
+        owner.add(known)
+        with patch.object(BSLDate, "__str__", side_effect=AssertionError("generic Date rendering")):
+            self.assertEqual(str(owner), "29.02.2024 4:05:06")
+
+        owner = PlainValueList()
+        owner.add(BSLDate(0, True))
+        with self.assertRaisesRegex(UnsupportedDateRange, "выхода за диапазон"):
+            str(owner)
+
+        malformed = BSLDate(0)
+        object.__setattr__(malformed, 'boundary', None)
+        owner = PlainValueList()
+        item = owner.add(malformed)
+        with self.assertRaisesRegex(ValueError, "недопустимое внутреннее значение"):
+            str(owner)
+        item.set_member("Presentation", "label")
+        self.assertEqual(str(owner), "label")
+
+    def test_plain_value_sort_preserves_singleton_text_on_scalar_fallback(self):
+        # The Linux short-sorts observation measures a Number. Apply the
+        # shared admitted singleton/no-permutation rule to Date and Undefined.
+        for value in (literal_date("20240229040506"), None):
+            with self.subTest(kind=type(value)):
+                owner = PlainValueList()
+                item = owner.add(value, "warm")
+                self.assertEqual(str(owner), "warm")
+                item.set_member("Presentation", "current")
+                owner.sort_by_value()
+                self.assertEqual(str(owner), "warm")
+                self.assertEqual(str(item), "current")
+                # Multi-item fallback still updates text in sorted order.
+                if value is not None:
+                    owner.add(None, "undefined")
+                    self.assertEqual(str(owner), "current; undefined")
+                    owner.sort_by_value()
+                    self.assertEqual(str(owner), "undefined; current")
+
     def test_actual_join_budget_includes_fallbacks_and_exact_separators(self):
         cases = (
             ((), ""),

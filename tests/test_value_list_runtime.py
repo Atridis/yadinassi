@@ -49,6 +49,28 @@ class ValueListRuntimeTests(unittest.TestCase):
         self.assertIsNone(self.vm.execute('c.Value'))
         self.assertIs(self.vm.execute('c.Check'), False)
 
+    def test_delete_index_bounds_leave_items_and_warmed_presentation_unchanged(self):
+        # Native collections.out, table.list.delete.index, rejects -1 and
+        # Count() without deleting; table.list.string-cache.controls keeps
+        # already rendered text across that failure.
+        self.assertEqual(self.vm.execute('String(values)'), 'first; second')
+        self.vm.execute('second=values.Get(1); first.Presentation="changed";')
+        for index in ('-1', 'values.Count()'):
+            with self.subTest(index=index):
+                with self.assertRaises(BSLError):
+                    self.vm.execute(f'values.Delete({index});')
+                self.assertEqual(self.vm.execute('values.Count()'), Decimal(2))
+                self.assertIs(self.vm.execute('(values.Get(0) = first)'), True)
+                self.assertIs(self.vm.execute('(values.Get(1) = second)'), True)
+                self.assertEqual(self.vm.execute('first.GetID()'), Decimal(0))
+                self.assertEqual(self.vm.execute('second.GetID()'), Decimal(1))
+                self.assertEqual(self.vm.execute('first.Presentation'), 'changed')
+                self.assertEqual(self.vm.execute('String(values)'), 'first; second')
+        self.vm.execute('values.Delete(1);')
+        self.assertEqual(self.vm.execute('values.Count()'), Decimal(1))
+        self.assertEqual(self.vm.execute('second.GetID()'), Decimal(-1))
+        self.assertEqual(self.vm.execute('String(values)'), 'changed')
+
     def test_required_and_computed_receiver_holes_reject_before_effects(self):
         self.vm.execute('Var touches; touches = 0; '
                         'Function Touch() touches = touches + 1; Return 7; EndFunction '

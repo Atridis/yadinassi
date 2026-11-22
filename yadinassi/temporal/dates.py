@@ -13,6 +13,8 @@ _EPOCH = datetime(1, 1, 1)
 MAX_TICKS = ((datetime(9999, 12, 31, 23, 59, 59) - _EPOCH).days * 86400
              + 86399) * TICKS_PER_SECOND
 _MAX_DIGITS = 4096
+_UNKNOWN_RANGE = ("Дата: после выхода за диапазон известно только скалярное "
+                  "внутреннее представление; дальнейшая операция пока не поддерживается")
 
 
 class UnsupportedDateRange(ValueError):
@@ -32,9 +34,7 @@ class BSLDate:
 
     def require_known(self):
         if self.boundary:
-            raise UnsupportedDateRange(
-                "Дата: после выхода за диапазон известно только скалярное "
-                "внутреннее представление; дальнейшая операция пока не поддерживается")
+            raise UnsupportedDateRange(_UNKNOWN_RANGE)
         return self
 
     def __eq__(self, other):
@@ -69,8 +69,7 @@ class BSLDate:
         return hash(self.ticks)
 
     def __str__(self):
-        value = _parts(self)
-        return f"{value.day:02}.{value.month:02}.{value.year:04} {value.hour}:{value.minute:02}:{value.second:02}"
+        return _format_known_ticks(_require_date(self).ticks)
 
 
 # Canonical slot access for direct collection equality's date-boundary gate.
@@ -92,6 +91,22 @@ def _sort_date_ticks(value, _ticks=_DIRECT_ORDER_DATE_TICKS[0],
     if boundary:
         raise NotImplementedError('sorting unknown dates is not supported')
     return ticks
+
+
+def _format_known_ticks(ticks):
+    value = _EPOCH + timedelta(seconds=ticks // TICKS_PER_SECOND)
+    return f"{value.day:02}.{value.month:02}.{value.year:04} {value.hour}:{value.minute:02}:{value.second:02}"
+
+
+def _exact_date_text(value):
+    """Format already selected exact Dates without calling their Python hooks."""
+    try:
+        ticks = _sort_date_ticks(value)
+    except NotImplementedError:
+        raise UnsupportedDateRange(_UNKNOWN_RANGE) from None
+    except ValueError:
+        raise ValueError('Дата: недопустимое внутреннее значение') from None
+    return _format_known_ticks(ticks)
 
 
 def _require_date(value):
