@@ -233,6 +233,7 @@ _REQUEST_BODY_METHODS = frozenset((
 
 class Emitter:
     missing_database_roots=()
+    missing_metadata_roots=()
     def __init__(self,filename):
         self.filename=filename;self.constants=[];self.serial=0
         self.has_goto=False;self.goto_last_expression=None
@@ -319,6 +320,9 @@ class Emitter:
         # A local or module value wins; only an actual unbound read reaches here.
         if key in self.missing_database_roots:
             return self.call('_require_database_context',[],token)
+        if key in self.missing_metadata_roots:
+            return self.invoke(self.attribute(self.name('_context',token),'external_get',token),
+                               [self.const(key,token)],token)
         if (self.current_module and not self.owned_constructors
                 and key in ('runcallback','выполнитьобработкуоповещения')):
             return self.invoke(self.attribute(self.name('_context',token),'capture_run_callback',token),
@@ -1980,9 +1984,10 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     from yadinassi.execution.direct.python_direct_services import ORDINARY_CONSTRUCTORS
     from yadinassi.execution.direct.python_direct_value_tree import CONSTRUCTOR_NAMES as TREE_NAMES
     emitter.constructor_names=frozenset(ORDINARY_CONSTRUCTORS)|frozenset(TREE_NAMES)|{'uuid','уникальныйидентификатор'}
-    from yadinassi.execution.direct.python_direct_database import NAMES as DATABASE_NAMES, DATABASE_ROOT_NAMES
+    from yadinassi.execution.direct.python_direct_database import NAMES as DATABASE_NAMES, DATABASE_ROOT_NAMES, METADATA_NAMES
     emitter.external_names=set(NAMES)
     emitter.missing_database_roots=DATABASE_ROOT_NAMES if _profile is None and vm.database_context is None else ()
+    if emitter.missing_database_roots:emitter.missing_metadata_roots=METADATA_NAMES
     if _profile is None and vm.database_context is not None:
         emitter.external_names.update(DATABASE_NAMES);emitter.constructor_names|={'query','запрос'}
     known_methods=(_profile is None and emitter.standalone_script and not has_goto

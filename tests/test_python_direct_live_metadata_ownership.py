@@ -9,6 +9,20 @@ import test_configuration_metadata_graph as fixture
 
 DENIED=(BoundaryViolation,BSLRuntimeError,ValueError,TypeError)
 
+class MetadataShellOwnershipTests(unittest.TestCase):
+    def test_no_database_shells_are_inert_and_local(self):
+        vm, other = Interpreter(), Interpreter()
+        self.addCleanup(vm.close)
+        self.addCleanup(other.close)
+        with patch('sqlite3.connect', side_effect=AssertionError('unexpected SQLite access')):
+            self.assertIs(vm.execute('Metadata.Catalogs;'), vm.execute('Метаданные.Справочники;'))
+            vm.variables['foreign'] = other.execute('Metadata.Catalogs;')
+            with self.assertRaises(BoundaryViolation):
+                vm.execute('Foreign.Count();')
+            with self.assertRaisesRegex(BSLRuntimeError, 'db required'):
+                vm.execute('Metadata.Catalogs.Count();')
+
+
 class LiveMetadataOwnershipTests(unittest.TestCase):
     def setUp(self):
         owner=fixture.MetadataGraphTests();self.addCleanup(owner.doCleanups)

@@ -51,7 +51,19 @@ Message(M.FindByDescription("Second",True)=M.FindByCode("20"));Message(M.FindByC
                 vm.execute(fragment)
         vm.execute('Documents=19;')
         self.assertEqual(vm.execute('Documents;'),19)
-        for name in ('Metadata','Enums','UnknownName'):
+        self.assertIs(vm.execute('Metadata;'), vm.execute('Метаданные;'))
+        with self.assertRaisesRegex(BSLRuntimeError, 'db required'):
+            vm.execute('Metadata.Documents.Count();')
+        self.assertEqual(vm.execute(
+            'Function Read(Val Metadata) Return Metadata; EndFunction Read(17);'),17)
+        vm.execute('Metadata=23;')
+        self.assertEqual(vm.execute('Metadata;'),23)
+        self.assertEqual(vm.execute('Eval("Metadata");'),23)
+        explicit = Interpreter(allow_extensions=True)
+        self.addCleanup(explicit.close)
+        explicit.register_function('Metadata', lambda: 'host')
+        self.assertEqual(explicit.execute('Metadata()'), 'host')
+        for name in ('Enums','UnknownName'):
             with self.subTest(name=name),self.assertRaises(BSLRuntimeError) as raised:
                 vm.execute(name+';')
             self.assertNotIn('db required',str(raised.exception))

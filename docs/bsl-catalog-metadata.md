@@ -77,8 +77,10 @@ current admitted schema/source, not historical receipt snapshots.
 All graph objects are read-only. Metadata and metadata-bound reference descriptions
 are not admitted to generic serialization, ValueStorage, network/form transfer or
 external Query tables. Scalar descriptions retain their existing supported codecs.
-A missing database fails lazily with the catchable `db required` error. A configured
-common-module registry and configuration name can be read without a database.
+Without a database, an ordinary unconfigured client can obtain the metadata root
+and its three collection shells. An existing local binding still wins. Looking up
+database-backed metadata fails lazily with the catchable `db required` error. A
+configured common-module registry and configuration name can be read without a database.
 Nonempty presentation metadata is still rejected by the importer, not silently
 replaced with Name. This block adds no SQL storage version or activation bypass.
 

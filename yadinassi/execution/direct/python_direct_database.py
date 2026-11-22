@@ -60,7 +60,8 @@ from yadinassi.types.type_qualifiers import (BSLNumberQualifiers, BSLStringQuali
 
 DATABASE_ROOT_NAMES=('catalogs','справочники','documents','документы',
                      'informationregisters','регистрысведений')
-NAMES=('metadata','метаданные',*DATABASE_ROOT_NAMES,'enums','перечисления','documentwritemode','режимзаписидокумента','accumulationrecordtype','виддвижениянакопления')
+METADATA_NAMES=('metadata','метаданные')
+NAMES=(*METADATA_NAMES,*DATABASE_ROOT_NAMES,'enums','перечисления','documentwritemode','режимзаписидокумента','accumulationrecordtype','виддвижениянакопления')
 
 # Canonical detached receivers only; child rows/items and database owners still
 # traverse live ownership validation. Public protocols retain resource guards.
@@ -257,7 +258,7 @@ class CatalogBoundary:
             if value is not XML_STRING_PROCESSING or self._verify_context:self._check_effect()
             return value
         self._check_effect()
-        if name in ('metadata','метаданные'):return self.vm._metadata
+        if name in METADATA_NAMES:return self.vm._metadata
         if name in ('catalogs','справочники'):return self.vm._catalogs
         if name in ('documents','документы'):return self.vm._documents
         if name in ('informationregisters','регистрысведений'):

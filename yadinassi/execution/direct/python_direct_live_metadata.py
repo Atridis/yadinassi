@@ -79,6 +79,29 @@ def _node(value):
         raise BoundaryViolation('live metadata provenance changed')
     return None if parent is None else parent(),relation
 
+def _without_database(vm,root,value):
+    # Only the issued root and its unloaded shells exist. The metadata model
+    # itself signals db required when a lookup actually needs storage.
+    if (root._identity is not None or root._configuration_name is not None
+            or root._common_modules is not None or root._common_templates is not None
+            or root._enumerations is not None or root._session_parameters is not None):
+        raise BoundaryViolation('metadata without a database must be unconfigured')
+    catalogs=vm._catalogs
+    if type(catalogs) is not BSLCatalogs:
+        raise BoundaryViolation('live metadata manager binding changed')
+    _fields(catalogs)
+    if catalogs._metadata is not root._catalogs or catalogs._context is not None:
+        raise BoundaryViolation('foreign live metadata root')
+    shells=(root._catalogs,root._documents,root._information_registers)
+    if value is not root and not any(value is shell for shell in shells):
+        raise BoundaryViolation('foreign live metadata receiver')
+    for shell in shells:
+        _node(shell)
+        if shell._context is not None or shell._root is not root or shell._items is not None:
+            raise BoundaryViolation('foreign live metadata family')
+    return root
+
+
 def check(boundary,value):
     boundary._check();_hooks()
     if not boundary._live_metadata_active:raise BoundaryViolation('live metadata activation ended')
@@ -86,6 +109,7 @@ def check(boundary,value):
     if type(root) is not native.BSLMetadata:raise BoundaryViolation('live metadata root changed')
     _node(root)
     context=boundary.vm.database_context
+    if context is None:return _without_database(boundary.vm,root,value)
     if type(context) is not SQLiteDBContext:raise BoundaryViolation('live metadata context required')
     _fields(context);backend=context._backend
     if type(backend) is not SQLiteCatalogBackend:raise BoundaryViolation('live metadata backend changed')
