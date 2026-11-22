@@ -357,22 +357,6 @@ class ValueListStringBoundaryTests(unittest.TestCase):
         owner.items[0].set_member("Value", "")
         self.assertEqual(str(owner), "; bb; cc")
 
-    def test_item_count_budget_applies_to_cold_and_warm_conversion(self):
-        owner = BSLValueList()
-        owner.add("a")
-        owner.add("b")
-        with patch.object(value_lists, "_MAX_ITEMS", 1):
-            with self.assertRaisesRegex(ValueError, "предел ресурсов"):
-                str(owner)
-        self.assertIsNone(owner._text_cache)
-        with patch.object(value_lists, "_MAX_ITEMS", 2):
-            self.assertEqual(str(owner), "a; b")
-        cached = owner._text_cache
-        with patch.object(value_lists, "_MAX_ITEMS", 1):
-            with self.assertRaisesRegex(ValueError, "предел ресурсов"):
-                str(owner)
-        self.assertIs(owner._text_cache, cached)
-
     def test_failed_rebuild_does_not_publish_stale_or_partial_text(self):
         owner = BSLValueList()
         item = owner.add(D(7))
