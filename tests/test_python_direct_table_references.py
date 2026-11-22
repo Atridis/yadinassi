@@ -59,7 +59,13 @@ class DirectTableReferenceTests(unittest.TestCase):
             vm.register_function('Effect',effect)
             error=BSLError if action=='delete' else BoundaryViolation
             with self.subTest(action=action),self.assertRaises(error):vm.execute('Change(R.A,Effect());')
-            self.assertEqual(row.cells,{} ) if action=='delete' else self.assertEqual(next(iter(row.cells.values())),1)
+            # The cells view follows the current owner. Use the raw payload
+            # to detect a rejected write even after the row becomes detached.
+            self.assertEqual(list(list.__iter__(row)), [1])
+            if action=='delete':
+                self.assertEqual(old_table.rows, [])
+                self.assertTrue(row._deleted)
+                with self.assertRaises(ValueError):row.get_member('A')
 
     def test_retained_host_references_recheck_owner_and_lifetime(self):
         for address in ('R.A','R[0]','C.Title'):
@@ -79,7 +85,8 @@ class DirectTableReferenceTests(unittest.TestCase):
         calls=[]
         class Foreign(BSLValueTableRow):
             def get_member(self,name):calls.append('get');raise AssertionError
-        vm.variables['foreign']=Foreign(BSLValueTable())
+        other=BSLValueTable();other.columns.add('A')
+        vm.variables['foreign']=Foreign(other,other._storage.schema,[Decimal(1)])
         with self.assertRaises(BoundaryViolation):vm.execute('Change(Foreign.A);')
         self.assertEqual(calls,[])
 
@@ -121,25 +128,25 @@ class DirectTableReferenceTests(unittest.TestCase):
         for action in (refs[0].get,lambda:refs[0].set(2)):
             with self.assertRaises(BoundaryViolation):action()
 
-    def test_forged_cell_keys_never_run_hash_or_equality_during_reference(self):
+    def test_forged_offset_keys_never_run_hash_or_equality_during_reference(self):
         for stage in ('bind','after_arguments','retained'):
             vm=Interpreter(allow_extensions=True);vm.execute(SETUP+'Procedure Change(X,Y) X=2;EndProcedure');seen=[]
-            row=vm.variables['r'];column=vm.variables['c']
+            row=vm.variables['r'];schema=row.schema
             class Key:
-                def __hash__(self):return hash(column)
+                def __hash__(self):seen.append('hash');return hash('a')
                 def __eq__(self,other):seen.append('eq');raise AssertionError('hostile key')
-            forged={Key():Decimal(1)}
+            forged={Key():0};seen.clear()
             if stage=='bind':
-                row.cells=forged
+                schema._offsets=forged
                 with self.assertRaises(BoundaryViolation):vm.execute('Change(R.A,0);')
             elif stage=='after_arguments':
-                def replace():row.cells=forged;return 0
+                def replace():schema._offsets=forged;return 0
                 vm.register_function('Replace',replace)
                 with self.assertRaises(BoundaryViolation):vm.execute('Change(R.A,Replace());')
             else:
                 refs=[];vm.register_function('Capture',lambda reference:refs.append(reference))
                 vm.functions['capture'].reference_parameters=frozenset({0});vm.execute('Capture(R.A);')
-                row.cells=forged
+                schema._offsets=forged
                 for action in (refs[0].get,lambda:refs[0].set(2)):
                     with self.assertRaises(BoundaryViolation):action()
             self.assertEqual(seen,[])
@@ -152,10 +159,10 @@ class DirectTableReferenceTests(unittest.TestCase):
                 def __iter__(self):seen.append('iter');raise AssertionError
             table=vm.variables['t'];column=vm.variables['c']
             if mutation=='collection':table.columns=Hostile()
-            elif mutation=='items':table.columns.items=Hostile()
-            elif mutation=='column':table.columns.items=[Hostile()]
+            elif mutation=='items':table.columns._items=Hostile()
+            elif mutation=='column':table.columns._items[0]=Hostile()
             elif mutation=='column_owner':column.table=BSLValueTable()
-            else:column.name=Hostile()
+            else:column._name=Hostile()
             with self.subTest(mutation=mutation),self.assertRaises(BoundaryViolation):vm.execute('Change(R.A);')
             self.assertEqual(seen,[])
 
