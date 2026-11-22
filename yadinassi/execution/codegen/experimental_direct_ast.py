@@ -616,6 +616,11 @@ class Emitter:
         parts=self.node(py.Tuple,t,elts=[value,phase],ctx=py.Load())
         return self.node(py.Subscript,t,value=parts,slice=self.const(0,t),ctx=py.Load())
     def _expr(self,node,require_value=True):
+        if type(node) is bsl.Await:
+            if self.scope is None or not self.scope.get('async'):
+                _reject('Await outside an admitted asynchronous routine')
+            return self.node(py.Yield,node.token,value=self.call('_AwaitRequest',[self.expr(node.operand)],node.token))
+
         self.visits+=1;t=node.token;k=type(node)
         if self.static_module_kinds:
             if k is bsl.New and self.address_routine_symbols and self.static_module_kinds[id(node)]=='array':
@@ -749,7 +754,7 @@ class Emitter:
             if not native and kindname not in self.constructor_names:
                 # A finite set of known nonconstructible names has a runtime
                 # rejection in its observed zero-argument form, not a factory.
-                if kindname in ('date','дата','sortdirection','направлениесортировки') and not node.arguments:
+                if kindname in ('date','дата','sortdirection','направлениесортировки','promise','обещание') and not node.arguments:
                     return self.call('_nonconstructible_type',[self.const(value,t) for value in
                         (node.name,self.filename,t.line,t.column)],t)
                 _reject(f'constructor {node.name}; outside research subset')
@@ -2006,6 +2011,16 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         emitter.constructor_names=frozenset(name.casefold() for name in constructors)
     else:module_names=vm.module_names
     emitter.routines={node.name.casefold():node for node in program if type(node) is bsl.Routine}
+    async_bodies={}
+    if any(node.is_async for node in emitter.routines.values()):
+        if _profile is not None or vm.database_context is not None or imported:
+            _reject('asynchronous routines require a standalone client module')
+        from dataclasses import replace
+        for name,node in tuple(emitter.routines.items()):
+            if node.is_async:
+                emitter.routines[name]=replace(node,parameters=[replace(p,by_value=True) for p in node.parameters])
+                async_bodies[name]=emitter.temp()
+
     emitter.native_cells=bool(emitter.routines) and _profile is None and not imported and vm.database_context is None
     emitter.routine_symbols={key:emitter.temp() for key in emitter.routines}
     emitter.module_globals={name.casefold() for node in program if type(node) is bsl.Var for name in node.names}|{name.casefold() for name in module_names}
@@ -2023,8 +2038,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     from yadinassi.execution.direct.python_direct_collection_regions import analyze,admitted,helpers
     for key,routine in emitter.routines.items():
         link_start=len(emitter.import_links)
-        if routine.is_async:
-            _reject('asynchronous routine requires a scheduler-aware compiler')
+
         declarations=set();assigned=set();pending=[(stmt,False) for stmt in routine.body]
         direct_vars={id(stmt) for stmt in routine.body if type(stmt) is bsl.Var}
         while pending:
@@ -2052,6 +2066,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         globals_=emitter.module_globals-declarations-parameters
         slots={parameter.name.casefold():emitter.temp() for parameter in routine.parameters}
         emitter.scope={'globals':globals_,'externals':emitter.external_names-parameters-declarations,'local_declarations':parameters|{name.casefold() for stmt in routine.body if type(stmt) is bsl.Var for name in stmt.names},'bindings':assigned|declarations|parameters,'initialized':set(parameters),'slots':slots,'boxed':{parameter.name.casefold() for parameter in routine.parameters if not parameter.by_value}}
+        if routine.is_async:emitter.scope['async']=True
         shadows=assigned & emitter.shadowable & emitter.scope['externals']-emitter.module_globals
         emitter.scope['shadows']=shadows;emitter.implicit_shadows.update(shadows)
         emitter.scope['externals']-=shadows;emitter.scope['boxed']|=shadows
@@ -2153,7 +2168,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
                 emitter.scope['known_phase']=emitter.temp()
                 emitter.known_calls.update(calls)
                 emitter.known_origins.update(origins)
-        routine_end,emitter.region_ops,emitter.region_states=(0,{}, {}) if has_goto or emitter.authority or emitter.source_scopes else _routine_region(routine,emitter.scope)
+        routine_end,emitter.region_ops,emitter.region_states=(0,{}, {}) if routine.is_async or has_goto or emitter.authority or emitter.source_scopes else _routine_region(routine,emitter.scope)
         emitter.region_active=bool(routine_end)
         region_body=emitter.sequence(routine.body[:routine_end])
         emitter.region_active=False
@@ -2181,6 +2196,18 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             args.kwonlyargs=[emitter.node(py.arg,routine.token,arg='_native_cells',annotation=None)];args.kw_defaults=[emitter.const(False,routine.token)]
         if len(emitter.import_links)>link_start:
             routine_body.insert(0,emitter.node(py.Nonlocal,routine.token,names=emitter.import_links[link_start:]))
+        if routine.is_async:
+            token=routine.token
+            # Even a routine without Await is eagerly started and owns a Promise.
+            marker=emitter.node(py.If,token,test=emitter.const(False,token),
+                body=[emitter.node(py.Expr,token,value=emitter.node(py.Yield,token,value=None))],orelse=[])
+            definitions.append(emitter.node(py.FunctionDef,token,name=async_bodies[key],args=args,
+                body=routine_body+[marker],decorator_list=[],returns=None,type_comment=None))
+            actuals=emitter.node(py.Tuple,token,elts=[emitter.name(arg.arg,token) for arg in args.args],ctx=py.Load())
+            start=emitter.invoke(emitter.attribute(emitter.name('_context',token),'start_async',token),
+                [emitter.name('naked_module',token),emitter.name('_constants',token),
+                 emitter.const('@async:'+key,token),actuals,emitter.const(not routine.is_function,token)],token)
+            routine_body=[emitter.node(py.Return,token,value=start)]
         definitions.append(emitter.node(py.FunctionDef,routine.token,name=emitter.routine_symbols[key],args=args,body=routine_body,decorator_list=[],returns=None,type_comment=None))
     # Module locals are the register file; dynamic edges explicitly synchronize.
     from yadinassi.execution.direct.python_direct_static_module import analyze as analyze_static
@@ -2190,7 +2217,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         from yadinassi.execution.direct.python_direct_pure_builtins import result_kinds
         builtin_results=result_kinds(pure_bindings.services)
     numeric_routines={};address_routines={}
-    if _profile is None and not imported and not vm.allow_extensions and not _authority and not _source_scopes:
+    if not async_bodies and _profile is None and not imported and not vm.allow_extensions and not _authority and not _source_scopes:
         numeric_routines={name:routine for name,routine in emitter.routines.items()
             if routine.is_function and all(p.by_value and p.default is None for p in routine.parameters)
             and len(routine.body)==1 and type(routine.body[0]) is bsl.Return and routine.body[0].value is not None}
@@ -2203,7 +2230,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             if all(type(stmt) is bsl.Assign and type(stmt.target) is bsl.Name
                     and stmt.target.name.casefold() in formals for stmt in routine.body):
                 address_routines[name]=routine
-    if _profile is None and not imported and not _exports and not _require_last_expression and vm.database_context is None:
+    if not async_bodies and _profile is None and not imported and not _exports and not _require_last_expression and vm.database_context is None:
         names=set();pending=list(program)
         while pending:
             value=pending.pop()
@@ -2322,7 +2349,9 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         emitter.static_module_names={};emitter.static_module_kinds={}
     initializers=[emitter.node(py.Assign,t,targets=[emitter.name(slot,t,True)],value=emitter.call('_SlotReference',[emitter.name('_initial',t),emitter.const(key,t)],t)) for key,slot in emitter.source_refs.items()]
     if emitter.routines:
-        exports=emitter.node(py.Dict,t,keys=[emitter.const(key,t) for key in emitter.routines],values=[emitter.name(emitter.routine_symbols[key],t) for key in emitter.routines])
+        exports=emitter.node(py.Dict,t,keys=[emitter.const(key,t) for key in emitter.routines]+
+            [emitter.const('@async:'+key,t) for key in async_bodies],values=[emitter.name(emitter.routine_symbols[key],t) for key in emitter.routines]+
+            [emitter.name(symbol,t) for symbol in async_bodies.values()])
         bind_return=emitter.node(py.If,t,test=emitter.name('_bind_only',t),body=[emitter.node(py.Return,t,value=exports)],orelse=[])
         declarations=[]
         for key in sorted(emitter.module_globals):
@@ -2381,7 +2410,11 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
                 note=getattr(error,'add_note',None)
                 if note is not None:note('Generated Python roundtrip: '+str(diagnostic))
         raise
+    if async_bodies:
+        from yadinassi.application.async_runtime import AwaitRequest
+        namespace['_AwaitRequest']=AwaitRequest
     exec(code,namespace)
+    if async_bodies:namespace['naked_module']._direct_source_text=source_text
     result=Program(generated,tuple(emitter.constants),namespace['naked_module'],{},frozenset(REPAIRS),source_name=filename,source_text=source_text,required_services=tuple(sorted(emitter.required)),trusted_entry=True,_generated_tree=tree if _retain_generated and generated is None else None)
     if emitter.authority:result.repairs=result.repairs|{'authority_checkpoints'}
     result._source_implicit_shadows=frozenset(emitter.implicit_shadows)

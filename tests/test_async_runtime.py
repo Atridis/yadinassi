@@ -101,6 +101,60 @@ class AsyncRuntimeTests(unittest.TestCase):
                 self.vm.execute('Try CrashAgain(); Except Message("ordinary BSL error"); EndTry;')
                 self.assertEqual(self.output[-1], 'ordinary BSL error')
 
+    def test_standalone_async_public_ast_and_prepared(self):
+        source = '''
+        Var total;
+        Async Function F(a)
+            total = total + 1;
+            Return Await a + total;
+        EndFunction
+        total = 1;
+        p = F(6);
+        '''
+        for prepared in (False, True):
+            vm = Interpreter()
+            self.addCleanup(vm.close)
+            with self.subTest(prepared=prepared):
+                program = parse(source)
+                if prepared:
+                    plan = vm.prepare_program(program)
+                    # Caller AST edits must not affect the prepared task code.
+                    program[1].body[:] = []
+                    vm.execute_prepared(plan)
+                else:
+                    vm.execute_program(program)
+                self.assertEqual(vm.variables['p'].result, Decimal(8))
+                self.assertEqual(vm.variables['total'], Decimal(2))
+                self.assertEqual(vm.pending_promises, ())
+
+    def test_suspended_task_never_resumes_against_replaced_module_state(self):
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        signal = self.vm._scheduler.new_pending()
+        self.vm.register_function('Signal', lambda: signal)
+        self.run_code('Async Procedure P() Await Signal(); Message("must not run"); EndProcedure P();')
+        self.vm.variables = dict(self.vm.variables)
+        self.vm._scheduler.resolve(signal)
+        with self.assertRaisesRegex(BoundaryViolation, 'activation changed'):
+            self.vm.run_until_idle()
+        self.assertEqual(self.output, [])
+        self.assertEqual(self.vm.pending_promises, ())
+
+    def test_async_task_denies_server_crossing_before_actuals(self):
+        self.run_code('''
+        &AtServer
+        Function OnServer(Val x) Message("server"); Return x; EndFunction
+        &AtClient
+        Function Effect() Message("actual"); Return 4; EndFunction
+        &AtClient
+        Async Function Work()
+            Await 0;
+            Try Return OnServer(Effect()); Except Message("blocked"); EndTry;
+        EndFunction
+        result=Work();
+        ''')
+        self.assertEqual(self.output, ['blocked'])
+        self.assertEqual(self.vm.variables['result'].state, 'fulfilled')
+
     def test_eager_call_and_yield_even_settled(self):
         self.run_code('''
         Async Function Leaf() Message("leaf"); Return 7; EndFunction
@@ -120,7 +174,7 @@ class AsyncRuntimeTests(unittest.TestCase):
         ''')
         self.assertEqual(self.vm.variables['x'], Decimal(5))
         self.assertEqual(self.vm.variables['y'], Decimal(4))
-        self.assertEqual(self.vm.variables['a'].get(Decimal(0)), Decimal(10))
+        self.assertEqual(self.run_code('a[0]'), Decimal(10))
         self.assertEqual(self.vm.variables['p'].result, Decimal(21))
 
     def test_pending_host_signal_preserves_siblings_locals(self):

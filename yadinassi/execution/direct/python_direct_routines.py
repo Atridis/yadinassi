@@ -26,20 +26,22 @@ class RoutineModule:
     dual_plan: object = None
     dual_names: frozenset = frozenset()
     local_function_exports: frozenset = frozenset()
+    async_names: frozenset = frozenset()
 
 
 def prepare(vm, program, plan, *, retain_generated=True):
     from yadinassi.syntax import ast
     from .python_direct import _snapshot, _source_facts, _contract
     declarations=_snapshot([node for node in program if type(node) in (ast.Var,ast.Routine,ast.ServerInitializer)])
-    nodes,names,constructors,calls=_source_facts(declarations)
+    async_names=frozenset(node.name.casefold() for node in declarations if type(node) is ast.Routine and node.is_async)
+    nodes,names,constructors,calls=_source_facts(declarations,allow_async=bool(async_names))
     initializer_body=[item for node in declarations if type(node) is ast.ServerInitializer for item in node.body]
     if not names and not initializer_body:return None
     exports=copy(plan)
     exports.last_state=None;exports.output=None
     signatures={node.name.casefold():(node.is_function,
         max((i+1 for i,p in enumerate(node.parameters) if p.default is None),default=0),
-        len(node.parameters),frozenset(i for i,p in enumerate(node.parameters) if not p.by_value))
+        len(node.parameters),frozenset(i for i,p in enumerate(node.parameters) if not (node.is_async or p.by_value)))
         for node in declarations if type(node) is ast.Routine}
     declared={name.casefold() for node in declarations if type(node) is ast.Var and node.execution_context=='client' for name in node.names}
     server=[node for node in declarations if type(node) is not ast.ServerInitializer and node.execution_context=='server']
@@ -91,7 +93,7 @@ def prepare(vm, program, plan, *, retain_generated=True):
         and node.module_context)
     return RoutineModule(exports,signatures,_contract(vm),frozenset(vm.module_names)|declared,
                          constructors,calls-names,server_plan,server_names,server_layout,
-                         initializer_plan,initializer_constructors,initializer_calls,nocontext_plan,nocontext_names,dual_plan,dual_names,local_function_exports)
+                         initializer_plan,initializer_constructors,initializer_calls,nocontext_plan,nocontext_names,dual_plan,dual_names,local_function_exports,async_names)
 
 
 def validate_calls(vm, calls, seen=None, *, registry=None, layout=None, initializers=None):
@@ -150,6 +152,8 @@ def resolve(context, name, *, require_value=False, allow_references=False, argum
         from .python_direct_server import resolve_dual_client
         return resolve_dual_client(context,module,name,require_value=require_value,allow_references=allow_references)
     if name in module.server_names:
+        if getattr(context,'_async_task',False):
+            raise ValueError('Серверный вызов из асинхронного задания пока не поддерживается')
         from .python_direct_server import resolve_server
         return resolve_server(context,module,name,require_value=require_value,allow_references=allow_references,
                               allow_omissions=crossing_omissions)

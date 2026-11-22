@@ -148,6 +148,9 @@ class _ErrorLocations:
 
 def convert_error(error,filename,source,*,_context=None):
     """Convert only recoverable runtime errors, preserving nonrecoverable boundaries."""
+    if (getattr(_context,'_async_scheduler',None) is not None
+            and _context._async_scheduler.active_context.host_failure is error):
+        return error
     if isinstance(error,BSLError) or not isinstance(error,(ArithmeticError,ValueError,TypeError,IndexError,RecursionError)):
         return error
     chosen=None;tb=error.__traceback__
@@ -190,6 +193,8 @@ class _HandledError:
 @contextmanager
 def handled_error(context,error,filename,source):
     """Activation-local diagnostics; nested handlers discard stale outer details."""
+    scheduler=getattr(context,'_async_scheduler',None)
+    if scheduler is not None and scheduler.active_context.host_failure is error:raise error
     errors=context._handled_errors
     for index in range(len(errors)):errors[index]=None
     errors.append(_HandledError(error,filename,source))

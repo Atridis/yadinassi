@@ -2,8 +2,8 @@
 
 Client execution with either supported compilation profile and an explicit
 host-selected catalog/query bridge live here. Configuration and forms use separate
-direct entry points; unsupported
-async contracts remain explicitly unsupported. Registered host services remain trusted
+direct entry points. Standalone client async routines use the owned scheduler.
+Registered host services remain trusted
 Python capabilities, not a sandbox.
 """
 from dataclasses import dataclass, fields
@@ -37,7 +37,7 @@ def _reject(message):
     raise PythonDirectUnsupported('python-direct: '+message)
 
 
-def _admit_vm(vm,*,_transaction_owner=None):
+def _admit_vm(vm,*,_transaction_owner=None,_async_entry=False):
     from yadinassi.runtime import Interpreter, _COMPILED_BASE_ABI_NAMES, _COMPILED_BASE_ABI, _DIRECT_VISITOR_ABI
     if type(vm) is not Interpreter:
         _reject('specialized Interpreter contexts are not integrated')
@@ -64,7 +64,7 @@ def _admit_vm(vm,*,_transaction_owner=None):
         from yadinassi.db.database_context import SQLiteDBContext
         if type(vm.database_context) is not SQLiteDBContext:
             _reject("direct database requires host-selected SQLiteDBContext")
-    if vm._scheduler.is_active or vm._scheduler.pending or getattr(vm,'_direct_active',False):
+    if vm._scheduler.is_active or (vm._scheduler.pending and not _async_entry) or getattr(vm,'_direct_active',False):
         _reject('nested or asynchronous execution is not integrated')
     from .python_direct_imports import check_live
     check_live(vm)
@@ -79,7 +79,7 @@ def _admit_vm(vm,*,_transaction_owner=None):
     # Plain mode validates the actual effectful lookup, not unused entries.
 
 
-def _source_facts(program):
+def _source_facts(program,*,allow_async=False):
     if type(program) is not list:
         _reject('execute_program requires a parsed AST list')
     nodes=tuple(_nodes(program))
@@ -87,16 +87,20 @@ def _source_facts(program):
     routine_nodes=[node for node in program if type(node) is ast.Routine]
     if any(type(node) is ast.Var and node.execution_context=='server' for node in program) and not any(node.execution_context=='server' for node in routine_nodes):
         _reject('server variables require a server routine in the same declaration module')
-    constructors=set();calls=set()
+    constructors=set();calls=set();checked_async=False
     native_names={'array','массив','map','соответствие','structure','структура','uuid','уникальныйидентификатор'}
     for node in nodes:
         if node.token is None:
             _reject('execute_program requires source tokens on every node')
+        if not checked_async and (type(node) is ast.Await or type(node) is ast.Routine and node.is_async is not False):
+            from yadinassi.syntax.parser import validate_async
+            validate_async(program)
+            checked_async=True
         if type(node) is ast.Var and node.execution_context not in ('client','server'):
             _reject('unsupported declaration side')
         if type(node) is ast.New and node.name.casefold() in native_names:
             constructors.add(node.name.casefold())
-        if type(node) is ast.Routine and (node.is_async or (not node.module_context and not node.is_dual and node.execution_context!='server') or node.execution_context not in ('client','server')):
+        if type(node) is ast.Routine and ((node.is_async and not allow_async) or (not node.module_context and not node.is_dual and node.execution_context!='server') or node.execution_context not in ('client','server')):
             _reject('async source routines are not integrated')
         if type(node) is ast.Import and node not in program:
             _reject('imports require module scope')
@@ -137,9 +141,9 @@ def _admit_bindings(vm,routines,constructors,calls):
     validate_calls(vm,calls-routines)
 
 
-def admit(vm,program):
-    _admit_vm(vm)
-    nodes,routines,constructors,calls=_source_facts(program)
+def admit(vm,program,*,_async_entry=False):
+    _admit_vm(vm,_async_entry=_async_entry)
+    nodes,routines,constructors,calls=_source_facts(program,allow_async=_async_entry)
     from .python_direct_imports import preflight
     preflight(vm,program)
     _admit_bindings(vm,routines,constructors,calls)
@@ -221,7 +225,9 @@ def _snapshot(value):
 
 
 def prepare_module(vm,program,*,source_text=None,source_name=None):
-    admit(vm,program)
+    from .python_direct_async import entry_mode
+    mode=entry_mode(vm,program)
+    admit(vm,program,_async_entry=mode)
     if vm._family_closed:
         _reject('prepared modules require an open interpreter')
     if vm.execution_backend != 'python-direct':
@@ -230,7 +236,7 @@ def prepare_module(vm,program,*,source_text=None,source_name=None):
     Interpreter._require_family(vm)
     # The caller may edit/reuse its AST after this call. Never retain that AST.
     owned=_snapshot(program)
-    nodes,routines,constructors,calls=_source_facts(owned)
+    nodes,routines,constructors,calls=_source_facts(owned,allow_async=mode)
     plan=_compile(vm,owned,nodes,source_text,source_name)
     if getattr(plan,'_pure_bindings',None) is not None:
         from yadinassi.execution.codegen.experimental_direct_ast import compile_module
@@ -256,12 +262,14 @@ def execute_prepared(vm,prepared):
 
 
 def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
+    from .python_direct_async import entry_mode
+    mode=entry_mode(vm,program if _prepared is None else _prepared._snapshot)
     if _prepared is None:
-        nodes,routines,calls=admit(vm,program)
+        nodes,routines,calls=admit(vm,program,_async_entry=mode)
         declared=frozenset(name.casefold() for node in program if type(node) is ast.Var and node.execution_context=='client' for name in node.names)
         returns_expression=bool(program and type(program[-1]) is ast.ExpressionStatement)
     else:
-        _admit_vm(vm)
+        _admit_vm(vm,_async_entry=mode)
         from .python_direct_imports import preflight,import_names
         preflight(vm,facts=_prepared._import_facts)
         if frozenset(import_names(vm,facts=_prepared._import_facts))!=_prepared._import_layout:
@@ -300,11 +308,12 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
     elif source_text is None:
         # An externally supplied AST does not have the parsed-text ownership
         # contract. Preserve its late verification before effects.
-        calls=_source_facts(program)[3]
+        calls=_source_facts(program,allow_async=mode)[3]
     initializers=tuple(getattr(vm,'_direct_server_initializers',()))
     if exports is not None and exports.initializer_plan is not None:initializers+= (exports,)
     validate_calls(vm,calls,registry=prospective,layout=frozenset(vm.module_names)|declared,initializers=initializers)
     context=None
+    async_scheduler=vm._scheduler if mode else None
     database=vm.database_context
     from yadinassi.runtime import _DIRECT_EXECUTION_SCOPE_ABI
     with _DIRECT_EXECUTION_SCOPE_ABI(vm):
@@ -329,7 +338,11 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
                 vm._transaction_activation_allowed=previous_transactions
                 from .python_direct_transactions import execution as transaction_execution
                 with transaction_execution(vm) as owner:
-                    context=make_boundary(vm,_transaction_owner=owner)
+                    if mode:
+                        from .python_direct_async import root_guard
+                        context=make_boundary(vm,_transaction_owner=owner,_async_guard=root_guard(vm))
+                    else:
+                        context=make_boundary(vm,_transaction_owner=owner)
                     pure=getattr(plan,'_pure_bindings',None)
                     if pure is not None and not pure.active(vm,context):
                         # Select generic lowering before execution, never retry failed code.
@@ -339,18 +352,28 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
                             from yadinassi.execution.codegen.experimental_direct_ast import compile_module
                             plan=compile_module(vm,program,nodes,plan.source_text,plan.source_name,
                                                 _retain_generated=False)
-                    result=plan.run(vm.variables,context=context)
+                    if mode:
+                        from .python_direct_async import inline_root
+                        result=inline_root(vm,plan,context)
+                    else:
+                        result=plan.run(vm.variables,context=context)
+            if mode:context._check()
             vm._self_module.ready=True
+            if mode:vm._pump_async()
             vm._hybrid_stats['python_direct_modules']=vm._hybrid_stats.get('python_direct_modules',0)+1
+            if mode:
+                error=async_scheduler.take_procedure_error()
+                if error is not None:raise error
             if returns_expression:return result
             return None if result is vm.variables else result
         finally:
             if context is not None:context._routine_exports.clear()
+            if mode:async_scheduler.procedure_errors.clear()
             vm._direct_active=False
             vm._transaction_activation_allowed=previous_transactions
 
 
-def make_boundary(vm,*,_parent_check=None,_transaction_owner=None):
+def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=None):
     from .python_direct_database import CatalogBoundary
     from .python_direct_live_metadata import LiveMetadataBoundary
     from .python_direct_detached_metadata import DetachedMetadataBoundary
@@ -459,13 +482,32 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None):
                     or vm.execution_context!='client'
                     or safe_mode._CURRENT.get() is not None
                     or source_transactions._current.get() is not None
-                    or vm._scheduler.is_active or vm._scheduler.pending):
+                    or (_async_guard is None and (vm._scheduler.is_active or vm._scheduler.pending))):
                 raise BoundaryViolation('python-direct restricted context changed at a host boundary')
+            if _async_guard is not None:_async_guard()
             from .python_direct_transactions import check as check_transaction
             check_transaction(_transaction_owner,database)
     # The live registry is assigned below; a normalized throwaway copy grants
     # nothing and must not be rebuilt on every invocation.
-    context=DirectBoundary()
+    if _async_guard is None:
+        context=DirectBoundary()
+    else:
+        from .python_direct_async import bind_context, promise_opaque
+        class AsyncBoundary(DirectBoundary):
+            def _check_effect(self):
+                super()._check_effect()
+                if not self._verify_context:_async_guard()
+
+            def get_member(self,value,name):
+                promise_opaque(value)
+                return super().get_member(value,name)
+
+            def resolve_member(self,value,name):
+                promise_opaque(value)
+                return super().resolve_member(value,name)
+
+        context=AsyncBoundary()
+        bind_context(context,vm)
     context.vm=vm
     context._verify_context=(vm.allow_extensions or _parent_check is not None
                              or (database is not None and not sqlite_attached))
