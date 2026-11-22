@@ -136,6 +136,63 @@ class LocalTableCellTests(unittest.TestCase):
                 vm.execute('Found=T.FindRows(New Structure("X",1.2));')
                 self.assertEqual(vm.variables['found'].items,[row])
 
+    def test_typed_and_indexed_local_writes_do_not_delegate(self):
+        for declaration in ('Y', 'X', 'Y,X'):
+            for address in ('Row.X', 'Row[0]'):
+                with self.subTest(declaration=declaration, address=address):
+                    vm = self.vm()
+                    vm.execute('T=New ValueTable;'
+                               'T.Columns.Add("X",New TypeDescription("Number",New NumberQualifiers(3,1)));'
+                               'T.Columns.Add("Y"); Row=T.Add(); Row.X=1; Row.Y=5;'
+                               'Other=T.Add(); Other.X=1; Other.Y=5;'
+                               f'T.Indexes.Add("{declaration}");')
+                    table=vm.variables['t']
+                    selected={'Y':'"Y",5','X':'"X",1','Y,X':'"X,Y",1,5'}[declaration]
+                    find=f'Found=T.FindRows(New Structure({selected}));'
+                    vm.execute(find)  # Warm the index before the write.
+                    row,other=vm.variables['row'],vm.variables['other']
+                    self.assertEqual(vm.variables['found'].items,[row,other])
+                    old=(table._storage.epoch, row.schema.data_epoch)
+                    plan=vm.prepare('Procedure Modify(Cell) Cell=1.04; EndProcedure '
+                                    f'Modify({address});')
+                    with patch.object(refs,'hooks',side_effect=AssertionError('generic row hooks')):
+                        vm.execute_prepared(plan)
+                    self.assertEqual(row.get(0),Decimal('1.0'))
+                    self.assertEqual((table._storage.epoch, row.schema.data_epoch),
+                                     (old[0]+(address=='Row[0]'),old[1]+(address=='Row.X')))
+                    vm.execute(find)
+                    self.assertEqual(vm.variables['found'].items,
+                                     [row,other] if declaration=='Y' else [other,row])
+
+    def test_typed_local_conversion_refusal_does_not_touch_index_or_epoch(self):
+        vm = self.vm()
+        vm.execute('T=New ValueTable;T.Columns.Add("X",New TypeDescription("Number"));'
+                   'Row=T.Add();Row.X=7;T.Indexes.Add("X");'
+                   'Found=T.FindRows(New Structure("X",7));')
+        table=vm.variables['t'];row=vm.variables['row']
+        before=(table._storage.epoch,row.schema.data_epoch,dict(table._search._history))
+        plan=vm.prepare('Procedure SetValue(Cell) Cell=New Array; EndProcedure SetValue(Row.X);')
+        with patch.object(refs,'hooks',side_effect=AssertionError('generic row hooks')):
+            with self.assertRaises(BSLError):vm.execute_prepared(plan)
+        self.assertEqual((table._storage.epoch,row.schema.data_epoch,table._search._history),before)
+        self.assertEqual(row.get(0),7)
+        vm.execute('Found=T.FindRows(New Structure("X",7));')
+        self.assertEqual(vm.variables['found'].items,[row])
+
+    def test_mutated_index_write_method_is_not_called(self):
+        from yadinassi.collections.plain_table_search import SearchIndexes
+
+        vm = self.vm()
+        vm.execute(_SETUP+'T.Indexes.Add("X");')
+        plan = vm.prepare(_STEP+'Step(Row.X,2);')
+        row = vm.variables['row']
+        effects = []
+        with patch.object(SearchIndexes,'touch',lambda *_: effects.append('touch')):
+            with self.assertRaises(BoundaryViolation):
+                vm.execute_prepared(plan)
+        self.assertEqual(effects, [])
+        self.assertEqual(row.get(0), 1)
+
     def test_corrupt_selected_owner_or_protocol_fails_without_callbacks(self):
         vm = self.vm()
         vm.execute(_SETUP)

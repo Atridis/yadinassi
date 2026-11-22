@@ -100,7 +100,12 @@ class SearchIndexes:
         for identity in dropped:
             history.pop(identity, None)
         if active:
-            self._active, self._columns, self._history = active, columns, history
+            # Offsets belong to the current ordered table schema. Store the
+            # column-to-index links as immutable positional entries.
+            links = [()] * (max(columns) + 1)
+            for offset, identities in columns.items():
+                links[offset] = tuple(identities)
+            self._active, self._columns, self._history = active, tuple(links), history
             # Codecs retain this set while admitting individual wire entries.
             self.declarations.clear()
             self.declarations.update(active)
@@ -108,10 +113,9 @@ class SearchIndexes:
             self.clear()
 
     def touch(self, row, offset):
-        handles = self._columns.get(offset)
-        if handles is None:
-            return
-        self._touch(row, handles)
+        columns = self._columns
+        if 0 <= offset < len(columns) and columns[offset]:
+            self._touch(row, columns[offset])
 
     def _touch(self, row, handles):
         identity = id(row)
@@ -121,13 +125,16 @@ class SearchIndexes:
             history[identity] = None
 
     def touch_all(self, row):
-        for offset in self._columns:
-            self.touch(row, offset)
+        for handles in self._columns:
+            if handles:
+                self._touch(row, handles)
 
     def filled(self, offsets):
+        columns = self._columns
         for offset in offsets:
-            for handle in self._columns.get(offset, ()):
-                self._history.pop(handle, None)
+            if 0 <= offset < len(columns):
+                for handle in columns[offset]:
+                    self._history.pop(handle, None)
 
     def deleted(self, row):
         identity = id(row)

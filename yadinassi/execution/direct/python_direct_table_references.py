@@ -6,9 +6,11 @@ from yadinassi.execution.codegen.experimental_naked_collections import _Referenc
 from .python_direct_table_iteration import owner
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
-from yadinassi.types.values import Reference
+from yadinassi.types.values import BSLType, Reference
+from yadinassi.types import type_descriptions as descriptions, type_qualifiers as qualifiers
 from . import python_direct_plain_tables as tables
 from .python_direct_plain_tables import fail, raw, column_check
+from .python_direct_plain_map import _scalar_map_key as _scalar_shape
 
 _TABLE,_COLUMNS,_ROW,_COLUMN=_DIRECT_ITERATION_TYPES
 
@@ -87,6 +89,75 @@ def _sealed(*names):
         if (current.get(name) is not method or method.__code__ is not code
                 or method.__defaults__ is not defaults or method.__kwdefaults__ is not None):
             fail()
+
+
+_WRITE=_MODEL_BINDINGS['_write_cell']
+_ADJUST=_MODEL_BINDINGS['_adjust']
+_WRITER_BINDINGS={name:_MODEL_BINDINGS[name] for name in ('_write_cell','_adjust','SearchIndexes')}
+_CONVERTER=dict(next(attrs for cls,_,attrs in descriptions._DIRECT_LIVE_METADATA_CLASSES
+                     if cls is _TYPE_DESCRIPTION))['adjust_value']
+_DESCRIPTION_ACCESS=('types','number_qualifiers','string_qualifiers','date_qualifiers',
+                     'binary_data_qualifiers','_query_scalar','_query_reference','adjust_value','__getattribute__')
+_DESCRIPTION_CLASSES=tuple((cls,mro,dict(fields)) for cls,mro,fields in
+                           (*descriptions._DIRECT_LIVE_METADATA_CLASSES,*qualifiers._DIRECT_LIVE_METADATA_CLASSES)
+                           if cls is not object)
+_TOUCH=dict(search._DIRECT_CLASSES[0][2])['touch']
+_TOUCH_INNER=dict(search._DIRECT_CLASSES[0][2])['_touch']
+_SEARCH_FUNCTIONS={fn:(code,defaults) for fn,code,defaults,_ in search._DIRECT_FUNCTIONS}
+_DESCRIPTION_FUNCTIONS={fn:(code,defaults) for fn,code,defaults,_ in descriptions._DIRECT_REGION_FUNCTIONS}
+_COLUMNS_SLOT=dict(search._DIRECT_CLASSES[0][2])['_columns']
+_HISTORY_SLOT=dict(search._DIRECT_CLASSES[0][2])['_history']
+
+
+def _same_code(function, specs):
+    code,defaults=specs[function]
+    return function.__code__ is code and function.__defaults__ is defaults and function.__kwdefaults__ is None
+
+
+def _typed_conversion(description,fields):
+    # Unowned or nullable query descriptors have their own resolver. For an
+    # ordinary scalar description, validate exactly the qualifier data shared
+    # with typed native Map keys before invoking canonical scalar conversion.
+    if '_query_scalar' in fields or '_query_reference' in fields:
+        return False
+    if any(type(kind) is not BSLType for kind in fields['types']):
+        return False
+    if not _same_code(_ADJUST,_FUNCTIONS) or not _same_code(_CONVERTER,_DESCRIPTION_FUNCTIONS):fail()
+    for cls,mro,expected in _DESCRIPTION_CLASSES:
+        # Only descriptor/qualifier/host base hooks used in the conversion.
+        current=vars(cls)
+        names=_DESCRIPTION_ACCESS if cls is _TYPE_DESCRIPTION else ('__getattribute__','digits','fraction_digits','allowed_sign','length','allowed_length','date_fractions')
+        if cls.__mro__ is not mro or any(current.get(name) is not expected.get(name) for name in names):fail()
+    _scalar_shape(description)
+    return True
+
+
+def _index_listener(root, schema, indexes, index, declarations, position):
+    listener=_INDEX_SEARCH.__get__(schema,_SCHEMA)
+    if not declarations:
+        if listener is not None:fail()
+        return None
+    if listener is not index:fail()
+    state=raw(indexes)
+    if any(type(key) is not str for key in state) or state.get('table') is not root:fail()
+    offsets=_COLUMNS_SLOT.__get__(index,_SEARCH)
+    if type(offsets) is not tuple:fail()
+    if not 0<=position<len(offsets):return None
+    handles=offsets[position]
+    if type(handles) is not tuple or any(type(handle) is not int for handle in handles):fail()
+    if not handles:return None
+    histories=_HISTORY_SLOT.__get__(index,_SEARCH)
+    if type(histories) is not dict or any(type(handle) is not int for handle in histories):fail()
+    current=vars(_SEARCH)
+    if (current.get('touch') is not _TOUCH or current.get('_touch') is not _TOUCH_INNER
+            or '__getattribute__' in current or current.get('_columns') is not _COLUMNS_SLOT
+            or current.get('_history') is not _HISTORY_SLOT
+            or not _same_code(_TOUCH,_SEARCH_FUNCTIONS) or not _same_code(_TOUCH_INNER,_SEARCH_FUNCTIONS)):
+        fail()
+    for handle in handles:
+        history=histories.get(handle)
+        if history is not None and type(history) is not dict:fail()
+    return listener
 
 
 class _RowAddress(_Reference):
@@ -185,29 +256,36 @@ class _RowAddress(_Reference):
         if 'types' in vars(_TYPE_DESCRIPTION):fail()
         types=desc.get('types')
         if type(types) is not tuple:fail()
-        if type(data.get('indexes')) is not _INDEXES:fail()
+        indexes=data.get('indexes')
+        if type(indexes) is not _INDEXES:fail()
         index=data.get('_search')
         if type(index) is not _SEARCH:fail()
         declarations=_DECLARATIONS.__get__(index,_SEARCH)
         if type(declarations) is not set:fail()
         try:
-            if types or declarations or _INDEX_SEARCH.__get__(schema,_SCHEMA) is not None:
-                # Use the established qualifier coercion and index-order/history
-                # path. It also handles any effects specific to those operations.
-                hooks(row)
-                if self.indexed:self.context.resolve_member(row,'__setitem__')(self.key,new)
-                else:self.context.resolve_set_member(row,self.key)(new)
+            obj,cls,stamp=((kernel,_KERNEL,_KEPOCH) if self.name is None
+                           else (schema,_SCHEMA,_DATA_EPOCH))
+            epoch=stamp.__get__(obj,cls)
+            if type(epoch) is not int or epoch<0:fail()
+            if types or declarations:
+                if any(vars(model).get(k) is not v for k,v in _WRITER_BINDINGS.items()) or not _same_code(_WRITE,_FUNCTIONS):fail()
+                if types and not _typed_conversion(description,desc):
+                    # Nullable/query/reference descriptors retain their own
+                    # admitted conversion rather than gaining scalar authority.
+                    hooks(row)
+                    if self.indexed:self.context.resolve_member(row,'__setitem__')(self.key,new)
+                    else:self.context.resolve_set_member(row,self.key)(new)
+                    return
+                if types:new=_ADJUST(description,new)
+                listener=_index_listener(root,schema,indexes,index,declarations,position)
+                _WRITE(row,obj,stamp,position,new,listener)
             else:
-                # The two public setter lanes deliberately update different
-                # existing version stamps. String subscripts use the named lane.
-                obj,cls,stamp=((kernel,_KERNEL,_KEPOCH) if self.name is None
-                               else (schema,_SCHEMA,_DATA_EPOCH))
-                epoch=stamp.__get__(obj,cls)
-                if type(epoch) is not int or epoch<0:fail()
+                if _INDEX_SEARCH.__get__(schema,_SCHEMA) is not None:fail()
                 stamp.__set__(obj,epoch+1)
                 list.__setitem__(row,position,new)
         finally:
             if owner(row) is not root:fail()
+
 
 
 def local_member(context,row,name):

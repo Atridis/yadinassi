@@ -231,6 +231,19 @@ class BSLValueTableColumnCollection(BSLObject):
         (('move','сдвинуть'),'move',False)))
 
 
+def _write_cell(row, stamp_owner, stamp, position, value, search):
+    """Store a resolved cell; the caller has admitted its owner and address."""
+    if search is not None:
+        search.touch(row,position)
+    epoch=stamp.__get__(stamp_owner,type(stamp_owner))
+    stamp.__set__(stamp_owner,epoch+1)
+    list.__setitem__(row,position,value)
+
+
+_SCHEMA_EPOCH=vars(Schema)['data_epoch']
+_STORAGE_EPOCH=vars(TableStorage)['epoch']
+
+
 class BSLValueTableRow(RowStorage,BSLObject):
     __hash__=object.__hash__
     __eq__=object.__eq__
@@ -248,11 +261,8 @@ class BSLValueTableRow(RowStorage,BSLObject):
         description = schema._metadata[position].value_type
         if description.types:value = _adjust(description,value)
         search=schema._index_search
-        if search is not None:
-            if type(search) is not SearchIndexes:raise ValueError('noncanonical index declarations')
-            search.touch(self,position)
-        schema.data_epoch += 1
-        list.__setitem__(self,position,value)
+        if search is not None and type(search) is not SearchIndexes:raise ValueError('noncanonical index declarations')
+        _write_cell(self,schema,_SCHEMA_EPOCH,position,value,search)
     def _positional_value(self,index):
         if self._deleted:raise ValueError("row is deleted")
         return list.__getitem__(self,_index(index,len(self.schema._keys)))
@@ -267,11 +277,8 @@ class BSLValueTableRow(RowStorage,BSLObject):
         description = schema._metadata[position].value_type
         if description.types:value = _adjust(description,value)
         search=schema._index_search
-        if search is not None:
-            if type(search) is not SearchIndexes:raise ValueError('noncanonical index declarations')
-            search.touch(self,position)
-        table._storage.epoch += 1
-        list.__setitem__(self,position,value)
+        if search is not None and type(search) is not SearchIndexes:raise ValueError('noncanonical index declarations')
+        _write_cell(self,table._storage,_STORAGE_EPOCH,position,value,search)
     def get_index(self,index):return self.get_member(index) if type(index) is str else self.get(index)
     def set_index(self,index,value):return self.set_member(index,value) if type(index) is str else self.set(index,value)
     def owner(self):
