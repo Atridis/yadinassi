@@ -388,6 +388,53 @@ class ValueListReferenceRuntimeTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('item.Presentation'), 'committed')
         self.assertIs(self.vm.execute('item.Check'), False)
 
+    def test_field_writes_create_and_fill_share_value_list_conversion(self):
+        source = """
+            V = New ValueList;
+            A = V.Add(10, 7, 1);
+            B = V.Insert(0, 20, Undefined, 0);
+            Message(A.Presentation + ":" + String(A.Check));
+            Message(B.Presentation + ":" + String(B.Check));
+            A.Представление = 1.5;
+            A.Пометка = 0;
+            Try A.Presentation = New Array; Except Message("bad presentation"); EndTry;
+            Try V.Add(30, "", "bad"); Except Message("bad add"); EndTry;
+            Message(V.Count());
+            Message(A.Presentation + ":" + String(A.Check));
+            V.FillChecks(1);
+            Try V.FillChecks(Undefined); Except Message("bad fill"); EndTry;
+            Message(A.Check And B.Check);
+        """
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                self.output.clear()
+                if prepared:
+                    self.vm.execute_prepared(self.vm.prepare(source))
+                else:
+                    self.vm.execute(source)
+                self.assertEqual(self.output, ['7:Да', ':Нет', 'bad presentation',
+                                                'bad add', '2', '1,5:Нет', 'bad fill', 'Да'])
+
+    def test_imported_field_and_reference_share_conversion(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            (path / 'Side.bsl').write_text(
+                'Var Entry Export; Var Owner; '
+                'Owner = New ValueList; Entry = Owner.Add(10);',
+                encoding='utf-8')
+            self.vm.execute('// #Import Side.bsl\n', str(path / 'Main.bsl'))
+            self.vm.execute_prepared(self.vm.prepare("""
+                Procedure SetField(Field, Val InputValue) Field = InputValue; EndProcedure
+                Side.Entry.Presentation = 123;
+                Message(Side.Entry.Presentation);
+                SetField(Side.Entry.Пометка, 1);
+                Try SetField(Side.Entry.Check, "bad"); Except Message("bad"); EndTry;
+                Message(Side.Entry.Check);
+            """, str(path / 'Main.bsl')))
+            self.assertEqual(self.output, ['123', 'bad', 'Да'])
+
     def test_receiver_and_index_are_bound_once_before_routine_entry(self):
         self.vm.execute('''
             Function Receiver(Val list) Message("receiver"); Return list; EndFunction

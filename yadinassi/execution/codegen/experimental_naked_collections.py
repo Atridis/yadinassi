@@ -10,6 +10,7 @@ from .experimental_naked_boundaries import _HostMemberReference, _HostIndexRefer
 
 from yadinassi.types.values import Reference as _CanonicalReference, BSLFixedArray as _CanonicalFixedArray
 from yadinassi.collections.maps import _DIRECT_FIXED_MAP_SNAPSHOT
+from yadinassi.collections.plain_value_list import _normalize_presentation, _normalize_check
 from yadinassi.temporal.dates import _DIRECT_EQUALITY_DATE_STATE, UnsupportedDateRange
 
 _MAP_DATE_TYPE, _MAP_DATE_BOUNDARY = _DIRECT_EQUALITY_DATE_STATE
@@ -249,6 +250,10 @@ class _ValueListItemReference(_Reference):
     @value.setter
     def value(self,value):
         self.item._require_live_owner()
+        if self.field == 1:
+            value = _normalize_presentation(value)
+        elif self.field == 2:
+            value = _normalize_check(value)
         self.item[self.field]=value
 
 class _AttributeRef(_Reference):

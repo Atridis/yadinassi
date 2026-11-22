@@ -468,11 +468,14 @@ class ImportBoundary:
 
     def _import_data_setter(self,value,name):
         from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure,structure_set_known
-        from yadinassi.collections.plain_value_list import PlainValueListItem,_field
+        from yadinassi.collections.plain_value_list import PlainValueListItem,_field,_ITEM_NORMALIZERS
         if type(value) is _DirectStructure:return lambda item:structure_set_known(value,name,name,item)
         if name.startswith('_'):raise ValueError('Поле объекта не обнаружено: '+name)
         if type(value) is PlainValueListItem:
             field=_field(name)
+            normalizer=_ITEM_NORMALIZERS.get(field)
+            if normalizer is not None:
+                return lambda item:list.__setitem__(value,field,normalizer(item))
             return lambda item:list.__setitem__(value,field,item)
         return self.resolve_set_member(value,name)
 

@@ -7,9 +7,38 @@ Native Python ordering replaces 1C collation. Typed lists/UI/serialization remai
 separate capabilities; this module does not grant access to them.
 """
 from decimal import Decimal
+from types import MappingProxyType
 from weakref import ReferenceType, ref
 
+from yadinassi.types.values import to_string
 
+
+def _normalize_presentation(value):
+    kind = type(value)
+    if kind is str:
+        return value
+    if value is None:
+        return ""
+    if kind is int:
+        value = Decimal(value)
+    elif kind is not Decimal:
+        raise ValueError("Недопустимое представление элемента списка значений")
+    return to_string(value)
+
+
+def _normalize_check(value):
+    kind = type(value)
+    if kind is bool:
+        return value
+    if kind is int or (kind is Decimal and value.is_finite()):
+        if value == 0:
+            return False
+        if value == 1:
+            return True
+    raise ValueError("Недопустимая пометка элемента списка значений")
+
+
+_ITEM_NORMALIZERS = MappingProxyType({1: _normalize_presentation, 2: _normalize_check})
 
 def _item(item):
     if type(item) is not PlainValueListItem:
@@ -81,7 +110,9 @@ class PlainValueListItem(list):
         return list.__getitem__(self, _field(name))
 
     def set_member(self, name, value):
-        list.__setitem__(self, _field(name), value)
+        field = _field(name)
+        normalizer = _ITEM_NORMALIZERS.get(field)
+        list.__setitem__(self, field, value if normalizer is None else normalizer(value))
 
 
 def _field(name):
@@ -93,9 +124,9 @@ def _field(name):
         raise AttributeError('Unknown ValueList item field: ' + name) from None
 
 
-_FIELDS = {'value': 0, 'значение': 0,
+_FIELDS = MappingProxyType({'value': 0, 'значение': 0,
            'presentation': 1, 'представление': 1,
-           'check': 2, 'пометка': 2, 'picture': 3, 'картинка': 3}
+           'check': 2, 'пометка': 2, 'picture': 3, 'картинка': 3})
 
 
 class PlainValueList(list):
@@ -121,7 +152,12 @@ class PlainValueList(list):
         return self is not other
 
     def add(self, value=None, presentation='', check=False, picture=None):
-        item = PlainValueListItem((value, presentation, check, picture))
+        item = PlainValueListItem((
+            value,
+            presentation if type(presentation) is str else _normalize_presentation(presentation),
+            check if type(check) is bool else _normalize_check(check),
+            picture,
+        ))
         if type(self._next_id) is not int: raise TypeError('Invalid ValueList identifier counter')
         item._membership = self._membership or self._start_membership()
         item._id = self._next_id
@@ -131,7 +167,12 @@ class PlainValueList(list):
 
     def insert(self, index, value=None, presentation='', check=False, picture=None):
         position = _index(index)
-        item = PlainValueListItem((value, presentation, check, picture))
+        item = PlainValueListItem((
+            value,
+            presentation if type(presentation) is str else _normalize_presentation(presentation),
+            check if type(check) is bool else _normalize_check(check),
+            picture,
+        ))
         if type(self._next_id) is not int: raise TypeError('Invalid ValueList identifier counter')
         item._membership = self._membership or self._start_membership()
         item._id = self._next_id
@@ -200,6 +241,7 @@ class PlainValueList(list):
         return None
 
     def fill_checks(self, check):
+        check = _normalize_check(check)
         for item in self:
             _item(item)[2] = check
 
