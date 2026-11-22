@@ -80,6 +80,45 @@ class DirectPlainValueListTests(unittest.TestCase):
         self.assertIs(vm.variables['l'][0],vm.variables['first'])
         self.assertEqual(vm.variables['first'][0],D(4))
 
+    def test_value_list_sort_directions_keep_equal_items_stable_and_live(self):
+        from yadinassi.syntax.parser import parse
+        for english,russian,items in (
+                ('SortByValue','СортироватьПоЗначению',('2,"z"','1,"m"','2,"a"')),
+                ('SortByPresentation','СортироватьПоПредставлению',('3,"b"','2,"a"','1,"b"'))):
+            with self.subTest(method=english):
+                vm=self.vm()
+                vm.execute('L=New ValueList; A=L.Add('+items[0]+'); B=L.Add('+items[1]+'); C=L.Add('+items[2]+');')
+                owner=vm.variables['l']
+                identities=tuple(vm.variables[name] for name in ('a','b','c'))
+                ids=tuple(item.get_id() for item in identities)
+                for call,order in (
+                        (f'L.{english}();',(1,0,2)),
+                        (f'L.{english}(SortDirection.Desc);',(0,2,1)),
+                        (f'L.{russian}(НаправлениеСортировки.Возр);',(1,0,2)),
+                        (f'L.{russian}(НаправлениеСортировки.Убыв);',(0,2,1)),
+                        (f'L.{english}(Undefined);',(1,0,2)),
+                ):
+                    plan=vm.prepare_program(parse(call))
+                    vm.execute_prepared(plan)
+                    self.assertIs(vm.variables['l'],owner)
+                    self.assertEqual(len(owner),3)
+                    for index,original in enumerate(order):
+                        self.assertIs(owner[index],identities[original])
+                    self.assertEqual(tuple(item.get_id() for item in identities),ids)
+
+    def test_value_list_rejects_nondirections_without_reordering(self):
+        vm=self.vm()
+        vm.execute('L=New ValueList; A=L.Add(2,"b"); B=L.Add(1,"a");')
+        owner=vm.variables['l']
+        for name in ('SortByValue','SortByPresentation'):
+            for direction in ('True','False','0','"Asc"','Null','SearchDirection.FromBegin'):
+                with self.subTest(name=name,direction=direction):
+                    vm.execute(f'Try L.{name}({direction}); Caught=False; Except Caught=True; EndTry;')
+                    self.assertIs(vm.variables['caught'],True)
+                    self.assertEqual(len(owner),2)
+                    self.assertIs(owner[0],vm.variables['a'])
+                    self.assertIs(owner[1],vm.variables['b'])
+
     def test_hostile_index_and_equality_do_not_gain_callbacks(self):
         vm=self.vm();seen=[]
         class Hostile:

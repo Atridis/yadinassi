@@ -118,7 +118,9 @@ class PlainValueListTests(unittest.TestCase):
     def test_native_sorting_and_negative_index_tradeoff(self):
         values = PlainValueList(); values.add(3, 'c'); values.add(1, 'a')
         values.sort_by_value(); self.assertEqual(values.unload_values(), [1, 3])
-        values.sort_by_presentation(True); self.assertEqual(values.unload_values(), [3, 1])
+        from yadinassi.collections.sort_directions import BSLSortDirection
+        values.sort_by_presentation(BSLSortDirection.DESC)
+        self.assertEqual(values.unload_values(), [3, 1])
         self.assertEqual(values.get(D(-1))[0], 1)
         self.assertEqual(values.get(D('0.5'))[0], 3)
 

@@ -43,4 +43,13 @@ class BSLSortDirections(BSLObject):
 
 SORT_DIRECTIONS = BSLSortDirections()
 
+
+def _sort_descending(direction):
+    if direction is None or direction is BSLSortDirection.ASC:
+        return False
+    if direction is BSLSortDirection.DESC:
+        return True
+    raise TypeError("Сортировка списка: ожидается НаправлениеСортировки")
+
+
 __all__ = ["BSLSortDirection", "BSLSortDirections", "SORT_DIRECTIONS"]

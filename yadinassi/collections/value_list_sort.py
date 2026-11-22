@@ -18,7 +18,7 @@ import unicodedata
 
 from . import value_table_collation as collation
 from yadinassi.temporal.dates import BSLDate
-from .sort_directions import BSLSortDirection
+from .sort_directions import BSLSortDirection, _sort_descending
 from .structures import BSLStructure
 from yadinassi.types.values import BSLArray, BSLType, NULL
 
@@ -113,8 +113,7 @@ def sort_list(owner, direction=None, *, by_presentation=False):
     """Validate every key, then commit a stable item-identity-preserving sort."""
     from .value_lists import BSLValueListItem
 
-    if direction is not None and type(direction) is not BSLSortDirection:
-        raise TypeError("Сортировка списка: ожидается НаправлениеСортировки")
+    descending = _sort_descending(direction)
     budget = [0, 0]
     family = None
     keyed = []
@@ -131,6 +130,6 @@ def sort_list(owner, direction=None, *, by_presentation=False):
         keyed.append((key, item))
     # reverse=True preserves equal-key order in both directions. Never reverse
     # the completed ascending result, which would reverse duplicate items.
-    keyed.sort(key=lambda pair: pair[0], reverse=direction is BSLSortDirection.DESC)
+    keyed.sort(key=lambda pair: pair[0], reverse=descending)
     owner.items[:] = [item for _, item in keyed]
     owner._revision += 1

@@ -11,6 +11,7 @@ from types import MappingProxyType
 from weakref import ReferenceType, ref
 
 from yadinassi.types.values import to_string
+from .sort_directions import _sort_descending
 
 
 def _normalize_presentation(value):
@@ -264,15 +265,14 @@ class PlainValueList(list):
             result.add(item[0], item[1], item[2], item[3])
         return result
 
-    def sort_by_value(self, descending=False):
-        self._sort(0, descending)
+    def sort_by_value(self, direction=None):
+        self._sort(0, direction)
 
-    def sort_by_presentation(self, descending=False):
-        self._sort(1, descending)
+    def sort_by_presentation(self, direction=None):
+        self._sort(1, direction)
 
-    def _sort(self, field, descending):
-        if type(descending) is not bool:
-            raise TypeError('Plain ValueList sort direction requires a boolean')
+    def _sort(self, field, direction):
+        descending = _sort_descending(direction)
         # Fail before list.sort can invoke arbitrary stored host hooks.
         for item in self:
             if type(item) is not PlainValueListItem:
