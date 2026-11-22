@@ -8,6 +8,20 @@ import tempfile
 from decimal import Decimal, localcontext, getcontext, Inexact, Rounded
 from scripts import benchmark_extended_layers as bench
 
+
+def render_case(name, route='default'):
+    """Fresh, deterministic report input; runtime measurement is tested separately."""
+    return {
+        'case': name,
+        'requested_route': route,
+        'api': 'execute_prepared(plan)' if route == 'prepared' else 'execute_program(preparsed_ast)',
+        'notes': '',
+        'fixture_and_prepare_seconds': 0.004,
+        'first_execution_seconds': {'python': 0.001, 'bsl': 0.003},
+        'summary': {'python': {'median_seconds': 0.001}, 'bsl': {'median_seconds': 0.002}},
+        'statuses': {},
+    }
+
 class ExtendedReferenceTests(unittest.TestCase):
     def setUp(self):
         # Plain Python reference work intentionally rounds Decimals. Keep its
@@ -47,6 +61,7 @@ class ExtendedReferenceTests(unittest.TestCase):
                     if name.startswith('form.'):
                         self.assertEqual(set(case['summary']),{'bsl'})
                         self.assertIn('FormSession',case['api'])
+                        self.assertEqual(case['statuses']['python']['status'], 'not_comparable')
                     if name=='xml.roundtrip' and 'bsl' not in case['summary']:
                         self.assertEqual(case['statuses']['bsl']['status'],'unsupported')
     def test_wrong_type_or_checksum_rejected(self):
@@ -54,7 +69,10 @@ class ExtendedReferenceTests(unittest.TestCase):
         for result in (True,1,1.0,'1',Decimal(2)):
             with self.assertRaises(AssertionError):bench.validate(case,'bsl',result)
     def test_missing_layer_is_explicit_in_summary(self):
-        case=bench.measure('form.event',3,3,'default')
+        case=render_case('form.event')
+        case['api'] = 'FormSession event'
+        del case['summary']['python'], case['first_execution_seconds']['python']
+        case['statuses']['python'] = {'status': 'not_comparable', 'reason': 'no baseline'}
         text=bench.render({'schema':'execution-layers-extended-v1', 'environment':{'git_head':'test'}, 'cases':[case]})
         self.assertIn('—',text)
         self.assertIn('несопоставимо',text)
@@ -150,7 +168,7 @@ class ExtendedReferenceTests(unittest.TestCase):
                     for layer,run in case.runs.items():bench.validate(case,layer,run())
 
     def test_renderer_rejects_invalid_or_unexplained_results(self):
-        case = bench.measure('structure.fields', 3, 3, 'default')
+        case = render_case('structure.fields')
         source = {'schema': 'execution-layers-extended-v1', 'environment': {'git_head': 'test'}, 'cases': [case]}
         for value in (0, -1, True, float('nan'), float('inf')):
             data = copy.deepcopy(source)
@@ -166,18 +184,16 @@ class ExtendedReferenceTests(unittest.TestCase):
 
     def test_colors_only_on_ratios_and_no_comparison_without_baseline(self):
         for route in ('default', 'prepared'):
-            case = bench.measure('structure.fields', 3, 3, route)
+            case = render_case('structure.fields', route)
             data = {'schema': 'execution-layers-extended-v1', 'environment': {'git_head': 'test'}, 'cases': [case]}
             rows = [line for line in bench.render(data).splitlines() if line.startswith('| structure.fields |')]
             timing = rows[0].split('|')[1:-1]
             self.assertFalse(any(c in ''.join(timing[:3]) for c in '🟩🟨🟧'))
             self.assertTrue(all(any(c in cell for c in '🟩🟨🟧') for cell in timing[3:]))
             self.assertFalse(any(c in rows[1] for c in '🟩🟨🟧'))
-        case = bench.measure('db.update', 1, 3, 'default')
-        historical = copy.deepcopy(case)
+        historical = render_case('db.update')
         historical['summary'].pop('python')
         historical['first_execution_seconds'].pop('python')
-        historical.pop('sql_statements')
         historical['statuses']['python'] = {'status': 'not_comparable', 'reason': 'no baseline'}
         text = bench.render({**data, 'cases':[historical]})
         row = next(line for line in text.splitlines() if line.startswith('| db.update |'))
@@ -187,8 +203,12 @@ class ExtendedReferenceTests(unittest.TestCase):
         self.assertEqual(cells[3], '—')
 
     def test_db_timings_and_sql_separate_from_general_cases(self):
-        regular = bench.measure('structure.fields', 1, 3, 'prepared')
-        db = bench.measure('db.count', 1, 3, 'prepared')
+        regular = render_case('structure.fields', 'prepared')
+        db = render_case('db.count', 'prepared')
+        db['sql_statements'] = {
+            'python': {'total': 1, 'by_verb': {'SELECT': 1}},
+            'bsl': {'total': 5, 'by_verb': {'SELECT': 3, 'BEGIN': 1, 'ROLLBACK': 1}},
+        }
         text = bench.render({'schema': 'execution-layers-extended-v1',
                              'environment': {'git_head': 'test'}, 'cases': [regular, db]})
         main, sql = text.split('### Операции SQLite', 1)
@@ -210,7 +230,7 @@ class ExtendedReferenceTests(unittest.TestCase):
             with self.assertRaises(AssertionError): bench.validate(case, 'python_classes', result)
 
     def test_shared_prepared_api_once_without_losing_special_notes_or_json(self):
-        base = bench.measure('structure.fields', 3, 3, 'prepared')
+        base = render_case('structure.fields', 'prepared')
         cases = [dict(copy.deepcopy(base), case=name) for name in
                  ('structure.fields', 'valuetable.build_scan', 'file.stat', 'xml.roundtrip', 'db.count')]
         cases[2]['notes'] = next(text for text in bench.labels.NOTES if text.startswith('Warm filesystem'))
@@ -232,7 +252,7 @@ class ExtendedReferenceTests(unittest.TestCase):
         self.assertEqual(data, before)
 
     def test_mixed_apis_keep_exceptions_visible(self):
-        base = bench.measure('structure.fields', 3, 3, 'default')
+        base = render_case('structure.fields')
         cases = [dict(copy.deepcopy(base), case=name) for name in ('structure.fields','json.roundtrip','form.open')]
         cases[-1]['api'] = 'FormSession construction + open + close'
         text = bench.render({'schema':'execution-layers-extended-v1', 'environment':{'git_head':'test'}, 'cases':cases})
@@ -284,7 +304,7 @@ class TwoLayerReportTests(unittest.TestCase):
             self.assertEqual({s['layer'] for s in case['samples']}, {'python', 'bsl'})
 
     def test_historical_class_measurements_are_not_rendered(self):
-        case = bench.measure('structure.fields', 1, 3, 'default')
+        case = render_case('structure.fields')
         case['summary']['python_classes'] = {'median_seconds': 9876}
         case['first_execution_seconds']['python_classes'] = 9876
         report = {'schema': 'execution-layers-extended-v1', 'environment': {'git_head':'test'}, 'cases':[case]}
