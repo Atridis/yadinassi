@@ -30,7 +30,7 @@ def key(name):
 
 class Schema:
     """Ordered schema and a reusable default row; no per-row schema objects."""
-    __slots__ = ('_names', '_keys', '_offsets', '_metadata', '_defaults', 'version', 'data_epoch')
+    __slots__ = ('_names', '_keys', '_offsets', '_metadata', '_defaults', 'version', 'data_epoch', '_index_search')
 
     def __init__(self):
         self._names = []
@@ -40,6 +40,8 @@ class Schema:
         self._defaults = []
         self.version = 0
         self.data_epoch = 0
+        # The facade installs an index-order listener only for actual indexes.
+        self._index_search = None
 
     @property
     def names(self):
@@ -364,7 +366,7 @@ class TableStorage:
         return next((row for row in self.rows
                      if scalar_equal(list.__getitem__(row, normalized), value)), None)
 
-    def fill(self, value, names=None):
+    def fill(self, value, names=None, *, _retain_replaced=False):
         if names is None:
             selected = range(len(self.schema._keys))
         else:
@@ -376,7 +378,8 @@ class TableStorage:
         for row in self.rows:
             for name in selected:
                 list.__setitem__(row, name, value)
-        # previous retains replaced payloads through coherent publication.
+        # The indexed facade can retain these through its order publication.
+        if _retain_replaced:return previous
         return None
 
     def copy(self, owner, names=None):

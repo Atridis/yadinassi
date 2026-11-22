@@ -85,3 +85,27 @@ explicit; no trusted/private schema provenance is claimed. 35 focused tests
 pass normal and Python 3.10 optimized, including retained refs across row order
 and schema changes, independent copy, actual indexed byref readonly, hostile
 AddColumn/named read, and fail-closed finalizer reentry.
+
+## Exact index lookup order
+
+The archived Windows 8.3.27.2342 index probes establish distinct table and
+index traversal orders. A successful write to an indexed cell moves that row
+to the end of the matching key group, even if the value did not change.
+Writes to other columns do not move it. Full `FillValues` and `LoadColumn`
+visit rows in table order; a partial load only moves the visited rows.
+Sorting or moving rows starts the index in the new table order.
+
+At exact `FindRows` predicates and explicit single-column `Find`, the first
+active matching declaration supplies the order. Each duplicate declaration
+begins with independent physical order. Adding a duplicate does not affect
+the active lookup; deleting the earlier declaration can change the result
+order. Partial filters and implicit/multi-column `Find` keep the existing
+physical scan. This does not claim native parity for opaque keys, ambiguous
+duplicate fields or unmeasured insertion behavior.
+
+Declarations and writes do not inspect row keys. Each declared index retains
+only the IDs of the rows moved since declaration/reset; there is no such
+history for tables without valid indexes. This history orders the existing
+lazy, bounded bucket build on the first exact lookup after an epoch change;
+warm lookups reuse those buckets. The cache's existing retention limits
+remain; they are not table size or insertion quotas.

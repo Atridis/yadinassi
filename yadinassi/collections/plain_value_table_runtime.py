@@ -6,6 +6,7 @@ relaxed: the compiler/native boundary still admits only these exact classes.
 from decimal import Decimal, ROUND_DOWN
 from types import MappingProxyType
 from yadinassi.types.values import BSLObject, BSLArray, HostFunction
+from yadinassi.execution.direct.python_direct_plain_array import _DIRECT_PLAIN_ARRAY_TYPE
 from yadinassi.types.type_descriptions import BSLTypeDescription
 from .plain_table_search import SearchIndexes
 from .value_tables import _adjust, _default, _text
@@ -170,12 +171,11 @@ class BSLValueTableColumnCollection(BSLObject):
             if type(signature) is not tuple or any(type(i) is not int or not 0<=i<size for i in signature):
                 raise ValueError('noncanonical index declaration')
             shifted.append(tuple(i+(i>=position) for i in signature))
-        declarations=set(shifted)
+        mapping=dict(zip(indexes.items,shifted))
+        bindings=[(mapping[sig] if sig else (), h) for sig,h in indexes._bindings(self._items)]
         self.table._storage.insert_column(position,name,column,default)
         self._items.insert(position,column)
-        indexes.items[:]=shifted
-        self.table._search.declarations=declarations
-        self.table._search.cache.clear()
+        indexes._replace_signatures(bindings)
         return column
     def move(self,column,offset):
         table=self.table
@@ -215,12 +215,11 @@ class BSLValueTableColumnCollection(BSLObject):
             if type(signature) is not tuple or any(type(i) is not int or not 0<=i<size for i in signature):
                 raise ValueError('noncanonical index declaration')
             shifted.append(tuple(sorted(offsets[i] for i in signature)))
-        declarations=set(shifted)
+        mapping=dict(zip(indexes.items,shifted))
+        bindings=[(mapping[sig] if sig else (), h) for sig,h in indexes._bindings(self._items)]
         storage.move_column(old,new)
         self._items.insert(new,self._items.pop(old))
-        indexes.items[:]=shifted
-        search.declarations=declarations
-        search.cache.clear()
+        indexes._replace_signatures(bindings)
     def get_member(self,name):return self.get_index(name)
     def set_index(self,*args):raise ValueError('columns cannot be replaced')
     def get_method(self,name):return _method(self,name,(
@@ -241,12 +240,17 @@ class BSLValueTableRow(RowStorage,BSLObject):
         value = RowStorage.get_value(self,name)
         return Decimal(value) if type(value) is int else value
     def set_member(self,name,value):
-        _writable(self.table)
+        table,schema=self.table,self.schema
+        _writable(table)
         if self._deleted:raise ValueError("row is deleted")
-        position = self.schema.offset(name)
-        description = self.schema._metadata[position].value_type
+        position = schema.offset(name)
+        description = schema._metadata[position].value_type
         if description.types:value = _adjust(description,value)
-        self.schema.data_epoch += 1
+        search=schema._index_search
+        if search is not None:
+            if type(search) is not SearchIndexes:raise ValueError('noncanonical index declarations')
+            search.touch(self,position)
+        schema.data_epoch += 1
         list.__setitem__(self,position,value)
     def _positional_value(self,index):
         if self._deleted:raise ValueError("row is deleted")
@@ -256,11 +260,16 @@ class BSLValueTableRow(RowStorage,BSLObject):
         return Decimal(value) if type(value) is int else value
     def set(self,index,value):
         if self._deleted:raise ValueError("row is deleted")
-        _writable(self.table)
-        position = _index(index,len(self.schema._keys))
-        description = self.schema._metadata[position].value_type
+        table,schema=self.table,self.schema
+        _writable(table)
+        position = _index(index,len(schema._keys))
+        description = schema._metadata[position].value_type
         if description.types:value = _adjust(description,value)
-        self.table._storage.epoch += 1
+        search=schema._index_search
+        if search is not None:
+            if type(search) is not SearchIndexes:raise ValueError('noncanonical index declarations')
+            search.touch(self,position)
+        table._storage.epoch += 1
         list.__setitem__(self,position,value)
     def get_index(self,index):return self.get_member(index) if type(index) is str else self.get(index)
     def set_index(self,index,value):return self.set_member(index,value) if type(index) is str else self.set(index,value)
@@ -280,6 +289,10 @@ class BSLValueTableRow(RowStorage,BSLObject):
             prepared[column.name.casefold()]=value
         if set(prepared)!=set(self.schema._keys):raise ValueError('materialized schema mismatch')
         _writable(self.table)
+        search=self.schema._index_search
+        if search is not None and not self._deleted:
+            if type(search) is not SearchIndexes:raise ValueError('noncanonical index declarations')
+            search.touch_all(self)
         self.table._storage.epoch += 1
         list.__setitem__(self,slice(None),[prepared[k] for k in self.schema._keys])
     def __iter__(self):
@@ -349,10 +362,9 @@ class BSLCollectionIndexes(BSLObject):
     def _add_positions(self, positions):
         columns = tuple(self.table.columns._items[i] for i in positions)
         handle = BSLCollectionIndex(self.table, columns)
-        signature = self._signature(positions)
-        if signature and signature not in self.items:
-            self.table._search.declare(signature)
-            self.items.append(signature)
+        bindings=self._bindings(self.table.columns._items)
+        bindings.append((self._signature(positions),handle))
+        self._replace_signatures(bindings,preserve_cache=True)
         self._handles.append(handle)
         return handle
 
@@ -404,29 +416,32 @@ class BSLCollectionIndexes(BSLObject):
             return ()
         return tuple(sorted(positions))
 
-    def _replace_signatures(self, signatures, *, preserve_cache=False):
-        self.items[:] = signatures
-        search = self.table._search
-        search.declarations = set(signatures)
-        if preserve_cache:
-            for dropped in search.cache.keys() - search.declarations:
-                del search.cache[dropped]
-        else:
-            search.cache.clear()
+    def _bindings(self, columns, handles=None):
+        positions={id(column): i for i,column in enumerate(columns)}
+        if handles is None:handles=self._active()
+        return [(self._signature(self._positions(handle._columns,positions)), handle)
+                for handle in handles]
+
+    def _replace_signatures(self, bindings, *, reset=(), preserve_cache=False):
+        search=self.table._search
+        search.bind(bindings,reset=reset,preserve_cache=preserve_cache)
+        self.table._storage.schema._index_search=search if search.declarations else None
+        self.items[:]=dict.fromkeys(signature for signature,_ in bindings if signature)
 
     def _without_column(self, removed):
         columns = [col for col in self.table.columns._items if col is not removed]
         positions = {id(col): i for i,col in enumerate(columns)}
         plans = [(handle, tuple(col for col in handle._columns if col is not removed))
                  for handle in self._active()]
-        signatures = [self._signature(self._positions(columns, positions)) for _,columns in plans]
-        return plans, list(dict.fromkeys(sig for sig in signatures if sig))
+        bindings=[(self._signature(self._positions(cols,positions)),handle) for handle,cols in plans]
+        reset=tuple(id(handle) for handle,cols in plans if len(cols)!=len(handle._columns))
+        return plans,bindings,reset
 
     def _apply_column_delete(self, plan):
-        plans, signatures = plan
+        plans,bindings,reset=plan
         for handle,columns in plans:
-            handle._columns = columns
-        self._replace_signatures(signatures)
+            handle._columns=columns
+        self._replace_signatures(bindings,reset=reset)
 
     def delete(self, index):
         _writable(self.table)
@@ -440,9 +455,7 @@ class BSLCollectionIndexes(BSLObject):
         if index.table is not self.table or not any(handle is index for handle in handles):
             raise ValueError('foreign or detached index')
         remaining = [handle for handle in handles if handle is not index]
-        positions = {id(col): i for i,col in enumerate(self.table.columns._items)}
-        signatures = [self._signature(self._positions(handle._columns, positions)) for handle in remaining]
-        self._replace_signatures(list(dict.fromkeys(sig for sig in signatures if sig)), preserve_cache=True)
+        self._replace_signatures(self._bindings(self.table.columns._items,remaining),preserve_cache=True)
         self._handles[:] = remaining
         index._detached = True
 
@@ -455,6 +468,7 @@ class BSLCollectionIndexes(BSLObject):
         self._handles.clear()
         self.items.clear()
         self.table._search.clear()
+        self.table._storage.schema._index_search=None
 
     def get_method(self,name):return _method(self,name,(
         (('count','количество'),'count',True),(('add','добавить'),'add',True),
@@ -491,15 +505,19 @@ class BSLValueTable(BSLObject):
             return index
         return _index(row,len(self.rows))
     def delete(self,row):
-        _writable(self);self._storage.delete(self._row_index(row))
+        _writable(self)
+        removed=self._storage.delete(self._row_index(row))
+        if self._search.declarations:self._search.deleted(removed)
     def clear(self):
         _writable(self);self._storage.clear()
+        if self._search.declarations:self._search.reordered()
     def move(self,row,offset):
         _writable(self)
         if type(offset) is int:distance=offset
         elif type(offset) is Decimal and offset.is_finite():distance=int(offset.to_integral_value(rounding=ROUND_DOWN))
         else:raise TypeError('row offset must be a finite number')
         self._storage.move(self._row_index(row),distance)
+        if self._search.declarations:self._search.reordered()
     def _selection(self,names):
         if names is None:return tuple(self._storage.schema._names)
         if type(names) is not str:raise TypeError('column selection must be str')
@@ -510,10 +528,19 @@ class BSLValueTable(BSLObject):
     def find(self,value,columns=None):
         schema=self._storage.schema
         selected=tuple(schema.offset(name) for name in self._selection(columns))
-        for row in self.rows:
+        rows=self.rows
+        # Only an explicit single-column lookup has an exact predicate.
+        if columns and len(selected)==1 and self._search.declarations:
+            rows=self._find_candidates(((selected[0],value),))
+        for row in rows:
             for position in selected:
                 if scalar_equal(list.__getitem__(row,position),value):return row
         return None
+    def _find_candidates(self, selected):
+        storage=self._storage
+        return self._search.candidates(self.rows,selected,
+            (storage.epoch,storage.schema.version,storage.schema.data_epoch),True)
+
     def find_rows(self,filters):
         from .structures import BSLStructure
         from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
@@ -527,7 +554,7 @@ class BSLValueTable(BSLObject):
         result = []
         # Historical FindRows(empty Structure) is empty, not all rows.
         if selected:
-            rows = self._search.candidates(self.rows, selected, (self._storage.epoch,self._storage.schema.version,self._storage.schema.data_epoch), True)
+            rows=self._find_candidates(selected) if self._search.declarations else self.rows
             for row in rows:
                 for offset, value in selected:
                     if not scalar_equal(list.__getitem__(row, offset), value):
@@ -536,15 +563,25 @@ class BSLValueTable(BSLObject):
                     result.append(row)
         return _array(result)
     def fill_values(self,value,columns=None):
-        _writable(self);self._storage.fill(value,self._selection(columns))
+        _writable(self)
+        names=self._selection(columns)
+        search=self._search
+        if search.declarations:
+            # Keep replaced payloads alive until cells and the index order
+            # agree, including when a host payload has a finalizer.
+            previous=self._storage.fill(value,names,_retain_replaced=True)
+            search.filled(self._storage.schema.offset(n) for n in names)
+        else:self._storage.fill(value,names)
     def unload_column(self,column):
         name=self.columns.resolve(column).name
         return _array(row.get_member(name) for row in self.rows)
     def load_column(self,values,column):
         _writable(self)
-        if type(values) is not BSLArray:raise TypeError('Array required')
+        if type(values) is BSLArray:values=values.items
+        if type(values) is not list and type(values) is not _DIRECT_PLAIN_ARRAY_TYPE:
+            raise TypeError('Array required')
         name=self.columns.resolve(column).name
-        for row,value in zip(self.rows,values.items):row.set_member(name,value)
+        for row,value in zip(self.rows,list.__iter__(values)):row.set_member(name,value)
     def total(self,column):
         position=self._storage.schema.offset(self.columns.resolve(column).name)
         result=sum((v for row in self.rows if type(v:=list.__getitem__(row,position)) in (int,Decimal)),0)
@@ -566,6 +603,7 @@ class BSLValueTable(BSLObject):
             terms.append((tokens[0],direction in ('desc','убыв')))
         if not terms:raise ValueError('invalid sort order')
         self._storage.sort(terms)
+        if self._search.declarations:self._search.reordered()
     def copy_columns(self,columns=None):
         result=BSLValueTable()
         for name in self._selection(columns):

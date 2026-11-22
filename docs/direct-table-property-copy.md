@@ -4,8 +4,9 @@ The table branch of property_transfer now admits canonical positional rows:
 exact row/table/column/storage types, live owner membership, bounded shape,
 column offsets/metadata and schema epoch. It retains readonly-slice rejection
 for destinations and descriptor checks. Writes still call the canonical row
-setter, so lazy indexes are invalidated through the existing schema epoch.
-No index declarations, cached keys or buckets are read by this endpoint.
+setter, so affected indexes record reinsertion order and lazy key buckets
+are invalidated through the existing schema epoch. A property copy does not
+build the index, read its buckets or compare row keys.
 Tree rows and other property endpoint families are unchanged.
 
 This change adds no conversion envelope and no endpoint family. In particular,

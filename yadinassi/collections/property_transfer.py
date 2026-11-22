@@ -297,8 +297,8 @@ def _row_endpoint(row, budget, target, readable_rows=False):
             _invalid('состав ячеек не соответствует колонкам')
         fields.extend(_Field(name, budget.name(name), True, name == 'parent' or readable_rows, False)
                       for name in ('parent', 'rows'))
-    # Positional row setters only update cells and the schema epoch. Index
-    # declarations and lazy buckets are not consumed by this endpoint.
+    # Use the canonical setters so table writes also publish reinsertion
+    # order for any affected index. No lazy key cache is built here.
     return _Endpoint(row, tuple(fields), row_type.get_member, row_type.set_member)
 
 

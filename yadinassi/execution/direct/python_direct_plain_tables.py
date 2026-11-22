@@ -109,12 +109,15 @@ def validate(value,pure=False,*,row_only=False,iteration=False):
     cache=data['_search']
     if type(cache) is not search.SearchIndexes:fail()
     if type(cache.declarations) is not set or type(cache.cache) is not dict or type(cache.builds) is not int:fail()
+    schema=kernel.schema
+    if schema._index_search is not (cache if cache.declarations else None):fail()
+    # Raw collection-region writes deliberately omit facade index history.
+    if pure and schema._index_search is not None:return False
     for signature in cache.declarations:
         if type(signature) is not tuple or any(type(i) is not int or i<0 for i in signature):fail()
     # Derived cache is private implementation state, not a receiver graph.
     # Search returns rows from the already validated table, never cached refs.
     # Raw host writes to cache internals are outside the supported API.
-    schema=kernel.schema
     if type(schema.version) is not int or schema.version<0:fail()
     if type(schema.data_epoch) is not int or schema.data_epoch<0:fail()
     # Exact key types before any hashing, comparison, or user dictionary lookup.

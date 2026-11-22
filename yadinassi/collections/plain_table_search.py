@@ -23,6 +23,25 @@ class _Entry:
     row_slots: int = 0
 
 
+def _ordered_positions(rows, history):
+    if not history:
+        yield from range(len(rows))
+        return
+    # Walk the untouched rows in physical order, then only moved rows in
+    # chronological order. No sort, keys, or retained references to rows.
+    touched = {}
+    for position, row in enumerate(rows):
+        identity = id(row)
+        if identity in history:
+            touched[identity] = position
+        else:
+            yield position
+    for identity in history:
+        position = touched.get(identity)
+        if position is not None:
+            yield position
+
+
 def _positions(rows, positions):
     if type(positions) is not tuple:
         raise ValueError('invalid index positions')
@@ -33,27 +52,97 @@ def _positions(rows, positions):
 
 
 class SearchIndexes:
-    __slots__ = ('declarations', 'cache', 'builds')
+    __slots__ = ('declarations', 'cache', 'builds', '_active', '_columns', '_history')
     def __init__(self):
         self.declarations = set()
         self.cache = {}
         self.builds = 0
 
+        self._active = self._columns = self._history = None
+
     def declare(self, names):
+        # Bare table and its scalar cache keep their original physical order.
         signature = tuple(sorted(names))
         if not signature or len(set(signature)) != len(signature):
             raise ValueError('index requires distinct columns')
         self.declarations.add(signature)
         return signature
 
+    def bind(self, pairs, *, reset=(), preserve_cache=False):
+        """Publish current valid definitions in handle order; never inspect rows."""
+        active, columns = {}, {}
+        history = {} if self._history is None else self._history
+        dropped = set(history)
+        for signature, handle in pairs:
+            if not signature:
+                continue
+            identity = id(handle)
+            active.setdefault(signature, identity)
+            for offset in signature:
+                columns.setdefault(offset, []).append(identity)
+            dropped.discard(identity)
+        dropped.update(reset)
+        if preserve_cache and self._active is not None:
+            for signature in tuple(self.cache):
+                previous = self._active.get(signature)
+                current = active.get(signature)
+                if current is None or (previous != current
+                                        and (previous in history or current in history)):
+                    del self.cache[signature]
+        else:
+            self.cache.clear()
+        for identity in dropped:
+            history.pop(identity, None)
+        if active:
+            self._active, self._columns, self._history = active, columns, history
+            # Codecs retain this set while admitting individual wire entries.
+            self.declarations.clear()
+            self.declarations.update(active)
+        else:
+            self.clear()
+
+    def touch(self, row, offset):
+        handles = self._columns.get(offset)
+        if handles is None:
+            return
+        self._touch(row, handles)
+
+    def _touch(self, row, handles):
+        identity = id(row)
+        for handle in handles:
+            history = self._history.setdefault(handle, {})
+            history.pop(identity, None)
+            history[identity] = None
+
+    def touch_all(self, row):
+        for offset in self._columns:
+            self.touch(row, offset)
+
+    def filled(self, offsets):
+        for offset in offsets:
+            for handle in self._columns.get(offset, ()):
+                self._history.pop(handle, None)
+
+    def deleted(self, row):
+        identity = id(row)
+        for history in self._history.values():
+            history.pop(identity, None)
+
+    def reordered(self):
+        self._history.clear()
+
     def clear(self):
         self.declarations.clear()
         self.cache.clear()
+        self._active = self._columns = self._history = None
 
     def candidates(self, rows, selected, epoch, typed):
+        if not self.declarations:
+            return rows
         signature = tuple(sorted(offset for offset, _ in selected))
         if signature not in self.declarations:
             return rows
+        history = None if self._active is None else self._history.get(self._active.get(signature))
         values = dict(selected)
         wanted = tuple(token(values[offset], typed) for offset in signature)
         if any(value is _UNSUPPORTED for value in wanted):
@@ -70,11 +159,12 @@ class SearchIndexes:
         if entry is None or entry.epoch != epoch:
             # Bound retained row-position slots without work on each write.
             if len(rows) > 200_000:
-                return rows
+                return rows if not history else (rows[i] for i in _ordered_positions(rows, history))
             if (len(self.cache) >= 8 and signature not in self.cache) or sum(e.row_slots for key,e in self.cache.items() if key != signature) + len(rows) > 200_000:
                 self.cache.clear()
             buckets = {}
-            for position, row in enumerate(rows):
+            for position in _ordered_positions(rows, history):
+                row = rows[position]
                 key = tuple(token(list.__getitem__(row, offset), typed) for offset in signature)
                 if any(value is _UNSUPPORTED for value in key):
                     # Do not preempt linear short-circuit/error semantics.
