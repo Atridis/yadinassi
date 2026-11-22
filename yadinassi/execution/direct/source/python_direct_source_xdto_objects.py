@@ -215,7 +215,8 @@ def _child(factory,records,parent,prop,child):
             raise BoundaryViolation('source XDTO child ownership changed')
     elif type(child) is shared._VALUE:
         _saved_fields(records,child)
-        if child._factory is not factory or child._type is not prop._type:
+        if child._factory is not factory or (child._type is not prop._type
+                and not (prop._upper==1 and _derived_scalar(child._type,prop._type))):
             raise BoundaryViolation('source XDTO child type changed')
     else:raise BoundaryViolation('source XDTO unregistered child')
 
@@ -234,6 +235,10 @@ def _property_read(factory,records,obj,prop):
     elif type(child) is _LIST:_list_fields(records,child,prop,obj)
     else:raise BoundaryViolation('source XDTO property list changed')
     return child
+
+
+def _derived_scalar(derived,base):
+    return type(derived) is shared._TYPE and type(base) is shared._TYPE and derived._base is base
 
 
 def _validate_records(factory,records):
@@ -300,7 +305,9 @@ def _validate_records(factory,records):
                 if not prop._nil:raise BoundaryViolation('source XDTO null changed')
             elif not any(type(child) is cls for cls in (_OBJECT,shared._VALUE)) or child not in records:
                 raise BoundaryViolation('source XDTO unregistered child')
-            elif child._factory is not factory or child._type is not prop._type:
+            elif child._factory is not factory or (child._type is not prop._type
+                    and not (prop._upper==1 and type(child) is shared._VALUE
+                             and _derived_scalar(child._type,prop._type))):
                 raise BoundaryViolation('source XDTO child type changed')
             elif type(child) is _OBJECT and (child._owner is not parent or child._owning is not prop):
                 raise BoundaryViolation('source XDTO child ownership changed')
@@ -402,6 +409,14 @@ def _input(boundary,owner,prop,value,old=None,present=False):
                 for item in child._items if type(child) is _LIST else (child,):
                     if type(item) is _OBJECT:pending.append((item,level+1))
         return 0,0
+    if type(value) is shared._VALUE and prop._upper==1:
+        shared._check_value(owner._factory,value)
+        actual,declared=value._type,prop._type
+        # The native setter retains a specific wrapper in a base property,
+        # but allocates a declaration-typed wrapper in the reverse direction.
+        if _derived_scalar(actual,declared):return 0,0
+        if _derived_scalar(declared,actual):value=value._value
+        else:raise TypeError('XDTO: тип свойства не совпадает')
     if not any(type(value) is cls for cls in (str,bool,Decimal)):
         raise TypeError('source XDTO property requires primitive scalar')
     _,lexical=shared.values.scalar(prop._type,value)

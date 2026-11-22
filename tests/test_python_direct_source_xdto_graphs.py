@@ -67,6 +67,36 @@ class GraphXDTOTests(unittest.TestCase):
         with patch.object(descriptor,'_name','changed'):
             with self.assertRaises(basic.DENIED):vm.execute('Descriptor.Name;')
 
+    def test_owned_wrapper_assignment_retains_derived_and_rewraps_base(self):
+        app=self.prepared();vm=app.interpreter;factory=app.xdto.factory
+        vm.execute('A=XDTOFactory.Create(XDTOFactory.Type("urn:owned:records","Code"),"alias");'
+                   'B=XDTOFactory.Create(XDTOFactory.Type("'+flat.XS+'","string"),"base");'
+                   'C.Label="old";')
+        before=(factory._nodes,factory._units)
+        with patch.object(xdto_io,'MAX_NODES',before[0]):
+            vm.execute('P.Label=A;')
+            self.assertIs(vm.execute('P.GetXDTO("Label");'),vm.variables['a'])
+            with self.assertRaises(basic.DENIED):vm.execute('C.Label=B;')
+            self.assertEqual(vm.execute('C.Label;'),'old')
+        self.assertEqual((factory._nodes,factory._units),before)
+        vm.execute('C.Label=B;')
+        converted=vm.execute('C.GetXDTO("Label");')
+        self.assertIsNot(converted,vm.variables['b'])
+        self.assertIs(converted._type,vm.variables['a']._type)
+        self.assertEqual(vm.execute('C.Label;'),'base')
+        self.assertEqual((factory._nodes,factory._units),(before[0]+1,before[1]+4))
+
+    def test_retained_derived_property_does_not_extend_source_wire(self):
+        app=self.prepared();vm=app.interpreter
+        vm.execute('P.Label=XDTOFactory.Create(XDTOFactory.Type("urn:owned:records","Code"),"alias");'
+                   'XW=New XMLWriter;XW.SetString();JW=New JSONWriter;JW.SetString();')
+        for key,call in (('xw','WriteXML(XW,P,"Root","urn:owned:records")'),
+                         ('jw','WriteJSON(JW,P)')):
+            writer=vm.variables[key];before=dict(vars(writer))
+            with self.subTest(codec=key),self.assertRaisesRegex(basic.DENIED,'retained derived'):
+                vm.execute('XDTOFactory.'+call+';')
+            self.assertEqual(vars(writer),before)
+
     def test_nested_attach_replace_and_detach(self):
         app=self.prepared();vm=app.interpreter
         vm.execute('C.Label="child";P.Child=C;')

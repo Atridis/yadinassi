@@ -58,10 +58,19 @@ class FlatXDTOSecurity(unittest.TestCase):
         forged=object.__new__(xdto_values.BSLXDTODataObject);forged.__dict__.update(vm.variables['v'].__dict__)
         vm.variables['forged']=forged
         with self.assertRaises(basic.DENIED):vm.execute('Forged.Label;')
-    def test_scalar_object_inputs_not_implicitly_reowned(self):
-        app=self.prepared();vm=app.interpreter
-        vm.execute('S=XDTOFactory.Type("'+flat.XS+'","string");D=XDTOFactory.Create(S,"scalar");')
-        with self.assertRaises(basic.DENIED):vm.execute('V.Label=D;')
+    def test_unrelated_foreign_and_unregistered_wrappers_not_implicitly_reowned(self):
+        app=self.prepared();other=self.prepared();vm=app.interpreter
+        vm.execute('B=XDTOFactory.Create(XDTOFactory.Type("'+flat.XS+'","boolean"),True);'
+                   'S=XDTOFactory.Create(XDTOFactory.Type("'+flat.XS+'","string"),"owned");')
+        other.interpreter.execute('S=XDTOFactory.Create(XDTOFactory.Type("'+flat.XS+'","string"),"foreign");')
+        vm.variables['foreign']=other.interpreter.variables['s']
+        owned=vm.variables['s']
+        copy=object.__new__(type(owned));vars(copy).update(vars(owned))
+        vm.variables['forged']=copy
+        for name in ('B','Foreign','Forged'):
+            with self.subTest(value=name),self.assertRaises(basic.DENIED):vm.execute('V.Label='+name+';')
+        with patch.object(owned,'_value','changed'):
+            with self.assertRaises(basic.DENIED):vm.execute('V.Label=S;')
         self.assertIsNone(vm.execute('V.Label;'))
     def test_values_dict_replacement_and_hidden_extra_property_denied(self):
         for replacement in ('copy','extra'):
