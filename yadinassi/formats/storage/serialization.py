@@ -42,7 +42,7 @@ from yadinassi.execution.codegen.experimental_naked_collections import (
 )
 from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure, structure_key
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
-from yadinassi.execution.direct.python_direct_plain_map import PlainFixedMap, PlainMap, native_map_items
+from yadinassi.execution.direct.python_direct_plain_map import PlainFixedMap, PlainMap, native_map_items, _scalar_map_key
 from yadinassi.types.values import BSLArray, BSLFixedArray, BSLNull, BSLType, NULL, equal
 
 
@@ -65,6 +65,7 @@ _PLAIN_LIST_ITEM_MEMBERSHIP = vars(PlainValueListItem)['_membership']
 _PLAIN_LIST_OWNER = vars(_ItemMembership)['owner']
 _PLAIN_LIST_CLEAR_ID = vars(_ItemMembership)['cleared_before']
 _PLAIN_FIXED_MAP_STORAGE = vars(PlainFixedMap)['_snapshot']
+_PLAIN_FIXED_MAP_WRAPPED_KEYS = vars(PlainFixedMap)['_identity_keys']
 
 _TYPE_IDS = {
     # Authenticated Linux PR112 run40240060498, records433..435.
@@ -259,9 +260,11 @@ _NATIVE_MAP_SERIALIZABLE_KEYS = (type(None), bool, str, int, Decimal, BSLNull, B
                                  BSLSearchDirection, BSLRoundMode)
 
 
-def _native_map_entries(value):
-    for key, item in native_map_items(value):
-        if not any(type(key) is kind for kind in _NATIVE_MAP_SERIALIZABLE_KEYS):
+def _native_map_entries(value, wrapped_keys=False):
+    for key, item in native_map_items(value, wrapped_keys):
+        if type(key) is BSLTypeDescription:
+            _scalar_map_key(key)
+        elif not any(type(key) is kind for kind in _NATIVE_MAP_SERIALIZABLE_KEYS):
             raise TypeError("ЗначениеВСтрокуВнутр: недопустимый ключ соответствия")
         yield key, item
 
@@ -331,9 +334,10 @@ class _Writer:
             kind, direct_items, entry_count = BSLType.MAP, _native_map_entries(value), dict.__len__(value)
         elif self.direct and value_type is PlainFixedMap:
             storage = _PLAIN_FIXED_MAP_STORAGE.__get__(value, PlainFixedMap)
-            if type(storage) is not dict:
+            flags = _PLAIN_FIXED_MAP_WRAPPED_KEYS.__get__(value, PlainFixedMap)
+            if type(storage) is not dict or type(flags) is not bool:
                 raise TypeError("ЗначениеВСтрокуВнутр: недопустимое состояние фиксированного соответствия")
-            kind, direct_items, entry_count = BSLType.FIXED_MAP, _native_map_entries(storage), dict.__len__(storage)
+            kind, direct_items, entry_count = BSLType.FIXED_MAP, _native_map_entries(storage, flags), dict.__len__(storage)
         elif value_type is _DirectStructure:
             kind, direct_items = BSLType.STRUCTURE, _native_structure_entries(value)
             entry_count = dict.__len__(value)

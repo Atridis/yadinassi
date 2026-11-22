@@ -12,6 +12,8 @@ from decimal import Decimal as D
 import hashlib
 from pathlib import Path
 import unittest
+from unittest.mock import patch
+from uuid import uuid4
 
 from tests.native_observations import extract_payload, read_observation
 from scripts.native_historical_replay import without_fill_include_probes
@@ -19,11 +21,13 @@ from yadinassi import Interpreter
 from yadinassi.temporal.dates import BSLDate
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.collections.maps import BSLFixedMap, BSLMap
+from yadinassi.db.catalog.catalog_types import BSLCatalogType
+from yadinassi.execution.direct.python_direct_plain_map import PlainFixedMap, PlainMap, plain_map
 from yadinassi.formats.storage.serialization import (
     FORMAT_ERROR, value_from_string_internal as read,
     value_to_string_internal as write,
 )
-from yadinassi.types.type_descriptions import BSLTypeDescription as TD
+from yadinassi.types.type_descriptions import BSLTypeDescription as TD, _query_nullable_description
 from yadinassi.types.type_qualifiers import (
     BSLAllowedLength as AL, BSLAllowedSign as AS,
     BSLDateFractions as DF, BSLDateQualifiers as DQ,
@@ -185,6 +189,58 @@ class DescriptorMapNativeRuntimeTests(unittest.TestCase):
 
 
 class DescriptorMapKeyContractTests(unittest.TestCase):
+    def test_direct_keys_preserve_representative_and_never_use_descriptor_hash_or_equality(self):
+        first, equal = pair('equal-reordered')
+        distinct = TD('Number')
+        mapping = PlainMap()
+        with patch.object(TD, '__hash__', side_effect=AssertionError('host hash')), \
+             patch.object(TD, '__eq__', side_effect=AssertionError('host comparison')):
+            mapping[first] = 101
+            mapping[equal] = 202
+            mapping[distinct] = 303
+            self.assertIs(next(iter(mapping)), first)
+            self.assertEqual(mapping.get(equal), 202)
+            self.assertIn(equal, mapping)
+            fixed = PlainFixedMap(mapping)
+            self.assertIs(next(iter(fixed)).key, first)
+            self.assertEqual(fixed.get_index(equal), 202)
+            copied = plain_map(fixed)
+            self.assertEqual(copied.pop(equal), 202)
+            del mapping[equal]
+            self.assertEqual(len(mapping), 1)
+            self.assertEqual(fixed.get(equal), 202)
+
+    def test_direct_keys_fail_closed_for_non_scalar_or_forged_descriptor_state(self):
+        class Foreign(TD):
+            def __hash__(self): raise AssertionError('host hash')
+            def __eq__(self, other): raise AssertionError('host comparison')
+
+        class ForeignQualifier:
+            def __getattribute__(self, name): raise AssertionError('host qualifier access')
+            def __hash__(self): raise AssertionError('host qualifier hash')
+
+        corrupt = TD('Number')
+        object.__setattr__(corrupt, 'number_qualifiers', ForeignQualifier())
+        forged_marker = TD('Number')
+        object.__setattr__(forged_marker, '_query_scalar', ForeignQualifier())
+        types = BSLArray()
+        types.items = [BSLCatalogType(uuid4(), 'Items', object())]
+        keys = [Foreign('Number'), corrupt, forged_marker, TD(types),
+                _query_nullable_description(TD('String'))]
+        valid = TD('Number')
+        mapping = PlainMap()
+        mapping[valid] = 7
+        fixed = PlainFixedMap(mapping)
+        for key in keys:
+            for fn in (mapping.get, mapping.__contains__, mapping.__delitem__,
+                       fixed.get, fixed.get_index):
+                with self.subTest(operation=fn.__name__), self.assertRaises(TypeError):
+                    fn(key)
+            with self.assertRaises(TypeError):
+                mapping[key] = 9
+            self.assertEqual(len(mapping), 1)
+            self.assertEqual(mapping.get(valid), 7)
+
     def test_measured_equal_and_unequal_pairs_share_all_mutable_operations(self):
         for name in PAIRS:
             with self.subTest(pair=name):

@@ -64,7 +64,7 @@ Args=New Array;Args.Add(F);T=New("Map",Args);T.Insert("K",2);R=F.Get("K");V=T.Ge
         del copy[key];self.assertIs(fixed.get(key),value)
 
     def test_value_key_domains_explicitly_reject_atomically(self):
-        keys=(BSLUUID('11111111-1111-1111-1111-111111111111'),BSLTypeDescription('String'),
+        keys=(BSLUUID('11111111-1111-1111-1111-111111111111'),
             BSLCatalogReference(BSLCatalogType(UUID(int=1),'Catalog',object()),UUID(int=2)))
         for key in keys:
             with self.subTest(kind=type(key)):
@@ -73,6 +73,20 @@ Args=New Array;Args.Add(F);T=New("Map",Args);T.Insert("K",2);R=F.Get("K");V=T.Ge
                 with self.assertRaisesRegex(BSLError,'scalar Python value'):vm.execute('Saved=New Map(F);')
                 self.assertEqual(vm.variables['saved'],7);self.assertEqual(len(fixed._items),2)
                 self.assertEqual(fixed.get(key),2)
+
+    def test_canonical_fixed_scalar_descriptor_key_thaws_by_value(self):
+        source = BSLMap()
+        first = BSLTypeDescription('String,Number')
+        source.insert(first, 'value')
+        fixed = BSLFixedMap(source)
+        vm = self.vm()
+        vm.variables['f'] = fixed
+        vm.execute('Saved=New Map(F); K=New TypeDescription("Number,String"); Saved[K]="copy";')
+        copied = vm.variables['saved']
+        self.assertEqual(len(copied), 1)
+        self.assertIs(next(iter(copied)), first)
+        self.assertEqual(copied.get(first), 'copy')
+        self.assertEqual(fixed.get(first), 'value')
 
     def test_canonical_fixed_date_key_thaws_by_value(self):
         source = BSLMap()
