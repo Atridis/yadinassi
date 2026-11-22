@@ -4,17 +4,17 @@ from decimal import Decimal
 import sqlite3
 import unittest
 from unittest.mock import patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 import test_query_count_pushdown as fixtures
 from yadinassi import Interpreter
 from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.db.sqlite.sqlite_migration_plan import prepare, apply
-from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogAggregateRequest, CatalogKey
 
 class GenericAdmissionEpochTests(unittest.TestCase):
     tearDown = fixtures.CountPushdownTests.tearDown
     query = fixtures.CountPushdownTests.query
-    table = fixtures.CountPushdownTests.table
 
     def setUp(self):
         fixtures.CountPushdownTests.setUp(self)
@@ -26,6 +26,11 @@ class GenericAdmissionEpochTests(unittest.TestCase):
         self.backend = self.context.backend
         self.assertEqual(self.backend.format_version, 11)
         self.assertTrue(self.backend._read_admission_cache_allowed())
+        self.products_schema = next(schema for schema in self.backend._schemas if schema.name == 'Products')
+
+    def table(self):
+        # Compute display SQL without opening the manager's object view.
+        return quote_identifier(self.backend._layout.table_name(self.products_schema.identity))
 
     def sql(self, statement, args=()):
         from yadinassi.db.sqlite.sqlite_catalog import register_query_collations
@@ -35,46 +40,70 @@ class GenericAdmissionEpochTests(unittest.TestCase):
             return result
 
     def warm(self):
-        self.assertEqual(self.query()._rows, ((Decimal(3),),))
+        catalog_id = self.products_schema.identity
+        with closing(self.backend.begin_read()) as view:
+            self.assertEqual(view.catalog_schema(catalog_id), self.products_schema)
+            self.assertEqual(view.aggregate_catalog(catalog_id, CatalogAggregateRequest()).count, 3)
         self.assertIsNotNone(self.backend._read_handle.admission)
 
+    def assert_single_query_count(self, expected, table, connection):
+        statements = []
+        connection.set_trace_callback(statements.append)
+        try:
+            with patch.object(self.backend, '_validate_transaction_admission',
+                              side_effect=AssertionError('unexpected object admission')):
+                self.assertEqual(self.query()._rows, ((Decimal(expected),),))
+        finally:
+            connection.set_trace_callback(None)
+        self.assertEqual(statements, ['SELECT COUNT(*) FROM '+table])
+        self.assertIs(self.backend._read_handle.connection, connection)
+
     def test_warm_query_has_no_schema_select_or_full_admission(self):
-        self.warm(); statements=[]
-        self.backend._read_handle.connection.set_trace_callback(statements.append)
-        with patch.object(self.backend, '_validate_transaction_admission', side_effect=AssertionError('cold')):
-            self.assertEqual(self.query()._rows, ((Decimal(3),),))
-        self.assertFalse(any('FROM catalog_schema' in sql for sql in statements), statements)
-        self.assertEqual(sum('SELECT COUNT(*) FROM' in sql for sql in statements), 1)
+        table = self.table()
+        self.assertEqual(self.query()._rows, ((Decimal(3),),))
+        handle = self.backend._read_handle
+        self.assertIsNone(handle.admission)
+        self.assert_single_query_count(3, table, handle.connection)
+        self.assertIsNone(handle.admission)
 
     def test_foreign_hidden_scalar_corruption_not_hidden(self):
         self.warm(); table=self.table()
-        # A noncooperating SQLite writer can bypass CHECK constraints. COUNT
-        # must still validate the unprojected revision after the epoch changes.
+        record_id = self.sql('SELECT record_id FROM '+table+' WHERE code=?', ('1',))[0][0]
+        key = CatalogKey(self.backend.database_id, self.products_schema.identity, UUID(record_id))
+        with closing(self.backend.begin_read()) as view:
+            self.assertEqual(view.read_catalog(key).code, '1')
+        # Query COUNT reads only projected data. The admitted object read
+        # still validates the selected row's stored revision.
         from yadinassi.db.sqlite.sqlite_catalog import register_query_collations
         with closing(sqlite3.connect(self.context.path)) as db:
             register_query_collations(db)
             db.execute('PRAGMA ignore_check_constraints=ON')
             db.execute('UPDATE '+table+" SET revision=0 WHERE code='1'"); db.commit()
-        with self.assertRaises(BackendError): self.query()
-        self.assertIsNone(self.backend._read_handle.admission)
+        self.assert_single_query_count(3, table, self.backend._read_handle.connection)
+        with closing(self.backend.begin_read()) as view:
+            with self.assertRaisesRegex(BackendError,'integrity'):
+                view.read_catalog(key)
 
     def test_foreign_schema_cookie_reset_cannot_hide_ddl(self):
         self.warm()
         with closing(sqlite3.connect(self.context.path)) as db:
             version=db.execute('PRAGMA schema_version').fetchone()[0]
             db.execute('CREATE TABLE injected(x)');db.execute('PRAGMA schema_version='+str(version));db.commit()
-        with self.assertRaisesRegex(BackendError,'schema_changed'): self.query()
+        with self.assertRaisesRegex(BackendError,'schema_changed'), closing(self.backend.begin_read()):
+            pass
 
     def test_foreign_layout_change_invalidates(self):
         self.warm()
         self.sql("UPDATE catalog_storage_map SET physical_name='injected' WHERE catalog_id=(SELECT catalog_id FROM catalog_storage_map LIMIT 1)")
-        with self.assertRaises(BackendError): self.query()
+        with self.assertRaises(BackendError), closing(self.backend.begin_read()):
+            pass
 
     def test_nested_schema_mutation_is_not_shared_descriptor(self):
         self.warm(); schema=self.backend._schemas[0]; old=schema.name
         try:
             object.__setattr__(schema,'name','injected')
-            with self.assertRaisesRegex(BackendError,'schema_changed'): self.query()
+            with self.assertRaisesRegex(BackendError,'schema_changed'), closing(self.backend.begin_read()) as view:
+                view.catalog_schema(schema.identity)
         finally: object.__setattr__(schema,'name',old)
 
     def test_live_view_schema_drift_fails_before_lookup(self):
@@ -88,13 +117,19 @@ class GenericAdmissionEpochTests(unittest.TestCase):
 
     def test_own_rollback_invalidates_metadata_and_rows(self):
         self.warm();handle=self.backend._read_handle
+        self.assertTrue(handle.proofs)
         with closing(self.backend.begin_write(uuid4())):
             self.assertIsNone(handle.admission);self.assertEqual(handle.proofs,{})
-        self.assertEqual(self.query()._rows,((Decimal(3),),))
+        self.assertIsNone(handle.admission);self.assertEqual(handle.proofs,{})
+        self.warm()
 
     def test_valid_external_change_is_fresh(self):
-        self.warm();self.sql('DELETE FROM '+self.table()+" WHERE code='1'")
-        self.assertEqual(self.query()._rows,((Decimal(2),),))
+        table = self.table()
+        self.assertEqual(self.query()._rows, ((Decimal(3),),))
+        connection = self.backend._read_handle.connection
+        for code, expected in (('1', 2), ('2', 1)):
+            self.sql('DELETE FROM '+table+' WHERE code=?', (code,))
+            self.assert_single_query_count(expected, table, connection)
 
     def test_generic_source_profiles_remain_outside_scope(self):
         old=self.backend.activation_issues
@@ -105,7 +140,8 @@ class GenericAdmissionEpochTests(unittest.TestCase):
 
     def test_foreign_activation_flag_change_is_not_hidden(self):
         self.warm(); self.sql('UPDATE database_info SET activated=0')
-        with self.assertRaisesRegex(BackendError, 'schema_changed'): self.query()
+        with self.assertRaisesRegex(BackendError, 'schema_changed'), closing(self.backend.begin_read()):
+            pass
 
 
 class GenericSectionAndSequenceEpochTests(unittest.TestCase):
