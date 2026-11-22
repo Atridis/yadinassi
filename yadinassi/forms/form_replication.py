@@ -10,7 +10,7 @@ from threading import Lock
 from .form_model import (BSLClientApplicationForm, BSLFormAttribute, BSLFormField,
     BSLFormButton, BSLFormCommand, BSLFormTable, BSLFormGroup, BSLFormFieldView, MAX_ATTRIBUTES, MAX_ITEMS,
     MAX_COMMANDS, MAX_TOTAL_TEXT, MAX_ALLOCATED, name, scalar, text)
-from .form_runtime import FormSession, MAX_SOURCE
+from .form_runtime import FormSession, MAX_SOURCE, _FormInterpreter
 from yadinassi.execution.invocation import (InvocationBinding, InvocationPort, InvocationError,
     MAX_CALLS, MAX_ENDPOINTS, _encode_scalar, _decode_scalar)
 from yadinassi.execution.codegen.native_targets import target_context
@@ -613,7 +613,8 @@ class ReplicatedFormSession(FormSession):
             key = binding.name.casefold()
             if self.state != 'created' or self._busy or key in self.reserved_names:
                 raise ValueError('NoContext binding must precede open with an unused name')
-            port._bind(self.interpreter, binding)
+            # Source-owned replicas retain their own NoContext boundary.
+            port._bind(self.interpreter, binding, _form_transport=type(self.interpreter) is _FormInterpreter)
             self.reserved_names.add(key)
         finally:
             self._gate.release()

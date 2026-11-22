@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLError
 from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.execution.codegen.experimental_naked_scalar_semantics import typed_find, UnsupportedScalarSemantics
 from yadinassi.types.values import BSLType, equal
 from yadinassi.types.type_values import type_of
 from yadinassi.types.value_checks import value_is_filled
@@ -86,6 +87,37 @@ class UUIDCandidateTests(unittest.TestCase):
                      'u.text', 'u.is_filled()', 'u < u', 'u + 1', 'Type("UnknownTree")']:
             with self.subTest(expr=expr), self.assertRaises(BSLError):
                 self.vm.execute(expr)
+
+    def test_array_find_compares_uuid_values_without_matching_strings(self):
+        source = f'''
+a = New Array;
+a.Add("{A}");
+a.Add(New UUID("{B}"));
+a.Add(New UUID("{A.upper()}"));
+found = a.Find(New UUID("{A}"));
+missing = a.Найти(New UUID("{ZERO}"));
+'''
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                if prepared:
+                    vm.execute_prepared(vm.prepare(source))
+                else:
+                    vm.execute(source)
+                self.assertEqual(vm.variables['found'], Decimal(2))
+                self.assertIsNone(vm.variables['missing'])
+
+    def test_array_find_does_not_call_foreign_uuid_payload_hooks(self):
+        class HookedText(str):
+            def __eq__(self, other):
+                raise AssertionError('foreign equality hook')
+        corrupt = BSLUUID(A)
+        object.__setattr__(corrupt, 'text', HookedText(A))
+        with self.assertRaises(UnsupportedScalarSemantics):
+            typed_find([corrupt], BSLUUID(A))
+        with self.assertRaises(UnsupportedScalarSemantics):
+            typed_find([BSLUUID(A)], corrupt)
 
     def test_unmeasured_surfaces_fail_closed(self):
         self.vm.execute(f'u = New UUID("{A}"); ts = New Array; ts.Add(Type("UUID"));')

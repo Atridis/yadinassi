@@ -9,6 +9,7 @@ from yadinassi.text.strings import concatenate as _join
 from yadinassi.text.chars import CHARS
 from yadinassi.text.collation import _DIRECT_STRING_KEY_ABI as _string_key
 from yadinassi.temporal.dates import _DIRECT_EQUALITY_DATE_STATE, UnsupportedDateRange
+from yadinassi.types.unique_identifiers import BSLUUID
 from yadinassi.types.values import BSLType, NULL, to_string, _DIRECT_TYPE_PRESENTATIONS, _DIRECT_ARRAY_TYPE, _DIRECT_FIXED_ARRAY_TYPE, _DIRECT_FIXED_COLLECTION_TYPE, divide as _divide
 from yadinassi.collections.structures import _DIRECT_FIXED_STRUCTURE_SNAPSHOT
 from yadinassi.collections.search_directions import BSLSearchDirection
@@ -40,6 +41,7 @@ _TYPE_PRESENTATIONS = {id(member): (member, label, error)
 _TYPE_PRESENTATIONS[id(CHARS)] = (
     CHARS, None, 'Строковое представление пространства Символы пока не поддерживается')
 
+_UUID_TEXT = vars(BSLUUID)['text']
 _TYPE_MRO = vars(type)['__mro__']
 
 def _fixed_identity(value):
@@ -65,6 +67,20 @@ def typed_find(array, value):
     if type(array) is not list:
         raise UnsupportedScalarSemantics('typed_find requires a native array')
     value_type = type(value)
+    if value_type is BSLUUID:
+        # The UUID is a value, unlike a collection. Read only its exact slot;
+        # never invoke comparison on a malformed or foreign host value.
+        needle = _UUID_TEXT.__get__(value, BSLUUID)
+        if type(needle) is not str:
+            raise UnsupportedScalarSemantics('invalid UUID text')
+        for index, item in enumerate(array):
+            if type(item) is BSLUUID:
+                text = _UUID_TEXT.__get__(item, BSLUUID)
+                if type(text) is not str:
+                    raise UnsupportedScalarSemantics('invalid UUID text')
+                if text == needle:
+                    return Decimal(index)
+        return None
     # Fixed descendants and the admitted enum singletons use identity.
     # This grants no fields, methods, equality hooks or payload traversal.
     identity = id(value_type) in _FIND_IDENTITY_TYPE_IDS or _fixed_identity(value)

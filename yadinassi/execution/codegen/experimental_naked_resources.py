@@ -6,6 +6,7 @@ int conversion so enormous exponents cannot materialize enormous Python integers
 """
 from decimal import Decimal
 from yadinassi.types import values
+from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 
 
 def array_widths(dimensions=(), *, max_slots=None, max_dimensions=None):
@@ -49,18 +50,19 @@ def bounded_array(*dimensions, max_slots=None, max_dimensions=None):
 
 
 def bounded_insert(array,index,value=None,*,max_growth=None):
-    if type(array) is not list:raise TypeError('Ожидается массив')
+    if type(array) is not list and type(array) is not PlainArray:raise TypeError('Ожидается массив')
     if type(index) is not Decimal:raise TypeError('Ожидается число')
     if not index.is_finite() or index!=index.to_integral_value():raise ValueError('Ожидается целое число')
     if index<0:raise IndexError('Индекс массива вне границ')
     limit=values._MAX_INSERT_GROWTH if max_growth is None else max_growth
-    if index>=len(array)+limit:
+    length=list.__len__(array)
+    if index>=length+limit:
         raise ValueError('Вставить: превышен предел роста массива Yadinassi (1000000 элементов)')
     offset=int(index)
-    if offset<len(array):array.insert(offset,value)
+    if offset<length:list.insert(array,offset,value)
     else:
         # Prepare the full tail before publishing any mutation, as the VM does.
-        tail=[None]*(offset-len(array));tail.append(value);array.extend(tail)
+        tail=[None]*(offset-length);tail.append(value);list.extend(array,tail)
 
 
 def _copy_fixed_array(source,max_slots,max_dimensions):

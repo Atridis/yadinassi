@@ -1,5 +1,6 @@
 """Native Array contract repairs, retaining direct representation and budgets."""
 import unittest
+from decimal import Decimal
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.types import values
@@ -7,6 +8,7 @@ from yadinassi.syntax.parser import parse
 from yadinassi.types.values import BSLFixedArray
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.execution.codegen.experimental_naked_resources import bounded_array
+from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 
 class DirectArrayContractTests(unittest.TestCase):
     def test_fixed_copy_routes_nested_aliases_and_no_vm_dispatch(self):
@@ -68,6 +70,31 @@ F=New FixedArray(A); B=New Array(F); B[0][0]=9; S.N=2;'''
             with self.assertRaises(BSLError):vm.execute(call)
             self.assertEqual(events,[]);self.assertEqual(vm.execute('A[0]'),7)
             vm.execute('A.Insert(0,9);');self.assertEqual(vm.execute('A.Count()'),2)
+
+    def test_insert_uses_both_canonical_array_representations(self):
+        for constructor, kind in (('New Array', PlainArray), ('New Array(1)', list)):
+            for prepared in (False, True):
+                with self.subTest(kind=kind, prepared=prepared):
+                    vm=Interpreter(allow_extensions=True)
+                    self.addCleanup(vm.close)
+                    events=[]
+                    vm.register_function('Position', lambda: events.append('position') or Decimal(0))
+                    vm.register_function('Payload', lambda: events.append('payload') or 'first')
+                    vm.execute('A='+constructor+'; A[0]=7;' if kind is list else 'A='+constructor+'; A.Add(7);')
+                    storage=vm.variables['a']
+                    self.assertIs(type(storage), kind)
+                    def execute(source):
+                        if prepared:
+                            return vm.execute_prepared(vm.prepare(source))
+                        return vm.execute(source)
+                    execute('A.Insert(Position(),Payload()); A.Вставить(3);')
+                    self.assertIs(vm.variables['a'], storage)
+                    self.assertEqual(list(storage), ['first',7,None,None])
+                    self.assertEqual(events, ['position','payload'])
+                    with patch.object(values, '_MAX_INSERT_GROWTH', 1):
+                        with self.assertRaisesRegex(BSLError, 'предел роста'):
+                            execute('A.Insert(5,9);')
+                    self.assertEqual(list(storage), ['first',7,None,None])
 
     def test_fixed_copy_rejects_extra_dimension_and_nested_subclass(self):
         vm=Interpreter();vm.execute('F=New FixedArray(New Array);')
