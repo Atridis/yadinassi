@@ -4,6 +4,7 @@ from yadinassi.types.values import (_DIRECT_COLLECTION_CLASS_ABI,
 from yadinassi.collections.structures import _DIRECT_COLLECTION_CLASS_ABI as _STRUCTURE_ABI
 from yadinassi.collections.maps import _DIRECT_COLLECTION_CLASS_ABI as _MAP_ABI
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from .python_direct_plain_array import PlainArray
 
 BSLArray=_DIRECT_COLLECTION_CLASS_ABI[2][0]
 HostFunction=_DIRECT_COLLECTION_CLASS_ABI[3][0]
@@ -44,9 +45,9 @@ def construct(context,target,parameters=None):
                 raise BoundaryViolation('dynamic constructor argument array hooks changed')
         parameters=object.__getattribute__(parameters,'items')
         if type(parameters) is not list:raise BoundaryViolation('dynamic constructor argument array storage changed')
-    if type(parameters) is list:
-        if len(parameters)>_MAX_ARGUMENTS:raise ValueError('Новый: превышен предел аргументов Yadinassi (1024)')
-        arguments=tuple(parameters)
+    if type(parameters) is list or type(parameters) is PlainArray:
+        if list.__len__(parameters)>_MAX_ARGUMENTS:raise ValueError('Новый: превышен предел аргументов Yadinassi (1024)')
+        arguments=tuple(list.__iter__(parameters))
     else:arguments=()
     expected=_NATIVE.get(key)
     if expected is not None:

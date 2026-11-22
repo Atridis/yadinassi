@@ -3,8 +3,10 @@ from decimal import Decimal
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
+from yadinassi.syntax.parser import parse
 from yadinassi.types.values import BSLType
 
 
@@ -67,6 +69,31 @@ class DynamicNewTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('x[0][1]'), 'Я😀')
         self.assertIsNone(self.vm.execute('x[1][1]'))
         self.assertEqual(self.vm.execute('args[0]'), Decimal(2))
+
+    def test_published_native_argument_array_is_read_without_python_hooks(self):
+        from yadinassi.execution.direct.python_direct_plain_array import PlainArray
+
+        class HostArray(list):
+            def __iter__(self):
+                raise AssertionError("host iteration")
+
+        source = 'New("Array", Args).Count()'
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                vm.execute('Args = New Array; Args.Add(3);')
+                self.assertIs(type(vm.variables['args']), PlainArray)
+                plan = vm.prepare_program(parse(source)) if prepared else None
+
+                def run():
+                    return vm.execute_prepared(plan) if prepared else vm.execute(source)
+
+                with (patch.object(PlainArray, '__iter__', side_effect=AssertionError("patched iteration")),
+                      patch.object(PlainArray, '__len__', side_effect=AssertionError("patched length"))):
+                    self.assertEqual(run(), Decimal(3))
+                vm.variables['args'] = HostArray([Decimal(3)])
+                self.assertEqual(run(), Decimal(0))
 
     def test_structure_values_keep_references(self):
         self.vm.execute('child = New Array; args = New Array; args.Add("Имя,Данные"); '
