@@ -310,6 +310,43 @@ class DirectValueTreeTests(unittest.TestCase):
         with self.assertRaises((BoundaryViolation,BSLError)):vm.execute('T.Rows.Add()')
         self.assertEqual(events,[]);self.assertEqual(len(tree.rows.items),1)
 
+    def test_uuid_defaults_require_exact_zero_in_the_owning_typed_column(self):
+        from yadinassi.types.unique_identifiers import BSLUUID
+
+        vm = self.vm()
+        vm.execute('T=New ValueTree;T.Columns.Add("U",New TypeDescription("UUID"));'
+                   'T.Columns.Add("Other");R=T.Rows.Add();')
+        tree, row = (vm.variables[name] for name in ('t', 'r'))
+        uuid_column, other_column = tree.columns.items
+        zero = uuid_column.default
+        self.assertIs(type(zero), BSLUUID)
+        self.assertEqual(zero.text, '00000000-0000-0000-0000-000000000000')
+        self.assertEqual(row.get_member('U'), zero)
+
+        class OpaqueText(str):
+            def __eq__(self, other):
+                raise AssertionError('UUID text compared through a host hook')
+
+        malformed = BSLUUID(zero.text)
+        object.__setattr__(malformed, 'text', OpaqueText(zero.text))
+        extended = BSLUUID(zero.text)
+        object.__setattr__(extended, 'get_member', lambda *_: self.fail('injected UUID hook'))
+        for column, default in (
+                (uuid_column, object.__new__(BSLUUID)), (uuid_column, malformed),
+                (uuid_column, extended),
+                (uuid_column, BSLUUID('11111111-2222-4333-8444-555555555555')),
+                (other_column, zero)):
+            with self.subTest(column=column.name, default=type(default)):
+                old = column.default
+                column.default = default
+                try:
+                    with self.assertRaisesRegex(BSLError, 'Неверное значение по умолчанию'):
+                        vm.execute('T.Rows.Add()')
+                finally:
+                    column.default = old
+                self.assertEqual(len(tree.rows.items), 1)
+                self.assertIs(tree.rows.items[0], row)
+
     def test_schema_class_and_instance_hooks_are_sealed(self):
         vm=self.vm();tree,row=self.setup_tree(vm);events=[]
         description=tree.columns.items[0].value_type

@@ -8,10 +8,14 @@ from weakref import WeakKeyDictionary, ref
 from decimal import Context, Decimal, DecimalException, InvalidOperation, MAX_EMAX, MIN_EMIN, Overflow, ROUND_DOWN, Rounded, localcontext
 
 from yadinassi.types.values import BSLArray, BSLObject, BSLType, HostFunction, NULL, equal, number
+from yadinassi.types.unique_identifiers import BSLUUID, _ZERO as _ZERO_UUID
 from .structures import BSLStructure, _key
 from yadinassi.types.type_descriptions import BSLTypeDescription, _boolean_value, _number_value, _MAX_NUMBER_DIGITS
 from .value_tables import (BSLValueTableColumn, BSLValueTableColumnCollection,
                            _default, _adjust, _method, _text, _MAX_TOTAL_PRECISION)
+
+_UUID_TEXT = vars(BSLUUID)['text']
+_UUID_DICT = vars(BSLObject)['__dict__']
 
 # Definition-owned provenance, not a database or interpreter grant. Weak links
 # allow ordinary detached trees to be collected and reject coherent reparenting.
@@ -733,6 +737,17 @@ class BSLValueTreeRowCollection(BSLObject):
                 text_size += len(default)
                 if text_size > _MAX_DEFAULT_TEXT:
                     raise ValueError("ДеревоЗначений: превышен предел значений по умолчанию")
+            elif type(default) is BSLUUID:
+                # Only the canonical zero UUID default of a UUID column.
+                # Read the original slots, not a host attribute hook.
+                try:
+                    text = _UUID_TEXT.__get__(default, BSLUUID)
+                except AttributeError:
+                    text = None
+                state = _UUID_DICT.__get__(default, BSLUUID)
+                if (description.types != (BSLType.UUID,) or type(text) is not str
+                        or text != _ZERO_UUID or type(state) is not dict or state):
+                    raise ValueError("Неверное значение по умолчанию вставки дерева")
             elif (description.types == (BSLType.STRING,)
                     or not (default is None or default is NULL or type(default) is bool
                             or type(default) is Decimal or type(default) is BSLDate)):

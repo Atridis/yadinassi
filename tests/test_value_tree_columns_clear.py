@@ -189,7 +189,7 @@ class ClearPolicyTests(unittest.TestCase):
                 with self.subTest(operation=operation,mutate=mutate),self.assertRaises(ValueError):
                     held.add() if operation=='add' else held.insert(D(0))
                 self.assertEqual(tree.rows.count(),D(0))
-        for name in ('Number','String','Boolean','Date'):
+        for name in ('Number','String','Boolean','Date','UUID'):
             tree,column,rows=self.fixture();held=rows[1].rows;tree.columns.clear()
             tree.columns.add('Key',BSLTypeDescription(name));held.add();held.insert(D(0))
             self.assertEqual(tree.rows.count(),D(2))
