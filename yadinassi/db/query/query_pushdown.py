@@ -145,6 +145,59 @@ def _numeric_constant(plan, expression):
     return value if type(value) is Decimal else None
 
 
+
+_REVERSED_COMPARISON = {'eq':'eq','ne':'ne','lt':'gt','le':'ge','gt':'lt','ge':'le'}
+
+
+def _ordered_predicate(plan):
+    """Canonicalize the bound SQL candidate, never the residual predicate."""
+    if plan.predicate is None: return None
+    from .relational_queries import _BoundField, BSLDate, BSLCatalogReference, BSLDocumentReference
+    from .query_ordered_predicates import total_number
+
+    def constant(value):
+        if type(value) is Decimal or type(value) is str or type(value) is bool:
+            return value
+        if type(value) is syntax.Expression:
+            return _numeric_constant(plan, value)
+        return None
+
+    def normalize(node):
+        if type(node) is syntax.Predicate and node.kind in ('and','or'):
+            identity = node.kind == 'and'
+            terms = []
+            for term in node.terms:
+                normalized, truth = normalize(term)
+                # Neutral terms preserve both SQL unknown and the order in
+                # which the remaining terms can short-circuit or raise.
+                if truth is not identity: terms.append((normalized,truth))
+            if not terms: return node,identity
+            if len(terms) == 1: return terms[0]
+            return syntax.Predicate(node.kind,tuple(term for term,_ in terms)),None
+        if type(node) is not syntax.Comparison or node.operator not in _REVERSED_COMPARISON:
+            return node,None
+        left,right = node.field,node.value
+        if type(right) is _BoundField:
+            kind = type(left)
+            if (kind is str or kind is bool or kind is BSLDate or kind is BSLCatalogReference
+                    or kind is BSLDocumentReference or (kind is Decimal and total_number(plan,left))):
+                return syntax.Comparison(right,_REVERSED_COMPARISON[node.operator],left),None
+            return node,None
+        if type(left) is _BoundField: return node,None
+        a,b = constant(left),constant(right)
+        if a is not None and b is not None:
+            try:
+                truth = plan.test(syntax.Comparison(a,node.operator,b),())
+            except (ArithmeticError,TypeError,ValueError):
+                pass  # If reached, the unchanged residual reports the error.
+            else:
+                if type(truth) is bool: return node,truth
+        return node,None
+
+    normalized,truth = normalize(plan.predicate)
+    # Do not invent a new unfiltered or empty route for constant-only WHERE.
+    return normalized if truth is None else plan.predicate
+
 def bounded_projection(plan):
     """Prove and bind the final-page projection without changing descriptors."""
     from .relational_queries import _BoundField
@@ -201,19 +254,20 @@ def try_ordered_select(plan, view, budget=None):
             return None
     projection = bounded_projection(plan)
     if projection is None: return None
+    condition = _ordered_predicate(plan)
     if q.section is not None:
         if q.family not in ('catalog','document'): return None
         from .query_ordered_parts import try_ordered_parts
-        return try_ordered_parts(plan,view,budget,projection)
+        return try_ordered_parts(plan,view,budget,projection,condition)
     if q.family in ('accumulation_register', 'information_register'):
         from .recorder_queries import RecorderQueryManager
         accumulation = q.family == 'accumulation_register'
         if accumulation or type(plan.managers[0]) is RecorderQueryManager:
             from .query_movement_order import try_ordered_movements
-            return try_ordered_movements(plan, view, budget, 'accumulation' if accumulation else 'recorder', projection)
+            return try_ordered_movements(plan, view, budget, 'accumulation' if accumulation else 'recorder', projection, condition)
     if q.family == 'information_register':
         from .register_queries import try_ordered_register
-        return try_ordered_register(plan,view,budget,projection)
+        return try_ordered_register(plan,view,budget,projection,condition)
     document = q.family == 'document'
     select = getattr(view, 'ordered_document_values' if document else 'ordered_catalog_values', None)
     if select is None: return None
@@ -225,7 +279,7 @@ def try_ordered_select(plan, view, budget=None):
     if document:
         from yadinassi.db.document.document_backend import DocumentKey, DocumentValuePage, DocumentValueRow
         from .document_queries import _ordered_header_value
-        predicates = plan.document_storage_predicate(plan.predicate, 0)
+        predicates = plan.document_storage_predicate(condition, 0)
         if predicates is None:
             from yadinassi.db.sqlite.sqlite_documents import DocumentView
             from .query_ordered_predicates import bind_scalar_predicate
@@ -234,7 +288,7 @@ def try_ordered_select(plan, view, budget=None):
                     or any(c.kind in ('catalog_ref','document_ref','enum_ref') and c.field != 'ref'
                            for c in plan.fields[0])):
                 return None
-            predicate = bind_scalar_predicate(plan, ('number','date','deletion_mark'), field_pairs=True,
+            predicate = bind_scalar_predicate(plan, condition, ('number','date','deletion_mark'), field_pairs=True,
                                               standard_leaf=plan.document_storage_predicate)
             if predicate is None: return None
             filtered = True
@@ -242,8 +296,8 @@ def try_ordered_select(plan, view, budget=None):
             predicate = CatalogPredicate('and', predicates) if predicates else None
         page_type, row_type, key_type = DocumentValuePage, DocumentValueRow, DocumentKey
     else:
-        predicate = plan.storage_predicate(plan.predicate, 0, allow_or=True, field_pairs=True)
-        if plan.predicate is not None and predicate is None: return None
+        predicate = plan.storage_predicate(condition, 0, allow_or=True, field_pairs=True)
+        if condition is not None and predicate is None: return None
         page_type, row_type, key_type = CatalogValuePage, CatalogValueRow, CatalogKey
     if not q.order and not _point_predicate(predicate, ('ref',) if document else ('code','ref')):
         return None

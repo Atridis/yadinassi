@@ -114,7 +114,7 @@ def load_register(manager, columns, view, budget, *, source=None, parameters=Non
 
 
 
-def try_ordered_register(plan, view, budget, projection):
+def try_ordered_register(plan, view, budget, projection, condition):
     """Materialize a bounded native ORDER/TOP page from the exact register port."""
     from yadinassi.db.catalog.catalog_backend import CatalogOrder
     from yadinassi.db.registers.information_registers import BSLInformationRegisterManager
@@ -131,7 +131,7 @@ def try_ordered_register(plan, view, budget, projection):
         return None
     manager._check_view(view)
     order = tuple(CatalogOrder(field, descending) for field, descending in orders.items())
-    filtered = plan.predicate is not None
+    filtered = condition is not None
     if filtered:
         from yadinassi.db.sqlite.sqlite_documents import DocumentView
         from .query_ordered_predicates import bind_scalar_predicate
@@ -139,7 +139,7 @@ def try_ordered_register(plan, view, budget, projection):
                 or view._view._operation_id is not None
                 or any(c.kind in ('catalog_ref','document_ref','enum_ref') for c in plan.fields[0])):
             return None
-        predicate = bind_scalar_predicate(plan)
+        predicate = bind_scalar_predicate(plan,condition)
         if predicate is None: return None
         page = provider(manager._schema.identity, order, plan.query.limit, predicate=predicate)
     else:

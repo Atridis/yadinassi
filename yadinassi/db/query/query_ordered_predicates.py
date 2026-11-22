@@ -30,7 +30,7 @@ def bind_field_comparison(node, source):
     return CatalogFieldComparison(left.column.field,node.operator,right.column.field)
 
 
-def bind_scalar_predicate(plan, standard=(), *, allow_or=True, reference=None,
+def bind_scalar_predicate(plan, condition, standard=(), *, allow_or=True, reference=None,
                           field_pairs=False, standard_leaf=None):
     from .relational_queries import _BoundField
 
@@ -71,4 +71,4 @@ def bind_scalar_predicate(plan, standard=(), *, allow_or=True, reference=None,
             return None
         return CatalogComparison(column.field,node.operator,value)
 
-    return bind(plan.predicate)
+    return bind(condition)

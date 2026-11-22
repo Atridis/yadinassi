@@ -4,7 +4,7 @@ from decimal import Decimal
 from yadinassi.db.catalog.catalog_backend import BackendError
 
 
-def try_ordered_movements(plan, view, budget, family, projection):
+def try_ordered_movements(plan, view, budget, family, projection, condition):
     from .query_ordered_predicates import bind_scalar_predicate
     from .queries import BSLQueryResult, _section_value, _MAX_CELLS, _MAX_RESULT_TEXT
     from yadinassi.db.sqlite.sqlite_movement_order import ordered_movements
@@ -13,8 +13,8 @@ def try_ordered_movements(plan, view, budget, family, projection):
     accumulation = family == 'accumulation'
     schema = manager._schema if accumulation else manager.recorder_schema
     standard = ('active', 'period') if accumulation else ('active',)
-    predicate = bind_scalar_predicate(plan, standard=standard)
-    if plan.predicate is not None and predicate is None:
+    predicate = bind_scalar_predicate(plan, condition, standard=standard)
+    if condition is not None and predicate is None:
         return None
     order = {}
     for field, descending in plan.orders:

@@ -189,6 +189,57 @@ class OrderedTopMainDemoTests(unittest.TestCase):
                 self.assertIn('"code" COLLATE yadinassi_casefold_v1 =',where)
                 self.assertTrue(sep and tail.endswith('LIMIT 1'),trace)
 
+    def test_bound_top_normalizes_equivalent_typed_predicates_to_same_sql(self):
+        from yadinassi.db.query import query_pushdown
+        from yadinassi.db.query.relational_queries import _Plan
+        self.seed_folded_codes(1000,codes=('ЁЖ','ёж'))
+        prefix = 'SELECT TOP 1 Description FROM Catalog.Склады WHERE '
+        cases = (
+            (('Code=&Key', '&Key=Code', '(&Key=Code OR 1=0) AND 1=1'), (('first marked',),)),
+            (('Code=&Key AND DeletionMark=FALSE',
+              '&Key=Code AND DeletionMark=FALSE',
+              'Code=&Key AND DeletionMark=FALSE AND 1=1',
+              'Code=&Key AND (DeletionMark=FALSE OR 1=0)',
+              '&Key=Code AND (DeletionMark=FALSE OR 1=0)',
+              '(1+2=3 AND &Key=Code) AND (1=0 OR FALSE=DeletionMark)'),
+             (('second live',),)),
+        )
+        for variants, expected in cases:
+            canonical = None
+            for condition in variants:
+                with self.subTest(condition=condition):
+                    q = self.bound(prefix+condition,Key='Ёж')
+                    with patch.object(query_pushdown,'try_ordered_select',return_value=None):
+                        self.assertEqual(q.execute()._rows,expected)
+                    trace,traced = self.actual_trace()
+                    with traced, patch.object(_Plan,'load',side_effect=AssertionError('residual load')):
+                        self.assertEqual(q.execute()._rows,expected)
+                    self.assertEqual(len(trace),1,trace)
+                    self.assertTrue(trace[0].endswith('LIMIT 1'),trace)
+                    if canonical is None: canonical = trace[0]
+                    else: self.assertEqual(trace[0],canonical)
+
+    def test_top_normalization_preserves_residual_error_order_and_null(self):
+        self.seed_folded_codes()
+        prefix='SELECT TOP 1 Description FROM Catalog.Склады WHERE '
+        cases = (
+            ('(1/0=1 OR 1=1) AND &Key=Code','missing', 'division by zero'),
+            ('(1=1 OR 1/0=1) AND &Key=Code','CASEFOLD', (('first marked',),)),
+            ('&Key=Code AND (1=0 OR 1/0=1)','missing', ()),
+            ('&Key=Code AND (1=0 OR 1/0=1)','CASEFOLD', 'division by zero'),
+            ('&Key=Code AND (1=1 OR Description=NULL)','CASEFOLD', (('first marked',),)),
+            ('&Key=Code AND (1=0 OR Description=NULL)','CASEFOLD', ()),
+            ('(&Key=Code OR Description="second live") AND 1=1','missing', (('second live',),)),
+        )
+        for condition, key, expected in cases:
+            with self.subTest(condition=condition,key=key), patch.object(
+                    DocumentView,'ordered_catalog_values',side_effect=AssertionError('not eligible')):
+                q = self.bound(prefix+condition,Key=key)
+                if type(expected) is str:
+                    with self.assertRaisesRegex(ValueError,expected):q.execute()
+                else:
+                    self.assertEqual(q.execute()._rows,expected)
+
     def test_unordered_point_does_not_accept_partial_or_negative_predicate(self):
         self.seed_folded_codes()
         start='SELECT TOP 1 Description FROM Catalog.Склады WHERE '
@@ -360,16 +411,17 @@ class OrderedTopGenericTests(unittest.TestCase):
         vm=Interpreter(database_context=db)
         self.addCleanup(vm.close)
         self.create(self.draft(code='1'))
-        text=('SELECT TOP 1 Code FROM Catalog.Products WHERE Code=&Key AND '
-              '(Amount<&Huge AND Description=Description)')
-        q=BSLQuery(vm._catalogs,text)
-        q.set_parameter('Huge',Decimal('1e38'))
-        with patch.object(_View,'ordered_catalog_values',side_effect=AssertionError('partial filter')):
-            q.set_parameter('Key','missing')
-            self.assertEqual(q.execute()._rows,())
-            q.set_parameter('Key','1')
-            with self.assertRaisesRegex(ValueError,'Number range exceeded'):
-                q.execute()
+        start = 'SELECT TOP 1 Code FROM Catalog.Products WHERE Code=&Key AND '
+        for comparison in ('Amount<&Huge', '&Huge>Amount'):
+            q=BSLQuery(vm._catalogs,start+'('+comparison+' AND Description=Description)')
+            q.set_parameter('Huge',Decimal('1e38'))
+            with self.subTest(comparison=comparison), patch.object(
+                    _View,'ordered_catalog_values',side_effect=AssertionError('partial filter')):
+                q.set_parameter('Key','missing')
+                self.assertEqual(q.execute()._rows,())
+                q.set_parameter('Key','1')
+                with self.assertRaisesRegex(ValueError,'Number range exceeded'):
+                    q.execute()
 
     def test_unordered_key_not_stays_on_generic_residual(self):
         self.create(self.draft(code='1'))
@@ -498,6 +550,24 @@ EndDo;
             q.set_parameter('Key',ref)
             with patch.object(DocumentView,'ordered_document_values',side_effect=AssertionError('no stored Posted rule')):
                 self.assertEqual(q.execute()._rows,(('Straße',),))
+
+    def test_document_point_normalizes_reversed_reference_and_neutral_terms(self):
+        from yadinassi.db.query.queries import BSLQuery
+        from yadinassi.db.query.relational_queries import _Plan
+        self.seed()
+        key = self.vm.execute('Documents.Receipt.FindByNumber("Straße")')
+        prefix = 'SELECT TOP 1 Number FROM Document.Receipt WHERE '
+        for condition in ('Ref=&Key AND DeletionMark=FALSE',
+                          '(&Key=Ref OR 1=0) AND (DeletionMark=FALSE AND 1=1)'):
+            q = BSLQuery(self.vm._catalogs,prefix+condition,self.vm._documents)
+            q.set_parameter('Key',key)
+            trace,traced = self.actual_trace()
+            with self.subTest(condition=condition):
+                with traced, patch.object(_Plan,'load',side_effect=AssertionError('residual load')):
+                    self.assertEqual(q.execute()._rows,(('Straße',),))
+                self.assertEqual(len(trace),1,trace)
+                self.assertIn('r.record_id COLLATE BINARY =',trace[0])
+                self.assertTrue(trace[0].endswith('LIMIT 1'),trace)
 
     def test_document_compounds_respect_parsed_envelope_and_raw_cycles_decline(self):
         from yadinassi.db.catalog.catalog_backend import CatalogComparison, CatalogOrder, CatalogPredicate, CatalogScanRequest

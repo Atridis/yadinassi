@@ -95,6 +95,16 @@ class FlatWhereTests(unittest.TestCase):
             self.assertEqual(self.bound('SELECT TOP 2 Key FROM InformationRegister.Rates '
                                         'WHERE Stamp=&Moment ORDER BY Key',Moment=too_precise),())
 
+    def test_shared_normalization_preserves_direction_and_decimal_bound(self):
+        self.seed()
+        prefix = 'SELECT TOP 2 Key,Amount FROM InformationRegister.Rates WHERE '
+        expected = (('STRASSE',Decimal(40)),('Straße',Decimal(20)))
+        before = self.verify(prefix+'Amount>&Min AND Enabled=TRUE ORDER BY Key',
+                             expected,Min=Decimal('19.995'))
+        after = self.verify(prefix+'1=1 AND (&Min<Amount OR 1=0) AND TRUE=Enabled ORDER BY Key',
+                            expected,Min=Decimal('19.995'))
+        self.assertEqual(after,before)
+
     def test_independent_register_uses_same_exact_constant_projection(self):
         self.seed()
         text=('SELECT TOP 2 Key, 1/3 AS Marker FROM InformationRegister.Rates '

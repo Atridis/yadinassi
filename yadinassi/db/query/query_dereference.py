@@ -125,7 +125,7 @@ def _where(plan):
         physical_key = CatalogKey if catalog else DocumentKey
         return physical_key(database, identity, value.reference_uuid)
 
-    result = bind_scalar_predicate(plan, (
+    result = bind_scalar_predicate(plan, plan.predicate, (
         'ref', 'code', 'description', 'deletion_mark', 'parent', 'is_folder',
         'number', 'date', 'posted', 'line_number', 'recorder', 'period', 'active',
     ), reference=key)

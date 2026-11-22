@@ -7,7 +7,7 @@ from yadinassi.db.document.document_backend import DocumentKey, DocumentValuePag
 from .query_ordered_predicates import bind_scalar_predicate
 
 
-def try_ordered_parts(plan, view, budget, projection):
+def try_ordered_parts(plan, view, budget, projection, condition):
     from .queries import BSLQueryResult, _MAX_CELLS, _MAX_RESULT_TEXT, _section_row, _section_value
     columns, project = projection
     document = plan.query.family == 'document'
@@ -15,8 +15,8 @@ def try_ordered_parts(plan, view, budget, projection):
     if select is None: return None
     manager,part = plan.managers[0],plan.sections[0]
     if part is None: return None
-    predicate = bind_scalar_predicate(plan,('line_number',) if document else ()) if plan.predicate is not None else None
-    if plan.predicate is not None and predicate is None: return None
+    predicate = bind_scalar_predicate(plan,condition,('line_number',) if document else ())
+    if condition is not None and predicate is None: return None
     fields = tuple(dict.fromkeys(column.field for column in plan.fields[0]))
     order = {}
     for field, descending in plan.orders: order.setdefault(field.column.field,descending)
