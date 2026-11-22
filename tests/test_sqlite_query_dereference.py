@@ -157,3 +157,102 @@ Q=Catalogs.Products.CreateItem(); Q.Code="B"; Q.Write();''')
         self.assertEqual(len(trace),1,trace)
         self.assertIn(' OR ',trace[0])
         self.assertEqual(trace[0].count('LEFT JOIN "catalog_Склады"'),1)
+
+    def test_audit_catalog_self_path_duplicate_or_with_top1_and_distinct(self):
+        self.seed()
+        self.vm.execute('Key=W.Code;')
+        for distinct in ('','DISTINCT '):
+            with self.subTest(distinct=distinct):
+                self.vm.variables['sql'] = (
+                    f'SELECT {distinct}TOP 1 W.Ref.Description AS Caption FROM Catalog.Склады AS W '
+                    'WHERE W.Code=&Key OR W.Code=&Key')
+                self.vm.execute('Q=New Query(Sql);Q.SetParameter("Key",Key);')
+                trace=[]
+                connection = self.backend._read_handle.connection
+                connection.set_trace_callback(trace.append)
+                try:
+                    self.assertEqual(self.vm.execute('Q.Execute()')._rows,(('Warehouse',),))
+                finally:
+                    connection.set_trace_callback(None)
+                self.assertEqual(len(trace),1,trace)
+                self.assertIn(' OR ',trace[0])
+                self.assertTrue(trace[0].endswith('LIMIT 1'),trace)
+                self.assertNotIn('LEFT JOIN',trace[0])
+
+    def test_distinct_preserves_first_spelling_null_and_top_against_join(self):
+        from yadinassi.types.values import NULL
+        self.vm.execute('''W=Catalogs.Склады.CreateItem();W.Description="Straße";W.Write();
+W2=Catalogs.Склады.CreateItem();W2.Description="STRASSE";W2.Write();
+W3=Catalogs.Склады.CreateItem();W3.Description="";W3.Write();
+D=Documents.Receipt.CreateDocument();D.Number="A";D.Date=Date(2024,1,1);D.Warehouse=W.Ref;D.Write();
+D=Documents.Receipt.CreateDocument();D.Number="B";D.Date=Date(2024,1,1);D.Warehouse=W2.Ref;D.Write();
+D=Documents.Receipt.CreateDocument();D.Number="C";D.Date=Date(2024,1,1);D.Warehouse=W3.Ref;D.Write();
+D=Documents.Receipt.CreateDocument();D.Number="D";D.Date=Date(2024,1,1);D.Write();
+D=Documents.Receipt.CreateDocument();D.Number="E";D.Date=Date(2024,1,1);D.Write();''')
+        for top, order, wanted in (
+                ('','',(('Straße',),('',),(NULL,))),
+                ('',' ORDER BY Caption',((NULL,),('',),('Straße',))),
+                ('TOP 1 ',' ORDER BY Caption DESC',(('Straße',),)),
+                ('TOP 2 ',' ORDER BY Caption DESC',(('Straße',),('',))),
+                ('TOP 2 ','',(('Straße',),('',)))):
+            with self.subTest(top=top,order=order):
+                select = 'SELECT DISTINCT '+top
+                predicate = ' WHERE D.DeletionMark=False OR D.Number="unknown"'+order
+                self.vm.variables['sql'] = (select+'W.Description AS Caption FROM Document.Receipt AS D '
+                    'LEFT JOIN Catalog.Склады AS W ON D.Warehouse=W.Ref'+predicate)
+                expected = self.vm.execute('Q=New Query(Sql);Q.Execute()')._rows
+                self.assertEqual(expected,wanted)
+                self.vm.variables['sql'] = (select+'D.Warehouse.Description AS Caption '
+                    'FROM Document.Receipt AS D'+predicate)
+                self.vm.execute('Q=New Query(Sql);')
+                trace=[]
+                connection = self.backend._read_handle.connection
+                connection.set_trace_callback(trace.append)
+                try:
+                    self.assertEqual(self.vm.execute('Q.Execute()')._rows,expected)
+                finally:
+                    connection.set_trace_callback(None)
+                self.assertEqual(len(trace),1,trace)
+                self.assertTrue(trace[0].endswith('LIMIT 1' if top=='TOP 1 ' else 'LIMIT 10001'),trace)
+
+    def test_distinct_does_not_hide_an_invalid_duplicate_reference(self):
+        from yadinassi import BSLRuntimeError
+        self.seed()
+        table, column = data_table(self.schema), attribute_column(self.field)
+        with closing(sqlite3.connect(self.path)) as writer, writer:
+            writer.execute(f'UPDATE "{table}" SET "{column}"=? WHERE record_id='
+                           '(SELECT record_id FROM document_record WHERE number=?)',(str(uuid4()),'B'))
+        self.vm.variables['sql'] = ('SELECT DISTINCT D.Warehouse.Description AS Caption '
+                                    'FROM Document.Receipt AS D')
+        with self.assertRaises(BSLRuntimeError):
+            self.vm.execute('Q=New Query(Sql);Q.Execute()')
+        self.assertIsNone(self.backend._active)
+
+    def test_or_dereference_reads_staged_owner_and_never_escapes_rollback(self):
+        self.seed()
+        self.vm.variables['sql'] = (
+            'SELECT D.Warehouse.Description AS Caption FROM Document.Receipt AS D '
+            'WHERE D.Number="inside" OR D.Number="missing"')
+        self.vm.execute('''Q=New Query(Sql);
+BeginTransaction();
+Inside=Documents.Receipt.CreateDocument();Inside.Number="inside";Inside.Date=Date(2024,1,1);
+Inside.Warehouse=W.Ref;Inside.Write();
+Captured=Q.Execute();RollbackTransaction();
+''')
+        self.assertEqual(self.vm.variables['captured']._rows,(('Warehouse',),))
+        self.assertEqual(self.vm.execute('Q.Execute()')._rows,())
+        self.assertIsNone(self.backend._active)
+
+    def test_distinct_does_not_charge_only_unique_rows_to_input_budget(self):
+        from unittest.mock import patch
+        from yadinassi import BSLRuntimeError
+        self.vm.execute('''W=Catalogs.Склады.CreateItem();W.Description="Same";W.Write();
+For I=1 To 2 Do
+ D=Documents.Receipt.CreateDocument();D.Number=String(I);D.Date=Date(2024,1,1);D.Warehouse=W.Ref;D.Write();
+EndDo;''')
+        self.vm.variables['sql'] = ('SELECT DISTINCT D.Warehouse.Description AS Caption '
+                                    'FROM Document.Receipt AS D')
+        with patch('yadinassi.db.query.queries._MAX_CELLS',1):
+            with self.assertRaises(BSLRuntimeError):
+                self.vm.execute('Q=New Query(Sql);Q.Execute()')
+        self.assertIsNone(self.backend._active)

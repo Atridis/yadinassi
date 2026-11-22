@@ -24,7 +24,7 @@ class BoundPath:
 def require_shape(query):
     if (query.joins or query.derived is not None or query.temporary or query.external
             or query.into is not None or query.period_boundary is not None
-            or query.virtual_condition is not None or query.groups or query.having is not None or query.distinct
+            or query.virtual_condition is not None or query.groups or query.having is not None
             or any(type(item.field) is not syntax.Field for item in (*query.projections, *query.order))):
         raise ValueError('Query dereference requires a flat field-only SELECT')
 
@@ -235,6 +235,7 @@ class Dereference:
 
     def execute(self, plan, view, budget):
         from .queries import BSLQueryResult, _MAX_CELLS, _MAX_RESULT_TEXT
+        from .relational_queries import _key
         from yadinassi.db.sqlite.sqlite_documents import DocumentView
         from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
         if type(view) is not DocumentView or type(plan.catalogs._context.backend) is not SQLiteCatalogBackend:
@@ -249,7 +250,14 @@ class Dereference:
             raise BackendError('schema_changed')
         self._require_schemas(view)
         count = plan.query.limit
-        limit = count + (count == syntax.MAX_ROWS)
+        # ORDER expressions of DISTINCT are projected. Their typed sort keys
+        # are equal throughout a duplicate group, so the physical source ties
+        # still give its first representative. TOP 1 cannot lose to a later
+        # duplicate; other DISTINCT shapes validate the whole sorted input once
+        # before dropping duplicates and applying the result limit.
+        unique = set() if plan.query.distinct and count!=1 else None
+        input_count = syntax.MAX_ROWS if unique is not None else count
+        limit = input_count + (input_count == syntax.MAX_ROWS)
         if self.predicate is None:
             result = provider(view, self.source, self.paths, self.order, limit)
         else:
@@ -259,7 +267,7 @@ class Dereference:
             raise ValueError('Query dereference is unsupported for this source')
         if type(result) is not tuple or len(result) > limit:
             raise BackendError('integrity')
-        if len(result) > count:
+        if len(result) > input_count:
             raise ValueError('Query input row limit exceeded')
         rows, text = [], 0
         for raw in result:
@@ -268,10 +276,15 @@ class Dereference:
             values = tuple(convert(value, view.database_id) for convert, value in zip(self.converters, raw))
             budget[0] += len(values)
             budget[1] += sum(len(value) for value in values if type(value) is str)
+            if budget[0] > _MAX_CELLS or budget[1] > _MAX_RESULT_TEXT:
+                raise ValueError('Query dereference resource limit exceeded')
             row = tuple(values[i] for i in self.projection)
+            if unique is not None:
+                key = tuple(_key(value) for value in row)
+                if key in unique: continue
+                unique.add(key)
             text += sum(len(value) for value in row if type(value) is str)
             rows.append(row)
-            if (budget[0] > _MAX_CELLS or budget[1] > _MAX_RESULT_TEXT
-                    or len(rows)*len(self.projection) > _MAX_CELLS or text > _MAX_RESULT_TEXT):
+            if len(rows)*len(self.projection) > _MAX_CELLS or text > _MAX_RESULT_TEXT:
                 raise ValueError('Query dereference resource limit exceeded')
-        return BSLQueryResult(plan.columns, tuple(rows))
+        return BSLQueryResult(plan.columns, tuple(rows if unique is None else rows[:count]))

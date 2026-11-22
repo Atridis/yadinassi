@@ -76,7 +76,7 @@ L=D.Lines.Add(); L.Flag=False; D.Write();''')
         _, vm = self.documents()
         result = self.run_query(vm,
             'SELECT L.Ref.Number AS OwnerNumber, L.Category.Description AS Caption '
-            'FROM Document.Orders.Lines AS L ORDER BY OwnerNumber')
+            'FROM Document.Orders.Lines AS L WHERE L.Flag=True OR L.Flag=False ORDER BY OwnerNumber')
         self.assertEqual(result._rows, (('A', 'Caption'), ('B', NULL)))
 
     def test_catalog_tabular_part_can_dereference_both_owner_and_field(self):
@@ -87,7 +87,7 @@ L=P.Lines.Add(); L.Text="a"; L.Category=C.Ref;
 L=P.Lines.Add(); L.Text="b"; P.Write();''')
         result = self.run_query(vm,
             'SELECT L.Ref.Description AS OwnerText, L.Category.Description AS Caption '
-            'FROM Catalog.Products.Lines AS L ORDER BY L.Text')
+            'FROM Catalog.Products.Lines AS L WHERE L.Text="A" OR L.Text="B" ORDER BY L.Text')
         self.assertEqual(result._rows, (('Product', 'Category'), ('Product', NULL)))
 
 
@@ -103,7 +103,7 @@ P=InformationRegisters.Prices.CreateRecordManager(); P.Item=C.Ref; P.Region="A";
 P=InformationRegisters.Prices.CreateRecordManager(); P.Region="B"; P.Price=10; P.Write();''')
         result = self.run_query(vm,
             'SELECT P.Region, P.Item.Description AS Caption, P.Price '
-            'FROM InformationRegister.Prices AS P ORDER BY P.Region')
+            'FROM InformationRegister.Prices AS P WHERE P.Price>41 OR P.Region="B" ORDER BY P.Region')
         self.assertEqual(result._rows, (('A', 'Category', Decimal('42')), ('B', NULL, Decimal('10'))))
 
     def test_main_demo_document_and_raw_accumulation_use_the_same_reference_path(self):
@@ -120,7 +120,7 @@ L.Unit=Enums.Units.Piece; D.Write(DocumentWriteMode.Posting);''')
         self.assertEqual(result._rows, (('r1', 'Основной'),))
         result = self.run_query(demo.vm,
             'SELECT M.Warehouse.Description AS Caption, M.Product.Description AS Item, M.Quantity '
-            'FROM AccumulationRegister.Stock AS M')
+            'FROM AccumulationRegister.Stock AS M WHERE M.Quantity=5 OR M.Quantity<0')
         self.assertEqual(result._rows, (('Основной', 'Кабель', Decimal(5)),))
 
     def test_card_filter_and_nullable_projection_run_in_one_statement(self):
@@ -154,5 +154,5 @@ Q.SetParameter("Selected",Selected); Q.SetParameter("Number","b"); R=Q.Execute()
             fixture.post()
         result = self.run_query(fixture.vm,
             'SELECT M.Recorder.Number AS Doc, M.Amount '
-            'FROM InformationRegister.OwnedPostingRows AS M ORDER BY Doc')
+            'FROM InformationRegister.OwnedPostingRows AS M WHERE M.Amount=5 OR M.Amount=99 ORDER BY Doc')
         self.assertEqual(result._rows, (('3', Decimal(5)), ('8', Decimal(5))))

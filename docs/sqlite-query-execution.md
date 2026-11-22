@@ -39,9 +39,15 @@ and their tabular sections, independent information registers, and raw
 recorder and accumulation rows. The reference must have one declared target
 supported by the opened SQLite layout.
 
-This is a one-hop, field-only projection with ordinary source comparisons,
-ordering and `TOP`. Polymorphic reference paths, virtual tables, hierarchical
-layouts, computed expressions and aggregate or nested dereference queries
+This is a one-hop, field-only projection with typed source comparisons
+combined by `AND` or `OR`, ordering, `TOP` and `DISTINCT`. With `DISTINCT`,
+order expressions must be projected. `TOP 1` can use the physical first row
+because equivalent duplicates have equal sort keys. Other distinct queries
+read one sorted, bounded input, validate its source and reference witnesses,
+then deduplicate with the normal typed query keys before applying `TOP`.
+They preserve the first spelling of case-insensitively equal strings and keep
+`NULL` distinct from an empty string. Polymorphic reference paths, virtual
+tables, hierarchical layouts, computed expressions and aggregate or nested dereference queries
 are not covered by this path. The ordinary script expression
 `S.Ref.Description` retains its live read behavior; only an explicit query
 projection captures the value as part of the query result.
