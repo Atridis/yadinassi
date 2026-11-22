@@ -28,12 +28,16 @@ The database stores its format marker, logical database UUID, configuration gene
 The SQLite connection and catalog operations remain in `sqlite_catalog.py`; the physical-name registry and offline v1 migration are in SQLite-specific modules. `catalog_backend.py` exposes immutable logical schema/card/key/revision types and bounded operations. Runtime owns BSL CatalogObject semantics, UI owns edit/navigation state, and backend owns consistency and persistence. PostgreSQL and MongoDB are future adapter targets only: no dependencies or claimed engine support. Unsupported ordering/filter/transaction capabilities must refuse, not silently change behavior. Default catalog selection has an explicit limit and code/identity order; overflow refuses rather than displaying a truncated total. Typed scans support explicit ordering. These orders are not a claim of native collation parity.
 
 Ordinary SQLite BSL manager `Select()/Next()` on flat catalogs and document
-headers uses detached pages of 16 rows. `Select()` captures the first page so
-existing small selections retain their captured values; `Next()` fetches a
-subsequent page only on demand, in the same stable order (catalog code/identity;
-document date/number/identity). Pages never retain a SQLite connection, cursor
-or lock. A later page can see changes committed since the previous page:
-this is not a single snapshot of an entire traversal. A row moved across the
+headers starts with a detached page of 16 rows. `Select()` captures that page
+so existing small selections retain their captured values. On demand, flat
+catalog pages can grow (32, 64, 128, up to 256 rows, subject to the declared
+row width). Document pages stay at 16 so their per-page physical byte budget
+and the point where a later invalid card is reported do not change. The
+order is still catalog code/identity or document date/number/identity. Pages
+never retain a SQLite connection, cursor or lock. A refill can see changes
+committed since the previous page; rows already buffered by a larger catalog
+page do not refresh individually. This is not a single snapshot of an entire
+traversal. A row moved across the
 order boundary can be skipped or revisited. Catalog selections expose only
 scalar fields; `GetObject()` still reads the live object, including tabular
 parts. Document pages detach full cards with parts and `GetObject()` uses the

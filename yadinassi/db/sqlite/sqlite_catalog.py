@@ -2331,13 +2331,26 @@ class _View:
         return tuple(self._scalar(catalog_id,row,schema=schema).key for row in rows)
 
     @_boundary
-    def _catalog_selection_page(self, catalog_id, after):
+    def _catalog_selection_page(self, catalog_id, after, size):
         """One detached BSL manager page, without fetching tabular parts."""
-        from yadinassi.db.manager_selection import PAGE_SIZE, require_continuation
+        from yadinassi.db.manager_selection import PAGE_SIZE, MAX_CATALOG_PAGE_SIZE, require_continuation
 
         self._require()
         if self._operation_id is not None: raise BackendError('unsupported')
+        if type(size) is not int or not PAGE_SIZE <= size <= MAX_CATALOG_PAGE_SIZE:
+            raise BackendError('invalid_input')
         schema = self.catalog_schema(catalog_id)
+        if size > PAGE_SIZE:
+            if self._backend.storage_version == 1:
+                # The legacy JSON cell may itself use the full row budget.
+                size = PAGE_SIZE
+            else:
+                # Bound growth by the opened declaration, not a data scan.
+                # Account conservatively for UTF-8 and narrow typed values.
+                text = schema.code_length+schema.description_length+sum(
+                    field.qualifiers[0] for field in schema.fields if field.kind=='string')
+                row_bytes = 128+128*len(schema.fields)+4*text
+                size = min(size,max(PAGE_SIZE,_MAX_CONFIG_BYTES//row_bytes))
         table, columns, where, args = self._source(schema)
         if after is not None:
             require_continuation(after,2)
@@ -2347,11 +2360,16 @@ class _View:
             args += after
         cursor = self._connection.execute(
             'SELECT %s FROM %s WHERE %s ORDER BY code COLLATE BINARY,record_id LIMIT ?'
-            % (columns,table,where), args+(PAGE_SIZE,))
-        try: rows = cursor.fetchall()
-        finally: cursor.close()
-        records = tuple(self._scalar(catalog_id,row,schema=schema) for row in rows)
-        return records, (rows[-1][2],rows[-1][0]) if len(rows)==PAGE_SIZE else None
+            % (columns,table,where), args+(size,))
+        records = []
+        try:
+            # Do not hold raw copies of the whole larger window alongside
+            # the typed rows. Each row still goes through the same decoder.
+            for row in cursor:
+                records.append(self._scalar(catalog_id,row,schema=schema))
+        finally:
+            cursor.close()
+        return tuple(records), (row[2],row[0]) if len(records)==size else None
 
     @_boundary
     def select_catalog(self, catalog_id, request=CatalogSelection()):

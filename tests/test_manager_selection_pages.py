@@ -56,6 +56,81 @@ EndDo;''')
         self.assertEqual(vm.execute('S.Description'), 'old')
         self.assertEqual(vm.execute('S.GetObject().Lines[0].Text'), 'new')
 
+    def seed_catalog(self, vm, count):
+        vm.execute(f"""For I=1 To {count} Do
+O=Catalogs.Products.CreateItem(); O.Code=String(100+I); O.Description="old"; O.Write();
+EndDo;""")
+
+    def test_catalog_adaptive_refill_is_detached_bounded_and_restarts(self):
+        db, vm, _, messages = self.database(catalog_files())
+        self.seed_catalog(vm,130)
+        backend = db.backend
+        fetch = _View._catalog_selection_page
+        sizes = []
+        def observe(view, identity, after, size):
+            result = fetch(view,identity,after,size)
+            sizes.append((size,len(result[0])))
+            return result
+
+        with patch.object(_View,'_catalog_selection_page',observe):
+            vm.execute('S=Catalogs.Products.Select();For I=1 To 16 Do S.Next();EndDo;')
+            self.assertEqual(sizes,[(16,16)])
+            self.assertIsNone(backend._active)
+            messages.clear()
+            vm.execute('''Edit=Catalogs.Products.FindByCode("135").GetObject();
+Edit.Description="before refill";Edit.Write();S.Next();Message(S.Code);''')
+            self.assertEqual(sizes,[(16,16),(32,32)])
+            self.assertIsNone(backend._active)
+            vm.execute('Edit.Description="after refill";Edit.Write();')
+            vm.execute('For I=1 To 18 Do S.Next();EndDo;Message(S.Code);Message(S.Description);'
+                       'Message(S.GetObject().Description);')
+            self.assertEqual(messages,['117','135','before refill','after refill'])
+            vm.execute('While S.Next() Do EndDo;')
+            self.assertEqual(sizes,[(16,16),(32,32),(64,64),(128,18)])
+            self.assertTrue(vm.execute('S.Next()'))
+            self.assertEqual(vm.execute('S.Code'),'101')
+            vm.execute('For I=1 To 16 Do S.Next();EndDo;')
+            self.assertEqual(sizes[-1],(32,32))
+        self.assertIsNone(backend._active)
+
+    def test_catalog_transaction_denies_only_actual_refill_on_reopen(self):
+        original, vm, path, _ = self.database(document_files())
+        self.seed_catalog(vm,65)
+        vm.close()
+        original.close()
+        apply(path,prepare(path,maintenance=True),maintenance=True)
+        with SQLiteDBContext(path) as db, closing(Interpreter(database_context=db)) as vm:
+            vm.execute('''S=Catalogs.Products.Select();
+For I=1 To 17 Do S.Next();EndDo;
+BeginTransaction();
+Buffered=S.Next();BufferedCode=S.Code;
+For I=1 To 30 Do S.Next();EndDo;
+RefillDenied=False;Try S.Next();Except RefillDenied=True;EndTry;
+CommitTransaction();''')
+            self.assertTrue(vm.execute('Buffered And RefillDenied'))
+            self.assertEqual(vm.execute('BufferedCode'),'118')
+            self.assertEqual(vm.execute('S.Code'),'148')
+            self.assertTrue(vm.execute('S.Next()'))
+            self.assertEqual(vm.execute('S.Code'),'149')
+            self.assertIsNone(db.backend._active)
+
+    def test_catalog_larger_page_validates_before_publication_and_allows_retry(self):
+        db, vm, path, _ = self.database(catalog_files())
+        self.seed_catalog(vm,40)
+        manager = vm._catalogs.get_member('Products')
+        table = db.backend._layout.table_name(manager._schema.identity)
+        with closing(sqlite3.connect(path)) as c, c:
+            c.execute(f'UPDATE "{table}" SET description=? WHERE code=?',('x'*2048,'135'))
+        vm.execute('S=Catalogs.Products.Select();For I=1 To 16 Do S.Next();EndDo;')
+        with self.assertRaises((BackendError,BSLRuntimeError)):
+            vm.execute('S.Next();')
+        self.assertEqual(vm.execute('S.Code'),'116')
+        self.assertIsNone(db.backend._active)
+        with closing(sqlite3.connect(path)) as c, c:
+            c.execute(f'UPDATE "{table}" SET description=? WHERE code=?',('restored','135'))
+        self.assertTrue(vm.execute('S.Next()'))
+        self.assertEqual(vm.execute('S.Code'),'117')
+
     def seed_documents(self, vm, count=35):
         vm.execute(f'''For I=1 To {count} Do
 D=Documents.Orders.CreateDocument(); D.Number=String(100+I);

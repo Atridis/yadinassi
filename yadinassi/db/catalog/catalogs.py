@@ -7,7 +7,7 @@ from decimal import Decimal
 from datetime import datetime
 from uuid import UUID, uuid4
 from yadinassi.temporal.dates import BSLDate, _date_from_datetime, _parts, TICKS_PER_SECOND
-from yadinassi.db.manager_selection import SelectionRows, current_selection_row
+from yadinassi.db.manager_selection import PAGE_SIZE, SelectionRows, current_selection_row
 from .catalog_types import BSLCatalogReference, BSLCatalogType
 from .catalog_backend import CatalogKey, CatalogDraft, CatalogSelection, CatalogScanRequest, CatalogComparison, Revision, BackendError, CatalogValuePage, CatalogValueRow, CatalogWriteOutcome
 from .catalog_sections import BSLCatalogSection, _MAX_ROWS as _MAX_SECTION_ROWS, _MAX_BUFFER_BYTES, _changed_sections
@@ -232,7 +232,7 @@ class BSLCatalogManager(BSLObject):
         try:rows=view.select_catalog(self._schema.identity,CatalogSelection())
         finally:view.close()
         return BSLCatalogSelection(self,rows)
-    def _selection_page(self, origin, after):
+    def _selection_page(self, origin, after, size=PAGE_SIZE):
         if (type(origin) is not tuple or len(origin)!=2
                 or self._backend is not origin[0] or self._schema is not origin[1]):
             raise BackendError('schema_changed')
@@ -240,7 +240,7 @@ class BSLCatalogManager(BSLObject):
         view = BSLCatalogManager._view(self)
         try:
             if type(view) is not _View: raise BackendError('unsupported')
-            return _View._catalog_selection_page(view,origin[1].identity,after)
+            return _View._catalog_selection_page(view,origin[1].identity,after,size)
         finally: view.close()
     def _find(self,field,value):
         from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
@@ -572,8 +572,9 @@ class BSLCatalogSelection(BSLObject):
         if type(state) is not SelectionRows: raise BackendError('integrity')
         after = SelectionRows.continuation(state)
         if after is not None:
-            SelectionRows.install(state,BSLCatalogManager._selection_page(
-                self._manager,self._selection_origin,after))
+            size = SelectionRows.next_catalog_page_size(state)
+            page = BSLCatalogManager._selection_page(self._manager,self._selection_origin,after,size)
+            SelectionRows.install(state,page,requested_size=size)
         return SelectionRows.next(state)
     def get_method(self,name):
         if name.casefold() in ('next','следующий'):return HostFunction(name,self.next)

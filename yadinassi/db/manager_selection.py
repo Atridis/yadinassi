@@ -2,19 +2,29 @@
 from yadinassi.db.catalog.catalog_backend import BackendError
 
 PAGE_SIZE = 16
+MAX_CATALOG_PAGE_SIZE = 256
 
 
 class SelectionRows:
-    __slots__ = ('_rows','_continuation','_first','_position','current')
+    __slots__ = ('_rows','_continuation','_first','_position','current','_requested_size')
 
     def __init__(self, page, *, restart=False):
         self._first = page if restart else None
         self.install(page)
         self.current = None
 
-    def install(self, page):
+    def install(self, page, *, requested_size=PAGE_SIZE):
         self._rows, self._continuation = page
         self._position = 0
+        self._requested_size = requested_size
+
+    def next_catalog_page_size(self):
+        # Called only at an actual refill; a catalog rewind installs the
+        # original first page and starts growth at the beginning again.
+        size = self._requested_size
+        if type(size) is not int or not PAGE_SIZE <= size <= MAX_CATALOG_PAGE_SIZE:
+            raise BackendError('integrity')
+        return min(size*2,MAX_CATALOG_PAGE_SIZE)
 
     def continuation(self):
         if type(self._rows) is not tuple or type(self._position) is not int:
