@@ -19,8 +19,30 @@ def _ungroup(node):
     return node
 
 
-def _literal_boolean(node):
-    """Prove a boolean without evaluating names, calls or context-sensitive operations."""
+def _invariant_digit(node):
+    """Integral arithmetic whose successful values cannot vary with Decimal Emax."""
+    node = _ungroup(node)
+    if type(node) is bsl.Literal and type(node.value) is Decimal:
+        coefficient = node.value.as_tuple()
+        if coefficient.exponent == 0 and len(coefficient.digits) == 1:
+            return int(node.value)
+    if type(node) is bsl.Binary and type(node.operator) is str and node.operator in ('+', '-', '*'):
+        left = _invariant_digit(node.left)
+        right = _invariant_digit(node.right)
+        if left is not None and right is not None:
+            value = left + right if node.operator == '+' else left - right if node.operator == '-' else left * right
+            if -9 <= value <= 9:
+                return value
+    return None
+
+
+def _simple_literal_boolean(node):
+    """Total boolean subset for which the emitter may replace the test itself."""
+    return _literal_boolean(node, extended=False)
+
+
+def _literal_boolean(node, *, extended=True):
+    """Prove the outcome of a successful test without dropping runtime diagnostics."""
     inverted = False
     node = _ungroup(node)
     while type(node) is bsl.Unary and type(node.operator) is str and node.operator == 'NOT':
@@ -29,20 +51,30 @@ def _literal_boolean(node):
     if type(node) is bsl.Literal and type(node.value) is bool:
         value = node.value
     elif type(node) is bsl.Binary and type(node.operator) is str:
-        left, right = _ungroup(node.left), _ungroup(node.right)
-        if type(left) is not bsl.Literal or type(right) is not bsl.Literal:
-            return None
-        left, right = left.value, right.value
-        kind = type(left)
-        if kind is not type(right) or (kind is not bool and kind is not Decimal):
-            return None
-        # Finite exact numbers compare identically in the Decimal and integer
-        # lanes, regardless of Decimal context; no signs/rounding are evaluated.
-        if kind is Decimal and not (left.is_finite() and right.is_finite()):
-            return None
         op = node.operator
+        if extended and op in ('AND', 'OR'):
+            left = _literal_boolean(node.left)
+            if left is None:
+                return None  # The left might throw or change state before RHS.
+            value = left if left == (op == 'OR') else _literal_boolean(node.right)
+            return None if value is None else value != inverted
+        left, right = _ungroup(node.left), _ungroup(node.right)
+        if type(left) is bsl.Literal and type(right) is bsl.Literal:
+            left, right = left.value, right.value
+            kind = type(left)
+            if kind is not type(right) or kind not in (bool, Decimal):
+                return None
+            if kind is Decimal and not (left.is_finite() and right.is_finite()):
+                return None
+        elif extended:
+            left, right = _invariant_digit(left), _invariant_digit(right)
+            if left is None or right is None:
+                return None
+            left, right = Decimal(left), Decimal(right)
+        else:
+            return None
         if op == '=':
-            value = left == right  # Same as the direct equality kernel here.
+            value = left == right
         elif op == '<>':
             value = left != right
         elif op in ('<', '<=', '>', '>='):
@@ -55,17 +87,44 @@ def _literal_boolean(node):
     return value != inverted
 
 
-def ordered_if(node, *, literal_reachability):
+def ordered_if(node, *, literal_reachability, extended_reachability=True):
     """Yield every arm, its live test/body flags, and a proven boolean if any."""
     reaches=True
     for condition,body in node.branches:
-        literal=_literal_boolean(condition) if reaches and literal_reachability else None
+        literal=_literal_boolean(condition,extended=extended_reachability) if reaches and literal_reachability else None
         yield condition,body,reaches,reaches and literal is not False,literal
         if literal is True:reaches=False
     yield OTHERWISE,node.otherwise,False,reaches,None
 
 
-def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=None, builtin_external_names=(), numeric_routines=None, address_routines=None, literal_reachability=False, module_declarations=False, table_prefix_origin=None):
+def table_schema_setup(program, start, table_name):
+    """Locate explicit numeric descriptors on the table's top-level setup statements."""
+    positions = {}
+    for position in range(start, len(program)):
+        statement = program[position]
+        if type(statement) in (bsl.For, bsl.While, bsl.ForEach, bsl.If):
+            break
+        if type(statement) is not bsl.ExpressionStatement:
+            continue
+        call = statement.expression
+        if (type(call) is not bsl.Call or len(call.arguments) != 2
+                or type(call.callee) is not bsl.Attribute
+                or call.callee.name.casefold() not in ('add', 'добавить')):
+            continue
+        columns = _ungroup(call.callee.object)
+        if (type(columns) is not bsl.Attribute
+                or columns.name.casefold() not in ('columns', 'колонки')):
+            continue
+        table = _ungroup(columns.object)
+        description = _ungroup(call.arguments[1])
+        if (type(table) is bsl.Name and table.name.casefold() == table_name
+                and type(description) is bsl.New
+                and description.name.casefold() in ('typedescription', 'описаниетипов')):
+            positions[position] = id(call)
+    return positions
+
+
+def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=None, builtin_external_names=(), numeric_routines=None, address_routines=None, literal_reachability=False, module_declarations=False, table_prefix_origin=None, extended_reachability=True, extended_tests=None, schema_setup=None):
     builtin_results = builtin_results or {}
     kinds={};names=set();opaque=set(opaque_names)|{'thisobject','этотобъект'}
     checked=set();active=set()
@@ -73,6 +132,28 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
     address_routines={} if address_routines is None else address_routines
     def require(condition):
         if not condition:raise _Decline
+    schema_calls=() if schema_setup is None else frozenset(schema_setup[1].values())
+    schema_cutoff=-1 if schema_setup is None else max(schema_setup[1])
+    def column_description(node,env,call):
+        inner=_ungroup(node)
+        if type(inner) is bsl.Literal and inner.value is None:
+            kind='default_column_type'
+        else:
+            require(id(call) in schema_calls and type(inner) is bsl.New and inner.name.casefold() in ('typedescription','описаниетипов'))
+            require(1<=len(inner.arguments)<=2)
+            name=_ungroup(inner.arguments[0])
+            require(type(name) is bsl.Literal and type(name.value) is str
+                    and name.value.strip().casefold() in ('number','число'))
+            expression(inner.arguments[0],env)
+            if len(inner.arguments)==2:
+                q=_ungroup(inner.arguments[1])
+                require(type(q) is bsl.New and q.name.casefold() in ('numberqualifiers','квалификаторычисла')
+                        and len(q.arguments)<=2)
+                require(all(expression(arg,env)=='number' for arg in q.arguments))
+                kinds[id(q)]='numeric_column_type'
+            kind='numeric_column_type'
+        kinds[id(inner)]=kinds[id(node)]=kind
+
     def expression(node,env):
         k=type(node)
         if scalar_prefix or active:
@@ -148,7 +229,12 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
                 require(receiver_kind!='columns' and len(node.arguments)==1 and expression(node.arguments[0],env)=='number');kind={'table':'row','valuelist':'item'}.get(receiver_kind,'number')
             elif method in ('add','добавить'):
                 if receiver_kind=='table':require(not node.arguments);kind='row'
-                elif receiver_kind=='columns':require(len(node.arguments)==1 and expression(node.arguments[0],env)=='string');kind='column'
+                elif receiver_kind=='columns':
+                    require(1<=len(node.arguments)<=2 and expression(node.arguments[0],env)=='string')
+                    if len(node.arguments)==2:
+                        require(extended_reachability)
+                        column_description(node.arguments[1],env,node)
+                    kind='column'
                 elif receiver_kind=='valuelist':require(len(node.arguments)==1 and expression(node.arguments[0],env)=='number');kind='item'
                 else:raise _Decline
             elif method in ('count','количество','ubound','вграница'):
@@ -169,6 +255,7 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
         for node in nodes:
             k=type(node)
             if k is bsl.Routine and (numeric_routines or address_routines):continue
+            if k is bsl.Var and table_prefix_origin is not None:continue
             if k is bsl.Assign:
                 if scalar_prefix:require(type(node.target) is bsl.Name)
                 kind=expression(node.value,env)
@@ -222,7 +309,10 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
                 require(all(nested.get(key)==kind for key,kind in env.items()))
             elif k is bsl.If:
                 branches=[]
-                for condition,body,live_test,live_body,literal in ordered_if(node,literal_reachability=literal_reachability):
+                for condition,body,live_test,live_body,literal in ordered_if(
+                        node,literal_reachability=literal_reachability,extended_reachability=extended_reachability):
+                    if extended_tests is not None and live_test and literal is not None and _simple_literal_boolean(condition) is None:
+                        extended_tests.add(id(condition))
                     if live_test and literal is None:require(expression(condition,env) in ('number','bool'))
                     if live_body:
                         nested=dict(env);sequence(body,nested);branches.append(nested)
@@ -251,6 +341,12 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
             try:sequence((node,),env)
             except _Decline:return index,prefix_kinds
             prefix_kinds.update(kinds)
+            if index==schema_cutoff:
+                # Ordinary construction may publish and rebind module slots.
+                # Only the table itself is readmitted by the runtime schema guard.
+                table_name=schema_setup[0]
+                if env.get(table_name)!='table':return index,prefix_kinds
+                env={table_name:'table'}
         return len(program),prefix_kinds
     # Declarations are still lowered into their original export and scheduler
     # entry points. They are not execution edges of a closed module body.

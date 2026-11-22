@@ -35,7 +35,7 @@ from yadinassi.execution.direct.python_direct_execute import execute_fragment, l
 from yadinassi.execution.direct.python_direct_eval import bind_eval
 from yadinassi.execution.direct.python_direct import REPAIRS,PythonDirectUnsupported
 from yadinassi.execution.direct.python_direct_names import NAMES, CHARS_ALIASES, XML_CLEANUP_ALIASES
-from yadinassi.execution.direct.python_direct_static_module import analyze as analyze_static, ordered_if, OTHERWISE
+from yadinassi.execution.direct.python_direct_static_module import analyze as analyze_static, ordered_if, OTHERWISE, _simple_literal_boolean, table_schema_setup
 from yadinassi.types.errors import BSLRuntimeError
 from dataclasses import fields, replace
 
@@ -1619,11 +1619,11 @@ class Emitter:
             recover=self.node(py.ExceptHandler,t,type=None,name=None,body=[cleanup,rethrow])
             result=[self.node(py.Try,t,body=result,handlers=[recover],orelse=[],finalbody=[])]
         return result
-    def without_module_facts(self, lower, node, *args):
+    def without_module_facts(self, lower, node, *args, keep_integer_lane=False):
         # Still lower and validate the whole source. A proven-dead arm has
         # neither closed facts nor a live register file to synchronize.
         kinds,names,integer=self.static_module_kinds,self.static_module_names,self.integer_lane
-        self.static_module_kinds,self.static_module_names,self.integer_lane={},{},False
+        self.static_module_kinds,self.static_module_names,self.integer_lane={},{},integer and keep_integer_lane
         try:return lower(node,*args)
         finally:self.static_module_kinds,self.static_module_names,self.integer_lane=kinds,names,integer
 
@@ -1757,9 +1757,11 @@ class Emitter:
             for condition,body,live_test,live_body,literal in ordered_if(node,literal_reachability=proven):
                 if condition is not OTHERWISE:
                     if literal is not None:
-                        # The proof admits only exact total scalar operators;
-                        # dead bodies/tests outside that subset still validate.
-                        test=self.literal(literal,condition.token)
+                        # Extended reachability does not replace a test that
+                        # could raise, nor skip validation of its dead operand.
+                        test=(self.literal(literal,condition.token)
+                              if _simple_literal_boolean(condition) is not None
+                              else self.without_module_facts(self.truth,condition,t,keep_integer_lane=True))
                     else:
                         test=self.truth(condition,t) if live_test else self.without_module_facts(self.truth,condition,t)
                 emitted=(branch_sequence(body) if live_body else
@@ -2295,7 +2297,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         definitions.append(emitter.node(py.FunctionDef,routine.token,name=emitter.routine_symbols[key],args=args,body=routine_body,decorator_list=[],returns=None,type_comment=None))
     # Module locals are the register file; dynamic edges explicitly synchronize.
     static_facts=None
-    table_prefix_end=0;table_prefix_kinds={}
+    table_prefix_end=0;table_prefix_start=0;table_prefix_origin=0;table_prefix_kinds={};extended_tests=set()
     builtin_results=None
     if pure_bindings is not None:
         from yadinassi.execution.direct.python_direct_pure_builtins import result_kinds
@@ -2325,7 +2327,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             static_facts=analyze_static(program,opaque_names=emitter.external_names|emitter.module_globals,
                builtin_results=builtin_results,builtin_external_names=builtin_external_names,
                numeric_routines=numeric_routines,address_routines=address_routines,
-               literal_reachability=facts_reachability,module_declarations=closed_with_declarations)
+               literal_reachability=facts_reachability,module_declarations=closed_with_declarations,extended_tests=extended_tests)
             emitter.static_module_kinds={} if static_facts is None else static_facts[1]
         # Starting a task (directly or through a reachable same-module
         # routine), Eval, and all opaque edges decline this closed proof.
@@ -2347,19 +2349,39 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
                 emitter.local_field_facts,local_scalars=analyze_local(program,opaque_names=opaque,routines=emitter.routines)
                 emitter.scalar_kinds.update(local_scalars)
             if (static_facts is None and facts_reachability and pure_bindings is None
-                    and not emitter.routines and not emitter.module_globals and not cells
-                    and type(program[0]) is bsl.Assign and type(program[0].target) is bsl.Name):
-                origin=program[0].value
-                if (type(origin) is bsl.New and origin.name.casefold() in ('valuetable','таблицазначений')
-                        and not origin.arguments):
+                    and not emitter.routines and not cells):
+                for offset,statement in enumerate(program):
+                    if type(statement) is not bsl.Assign or type(statement.target) is not bsl.Name:
+                        continue
+                    origin=statement.value
+                    if (type(origin) is not bsl.New or origin.name.casefold() not in ('valuetable','таблицазначений')
+                            or origin.arguments):
+                        continue
+                    key=statement.target.name.casefold()
+                    setup=table_schema_setup(program,offset+1,key)
                     end,kinds=analyze_static(program,opaque_names=opaque,
-                        literal_reachability=True,table_prefix_origin=origin)
-                    if (1<end<len(program) and any(type(node) is bsl.For for node in program[1:end])):
-                        table_prefix_end,table_prefix_kinds=end,kinds
+                        literal_reachability=True,table_prefix_origin=origin,
+                        schema_setup=(key,setup) if setup else None)
+                    phase=max(setup,default=offset)+1
+                    if setup and end==len(program) and type(program[-1]) is bsl.ExpressionStatement:
+                        end-=1  # Keep the module's final expression/return outside the guard.
+                    if (phase<end and (setup or end<len(program))
+                            and any(type(node) is bsl.For for node in program[phase:end])):
+                        table_prefix_origin,table_prefix_start,table_prefix_end,table_prefix_kinds=offset,phase,end,kinds
+                    break
     if static_facts is not None and not emitter.module_cells and not emitter.authority and not emitter.catalog_bounds:
-        emitter.integer_lane=bool(static_facts[1]) and all(
-            kind in ('number','bool','string','table','row','columns','column','map','map_insert')
-            for kind in static_facts[1].values())
+        integer_kinds=('number','bool','string','table','row','columns','column','map','map_insert','default_column_type')
+        emitter.integer_lane=bool(static_facts[1]) and all(kind in integer_kinds for kind in static_facts[1].values())
+        if emitter.integer_lane and (extended_tests or 'default_column_type' in static_facts[1].values()):
+            # Newly closed table shapes may still use direct access without
+            # switching old Decimal operations to a different numeric lane.
+            previous=analyze_static(program,opaque_names=emitter.external_names|emitter.module_globals,
+                builtin_results=builtin_results,builtin_external_names=builtin_external_names,
+                numeric_routines=numeric_routines,address_routines=address_routines,
+                literal_reachability=facts_reachability,module_declarations=closed_with_declarations,
+                extended_reachability=False)
+            emitter.integer_lane=(previous is not None and bool(previous[1])
+                and all(kind in integer_kinds for kind in previous[1].values()))
         if emitter.integer_lane:
             emitter.scalar_kinds.update(static_facts[1])
             proven={name:routine for name,routine in numeric_routines.items()
@@ -2414,8 +2436,8 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         # Keep the ordinary constructor and one shared register file. Switch
         # lowering, never visibility: only normal generic edges and module exit
         # publish, so no old (possibly finalizable) values retire early.
-        body=emitter.sequence(program[:1])
-        segment=program[1:table_prefix_end]
+        body=emitter.sequence(program[:table_prefix_start])
+        segment=program[table_prefix_start:table_prefix_end]
         generic=emitter.sequence(segment)
         emitter.static_module_kinds=table_prefix_kinds
         # Use the ordinary Decimal counter/increments and public facade values.
@@ -2423,8 +2445,11 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         specialized=emitter.sequence(segment)
         emitter.table_prefix=False
         emitter.static_module_kinds={}
-        slot=emitter.static_module_names[program[0].target.name.casefold()]
-        test=emitter.call('_fresh_closed_table',[emitter.name('_context',t),emitter.name(slot,t)],t)
+        slot=emitter.static_module_names[program[table_prefix_origin].target.name.casefold()]
+        arguments=[emitter.name('_context',t),emitter.name(slot,t)]
+        if table_prefix_start!=table_prefix_origin+1:
+            arguments.append(emitter.const(True,t))
+        test=emitter.call('_fresh_closed_table',arguments,t)
         body.append(emitter.node(py.If,t,test=test,body=specialized,orelse=generic))
         body+=emitter.sequence(program[table_prefix_end:])
     else:

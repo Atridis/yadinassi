@@ -212,6 +212,102 @@ class LiveTablePrefixTests(unittest.TestCase):
         self.addCleanup(vm.close)
         return vm
 
+    def test_scalar_prefix_and_declarations_do_not_hide_fresh_origin(self):
+        from unittest.mock import Mock, patch
+
+        for prefix in ('R=0;', 'Var Z;', 'Var Z; R=0;'):
+            with self.subTest(prefix=prefix):
+                source=prefix+TABLE+'Z=T.Copy(); R'
+                vm=self.vm()
+                plan=vm.prepare(source)
+                namespace=plan._plan.function.__globals__
+                admitted=Mock(wraps=namespace['_fresh_closed_table'])
+                with patch.dict(namespace,_fresh_closed_table=admitted):
+                    self.assertEqual(vm.execute_prepared(plan),210)
+                admitted.assert_called_once()
+                self.assertEqual((vm.variables['z'].count(),vm.execute(source)),(20,210))
+
+    def test_literal_short_circuit_and_arithmetic_keep_proved_table_access(self):
+        for condition in ('False And (1/0=0)', '1+1=3', 'Not (True Or (1/0=0))'):
+            with self.subTest(condition=condition):
+                source=TABLE.replace('For I=1', f'If {condition} Then Z=T.Copy(); EndIf; For I=1')+'R'
+                vm=self.vm()
+                plan=vm.prepare(source)
+                generated=plan._plan.generated_source
+                self.assertIn('.set_member(',generated)
+                self.assertNotIn('resolve_set_member',generated)
+                self.assertEqual((vm.execute_prepared(plan),vm.execute(source)),(210,210))
+                self.assertNotIn('z',vm.variables)
+
+    def test_invariant_branch_proof_keeps_runtime_decimal_fault(self):
+        from decimal import Clamped, localcontext
+
+        source=TABLE.replace('For I=1', 'If 1+1=3 Then Z=T.Copy(); EndIf; For I=1')+'R'
+        vm=self.vm(); plan=vm.prepare(source)
+        with localcontext() as ctx:
+            ctx.Emax=0; ctx.clamp=1; ctx.traps[Clamped]=True
+            with self.assertRaises((BSLError,Clamped)):
+                vm.execute_prepared(plan)
+        self.assertEqual(vm.variables['t'].count(),0)
+
+    def test_existing_integer_test_does_not_start_using_decimal_context(self):
+        from decimal import Clamped, localcontext
+
+        vm=self.vm()
+        source='R=0; If 1+1=3 Then R=1; EndIf; R'
+        with localcontext() as ctx:
+            ctx.Emax=0; ctx.clamp=1; ctx.traps[Clamped]=True
+            self.assertEqual(vm.execute(source),0)
+
+    def test_default_and_qualified_columns_keep_original_conversions(self):
+        from decimal import Decimal
+        from unittest.mock import Mock, patch
+
+        for column_type, body, expected in (
+                ('Undefined','Row.X=I',Decimal(210)),
+                ('New TypeDescription("Number")','Row.X=I',Decimal(210)),
+                ('New TypeDescription("Number",New NumberQualifiers(2,0))',
+                 'Row.X=I+0.6',Decimal(230))):
+            with self.subTest(column_type=column_type):
+                source=TABLE.replace('Add("X")',f'Add("X", {column_type})').replace('Row.X=I',body)+'R'
+                vm=self.vm()
+                plan=vm.prepare(source)
+                self.assertIn('.set_member(',plan._plan.generated_source)
+                namespace=plan._plan.function.__globals__
+                if column_type=='Undefined':
+                    self.assertNotIn('resolve_set_member',plan._plan.generated_source)
+                    self.assertEqual(vm.execute_prepared(plan),expected)
+                else:
+                    admitted=Mock(wraps=namespace['_fresh_closed_table'])
+                    with patch.dict(namespace,_fresh_closed_table=admitted):
+                        self.assertEqual(vm.execute_prepared(plan),expected)
+                    admitted.assert_called_once()
+                    self.assertEqual(admitted.call_args.args[2:],(True,))
+                self.assertEqual(vm.execute(source),expected)
+                self.assertIs(type(vm.variables['r']),Decimal)
+
+    def test_typed_schema_publication_and_reload_precede_fast_loop(self):
+        seen=[]
+        vm=self.vm()
+
+        class Retired:
+            def __del__(self):
+                table=vm.variables['t']
+                seen.append((table.count(),table.columns.count()))
+        vm.variables['zz']=Retired()
+        source=TABLE.replace('T.Columns.Add("X");','ZZ=1; T.Columns.Add("X",New TypeDescription("Number"));')
+        self.assertEqual(vm.execute(source+' Z=T.Copy(); R'),210)
+        self.assertEqual(seen,[(0,0)])
+
+    def test_typed_schema_cannot_reuse_earlier_scalar_slots_after_publication(self):
+        vm=self.vm()
+        source=TABLE.replace('T.Columns.Add("X");','R=5; T.Columns.Add("X",New TypeDescription("Number"));')
+        plan=vm.prepare(source.replace('R=0;', '')+'R')
+        fast_arm=plan._plan.generated_source.split('if _fresh_closed_table',1)[1].split('        else:',1)[0]
+        self.assertIn('.set_member(',fast_arm)
+        self.assertNotIn('.get_member(',fast_arm)  # Old R is read only by the generic suffix.
+        self.assertEqual(vm.execute_prepared(plan),215)
+
     def test_warm_repeats_keep_one_table_origin_and_same_aliases(self):
         from unittest.mock import Mock, patch
 

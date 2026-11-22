@@ -2,7 +2,7 @@
 from decimal import Decimal
 from yadinassi.collections import plain_table_storage as storage, plain_value_table_runtime as runtime, plain_table_search as search
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.types.values import BSLObject
+from yadinassi.types.values import BSLObject, BSLType
 
 _TABLE=runtime.BSLValueTable;_ROW=runtime.BSLValueTableRow
 _COLUMNS=runtime.BSLValueTableColumnCollection;_COLUMN=runtime.BSLValueTableColumn
@@ -170,13 +170,47 @@ def validate(value,pure=False,*,row_only=False,iteration=False,fresh=False):
     return True
 
 
-def fresh_closed_table(context,value):
+def fresh_closed_table(context,value,configured=False):
     # This value has just passed the normal constructor. The true branch can
     # touch only this empty graph and data allocated by the closed source.
     # Never check previously published tables or release their references here.
     if (type(value) is not _TABLE or context.policy is not None or context.loop_budget is not None
             or context._verify_context):return False
     try:
-        return validate(value,pure=True,fresh=True)
+        if not configured:
+            return validate(value,pure=True,fresh=True)
+        # All ordinary constructor/column effects already ran and published.
+        # The continuation needs a fresh, exact, rowless numeric table, not
+        # proof of the original identity or of other pre-bound locals.
+        data=raw(value)
+        if any(type(key) is not str for key in data):
+            return False
+        rows=data.get('rows')
+        if type(rows) is not list or rows:
+            return False
+        if not validate(value) or data['_bounded_slice_read']:
+            return False
+        schema=data['_storage'].schema
+        columns=raw(data['columns'])
+        if schema._index_search is not None or columns['_query_columns']:
+            return False
+        from .python_direct_plain_map import _scalar_map_key
+        for column,default in zip(schema._metadata,schema._defaults):
+            descriptor=raw(column)['value_type']
+            if type(descriptor) is not runtime.BSLTypeDescription:
+                return False
+            fields=raw(descriptor)
+            if any(type(key) is not str for key in fields):
+                return False
+            kinds=fields.get('types')
+            if type(kinds) is not tuple or (kinds and (len(kinds)!=1 or kinds[0] is not BSLType.NUMBER)):
+                return False
+            try:
+                _scalar_map_key(descriptor)
+            except TypeError:
+                return False
+            if default is not None and type(default) is not Decimal:
+                return False
+        return True
     except BoundaryViolation:
         return False
