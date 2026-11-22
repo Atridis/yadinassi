@@ -2790,6 +2790,24 @@ class _View:
         return records
 
     @_boundary
+    def ordered_catalog_part(self, catalog_id, section_id, request, fields):
+        from .sqlite_ordered_parts import ordered_part_rows
+        self._require()
+        if not self._query_language or self._operation_id is not None: return None
+        catalog = self.catalog_schema(catalog_id)
+        _uuid(section_id)
+        section = next((part for part in catalog.tabular_sections if part.identity==section_id),None)
+        if section is None: raise BackendError('not_found')
+        if type(fields) is not tuple or not 1<=len(fields)<=128: raise BackendError('invalid_input')
+        for field in fields: self._scan_field(section,field,catalog_id)
+        table, physical = self._section_source(catalog,section)
+        parent = quote_identifier(self._backend._layout.table_name(catalog_id))
+        rows = ordered_part_rows(self,request,section,table,physical,parent,catalog_id)
+        if rows is None: return None
+        return CatalogSectionPage(tuple(CatalogSectionRecord(CatalogKey(self.database_id,catalog_id,owner),
+            section_id,TabularRow(row,values)) for owner,row,_,values,_ in rows),None)
+
+    @_boundary
     def scan_catalog_section(self, catalog_id, section_id, request):
         """Read-only typed section scan in the same pinned read-view contract."""
         self._require()
@@ -3189,7 +3207,7 @@ class _View:
             raise
 
 # The document port shares the same closed storage error boundary.
-for _document_method in ('_validate_query_source','documents','document_schema','read_document','read_document_values','select_documents','scan_documents','scan_document_values','ordered_document_values','find_document_number','registers','register_schema','scan_register','ordered_register_records','periodic_records','create','update','commit'):
+for _document_method in ('_validate_query_source','documents','document_schema','read_document','read_document_values','select_documents','scan_documents','scan_document_values','ordered_document_values','ordered_document_part','find_document_number','registers','register_schema','scan_register','ordered_register_records','periodic_records','create','update','commit'):
     setattr(DocumentView, _document_method, _boundary(getattr(DocumentView, _document_method)))
 
 install_boundaries(_boundary)

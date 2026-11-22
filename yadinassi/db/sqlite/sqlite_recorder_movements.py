@@ -80,6 +80,22 @@ def schema_data(schema,database_id):
             _storage()._fields_data(schema.fields),schema.name,schema.dimension_count]
 
 
+def decode_movement_row(schema, database_id, raw):
+    line, active, byte_count, *physical = raw
+    if (type(line) is not int or not 1 <= line <= MAX_DATABASE_ROWS or type(active) is not int
+            or active not in (0,1) or type(byte_count) is not int or not 0 <= byte_count <= MAX_ROW_BYTES):
+        raise BackendError('integrity')
+    try:
+        data = decode_typed_columns(physical, schema)
+        if len(_json(data).encode()) != byte_count:
+            raise BackendError('integrity')
+        values = tuple(_storage()._decode(value, field, database_id)
+                       for value, field in zip(data, schema.fields))
+        return RecorderMovementRow(line, bool(active), values)
+    except (ValueError,TypeError):
+        raise BackendError('integrity') from None
+
+
 class RecorderMovementPort:
     """Private borrowed-connection port. Admission/activation is not installed."""
     def __init__(self,connection,database_id,generation,schemas):
@@ -136,21 +152,10 @@ class RecorderMovementPort:
         if type(revision) is not int or not 0 <= revision < 2**63:
             raise BackendError('integrity')
         rows=[]
-        for line, active, byte_count, *physical in source:
-            if (type(line) is not int or line != len(rows)+1 or type(active) is not int
-                    or active not in (0,1) or type(byte_count) is not int or not 0 <= byte_count <= MAX_ROW_BYTES):
-                raise BackendError('integrity')
-            if len(rows) >= MAX_DATABASE_ROWS:
-                raise BackendError('unsupported')
-            try:
-                data = decode_typed_columns(physical, schema)
-                if len(_json(data).encode()) != byte_count:
-                    raise BackendError('integrity')
-                values = tuple(_storage()._decode(value, field, self.database_id)
-                               for value, field in zip(data, schema.fields))
-                rows.append(RecorderMovementRow(line, bool(active), values))
-            except (ValueError,TypeError):
-                raise BackendError('integrity') from None
+        for raw in source:
+            if raw[0] != len(rows)+1: raise BackendError('integrity')
+            if len(rows) >= MAX_DATABASE_ROWS: raise BackendError('unsupported')
+            rows.append(decode_movement_row(schema,self.database_id,raw))
         if revision == 0 and rows: raise BackendError('integrity')
         rows=tuple(rows)
         validate_replacement(schema,RecorderReplacement(schema.identity,recorder,rows,'0'*64),self.database_id)

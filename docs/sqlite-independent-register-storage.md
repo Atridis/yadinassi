@@ -20,7 +20,8 @@ still computed from the canonical logical key in memory. The sequence and
 logical write journal still make deletion/reinsert distinct and rollback atomic.
 
 The native ordered TOP provider is limited to ordinary single flat independent
-sources, without predicates, selecting/sorting bound fields. Explicit ORDER
+sources selecting and sorting bound fields, with optional supported scalar
+predicates. Explicit ORDER
 uses the existing logical casefold and typed comparison semantics (with
 dimension-key order for equal sort keys). The query provider validates each
 selected full register row, like the other ordered TOP providers. Ordinary

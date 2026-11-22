@@ -124,7 +124,7 @@ def try_ordered_select(plan, view, budget=None):
     from .relational_queries import _BoundField
     q = plan.query
     if (type(q) is not syntax.Select or not q.order or not 0 < q.limit < syntax.MAX_ROWS
-            or len(plan.sources) != 1 or q.family not in ('catalog','document','information_register') or q.section is not None
+            or len(plan.sources) != 1 or q.family not in ('catalog','document','information_register','accumulation_register')
             or q.temporary or q.external or q.derived is not None or q.into is not None
             or q.virtual_condition is not None or q.joins or plan.grouped or q.having is not None
             or q.distinct or plan.memberships or plan.hierarchies):
@@ -132,6 +132,16 @@ def try_ordered_select(plan, view, budget=None):
     if any(type(field) is not _BoundField or field.source != 0
            for field in (*plan.projections, *(field for field, _ in plan.orders))):
         return None
+    if q.section is not None:
+        if q.family not in ('catalog','document'): return None
+        from .query_ordered_parts import try_ordered_parts
+        return try_ordered_parts(plan,view,budget)
+    if q.family in ('accumulation_register', 'information_register'):
+        from .recorder_queries import RecorderQueryManager
+        accumulation = q.family == 'accumulation_register'
+        if accumulation or type(plan.managers[0]) is RecorderQueryManager:
+            from .query_movement_order import try_ordered_movements
+            return try_ordered_movements(plan, view, budget, 'accumulation' if accumulation else 'recorder')
     if q.family == 'information_register':
         from .register_queries import try_ordered_register
         return try_ordered_register(plan,view,budget)
@@ -142,12 +152,23 @@ def try_ordered_select(plan, view, budget=None):
     from yadinassi.db.catalog.catalog_backend import (
         CatalogKey, CatalogOrder, CatalogPredicate, CatalogScanRequest, CatalogValuePage, CatalogValueRow,
     )
+    filtered = False
     if document:
         from yadinassi.db.document.document_backend import DocumentKey, DocumentValuePage, DocumentValueRow
         from .document_queries import _ordered_header_value
         predicates = plan.document_storage_predicate(plan.predicate, 0)
-        if predicates is None: return None
-        predicate = CatalogPredicate('and', predicates) if predicates else None
+        if predicates is None:
+            from yadinassi.db.sqlite.sqlite_documents import DocumentView
+            from .query_ordered_predicates import bind_scalar_predicate
+            if (type(view) is not DocumentView or not view._view._query_language
+                    or view._view._operation_id is not None
+                    or any(c.kind in ('catalog_ref','document_ref','enum_ref') for c in plan.fields[0])):
+                return None
+            predicate = bind_scalar_predicate(plan, ('number','date','deletion_mark'))
+            if predicate is None: return None
+            filtered = True
+        else:
+            predicate = CatalogPredicate('and', predicates) if predicates else None
         page_type, row_type, key_type = DocumentValuePage, DocumentValueRow, DocumentKey
     else:
         predicate = plan.storage_predicate(plan.predicate, 0, allow_or=True)
@@ -174,7 +195,8 @@ def try_ordered_select(plan, view, budget=None):
                 or view.catalog_schema(manager._schema.identity) != manager._schema):
             raise BackendError('schema_changed')
     request = CatalogScanRequest(predicate,order,q.limit,string_comparison='casefold_v1')
-    page = select(manager._schema.identity, request, fields)
+    page = (select(manager._schema.identity, request, fields, scalar_filter=True) if filtered
+            else select(manager._schema.identity, request, fields))
     if plan.enum_scope is not None: plan.enum_scope.require_current()
     elif plan.enum_binding is not None: plan.enum_binding._live()
     if page is None: return None

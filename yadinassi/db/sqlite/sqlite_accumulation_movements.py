@@ -93,6 +93,28 @@ def _canonical_rows(rows):
     return [list(row[:-1]) for row in rows]
 
 
+def decode_movement_row(schema, database_id, raw, *, enum_domain=None):
+    line, period, active, direction, byte_count, *physical = raw
+    if (type(line) is not int or not 1 <= line <= MAX_MOVEMENT_ROWS or type(period) is not str
+            or len(period) != 14 or type(active) is not int or active not in (0, 1)
+            or type(direction) is not str or type(byte_count) is not int
+            or not 0 <= byte_count <= MAX_ROW_BYTES):
+        raise BackendError('integrity')
+    try:
+        flat = decode_typed_columns(physical, schema, enum_domain=enum_domain)
+        data = _grouped(schema, flat)
+        if len(_json(data).encode('utf-8')) + len(period) + len(direction) + 64 != byte_count:
+            raise BackendError('integrity')
+        groups = [tuple(_storage()._decode(value, field, database_id, enum_domain=enum_domain)
+                        for value, field in zip(values, fields))
+                  for values, fields in zip(data, (schema.dimensions, schema.resources, schema.attributes))]
+        date = _storage()._decode(['d', period], _PERIOD_FIELD, database_id,enum_domain=enum_domain)
+        return AccumulationMovementRow(line, date, bool(active),
+                                       AccumulationDirection(direction), *groups)
+    except (ValueError, TypeError, RecursionError):
+        raise BackendError('integrity') from None
+
+
 def _initialize_headers(self, connection, database_id, generation, schemas, *, active_only=False, reference_catalogs=(), enum_domain=None):
     """Shared live metadata checks; no layout admission or usable port result."""
     if (type(connection) is not sqlite3.Connection or type(database_id) is not UUID
@@ -247,25 +269,10 @@ class AccumulationMovementPort:
         if type(revision) is not int or not 0 <= revision < 2**63:
             raise BackendError('integrity')
         rows = []
-        for line, period, active, direction, byte_count, *physical in source:
+        for raw in source:
             if len(rows) >= MAX_MOVEMENT_ROWS: raise BackendError('unsupported')
-            if (type(line) is not int or line != len(rows) + 1 or type(period) is not str
-                    or len(period) != 14 or type(active) is not int or active not in (0, 1)
-                    or type(direction) is not str or type(byte_count) is not int):
-                raise BackendError('integrity')
-            try:
-                flat = decode_typed_columns(physical, schema, enum_domain=self._enum_domain)
-                data = _grouped(schema, flat)
-                if len(_json(data).encode('utf-8')) + len(period) + len(direction) + 64 != byte_count:
-                    raise BackendError('integrity')
-                groups = [tuple(_storage()._decode(value, field, self.database_id, enum_domain=self._enum_domain)
-                                for value, field in zip(values, fields))
-                          for values, fields in zip(data, (schema.dimensions, schema.resources, schema.attributes))]
-                date = _storage()._decode(['d', period], _PERIOD_FIELD, self.database_id,enum_domain=self._enum_domain)
-                rows.append(AccumulationMovementRow(line, date, bool(active),
-                                                    AccumulationDirection(direction), *groups))
-            except (ValueError, TypeError, RecursionError):
-                raise BackendError('integrity') from None
+            if raw[0] != len(rows) + 1: raise BackendError('integrity')
+            rows.append(decode_movement_row(schema, self.database_id, raw, enum_domain=self._enum_domain))
         if revision == 0 and rows: raise BackendError('integrity')
         rows = tuple(rows)
         try:

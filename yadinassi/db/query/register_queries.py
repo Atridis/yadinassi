@@ -119,8 +119,6 @@ def try_ordered_register(plan, view, budget=None):
     from yadinassi.db.catalog.catalog_backend import CatalogOrder
     from yadinassi.db.registers.information_registers import BSLInformationRegisterManager
     from .queries import BSLQueryResult, _MAX_CELLS, _MAX_RESULT_TEXT
-    if plan.predicate is not None:
-        return None
     manager = plan.managers[0]
     provider = getattr(view,'ordered_register_records',None)
     if provider is None or type(manager) is not BSLInformationRegisterManager:
@@ -131,15 +129,27 @@ def try_ordered_register(plan, view, budget=None):
     if not 1<=len(orders)<=16:
         return None
     manager._check_view(view)
-    page = provider(manager._schema.identity, tuple(CatalogOrder(field, descending)
-                    for field, descending in orders.items()), plan.query.limit)
+    order = tuple(CatalogOrder(field, descending) for field, descending in orders.items())
+    filtered = plan.predicate is not None
+    if filtered:
+        from yadinassi.db.sqlite.sqlite_documents import DocumentView
+        from .query_ordered_predicates import bind_scalar_predicate
+        if (type(view) is not DocumentView or not view._view._query_language
+                or view._view._operation_id is not None
+                or any(c.kind in ('catalog_ref','document_ref','enum_ref') for c in plan.fields[0])):
+            return None
+        predicate = bind_scalar_predicate(plan)
+        if predicate is None: return None
+        page = provider(manager._schema.identity, order, plan.query.limit, predicate=predicate)
+    else:
+        page = provider(manager._schema.identity, order, plan.query.limit)
     if page is None:
         return None
     manager._check_view(view)
     if (type(page) is not RegisterPage or type(page.rows) is not tuple
             or len(page.rows)>plan.query.limit or page.continuation is not None):
         raise BackendError('integrity')
-    if budget is None: budget = [0, 0]
+    if budget is None: budget = [0,0]
     rows, seen, digests, text = [], set(), set(), 0
     for record in page.rows:
         values = _record_values(manager,record,view,seen,digests,budget)

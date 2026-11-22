@@ -213,7 +213,7 @@ class RegisterView:
             token=uuid4().hex;self._scan=(token,identity,rows[request.page_size-1][1:1+len(layout.keys)])
         return RegisterPage(records,token)
 
-    def ordered_register_records(self, identity, order, limit):
+    def ordered_register_records(self, identity, order, limit, *, predicate=None):
         """Closed query-only TOP over physical columns, never the raw/tx port."""
         self._view._require()
         if not self._view._query_language or self._view._operation_id is not None:
@@ -239,8 +239,16 @@ class RegisterView:
             terms.append(col+(' DESC' if item.descending else ' ASC'))
         order_sql=','.join((*terms,layout.key_order))
         self._scan=None
+        where, args = '', ()
+        if predicate is not None:
+            from .sqlite_ordered_predicates import ordered_where
+            fields = {identity:(field,col+' COLLATE yadinassi_casefold_v1' if field.kind=='string' else col)
+                      for identity,(field,col) in admitted.items()
+                      if field.kind in ('string','number','boolean','datetime')}
+            expression,args = ordered_where(predicate, fields)
+            where = ' WHERE ' + expression
         cursor=self._connection.execute(
-            f'SELECT {layout.columns} FROM {layout.table} ORDER BY {order_sql} LIMIT ?',(limit,))
+            f'SELECT {layout.columns} FROM {layout.table}{where} ORDER BY {order_sql} LIMIT ?',(*args,limit))
         try: rows=tuple(self._record(schema,row) for row in cursor)
         finally: cursor.close()
         self._view._require()

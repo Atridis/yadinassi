@@ -117,6 +117,9 @@ class DocumentView:
     def ordered_catalog_values(self, identity, request, fields):
         return self._view.ordered_catalog_values(identity, request, fields)
 
+    def ordered_catalog_part(self, identity, section_id, request, fields):
+        return self._view.ordered_catalog_part(identity,section_id,request,fields)
+
     def scan_catalog_section(self, identity, section_id, request):
         return self._view.scan_catalog_section(identity, section_id, request)
     def _register_reader(self):
@@ -129,8 +132,8 @@ class DocumentView:
     def register_schema(self, identity): return self._register_reader().register_schema(identity)
     def scan_register(self, identity, request):
         return self._register_reader().scan_register(identity, request)
-    def ordered_register_records(self, identity, order, limit):
-        return self._register_reader().ordered_register_records(identity,order,limit)
+    def ordered_register_records(self, identity, order, limit, *, predicate=None):
+        return self._register_reader().ordered_register_records(identity,order,limit,predicate=predicate)
 
     def periodic_records(self, identity, filters=(), start=None, end=None, edge=None, limit=1000):
         return self._register_reader().periodic_records(identity,filters,start,end,edge,limit)
@@ -593,7 +596,7 @@ class DocumentView:
             args.append(value)
         return where,args
 
-    def ordered_document_values(self, identity, request, fields):
+    def ordered_document_values(self, identity, request, fields, *, scalar_filter=False):
         """One bounded query-language page over owned native columns."""
         from yadinassi.db.catalog.catalog_backend import CatalogOrder, CatalogPredicate, CatalogScanRequest
         from yadinassi.db.document.document_backend import DocumentValuePage
@@ -632,13 +635,22 @@ class DocumentView:
         # The residual stable sort loads documents in this exact source order.
         order.extend(('r.date ASC','r.number COLLATE BINARY ASC','r.record_id ASC'))
         predicate = request.predicate
-        if predicate is None:
-            terms = ()
-        elif type(predicate) is CatalogPredicate and type(predicate.kind) is str and predicate.kind == 'and':
-            terms = predicate.terms
+        if scalar_filter:
+            from .sqlite_ordered_predicates import ordered_where
+            definitions = {'number':'string', 'date':'datetime', 'deletion_mark':'boolean'}
+            definitions.update((field.identity, field) for field in attributes
+                               if field.kind in ('string','number','boolean','datetime'))
+            clause, args = ordered_where(predicate, {field:(definition, fields_sql[field])
+                                                    for field, definition in definitions.items()})
+            where = (clause,)
         else:
-            return None
-        where,args = self._document_where(schema,terms)
+            if predicate is None:
+                terms = ()
+            elif type(predicate) is CatalogPredicate and type(predicate.kind) is str and predicate.kind == 'and':
+                terms = predicate.terms
+            else:
+                return None
+            where,args = self._document_where(schema,terms)
         _storage()._close_document_scan(view)
         view._scan_cursor = None
         sql = self._projection_sql(schema,fields,where=' AND '.join(('r.document_id=?',*where)))
@@ -653,6 +665,31 @@ class DocumentView:
         view._require()
         if view._backend._active is not view: raise BackendError('closed')
         return DocumentValuePage(rows,None)
+
+    def ordered_document_part(self, identity, section_id, request, fields):
+        from .sqlite_ordered_parts import ordered_part_rows
+        from yadinassi.db.document.document_backend import DocumentValuePage, DocumentValueRow
+        self._view._require()
+        if not self._view._query_language or self._view._operation_id is not None: return None
+        schema = self.document_schema(identity)
+        _storage()._uuid(section_id)
+        section = next((part for part in schema.tabular_sections if part.identity==section_id),None)
+        if section is None: raise BackendError('not_found')
+        self._projection_fields(schema,fields,section)
+        table = quote_identifier(section_table(schema,section))
+        physical = tuple(quote_identifier(attribute_column(field)) for field in section.fields)
+        rows = ordered_part_rows(self._view,request,section,table,physical,'document_record',identity,document=True)
+        if rows is None: return None
+        results = []
+        for owner,_,line,values,(number,date) in rows:
+            validate_string(number,schema.number_length)
+            if not number: raise BackendError('integrity')
+            _storage()._decode(['d',date],_DATE_FIELD,self.database_id)
+            key = DocumentKey(self.database_id,identity,owner)
+            mapped = {field.identity:value for field,value in zip(section.fields,values)}
+            mapped.update(ref=key,line_number=Decimal(line))
+            results.append(DocumentValueRow(key,tuple(mapped[field] for field in fields),line))
+        return DocumentValuePage(tuple(results),None)
 
     def scan_document_values(self, identity, request, fields, section_id=None, predicate=()):
         """Closed SQLite projection port, never a partial DocumentCard.
