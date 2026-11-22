@@ -240,7 +240,7 @@ class Emitter:
         self.has_goto=False;self.literal_reachability=False;self.table_prefix=False;self.goto_last_expression=None
         self.goto_destinations={};self.goto_transfers={};self.goto_dispatch=[]
         self.http_body_receiver=False
-        self.known_calls={};self.known_origins=();self.known_selection_reads=set()
+        self.known_calls={};self.known_origins=();self.known_selection_reads=set();self.known_selection_adds=set()
         self.local_field_facts={};self.integer_lane=False;self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.module_boundaries=0;self.range_indices={};self.external_actuals=0
         self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.current_module=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
         self.standalone_script=False;self.row_cell_references=False;self.link_imports=False;self.import_links=[]
@@ -616,6 +616,18 @@ class Emitter:
             value=self.attribute(self.name('_context',t),'_known_methods_live',t))
         parts=self.node(py.Tuple,t,elts=[value,phase],ctx=py.Load())
         return self.node(py.Subscript,t,value=parts,slice=self.const(0,t),ctx=py.Load())
+
+    def known_selection_add(self,operation,left,right,t):
+        call=self.call('_known_selection_add',[self.name('_context',t),operation,left,right],t)
+        if self.scope is None or 'known_phase' not in self.scope:return call
+        # An operator can retire the lexical proof but is never a new origin.
+        phase=self.scope['known_phase']
+        live=self.node(py.BoolOp,t,op=py.And(),values=[
+            self.name(phase,t),self.attribute(self.name('_context',t),'_known_methods_live',t)])
+        keep=self.node(py.NamedExpr,t,target=self.name(phase,t,True),value=live)
+        pair=self.node(py.Tuple,t,elts=[call,keep],ctx=py.Load())
+        return self.node(py.Subscript,t,value=pair,slice=self.const(0,t),ctx=py.Load())
+
     def _expr(self,node,require_value=True):
         if type(node) is bsl.Await:
             if self.scope is None or not self.scope.get('async'):
@@ -716,6 +728,8 @@ class Emitter:
                         or (type(left_value) is bsl.Literal and type(left_value.value) is str)):
                     # BSL converts a non-string RHS when the left operand is a string.
                     # No runtime type dispatch is needed for a known string.
+                    if id(node) in self.known_selection_adds:
+                        return self.known_selection_add(self.name('_concatenate',t),left,right,t)
                     return self.call('_concatenate',[left,right],t)
             if id(node) in self.scalar_kinds and left_kind==right_kind:
                 if op=='+' and left_kind=='number':
@@ -726,6 +740,8 @@ class Emitter:
                         return self.node(py.Compare,t,left=left,ops=[relation()],comparators=[right])
             if op=='+':
                 if left_kind in ('number','bool') or type(left_value) is bsl.Literal:
+                    if id(node) in self.known_selection_adds:
+                        return self.known_selection_add(self.name('_native_add',t),left,right,t)
                     return self.node(py.BinOp,t,left=left,op=py.Add(),right=right)
                 # Preserve ordinary-direct left-temporary lifetime, evaluate
                 # the type decision before RHS, and emit RHS only once.
@@ -734,6 +750,8 @@ class Emitter:
                 kind=self.call('type',[bound],t)
                 test=self.node(py.Compare,t,left=kind,ops=[py.Is()],comparators=[self.name('str',t)])
                 operation=self.node(py.IfExp,t,test=test,body=self.name('_concatenate',t),orelse=self.name('_native_add',t))
+                if id(node) in self.known_selection_adds:
+                    return self.known_selection_add(operation,self.name(temporary,t),right,t)
                 return self.invoke(operation,[self.name(temporary,t),right],t)
             helpers={'/':'_divide','=':'_equal','<>':'_not_equal'}
             if op in helpers:return self.call('_dynamic_divide' if self.integer_lane and op=='/' else helpers[op],[left,right],t)
@@ -2083,9 +2101,10 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
                     ('query','запрос','valuetable','таблицазначений') for node in nodes))
     if known_methods:
         from yadinassi.execution.direct.python_direct_known_methods import analyze as analyze_known
-        emitter.known_calls,emitter.known_origins,emitter.known_selection_reads=analyze_known(
+        emitter.known_calls,emitter.known_origins,emitter.known_selection_reads,emitter.known_selection_adds=analyze_known(
             program,database=vm.database_context is not None)
-        if not emitter.known_calls:emitter.known_origins=set();emitter.known_selection_reads.clear()
+        if not emitter.known_calls:
+            emitter.known_origins=set();emitter.known_selection_reads.clear();emitter.known_selection_adds.clear()
     if _profile is not None:
         module_names,external_names,constructors=_profile
         emitter.external_names={name.casefold() for name in external_names}
@@ -2247,13 +2266,17 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             prologue.append(emitter.node(py.FunctionDef,token,name=setter,args=args,body=body,decorator_list=[],returns=None,type_comment=None))
         if shadows and has_fragments:_reject('source implicit namespace shadow with Execute/Eval is not integrated')
         if known_methods and not imported and not has_fragments and routine.execution_context=='client' and not routine.is_dual:
-            local_slots=(assigned|declarations)-parameters-globals_-emitter.scope['externals']-emitter.scope['boxed']-lexical
-            calls,origins,selection_reads=analyze_known(routine.body,database=vm.database_context is not None,local_slots=local_slots)
+            # Host getter/setter closures are not an escape by themselves.
+            # The known-method analysis ends the lexical phase at a reachable
+            # opaque call; dead or later calls need not poison earlier facts.
+            local_slots=(assigned|declarations)-parameters-globals_-emitter.scope['externals']-emitter.scope['boxed']
+            calls,origins,selection_reads,selection_adds=analyze_known(routine.body,database=vm.database_context is not None,local_slots=local_slots)
             if calls:
                 emitter.scope['known_phase']=emitter.temp()
                 emitter.known_calls.update(calls)
                 emitter.known_origins.update(origins)
                 emitter.known_selection_reads.update(selection_reads)
+                emitter.known_selection_adds.update(selection_adds)
         routine_end,emitter.region_ops,emitter.region_states=(0,{}, {}) if routine.is_async or has_goto or emitter.authority or emitter.source_scopes else _routine_region(routine,emitter.scope)
         emitter.region_active=bool(routine_end)
         region_body=emitter.sequence(routine.body[:routine_end])
@@ -2526,6 +2549,9 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     if emitter.known_selection_reads:
         from yadinassi.execution.direct.python_direct_known_methods import selection_read_protocol
         namespace['_known_selection_read_protocol']=selection_read_protocol
+    if emitter.known_selection_adds:
+        from yadinassi.execution.direct.python_direct_known_methods import selection_add
+        namespace['_known_selection_add']=selection_add
     if table_prefix_end:
         from yadinassi.execution.direct.python_direct_plain_tables import fresh_closed_table
         namespace['_fresh_closed_table']=fresh_closed_table

@@ -187,15 +187,67 @@ class KnownQueryLoopTests(unittest.TestCase):
         with self.assertRaisesRegex(BSLRuntimeError,'Unknown'):
             self.vm.execute(self.QUERY+'S.Next();R=S.Unknown;')
 
-    def test_field_value_does_not_certify_scalar_or_a_new_receiver(self):
+    def test_closed_selection_addition_and_dead_branches_keep_live_cursor(self):
+        from test_query_ordered_top_pushdown import OrderedTopMainDemoTests
         self.seed()
-        source=self.QUERY+'R="";While S.Next() Do R=R+S.Code;EndDo;'
-        plan=self.vm.prepare_program(parse(source))
-        self.assertNotIn('.next()',plan._plan.generated_source)
-        reached,methods=self.methods()
-        with methods:self.vm.execute_prepared(plan)
-        self.assertEqual(reached,['Next']*4)
-        self.assertEqual(self.vm.variables['r'],'123')
+        cases=(
+            ('R=S.Code + "";', '3', True),
+            ('V=S.Code;R=V+"";', '3', True),
+            ('R=R+S.Code;', '123', True),
+            ('R=S.Code; If False Then Message(R); EndIf;', '3', False),
+        )
+        for body,expected,addition in cases:
+            loop=self.QUERY+'R="";While S.Next() Do '+body+'EndDo;'
+            routine='Function Work() Var Q,S,R,V;'+loop+'Return R;EndFunction\nAnswer=Work();'
+            for source,key in ((loop,'r'),(routine,'answer')):
+                with self.subTest(body=body,key=key):
+                    plan=self.vm.prepare_program(parse(source))
+                    generated=plan._plan.generated_source
+                    self.assertIn('.next()',generated)
+                    self.assertIn('_known_selection_read_protocol',generated)
+                    self.assertEqual('_known_selection_add(' in generated,addition)
+                    self.vm.execute_prepared(plan)  # warm the SQLite handle
+                    for prepared in (False,True):
+                        reached,methods=self.methods()
+                        trace,traced=OrderedTopMainDemoTests.actual_trace(self)
+                        with traced,methods:
+                            if prepared:self.vm.execute_prepared(plan)
+                            else:self.vm.execute(source)
+                        self.assertEqual(self.vm.variables[key],expected)
+                        self.assertEqual(reached,[])
+                        self.assertEqual(len(trace),1,trace)
+
+    def test_opaque_selection_operand_runs_once_and_revokes_live_cursor(self):
+        from yadinassi.db.query import query_pushdown
+        self.seed()
+        source=self.QUERY+'R="";While S.Next() Do R=S.Code+"";EndDo;'
+        for src in (source,'Function Work() Var Q,S,R;'+source+'Return R;EndFunction\nR=Work();'):
+            with self.subTest(source=src):
+                actual=query_pushdown.try_ordered_select
+                effects=[]
+                class Opaque:
+                    def __add__(self, other):
+                        effects.append(other)
+                        return 'opaque'
+                def result(*args,**kwargs):
+                    found=actual(*args,**kwargs)
+                    if found is not None:
+                        found._rows=((Opaque(),),*found._rows[1:])
+                    return found
+                plan=self.vm.prepare_program(parse(src))
+                self.assertIn('_known_selection_add(',plan._plan.generated_source)
+                reached,methods=self.methods()
+                with methods,patch.object(query_pushdown,'try_ordered_select',result):
+                    self.vm.execute_prepared(plan)
+                self.assertEqual(effects,[''])
+                self.assertEqual(reached,['Next']*3)
+                self.assertEqual(self.vm.variables['r'],'3')
+
+    def test_cursor_reachability_does_not_skip_dead_branch_admission(self):
+        from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+        source=self.QUERY+'While S.Next() Do R=S.Code;If False Then New FormGroup;EndIf;EndDo;'
+        with self.assertRaisesRegex(PythonDirectUnsupported,'constructor FormGroup'):
+            self.vm.prepare_program(parse(source))
 
     def test_replaced_selection_member_runs_once_and_disarms_method_proof(self):
         from yadinassi.db.query.queries import BSLQueryResultSelection

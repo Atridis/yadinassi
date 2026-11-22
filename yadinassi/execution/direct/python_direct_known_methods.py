@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from yadinassi.syntax import ast
 from weakref import ref
+from .python_direct_static_module import ordered_if
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,7 +32,7 @@ def analyze(program, *, database, local_slots=None):
     lexical=local_slots is not None
     entries = _TABLE_ENTRIES + (_QUERY_ENTRIES if database else ())
     methods = {(item.kind, name): item for item in entries for name in item.aliases}
-    calls, origins, selection_reads = {}, set(), set()
+    calls, origins, selection_reads, selection_adds = {}, set(), set(), set()
     loop_probes = {}
     # The lexical phase distinguishes kinds, not individual objects. Keep
     # the existing single-origin rule across the whole routine, including
@@ -64,7 +65,8 @@ def analyze(program, *, database, local_slots=None):
             return 'scalar',False
         if kind is ast.Binary and node.operator in ('AND','OR','=','<>','<','<=','>','>=','+','-','*','/','%'):
             left,_=expression(node.left,facts)
-            if lexical and left != 'scalar':raise _OpaqueLocal
+            if lexical and left != 'scalar' and not (node.operator=='+' and left=='selection-value'):
+                raise _OpaqueLocal
             if node.operator in ('AND','OR'):
                 reached=facts.copy()
                 right,_=expression(node.right,reached)
@@ -73,6 +75,14 @@ def analyze(program, *, database, local_slots=None):
                 facts.update(common)
             else:
                 right,_=expression(node.right,facts)
+            if (node.operator=='+'
+                    and 'selection-value' in (left,right)
+                    and left in ('scalar','selection-value') and right in ('scalar','selection-value')):
+                # A detached projection's value domain is not a receiver fact.
+                # Keep the cursor's provenance through this expression only
+                # with a live exact-operand guard at the eventual addition.
+                if record:selection_adds.add(id(node))
+                return 'scalar',False
             if left != 'scalar' or right != 'scalar':
                 if lexical:raise _OpaqueLocal
                 facts.clear()
@@ -233,13 +243,14 @@ def analyze(program, *, database, local_slots=None):
                     return _RETURNED
                 elif kind is ast.If:
                     exits=[]
-                    for condition,body in node.branches:
-                        result,_=expression(condition,facts)
-                        if lexical and result != 'scalar':raise _OpaqueLocal
+                    for condition,body,live_test,live_body,literal in ordered_if(node,literal_reachability=True):
+                        if live_test and literal is None:
+                            result,_=expression(condition,facts)
+                            if lexical and result != 'scalar':raise _OpaqueLocal
                         # The next ElseIf sees only this condition's
                         # fallthrough, never the preceding Then body.
-                        exits.append(statements(body,facts.copy(),loop_edges))
-                    exits.append(statements(node.otherwise,facts,loop_edges))
+                        if live_body:
+                            exits.append(statements(body,facts.copy(),loop_edges))
                     live=[exit_facts for exit_facts in exits if exit_facts is not _RETURNED]
                     if not live:return _RETURNED
                     if any(exit_facts is None for exit_facts in live):return None
@@ -263,7 +274,7 @@ def analyze(program, *, database, local_slots=None):
         return facts
 
     statements(program,{})
-    return calls,origins,selection_reads
+    return calls,origins,selection_reads,selection_adds
 
 
 def _plain_abi(kind,methods):
@@ -293,6 +304,22 @@ def generic_call(context,value,spelling,require_value):
     # Regardless of what it returns, it cannot arm the enclosing origin.
     try:
         return context.resolve_member_call(value,spelling,require_value=require_value)()
+    finally:
+        context._known_methods_live=0
+        context._known_method_origin=None
+
+
+_CLOSED_ADD_TYPES=frozenset(map(id,(str,Decimal,bool,int,type(None))))
+
+
+def selection_add(context, operation, left, right):
+    # An opaque operand may run Python while adding. Revoke before that
+    # callback (not after it), and do not let its result rearm this origin.
+    if id(type(left)) in _CLOSED_ADD_TYPES and id(type(right)) in _CLOSED_ADD_TYPES:
+        return operation(left,right)
+    context._known_methods_live=0
+    context._known_method_origin=None
+    try:return operation(left,right)
     finally:
         context._known_methods_live=0
         context._known_method_origin=None
