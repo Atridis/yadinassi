@@ -407,6 +407,16 @@ def binary_data_stream(data):
     return result
 
 
+# Definition-time bindings for standalone ZIP's memory-only borrowed transport.
+_DIRECT_ZIP_STREAM_ABI = tuple((cls, cls.__mro__, tuple(vars(cls).items()))
+                              for cls in (_State, BSLStream, BSLMemoryStream))
+_DIRECT_ZIP_STREAM_INIT_CODES = (_State.__init__.__code__, BSLMemoryStream.__init__.__code__)
+_DIRECT_ZIP_OPEN_MEMORY_CODE = binary_data_stream.__code__
+_DIRECT_ZIP_BYTEARRAY = bytearray
+_DIRECT_ZIP_STREAM_BINDINGS = tuple((key, globals()[key]) for key in
+    ('_State', 'BSLStream', 'BSLMemoryStream', 'BSLBinaryData', 'binary_data_stream', '_number'))
+
+
 FUNCTIONS = (
     ('ПолучитьДвоичныеДанныеИзБуфераДвоичныхДанных', buffer_to_binary_data, 'GetBinaryDataFromBinaryDataBuffer'),
     ('ПолучитьБуферДвоичныхДанныхИзДвоичныхДанных', binary_data_to_buffer, 'GetBinaryDataBufferFromBinaryData'),

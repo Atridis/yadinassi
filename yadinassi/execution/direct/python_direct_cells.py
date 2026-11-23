@@ -115,3 +115,12 @@ class PublishedModuleCell:
     def __setitem__(self,index,value):
         self.cell[index]=value
         self.state[self.key]=public_number(value)
+
+
+def module_property_reference(cell, name):
+    """Bind a Structure output to the live module slot, not its published copy."""
+    from yadinassi.types.values import Reference
+    from yadinassi.execution.codegen.experimental_naked_live_state import UNSET, _ForwardReference, missing
+    value=cell[0]
+    if value is UNSET:missing(name)
+    return _ForwardReference(value) if type(value) is Reference else CellReference(cell)

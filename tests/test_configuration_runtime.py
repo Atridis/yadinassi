@@ -267,6 +267,31 @@ class ApplicationLifecycleTests(unittest.TestCase):
         self.assertTrue(app.close()); self.assertTrue(app.close())
         self.assertEqual(output, ['body', 'before', '4', 'leaving'])
 
+    def test_scalar_startup_rejects_transaction_before_initializer_effects(self):
+        app, output = self.prepare(
+            'Procedure OnStart() Message("hook"); EndProcedure\n'
+            'Message("initializer"); If False Then BeginTransaction(); EndIf;')
+        with self.assertRaises(PythonDirectUnsupported):
+            app.start()
+        self.assertEqual(output, [])
+        self.assertEqual(app.state, 'failed')
+        self.assertTrue(app.interpreter._family_closed)
+        with self.assertRaises(ValueError):
+            app.execute('Message("after failure");')
+        self.assertEqual(output, [])
+
+    def test_scalar_startup_output_cannot_reenter_application_command(self):
+        output = []
+        def emit(value):
+            output.append(value)
+            with self.assertRaisesRegex(ValueError, 'must be running'):
+                app.execute('Message("reentered");')
+        app = ConfigurationApplication.from_files(
+            module_files([CLIENT], application='Message("body");'), output=emit)
+        self.addCleanup(app.close, force=True)
+        self.assertTrue(app.start())
+        self.assertEqual(output, ['body'])
+
     def test_start_cancel_skips_onstart_and_cannot_restart(self):
         app, output = self.prepare('Procedure BeforeStart(Cancel) Cancel=True; EndProcedure\nProcedure OnStart() Message("bad"); EndProcedure')
         self.assertFalse(app.start()); self.assertEqual(app.state, 'cancelled')

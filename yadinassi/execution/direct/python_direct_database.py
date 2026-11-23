@@ -532,6 +532,9 @@ class CatalogBoundary:
             adapter = _OWNED_SYNTAX[receiver_kind]
             if adapter is not live_metadata or live_metadata.server_receiver(self):
                 return adapter.resolve(self,value,name,syntax=True)
+        if type(value) is BSLBinaryData:
+            owned_stream=zip_reader.resolve_binary_stream(self,value,name)
+            if owned_stream is not None:return owned_stream
         if name=='__setitem__' and type(value) is PlainValueList:
             if self._verify_context:self._check()
             return _readonly_value_list_index

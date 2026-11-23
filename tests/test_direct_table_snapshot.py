@@ -68,8 +68,18 @@ class DirectTableSnapshot(unittest.TestCase):
             storage.capture(self.table())
             with self.assertRaises(BoundaryViolation):direct.check_factories()
     def test_names_with_commas_not_snapshot_admitted(self):
-        t=BSLValueTable();t.columns.add('A,B')
+        t=BSLValueTable();column=t.columns.add('A')
+        storage.capture(t)
+        # The public setter no longer permits this fixture. Keep the raw
+        # schema and handle in agreement so capture rejects the name itself.
+        t._storage.rename_column('A','A,B')
+        column._name='A,B'
+        t._storage.schema.validate()
         with self.assertRaises(storage.SnapshotError):storage.capture(t)
+    def test_public_column_add_rejects_comma_without_changing_table(self):
+        t=self.table();before=storage.capture(t)
+        with self.assertRaises(ValueError):t.columns.add('A,B')
+        self.assertEqual(storage.capture(t),before)
     def test_declarations_bounded_before_elements(self):
         from yadinassi.formats.storage import value_storage_table as codec
         t=self.table();t._search.declarations=set((i,) for i in range(codec.MAX_INDEXES+1))

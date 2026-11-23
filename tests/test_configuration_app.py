@@ -1,4 +1,6 @@
 """Configuration XML -> independent BSL -> OpenForm -> retained UI sessions."""
+from dataclasses import replace
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 import sys
@@ -88,6 +90,116 @@ class ConfigurationApplicationTests(unittest.TestCase):
         for _ in range(2):
             self.assertIsNone(self.event(app, sid, control='IncrementButton')['form']['result']['error'])
         self.assertEqual(str(app.sessions[sid][0].session.form._data['count']), '4')
+
+    def test_same_server_nocontext_keeps_the_event_budget_without_a_wire_call(self):
+        files = sources('counter')
+        module = 'CommonForms/Counter/Ext/Form/Module.bsl'
+        files[module] = files[module].replace(b'Count = AddOne(Count);',
+            b'Tmp = AddOne(Count); Count = AddOne(Tmp);').replace(b'Return Value + 1;',
+            b'For I=1 To 4 Do Value=Value+1; EndDo; Return Value;')
+        broker, app = self.setup_app(files=files)
+        sid = self.open(app, 'CommonForm.Counter')['session']
+        server, detached_wire, _ = broker.sessions[sid]
+        with mock.patch.object(detached_wire, 'exchange',
+                               side_effect=AssertionError('same-side helper entered the wire')) as exchange:
+            with mock.patch('yadinassi.forms.form_runtime.MAX_STEPS', 9):
+                failed = self.event(app, sid, control='IncrementButton')['form']['result']
+            self.assertEqual(failed['error'], 'event_failed')
+            self.assertEqual(server.session.form._data['count'], 0)
+            self.assertEqual(server.session.interpreter._context_stack, ['client'])
+            self.assertEqual(server.session.interpreter._module_context_stack, [True])
+            accepted = self.event(app, sid, control='IncrementButton')['form']['result']
+            self.assertIsNone(accepted['error'])
+            self.assertEqual(server.session.form._data['count'], 8)
+            exchange.assert_not_called()
+
+    def test_same_server_nocontext_cannot_access_form_state_service_or_handle(self):
+        module = 'CommonForms/Counter/Ext/Form/Module.bsl'
+        for before, after in ((b'Return Value + 1;', b'Return Count;'),
+                              (b'Return Value + 1;', b'Message("forbidden"); Return Value;'),
+                              (b'Return Value + 1;', b'BeginTransaction(); Return Value;'),
+                              (b'Count = AddOne(Count);', b'Count = AddOne(ThisObject);')):
+            with self.subTest(after=after):
+                files = sources('counter')
+                files[module] = files[module].replace(before, after)
+                broker, app = self.setup_app(files=files)
+                sid = self.open(app, 'CommonForm.Counter')['session']
+                server, _, _ = broker.sessions[sid]
+                failed = self.event(app, sid, control='IncrementButton')['form']['result']
+                self.assertEqual(failed['error'], 'event_failed')
+                self.assertEqual(server.session.form._data['count'], 0)
+                self.assertEqual(failed['state']['messages'], [])
+
+    def test_same_server_nocontext_wrong_arity_precedes_argument_effect(self):
+        files = sources('counter')
+        module = 'CommonForms/Counter/Ext/Form/Module.bsl'
+        files[module] = files[module].replace(b'Count = AddOne(Count);',
+            b'Count = AddOne(Effect(), 2);') + b"""
+&AtServer
+Function Effect()
+ Message("argument evaluated");
+ Return 1;
+EndFunction
+"""
+        _, app = self.setup_app(files=files)
+        sid = self.open(app, 'CommonForm.Counter')['session']
+        failed = self.event(app, sid, control='IncrementButton')['form']['result']
+        self.assertEqual(failed['error'], 'event_failed')
+        self.assertEqual(failed['state']['messages'], [])
+
+    def test_same_server_nocontext_rejects_opaque_date_payload_before_use(self):
+        from yadinassi.temporal.dates import BSLDate, TICKS_PER_SECOND
+
+        files = sources('counter')
+        module = 'CommonForms/Counter/Ext/Form/Module.bsl'
+        files[module] = files[module].replace(b'Count = AddOne(Count);',
+            b'Count = AddOne(HostDate());').replace(b'Return Value + 1;',
+            b"Return Value - '00010101';")
+        broker, app = self.setup_app(files=files)
+        sid = self.open(app, 'CommonForm.Counter')['session']
+        server, _, _ = broker.sessions[sid]
+        vm = server.session.interpreter
+        effects = []
+
+        class Ticks:
+            def __sub__(self, other):
+                effects.append('host tick hook')
+                return TICKS_PER_SECOND
+
+        date = BSLDate(TICKS_PER_SECOND)
+        vm._register_platform_function('HostDate', lambda: date)
+        healthy = self.event(app, sid, control='IncrementButton')['form']['result']
+        self.assertIsNone(healthy['error'])
+        self.assertEqual(server.session.form._data['count'], 1)
+
+        object.__setattr__(date, 'ticks', Ticks())
+        failed = self.event(app, sid, control='IncrementButton')['form']['result']
+        self.assertEqual(effects, [])
+        self.assertEqual(failed['error'], 'event_failed')
+        self.assertEqual(server.session.form._data['count'], 1)
+
+    def test_same_server_nocontext_rechecks_binding_after_argument_effect(self):
+        files = sources('counter')
+        module = 'CommonForms/Counter/Ext/Form/Module.bsl'
+        files[module] = files[module].replace(b'Count = AddOne(Count);', b'Count = AddOne(Invalidate());')
+        broker, app = self.setup_app(files=files)
+        sid = self.open(app, 'CommonForm.Counter')['session']
+        server, _, _ = broker.sessions[sid]
+        vm = server.session.interpreter
+        routine = vm.server_routines['addone']
+        effects = []
+        def invalidate():
+            effects.append('argument')
+            vm.server_routines['addone'] = replace(routine)
+            return Decimal(10)
+        vm._register_platform_function('Invalidate', invalidate)
+        failed = self.event(app, sid, control='IncrementButton')['form']['result']
+        self.assertEqual(effects, ['argument'])
+        self.assertEqual(failed['error'], 'outcome_unknown')
+        self.assertTrue(failed['state']['uncertain'])
+        self.assertEqual(server.session.form._data['count'], 0)
+        self.assertEqual(vm._context_stack, ['client'])
+        self.assertEqual(vm._module_context_stack, [True])
 
     def test_renderer_cannot_choose_source_name_or_parameters(self):
         _, app = self.setup_app()

@@ -43,7 +43,6 @@ class _Scope:
         if type(root) is not Interpreter:_deny()
         self.app,self.root=app,root
         self.expected_state='starting' if starting else 'running'
-        if starting and app._cli_database is None:_deny()
         self.thread=get_ident()
         self.active=False
         self.token=None
@@ -377,7 +376,7 @@ def execute_command(app,text,source):
     return _execute_program(app,program,text,source)
 
 
-def run_cli_initializer(app,program,text):
+def run_startup_initializer(app,program,text):
     return _execute_program(app,program,text,'<configuration:Ext/ManagedApplicationModule.bsl>',starting=True)
 
 

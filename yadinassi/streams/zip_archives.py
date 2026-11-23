@@ -515,6 +515,11 @@ class BSLZipFileWriter(_FileMethods):
                         ('write', False, 'Write Записать'), ('get_binary_data', True, 'GetBinaryData ПолучитьДвоичныеДанные'))
 
 
+# Only used when direct BSL borrows an owned memory stream.
+_DIRECT_ZIP_ARCHIVE_ABI = tuple((cls, cls.__mro__, tuple(vars(cls).items()))
+                               for cls in (BSLZipFileReader, BSLZipFileWriter))
+
+
 NAMESPACES = tuple((ru, en, _Namespace(cls)) for ru, en, cls in (
     ('МетодСжатияZIP', 'ZIPCompressionMethod', BSLZIPCompressionMethod),
     ('УровеньСжатияZIP', 'ZIPCompressionLevel', BSLZIPCompressionLevel),

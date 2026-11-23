@@ -556,3 +556,6 @@ FUNCTIONS = (
 _DIRECT_SOURCE_BINARY_ABI=tuple((name,getattr(BSLBinaryData,name)) for name in (
     '__new__','__init__','__getattribute__','__setattr__','get_method','size'))
 _DIRECT_SOURCE_BINARY_FROM_BYTES=vars(BSLBinaryData)['from_bytes']
+_DIRECT_ZIP_BINARY_ABI = tuple((cls, cls.__mro__, tuple(vars(cls).items()))
+                              for cls in (_FileMethods, BSLBinaryData))
+_DIRECT_ZIP_BINARY_INIT_CODE = BSLBinaryData.__init__.__code__

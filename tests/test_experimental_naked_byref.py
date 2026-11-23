@@ -33,6 +33,33 @@ class DirectByrefContracts(unittest.TestCase):
     def test_property_output_found_and_absent(self):
         self.check_source('s=New Structure("x",7);a=0;r=s.Property("x",a);b=9;q=s.Property("missing",b);', ['a', 'r', 'b', 'q'], [7, True, None, False])
 
+    def test_property_output_live_module_slot_preserves_storage_rules(self):
+        for prepared in (False,True):
+            with self.subTest(prepared=prepared):
+                vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close)
+                output=[]
+                vm.register_function('ReadOutput', lambda: output.append(vm.variables['out']))
+                source=('S=New Structure("X",7); Out=0; Found=S.Свойство("x",(Out)); ReadOutput();'
+                        'Try S.Property("X",NotYet); Except Rejected=True; EndTry;'
+                        'NotYet=1; Absent=S.Property("no",Out); ReadOutput();')
+                if prepared:vm.execute_prepared(vm.prepare(source))
+                else:vm.execute(source)
+                self.assertEqual(output,[7,None])
+                self.assertIs(vm.variables['found'],True)
+                self.assertIs(vm.variables['absent'],False)
+                self.assertIs(vm.variables['rejected'],True)
+                self.assertEqual(vm.variables['notyet'],1)
+
+    def test_property_output_does_not_replace_module_host_reference_identity(self):
+        from yadinassi.types.values import Reference
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close)
+        cell=[0]
+        ref=Reference(lambda:cell[0],lambda value:cell.__setitem__(0,value))
+        vm.variables['out']=ref
+        vm.execute('S=New Structure("X",7); If False Then Out=0; EndIf; S.Property("X",Out);')
+        self.assertEqual(cell,[7])
+        self.assertIs(vm.variables['out'],ref)
+
     def test_value_collection_alias_and_rebinding(self):
         self.check_source('Procedure F(Val a) a.Add(9);a=New Array;EndProcedure x=New Array;x.Add(1);F(x);', ['x'], [[1, 9]])
 

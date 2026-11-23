@@ -507,6 +507,10 @@ class ServicesBoundary:
                     raise BoundaryViolation('direct ValueStorage/Deflation requires an ordinary interpreter')
                 from .python_direct_value_storage import constructor
                 return constructor(self,key[4:],factory,**kwargs)
+            if zip_reader.owns_producer(expected):
+                producer=zip_reader.producer(self,key[4:],factory,expected,
+                    allow_references=kwargs.get('allow_references',False))
+                if producer is not None:return producer
             bound=super().resolve_callable(factory)
             if expected in (BSLDOMBuilder,BSLDOMWriter,BSLDOMDocument,BSLDOMNamespaceResolver,BSLXMLReader,BSLXMLWriter,BSLXMLReaderSettings,BSLXMLWriterSettings,BSLHTTPConnection,BSLHTTPRequest,BSLFile,BSLBinaryDataBuffer,BSLDataHashing,BSLJSONSerializerSettings,*_STREAM_CONSTRUCTORS,BSLValueList,BSLValueTable,BSLTypeDescription,BSLNumberQualifiers,BSLStringQualifiers,BSLDateQualifiers,BSLBinaryDataQualifiers):
                 original=bound

@@ -52,6 +52,13 @@ call into a transaction root. Independently dispatched form/NoContext VMs deny
 The separate synchronous headless application transaction contract remains
 unchanged; a live transaction cannot cross a browser or server boundary.
 
+An ordinary contextual server form can call a declared synchronous NoContext
+helper using required `Val` scalars. The helper runs generated code with fresh
+formless state and no host services, form attributes or database authority, and
+uses the current form event's lease and execution budget. This does not create
+another transport call or form revision. Client calls to the declared NoContext
+port still use the separate scalar transport and its existing validation.
+
 A successful transport response is not a general business transaction. Existing
 catalog write/receipt rules still apply. After an uncertain response the host
 locks instead of claiming rollback or retrying a write.

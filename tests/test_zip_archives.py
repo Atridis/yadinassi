@@ -195,6 +195,113 @@ class ZIPTests(unittest.TestCase):
                 vm.execute('W=New ZipFileWriter(Stream);')
             write.assert_not_called()
 
+    def test_direct_owned_memory_stream_zip_roundtrip_and_readonly_binary_stream(self):
+        path = self.root / 'input.zip'
+        path.write_bytes(raw_zip([('binary.txt', b'a\x00\xff')]))
+        code = """
+            S=New MemoryStream; W=New ZipFileWriter;
+            W.Open(S); W.Add(Source); W.Write();
+            Written=S.Size(); S.Seek(0,PositionInStream.Begin);
+            R=New ZipFileReader; R.Open(S); Count=R.Items.Count(); R.Close();
+            D=New BinaryData(Path); Readonly=D.OpenStreamForRead();
+            R=New ZipFileReader(Readonly); Name=R.Items[0].Name; R.Close();
+            After=S.Size(); ReadAfter=Readonly.Size();
+            Try W.Open(Readonly); Except DirectionDenied=True; EndTry;
+        """
+        for prepared in False, True:
+            with self.subTest(prepared=prepared):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                vm.variables.update(path=str(path), source=str(self.src/'a.bin'))
+                if prepared:
+                    vm.execute_prepared(vm.prepare(code))
+                else:
+                    vm.execute(code)
+                values = vm.variables
+                self.assertEqual(values['count'], 1)
+                self.assertEqual(values['name'], 'binary.txt')
+                self.assertEqual(values['written'], values['after'])
+                self.assertEqual(values['readafter'], path.stat().st_size)
+                self.assertIs(values['directiondenied'], True)
+                with zipfile.ZipFile(io.BytesIO(values['s']._state.data)) as written:
+                    self.assertEqual(written.read('a.bin'), b'a\x00\xff')
+
+    def test_direct_zip_does_not_borrow_other_family_or_unregistered_views(self):
+        owner, other = Interpreter(), Interpreter()
+        self.addCleanup(owner.close)
+        self.addCleanup(other.close)
+        owner.execute('S=New MemoryStream; View=S.GetReadonlyStream();')
+        other.variables.update(s=owner.variables['s'], view=owner.variables['view'])
+        for statement in ('R=New ZipFileReader(S);', 'W=New ZipFileWriter(S);',
+                          'R=New ZipFileReader(View);'):
+            with self.subTest(statement=statement), self.assertRaisesRegex(BSLRuntimeError, 'имя файла'):
+                other.execute(statement)
+        with self.assertRaisesRegex(BSLRuntimeError, 'имя файла'):
+            owner.execute('R=New ZipFileReader(View);')
+
+    def test_direct_zip_revalidates_retained_memory_target_before_writing(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.variables['source'] = str(self.src/'a.bin')
+        vm.execute('S=New MemoryStream; W=New ZipFileWriter(S); W.Add(Source);')
+        stream, writer = vm.variables['s'], vm.variables['w']
+        original = writer._target
+        with mock.patch.object(module, '_write_file') as write:
+            try:
+                writer._target = str(self.root/'not-created.zip')
+                with self.assertRaises(BoundaryViolation):
+                    vm.execute('W.Write();')
+            finally:
+                writer._target = original
+            write.assert_not_called()
+        self.assertEqual(stream.size(), 0)
+        vm.execute('S.Close(); Try W.Write(); Except Refused=True; EndTry;')
+        self.assertIs(vm.variables['refused'], True)
+        self.assertEqual(stream._state.data, bytearray())
+
+    def test_direct_zip_rejects_malformed_memory_before_archive_processing(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('S=New MemoryStream;')
+        state = vm.variables['s']._state
+        state.position = None
+        with mock.patch.object(module, '_preflight_zip') as preflight:
+            with self.assertRaises(BoundaryViolation):
+                vm.execute('R=New ZipFileReader(S);')
+            preflight.assert_not_called()
+        self.assertNotIn('r', vm.variables)
+
+    def test_memory_constructor_seal_uses_the_canonical_allocator(self):
+        from yadinassi.streams import binary_streams
+
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        with mock.patch.object(binary_streams, 'bytearray', create=True) as allocate:
+            with self.assertRaises(BoundaryViolation):
+                vm.execute('S=New MemoryStream;')
+            allocate.assert_not_called()
+        self.assertNotIn('s', vm.variables)
+
+    def test_custom_host_wrapper_operates_but_does_not_issue_zip_authority(self):
+        from yadinassi.types.values import HostFunction
+
+        vm = Interpreter(allow_extensions=True)
+        self.addCleanup(vm.close)
+        original = HostFunction.__call__
+        calls = []
+
+        def wrapped(function, *arguments):
+            if function.function is BSLMemoryStream:
+                calls.append(function)
+            return original(function, *arguments)
+
+        with mock.patch.object(HostFunction, '__call__', wrapped):
+            vm.execute('S=New MemoryStream;')
+        self.assertEqual(len(calls), 1)
+        self.assertIs(type(vm.variables['s']), BSLMemoryStream)
+        with self.assertRaisesRegex(BSLRuntimeError, 'имя файла'):
+            vm.execute('W=New ZipFileWriter(S);')
+
     def test_direct_reader_open_metadata_and_reject_reflection(self):
         path = self.root / 'read.zip'
         path.write_bytes(raw_zip([('entry.txt', b'abc')]))

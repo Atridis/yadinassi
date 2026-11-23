@@ -639,15 +639,12 @@ class ConfigurationApplication:
                 self.state = 'running'
                 return True
             from yadinassi.execution.direct.python_direct_configuration import install
-            if self._cli_database is None:
-                install(self, self.interpreter, self._program)
-            else:
-                from yadinassi.execution.direct.python_direct_configuration_commands import run_cli_initializer
-                declarations = [node for node in self._program if type(node) in (ast.Var, ast.Routine)]
-                initializer = [node for node in self._program if type(node) not in (ast.Var, ast.Routine)]
-                install(self, self.interpreter, declarations, self._program_source)
-                if initializer:
-                    run_cli_initializer(self, initializer, self._program_source)
+            declarations = [node for node in self._program if type(node) in (ast.Var, ast.Routine)]
+            initializer = [node for node in self._program if type(node) not in (ast.Var, ast.Routine)]
+            install(self, self.interpreter, declarations, self._program_source)
+            if initializer:
+                from yadinassi.execution.direct.python_direct_configuration_commands import run_startup_initializer
+                run_startup_initializer(self, initializer, self._program_source)
             cancel = BSLStructure('Cancel', False)
             self._invoke('before_start', ((cancel, 'Cancel'),))
             if type(cancel.get_member('Cancel')) is not bool:

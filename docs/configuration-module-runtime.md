@@ -104,6 +104,9 @@ running initializers. `start()` runs the application module body, then
 Russian names are `ПередНачаломРаботыСистемы` and `ПриНачалеРаботыСистемы`.
 Only ordinary procedures with the exact supported argument counts are admitted.
 Cancellation is by reference and must remain Boolean. Startup occurs once.
+The direct application module body uses the same bounded synchronous scalar
+initializer in headless and managed CLI startup. It does not grant transactions,
+arbitrary host calls, async execution or general application command admission.
 
 `close()` invokes `BeforeExit(Cancel, WarningText)` and, if not cancelled,
 `OnExit()`. Russian aliases are `ПередЗавершениемРаботыСистемы` and

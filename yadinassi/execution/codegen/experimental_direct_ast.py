@@ -13,7 +13,7 @@ from functools import partial
 from .experimental_naked_collections import _TypedMap, _NakedMap, _checked_array_index, _native_property_write_missing, _native_property_missing, _MapEntry, _array_insert_shape, _native_method_missing, _ALIASES, _canonical_reference, _IndexRef, _AttributeRef, _procedure_value_error, _routine_value_error, _argument_count_error, _OMITTED_REF, _Cell, _as_ref, _bound_ref, _UNSET_REF
 from .experimental_naked_structure import _DirectStructure, structure_get_known, structure_set_known, structure_property
 from .experimental_naked_array_methods import array_method_value
-from yadinassi.execution.direct.python_direct_cells import host_reference as _native_host_reference
+from yadinassi.execution.direct.python_direct_cells import host_reference as _native_host_reference, module_property_reference
 from yadinassi.execution.direct.python_direct_cells import NativeCell as _NativeCell,PublishedModuleCell as _PublishedModuleCell,adapt as _adapt_native_cell,reference as _native_cell_reference,fragment_binding as _native_fragment_binding
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray as _PlainArray
 from .experimental_naked_resources import bounded_array,bounded_insert
@@ -924,7 +924,7 @@ class Emitter:
             selected=self.node(py.IfExp,t,test=native_test,body=native,orelse=host)
             if len(node.arguments)==2:
                 converter=self.node(py.IfExp,t,test=exact('_DirectStructure'),body=self.name('_identity_reference',t),orelse=self.name('_canonical_reference',t))
-                args=[self.expr(node.arguments[0]),self.invoke(converter,[self.property_output(node.arguments[1],t)],t)]
+                args=[self.expr(node.arguments[0]),self.invoke(converter,[self.property_output(node.arguments[1],t,native_structure=exact('_DirectStructure'))],t)]
             else:
                 # Resolve the actual receiver and let its method enforce arity
                 # at runtime, rather than rejecting the containing BSL module.
@@ -1247,11 +1247,24 @@ class Emitter:
             bound=self.invoke(self.attribute(self.name('_context',t),'resolve_extension_value',t),[self.expr(node.callee)],t,[self.node(py.keyword,t,arg='require_value',value=self.const(require_value,t)),self.node(py.keyword,t,arg='allow_references',value=self.const(True,t))])
             return self.dynamic_call(bound,node,call_token=t)
         _reject('unsupported expression '+k.__name__)
-    def property_output(self,node,token):
+    def property_output(self,node,token,*,native_structure=None):
         while type(node) is bsl.Group:node=node.expression
         if type(node) in (bsl.Name,bsl.Index,bsl.Attribute):
             reference_token=None if type(node) is bsl.Name and not self.external_name(node.name) else token
-            return self.output_reference(node,reference_token)
+            fallback=self.output_reference(node,reference_token)
+            if native_structure is not None and self.scope is None and type(node) is bsl.Name:
+                key=node.name.casefold()
+                if key in self.module_cells:
+                    cell=self.name(self.static_module_names[key],token)
+                    if not self.static_module_kinds:
+                        # A surrounding opaque actual may already have published
+                        # the slots. Its reload must see this output write.
+                        published=self.call('_PublishedModuleCell',
+                            [cell,self.name('_initial',token),self.const(key,token)],token)
+                        cell=self.node(py.IfExp,token,test=self.name('_dynamic_depth',token),body=published,orelse=cell)
+                    live=self.call('_module_property_reference',[cell,self.const(node.name,token)],token)
+                    return self.node(py.IfExp,token,test=native_structure,body=live,orelse=fallback)
+            return fallback
         # A non-addressable actual has a disposable output slot. Its
         # expression still runs exactly once, at the original argument point.
         return self.call('_Cell',[self.expr(node)],token)
@@ -2088,6 +2101,12 @@ def _module_registers(program, emitter, *, literal_reachability):
                 while type(arg) is bsl.Group:arg=arg.expression
                 if not parameter.by_value and type(arg) is bsl.Name:
                     cells.add(arg.name.casefold());names.add(arg.name.casefold())
+        if type(callee) is bsl.Attribute and callee.name.casefold() in ('property','свойство') and len(value.arguments)==2:
+            output=value.arguments[1]
+            while type(output) is bsl.Group:output=output.expression
+            if type(output) is bsl.Name:
+                key=output.name.casefold()
+                if key not in emitter.import_names:cells.add(key)
         if type(value) is bsl.Assign and type(value.target) is bsl.Name:names.add(value.target.name.casefold())
         if type(value) is bsl.For:names.add(value.name.casefold())
         if type(value) is bsl.Var:names.update(name.casefold() for name in value.names)
@@ -2626,7 +2645,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     from yadinassi.execution.direct.python_direct_structural_reads import TARGET_IDS, selects, count as structural_count
     from yadinassi.db.database_context import require_database_context
     from .experimental_naked_errors import for_bound_unbound, read_except_local
-    namespace=dict(_checked_live_counter=_checked_live_counter,_for_bound_unbound=for_bound_unbound,_read_except_local=read_except_local,_normalize_item_presentation=_normalize_presentation,_normalize_item_check=_normalize_check,
+    namespace=dict(_module_property_reference=module_property_reference,_checked_live_counter=_checked_live_counter,_for_bound_unbound=for_bound_unbound,_read_except_local=read_except_local,_normalize_item_presentation=_normalize_presentation,_normalize_item_check=_normalize_check,
         _require_database_context=require_database_context,_structural_count_ids=TARGET_IDS,_select_structural_read=selects,_structural_count=structural_count,_local_structure_member=_local_structure_member,_BoxedStructure=_BoxedStructure,_local_array_index=_local_array_index,_BoxedArray=_BoxedArray,_local_row_index=_local_row_index,_local_row_member=_local_row_member,_PlainTableRow=_vt.BSLValueTableRow,_raw_table_value=RowStorage.get_value,_raw_table_positional=_vt.BSLValueTableRow._positional_value,_dynamic_remainder=remainder,_dynamic_divide=divide,_dynamic_sign=sign,_dynamic_public_number=public_number,_plain_array_loop=_plain_array_loop,_plain_append_receiver=_plain_append_receiver,_list_append=list.append,_native_host_reference=_native_host_reference,_native_cell_reference=_native_cell_reference,_native_fragment_binding=_native_fragment_binding,_NativeCell=_NativeCell,_PublishedModuleCell=_PublishedModuleCell,_adapt_native_cell=_adapt_native_cell,_PrivateTable=_vt.BSLValueTable,_PrivateValueList=PlainValueList,_PlainValueList=PlainValueList,_PlainValueListItem=PlainValueListItem,_module_primitive_type_ids=frozenset(id(kind) for kind in (list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure)),_module_data_types=data_types,_module_data_type_ids=frozenset(id(kind) for kind in data_types),_native_dict_get=dict.get,_native_dict_setitem=dict.__setitem__,_PlainArray=_PlainArray,_Decimal=Decimal,_PlainMap=PlainMap,_plain_map=plain_map,_execute_fragment=execute_fragment,_fragment_binding=_fragment_binding,_bind_eval=bind_eval,_raise_arity_error=raise_arity_error,_host_omission_error=_host_omission_error,_host_omission_values=_host_omission_values,_dynamic_construct=dynamic_construct,_invalid_native_arity=_invalid_native_arity,_typed_find=scalar.typed_find,_list_delete=_list_delete,_native_ubound=_native_ubound,_readonly=readonly,_array_set_checked=_array_set_checked,_bounded_insert=bounded_insert,_structure_insert=structure_insert,_array_constructor_bounds=bounded_array,_new_structure=new_structure,_structure_from_schema=structure_from_schema,_host_name_reference=_host_name_reference,_Cell=_Cell,_ForwardReference=_ForwardReference,_as_ref=_as_ref,_bound_ref=_bound_ref,_UNSET_REF=_UNSET_REF,_OMITTED_REF=_OMITTED_REF,_argument_count_error=_argument_count_error,_routine_value_error=_routine_value_error,_procedure_value_error=_procedure_value_error,_identity_reference=_identity_reference,_IndexRef=_IndexRef,_AttributeRef=_AttributeRef,_SlotReference=live_state._SlotReference,_source_reference=source_reference,_canonical_reference=_canonical_reference,_structure_property=structure_property,_native_method_missing=_native_method_missing,_native_count=_native_count,_MapEntry=_MapEntry,_array_member=_array_member,_native_property_missing=_native_property_missing,_structure_get_known=structure_get_known,_structure_set_known=structure_set_known,_native_property_write_missing=_native_property_write_missing,_checked_array_index=_checked_array_index,_checked_literal_array_index=_checked_literal_array_index,_partial=partial,_native_getitem=_NATIVE_GETITEM,_list_get=_list_get,_TypedMap=_TypedMap,_NakedMap=_NakedMap,_DirectStructure=_DirectStructure,_host_reference=host_reference,_UNSET=UNSET,_missing=missing,_native_add=_NATIVE_ADD,_concatenate=scalar.concatenate,_divide=scalar.decimal_divide,_sign=scalar.decimal_sign,_order=scalar.uca_order,_truth=scalar.truth,_equal=equal,_not_equal=not_equal,_MISSING=_MISSING,_handled_error=handled_error,_reraise_handled=reraise_handled,_raise_error=raise_error,_presentation=scalar.presentation,_BSLRuntimeError=BSLRuntimeError)
     if emitter.known_calls:
         from yadinassi.execution.direct.python_direct_known_methods import execute, construct_table, detached_after_publication, generic_call

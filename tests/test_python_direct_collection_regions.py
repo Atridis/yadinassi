@@ -152,13 +152,47 @@ class CollectionRegionsTests(unittest.TestCase):
 
     def test_fast_gate_is_reached_and_enabled(self):
         from yadinassi.execution.direct import python_direct_collection_regions as region
-        seen=[];original=region.admitted
-        def gate(*args):
-            result=original(*args);seen.append(result);return result
-        vm=Interpreter();self.addCleanup(vm.close)
-        with patch.object(region,'admitted',gate):
-            vm.execute('T=New ValueTable;T.Columns.Add("N");For I=0 To 4 Do Row=T.Add();Row.N=I;EndDo;R=0;For I=0 To 4 Do R=R+T.Get(I).N;EndDo;')
-        self.assertEqual(seen,[True,True])
+        # Module-level collection locals now use native lowering. A routine
+        # with this same body still uses both real eager region guards.
+        source = (
+            'Function Build() T=New ValueTable;T.Columns.Add("N");'
+            'For I=0 To 4 Do Row=T.Add();Row.N=I;EndDo;R=0;'
+            'For I=0 To 4 Do R=R+T.Get(I).N;EndDo;Return R;EndFunction;'
+            'Result=Build();'
+        )
+        original = region.admitted
+        original_helpers = region.helpers
+        for prepared in (False, True):
+            for enable in (False, True):
+                with self.subTest(prepared=prepared, enable=enable):
+                    seen, adds = [], []
+
+                    def gate(*args):
+                        result = original(*args)
+                        seen.append(result)
+                        return result and enable
+
+                    def helpers():
+                        operations = original_helpers()
+                        add = operations['table_add']
+
+                        def observe_add(*args):
+                            row = add(*args)
+                            adds.append(row)
+                            return row
+
+                        return dict(operations, table_add=observe_add)
+
+                    vm = Interpreter()
+                    self.addCleanup(vm.close)
+                    with patch.object(region, 'admitted', gate), patch.object(region, 'helpers', helpers):
+                        if prepared:
+                            vm.execute_prepared(vm.prepare(source))
+                        else:
+                            vm.execute(source)
+                    self.assertEqual(seen, [True, True])
+                    self.assertEqual(len(adds), 5 if enable else 0)
+                    self.assertEqual(vm.variables['result'], Decimal(10))
 
     def test_modulo_failure_preserves_partial_graph_in_fast_loop(self):
         values,error=self.paired('T=New ValueTable;T.Columns.Add("N");For I=0 To 5 Do Row=T.Add();Row.N=1%(3-I);EndDo;')
@@ -253,6 +287,7 @@ class CollectionRegionsTests(unittest.TestCase):
         self.assertFalse(admitted(context,{'t':values,'item':item},{'t':'list','item':'item'}))
 
     def test_graph_guard_rejects_hostile_keys_without_equality(self):
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         from yadinassi.execution.direct.python_direct_collection_regions import admitted
         from yadinassi.execution.direct.python_direct import make_boundary
         vm=Interpreter();self.addCleanup(vm.close);context=make_boundary(vm);context.start()
@@ -263,7 +298,8 @@ class CollectionRegionsTests(unittest.TestCase):
         # Replace the dict rather than insert alongside colliding string key.
         fields=dict(vars(table));fields.pop('rows');fields[Key()]=[]
         table.__dict__=fields
-        self.assertFalse(admitted(context,{'t':table},{'t':'table'}))
+        with self.assertRaisesRegex(BoundaryViolation, 'plain table ownership or storage changed'):
+            admitted(context,{'t':table},{'t':'table'})
 
     def test_changed_function_defaults_preserve_canonical_behavior(self):
         old=BSLValueList.add.__defaults__
@@ -370,7 +406,8 @@ class CollectionRegionsTests(unittest.TestCase):
             outputs.append((snapshot(vm),error))
         self.assertEqual(*outputs);self.assertEqual(len(outputs[-1][0]['t'][1]),2)
 
-    def test_old_graph_qualifier_payload_and_oversized_rows_decline(self):
+    def test_qualifier_payload_declines_and_mismatched_row_storage_fails_closed(self):
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         from yadinassi.execution.direct.python_direct_collection_regions import admitted
         from yadinassi.execution.direct.python_direct import make_boundary
         vm=Interpreter();self.addCleanup(vm.close);context=make_boundary(vm);context.start()
@@ -379,8 +416,11 @@ class CollectionRegionsTests(unittest.TestCase):
             def __getattribute__(self,name):raise AssertionError('host descriptor payload')
         object.__setattr__(column.value_type,'number_qualifiers',Host())
         self.assertFalse(admitted(context,{'t':table},{'t':'table'}))
-        table=BSLValueTable();table.rows=[None]*100001
-        self.assertFalse(admitted(context,{'t':table},{'t':'table'}))
+        table=BSLValueTable()
+        self.assertTrue(admitted(context,{'t':table},{'t':'table'}))
+        table.rows=[]  # Same empty contents, but not the kernel's own row list.
+        with self.assertRaisesRegex(BoundaryViolation, 'plain table ownership or storage changed'):
+            admitted(context,{'t':table},{'t':'table'})
 
     def test_no_legacy_execution(self):
         vm=Interpreter();self.addCleanup(vm.close)
