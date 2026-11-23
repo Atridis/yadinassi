@@ -80,6 +80,7 @@ _OWNED_SYNTAX = {**dict.fromkeys(zip_reader.TYPE_IDS, zip_reader),
                  **dict.fromkeys(live_metadata.TYPE_IDS, live_metadata)}
 _DATE_TYPE = _DIRECT_EQUALITY_DATE_STATE[0]
 _NUMERIC_BOOLEAN_TYPE_IDS = frozenset(map(id, (int, Decimal, bool)))
+_NONOBJECT_MEMBER_TYPE_IDS = _NUMERIC_BOOLEAN_TYPE_IDS | {id(str)}
 _METHODLESS_TYPE_IDS=frozenset(map(id, (
     _DATE_TYPE, BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers,
 )))
@@ -315,9 +316,13 @@ class CatalogBoundary:
             if key in _PLAIN_VALUE_LIST_DEFAULT_PROPERTIES:
                 if self._verify_context: self._check()
                 return BSLTypeDescription() if key in _PLAIN_VALUE_LIST_TYPE_PROPERTIES else None
-        adapter = _OWNED_STANDALONE_READS.get(id(kind))
+        receiver_kind=id(kind)
+        adapter = _OWNED_STANDALONE_READS.get(receiver_kind)
         if adapter is not None and (adapter is not live_metadata or live_metadata.server_receiver(self)):
             return adapter.get(self,value,name)
+        if receiver_kind in _NONOBJECT_MEMBER_TYPE_IDS:
+            if self._verify_context:self._check()
+            raise TypeError('Значение не имеет методов или свойств')
         if kind is _DATE_TYPE or id(value) in OPAQUE_ENUM_IDS:
             if self._verify_context:self._check()
             raise ValueError('Поле объекта не обнаружено: '+name)
@@ -565,6 +570,9 @@ class CatalogBoundary:
                 if self._verify_context:self._check()
                 if name=='__iter__':raise ValueError('Для Каждого ожидает массив или коллекцию')
                 raise ValueError('Индексирование для этого типа не поддерживается')
+        elif receiver_kind in _NONOBJECT_MEMBER_TYPE_IDS:
+            if self._verify_context:self._check()
+            raise TypeError('Значение не имеет методов или свойств')
         from . import python_direct_fixed_find as fixed_find
         if fixed_find.owns(value,name):return fixed_find.resolve(self,value,name)
         if name=='__iter__':
