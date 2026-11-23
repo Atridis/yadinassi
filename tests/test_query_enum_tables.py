@@ -2,13 +2,13 @@
 from contextlib import closing
 from dataclasses import replace
 from decimal import Decimal
-import sqlite3
 import sys
 import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLRuntimeError
 from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.db.query.query_packages import BSLTempTablesManager
 from yadinassi.types.values import NULL, BSLType
 from yadinassi.db.sqlite.sqlite_catalog import _View
@@ -207,12 +207,21 @@ class EnumTableTests(unittest.TestCase):
         m.close(); m.close()
         self.assertEqual(m._tables, {})
 
-    def test_external_empty_generation_change_fails(self):
-        t = self.q('SELECT Unit FROM Catalog.Products WHERE Code="missing"').execute().unload()
-        with closing(sqlite3.connect(self.context.path)) as connection:
-            with connection:
-                connection.execute('UPDATE database_info SET generation=generation+1')
-        with self.assertRaises(BackendError): self.q('SELECT Unit FROM &Input', t).execute()
+    def test_empty_enum_table_cannot_cross_database_reopen(self):
+        text = 'SELECT Unit FROM Catalog.Products WHERE Code="missing"'
+        previous = self.q(text).execute().unload()
+        self.assertFalse(previous.rows)
+        # Even with the same SQLite file and declarations, a new open DB
+        # owner must not acquire the previous namespace through its type.
+        self.vm.close()
+        self.context.close()
+        with closing(SQLiteDBContext(self.path)) as context:
+            with closing(Interpreter(database_context=context)) as vm:
+                local = self.q(text, vm=vm).execute().unload()
+                self.assertEqual(self.q('SELECT Unit FROM &Input', local, vm=vm).execute()._rows, ())
+                with self.assertRaises(BackendError):
+                    self.q('SELECT Unit FROM &Input', previous, vm=vm).execute()
+                self.assertIsNone(context.backend._active)
 
     def test_warm_metadata_corruption_refused_before_scan(self):
         item = self.vm._catalogs._metadata._items['products']

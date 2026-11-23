@@ -22,11 +22,13 @@ cache does not grant permission to write.
 
 Focused tests use original main-demo Receipt source for successful posting,
 current Cancel/exception inputs, current transactional query results and rollback.
-InventoryRootOperations tests execute that same original source and prove both
-committed operation-ID replay and uncertain-real-COMMIT resolution call neither
-prepared_posting nor PostingRuntime.write. Schema/target/compiler changes replace
-the bounded slot; different admitted sources do not share a plan. Plain Write
-without selected handlers avoids preparation.
+InventoryRootOperations tests also execute that source and verify that proceeding
+from a stale create revision after a real COMMIT does not call prepared_posting or
+PostingRuntime.write again. A lost COMMIT acknowledgement remains uncertain;
+the test checks the persisted document and movements over a fresh connection,
+not through an operation-ID receipt or recovery call. Schema/target/compiler
+changes replace the bounded slot; different admitted sources do not share a
+plan. Plain Write without selected handlers avoids preparation.
 
 Two older scalar PostingHostTests remain baseline failures: their Number(...)
 call conflicts with the direct external Number field. That compatibility gap was

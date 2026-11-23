@@ -1,9 +1,13 @@
 """Posting code reuse does not reuse document, frame, transaction or grants."""
+from contextlib import closing
 from dataclasses import replace
 from decimal import Decimal
 from unittest import TestCase
 from unittest.mock import patch
+from uuid import uuid4
 import test_python_direct_posting as fixture
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.db.document.document_posting_values import DocumentWriteMode
 from yadinassi.execution.direct.python_direct_posting import prepared_posting
 from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
@@ -64,33 +68,65 @@ class PreparedPostingTests(TestCase):
             plans.append(f.vm._documents.posting_runtime()._direct_plans[d._key.document_id])
         self.assertIsNot(plans[0],plans[1]);self.assertNotEqual(plans[0]._key[0],plans[1]._key[0])
 
-    def test_original_receipt_committed_id_never_prepares_or_replays(self):
-        from uuid import uuid4
-        from yadinassi.configuration.demos.inventory_host_operations import InventoryRootOperations
-        host=InventoryRootOperations(self.f.fixture.context,self.f.fixture.context.backend.accumulation_configuration)
-        self.addCleanup(host.close)
-        d=self.f.document();draft=d._draft();operation=uuid4()
-        receipt=host.execute(operation,draft,None,form='Document.Receipt.Form.Card',command='Post')
-        self.assertEqual(receipt.state,'committed');self.assertEqual(self.f.counts(),(1,1,1))
-        with patch('yadinassi.execution.direct.python_direct_posting.prepared_posting',side_effect=AssertionError('prepare on receipt')),patch('yadinassi.db.document.document_posting.PostingRuntime.write',side_effect=AssertionError('handler replay')):
-            again=host.execute(operation,draft,None,form='Document.Receipt.Form.Card',command='Post')
-        self.assertIs(again,receipt);self.assertEqual(self.f.counts(),(1,1,1))
+    def persisted_document(self, key):
+        # A new owned connection, not a cached outcome or recovery API.
+        with SQLiteDBContext(self.f.fixture.path) as context:
+            with closing(context.backend.begin_document_read()) as view:
+                card = view.read_document(key)
+                self.assertIsNotNone(card)
+                self.assertTrue(card.posted)
+                self.assertEqual(card.number, 'r1')
+                self.assertEqual(card.tabular_sections[0].rows[0].values[1], Decimal(5))
+                return card
 
-    def test_original_receipt_uncertain_commit_resolves_without_prepare(self):
-        from uuid import uuid4
+    def refuse_stale_create_without_preparing(self, host, operation, draft):
+        with patch('yadinassi.execution.direct.python_direct_posting.prepared_posting',
+                   side_effect=AssertionError('prepare on stale create')), \
+             patch('yadinassi.db.document.document_posting.PostingRuntime.write',
+                   side_effect=AssertionError('handler replay')):
+            with self.assertRaises(BackendError) as error:
+                host.execute(operation, draft, None, form='Document.Receipt.Form.Card', command='Post')
+        self.assertEqual(error.exception.code, 'conflict')
+
+    def test_committed_create_rejects_stale_intent_without_preparing(self):
+        from yadinassi.configuration.demos.inventory_host_operations import InventoryRootOperations
+        context = self.f.fixture.context
+        host = InventoryRootOperations(context, context.backend.accumulation_configuration)
+        self.addCleanup(host.close)
+        draft, operation = self.f.document()._draft(), uuid4()
+        result = host.execute(operation, draft, None, form='Document.Receipt.Form.Card', command='Post')
+        self.assertEqual(result.state, 'committed')
+        self.assertTrue(result.accepted)
+        before = self.persisted_document(draft.key)
+        self.refuse_stale_create_without_preparing(host, operation, draft)
+        self.assertEqual(self.persisted_document(draft.key), before)
+        self.assertEqual(self.f.counts(), (1, 1, 1))
+
+    def test_uncertain_post_does_not_retry_and_persisted_state_can_be_reopened(self):
         from yadinassi.configuration.demos.inventory_host_operations import InventoryRootOperations
         from yadinassi.db.sqlite.sqlite_transactions import UnitOfWork
-        from yadinassi.db.catalog.catalog_backend import BackendError
-        host=InventoryRootOperations(self.f.fixture.context,self.f.fixture.context.backend.accumulation_configuration)
+        context = self.f.fixture.context
+        host = InventoryRootOperations(context, context.backend.accumulation_configuration)
         self.addCleanup(host.close)
-        d=self.f.document();original=UnitOfWork.commit
-        def lost(unit):original(unit);unit.state='uncertain';raise BackendError('uncertain_commit')
-        with patch.object(UnitOfWork,'commit',lost):
-            receipt=host.execute(uuid4(),d._draft(),None,form='Document.Receipt.Form.Card',command='Post')
-        self.assertEqual(receipt.state,'uncertain')
-        with patch('yadinassi.execution.direct.python_direct_posting.prepared_posting',side_effect=AssertionError('prepare on receipt')),patch('yadinassi.db.document.document_posting.PostingRuntime.write',side_effect=AssertionError('handler replay')):
-            resolved=host.resolve(receipt.operation_id)
-        self.assertEqual(resolved.state,'committed');self.assertEqual(self.f.counts(),(1,1,1))
+        draft, operation = self.f.document()._draft(), uuid4()
+        original = UnitOfWork.commit
+        commits = []
+        def lost(unit):
+            original(unit)
+            commits.append(unit.state)
+            unit.state = 'uncertain'
+            raise BackendError('uncertain_commit')
+        with patch.object(UnitOfWork, 'commit', lost):
+            result = host.execute(operation, draft, None, form='Document.Receipt.Form.Card', command='Post')
+        self.assertEqual(commits, ['committed'])
+        self.assertEqual(result.state, 'uncertain')
+        self.assertFalse(result.accepted)
+        self.assertEqual(result.error, 'uncertain_commit')
+        self.assertIsNone(context.backend._active)
+        before = self.persisted_document(draft.key)
+        self.refuse_stale_create_without_preparing(host, operation, draft)
+        self.assertEqual(self.persisted_document(draft.key), before)
+        self.assertEqual(self.f.counts(), (1, 1, 1))
 
     def test_plain_write_without_selected_handlers_does_not_compile(self):
         d=self.f.document()

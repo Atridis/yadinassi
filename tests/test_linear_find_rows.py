@@ -136,7 +136,7 @@ class LazyFindRows(unittest.TestCase):
         for name in ('Unused','K','V'):t.columns.add(name)
         for k in (2,1,1):
             r=t.add();r.set_member('K',Decimal(k));r.set_member('V','x')
-        t.indexes.add('K');t.indexes.add('V')
+        deleted_key=t.indexes.add('K');still_indexed=t.indexes.add('V')
         self.assertEqual(t.find_rows(BSLStructure('K',Decimal(9))).items,[])
         t.rows[0].set_member('K',Decimal(9))
         self.assertIs(t.find_rows(BSLStructure('K',Decimal(9))).items[0],t.rows[0])
@@ -148,7 +148,43 @@ class LazyFindRows(unittest.TestCase):
         matches=t.find_rows(BSLStructure('Renamed',Decimal(1))).items
         self.assertTrue(all(a is b for a,b in zip(matches,t.rows[1:])))
         t.columns.delete('Renamed')
+        # Removing a key column shortens the public definition rather than
+        # deleting its handle. An empty definition is not a search index.
+        self.assertEqual(t.indexes.count(),2)
+        self.assertIs(t.indexes.get_index(0),deleted_key)
+        self.assertIs(t.indexes.get_index(1),still_indexed)
+        self.assertEqual((list(deleted_key),list(still_indexed)),([],['V']))
+        self.assertEqual(t._search.declarations,{(0,)})
+        self.assertFalse(t._search.cache)
+        hits=t.find_rows(BSLStructure('V','x')).items
+        self.assertEqual(len(hits),len(t.rows))
+        for actual,row in zip(hits,t.rows):
+            self.assertIs(actual,row)
+        self.assertEqual(tuple(t._search.cache),((0,),))
+        t.indexes.delete(deleted_key)
         self.assertEqual(t.indexes.count(),1)
+        self.assertIs(t.indexes.get_index(0),still_indexed)
+
+    def test_native_index_definitions_survive_column_removal(self):
+        from pathlib import Path
+        from tests.native_observations import extract_payload
+
+        root=Path(__file__).resolve().parents[1]
+        source=(root/'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig')
+        archive=(root/'tests/fixtures/native_windows/collections.out').read_text(encoding='utf-8-sig')
+        outputs=[]
+        vm=Interpreter(outputs.append)
+        self.addCleanup(vm.close)
+        vm.execute(source.split('#Область МассивыИСтруктуры',1)[0])
+        for name in ('indexes.column-delete','indexes.columns-clear'):
+            with self.subTest(name=name):
+                code,=(line for line in source.splitlines()
+                       if line.startswith(f'НаблюдатьТаблицы("{name}",'))
+                outputs.clear()
+                vm.execute_prepared(vm.prepare(code))
+                self.assertEqual(len(outputs),1)
+                self.assertEqual(extract_payload(outputs[0],'table.'+name),
+                                 extract_payload(archive,'table.'+name))
     def test_bare_index_numeric_equality_and_epoch(self):
         from yadinassi.execution.codegen.native_bare_table import BareTable
         from yadinassi.execution.codegen.native_bare_collections import BareStructure

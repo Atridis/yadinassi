@@ -1,6 +1,6 @@
 """Scoped preparation budgets cover intermediate work, not only final output."""
 from decimal import Decimal
-from types import SimpleNamespace
+from types import CodeType
 import unittest
 from unittest.mock import patch
 from yadinassi import BSLError,Interpreter
@@ -13,6 +13,15 @@ import test_catalog_object_preparation as catalog_fixture
 
 
 def handler(body):return 'Процедура ПередЗаписью(Отказ) '+body+' КонецПроцедуры'
+
+
+def invoked_names(code):
+    # Owned hot plans deliberately do not retain the pretty-printed source.
+    # Guard references still exist in the actual generated nested functions.
+    yield from code.co_names
+    for child in code.co_consts:
+        if type(child) is CodeType:
+            yield from invoked_names(child)
 
 class DirectCatalogBoundsTests(unittest.TestCase):
     def setUp(self):
@@ -80,8 +89,9 @@ class DirectCatalogBoundsTests(unittest.TestCase):
             second=prepared_validator(self.card._manager,source)
             self.assertIsNot(first,second)
             with self.assertRaises(ValueError):prepared_validator(self.card._manager,source,prepared=first)
-            self.assertIn('preparation_step',second._plan.generated_source)
-            self.assertIn('preparation_value',second._plan.generated_source)
+            names = set(invoked_names(second._plan.function.__code__))
+            self.assertIn('preparation_step',names)
+            self.assertIn('preparation_value',names)
         for options in ((),('authority_checkpoints',)):
             with patch.object(direct,'REPAIRS',options),self.assertRaises(ValueError):
                 prepared_validator(self.card._manager,source)
@@ -106,7 +116,7 @@ class DirectCatalogBoundsTests(unittest.TestCase):
         with patch.object(direct,'REPAIRS',direct.REPAIRS),patch.object(preparation,'_admit_catalog_object_source',change):
             result=prepared_validator(self.card._manager,source)
             self.assertIn('service_boundaries',result._plan.repairs)
-            self.assertIn('preparation_value',result._plan.generated_source)
+            self.assertIn('preparation_value',invoked_names(result._plan.function.__code__))
             with self.assertRaises(ValueError):prepared_validator(self.card._manager,source,prepared=result)
 
     def test_exact_scalar_guard_never_calls_foreign_hooks_or_traverses(self):

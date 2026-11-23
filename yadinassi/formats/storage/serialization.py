@@ -14,6 +14,7 @@ from yadinassi.temporal.dates import BSLDate, codec_text, read_codec
 from decimal import Decimal
 import re
 
+from yadinassi.application.direct_callbacks import CallbackDescription as _DirectCallbackDescription
 from yadinassi.collections.maps import BSLFixedMap, BSLMap
 from yadinassi.numeric.round_modes import BSLRoundMode
 from yadinassi.collections.search_directions import BSLSearchDirection
@@ -375,6 +376,8 @@ class _Writer:
                 raise TypeError("ЗначениеВСтрокуВнутр: недопустимое состояние пары")
             direct_pair = (state['key'], state['value'])
             kind = BSLType.KEY_AND_VALUE
+        elif value_type is _DirectCallbackDescription:
+            kind = BSLType.CALLBACK_DESCRIPTION
         else:
             try:
                 kind = type_of(value)

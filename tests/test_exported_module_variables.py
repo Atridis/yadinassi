@@ -204,7 +204,7 @@ class ExportedModuleVariableTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('ThisObject.List[0].Value'), Decimal(23))
         self.assertTrue(self.vm.execute('ThisObject.List[0].Check'))
 
-    def test_plain_value_list_holes_preserve_defaults_not_explicit_undefined(self):
+    def test_plain_value_list_holes_preserve_defaults_and_normalize_explicit_presentation(self):
         self.initialize('Var Items Export; Items=New ValueList;')
         self.vm.execute('''
             Added=ThisObject.Items.Add(23, , True, );
@@ -214,8 +214,14 @@ class ExportedModuleVariableTests(unittest.TestCase):
         self.assertTrue(self.vm.execute('Added.Check'))
         self.assertIsNone(self.vm.execute('Added.Picture'))
         self.assertIsNone(self.vm.execute('Inserted.Value'))
-        self.assertIsNone(self.vm.execute('Inserted.Presentation'))
+        # Explicit Undefined remains a value, but the public list constructor
+        # normalizes it to an empty Presentation (native list.add.invalid).
+        self.assertEqual(self.vm.execute('Inserted.Presentation'), '')
         self.assertFalse(self.vm.execute('Inserted.Check'))
+        with self.assertRaisesRegex(BSLError, 'пометка'):
+            self.vm.execute('ThisObject.Items.Insert(1, , , Undefined, );')
+        self.assertTrue(self.vm.execute('(ThisObject.Items[0]=Inserted)'))
+        self.assertTrue(self.vm.execute('(ThisObject.Items[1]=Added)'))
         self.vm.execute('Function Touch() Raise "must not evaluate"; EndFunction')
         with self.assertRaisesRegex(BSLError,'обязательного аргумента'):
             self.vm.execute('ThisObject.Items.Insert(, Touch());')

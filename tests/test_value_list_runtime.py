@@ -29,6 +29,22 @@ class NativeValueListPositionsTests(unittest.TestCase):
                 self.assertEqual(extract_payload(output[0], 'table.' + label),
                                  extract_payload(expected, 'table.' + label))
 
+    def test_item_index_distinguishes_foreign_item_from_invalid_values(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig')
+        archive = (root / 'tests/fixtures/native_windows/collections.out').read_text(encoding='utf-8-sig')
+        output = []
+        vm = Interpreter(output.append)
+        self.addCleanup(vm.close)
+        vm.execute(source.split('#Область МассивыИСтруктуры', 1)[0])
+        label = 'list.indexof'
+        code, = (line for line in source.splitlines()
+                 if line.startswith(f'НаблюдатьТаблицы("{label}",'))
+        vm.execute_prepared(vm.prepare(code))
+        self.assertEqual(len(output), 1)
+        self.assertEqual(extract_payload(output[0], 'table.' + label),
+                         extract_payload(archive, 'table.' + label))
+
     def test_foreign_item_move_matches_both_archived_records(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig')

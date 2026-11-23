@@ -323,6 +323,8 @@ class PlainValueList(list):
         return -1
 
     def index_of(self, item):
+        if type(item) is not PlainValueListItem:
+            raise TypeError('Ожидается элемент списка значений')
         return Decimal(self._index_of(item))
 
     def _position(self, item_or_index):
