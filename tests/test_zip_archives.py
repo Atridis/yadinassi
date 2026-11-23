@@ -195,19 +195,17 @@ class ZIPTests(unittest.TestCase):
                 vm.execute('W=New ZipFileWriter(Stream);')
             write.assert_not_called()
 
-    def test_direct_reader_open_metadata_and_no_extraction(self):
+    def test_direct_reader_open_metadata_and_reject_reflection(self):
         path = self.root / 'read.zip'
         path.write_bytes(raw_zip([('entry.txt', b'abc')]))
         unsafe = self.root / 'unsafe.zip'
         unsafe.write_bytes(raw_zip([('../entry.txt', b'data')]))
-        target = self.root / 'not-created'
         code = """
             R=New ZipFileReader;
             Try R.Open(Unsafe); Except Rejected=True; EndTry;
             R.Открыть(Path); Items=R.Элементы;
             Entry=Items.Find("entry.txt");
             Size=Entry.UncompressedSize; Count=Items.Count();
-            Try R.ExtractAll(Target); Except WriteDenied=True; EndTry;
             Try Items.__iter__(); Except ReflectionDenied=True; EndTry;
             R.Закрыть();
         """
@@ -215,7 +213,7 @@ class ZIPTests(unittest.TestCase):
             with self.subTest(prepared=prepared):
                 vm = Interpreter()
                 self.addCleanup(vm.close)
-                vm.variables.update(path=str(path), unsafe=str(unsafe), target=str(target))
+                vm.variables.update(path=str(path), unsafe=str(unsafe))
                 with mock.patch.object(BoundaryContext, '_check',
                                        side_effect=AssertionError('unexpected Light check')):
                     if prepared:
@@ -224,9 +222,52 @@ class ZIPTests(unittest.TestCase):
                         vm.execute(code)
                 self.assertEqual((vm.variables['size'], vm.variables['count']), (3, 1))
                 self.assertTrue(vm.variables['rejected'])
-                self.assertTrue(vm.variables['writedenied'])
                 self.assertTrue(vm.variables['reflectiondenied'])
-                self.assertFalse(target.exists())
+
+    def test_direct_reader_extract_file_and_flatten_all(self):
+        archive = self.root / 'archive.zip'
+        archive.write_bytes(raw_zip([('nested/a.bin', b'abc'), ('b.bin', b'xyz')]))
+        single, flat = self.root / 'single', self.root / 'flat'
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.variables.update(path=str(archive), single=str(single), flat=str(flat))
+        vm.execute('R=New ZipFileReader(Path);')
+        one = 'R.Extract(R.Items[0], Single);'
+        all_entries = 'R.ИзвлечьВсе(Flat, ZIPRestoreFilePathsMode.DontRestore);'
+        with mock.patch.object(BoundaryContext, '_check',
+                               side_effect=AssertionError('unexpected Light check')):
+            if ANCHORED:
+                vm.execute(one + all_entries)
+                self.assertEqual((single / 'nested' / 'a.bin').read_bytes(), b'abc')
+                self.assertFalse((single / 'b.bin').exists())
+                self.assertEqual((flat / 'a.bin').read_bytes(), b'abc')
+                self.assertEqual((flat / 'b.bin').read_bytes(), b'xyz')
+            else:
+                for command in (one, all_entries):
+                    with self.assertRaises(BSLRuntimeError):
+                        vm.execute(command)
+                self.assertFalse(single.exists())
+                self.assertFalse(flat.exists())
+
+    def test_direct_extraction_refuses_foreign_and_stale_entries_before_writes(self):
+        archive = self.root / 'archive.zip'
+        archive.write_bytes(raw_zip([('a.bin', b'abc')]))
+        target = self.root / 'not-created'
+        vm, foreign = Interpreter(), Interpreter()
+        self.addCleanup(vm.close)
+        self.addCleanup(foreign.close)
+        for owner in (vm, foreign):
+            owner.variables.update(path=str(archive), target=str(target))
+            owner.execute('R=New ZipFileReader(Path); Entry=R.Items[0];')
+        vm.variables['foreign'] = foreign.variables['entry']
+        vm.execute('R.Close(); R.Open(Path);')
+        with mock.patch.object(module, '_write_file') as write:
+            with self.assertRaises(BoundaryViolation):
+                vm.execute('R.Extract(Foreign, Target);')
+            with self.assertRaises(BSLRuntimeError):
+                vm.execute('R.Extract(Entry, Target);')
+            write.assert_not_called()
+        self.assertFalse(target.exists())
 
     def test_direct_reader_missing_registration_remains_fatal_before_arguments(self):
         vm = Interpreter(allow_extensions=True)

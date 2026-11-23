@@ -273,5 +273,5 @@ Message(Q.Execute().Unload()[0].Total);''')
 
     def test_catalog_fast_path_does_not_require_register_methods(self):
         self.seed()
-        with patch.object(self.context.backend, 'begin_query_read', side_effect=AssertionError('not needed')):
+        with patch.object(DocumentView, '_register_reader', side_effect=AssertionError('unused registers')):
             self.assertEqual(self.rows('SELECT Code AS Code FROM Catalog.Categories'), (('C',),))

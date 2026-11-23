@@ -774,6 +774,22 @@ class ValueTreeBoundary:
         from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
         return _ForwardReference(Reference(read,self.resolve_set_member(value,name)))
 
+    def reference_index(self,value,index):
+        if type(value) is not _ROW:return super().reference_index(value,index)
+        self.call_member(value,'__getitem__',index)
+        epoch=self._value_tree_epoch
+        def current():
+            if self._value_tree_epoch is not epoch:raise BoundaryViolation('ValueTree reference activation expired')
+        def read():
+            current();return self.call_member(value,'__getitem__',index)
+        def write(new):
+            current();self.call_member(value,'__setitem__',index,new)
+        # Local native cells adapt the private reference ABI, not the generic
+        # host-address object. Keep the original key live through schema edits.
+        from yadinassi.types.values import Reference
+        from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
+        return _ForwardReference(Reference(read,write))
+
     def resolve_member(self,value,name):
         if not owns(value):return super().resolve_member(value,name)
         return self._tree_method(value,name)

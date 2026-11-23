@@ -24,8 +24,8 @@ class Format16CombinedProofTests(unittest.TestCase):
         self.table = quote_identifier(self.backend._layout.table_name(self.schema.identity))
 
     def count(self):
-        # Provider-level coexistence: enum-bound query plans currently decline
-        # COUNT pushdown; do not bypass that planner boundary in this test.
+        # Exercise the two proofs on the strict object-read path, separately
+        # from the public Query's admitted-open lightweight read handle.
         with closing(self.backend.begin_read()) as view:
             result = view.aggregate_catalog(self.schema.identity, CatalogAggregateRequest())
             self.assertIsNotNone(result)
@@ -138,13 +138,21 @@ class Format16CombinedProofTests(unittest.TestCase):
         self.assertIs(self.backend._read_handle, handle)
         self.assertEqual([v for k,v in handle.proofs.items() if k[0]=='catalog-count-unique-v1'], [(0,)])
 
-    def test_enum_bound_query_uses_sql_and_retains_both_proofs(self):
+    def test_enum_bound_query_uses_one_sql_statement_without_object_read_proofs(self):
         from yadinassi.db.query.relational_queries import _Plan
-        with patch.object(_Plan, 'load', side_effect=AssertionError('unexpected materialization')):
-            for _ in range(2):
-                result = BSLQuery(self.vm._catalogs, 'SELECT COUNT(*) AS N FROM Catalog.Номенклатура').execute()
-                self.assertEqual(result._rows, ((Decimal(1),),))
+        query = BSLQuery(self.vm._catalogs, 'SELECT COUNT(*) AS N FROM Catalog.Номенклатура')
+        self.assertEqual(query.execute()._rows, ((Decimal(1),),))
         handle = self.backend._read_handle
-        self.assertIsNotNone(handle.admission)
-        self.assertEqual([value for key, value in handle.proofs.items()
-                          if key[0] == 'catalog-count-unique-v1'], [(1,)])
+        statements = []
+        handle.connection.set_trace_callback(statements.append)
+        try:
+            with patch.object(_Plan, 'load', side_effect=AssertionError('unexpected materialization')), \
+                 patch.object(self.backend, '_validate_transaction_admission',
+                              side_effect=AssertionError('unexpected object admission')):
+                self.assertEqual(query.execute()._rows, ((Decimal(1),),))
+        finally:
+            handle.connection.set_trace_callback(None)
+        self.assertEqual(statements, ['SELECT COUNT(*) FROM '+self.table])
+        self.assertIs(self.backend._read_handle, handle)
+        self.assertIsNone(self.backend._active)
+        self.assert_invalidated(handle)

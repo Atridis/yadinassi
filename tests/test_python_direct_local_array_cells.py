@@ -106,25 +106,35 @@ class LocalBoxedArrayCellsTests(unittest.TestCase):
         self.assertEqual(ordinary.items,[2])
 
     def test_touched_method_hook_is_not_invoked(self):
-        vm=self.vm()
-        vm.execute(SETUP)
-        plan=vm.prepare(DECLARATIONS+'Store(A[0],9);')
-        seen=[]
-        def hostile(*_args):seen.append('set');raise AssertionError
-        with patch.object(BSLArray,'set',hostile):
-            with self.assertRaises(BoundaryViolation):vm.execute_prepared(plan)
-        self.assertEqual(seen,[])
-        self.assertEqual(vm.variables['a'].items,[1,2,3])
-
-    def test_dynamic_invocation_and_verified_mode_do_not_gain_reference(self):
         for extensions in (False,True):
-            vm=self.vm(allow_extensions=extensions)
-            vm.execute(SETUP)
-            vm.execute(DECLARATIONS)
-            with self.assertRaises(BoundaryViolation):vm.execute('Store(A[0],9);')
-            if extensions:
-                with self.assertRaises(BoundaryViolation):vm.execute(DECLARATIONS+'Store(A[0],9);')
-            self.assertEqual(vm.variables['a'].items,[1,2,3])
+            with self.subTest(allow_extensions=extensions):
+                vm=self.vm(allow_extensions=extensions)
+                vm.execute(SETUP)
+                plan=vm.prepare(DECLARATIONS+'Store(A[0],9);')
+                seen=[]
+                def hostile(*_args):seen.append('set');raise AssertionError
+                with patch.object(BSLArray,'set',hostile):
+                    with self.assertRaises(BoundaryViolation):vm.execute_prepared(plan)
+                self.assertEqual(seen,[])
+                self.assertEqual(vm.variables['a'].items,[1,2,3])
+
+    def test_dynamic_invocation_does_not_gain_reference(self):
+        for extensions in (False,True):
+            with self.subTest(allow_extensions=extensions):
+                vm=self.vm(allow_extensions=extensions)
+                vm.execute(SETUP)
+                vm.execute(DECLARATIONS)
+                with self.assertRaises(BoundaryViolation):vm.execute('Store(A[0],9);')
+                self.assertEqual(vm.variables['a'].items,[1,2,3])
+
+    def test_known_local_invocation_keeps_reference_in_either_mode(self):
+        for extensions in (False,True):
+            with self.subTest(allow_extensions=extensions):
+                vm=self.vm(allow_extensions=extensions)
+                vm.execute(SETUP)
+                vm.execute(DECLARATIONS+'Store(A[0],9);')
+                self.assertIs(type(vm.variables['a']),BSLArray)
+                self.assertEqual(vm.variables['a'].items,[9,2,3])
 
     def test_fixed_array_stays_readonly_and_bad_numbers_are_rejected(self):
         vm=self.vm()

@@ -28,9 +28,14 @@ class QueryTableTests(unittest.TestCase):
 
     def test_noncanonical_receivers_and_owners_rejected(self):
         class OtherTable(BSLValueTable):pass
-        for value in (OtherTable(),BSLValueTableRow(OtherTable())):
-            vm=Interpreter();vm.variables['t']=value
-            with self.assertRaises(BoundaryViolation):vm.execute('T.Count();')
+        table=OtherTable();table.columns.add('N',BSLTypeDescription('Number'))
+        row=table.add();row.set_member('N',Decimal(4))
+        self.assertIs(type(row),BSLValueTableRow)
+        vm=Interpreter();self.addCleanup(vm.close)
+        vm.variables.update(t=table,r=row)
+        with self.assertRaises(BoundaryViolation):vm.execute('T.Count();')
+        with self.assertRaisesRegex(BoundaryViolation,'noncanonical value table owner'):
+            vm.execute('R.N;')
 
     def test_foreign_row_deleted_row_and_private_attributes(self):
         vm=Interpreter();table=self.table();foreign=self.table().get(Decimal(0))

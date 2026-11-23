@@ -165,13 +165,46 @@ class DirectConfigurationCommandTests(unittest.TestCase):
         self.assertEqual(app.execute('Tools.Double(1)'),Decimal(2))
         self.assertEqual(calls,[])
 
-    def test_explicit_transport_is_not_implicitly_admitted_by_commands(self):
-        packets=[]
-        app=ConfigurationApplication.from_files(module_files([('Remote','Function F(Val X) Export Return X;EndFunction',SERVER)]),
-            side='client',server_exchange=lambda packet:packets.append(packet))
-        self.addCleanup(lambda:app.close(force=True));app.start()
-        with self.assertRaises(BSLRuntimeError):app.execute('Remote.F(1);')
-        self.assertEqual(packets,[])
+    def test_explicit_prebound_command_rejects_malformed_reply_without_replay(self):
+        from yadinassi.execution.invocation import PROTOCOL
+        from yadinassi.ui.protocol import decode_line, encode_line
+
+        packets, output = [], []
+
+        def exchange(packet):
+            request = decode_line(packet)
+            packets.append(request)
+            return encode_line({
+                'protocol': PROTOCOL, 'id': request['id'] + 1, 'status': 'ok',
+                'messages': ['wrong request'], 'value': {'type': 'Number', 'value': '99'},
+            })
+
+        files = module_files([('Remote', 'Function F(Val X) Export Return X; EndFunction', SERVER)])
+        app = ConfigurationApplication.from_files(
+            files, side='client', server_exchange=exchange, output=output.append)
+        self.addCleanup(app.close, force=True)
+        self.assertTrue(app.start())
+        app.execute('Result=7;')
+        for _ in range(2):
+            with self.assertRaises(BSLRuntimeError):
+                app.execute('Result=Remote.F(1);')
+            self.assertEqual(app.interpreter.variables['result'], Decimal(7))
+            self.assertEqual(output, [])
+        self.assertEqual(packets, [{
+            'protocol': PROTOCOL, 'id': 1, 'endpoint': 1,
+            'arguments': [{'type': 'Number', 'value': '1'}],
+        }])
+
+    def test_explicit_transport_does_not_admit_unbound_export(self):
+        packets = []
+        files = module_files([('Remote', 'Function F(Val X) Export Return X; EndFunction\n'
+                                         'Function Hidden(Val X) Return X; EndFunction', SERVER)])
+        app = ConfigurationApplication.from_files(files, side='client', server_exchange=packets.append)
+        self.addCleanup(app.close, force=True)
+        self.assertTrue(app.start())
+        with self.assertRaises(BoundaryViolation):
+            app.execute('Remote.Hidden(1);')
+        self.assertEqual(packets, [])
 
     def test_custom_namespace_mappings_are_rejected_without_hooks(self):
         calls=[]

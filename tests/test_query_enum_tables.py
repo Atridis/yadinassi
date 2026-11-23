@@ -114,8 +114,13 @@ class EnumTableTests(unittest.TestCase):
 
     def test_forged_equal_enum_instance_rejected(self):
         t = self.table()
-        c = t.columns.items[1]
-        t.rows[0].cells[c] = replace(self.piece)
+        forged = replace(self.piece)
+        self.assertEqual(forged,self.piece)
+        self.assertIsNot(forged,self.piece)
+        with self.assertRaises(BackendError): t.rows[0].set_member('Unit', forged)
+        # Simulate a malformed table received from Python. Public row cells
+        # cannot be used to bypass their own canonical enum check.
+        list.__setitem__(t.rows[0], t._storage.schema.offset('Unit'), forged)
         with self.assertRaises(BackendError): self.q('SELECT Code FROM &Input WHERE Code="missing"', t).execute()
 
     def test_empty_table_keeps_enum_domain(self):

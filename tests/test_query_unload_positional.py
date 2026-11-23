@@ -41,7 +41,11 @@ class QueryUnloadPositionalTests(unittest.TestCase):
         self.assertIs(table.rows[0].get_member('Item'),result._rows[0][0])
         self.assertIs(table.rows[0].get_member('Missing'),NULL)
         self.assertIs(table.columns.items[0].value_type._query_reference,result._columns[0].reference_binding)
-        table.rows[0].set_member('Missing','local')
+        with self.assertRaisesRegex(ValueError,'nullable'):
+            table.rows[0].set_member('Missing','local')
+        self.assertIs(table.rows[0].get_member('Missing'),NULL)
+        table.rows[0].set_member('Missing',Decimal(5))
+        self.assertEqual(table.rows[0].get_member('Missing'),Decimal(5))
         self.assertIs(result._rows[0][1],NULL)
 
     def test_invalid_row_shape_rejected_before_allocating_rows(self):

@@ -162,6 +162,38 @@ class DirectValueTreeTests(unittest.TestCase):
         vm.variables['bad']=Child()
         with self.assertRaises(BoundaryViolation):vm.execute('Bad.Rows')
 
+    def test_row_index_reference_uses_live_column_position_or_name(self):
+        vm=self.vm()
+        vm.execute('Var T,Calls; T=New ValueTree; T.Columns.Add("Name"); Calls=0; '
+                   'R=T.Rows.Add(); R.Name="one"; '
+                   'Function NextIndex() Calls=Calls+1; Return 0; EndFunction '
+                   'Function InsertColumn() T.Columns.Insert(0,"New"); Return "position"; EndFunction '
+                   'Procedure Put(Target,Val NewValue) Target=NewValue; EndProcedure '
+                   'Put(R[NextIndex()],InsertColumn()); Snapshot=R.New; R["nAmE"]="direct"; '
+                   'Put(R["nAmE"],"name");')
+        self.assertEqual(vm.execute('Calls'),1)
+        self.assertEqual(vm.execute('Snapshot'),'position')
+        self.assertEqual(vm.execute('R.Get(0)'),'position')
+        self.assertEqual(vm.execute('R.Name'),'name')
+        self.assertEqual(vm.execute('R.Get(1)'),'name')
+
+    def test_bad_row_index_precedes_callee_and_deleted_row_cannot_be_written(self):
+        vm=self.vm()
+        vm.execute('Var T,R,Entered; T=New ValueTree; T.Columns.Add("Name"); '
+                   'R=T.Rows.Add(); R[0]="start"; Entered=0;')
+        definitions=('Var T,R,Entered; '
+                     'Procedure Put(Target,Val Ignored) Entered=Entered+1; Target="changed"; EndProcedure '
+                     'Function DeleteRow() T.Rows.Delete(R); Return 0; EndFunction ')
+        for index in ('4','"missing"'):
+            with self.subTest(index=index),self.assertRaises(BSLError):
+                vm.execute(definitions+f'Put(R[{index}],0);')
+        self.assertEqual(vm.execute('Entered'),0)
+        self.assertEqual(vm.execute('R.Name'),'start')
+        with self.assertRaisesRegex(BSLError,'отсоединенным'):
+            vm.execute(definitions+'Put(R[0],DeleteRow());')
+        self.assertEqual(vm.execute('Entered'),1)
+        self.assertEqual(vm.execute('T.Rows.Count()'),0)
+
     def test_foreign_row_argument_and_deleted_row_semantics(self):
         vm=self.vm();tree,row=self.setup_tree(vm)
         other=trees.BSLValueTree();foreign=other.rows.add();vm.variables['foreign']=foreign

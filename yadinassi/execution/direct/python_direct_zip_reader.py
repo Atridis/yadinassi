@@ -1,4 +1,4 @@
-"""Standalone ZIP file reading/writing and detached metadata; never extraction."""
+"""Standalone ZIP file reading/writing and anchored extraction."""
 from weakref import ref
 
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
@@ -13,11 +13,13 @@ _READ = {id(kind): kind.get_member for kind in _TYPES}
 TYPE_IDS = frozenset(_READ)
 _OWNERS = {}
 _OPEN, _CLOSE = BSLZipFileReader.open, BSLZipFileReader.close
+_EXTRACT, _EXTRACT_ALL = BSLZipFileReader.extract, BSLZipFileReader.extract_all
 _ENTRY_GET, _ENTRY_SET = BSLZipFileEntries.get, BSLZipFileEntries.set
 _SYNTAX = {'__getitem__': _ENTRY_GET, '__setitem__': _ENTRY_SET,
            '__iter__': BSLZipFileEntries.__iter__}
 _READER = {alias: method for aliases, method in (
-    (('open', 'открыть'), _OPEN), (('close', 'закрыть'), _CLOSE))
+    (('open', 'открыть'), _OPEN), (('close', 'закрыть'), _CLOSE),
+    (('extract', 'извлечь'), _EXTRACT), (('extractall', 'извлечьвсе'), _EXTRACT_ALL))
     for alias in aliases}
 _WRITER = {alias: (method, returns_value) for aliases, method, returns_value in (
     (('open', 'открыть'), BSLZipFileWriter.open, False),
@@ -134,7 +136,7 @@ def resolve(boundary, value, name, *, syntax=False, require_value=False, omitted
                                          require_value=require_value)
     if kind is BSLZipFileReader:
         method = _READER.get(name.casefold())
-        if method is None:
+        if method is None or syntax:
             raise ValueError('Метод объекта не обнаружен: ' + name)
         if omitted:
             raise TypeError('ZIP: обязательный аргумент пропущен')
@@ -145,6 +147,15 @@ def resolve(boundary, value, name, *, syntax=False, require_value=False, omitted
             boundary._check_effect()
             if method is _OPEN and actuals:
                 _source(actuals[0])
+            elif method is _EXTRACT or method is _EXTRACT_ALL:
+                _owned(boundary, value)
+                if method is _EXTRACT:
+                    if actuals and type(actuals[0]) is BSLZipFileEntry:
+                        _owned(boundary, actuals[0])
+                    if len(actuals) >= 2:
+                        _source(actuals[1])
+                elif actuals:
+                    _source(actuals[0])
             try:
                 return method(value, *actuals)
             finally:

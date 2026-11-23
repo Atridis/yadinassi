@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from yadinassi import Interpreter
 from yadinassi.db.query import query_parser as syntax
+from yadinassi.db.query import queries as query_runtime
 from yadinassi.temporal.dates import BSLDate, TICKS_PER_SECOND
 from yadinassi.db.query.queries import BSLQuery
 from yadinassi.db.query.query_packages import BSLTempTablesManager
@@ -354,9 +355,13 @@ Message(A[2].IsEmpty());M.Close();''')
 
     def test_external_resource_limits_count_entire_source_before_top(self):
         source = table([('N',number()),('S',string())], [(Decimal(1),'hello'),(Decimal(2),'world')])
-        for module, limit, value in [('query_parser','MAX_ROWS',1), ('queries','_MAX_CELLS',3), ('queries','_MAX_RESULT_TEXT',9)]:
-            with self.subTest(limit=limit), patch('yadinassi.'+module+'.'+limit,value):
-                with self.assertRaises(ValueError): self.rows('SELECT TOP 1 N FROM &T', [('T',source)])
+        for module, limit, value, diagnostic in (
+                (syntax, 'MAX_ROWS', 1, 'source size'),
+                (query_runtime, '_MAX_CELLS', 3, 'source cell'),
+                (query_runtime, '_MAX_RESULT_TEXT', 9, 'source text')):
+            with self.subTest(limit=limit), patch.object(module, limit, value):
+                with self.assertRaisesRegex(ValueError, diagnostic):
+                    self.rows('SELECT TOP 1 N FROM &T', [('T',source)])
 
     def test_external_snapshot_budget_is_shared_across_distinct_parameters(self):
         a = table([('N',number())], [(Decimal(1),),(Decimal(2),)])

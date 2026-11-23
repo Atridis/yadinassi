@@ -185,10 +185,11 @@ class MembershipTests(unittest.TestCase):
 
     def test_subquery_sources_share_one_view(self):
         backend=self.context.backend
-        original=backend.begin_read
-        with patch.object(backend,'begin_read',wraps=original) as begin:
+        with patch.object(backend,'begin_query_read',wraps=backend.begin_query_read) as begin, \
+             patch.object(backend,'begin_read',side_effect=AssertionError('nested object read')):
             self.assertEqual(self.rows('SELECT Code FROM Catalog.Products WHERE Amount IN (SELECT Amount FROM Catalog.Products WHERE Amount IN (SELECT Amount FROM Catalog.Products))'),(('1',),('2',),('3',)))
-            self.assertEqual(begin.call_count,1)
+            begin.assert_called_once_with(query_language=True)
+        self.assertIsNone(backend._active)
 
     def test_membership_work_limit(self):
         import yadinassi.db.query.relational_queries as relational

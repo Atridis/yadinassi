@@ -125,5 +125,7 @@ class AsyncContextIntegrationTests(unittest.TestCase):
         self.assertIsNot(contexts[0], contexts[1])
         for context in contexts:
             self.assertEqual(context.locals, {})
-            self.assertEqual(set(context.state), {self.vm})
-            self.assertEqual(context.state[self.vm]['_handled_errors'], [])
+            # Direct handlers keep error state on their boundary, not in
+            # the generic scheduler's interpreter-state cache.
+            self.assertEqual(context.state, {})
+        self.assertEqual(self.vm._handled_errors, [])
