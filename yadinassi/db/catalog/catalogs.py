@@ -450,8 +450,9 @@ class BSLCatalogObject(BSLObject):
         outcomes=caps.catalog_write_outcomes
         if m._schema.numbering!='explicit' and not outcomes:raise BackendError('unsupported')
         policy = getattr(m._backend, 'catalog_write_preparation', None)
-        deferred_source = (sqlite_backend and active is None and preparation is None
-            and m._backend._defer_main_demo_write_source(m._schema.identity, policy))
+        source_candidate = (m._backend._main_demo_write_candidate(m._schema.identity, policy)
+                            if sqlite_backend and active is None and preparation is None else None)
+        deferred_source = source_candidate is not None
         selected_source = policy(m._schema.identity) if policy is not None and not deferred_source else None
         if selected_source is not None:
             if preparation is not None and preparation[0] != selected_source:
@@ -476,11 +477,12 @@ class BSLCatalogObject(BSLObject):
                               draft, expected, (draft,expected,operation))
             return ()
         prepared_validator=None
-        if preparation is not None:
+        if preparation is not None or deferred_source:
             from yadinassi.execution.execution_policy import current_backend
             if current_backend() == 'python-direct':
                 from yadinassi.execution.direct.python_direct_catalog_preparation import prepared_validator as prepare_validator
-                prepared_validator=prepare_validator(m,preparation[0])
+                source = source_candidate if deferred_source else preparation[0]
+                prepared_validator=prepare_validator(m,source)
         data_backend = m._runtime_data_backend() if preparation is None and not deferred_source else None
         if data_backend is not None and expected is not None and outcomes:
             from yadinassi.db.sqlite.sqlite_catalog import _single_catalog_scalar_schema

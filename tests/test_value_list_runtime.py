@@ -29,6 +29,24 @@ class NativeValueListPositionsTests(unittest.TestCase):
                 self.assertEqual(extract_payload(output[0], 'table.' + label),
                                  extract_payload(expected, 'table.' + label))
 
+    def test_foreign_item_move_matches_both_archived_records(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig')
+        expected = (root / 'tests/fixtures/native_windows/collections.out').read_text(encoding='utf-8-sig')
+        output = []
+        vm = Interpreter(output.append)
+        self.addCleanup(vm.close)
+        vm.execute(source.split('#Область МассивыИСтруктуры', 1)[0])
+        for label in ('list.move.item', 'list.extra.foreign-move'):
+            with self.subTest(label=label):
+                code, = (line for line in source.splitlines()
+                         if line.startswith(f'НаблюдатьТаблицы("{label}",'))
+                output.clear()
+                vm.execute_prepared(vm.prepare(code))
+                self.assertEqual(len(output), 1)
+                self.assertEqual(extract_payload(output[0], 'table.' + label),
+                                 extract_payload(expected, 'table.' + label))
+
 
 class ValueListRuntimeTests(unittest.TestCase):
     def setUp(self):
@@ -154,6 +172,18 @@ class ValueListRuntimeTests(unittest.TestCase):
                         'Message(Find(ErrorDescription(), "пока не поддерживается") > 0); EndTry;')
         self.assertEqual(self.output, ["Да"])
         self.assertTrue(self.vm.execute('(values.Get(0) = first)'))
+
+    def test_item_move_does_not_generalize_to_other_offsets_or_deleted_local_items(self):
+        self.vm.execute('foreign = New ValueList; foreignItem = foreign.Add(100); '
+                        'removed = values.Add(30); values.Delete(removed);')
+        for statement in ('values.Move(foreignItem, -1)', 'values.Move(foreignItem, 1.5)',
+                          'values.Move(removed, 1)', 'values.Delete(foreignItem)'):
+            with self.subTest(statement=statement):
+                with self.assertRaises(BSLError):
+                    self.vm.execute(statement + ';')
+                self.assertTrue(self.vm.execute('(values.Get(0) = first)'))
+                self.assertEqual(self.vm.execute('values.Count()'), 2)
+                self.assertTrue(self.vm.execute('(foreign.Get(0) = foreignItem)'))
 
     def test_copy_load_unload_bilingual_dispatch(self):
         self.vm.execute('copy = values.Скопировать(); a = values.ВыгрузитьЗначения(); '

@@ -318,9 +318,28 @@ class PlainValueList(list):
 
     def move(self, item_or_index, offset):
         count = list.__len__(self)
-        position = _checked_position(self._position(item_or_index), count)
-        shift = _index(offset)
-        destination = _checked_position(position + shift, count)
+        if type(item_or_index) is PlainValueListItem:
+            position = self._index_of(item_or_index)
+            if position < 0:
+                state = item_or_index._membership
+                owner = (state.owner() if type(state) is _ItemMembership
+                         and type(state.owner) is ReferenceType else None)
+                if type(owner) is not PlainValueList or owner is self:
+                    raise ValueError('ValueList item does not belong to this list')
+                # Native observations for 2/3 target items and an offset of
+                # exactly +1 move the first target item. Neither the donor's
+                # position, ID nor value selects a target item.
+                kind = type(offset)
+                if (count not in (2, 3)
+                        or not (kind is int or (kind is Decimal and offset.is_finite()))
+                        or offset != 1):
+                    raise ValueError('Этот сдвиг чужого элемента списка значений пока не поддерживается')
+                position, destination = 0, 1
+            else:
+                destination = _checked_position(position + _index(offset), count)
+        else:
+            position = _checked_position(_index(item_or_index), count)
+            destination = _checked_position(position + _index(offset), count)
         if destination == position:
             return
         item = list.pop(self, position)

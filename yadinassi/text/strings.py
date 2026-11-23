@@ -10,6 +10,7 @@ import re
 
 from .collation import caseless_string_key
 from yadinassi.collections.search_directions import BSLSearchDirection
+from yadinassi.execution.direct.python_direct_plain_array import _DIRECT_PLAIN_ARRAY_TYPE
 from yadinassi.types.values import BSLArray, BSLFixedArray, NULL, boolean, number, to_string
 
 
@@ -290,18 +291,23 @@ def split(value: object, separators: object, include_empty: object = True) -> BS
 
 
 def join(values: object, separator: object = "") -> str:
-    if type(values) is not list and not isinstance(values, (BSLArray, BSLFixedArray)):
+    kind = type(values)
+    native_list = kind is list or kind is _DIRECT_PLAIN_ARRAY_TYPE
+    if not native_list and not isinstance(values, (BSLArray, BSLFixedArray)):
         raise TypeError("СтрСоединить ожидает массив или фиксированный массив")
     from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
     from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
+    from yadinassi.execution.direct.python_direct_plain_map import _DIRECT_PLAIN_MAP_FIND_TYPES
+    plain_map = _DIRECT_PLAIN_MAP_FIND_TYPES[0]
     def convert(value):
         kind = type(value)
-        if kind is list: return "Массив"
-        if kind is _TypedMap: return "Соответствие"
+        if kind is list or kind is _DIRECT_PLAIN_ARRAY_TYPE: return "Массив"
+        if kind is _TypedMap or kind is plain_map: return "Соответствие"
         if kind is _DirectStructure: return "Структура"
         return to_string(value)
     delimiter = convert(separator)
-    return _text(delimiter.join(convert(value) for value in values))
+    items = list.__iter__(values) if native_list else values
+    return _text(delimiter.join(convert(value) for value in items))
 
 
 def occurrence_count(value: object, substring: object) -> Decimal:

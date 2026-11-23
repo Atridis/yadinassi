@@ -316,7 +316,7 @@ class FormProcessTests(unittest.TestCase):
         self.assertEqual(serve_runtime(EXAMPLE,input_stream=io.BytesIO(),output_stream=io.BytesIO()),0)
 
     def test_frozen_route_and_process_selection_are_explicit(self):
-        with mock.patch.object(entrypoint.form_app,'main',return_value=6) as app, mock.patch.object(entrypoint,'cli_main',return_value=9):
+        with mock.patch('yadinassi.ui.form_app.main',return_value=6) as app, mock.patch.object(entrypoint,'cli_main',return_value=9):
             self.assertEqual(entrypoint.main(['--form-ui','owned']),6)
             app.assert_called_with(['owned'])
             self.assertEqual(entrypoint.main(['--form-ui-runtime','owned']),6)

@@ -7,6 +7,7 @@ closing and reopening the backend. Raw, migration, and source lanes keep
 their own admissions and never treat this descriptor as a validation proof.
 """
 from copy import deepcopy
+from types import MappingProxyType
 import sqlite3
 from uuid import UUID
 
@@ -25,7 +26,11 @@ class CatalogRuntimeData:
 
         self.config = backend.accumulation_configuration
         self.handlers = self.config.catalog_handlers if type(self.config) is MainDemoConfiguration else ()
-        self.handler_ids = frozenset(identity.int for identity, _, _ in self.handlers)
+        files = dict(self.config.files) if self.handlers else {}
+        # Open-admitted text is only a candidate for compiling code. The
+        # actual writer must re-admit the source before running that code.
+        self.handler_candidates = MappingProxyType({
+            identity.int:files[path].decode('utf-8-sig') for identity,path,_ in self.handlers})
         self.identity = (UUID(int=backend.database_id.int), backend.configuration_generation)
         schemas, self.layout, self.sections, self.domain = deepcopy(
             (backend._schemas, backend._layout, backend._section_layout, backend._enum_domain))
@@ -44,7 +49,7 @@ class CatalogRuntimeData:
         if (backend.accumulation_configuration is not self.config
                 or getattr(self.config, 'catalog_handlers', self.handlers) is not self.handlers):
             raise BackendError('schema_changed')
-        return identity.int not in self.handler_ids
+        return identity.int not in self.handler_candidates
 
     def document_header(self,backend,schema,identity,selected):
         from yadinassi.db.catalog.catalog_backend import FieldSchema

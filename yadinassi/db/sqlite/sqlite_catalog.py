@@ -1178,10 +1178,10 @@ class SQLiteCatalogBackend:
         finally:
             connection.close()
 
-    def _defer_main_demo_write_source(self, catalog_id, policy):
-        """Select a candidate only; this does not supply executable source."""
+    def _main_demo_write_candidate(self, catalog_id, policy):
+        """Return open-admitted text to compile, not authority to execute it."""
         if self.format_version != 16 or self._active is not None or self._closed:
-            return False
+            return None
         from types import MethodType
         from yadinassi.configuration.configuration_main_demo import MainDemoConfiguration
         from .sqlite_catalog_runtime_data import CatalogRuntimeData
@@ -1190,15 +1190,16 @@ class SQLiteCatalogBackend:
         config = self.accumulation_configuration
         if (type(config) is not MainDemoConfiguration or type(data) is not CatalogRuntimeData
                 or data.config is not config or data.handlers is not config.catalog_handlers
-                or type(catalog_id) is not UUID or type(catalog_id.int) is not int
-                or catalog_id.int not in data.handler_ids):
-            return False
+                or type(catalog_id) is not UUID or type(catalog_id.int) is not int):
+            return None
+        candidate = data.handler_candidates.get(catalog_id.int)
+        if candidate is None: return None
         for name, canonical in _ORDINARY_MAIN_DEMO_WRITE_ABI:
             actual = policy if name == 'catalog_write_preparation' else getattr(self, name)
             if (type(actual) is not MethodType or actual.__self__ is not self
                     or actual.__func__ is not canonical):
-                return False
-        return True
+                return None
+        return candidate
 
     def _main_demo_write_source_on_owner(self, catalog_id, writer, operation):
         """Consume the exact source just re-admitted by this ordinary writer."""

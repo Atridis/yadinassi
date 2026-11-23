@@ -21,6 +21,18 @@ class DirectStringJoinTests(unittest.TestCase):
             self.assertEqual(vm.variables['s'],vm.variables['r'])
             self.assertEqual(len(vm.variables['a']),6)
 
+    def test_bilingual_join_accepts_exact_published_plain_array(self):
+        from yadinassi.execution.direct.python_direct_plain_array import _DIRECT_PLAIN_ARRAY_TYPE
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm=Interpreter();self.addCleanup(vm.close)
+                vm.execute('A=New Array; A.Add(12.5); A.Add(-2.5); A.Add(0);')
+                self.assertIs(type(vm.variables['a']),_DIRECT_PLAIN_ARRAY_TYPE)
+                source='R=СтрСоединить(A,"|"); S=StrConcat(A,"|");'
+                if prepared:vm.execute_prepared(vm.prepare(source))
+                else:vm.execute(source)
+                self.assertEqual((vm.variables['r'],vm.variables['s']),('12,5|-2,5|0','12,5|-2,5|0'))
+
     def test_canonical_arrays_and_fixed_arrays_unchanged(self):
         canonical=BSLArray();canonical.items=[Decimal('12.5'),True,None,NULL,'я']
         expected='12,5|Да|||я'

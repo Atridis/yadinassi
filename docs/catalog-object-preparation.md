@@ -43,7 +43,10 @@ except CatalogWriteRefused as refused:
 ```
 
 The writer begins its ordinary transaction and verifies database, generation and
-catalog schema before executing the handler. In this route, each reference
+catalog schema before executing the handler. The candidate can be compiled
+before the writer begins; the locked write must still admit the exact source
+and match the prepared code's source/schema/options before executing it.
+In this route, each reference
 `GetObject`/`ПолучитьОбъект` reads from that same writer view. The original kind
 and warehouse deletion-mark checks therefore cannot race a separate writer
 between validation and commit. Existing SQLite scalar/row reference-existence
