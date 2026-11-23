@@ -243,7 +243,7 @@ class Emitter:
         self.known_calls={};self.known_origins=();self.known_selection_reads=set();self.known_selection_adds=set()
         self.local_field_facts={};self.integer_lane=False;self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.module_boundaries=0;self.range_indices={};self.external_actuals=0
         self.handler_depth=0;self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.current_module=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
-        self.standalone_script=False;self.row_cell_references=False;self.link_imports=False;self.import_links=[]
+        self.standalone_script=False;self.row_cell_references=False;self.array_cell_references=False;self.link_imports=False;self.import_links=[]
         self.import_names=frozenset();self.require_last_expression=None;self.region_active=False;self.region_ops={};self.region_states={};self.routines={};self.routine_symbols={};self.numeric_routine_symbols={};self.address_routine_symbols={};self.module_globals=set();self.scope=None;self.source_refs={};self.loop_increments=[];self.required=set();self.pure_builtins={};self.visits=0;self.python_nodes=0
     def node(self,kind,token,**fields):
         if kind is py.FunctionDef and 'type_params' in kind._fields:fields.setdefault('type_params',[])
@@ -1159,7 +1159,7 @@ class Emitter:
                             elif self.scope is not None and key in self.scope['boxed'] and key not in self.scope['globals']:
                                 actual=self.name(self.scope['slots'][key],plain.token)
                             else:actual=self.call('_adapt_native_cell',[self.output_reference(plain,node.callee.token),self.name('_context',node.callee.token)],node.callee.token)
-                        elif type(plain) in (bsl.Index,bsl.Attribute):actual=self.call('_adapt_native_cell',[self.output_reference(plain,node.callee.token,local_row=self.row_cell_references),self.name('_context',node.callee.token)],node.callee.token)
+                        elif type(plain) in (bsl.Index,bsl.Attribute):actual=self.call('_adapt_native_cell',[self.output_reference(plain,node.callee.token,local_row=self.row_cell_references,local_array=self.array_cell_references),self.name('_context',node.callee.token)],node.callee.token)
                         else:actual=self.call('_NativeCell',[self.expr(arg)],node.callee.token)
                         arguments.append(actual)
                     elif self.import_path(plain) is not None:
@@ -1167,7 +1167,8 @@ class Emitter:
                     elif type(plain) in (bsl.Name,bsl.Index,bsl.Attribute):
                         reference_token=(node.callee.token if type(plain) is not bsl.Name
                                          or self.external_name(plain.name) else None)
-                        arguments.append(self.output_reference(plain,reference_token,local_row=self.row_cell_references))
+                        arguments.append(self.output_reference(plain,reference_token,
+                            local_row=self.row_cell_references,local_array=self.array_cell_references))
                     else:arguments.append(self.call('_Cell',[self.expr(arg)],node.callee.token))
             function=self.name(self.routine_symbols[routine.name.casefold()],node.callee.token)
             if self.authority and (self.source_scopes or not self.standalone_script):
@@ -1246,7 +1247,7 @@ class Emitter:
         # expression still runs exactly once, at the original argument point.
         return self.call('_Cell',[self.expr(node)],token)
 
-    def output_reference(self,node,reference_token=None,*,local_row=False):
+    def output_reference(self,node,reference_token=None,*,local_row=False,local_array=False):
         while type(node) is bsl.Group:node=node.expression
         t=reference_token or node.token
         path=self.import_path(node)
@@ -1280,13 +1281,13 @@ class Emitter:
             constructor=self.call('_partial',[self.name('_AttributeRef',t),self.name(receiver,t)],t)
             host=self.call('_partial',[self.attribute(self.name('_context',t),'reference_member',t),self.name(receiver,t)],t)
             argument=self.const(node.name,t)
+        if local_array and type(node) is bsl.Index:
+            array=self.call('_partial',[self.name('_local_array_index',t),self.name('_context',t),self.name(receiver,t)],t)
+            host=self.node(py.IfExp,t,test=exact('_BoxedArray'),body=array,orelse=host)
         if local_row:
             helper='_local_row_index' if type(node) is bsl.Index else '_local_row_member'
             address=self.call('_partial',[self.name(helper,t),self.name('_context',t),self.name(receiver,t)],t)
-            if type(node) is bsl.Index:
-                array=self.call('_partial',[self.name('_local_array_index',t),self.name('_context',t),self.name(receiver,t)],t)
-                host=self.node(py.IfExp,t,test=exact('_BoxedArray'),body=array,orelse=host)
-            else:
+            if type(node) is bsl.Attribute:
                 structure=self.call('_partial',[self.name('_local_structure_member',t),self.name('_context',t),self.name(receiver,t)],t)
                 host=self.node(py.IfExp,t,test=exact('_BoxedStructure'),body=structure,orelse=host)
             host=self.node(py.IfExp,t,test=exact('_PlainTableRow'),body=address,orelse=host)
@@ -2161,6 +2162,11 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     # SQLite-attached local routines keep their existing reference ABI.
     emitter.row_cell_references=(bool(emitter.routines) and _profile is None and not imported
                                  and emitter.standalone_script and not async_bodies)
+    # Boxed array addresses need the same exact storage proof in an ordinary
+    # local BSL call even when unrelated host extensions require full guards.
+    emitter.array_cell_references=(emitter.row_cell_references
+        or bool(emitter.routines) and _profile is None and not imported and not async_bodies
+           and not _authority and not _source_scopes and vm.allow_extensions)
     emitter.routine_symbols={key:emitter.temp() for key in emitter.routines}
     emitter.module_globals={name.casefold() for node in program if type(node) is bsl.Var for name in node.names}|{name.casefold() for name in module_names}
     collisions=emitter.external_names & (emitter.module_globals|emitter.routines.keys())

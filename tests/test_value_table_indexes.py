@@ -450,52 +450,57 @@ class IndexSafetyTests(unittest.TestCase):
                 table.rows[0].set_member('Key', 'xxxx')
         self.assertEqual(found(table, Key='a'), table.rows)
 
-    def test_aggregate_key_content_budget_is_atomic_and_released(self):
+    def test_key_replacement_and_row_removal_keep_other_declarations_live(self):
         table = sample()
-        with patch('yadinassi.collections.value_tables._MAX_INDEX_UNITS', 4):
-            index = table.indexes.add('Key')
-            second = table.indexes.add('Second')
-            self.assertEqual(index._units + second._units, 4)
-            with self.assertRaisesRegex(ValueError, 'содержимого ключей'):
-                table.rows[0].set_member('Key', 'long')
-            with self.assertRaisesRegex(ValueError, 'содержимого ключей'):
-                table.indexes.add('Amount')
-            with self.assertRaisesRegex(ValueError, 'содержимого ключей'):
-                table.add()
-            self.assertEqual(names(table), [['Key'], ['Second']])
-            self.assertEqual(len(table.rows), 2)
-            self.assertEqual(found(table, Key='a'), table.rows)
-            table.indexes.delete(second)
-            table.rows[0].set_member('Key', 'abc')
-            self.assertEqual(index._units, 4)
-            table.delete(table.rows[0])
-            self.assertEqual(index._units, 1)
-            table.clear()
-            self.assertEqual(index._units, 0)
-            table.add().set_member('Key', 'abcd')
-            self.assertEqual(index._units, 4)
+        index = table.indexes.add('Key')
+        second_index = table.indexes.add('Second')
+        first, second = table.rows
+        self.assertEqual(found(table, Key='a'), [first, second])
+        self.assertEqual(found(table, Second=D(1)), [first])
+        warmed = table._search.cache.copy()
 
-    def test_bulk_work_guard_counts_compound_width_and_duplicate_selections(self):
+        long_key = 'long' * 32
+        first.set_member('Key', long_key)
+        self.assertIs(table._search.cache[(0,)], warmed[(0,)])
+        self.assertEqual(found(table, Key=long_key), [first])
+        self.assertEqual(found(table, Key='a'), [second])
+        self.assertEqual(found(table, Second=D(1)), [first])
+        self.assertEqual(list(table.indexes), [index, second_index])
+
+        table.indexes.delete(second_index)
+        table.delete(first)
+        self.assertEqual(found(table, Key=long_key), [])
+        self.assertEqual(found(table, Key='a'), [second])
+        table.clear()
+        self.assertEqual(found(table, Key='a'), [])
+        replacement = table.add()
+        replacement.set_member('Key', long_key)
+        self.assertEqual(found(table, Key=long_key), [replacement])
+        self.assertEqual(list(table.indexes), [index])
+
+    def test_failed_bulk_column_selection_preserves_cells_and_index_order(self):
         table = sample()
         table.indexes.add('Key,Second')
         table.indexes.add('Key')
-        table.rows[0].set_member('Key', 'b')
-        table.rows[0].set_member('Key', 'a')
+        first, second = table.rows
+        first.set_member('Key', 'b')
+        first.set_member('Key', 'a')
         before = [list(row) for row in table]
-        order = found(table, Key='a')
-        with patch('yadinassi.collections.value_tables._MAX_INDEX_WORK', 8):
-            # Two rows * ((1 + 3) Key work + (1 + 2) Second work).
-            with self.assertRaisesRegex(ValueError, 'предел работы'):
-                table.fill_values('z', 'Key,Second')
-            with self.assertRaisesRegex(ValueError, 'предел работы'):
-                table.fill_values('z', 'Key,Key')
+        self.assertEqual(found(table, Key='a'), [second, first])
+
+        for operation in (lambda: table.fill_values('z', 'Key,Missing'),
+                          lambda: table.load_column(array('b', 'b'), 'Missing')):
+            with self.assertRaisesRegex(ValueError, 'column not found'):
+                operation()
             self.assertEqual([list(row) for row in table], before)
-            self.assertEqual(found(table, Key='a'), order)
-        with patch('yadinassi.collections.value_tables._MAX_INDEX_WORK', 7):
-            with self.assertRaisesRegex(ValueError, 'предел работы'):
-                table.load_column(array('b', 'b'), 'Key')
-            self.assertEqual([list(row) for row in table], before)
-            self.assertEqual(found(table, Key='a'), order)
+            self.assertEqual(found(table, Key='a'), [second, first])
+            self.assertEqual(found(table, Key='a', Second=D(1)), [first])
+
+        table.fill_values('z', 'Key,Key')
+        self.assertEqual(found(table, Key='a'), [])
+        self.assertEqual(found(table, Key='z'), [first, second])
+        self.assertEqual(found(table, Key='z', Second=D(1)), [first])
+        self.assertEqual([row.get_member('Second') for row in table], [D(1), D(2)])
 
     def test_equal_decimal_rewrite_refreshes_lazy_positions_and_live_value(self):
         table = BSLValueTable()
@@ -525,48 +530,71 @@ class IndexSafetyTests(unittest.TestCase):
         self.assertEqual(found(table, A=D(1)), [other])
         self.assertEqual(tuple(table._search.cache[(0,)].buckets.values()), ((0,),))
 
-    def test_column_delete_preflights_all_index_changes(self):
+    def test_column_delete_preflights_and_remaps_warmed_index_positions(self):
         table = sample()
-        table.indexes.add('Key,Second')
-        table.indexes.add('Amount')
+        compound = table.indexes.add('Key,Second')
+        amount = table.indexes.add('Amount')
+        first, second = table.rows
         before = [list(row) for row in table]
-        with patch('yadinassi.collections.value_tables._MAX_INDEX_UNITS', 1):
-            with self.assertRaisesRegex(ValueError, 'содержимого ключей'):
-                table.columns.delete('Second')
-        self.assertEqual(names(table), [['Key', 'Second'], ['Amount']])
-        self.assertEqual([column.name for column in table.columns], ['Key', 'Second', 'Amount'])
-        self.assertEqual([list(row) for row in table], before)
-        self.assertEqual(found(table, Key='a', Second=D(1)), [table.rows[0]])
+        self.assertEqual(found(table, Key='a', Second=D(1)), [first])
+        self.assertEqual(found(table, Amount=D(2)), [second])
 
-    def test_bulk_content_budget_failures_preserve_every_cell_and_bucket_order(self):
+        with self.assertRaisesRegex(ValueError, 'column not found'):
+            table.columns.delete('Missing')
+        self.assertEqual(list(table.indexes), [compound, amount])
+        self.assertEqual([list(row) for row in table], before)
+        self.assertEqual(found(table, Key='a', Second=D(1)), [first])
+        self.assertEqual(found(table, Amount=D(2)), [second])
+
+        table.columns.delete('Second')
+        self.assertEqual(names(table), [['Key'], ['Amount']])
+        self.assertEqual(list(table.indexes), [compound, amount])
+        self.assertEqual(table._search.declarations, {(0,), (1,)})
+        self.assertEqual([list(row) for row in table], [['a', D(1)], ['a', D(2)]])
+        self.assertEqual(found(table, Key='a'), [first, second])
+        self.assertEqual(found(table, Amount=D(2)), [second])
+
+    def test_invalid_bulk_argument_shapes_preserve_cells_and_warmed_bucket_order(self):
         table = sample()
         table.indexes.add('Key')
-        table.rows[0].set_member('Key', 'b')
-        table.rows[0].set_member('Key', 'a')
+        first, second = table.rows
+        first.set_member('Key', 'b')
+        first.set_member('Key', 'a')
         before = [list(row) for row in table]
-        order = found(table, Key='a')
-        with patch('yadinassi.collections.value_tables._MAX_INDEX_UNITS', 4):
-            with self.assertRaisesRegex(ValueError, 'содержимого ключей'):
-                table.fill_values('xxx', 'Key')
-            with self.assertRaisesRegex(ValueError, 'содержимого ключей'):
-                table.load_column(array('xx', 'xxx'), 'Key')
-            self.assertEqual([list(row) for row in table], before)
-            self.assertEqual(found(table, Key='a'), order)
-            table.fill_values('xx', 'Key')
-            self.assertEqual(table.indexes.items[0]._units, 4)
+        self.assertEqual(found(table, Key='a'), [second, first])
+        warmed = table._search.cache[(0,)]
 
-    def test_bulk_work_counts_repeated_long_key_content(self):
+        for operation in (lambda: table.fill_values('xxx', array('Key')),
+                          lambda: table.load_column(('xx', 'xxx'), 'Key')):
+            with self.assertRaises(TypeError):
+                operation()
+            self.assertEqual([list(row) for row in table], before)
+            self.assertEqual(found(table, Key='a'), [second, first])
+            self.assertIs(table._search.cache[(0,)], warmed)
+
+        table.load_column(array('xx', 'xxx'), 'Key')
+        self.assertEqual(found(table, Key='xx'), [first])
+        self.assertEqual(found(table, Key='xxx'), [second])
+        self.assertEqual(found(table, Key='a'), [])
+        self.assertEqual([list(row) for row in table], [['xx', D(1), D(1)], ['xxx', D(2), D(2)]])
+
+    def test_bulk_writes_preserve_unselected_long_compound_keys(self):
         table = sample()
-        table.rows[0].set_member('Second', D('1' * 100))
+        first, second = table.rows
+        long_number = D('1' * 100)
+        first.set_member('Second', long_number)
         table.indexes.add('Key,Second')
-        before = [list(row) for row in table]
-        with patch('yadinassi.collections.value_tables._MAX_INDEX_WORK', 50):
-            with self.assertRaisesRegex(ValueError, 'предел работы'):
-                table.fill_values('z', 'Key')
-            with self.assertRaisesRegex(ValueError, 'предел работы'):
-                table.load_column(array('z'), 'Key')
-        self.assertEqual([list(row) for row in table], before)
-        self.assertEqual(found(table, Key='a', Second=D('1' * 100)), [table.rows[0]])
+        self.assertEqual(found(table, Key='a', Second=long_number), [first])
+
+        table.fill_values('z', 'Key')
+        self.assertEqual(found(table, Key='a', Second=long_number), [])
+        self.assertEqual(found(table, Second=long_number, Key='z'), [first])
+        self.assertEqual(found(table, Key='z', Second=D(2)), [second])
+        table.load_column(array('written'), 'Key')
+        self.assertEqual(found(table, Key='written', Second=long_number), [first])
+        self.assertEqual(found(table, Key='z', Second=long_number), [])
+        self.assertEqual(found(table, Key='z', Second=D(2)), [second])
+        self.assertIs(first.get_member('Second'), long_number)
 
     def test_duplicate_field_lookup_is_bounded_only_when_order_ambiguous(self):
         table = sample()

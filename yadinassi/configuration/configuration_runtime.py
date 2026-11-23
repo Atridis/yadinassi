@@ -69,6 +69,7 @@ class ConfigurationApplication:
         self._server_exchange = server_exchange
         self.server_bindings = ()
         self.server_endpoints = {}
+        self._command_remote_bindings = {}
         sources = {entry.path: entry.content for entry in configuration.files}
         numbering = ('decimal_v1' if any(s.numbering == 'decimal_v1'
                      for s in (*configuration.catalogs, *configuration.documents)) else 'explicit')
@@ -315,6 +316,10 @@ class ConfigurationApplication:
                     stub.exported = True
                     self._common_routines[id(stub)] = stub
                     self._declared_routines[id(stub)] = stub
+                    self._command_remote_bindings[name, routine.name.casefold()] = (
+                        self._definitions[name], child._self_module, child, stub,
+                        child._invocation_bindings[routine.name.casefold()], port, binding, self._server_exchange,
+                        binding.name, binding.endpoint, binding.parameters, binding.is_function)
                 child._self_module.ready = True
                 self._modules[name, side] = child._self_module
                 continue

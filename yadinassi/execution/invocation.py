@@ -140,7 +140,7 @@ class InvocationPort:
                 return self.invoke(binding, values, output=interpreter.output)
         interpreter._invocation_bindings[key] = (routine, invoke)
 
-    def invoke(self, binding, values, *, output=lambda message: None, _check_reply=None):
+    def invoke(self, binding, values, *, output=lambda message: None, _check_reply=None, _check_result=None):
         if not self._gate.acquire(blocking=False): raise InvocationError('busy')
         exchange_started = False
         try:
@@ -181,6 +181,15 @@ class InvocationPort:
             except Exception:
                 self.uncertain = True
                 raise InvocationError('outcome_unknown') from None
+            # Optional admission for a caller with a narrower scalar domain.
+            # A valid wire reply is definitive; this does not reopen or replay it.
+            if success and _check_result is not None:
+                try:_check_result(result)
+                except BoundaryViolation:
+                    # The admitted wire exchange completed; this is a local
+                    # result-domain rejection, not an interrupted transport.
+                    exchange_started = False
+                    raise
             # Apply a fully admitted response before dependent client BSL resumes.
             try:
                 for message in messages: output(message)

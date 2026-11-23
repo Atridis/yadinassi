@@ -100,7 +100,19 @@ class _ArrayAddress(_Reference):
                 _invalid()
 
 
+class _GuardedArrayAddress(_ArrayAddress):
+    __slots__ = ()
+
+    def _live(self):
+        self.context._check_effect()
+        super()._live()
+
+
 def local_index(context, array, key):
-    if context._verify_context or context.policy is not None:
+    if context.policy is not None:
         return context.reference_index(array, key)
+    if context._verify_context:
+        # A known local BSL routine can borrow the same canonical boxed array
+        # slot in a guarded interpreter. Arbitrary host ByRef stays unchanged.
+        return _GuardedArrayAddress(context, array, key)
     return _ArrayAddress(context, array, key)

@@ -3,7 +3,9 @@ from decimal import Decimal as D
 import unittest
 
 from yadinassi import Interpreter
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.types.values import BSLArray
 
 
 class DirectArrayElementAddressTests(unittest.TestCase):
@@ -74,3 +76,37 @@ class DirectArrayElementAddressTests(unittest.TestCase):
                         if prepare:vm.execute_prepared(vm.prepare(source))
                         else:vm.execute(source)
                     self.assertEqual(vm.variables['t'],[value])
+
+    def test_guarded_local_boxed_array_addresses_keep_aliases_and_argument_order(self):
+        vm=Interpreter(allow_extensions=True)
+        self.addCleanup(vm.close)
+        values=BSLArray(D(1))
+        values.set(D(0),D(2))
+        vm.variables['values']=values
+        calls=[]
+        vm.register_function('Later',lambda: calls.append('later') or D(3))
+        definition='Procedure Change(A, Val N, B) A=A*N; B=B+1; EndProcedure\n'
+        bad=definition+'Change(Values[1],Later(),Values[0]);'
+        with self.assertRaisesRegex(BSLRuntimeError,'Индекс массива вне границ'):
+            vm.execute(bad)
+        self.assertEqual(calls,[])
+        plan=vm.prepare(definition+'Change(Values[0],Later(),Values[0]);')
+        vm.execute_prepared(plan)
+        self.assertEqual(values.items,[D(7)])
+        self.assertEqual(calls,['later'])
+
+    def test_guarded_local_boxed_array_address_refuses_replaced_storage(self):
+        vm=Interpreter(allow_extensions=True)
+        self.addCleanup(vm.close)
+        values=BSLArray(D(1))
+        original=values.items
+        vm.variables['values']=values
+        def swap():
+            values.items=[D(42)]
+            return D(0)
+        vm.register_function('Swap',swap)
+        source='Procedure Change(A, Val Ignored) A=9; EndProcedure\nChange(Values[0],Swap());'
+        with self.assertRaisesRegex(BoundaryViolation,'canonical array address storage or hooks changed'):
+            vm.execute(source)
+        self.assertEqual(original,[None])
+        self.assertEqual(values.items,[D(42)])

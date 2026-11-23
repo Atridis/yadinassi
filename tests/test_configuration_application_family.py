@@ -1,5 +1,6 @@
 """Local process-family contracts, not native application-host evidence."""
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 from unittest.mock import patch, PropertyMock
 from yadinassi.runtime import Interpreter
@@ -84,6 +85,105 @@ class ApplicationFamilyTests(unittest.TestCase):
         files = module_files([('Service', 'Function F(X) Export Return X; EndFunction', SERVER)])
         with self.assertRaises(ValueError):
             ConfigurationApplication.from_files(files, side='client', server_exchange=lambda raw: raw)
+
+    def test_split_client_command_uses_only_prebound_scalar_wire(self):
+        files = module_files([('Service',
+            'Function F(Val X) Export Message("server"); Return X + 1; EndFunction', SERVER)])
+        server = ConfigurationApplication.from_files(files, side='server')
+        self.addCleanup(server.close)
+        server.start()
+        endpoint = InvocationServer.from_handlers(server.server_endpoints, message_scope=server.event_messages)
+        packets, output = [], []
+        with ThreadPoolExecutor(max_workers=1) as transport:
+            def exchange(raw):
+                packets.append(raw)
+                return transport.submit(endpoint.exchange, raw).result(timeout=5)
+            client = ConfigurationApplication.from_files(files, side='client', server_exchange=exchange,
+                                                        output=output.append)
+            self.addCleanup(client.close)
+            client.start()
+            # Bad outer call is rejected even before the inner actual can send.
+            with self.assertRaisesRegex(Exception, 'argument count mismatch'):
+                client.execute('Service.F(Service.F(4), 0);')
+            self.assertEqual(packets, [])
+            self.assertEqual(output, [])
+            client.execute('Message(Service.F(4));')
+        self.assertEqual(output, ['server', '5'])
+        self.assertEqual(len(packets), 1)
+        self.assertNotIn(b'Service', packets[0])
+        self.assertEqual(client._modules['service', 'server'].routine('F').body, [])
+
+    def test_split_client_checks_stub_readiness_at_bind_and_after_actuals(self):
+        from yadinassi.execution.direct.python_direct_configuration import ConfigurationBoundary
+        from yadinassi.execution.direct.python_direct_configuration_commands import _Scope
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.types.values import NULL
+
+        files = module_files([('Service', 'Function F(Val X) Export Return X; EndFunction', SERVER)])
+        packets = []
+        app = ConfigurationApplication.from_files(files, side='client', server_exchange=packets.append)
+        self.addCleanup(app.close)
+        app.start()
+        receiver = app._modules['service', 'server']
+        receiver.ready = False
+        with self.assertRaises(BoundaryViolation):
+            app.execute('Service.F(4);')
+        self.assertEqual(packets, [])
+
+        receiver.ready = True
+        # The generated call binds and checks arity before actual evaluation.
+        # Exercise the two phases explicitly so no other resolver can catch the
+        # revocation before the already bound invocation has a chance to do so.
+        scope = _Scope(app)
+        scope.enter()
+        try:
+            boundary = ConfigurationBoundary(app, app.interpreter)
+            boundary.enter()
+            try:
+                call = boundary.resolve_configuration_member_call(
+                    boundary.external_get('Service'), 'F', argument_count=1)
+                with self.assertRaises(BoundaryViolation):
+                    call(NULL)  # A transport-capable value outside command scalar admission.
+
+                def evaluate_actual():
+                    receiver.ready = False
+                    return Decimal(4)
+
+                with self.assertRaises(BoundaryViolation):
+                    call(evaluate_actual())
+            finally:
+                boundary.leave()
+        finally:
+            scope.leave()
+        self.assertEqual(packets, [])
+
+    def test_split_client_admits_reply_value_before_publishing_messages(self):
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.invocation import PROTOCOL
+        from yadinassi.ui.protocol import decode_line, encode_line
+
+        files = module_files([('Service', 'Function F(Val X) Export Return X; EndFunction', SERVER)])
+        packets, output = [], []
+
+        def exchange(raw):
+            request = decode_line(raw)
+            packets.append(request)
+            first = len(packets) == 1
+            return encode_line({'protocol': PROTOCOL, 'id': request['id'], 'status': 'ok',
+                                'messages': ['not admitted'] if first else ['first', 'second'],
+                                'value': {'type': 'Null'} if first else {'type': 'Number', 'value': '5'}})
+
+        app = ConfigurationApplication.from_files(files, side='client', server_exchange=exchange,
+                                                  output=output.append)
+        self.addCleanup(app.close)
+        app.start()
+        with self.assertRaises(BoundaryViolation):
+            app.execute('Message(Service.F(4));')
+        self.assertEqual(len(packets), 1)
+        self.assertEqual(output, [])
+        app.execute('Message(Service.F(5));')
+        self.assertEqual([request['id'] for request in packets], [1, 2])
+        self.assertEqual(output, ['first', 'second', '5'])
 
     def test_remote_call_only_over_prebound_wire(self):
         files = module_files([('Service', 'Function F(Val X) Export Message("server"); Return X + 1; EndFunction', SERVER)])

@@ -94,6 +94,9 @@ class _Scope:
         if global_export:
             if definition is not global_definition:_deny()
         elif prior is None and not any(definition is entry for entry in self.definition_list):_deny()
+        if not global_export and self.remote_module(key,definition,module):
+            self.module_bindings[id(module)]=((key,'server'),module)
+            return
         if prior is not None and (prior[0]!=(key,'client') or prior[1] is not module):_deny()
         if metadata.validate_definition(definition)[0].casefold()!=key:_deny()
         if (not definition.client or definition.server or definition.server_call
@@ -107,6 +110,19 @@ class _Scope:
             self._admit_owner(module.interpreter)
         if not global_export:self.module_bindings[id(module)]=((key,'client'),module)
         self._check_state(self.app,module.interpreter)
+
+    def remote_module(self,key,definition,module):
+        if self.app.side!='client' or self.app._server_exchange is None:return False
+        name,global_export,client,server,server_call,reuse=metadata.validate_definition(definition)
+        if not (server and server_call and not client and not global_export and reuse=='DontUse'):
+            return False
+        if (name.casefold()!=key
+                or not any(definition is entry for entry in self.definition_list)
+                or type(module) is not _Module or module.ready is not True
+                or self.app._modules.get((key,'server')) is not module
+                or type(module.interpreter) is not Interpreter or module.interpreter._self_module is not module):
+            _deny()
+        return True
 
     @staticmethod
     def literal(value):

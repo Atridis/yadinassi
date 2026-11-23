@@ -239,7 +239,62 @@ class ConfigurationBoundary(BoundaryContext):
             module_name,side=matches[0]
         if self.app.resolve_module(module_name,self.owner) is not value:
             raise BoundaryViolation('common module side changed')
+        if self._command_scope is not None and side=='server':
+            return self._bind_remote(value,module_name,name.casefold())
         return self._bind_common(value,name,module_name,side)
+
+    def _bind_remote(self,module,module_name,key):
+        from yadinassi.execution.invocation import InvocationBinding, InvocationPort
+        scope,app=self._command_scope,self.app
+        route=(module_name,key)
+        records=app._command_remote_bindings
+        if type(records) is not dict:raise BoundaryViolation('invalid prebound server exports')
+        record=records.get(route)
+        if type(record) is not tuple or len(record)!=12:raise BoundaryViolation('unsupported prebound server export')
+        definition,expected,owner,routine,entry,port,binding,exchange,name,endpoint,parameters,result=record
+
+        def check():
+            self._check()
+            if (type(port) is not InvocationPort or type(binding) is not InvocationBinding
+                    or app._command_remote_bindings is not records or records.get(route) is not record
+                    or expected is not module or module.interpreter is not owner
+                    or app._definitions.get(module_name) is not definition
+                    or not scope.remote_module(module_name,definition,module)
+                    or app._server_exchange is not exchange or port._exchange is not exchange
+                    or type(owner.routines) is not dict or key in owner.routines
+                    or type(owner.server_routines) is not dict or owner.server_routines.get(key) is not routine
+                    or type(owner._invocation_bindings) is not dict
+                    or owner._invocation_bindings.get(key) is not entry or entry[0] is not routine
+                    or routine.execution_context!='server' or routine.module_context is not False
+                    or routine.exported is not True or routine.body
+                    or binding.name is not name or binding.endpoint is not endpoint
+                    or binding.parameters is not parameters or binding.is_function is not result):
+                raise BoundaryViolation('prebound server export changed')
+            check_owner(app,owner)
+            app.check_call(routine,self.owner)
+
+        def check_argument_count(count):
+            check()
+            if count!=len(parameters):raise TypeError('common-module argument count mismatch')
+
+        def invoke(*args):
+            check_argument_count(len(args))
+            scope.values(args)
+            output=self.owner.output
+            def guarded_output(message):
+                check()
+                output(message)
+                check()
+            def check_result(value):
+                scope.values((value,))
+            try:return port.invoke(binding,args,output=guarded_output,_check_reply=check,
+                                   _check_result=check_result)
+            finally:check()
+
+        check()
+        invoke.returns_value=result
+        invoke.check_argument_count=check_argument_count
+        return invoke
 
     def _bind_common(self,value,name,module_name,side,*,global_binding=None):
         routine=value.routine(name);target=value.interpreter
