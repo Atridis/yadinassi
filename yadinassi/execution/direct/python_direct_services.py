@@ -445,7 +445,7 @@ class ServicesBoundary:
         bound.prepare_omissions=prepare_omissions
         return bound
 
-    def resolve_service(self,name,*args,**kwargs):
+    def resolve_service(self,name,*args,plain_value_list=False,**kwargs):
         key=name.casefold()
         self._check_extension_binding(key)
         if key.startswith('new:') and key[4:] in user_messages.NAMES:
@@ -501,6 +501,20 @@ class ServicesBoundary:
                 raise ValueError('Тип не определен: '+name[4:])
             if type(factory) is not HostFunction or factory.function is not expected:
                 raise BoundaryViolation('direct constructor requires canonical registration: '+key[4:])
+            if expected is BSLValueList and plain_value_list:
+                # Ordinary standalone mode still constructs directly. With
+                # Python extensions, bind the live canonical registration
+                # before evaluating actuals, not its boxed implementation.
+                self._validate_host_function(factory,require_value=True)
+                alias=key[4:]
+                factory_name=factory.name.casefold()
+                def construct(*values):
+                    self._before('call_value',factory_name)
+                    if self.vm.types.get(alias) is not factory or factory.function is not expected:
+                        raise BoundaryViolation('canonical constructor changed during argument evaluation')
+                    try:return PlainValueList(*values)
+                    finally:self._check()
+                return construct
             if expected is BSLValueStorage or expected is BSLDeflation:
                 from yadinassi.runtime import Interpreter
                 if type(self.vm) is not Interpreter:

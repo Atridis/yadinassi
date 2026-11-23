@@ -3,6 +3,7 @@ import unittest
 import json
 from decimal import Decimal
 from yadinassi import Interpreter, BSLError
+from yadinassi.collections.plain_value_list import PlainValueList
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class DirectASTCanonicalConstructorTests(unittest.TestCase):
@@ -41,6 +42,48 @@ class DirectASTCanonicalConstructorTests(unittest.TestCase):
         vm=self.vm();vm.register_type('ValueList',lambda *args:object())
         with self.assertRaises(BoundaryViolation):vm.execute('X=1;T=New ValueList(Touch());')
         self.assertEqual(self.events,[]);self.assertNotIn('t',vm.variables)
+
+    def test_prepared_value_list_checks_reached_binding_before_arguments(self):
+        for alias in ('ValueList', 'СписокЗначений'):
+            for replace in ('before_run', 'earlier_statement', 'during_argument'):
+                with self.subTest(alias=alias, replace=replace):
+                    vm = self.vm()
+
+                    def replacement():
+                        self.fail('noncanonical factory must not run')
+
+                    def rebind():
+                        self.events.append('rebind')
+                        vm.register_type(alias, replacement)
+
+                    vm.register_function('Rebind', rebind)
+                    prefix = 'Rebind();' if replace == 'earlier_statement' else ''
+                    actual = 'Rebind()' if replace == 'during_argument' else 'Touch()'
+                    plan = vm.prepare(prefix + f'T=New {alias}({actual});')
+                    if replace == 'before_run':
+                        vm.register_type(alias, replacement)
+                    with self.assertRaises(BoundaryViolation):
+                        vm.execute_prepared(plan)
+                    self.assertEqual(self.events, [] if replace == 'before_run' else ['rebind'])
+                    self.assertNotIn('t', vm.variables)
+
+    def test_value_list_static_construction_remains_native(self):
+        source = 'T=New ValueList;For I=1 To 3 Do T.Add(I);EndDo;'
+        for extensions in (False, True):
+            with self.subTest(extensions=extensions):
+                vm = Interpreter(allow_extensions=extensions)
+                self.addCleanup(vm.close)
+                plan = vm.prepare(source)
+                generated = plan._plan.generated_source
+                if extensions:
+                    self.assertIn("resolve_service('new:valuelist', plain_value_list=True)()", generated)
+                else:
+                    self.assertIn('_PrivateValueList()', generated)
+                    self.assertNotIn('new:valuelist', generated)
+                vm.execute_prepared(plan)
+                result = vm.variables['t']
+                self.assertIs(type(result), PlainValueList)
+                self.assertEqual([item[0] for item in result], [1, 2, 3])
 
     def test_constructor_argument_close_stops_following_effects(self):
         vm=self.vm();vm.register_function('Touch',vm.close)

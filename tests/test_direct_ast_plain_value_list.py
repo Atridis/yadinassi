@@ -198,10 +198,20 @@ class DirectPlainValueListTests(unittest.TestCase):
         for code in (
             'Procedure F(Val X,Val L) R=X+1;L.Add(7);EndProcedure;F(X,L);',
             'Procedure F(Val X,Val L) L.Add(X+1);EndProcedure;F(X,L);',
-            'L.Add(X+1);'):
+            'L.Add(X+1);',
+            'L.Insert(0,X+1);'):
             vm=self.vm();data=PlainValueList();vm.variables['l']=data
             class Opaque:
                 def __add__(self,other):vm.close();return D(9)
             vm.variables['x']=Opaque()
             with self.assertRaises(BoundaryViolation):vm.execute(code)
             self.assertEqual(len(data),0)
+
+    def test_public_insert_and_add_keep_live_item_identity(self):
+        vm = self.vm()
+        data = PlainValueList()
+        vm.variables['l'] = data
+        vm.execute_prepared(vm.prepare('A=L.Add(2); B=L.Insert(0,1);'))
+        self.assertIs(data[0], vm.variables['b'])
+        self.assertIs(data[1], vm.variables['a'])
+        self.assertEqual([item[0] for item in data], [1,2])

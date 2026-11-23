@@ -173,6 +173,13 @@ def _list_delete(receiver,index):
     return receiver.__delitem__(_checked_array_index(receiver,index))
 
 
+def _plain_value_list_write(context, operation, *actuals):
+    # Arguments may have run a Python callback against an existing alias.
+    # Scope this lease check to the reached write, not the surrounding loop.
+    context._check_effect()
+    return operation(*actuals)
+
+
 def _native_operator_binding(value,name):
     if type(value) is not type(type.__dict__['__new__']):return False
     # __module__ is writable even on builtin methods (e.g. set().add).
@@ -246,6 +253,7 @@ class Emitter:
         self.has_goto=False;self.literal_reachability=False;self.table_prefix=False;self.goto_last_expression=None
         self.goto_destinations={};self.goto_transfers={};self.goto_dispatch=[]
         self.http_body_receiver=False
+        self.extension_value_list_binding=False
         self.known_calls={};self.known_origins=();self.known_selection_reads=set();self.known_selection_adds=set()
         self.local_field_facts={};self.integer_lane=False;self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.scalar_prefix_reads=frozenset();self.module_boundaries=0;self.range_indices={};self.external_actuals=0;self.hoisted_module_var_ids=frozenset()
         self.handler_depth=0;self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.current_module=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
@@ -646,6 +654,16 @@ class Emitter:
         pair=self.node(py.Tuple,t,elts=[call,keep],ctx=py.Load())
         return self.node(py.Subscript,t,value=pair,slice=self.const(0,t),ctx=py.Load())
 
+    def extension_value_list(self,node):
+        t=node.token
+        key='new:'+node.name.casefold()
+        self.required.add(key)
+        bound=self.invoke(self.attribute(self.name('_context',t),'resolve_service',t),
+            [self.const(key,t)],t,[self.node(py.keyword,t,arg='plain_value_list',value=self.const(True,t))])
+        if any(type(arg) is bsl.OmittedArgument for arg in node.arguments):
+            return self.dynamic_call(bound,node,references=False)
+        return self.invoke(bound,[self.expr(arg) for arg in node.arguments],t)
+
     def _expr(self,node,require_value=True):
         if type(node) is bsl.Await:
             if self.scope is None or not self.scope.get('async'):
@@ -653,6 +671,9 @@ class Emitter:
             return self.node(py.Yield,node.token,value=self.call('_AwaitRequest',[self.expr(node.operand)],node.token))
 
         self.visits+=1;t=node.token;k=type(node)
+        if (k is bsl.New and self.extension_value_list_binding
+                and node.name.casefold() in VALUE_LIST_CONSTRUCTOR_ALIASES):
+            return self.extension_value_list(node)
         if self.static_module_kinds:
             if k is bsl.New and self.address_routine_symbols and self.static_module_kinds[id(node)]=='array':
                 return self.call('_array_constructor_bounds',[],t)
@@ -1061,6 +1082,9 @@ class Emitter:
                     direct=self.call('_procedure_value_error',[self.const(callee.name,t)],t)
                 else:
                     direct=self.attribute(self.name(receiver,t),signature[0],t)
+                    if self.standalone_script and not self.owned_constructors and signature[0] in ('add','insert'):
+                        direct=self.call('_partial',[self.name('_plain_value_list_write',t),
+                                                    self.name('_context',t),direct],t)
                 if invalid_arity:
                     mark=self.node(py.NamedExpr,t,target=self.name(mode,t,True),value=self.const(False,t))
                     direct=self.node(py.Subscript,t,value=self.node(py.Tuple,t,elts=[mark,direct],ctx=py.Load()),slice=self.const(-1,t),ctx=py.Load())
@@ -2141,6 +2165,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         lines={node.token.line:node.token.source_line for node in nodes}
         source_text='\n'.join(lines.get(line,'') for line in range(1,max(lines,default=0)+1))
     emitter=Emitter(filename)
+    emitter.extension_value_list_binding=_profile is None and vm.allow_extensions
     pure_bindings=None
     if _allow_pure_builtins and _profile is None and not _whole_source and not vm.allow_extensions and not imported:
         from yadinassi.execution.direct.python_direct_pure_builtins import analyze
@@ -2668,6 +2693,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         namespace['_HTTPRequest'] = BSLHTTPRequest
     # Exception handlers share the module source instead of emitting one literal each.
     namespace['_diagnostic_source'] = source_text
+    namespace['_plain_value_list_write'] = _plain_value_list_write
     if pure_bindings is not None:
         from yadinassi.execution.direct.python_direct_pure_builtins import resolve
         namespace.update({symbol:resolve(name,native_numbers=emitter.integer_lane) for name,symbol in emitter.pure_builtins.items()})

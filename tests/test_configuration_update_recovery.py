@@ -209,23 +209,56 @@ class ConfigurationUpdateRecoveryTests(unittest.TestCase):
             with self.subTest(key=key),self.assertRaises(BackendError):load_plan(json.dumps(altered))
         with self.assertRaises(BackendError):load_plan(raw[:-1]+',"schema":"configuration_update_plan_v1"}')
 
-    def test_backfill_target_budget_failure_rolls_back_before_commit(self):
-        # Small patched bound retains realistic old source admission while the
-        # DateTime defaults push the target source over its scalar scan budget.
-        for i in range(100):
-            view=self.backend.begin_write(uuid4());view.create(self.cat(str(i)));view.commit()
+    def test_unreadable_backfill_rolls_back_before_commit(self):
+        # SQLite accepts TEXT in the new Date column; the typed target scan
+        # must still refuse an impossible date after the rows have been copied.
+        draft = self.cat('copy-me')
+        with closing(self.backend.begin_write(uuid4())) as view:
+            view.create(draft)
+            revision, = view.commit()
         self.backend.close()
-        files=dict(self.files)
-        field=('<Attribute uuid="'+str(uuid4())+'"><Properties><Name>ExtraDate</Name><Type>'
-               '<v8:Type>xs:dateTime</v8:Type><v8:DateQualifiers><v8:DateFractions>DateTime</v8:DateFractions></v8:DateQualifiers>'
-               '</Type></Properties></Attribute>').encode()
+        files = dict(self.files)
+        field_id = uuid4()
+        field=('<Attribute uuid="'+str(field_id)+'"><Properties><Name>ExtraDate</Name><Type>'
+               '<v8:Type>xs:dateTime</v8:Type><v8:DateQualifiers><v8:DateFractions>DateTime</v8:DateFractions>'
+               '</v8:DateQualifiers></Type></Properties></Attribute>').encode()
         files['Catalogs/Categories.xml']=files['Catalogs/Categories.xml'].replace(b'</ChildObjects>',field+b'</ChildObjects>')
         target=import_configuration(files,numbering_policy='decimal_v1',module_runtime=MODULE_RUNTIME)
-        with patch('yadinassi.db.sqlite.sqlite_catalog._MAX_CONFIG_BYTES',8000):
-            plan=prepare(self.path,target,maintenance=True);before=self.path.read_bytes()
-            with self.assertRaisesRegex(BackendError,'unsupported'):apply(self.path,plan,maintenance=True)
-        self.assertEqual(self.path.read_bytes(),before)
-        self.assertEqual(resolve(self.path,plan,maintenance=True),'not_committed')
+        plan = prepare(self.path, target, maintenance=True)
+        before = self.path.read_bytes()
+        from yadinassi.db.sqlite import sqlite_migration_plan as migration
+        from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
+        original_open = migration._open
+        copy_witness = []
+        writers = []
+        physical = quote_identifier('configuration_rebuild_' + draft.key.catalog_id.hex)
+        column = quote_identifier(next(name for catalog, field, name in plan.field_mapping
+                                       if catalog == str(draft.key.catalog_id) and field == str(field_id)))
+        invalid_date = '20240230000000'
+        class Witness(FaultConnection):
+            def execute(self, sql, *args):
+                result = super().execute(sql, *args)
+                if sql.startswith('INSERT INTO ' + physical + ' SELECT '):
+                    self.wrapped.execute(f'UPDATE {physical} SET {column}=?', (invalid_date,))
+                    copy_witness.extend(self.wrapped.execute(f'SELECT record_id,{column} FROM {physical}'))
+                return result
+        def opened(path, *, readonly):
+            connection = original_open(path, readonly=readonly)
+            if readonly: return connection
+            witness = Witness(connection)
+            writers.append(witness)
+            return witness
+
+        with patch.object(migration, '_open', side_effect=opened), self.assertRaisesRegex(BackendError, 'integrity'):
+            apply(self.path, plan, maintenance=True)
+        self.assertEqual(copy_witness, [(str(draft.key.record_id), invalid_date)])
+        self.assertEqual([writer.commit_calls for writer in writers], [0])
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(resolve(self.path, plan, maintenance=True), 'not_committed')
+        self.backend = SQLiteCatalogBackend(self.path)
+        self.assertEqual(self.backend.export_configuration(), self.files)
+        with closing(self.backend.begin_read()) as view:
+            self.assertEqual(view.read_catalog(draft.key).revision, revision)
 
     def test_writer_page_cap_refuses_before_commit(self):
         self.backend.close();plan=prepare(self.path,self.target,maintenance=True);before=self.path.read_bytes()

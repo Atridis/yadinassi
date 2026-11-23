@@ -127,9 +127,10 @@ def _source_facts(program,*,allow_async=False):
 
 
 def _admit_bindings(vm,routines,constructors,calls):
-    ports=getattr(vm,'_direct_invocation_ports',None)
-    if ports and not routines.isdisjoint(ports):
-        _reject('invocation name already bound')
+    if routines:
+        ports=getattr(vm,'_direct_invocation_ports',None)
+        if ports and not routines.isdisjoint(ports):
+            _reject('invocation name already bound')
     if not constructors and not calls:return
     from yadinassi.types.values import BSLArray
     from yadinassi.collections.maps import BSLMap

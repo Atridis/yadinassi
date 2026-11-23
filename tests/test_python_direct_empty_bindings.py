@@ -28,6 +28,23 @@ class DirectEmptyBindingTests(unittest.TestCase):
             def __getattribute__(self,name):raise AssertionError('unexpected read: '+name)
         validate_calls(Unreadable(),frozenset())
         _admit_bindings(Unreadable(),frozenset(),frozenset(),frozenset())
+
+    def test_direct_and_prepared_routine_collisions_still_check_invocation_names(self):
+        from yadinassi.execution.invocation import InvocationBinding, InvocationPort
+        source = 'Function Provide() Return 1; EndFunction Effect=1;'
+        for prepared in (False,True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                plan = vm.prepare(source) if prepared else None
+                port = InvocationPort(lambda _: self.fail('unexpected byte exchange'))
+                port.bind(vm, InvocationBinding('Provide', 1, ()))
+                with self.assertRaisesRegex(PythonDirectUnsupported, 'invocation name already bound'):
+                    if prepared:
+                        vm.execute_prepared(plan)
+                    else:
+                        vm.execute(source)
+                self.assertNotIn('effect', vm.variables)
     def test_host_boundary_checks_before_and_after_effect_remain(self):
         for persistent in (False,True):
             for change in ('close','restricted'):
