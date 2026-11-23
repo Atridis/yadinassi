@@ -2,6 +2,7 @@
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
+from yadinassi.formats.storage.serialization import value_to_string_internal
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.types.values import BSLType
 from yadinassi.types.type_values import type_of
@@ -73,9 +74,17 @@ For Each P In S Do ST=ТипЗнч(P);SR=(ST=Тип("КлючИЗначение"
         vm=self.vm();pair=_MapEntry('K',1);vm.variables['p']=pair
         self.assertIs(vm.execute('TypeOf(P)'),BSLType.KEY_AND_VALUE)
         with self.assertRaises(TypeError):type_of(pair)
-        for source in ('P.Unknown()','P[0]','P.Value=2','ValueToStringInternal(P)'):
+        with self.assertRaises(TypeError):value_to_string_internal(pair)
+        for source in ('P.Unknown()','P[0]','P.Value=2'):
             with self.subTest(source=source),self.assertRaises((BSLRuntimeError,BoundaryViolation)):vm.execute(source)
         self.assertEqual(pair.value,1)
+        # The separately admitted BSL codec can round-trip the pair without
+        # changing its read-only member protocol or the generic host API.
+        vm.execute('Wire=ValueToStringInternal(P); Q=ValueFromStringInternal(Wire);')
+        self.assertIs(vm.execute('TypeOf(Q)'),BSLType.KEY_AND_VALUE)
+        self.assertEqual((vm.execute('Q.Key'),vm.execute('Q.Value')),('K',1))
+        with self.assertRaises((BSLRuntimeError,BoundaryViolation)):vm.execute('Q.Value=2;')
+        self.assertEqual(vm.execute('Q.Value'),1)
 
     def test_late_module_class_rebinding_is_not_blessed(self):
         vm=self.vm();pair=_MapEntry('K',1)
