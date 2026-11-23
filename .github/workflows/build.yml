@@ -301,6 +301,23 @@ jobs:
         run: python -m pip install -e . wcwidth==0.8.2
       - name: Test native launcher without 1C
         run: python integrational_tests/check_launcher.py
+      # Linux lifecycle/ownership proof is separate from the portable
+      # exact-output test discovered and accounted for on every platform.
+      - name: Verify strict Linux-owned SQLite client replay
+        if: matrix.target == 'linux'
+        shell: bash
+        run: |
+          python -I -B - <<'PY'
+          from pathlib import Path
+          import sys
+
+          root = Path.cwd().resolve(strict=True)
+          sys.path.insert(0, str(root / 'scripts'))
+          import native_1c_full_host as host
+
+          host.verify_client_interpreter(root, root / host.CLIENT_SOURCE,
+                                         host.PREPROCESSOR_SOURCE_SHA256)
+          PY
       - name: Run every light module (unknown tests included)
         id: partition
         run: python -m scripts.test_partition --tier light --report test-results/partition.json

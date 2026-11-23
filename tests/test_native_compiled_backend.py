@@ -18,7 +18,8 @@ class NativeCompiledBackendTests(unittest.TestCase):
                   'Function F() s=0;For i=1 To 2 Do s=s+21;EndDo;Return s;EndFunction Message(F());')
         # Read actual backend state after execution; output equality is not the
         # witness of backend selection.
-        script = full.EXECUTE_SCRIPT + "\nprint(interpreter.execution_backend, file=sys.stderr)\n"
+        script = full.EXECUTE_SCRIPT + (
+            "\nsys.stderr.buffer.write((interpreter.execution_backend + '\\n').encode('ascii'))\n")
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / 'case.bsl'
             for body in bodies:

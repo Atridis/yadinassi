@@ -1,5 +1,11 @@
 from decimal import Decimal
+from hashlib import sha256
+import json
+import os
 from pathlib import Path
+import subprocess
+import sys
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
@@ -84,7 +90,38 @@ Function F(Val X,Val Token) Return X;EndFunction
 X=1;R=0;Execute("R=F(X,Change(X));");''')
         self.assertEqual((vm.variables['x'],vm.variables['r']),(9,9))
 
-    def test_original_owned_sqlite_native_verifier_matches_exactly(self):
-        import native_1c_full_host as host
-        root=Path(__file__).resolve().parents[1]
-        host.verify_client_interpreter(root,root/host.CLIENT_SOURCE,host.PREPROCESSOR_SOURCE_SHA256)
+    def test_pinned_sqlite_client_output_matches_exactly(self):
+        # The full Linux ownership/census proof runs in its own mandatory Light
+        # workflow step. This test covers the real client output on every OS.
+        from scripts import native_1c_full_host as host
+        root = Path(__file__).resolve().parents[1]
+        source = root / host.CLIENT_SOURCE
+        self.assertEqual(sha256(source.read_bytes()).hexdigest(), host.PREPROCESSOR_SOURCE_SHA256)
+        fixture = host._load_infobase_fixture()
+        expected = json.dumps(host.CLIENT_SQLITE_RUNTIME_VALUES + [host.PREPROCESSOR_RUNTIME_TOKEN],
+                              ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+        self.assertEqual(sha256(expected).hexdigest(),
+                         '71c3061d8f776e5831b1ec38559319876a555edf799e152b4911a820d4ab4a2b')
+        env = host.child_environment()
+        if sys.platform == 'win32':
+            # Windows requires this native loader setting for a child with
+            # an explicitly supplied environment.
+            env['SystemRoot'] = os.environ['SystemRoot']
+        with TemporaryDirectory(prefix='pinned-sqlite-client-') as folder:
+            directory = Path(folder).resolve(strict=True)
+            database = directory / 'application.sqlite'
+            self.assertEqual(sha256(fixture._FIXTURE_BYTES).hexdigest(), fixture._FIXTURE_SHA256)
+            database.write_bytes(fixture._FIXTURE_BYTES)
+            flags = ['-I', '-B', '-X', 'utf8']
+            if sys.flags.optimize:
+                flags.append('-' + 'O' * sys.flags.optimize)
+            result = subprocess.run(
+                [sys.executable, *flags, '-c', host.CLIENT_EXECUTE_SCRIPT,
+                 str(root), host.PREPROCESSOR_COMPILATION_PROFILE, str(source), str(database)],
+                cwd=root, env=env, capture_output=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stderr, b'')
+            self.assertEqual(result.stdout, expected)
+            self.assertEqual(sha256(source.read_bytes()).hexdigest(), host.PREPROCESSOR_SOURCE_SHA256)
+            self.assertEqual(database.read_bytes(), fixture._FIXTURE_BYTES)
+            self.assertEqual(list(directory.iterdir()), [database])

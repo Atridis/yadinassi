@@ -56,6 +56,22 @@ versus baseline30/2), including other constructor/presentation/collection gaps.
 Source, schema and transaction gates were not relaxed. Errors/boundaries modules
 and the parallel lazy-error performance candidate were not modified.
 
+## Current Light CI coverage
+
+Every Light platform discovers `test_pinned_sqlite_client_output_matches_exactly`.
+It runs the byte-pinned managed-thick-file client witness against the same
+embedded SQLite bytes in a private temporary directory, checks the exact
+138-value JSON result, and requires the source and database bytes to stay
+unchanged with no SQLite sidecars.
+
+Linux Light additionally runs the original, unmodified
+`verify_client_interpreter` in **Verify strict Linux-owned SQLite client
+replay**, before it can produce a partition report. This also verifies the
+owned fixed namespace, process census and cleanup; a failure blocks Light and
+the exact-source verdict. The portable test does not substitute for or claim
+those Linux-specific checks. The portable witness remains a normal required discovery ID on every
+platform; no skip or platform exception was added to partition coverage.
+
 Run this historical reproducer from [its archived source checkpoint](https://github.com/Atridis/yadinassi/tree/713fb157cac984d8918681524848efa5f64f6b70).
 
 ```sh
