@@ -53,10 +53,20 @@ def transfer(value):
     return copy(value,0)
 
 
+# The boundary is shared with physical InvocationServer endpoints. Only the
+# in-process server crossing may opt into the live metadata graph adapter.
+_LOGICAL_METADATA = object()
+
+
 class ServerBoundary(ServicesBoundary,CatalogBoundary,BoundaryContext):
     _server_side=True
-    def __init__(self,parent,*,module_context=True,side="server"):
+    # A ServerBoundary belongs to one crossing, including same-side NoContext.
+    # Read-only metadata operations can never survive its exit.
+    _live_metadata_epoch=None
+    _live_metadata_active=True
+    def __init__(self,parent,*,module_context=True,side="server",_logical_metadata=None):
         self._server_side=side=="server"
+        self._logical_metadata=_logical_metadata
         self.side=side
         super().__init__()
         self.vm=parent.vm;self._services=self.vm.functions
@@ -72,6 +82,10 @@ class ServerBoundary(ServicesBoundary,CatalogBoundary,BoundaryContext):
         self._register_root=getattr(parent,'_register_root',None)
         self._routine_exports={};self.state={}
         self.module_context=module_context
+    def leave(self):
+        self._live_metadata_active=False
+        return super().leave()
+
     def current_module(self):
         if self.module_context:return self.vm._self_module
         return super().current_module()
@@ -202,7 +216,8 @@ def resolve_server(parent,module,name,*,require_value,allow_references,allow_omi
             # Contextual server -> NoContext is a same-side call: references stay
             # live, but globals and initializer capabilities do not follow it.
             parent._check_effect()
-            context=ServerBoundary(parent,module_context=False)
+            context=ServerBoundary(parent,module_context=False,
+                _logical_metadata=parent._logical_metadata if type(parent) is ServerBoundary else None)
             module_stack=vm._module_context_stack
             module_stack.append(False)
             try:
@@ -235,7 +250,7 @@ def resolve_server(parent,module,name,*,require_value,allow_references,allow_omi
         if omitted:
             for i in omitted:packet[i]=_OMITTED_REF
         for i,_ in outputs:packet[i]=_Cell(packet[i])
-        context=ServerBoundary(parent,module_context=module_context)
+        context=ServerBoundary(parent,module_context=module_context,_logical_metadata=_LOGICAL_METADATA)
         previous=getattr(vm,'_transaction_activation_allowed',True)
         vm._transaction_activation_allowed=False
         side_stack=vm._context_stack;module_stack=vm._module_context_stack

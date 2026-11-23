@@ -57,3 +57,23 @@ class NamespaceTests(unittest.TestCase):
 
     def test_grouped_routine_preserves_reference(self):
         self.run_case('Procedure F(x) x=7;EndProcedure r=0;((F))(r);',7)
+
+    def test_grouped_routine_and_actual_alias_shared_prepared_storage(self):
+        source=('Procedure F(A, B) A=7; B=B+1; EndProcedure '
+                'R=0; ((F))(((R)), (R));')
+        for extensions in (False,True):
+            with self.subTest(allow_extensions=extensions):
+                vm=Interpreter(allow_extensions=extensions)
+                self.addCleanup(vm.close)
+                plan=vm.prepare(source)
+                vm.execute_prepared(plan)
+                self.assertEqual(vm.variables['r'],8)
+
+    def test_grouped_val_call_does_not_box_module_slot(self):
+        vm=Interpreter();self.addCleanup(vm.close)
+        plan=vm.prepare('Function F(Val X) Return X; EndFunction R=7; Result=((F))((R));')
+        names=plan._plan.function.__code__.co_names
+        self.assertNotIn('_NativeCell',names)
+        self.assertNotIn('_adapt_native_cell',names)
+        vm.execute_prepared(plan)
+        self.assertEqual((vm.variables['r'],vm.variables['result']),(7,7))

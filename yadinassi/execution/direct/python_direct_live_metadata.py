@@ -22,6 +22,7 @@ _TYPES=(native.BSLMetadata,native.BSLCatalogMetadataCollection,native.BSLDocumen
         native.BSLInformationRegisterMetadataCollection,native.BSLCatalogMetadata,native.BSLDocumentMetadata,
         native.BSLInformationRegisterMetadata,native.BSLAttributeMetadata,native.BSLTabularSectionMetadata,
         native._DeclaredMetadataCollection,native.StandardAttributeDescriptions,native.StandardAttributeDescription)
+TYPE_IDS=frozenset(map(id,_TYPES))
 _ORIGINS=native._LIVE_METADATA_ORIGINS
 _COLLECTIONS=(native.BSLCatalogMetadataCollection,native.BSLDocumentMetadataCollection,
               native.BSLInformationRegisterMetadataCollection,native._DeclaredMetadataCollection,native.StandardAttributeDescriptions)
@@ -55,7 +56,7 @@ def _fields(value):
     return fields
 
 def registered(value):
-    if not any(type(value) is cls for cls in _TYPES):return False
+    if id(type(value)) not in TYPE_IDS:return False
     _hooks()
     return value in _ORIGINS
 
@@ -120,8 +121,25 @@ def check(boundary,value):
         if collection._context is not context or collection._root is not root:raise BoundaryViolation('foreign live metadata family')
     if type(root._catalog_managers) is not BSLCatalogs or type(root._document_managers) is not BSLDocuments:raise BoundaryViolation('live metadata manager family changed')
     _fields(root._catalog_managers);_fields(root._document_managers)
-    if root._catalog_managers is not boundary.vm._catalogs or root._document_managers is not boundary.vm._documents:
-        raise BoundaryViolation('live metadata manager binding changed')
+    vm=boundary.vm
+    family=vm._family_owner
+    local_catalogs,local_documents=vm._catalogs,vm._documents
+    if vm is family:
+        if root._catalog_managers is not local_catalogs or root._document_managers is not local_documents:
+            raise BoundaryViolation('live metadata manager binding changed')
+    else:
+        # Same-family imports own distinct executable manager wrappers.
+        # Reference types are decoded using the graph's pinned managers.
+        if (vm._family_released or family._family_closed
+                or vm._family_generation!=family._family_generation
+                or family._schema_scopes.get(id(context)) is not root
+                or type(local_catalogs) is not BSLCatalogs or type(local_documents) is not BSLDocuments):
+            raise BoundaryViolation('live metadata manager binding changed')
+        _fields(local_catalogs);_fields(local_documents)
+        if (local_catalogs._metadata is not root._catalogs or local_catalogs._context is not context
+                or local_documents._metadata is not root._documents or local_documents._context is not context
+                or local_documents._catalogs is not local_catalogs or local_documents._interpreter is not vm):
+            raise BoundaryViolation('live metadata manager binding changed')
     catalogs=root._catalog_managers;documents=root._document_managers
     if (catalogs._metadata is not root._catalogs or catalogs._context is not context
             or documents._metadata is not root._documents or documents._context is not context
@@ -167,8 +185,63 @@ def _type_argument(value):
         raise BoundaryViolation('live metadata type identity changed')
 
 def _owned(boundary,value):
-    if any(type(value) is cls for cls in _TYPES):check(boundary,value)
+    if id(type(value)) in TYPE_IDS:check(boundary,value)
     return value
+
+def _read(boundary,value,name):
+    check(boundary,value)
+    result=value.get_member(name)
+    check(boundary,value)
+    if type(result) is HostFunction:
+        return result
+    return _owned(boundary,result)
+
+def _bind(boundary,value,name):
+    check(boundary,value);epoch=boundary._live_metadata_epoch
+    def current():
+        check(boundary,value)
+        if boundary._live_metadata_epoch is not epoch:raise BoundaryViolation('live metadata callback expired')
+    if name=='__iter__':
+        if not any(type(value) is cls for cls in _COLLECTIONS):raise ValueError('metadata object is not iterable')
+        def iterate():
+            current();items=tuple(value);current()
+            for item in items:current();yield _owned(boundary,item)
+        return iterate
+    if name=='__setitem__':
+        def readonly(index,new):
+            current();raise ValueError('metadata is read-only')
+        return readonly
+    if name=='__getitem__':method=value.get_index
+    else:
+        function=value.get_method(name)
+        if type(function) is not HostFunction:raise BoundaryViolation('metadata method changed')
+        method=function.function
+    def call(*args):
+        current()
+        if type(value) is native.BSLMetadata and name.casefold() in ('findbytype','найтипотипу') and args:_type_argument(args[0])
+        result=method(*args)
+        current();return _owned(boundary,result)
+    return call
+
+
+def server_receiver(boundary):
+    from .python_direct_server import ServerBoundary, _LOGICAL_METADATA
+    return (type(boundary) is ServerBoundary and boundary._server_side
+            and boundary._logical_metadata is _LOGICAL_METADATA)
+
+def get(boundary,value,name):
+    result=_read(boundary,value,name)
+    if type(result) is not HostFunction:return result
+    # Capture the verified operation, not its underlying Python method. The
+    # generic captured-value lane is already restricted to actual captures.
+    from .python_direct_captured_values import register
+    return register(HostFunction(name,_bind(boundary,value,name)))
+
+def resolve(boundary,value,name,*,syntax=False,require_value=False,omitted=()):
+    if omitted:raise TypeError('metadata methods do not accept omissions')
+    if not syntax and name.startswith('_'):
+        raise ValueError('Метод объекта не обнаружен: '+name)
+    return _bind(boundary,value,name)
 
 class LiveMetadataBoundary:
     def enter(self):
@@ -177,13 +250,7 @@ class LiveMetadataBoundary:
         self._live_metadata_active=False;return super().leave()
     def get_member(self,value,name):
         if not registered(value):return super().get_member(value,name)
-        check(self,value)
-        result=value.get_member(name)
-        check(self,value)
-        if type(result) is HostFunction:
-            # Preserve a canonical descriptor; resolve_callable rebinds it.
-            return result
-        return _owned(self,result)
+        return _read(self,value,name)
     def resolve_set_member(self,value,name):
         if not registered(value):return super().resolve_set_member(value,name)
         check(self,value);epoch=self._live_metadata_epoch
@@ -218,31 +285,7 @@ class LiveMetadataBoundary:
         return self.resolve_member(value,name)
     def resolve_member(self,value,name):
         if not registered(value):return super().resolve_member(value,name)
-        check(self,value);epoch=self._live_metadata_epoch
-        def current():
-            check(self,value)
-            if self._live_metadata_epoch is not epoch:raise BoundaryViolation('live metadata callback expired')
-        if name=='__iter__':
-            if not any(type(value) is cls for cls in _COLLECTIONS):raise ValueError('metadata object is not iterable')
-            def iterate():
-                current();items=tuple(value);current()
-                for item in items:current();yield _owned(self,item)
-            return iterate
-        if name=='__setitem__':
-            def readonly(index,new):
-                current();raise ValueError('metadata is read-only')
-            return readonly
-        if name=='__getitem__':method=value.get_index
-        else:
-            function=value.get_method(name)
-            if type(function) is not HostFunction:raise BoundaryViolation('metadata method changed')
-            method=function.function
-        def call(*args):
-            current()
-            if type(value) is native.BSLMetadata and name.casefold() in ('findbytype','найтипотипу') and args:_type_argument(args[0])
-            result=method(*args)
-            current();return _owned(self,result)
-        return call
+        return _bind(self,value,name)
     def resolve_callable(self,value,*,require_value=False,allow_references=False,_extension_value=False):
         if type(value) is HostFunction:
             _class_hooks((_DIRECT_COLLECTION_CLASS_ABI[-1],));_fields(value)

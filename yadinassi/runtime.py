@@ -534,8 +534,7 @@ class Interpreter:
         self._information_registers = BSLInformationRegisters(
             self._metadata._information_registers, self.database_context, self._catalogs, self._documents)
         if metadata is None:
-            self._metadata._catalog_managers = self._catalogs
-            self._metadata._document_managers = self._documents
+            self._metadata._bind_managers(self._catalogs, self._documents)
             from .configuration.demos.inventory_enum_runtime import bind as bind_storage_enums
             bind_storage_enums(self,self._metadata)
 

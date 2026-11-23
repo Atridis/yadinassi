@@ -143,7 +143,7 @@ class StandaloneImportLinksTests(unittest.TestCase):
     def test_imported_failure_keeps_callee_source_and_line(self):
         with self.assertRaises(BSLError) as error:
             self.execute('Side.Inc(Undefined)')
-        self.assertEqual(error.exception.source, str(self.side))
+        self.assertTrue(Path(error.exception.source).samefile(self.side), error.exception.source)
         self.assertEqual(error.exception.line, 2)
 
     def test_link_from_inside_local_routine(self):

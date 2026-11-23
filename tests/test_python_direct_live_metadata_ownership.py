@@ -1,5 +1,7 @@
 """Independent live metadata provenance and callback-boundary regressions."""
 from decimal import Decimal
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter,BSLRuntimeError
@@ -45,6 +47,37 @@ class LiveMetadataOwnershipTests(unittest.TestCase):
         for name,code in (('p','X.Name;'),('c','X.Count();'),('a','X.Name;'),('s','X.Count();'),('f','X.Name;')):
             other.variables['x']=vm.variables[name]
             with self.subTest(name=name),self.assertRaises(DENIED):other.execute(code)
+    def _import_reader(self,vm):
+        directory=TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        folder=Path(directory.name)
+        (folder/'helper.bsl').write_text(
+            'Function Name() Export Return Metadata.Catalogs.Products.Name; EndFunction '
+            'Function Read(Val Item) Export Return Item.Name; EndFunction',
+            encoding='utf-8')
+        vm.execute('// #Import helper.bsl\n',source=str(folder/'main.bsl'))
+        return vm.imports['helper'].interpreter
+
+    def test_import_keeps_its_issued_graph_and_rejects_foreign_graph(self):
+        vm=self.prepared();self._import_reader(vm)
+        self.assertEqual(vm.execute('Helper.Name()'),'Products')
+        self.assertEqual(vm.execute('Helper.Read(P)'),'Products')
+        independent=Interpreter(database_context=self.context)
+        self.addCleanup(independent.close)
+        vm.set_variable('Foreign',independent.execute('Metadata.Catalogs.Products'))
+        with self.assertRaises(BoundaryViolation):vm.execute('Helper.Read(Foreign)')
+
+    def test_root_manager_publication_is_not_resealable_with_child_managers(self):
+        vm=self.prepared();root=vm._metadata
+        child=self._import_reader(vm)
+        old=root._catalog_managers,root._document_managers
+        try:
+            root._catalog_managers,root._document_managers=child._catalogs,child._documents
+            with self.assertRaises(BoundaryViolation):vm.execute('Helper.Name()')
+        finally:
+            root._catalog_managers,root._document_managers=old
+        self.assertEqual(vm.execute('Helper.Name()'),'Products')
+
     def test_closed_context_revokes_registered_child(self):
         vm=self.prepared();self.context.close()
         with self.assertRaises(DENIED):vm.execute('A.Name;')

@@ -6,6 +6,7 @@ from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryVi
 from . import python_direct_movements as movements
 from . import python_direct_zip_reader as zip_reader
 from . import python_direct_http_security as http_security
+from . import python_direct_live_metadata as live_metadata
 from .python_direct_plain_map import PlainFixedMap
 from yadinassi.db.registers.accumulation_posting_values import BSLAccumulationRow
 from yadinassi.db.catalog.catalogs import BSLCatalogs, BSLCatalogManager, BSLCatalogObject, BSLCatalogSelection
@@ -73,7 +74,10 @@ _DETACHED_TYPE_IDS=frozenset(map(id,_DETACHED_TYPES))
 _OWNED_STANDALONE_READS = {
     **dict.fromkeys(zip_reader.TYPE_IDS, zip_reader),
     **dict.fromkeys(http_security.TYPE_IDS, http_security),
+    **dict.fromkeys(live_metadata.TYPE_IDS, live_metadata),
 }
+_OWNED_SYNTAX = {**dict.fromkeys(zip_reader.TYPE_IDS, zip_reader),
+                 **dict.fromkeys(live_metadata.TYPE_IDS, live_metadata)}
 _DATE_TYPE = _DIRECT_EQUALITY_DATE_STATE[0]
 _METHODLESS_TYPE_IDS=frozenset(map(id, (
     _DATE_TYPE, BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers,
@@ -311,7 +315,8 @@ class CatalogBoundary:
                 if self._verify_context: self._check()
                 return BSLTypeDescription() if key in _PLAIN_VALUE_LIST_TYPE_PROPERTIES else None
         adapter = _OWNED_STANDALONE_READS.get(id(kind))
-        if adapter is not None:return adapter.get(self,value,name)
+        if adapter is not None and (adapter is not live_metadata or live_metadata.server_receiver(self)):
+            return adapter.get(self,value,name)
         if kind is _DATE_TYPE or id(value) in OPAQUE_ENUM_IDS:
             if self._verify_context:self._check()
             raise ValueError('Поле объекта не обнаружено: '+name)
@@ -425,7 +430,7 @@ class CatalogBoundary:
 
     def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
         adapter = _OWNED_STANDALONE_READS.get(id(type(value)))
-        if adapter is not None:
+        if adapter is not None and (adapter is not live_metadata or live_metadata.server_receiver(self)):
             return adapter.resolve(self,value,name,require_value=require_value,omitted=omitted)
         # A spelled member call must not reach the internal protocol names
         # emitted for indexing and For Each. These namespaces have no
@@ -523,7 +528,10 @@ class CatalogBoundary:
             if name.casefold() not in _XML_CLEANUP_NAMES:
                 raise ValueError('Метод объекта не обнаружен: '+name)
             return self.resolve_callable(HostFunction(name,delete_disallowed_xml_characters))
-        if id(type(value)) in zip_reader.TYPE_IDS:return zip_reader.resolve(self,value,name,syntax=True)
+        if (receiver_kind := id(type(value))) in _OWNED_SYNTAX:
+            adapter = _OWNED_SYNTAX[receiver_kind]
+            if adapter is not live_metadata or live_metadata.server_receiver(self):
+                return adapter.resolve(self,value,name,syntax=True)
         if name=='__setitem__' and type(value) is PlainValueList:
             if self._verify_context:self._check()
             return _readonly_value_list_index

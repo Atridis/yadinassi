@@ -241,7 +241,7 @@ class Emitter:
         self.goto_destinations={};self.goto_transfers={};self.goto_dispatch=[]
         self.http_body_receiver=False
         self.known_calls={};self.known_origins=();self.known_selection_reads=set();self.known_selection_adds=set()
-        self.local_field_facts={};self.integer_lane=False;self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.module_boundaries=0;self.range_indices={};self.external_actuals=0
+        self.local_field_facts={};self.integer_lane=False;self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.scalar_prefix_reads=frozenset();self.module_boundaries=0;self.range_indices={};self.external_actuals=0
         self.handler_depth=0;self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.current_module=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
         self.standalone_script=False;self.row_cell_references=False;self.array_cell_references=False;self.link_imports=False;self.import_links=[]
         self.import_names=frozenset();self.require_last_expression=None;self.region_active=False;self.region_ops={};self.region_states={};self.routines={};self.routine_symbols={};self.numeric_routine_symbols={};self.address_routine_symbols={};self.module_globals=set();self.scope=None;self.source_refs={};self.loop_increments=[];self.required=set();self.pure_builtins={};self.visits=0;self.python_nodes=0
@@ -335,11 +335,11 @@ class Emitter:
                                [self.const(name,token)],token)
         return self.call('_missing',[self.const(name,token)],token)
 
-    def read(self,name,token):
+    def read(self,name,token,*,proven_initialized=False):
         if self.scope is None and name.casefold() in self.static_module_names:
             value=self.name(self.static_module_names[name.casefold()],token)
             if name.casefold() in self.module_cells:value=self.node(py.Subscript,token,value=value,slice=self.const(0,token),ctx=py.Load())
-            if self.static_module_kinds:return value
+            if self.static_module_kinds or proven_initialized:return value
             test=self.node(py.Compare,token,left=value,ops=[py.IsNot()],comparators=[self.name('_UNSET',token)])
             return self.node(py.IfExp,token,test=test,body=value,orelse=self.read_missing(name,name.casefold(),token))
         if self.external_name(name):return self.invoke(self.attribute(self.name('_context',token),'external_get',token),[self.const(name.casefold(),token)],token)
@@ -715,7 +715,7 @@ class Emitter:
             if (key in self.routines and self.scope is not None and key not in self.scope['globals']
                     and key in self.scope['bindings'] and key not in self.scope['initialized']):
                 return self.call('_routine_value_error',[self.const(node.name,t)],t)
-            return self.read(node.name,t)
+            return self.read(node.name,t,proven_initialized=id(node) in self.scalar_prefix_reads)
         if k is bsl.Group:return self.expr(node.expression,require_value)
         if k is bsl.Unary:
             if self.integer_lane and node.operator in ('+','-'):
@@ -2066,8 +2066,11 @@ def _module_registers(program, emitter, *, literal_reachability):
     while pending:
         value=pending.pop()
         if type(value) is bsl.Routine:continue
-        if type(value) is bsl.Call and type(value.callee) is bsl.Name and value.callee.name.casefold() in emitter.routines:
-            signature=emitter.routines[value.callee.name.casefold()]
+        callee=value.callee if type(value) is bsl.Call else None
+        # Register discovery must see the same named callee as call lowering.
+        while type(callee) is bsl.Group:callee=callee.expression
+        if type(callee) is bsl.Name and callee.name.casefold() in emitter.routines:
+            signature=emitter.routines[callee.name.casefold()]
             for parameter,arg in zip(signature.parameters,value.arguments):
                 while type(arg) is bsl.Group:arg=arg.expression
                 if not parameter.by_value and type(arg) is bsl.Name:
@@ -2421,6 +2424,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
                 opaque=emitter.external_names|emitter.module_globals|emitter.module_cells
                 emitter.scalar_kinds=analyze_static(program,opaque_names=opaque,scalar_prefix=True,
                    builtin_results=builtin_results,builtin_external_names=builtin_external_names)
+                emitter.scalar_prefix_reads=frozenset(emitter.scalar_kinds)
             if (not has_goto and static_facts is None and not emitter.authority and not emitter.source_scopes
                     and not emitter.catalog_bounds and (not emitter.routines or emitter.native_cells)):
                 from yadinassi.execution.direct.python_direct_local_facts import analyze as analyze_local

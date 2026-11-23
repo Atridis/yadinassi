@@ -134,8 +134,12 @@ def validate_row(row, schema, owner, *, active=True, row_type=RowStorage):
         raise StorageError('row does not match schema')
 
 
+def mutable_array_kind(kind):
+    return kind is list or kind is _DIRECT_PLAIN_ARRAY_TYPE or kind is BSLArray
+
+
 def scalar_equal(left, right):
-    """Exact scalar comparison only; never call arbitrary payload equality."""
+    """Exact scalar or mutable Array identity, never host payload equality."""
     left_kind, right_kind = type(left), type(right)
     if (not any(left_kind is kind for kind in _SCALAR_TYPES)
             or not any(right_kind is kind for kind in _SCALAR_TYPES)):
@@ -146,9 +150,16 @@ def scalar_equal(left, right):
                 right_text = _exact_uuid_text(right)
                 if right_text is None: raise TypeError('invalid exact UUID table value')
                 return left_text == right_text
-            if any(right_kind is kind for kind in _SCALAR_TYPES): return False
-        elif right_kind is BSLUUID and any(left_kind is kind for kind in _SCALAR_TYPES):
+            if mutable_array_kind(right_kind) or any(right_kind is kind for kind in _SCALAR_TYPES): return False
+        elif right_kind is BSLUUID and (mutable_array_kind(left_kind)
+                                        or any(left_kind is kind for kind in _SCALAR_TYPES)):
             if _exact_uuid_text(right) is None: raise TypeError('invalid exact UUID table value')
+            return False
+        left_array, right_array = mutable_array_kind(left_kind), mutable_array_kind(right_kind)
+        if left_array and right_array:
+            return left is right
+        if (left_array and any(right_kind is kind for kind in _SCALAR_TYPES)
+                or right_array and any(left_kind is kind for kind in _SCALAR_TYPES)):
             return False
         raise NotImplementedError('comparison of opaque values is not supported')
     if left_kind is not right_kind and not (

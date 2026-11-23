@@ -5,10 +5,12 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from unittest.mock import patch
 from uuid import uuid4
 
 from yadinassi import Interpreter, BSLRuntimeError
 from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.configuration.configuration_xml import import_configuration
 from yadinassi.configuration.configuration_runtime import ConfigurationApplication
 from yadinassi.db.database_context import SQLiteDBContext
@@ -261,6 +263,65 @@ class MetadataGraphTests(unittest.TestCase):
         vm,_=self.runtime()
         vm.execute('&AtServerNoContext\nFunction Check() D=Metadata.Catalogs.Products.Attributes.Category.Type; Return D.ContainsType(Type("CatalogRef.Categories")); EndFunction')
         self.assertTrue(vm.execute('Check()'))
+
+    def test_server_can_read_but_not_transfer_live_metadata(self):
+        vm,_=self.runtime()
+        vm.execute("""
+&AtServerNoContext
+Function ReadName()
+ Items = Metadata.Catalogs;
+ First = Items.Get(0);
+ Full = First.FullName;
+ Return Full() + ":" + Items[1].Name;
+EndFunction
+&AtServerNoContext
+Function Receive(Val Item)
+ Message("before reading the received value");
+ Return Item.Name;
+EndFunction
+&AtServerNoContext
+Function ReturnMetadata()
+ Return Metadata.Catalogs.Products;
+EndFunction
+""")
+        self.assertEqual(vm.execute('ReadName()'),'Справочник.Categories:Products')
+        effects=[]
+        with patch.object(vm,'output',effects.append):
+            with self.assertRaisesRegex(BSLRuntimeError,'Межконтекстная передача'):
+                vm.execute('Receive(Metadata.Catalogs.Products)')
+            with self.assertRaisesRegex(BSLRuntimeError,'Межконтекстная передача'):
+                vm.execute('ReturnMetadata()')
+        self.assertEqual(effects,[])
+        self.assertEqual(vm.execute('ReadName()'),'Справочник.Categories:Products')
+
+    def test_local_server_to_nocontext_preserves_logical_metadata_provenance(self):
+        vm,_=self.runtime()
+        vm.execute("""&AtServerNoContext
+Function ReadFields()
+ Return Metadata.Catalogs.Products.Attributes.Count();
+EndFunction
+&AtServer
+Function Forward()
+ Return ReadFields();
+EndFunction""")
+        self.assertEqual(vm.execute('Forward()'),Decimal(5))
+
+    def test_server_rejects_foreign_metadata_graph(self):
+        vm,context=self.runtime()
+        independent=Interpreter(database_context=context)
+        self.addCleanup(independent.close)
+        independent.execute('Metadata.Catalogs.Products.Name')
+        vm.execute('&AtServerNoContext\nFunction ReadName() Return Metadata.Catalogs.Products.Name; EndFunction')
+        with patch.object(vm,'_metadata',independent._metadata):
+            with self.assertRaises(BoundaryViolation):vm.execute('ReadName()')
+        self.assertEqual(vm.execute('ReadName()'),'Products')
+
+    def test_plain_server_calls_do_not_enter_metadata_proof(self):
+        vm,_=self.runtime()
+        vm.execute('&AtServerNoContext\nFunction Twice(Val N) Return N+N; EndFunction')
+        with patch('yadinassi.execution.direct.python_direct_live_metadata.check',
+                   side_effect=AssertionError('unexpected metadata proof')):
+            self.assertEqual(vm.execute('Twice(9)'),Decimal(18))
 
     def test_source_bytes_not_changed_by_graph_read(self):
         vm,context=self.runtime(document_files())

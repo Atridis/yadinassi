@@ -5,8 +5,10 @@ from dataclasses import dataclass
 
 from yadinassi.types.values import NULL
 from yadinassi.types.unique_identifiers import BSLUUID, _exact_uuid_text
+from .plain_table_storage import mutable_array_kind
 
 _UNSUPPORTED = object()
+_ARRAY_IDENTITY = object()
 _SCALAR_TYPES = (type(None), str, bool, int, Decimal, type(NULL))
 
 def token(value, typed):
@@ -16,6 +18,10 @@ def token(value, typed):
             text = _exact_uuid_text(value)
             if text is not None:
                 return BSLUUID, text
+        if typed and mutable_array_kind(kind):
+            # Rows keep the referent alive for this data epoch; array payload
+            # edits do not affect identity, while cell replacement invalidates it.
+            return _ARRAY_IDENTITY, id(value)
         # Invalid/unknown domains keep the linear lane's reached-row errors.
         return _UNSUPPORTED
     if kind is Decimal and not value.is_finite():
@@ -196,5 +202,5 @@ class SearchIndexes:
 _DIRECT_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items())) for cls in (SearchIndexes,_Entry))
 _DIRECT_FUNCTIONS=tuple((fn,fn.__code__,fn.__defaults__,tuple((fn.__kwdefaults__ or {}).items()))
     for fn in [token,_positions,*vars(SearchIndexes).values()] if type(fn) is type(token))
-_DIRECT_BINDINGS=tuple((name,value) for name,value in tuple(globals().items()) if callable(value) or name in ('_UNSUPPORTED', '_SCALAR_TYPES'))
+_DIRECT_BINDINGS=tuple((name,value) for name,value in tuple(globals().items()) if callable(value) or name in ('_UNSUPPORTED', '_ARRAY_IDENTITY', '_SCALAR_TYPES'))
 _DIRECT_NAMES=frozenset((*globals(), '_DIRECT_NAMES'))

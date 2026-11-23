@@ -65,6 +65,43 @@ class InvocationPortTests(unittest.TestCase):
         self.assertNotIn('total', getattr(client,'_direct_routine_modules',{}))
         self.assertIn('total', server._interpreter._direct_routine_modules)
 
+    def test_physical_endpoint_does_not_borrow_logical_metadata_protocol(self):
+        from tempfile import TemporaryDirectory
+        from sqlite_catalog_fixture import configuration_files
+        from yadinassi.configuration.configuration_xml import import_configuration
+        from yadinassi.db.database_context import SQLiteDBContext
+
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        database = SQLiteDBContext.create(
+            Path(directory.name) / 'invocation.sqlite', import_configuration(configuration_files()))
+        self.addCleanup(database.close)
+        server = InvocationServer("""&AtServerNoContext
+Function ReadMetadata()
+    Return Metadata.Catalogs.Products.Attributes.Count();
+EndFunction
+&AtServerNoContext
+Function Indirect()
+    Return ReadMetadata();
+EndFunction
+&AtServerNoContext
+Function Scalar(Val Input)
+    Return Input * 2;
+EndFunction
+""", {1: 'ReadMetadata', 2: 'Indirect', 3: 'Scalar'}, database_context=database)
+        self.addCleanup(server._interpreter.close)
+        client = Interpreter(database_context=database)
+        self.addCleanup(client.close)
+        port = InvocationPort(server.exchange)
+        for binding in server.bindings:
+            port.bind(client, binding)
+
+        for call in ('ReadMetadata()', 'Indirect()'):
+            with self.subTest(call=call), self.assertRaisesRegex(BSLError, 'server_error'):
+                client.execute(call)
+        self.assertFalse(port.uncertain)
+        self.assertEqual(client.execute('Scalar(21)'), Decimal(42))
+
     def test_by_value_arguments_keep_existing_left_to_right_late_name_reads(self):
         client, unused, port, seen, messages = self.setup_port()
         client.execute('''Function Change(X)

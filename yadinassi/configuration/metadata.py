@@ -29,6 +29,8 @@ def _live_freeze(value):
 def _live_fields(value):
     if type(value) is BSLMetadata:
         names=('_catalogs','_documents','_information_registers','_identity','_orders','_configuration_name')
+        if value._catalogs._context is not None:
+            names+=('_catalog_managers','_document_managers')
         return tuple((name,_live_freeze(vars(value)[name])) for name in names)
     return tuple((name,_live_freeze(item)) for name,item in vars(value).items())
 
@@ -382,6 +384,11 @@ class BSLMetadata(_MetadataObject):
         _live_issue(self,None,('root',))
         for name in ('_catalogs','_documents','_information_registers'):
             _live_issue(getattr(self,name),self,('field',name))
+
+    def _bind_managers(self, catalogs, documents):
+        self._catalog_managers, self._document_managers = catalogs, documents
+        if self._catalogs._context is not None:
+            _live_refresh(self, ('_catalog_managers', '_document_managers'))
 
     def _accept_snapshot(self, database, generation, info=None):
         if self._identity is not None and self._identity != (database,generation):

@@ -4,7 +4,7 @@ from decimal import Decimal
 from unittest import TestCase
 from unittest.mock import patch
 
-from yadinassi import Interpreter
+from yadinassi import BSLError, Interpreter
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
 
 
@@ -43,8 +43,11 @@ class DirectScalarPrefixTests(TestCase):
                 prepared = vm.prepare(text)
                 code = prepared._plan.generated_source
                 tree = ast.parse(code)
+                # A host boundary also maintains its own reentry-depth counter.
+                # Count source arithmetic, not that envelope bookkeeping.
                 adds = [node for node in ast.walk(tree)
-                        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add)]
+                        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add)
+                        and not (isinstance(node.left, ast.Name) and node.left.id == '_dynamic_depth')]
                 self.assertEqual(len(adds), 3)
                 self.assertNotIn('_native_add', code)
                 self.assertNotIn('_concatenate', code)
@@ -102,6 +105,15 @@ class DirectScalarPrefixTests(TestCase):
         vm.register_function('Host', lambda: vm.variables.update(r=True, v=1))
         vm.execute('R=1+2+3+5;Host();T=(R=V);')
         self.assertIs(vm.variables['t'], False)
+
+    def test_opaque_edges_do_not_preserve_initialization_facts(self):
+        vm = self.vm(allow_extensions=True)
+        vm.register_function('Clear', lambda: vm.variables.pop('r'))
+        with self.assertRaisesRegex(BSLError, 'не определена: R'):
+            vm.execute('R=1;Clear();T=R+1;')
+        self.assertNotIn('t', vm.variables)
+        vm.execute('R=1;Execute("R=30;");T=R+1;')
+        self.assertEqual(vm.variables['t'], 31)
 
     def test_string_prefix_uses_bsl_concat_with_unknown_or_native_int_rhs(self):
         vm = self.vm()
