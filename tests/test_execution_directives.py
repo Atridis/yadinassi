@@ -181,6 +181,18 @@ Counter = 42; Message(S()); Message(Counter);
             self.vm.execute('S(Effect());')
         self.assertEqual(calls, [])
 
+    def test_prepared_call_checks_current_crossing_before_actuals(self):
+        trace=[]
+        self.vm.register_function('Effect', lambda: trace.append('actual'))
+        self.vm.execute('Procedure Change(X) X=2; EndProcedure')
+        prepared=self.vm.prepare('Change((Effect()));')
+        self.vm.execute_prepared(prepared)
+        self.assertEqual(trace, ['actual'])
+        self.vm.execute('&AtServer\nProcedure Change(X) X=2; EndProcedure')
+        with self.assertRaisesRegex(BSLError, 'без Знач'):
+            self.vm.execute_prepared(prepared)
+        self.assertEqual(trace, ['actual'])
+
     def test_scalar_values_and_val_rebinding(self):
         self.vm.execute('''
 &AtServer

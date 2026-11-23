@@ -402,7 +402,7 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=N
         def current_module(self):
             return vm._self_module
 
-        def resolve_optional_service(self,name,*args,**kwargs):
+        def resolve_optional_service(self,name,*args,_non_name_actuals=(),**kwargs):
             key=name.casefold()
             module=getattr(vm,'_direct_routine_modules',{}).get(key)
             if module is not None and key in module.server_names:
@@ -410,7 +410,8 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=N
                 if getattr(vm,'_direct_routine_modules',{}).get(key) is module:
                     return resolve_routine(self,key,require_value=kwargs.get('require_value',False),
                                            allow_references=kwargs.get('allow_references',False),
-                                           argument_count=kwargs.get('argument_count'),crossing_omissions=True)
+                                           argument_count=kwargs.get('argument_count'),crossing_omissions=True,
+                                           non_name_actuals=_non_name_actuals)
             if module is not None and key not in module.server_names and key not in module.dual_names:
                 bound=self.resolve_service(name,*args,**kwargs)
                 if getattr(self.vm,'_direct_routine_modules',{}).get(key) is module:
@@ -428,7 +429,7 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=N
                 raise ValueError('Переменная или функция не определена: '+name)
             super()._unregistered_service(name)
 
-        def resolve_service(self,name,*args,**kwargs):
+        def resolve_service(self,name,*args,_non_name_actuals=(),**kwargs):
             modules=getattr(vm,'_direct_routine_modules',None)
             key=name.casefold()
             ports=getattr(vm,'_direct_invocation_ports',None)
@@ -442,7 +443,8 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=N
                 if self._verify_context or (key in module.server_names and key not in module.dual_names):self._check()
                 routine=resolve_routine(self,key,require_value=kwargs.get('require_value',False),
                                         allow_references=kwargs.get('allow_references',False),
-                                        argument_count=kwargs.get('argument_count'))
+                                        argument_count=kwargs.get('argument_count'),
+                                        non_name_actuals=_non_name_actuals)
                 if routine is not None:return routine
             if key in ('new:uuid','new:уникальныйидентификатор'):
                 from yadinassi.types.unique_identifiers import BSLUUID

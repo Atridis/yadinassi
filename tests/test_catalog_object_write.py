@@ -11,7 +11,7 @@ import test_catalog_object_preparation as fixture
 from test_catalog_commit_cleanup_recovery import FaultConnection
 from test_sqlite_catalog_backend import configuration
 from yadinassi import BSLError, Interpreter
-from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogKey
 from yadinassi.db.catalog.catalog_object_preparation import (
     CatalogWriteRefused, write_prepared_catalog_object)
 from yadinassi.db.database_context import SQLiteDBContext
@@ -51,18 +51,34 @@ class CatalogObjectWriteTests(unittest.TestCase):
         self.assertEqual(vm.execute('Карточка.ВидНоменклатуры.Наименование'), 'Товары')
         self.assertEqual(vm.execute('Карточка.Склады.Получить(0).Склад.Наименование'), 'Основной')
 
-    def test_getobject_uses_writer_view_not_separate_backend_reads(self):
-        seen = []
-        original = _View.read_catalog
+    def reference_read_probes(self, observe):
+        read_catalog = _View.read_catalog
+        read_marks = _View._read_catalog_reference_marks
         def read(view, key):
-            seen.append((view, view._connection.in_transaction))
-            return original(view, key)
+            result = read_catalog(view, key)
+            observe(view, key)
+            return result
+        def marks(view, schema, identities):
+            result = read_marks(view, schema, identities)
+            for identity in identities:
+                observe(view, CatalogKey(view.database_id, schema.identity, identity))
+            return result
+        return patch.object(_View, 'read_catalog', read), patch.object(_View, '_read_catalog_reference_marks', marks)
+
+    def test_reference_reads_use_writer_view_not_separate_backend_reads(self):
+        seen = []
+        def observe(view, key):
+            seen.append((key, view, self.context.backend._active, view._connection.in_transaction))
+        read, marks = self.reference_read_probes(observe)
         with patch.object(self.context.backend, 'begin_read', side_effect=AssertionError('outside read')), \
-             patch.object(_View, 'read_catalog', read):
+             read, marks:
             self.write()
-        self.assertEqual(len(seen), 2)
-        self.assertIs(seen[0][0], seen[1][0])
-        self.assertTrue(all(active for _, active in seen))
+        self.assertCountEqual([key for key, *_ in seen],
+                              [self.vm.variables[name]._key for name in ('вид', 'склад')])
+        for _, view, active_view, in_transaction in seen:
+            self.assertIs(view, seen[0][1])
+            self.assertIs(view, active_view)
+            self.assertTrue(in_transaction)
 
     def test_missing_kind_and_empty_sections_refuse_without_write(self):
         self.vm.execute('Карточка.ВидНоменклатуры=Справочники.ВидыНоменклатуры.ПустаяСсылка(); Карточка.Склады.Очистить();')
@@ -99,20 +115,18 @@ class CatalogObjectWriteTests(unittest.TestCase):
         self.assertTrue(self.card.is_new())
 
     def test_writer_lock_prevents_reference_mark_between_check_and_save(self):
-        original = _View.read_catalog
         attempts = []
-        def read(view, key):
-            result = original(view, key)
+        def observe(view, key):
             with closing(sqlite3.connect(self.context.path, timeout=0)) as other:
                 table = self.context.backend._layout.table_name(key.catalog_id)
-                with self.assertRaises(sqlite3.OperationalError):
+                with self.assertRaisesRegex(sqlite3.OperationalError, 'locked'):
                     other.execute('UPDATE "' + table + '" SET deletion_mark=1 WHERE record_id=?',
                                   (str(key.record_id),))
             attempts.append(key)
-            return result
-        with patch.object(_View, 'read_catalog', read):
+        read, marks = self.reference_read_probes(observe)
+        with read, marks:
             self.write()
-        self.assertEqual(len(attempts), 2)
+        self.assertCountEqual(attempts, [self.vm.variables[name]._key for name in ('вид', 'склад')])
         self.assertFalse(self.card.is_new())
 
     def test_target_changed_before_begin_is_observed_in_writer_snapshot(self):

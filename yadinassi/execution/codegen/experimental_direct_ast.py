@@ -1209,8 +1209,17 @@ class Emitter:
             else:fallback=self.invoke(self.attribute(self.name('_initial',t),'get',t),[self.const(name,t),self.name('_MISSING',t)],t)
             resolver=('resolve_optional_service' if any(type(arg) is bsl.OmittedArgument for arg in node.arguments)
                       else 'resolve_service')
-            bound=self.invoke(self.attribute(self.name('_context',t),resolver,t),[self.const(node.callee.name if self.source_scopes else name,t),fallback],node.callee.token,
-                [self.node(py.keyword,t,arg='require_value',value=self.const(require_value,t)),self.node(py.keyword,t,arg='allow_references',value=self.const(True,t)),self.node(py.keyword,t,arg='argument_count',value=self.const(len(node.arguments),t))])
+            keywords=[self.node(py.keyword,t,arg='require_value',value=self.const(require_value,t)),
+                self.node(py.keyword,t,arg='allow_references',value=self.const(True,t)),
+                self.node(py.keyword,t,arg='argument_count',value=self.const(len(node.arguments),t))]
+            if not self.owned_constructors:
+                shaped=[]
+                for index,arg in enumerate(node.arguments):
+                    while type(arg) is bsl.Group:arg=arg.expression
+                    if type(arg) not in (bsl.Name,bsl.OmittedArgument):shaped.append(index)
+                if shaped:
+                    keywords.append(self.node(py.keyword,t,arg='_non_name_actuals',value=self.const(tuple(shaped),t)))
+            bound=self.invoke(self.attribute(self.name('_context',t),resolver,t),[self.const(node.callee.name if self.source_scopes else name,t),fallback],node.callee.token,keywords)
             if name in ('eval','вычислить'):
                 bound=self.call('_bind_eval',[bound,*self.fragment_arguments(t)],t)
             return self.dynamic_call(bound,node)

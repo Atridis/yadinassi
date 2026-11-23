@@ -8,11 +8,12 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from sqlite_catalog_fixture import configuration_files
+from test_catalog_commit_cleanup_recovery import FaultConnection
 from yadinassi import Interpreter
 from yadinassi.db.catalog.catalog_backend import BackendError
 from yadinassi.configuration.configuration_xml import import_configuration
 from yadinassi.db.database_context import SQLiteDBContext
-from yadinassi.db.sqlite.sqlite_catalog import _View
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
 class CatalogDeletionMarkTests(unittest.TestCase):
@@ -96,7 +97,7 @@ Message(R.Next());Message(R.Code);Message(R.Next());''')
                 config = import_configuration(files)
                 self.assertTrue(any(f.name == name for c in config.catalogs for f in c.fields))
 
-    def test_legacy_colliding_attributes_remain_readable(self):
+    def test_colliding_attributes_remain_readable_not_callable(self):
         files = configuration_files()
         xml = files['Catalogs/Products.xml'].replace(b'<Name>Text</Name>', b'<Name>SetDeletionMark</Name>')
         xml = xml.replace(b'<Name>Amount</Name>', '<Name>УстановитьПометкуУдаления</Name>'.encode())
@@ -111,27 +112,31 @@ Message(R.Next());Message(R.Code);Message(R.Next());''')
             vm = Interpreter(database_context=legacy)
             self.assertEqual(vm.execute('Catalogs.Products.FindByCode("1").GetObject().setdeletionmark'), 'preserved')
             self.assertEqual(str(vm.execute('Catalogs.Products.FindByCode("1").GetObject().УСТАНОВИТЬПОМЕТКУУДАЛЕНИЯ')), '42.00')
-            with self.assertRaises(Exception):
+            with self.assertRaisesRegex(BoundaryViolation, 'database method requires canonical HostFunction'):
                 vm.execute('Catalogs.Products.FindByCode("1").GetObject().SetDeletionMark(True);')
             self.assertFalse(vm.execute('Catalogs.Products.FindByCode("1").DeletionMark'))
         finally:
             legacy.close()
 
-    def test_lost_commit_response_resolves_exact_mark_without_duplicate_write(self):
+    def test_lost_commit_response_requires_fresh_object_and_cannot_replay_mark(self):
         obj = self.vm.execute('P.Ref.GetObject()')
-        commit = _View.commit
-        def lost_response(tx):
-            commit(tx)
-            raise BackendError('uncertain_commit')
+        backend = self.context.backend
+        begin_write = backend.begin_write
+        def lost_response(operation):
+            view = begin_write(operation)
+            view._connection = FaultConnection(view._connection, commit_fault='after')
+            return view
         obj.set_member('DeletionMark', True)
-        with patch.object(_View, 'commit', lost_response), self.assertRaises(BackendError):
+        with patch.object(backend, 'begin_write', lost_response), self.assertRaisesRegex(BackendError, 'uncertain_commit'):
             obj.write()
-        with self.assertRaises(BackendError): obj.set_member('DeletionMark', False)
-        with patch.object(_View, 'commit', side_effect=AssertionError('must not commit twice')):
-            obj.write()
+        with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
+            obj.set_member('DeletionMark', False)
+        with patch.object(backend, 'begin_write') as begin:
+            with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
+                obj.write()
+            begin.assert_not_called()
         self.assertTrue(self.vm.execute('P.Ref.DeletionMark'))
-        obj.set_member('DeletionMark', False)
-        obj.write()
+        self.vm.execute('Fresh=P.Ref.GetObject(); Fresh.DeletionMark=False; Fresh.Write();')
         self.assertFalse(self.vm.execute('P.Ref.DeletionMark'))
 
 

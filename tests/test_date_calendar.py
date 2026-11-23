@@ -159,17 +159,33 @@ class NativeCalendarEvidenceTests(unittest.TestCase):
             if self.records[label] == 'error' or label in boundary_labels:
                 continue
             with self.subTest(label=label):
-                restored = read(self.records[label])
-                self.assertMultiLineEqual(normalized(write(restored)), self.records[label])
-                original = Interpreter().execute(expression)
-                if type(original) is BSLDate:
-                    self.assertFalse(original.boundary)
-                    self.assertEqual(original, restored)
-                elif type(original) is BSLStructure:
-                    for entry in original:
-                        self.assertEqual(entry.value, restored.get(entry.key))
-                else:
-                    self.assertEqual(original, restored)
+                expected = self.records[label]
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                vm.execute(f"""
+                    Original = ({expression});
+                    Restored = ValueFromStringInternal({quote(expected)});
+                    OriginalWire = ValueToStringInternal(Original);
+                    RestoredWire = ValueToStringInternal(Restored);
+                    SameType = TypeOf(Original) = TypeOf(Restored);
+                    SameValues = True;
+                    // Compare BSL values, not the two Python Structure layouts.
+                    If TypeOf(Restored) = Type("Structure") Then
+                        For Each Entry In Restored Do
+                            Value = Original[Entry.Key];
+                            SameValues = SameValues And TypeOf(Value) = TypeOf(Entry.Value)
+                                                    And Value = Entry.Value;
+                        EndDo;
+                    Else
+                        SameValues = Original = Restored;
+                    EndIf;
+                """)
+                self.assertMultiLineEqual(normalized(vm.variables['originalwire']), expected)
+                self.assertMultiLineEqual(normalized(vm.variables['restoredwire']), expected)
+                self.assertIs(vm.variables['sametype'], True)
+                self.assertIs(vm.variables['samevalues'], True)
+                if type(vm.variables['original']) is BSLDate:
+                    self.assertFalse(vm.variables['original'].boundary)
 
 
 class CalendarMonthTests(unittest.TestCase):

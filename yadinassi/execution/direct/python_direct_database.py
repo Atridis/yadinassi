@@ -24,6 +24,7 @@ from yadinassi.db.metadata.enum_types import BSLEnumReference
 from yadinassi.db.document.document_posting_values import DOCUMENT_WRITE_MODES
 from yadinassi.collections.structures import BSLStructure, BSLFixedStructure, BSLKeyAndValue
 from yadinassi.types.values import HostFunction, BSLArray, BSLFixedArray
+from yadinassi.temporal.dates import _DIRECT_EQUALITY_DATE_STATE
 from decimal import Decimal
 from .python_direct_xml_ownership import reject_source_owned as _reject_source_xml
 from yadinassi.formats.xml.dom_io import BSLDOMBuilder, BSLDOMWriter
@@ -68,8 +69,9 @@ NAMES=(*METADATA_NAMES,*DATABASE_ROOT_NAMES,'enums','перечисления','
 _DOM_LISTS=(BSLDOMNodeList,BSLDOMElementList,BSLDOMAttributeMap)
 _DETACHED_TYPES=(*_NODE_CLASSES,*_DOM_LISTS,BSLDOMBuilder,BSLDOMWriter,BSLDOMNamespaceResolver,BSLDOMXPathResult,BSLXMLReader, BSLXMLReaderSettings, BSLXMLNamespaceContext, BSLXMLWriter, BSLXMLWriterSettings, BSLValueList, BSLValueTable, BSLTypeDescription, BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers, BSLQueryResult, BSLQueryResultSelection, BSLStructure, BSLFixedStructure, BSLKeyAndValue, BSLArray, BSLFixedArray, BSLFixedMap, BSLRegexResult, BSLRegexGroup, BSLFile, BSLBinaryData, BSLTextReader, BSLTextWriter, BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream, BSLStream, BSLDataHashing, BSLDataReader, BSLDataWriter, BSLReadDataResult, BSLMap, BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings, BSLJSONSerializerSettings)
 _DETACHED_TYPE_IDS=frozenset(map(id,_DETACHED_TYPES))
-_QUALIFIER_TYPE_IDS=frozenset(map(id, (
-    BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers,
+_DATE_TYPE = _DIRECT_EQUALITY_DATE_STATE[0]
+_METHODLESS_TYPE_IDS=frozenset(map(id, (
+    _DATE_TYPE, BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers,
 )))
 _PURE_COLLECTION_TYPE_IDS=frozenset(map(id,(
     BSLValueTable, BSLValueTableRow, BSLValueTableColumn, BSLValueTableColumnCollection,
@@ -297,13 +299,14 @@ class CatalogBoundary:
         return _ForwardReference(Reference(read,write))
 
     def get_member(self,value,name):
-        if type(value) is PlainValueList:
+        kind=type(value)
+        if kind is PlainValueList:
             key = name.casefold()
             if key in _PLAIN_VALUE_LIST_DEFAULT_PROPERTIES:
                 if self._verify_context: self._check()
                 return BSLTypeDescription() if key in _PLAIN_VALUE_LIST_TYPE_PROPERTIES else None
-        if id(type(value)) in zip_reader.TYPE_IDS:return zip_reader.get(self,value,name)
-        if id(value) in OPAQUE_ENUM_IDS:
+        if id(kind) in zip_reader.TYPE_IDS:return zip_reader.get(self,value,name)
+        if kind is _DATE_TYPE or id(value) in OPAQUE_ENUM_IDS:
             if self._verify_context:self._check()
             raise ValueError('Поле объекта не обнаружено: '+name)
         verify=_verify_collection(self,value)
@@ -313,7 +316,7 @@ class CatalogBoundary:
             if verify:self._check_effect()
 
     def resolve_set_member(self,value,name):
-        if id(value) in OPAQUE_ENUM_IDS:
+        if id(value) in OPAQUE_ENUM_IDS or type(value) is _DATE_TYPE:
             if self._verify_context:self._check()
             raise ValueError('Свойство недоступно для записи: '+name)
         verify=_verify_collection(self,value)
@@ -329,6 +332,9 @@ class CatalogBoundary:
         from . import python_direct_table_references as table_refs
         if table_refs.member(value):return table_refs.bind(self,value,name)
         kind=type(value)
+        if kind is _DATE_TYPE:
+            if self._verify_context:self._check()
+            raise ValueError('Поле объекта не обнаружено: '+name)
         if kind is PlainValueListItem:
             from yadinassi.execution.codegen.experimental_naked_collections import _ValueListItemReference
             if not self._verify_context:
@@ -414,10 +420,10 @@ class CatalogBoundary:
             return zip_reader.resolve(self,value,name,require_value=require_value,omitted=omitted)
         # A spelled member call must not reach the internal protocol names
         # emitted for indexing and For Each. These namespaces have no
-        # methods; individual enum members have no member protocol at all.
+        # methods; individual enum members and Date have no member protocol.
         identity=id(value)
         if (identity in METHODLESS_NAMESPACE_IDS or identity in OPAQUE_ENUM_IDS
-                or id(type(value)) in _QUALIFIER_TYPE_IDS):
+                or id(type(value)) in _METHODLESS_TYPE_IDS):
             if self._verify_context:self._check()
             raise ValueError('Метод объекта не обнаружен: '+name)
         if omitted and type(value) in (BSLTextReader,BSLTextWriter,BSLDataWriter,BSLDataHashing):
@@ -515,7 +521,7 @@ class CatalogBoundary:
         if name in ('__iter__','__getitem__','__setitem__'):
             identity=id(value)
             if (identity in OPAQUE_ENUM_IDS or identity in FIELD_ONLY_NAMESPACE_IDS
-                    or id(type(value)) in _QUALIFIER_TYPE_IDS
+                    or id(type(value)) in _METHODLESS_TYPE_IDS
                     or (name!='__iter__' and identity in ITERABLE_IDS)
                     or (name=='__iter__' and value is CHARS)):
                 if self._verify_context:self._check()

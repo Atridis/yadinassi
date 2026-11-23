@@ -12,6 +12,7 @@ from yadinassi.configuration.configuration_xml import import_configuration
 from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.db.catalog.catalog_backend import BackendError
 from yadinassi.db.sqlite.sqlite_documents import DocumentView
+from yadinassi.db.sqlite.sqlite_register_layout import register_table
 from yadinassi.db.sqlite.sqlite_registers import RegisterView
 from test_document_configuration_xml import document_files
 from test_information_registers import register_files
@@ -120,6 +121,7 @@ class StandaloneDocumentRegisterNoReceiptTests(unittest.TestCase):
         record.set_member('Price',Decimal(6))
         record.write()
         record.delete()
-        self.assertEqual(self.sql(path,'SELECT COUNT(*) FROM information_register_record'),[(1,)])
+        table=register_table(manager._schema)
+        self.assertEqual(self.sql(path,f'SELECT COUNT(*) FROM "{table}"'),[(1,)])
         self.assertEqual(self.sql(path,"SELECT name FROM sqlite_schema WHERE type='table' AND name='information_register_receipt'"),[])
         self.assert_no_receipt_access(statements,4)

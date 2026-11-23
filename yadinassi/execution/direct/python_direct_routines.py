@@ -139,7 +139,7 @@ def bind_omissions(bound):
     return bound
 
 
-def resolve(context, name, *, require_value=False, allow_references=False, argument_count=None, crossing_omissions=False):
+def resolve(context, name, *, require_value=False, allow_references=False, argument_count=None, crossing_omissions=False, non_name_actuals=()):
     vm=context.vm
     module=getattr(vm,'_direct_routine_modules',{}).get(name)
     if module is None:return None
@@ -158,7 +158,7 @@ def resolve(context, name, *, require_value=False, allow_references=False, argum
             raise ValueError('Серверный вызов из асинхронного задания пока не поддерживается')
         from .python_direct_server import resolve_server
         return resolve_server(context,module,name,require_value=require_value,allow_references=allow_references,
-                              allow_omissions=crossing_omissions)
+                              allow_omissions=crossing_omissions,non_name_actuals=non_name_actuals)
     if getattr(context,'_server_side',False) or getattr(context,'module_context',True) is False:
         raise TypeError('Вызов клиентской подпрограммы с сервера запрещён')
     def invoke(*arguments):

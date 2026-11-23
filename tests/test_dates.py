@@ -11,6 +11,7 @@ from decimal import Decimal, Inexact, Rounded, localcontext
 from pathlib import Path
 import re
 import unittest
+from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
@@ -394,6 +395,38 @@ class DateRuntimeTests(unittest.TestCase):
                      'For Each item In value Do Message(item); EndDo;'):
             with self.subTest(code=code), self.assertRaises(BSLRuntimeError):
                 self.vm.execute(code)
+
+    def test_date_receiver_errors_are_catchable_without_running_later_operands(self):
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('''
+            Var marks, value;
+            value = Date(2024, 2, 29);
+            Function Receiver() marks = marks + "R"; Return value; EndFunction
+            Function Later() marks = marks + "L"; Return 0; EndFunction
+            Procedure Accept(slot, Val other) marks = marks + "A"; EndProcedure
+        ''')
+        for statement in ('result=Receiver().Year;', 'Receiver().ticks = Later();',
+                          'result=Receiver()[Later()];', 'Receiver()[Later()]=Later();',
+                          'Receiver().isoformat(Later());',
+                          'Accept(Receiver().ticks, Later());',
+                          'For Each item In Receiver() Do marks=marks+"I"; EndDo;'):
+            with self.subTest(statement=statement):
+                source='marks=""; Try '+statement+' Except marks=marks+"C"; EndTry;'
+                with patch.object(BoundaryContext,'_check',side_effect=AssertionError('Light check')):
+                    vm.execute(source)
+                self.assertEqual(vm.execute('marks'), 'RC')
+        self.assertEqual(vm.execute('Year(value)'), Decimal(2024))
+
+    def test_host_date_subclass_does_not_get_scalar_receiver_diagnostics(self):
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        class ForeignDate(BSLDate):
+            pass
+        self.vm.variables['foreign'] = ForeignDate(0)
+        for expression in ('Foreign.Year', 'Foreign[0]', 'Foreign.isoformat()'):
+            with self.subTest(expression=expression), self.assertRaises(BoundaryViolation):
+                self.vm.execute(expression)
 
     def test_literals_parse_in_expressions_defaults_eval_and_execute(self):
         self.assertEqual(self.vm.execute("'2024-02-29 12:34:56'"), date(BASE_TEXT))

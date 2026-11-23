@@ -172,7 +172,7 @@ class _LateNamedValue:
     def __init__(self,reference):self.reference=reference
 
 
-def resolve_server(parent,module,name,*,require_value,allow_references,allow_omissions=False):
+def resolve_server(parent,module,name,*,require_value,allow_references,allow_omissions=False,non_name_actuals=()):
     vm=parent.vm
     references=module.signatures[name][3]
     copyout_references=references
@@ -270,6 +270,10 @@ def resolve_server(parent,module,name,*,require_value,allow_references,allow_omi
     function=HostFunction(name,invoke,reference_parameters=references,returns_value=module.signatures[name][0])
     bound=parent.resolve_callable(function,require_value=require_value,allow_references=allow_references)
     if not getattr(parent,'_server_side',False):
+        # Copy-out accepts only names. Reject the shape while binding, before
+        # even an earlier by-value actual can run.
+        if references and non_name_actuals and not references.isdisjoint(non_name_actuals):
+            raise TypeError('Межконтекстные параметры без Знач пока требуют имя переменной')
         def prepare_named_value(reference):
             parent._check()
             if type(reference) is not Reference:raise TypeError('named server value requires a source reference')

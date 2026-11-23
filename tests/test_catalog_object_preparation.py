@@ -137,9 +137,11 @@ class CatalogObjectPreparationTests(unittest.TestCase):
 
     def test_partial_mutation_on_error_is_not_rollback_or_success(self):
         source = '''Процедура ПередЗаписью(Отказ)
-                     Наименование="Changed"; ЭтотОбъект.Записать(); КонецПроцедуры'''
-        with self.assertRaises(BSLError): self.prepare(source)
+                     Наименование="Changed"; ПометкаУдаления="Not a boolean"; КонецПроцедуры'''
+        with patch.object(self.context.backend, 'begin_write', side_effect=AssertionError('write')):
+            with self.assertRaises(BSLError): self.prepare(source)
         self.assertEqual(self.card.get_member('Description'), 'Changed')
+        self.assertFalse(self.card.get_member('DeletionMark'))
         self.assertTrue(self.card.is_new())
 
     def test_row_numbers_are_read_only_current_positions_not_uuid(self):
