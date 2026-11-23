@@ -215,17 +215,21 @@ class TypedIndexSnapshotTests(unittest.TestCase):
         source = table_with(numeric(), (D(1), D(2)))
         source.columns.add('Label', BSLTypeDescription('String'))
         source.rows[0].set(D(1), 'a'); source.rows[1].set(D(1), 'b')
-        for definition in ('Label,Item', 'Item', 'Label,Item'):
+        for definition in ('Label,Item', 'Item'):
             source.indexes.add(definition)
-        for definition in ('', 'Item,Item'):
-            with self.assertRaises(ValueError):
-                source.indexes.add(definition)
         source.columns.get_index('Item').set_member('Name', 'Amount')
         result = storage.BSLValueStorage(source).get()
         self.assertEqual(result.indexes.items, [(0, 1), (0,)])
-        self.assertEqual([tuple(result.columns.items[i].name for i in index)
-                          for index in result.indexes.items],
-                         [('Amount', 'Label'), ('Amount',)])
+        self.assertEqual([tuple(index) for index in result.indexes],
+                         [('Label', 'Amount'), ('Amount',)])
+        for definition in ('', 'Amount,Amount', 'Label,Amount'):
+            with self.subTest(definition=definition):
+                handle = source.indexes.add(definition)
+                try:
+                    with self.assertRaises(storage.SnapshotError):
+                        storage.capture(source)
+                finally:
+                    source.indexes.delete(handle)
 
     def test_reverse_index_order_is_private_snapshot_data_not_a_wire_extension(self):
         source = table_with(None, (D(1), D(2)))

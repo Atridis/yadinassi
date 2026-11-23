@@ -353,6 +353,8 @@ class CatalogBoundary:
         if kind is PlainValueList and not self._verify_context:
             raise ValueError('Поле объекта не обнаружено: '+name)
         if (kind is BSLQueryResultSelection or kind is BSLFixedStructure
+                or ((kind is BSLDocumentObject or kind is BSLCatalogObject)
+                    and name.casefold() in ('ref','ссылка'))
                 or kind is BSLNumberQualifiers and name.casefold() in
                     ('digits','разрядность','fractiondigits','разрядностьдробнойчасти')
                 or kind is BSLAccumulationRow and name.casefold() in ('linenumber','номерстроки')):

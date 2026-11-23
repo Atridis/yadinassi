@@ -115,14 +115,18 @@ class PlainValueListTests(unittest.TestCase):
         with self.assertRaises(TypeError): values.sort_by_value()
         self.assertEqual(called, [])
 
-    def test_native_sorting_and_negative_index_tradeoff(self):
+    def test_native_sorting_and_positional_access(self):
         values = PlainValueList(); values.add(3, 'c'); values.add(1, 'a')
         values.sort_by_value(); self.assertEqual(values.unload_values(), [1, 3])
         from yadinassi.collections.sort_directions import BSLSortDirection
         values.sort_by_presentation(BSLSortDirection.DESC)
         self.assertEqual(values.unload_values(), [3, 1])
-        self.assertEqual(values.get(D(-1))[0], 1)
+        with self.assertRaises(IndexError):
+            values.get(D(-1))
         self.assertEqual(values.get(D('0.5'))[0], 3)
+        self.assertEqual(values.get_index(D(1))[0], 1)
+        with self.assertRaises(TypeError):
+            values.get_index(D('0.5'))
 
     def test_value_sort_rejects_malformed_unknown_and_opaque_keys_atomically(self):
         from yadinassi.temporal.dates import BSLDate

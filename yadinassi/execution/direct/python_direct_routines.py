@@ -152,7 +152,10 @@ def resolve(context, name, *, require_value=False, allow_references=False, argum
         from .python_direct_server import resolve_dual_client
         return resolve_dual_client(context,module,name,require_value=require_value,allow_references=allow_references)
     if name in module.server_names:
-        if (getattr(context,'_async_task',False)
+        # A root async task is already admitted to its live, database-free
+        # client activation. Its synchronous server call does not suspend.
+        # Imported tasks continue to use the narrower import admission.
+        if (getattr(context,'_async_task',False) and vm._family_owner is not vm
                 and (getattr(context,'_async_import_nocontext',None)!=name
                      or name not in module.nocontext_names or references)):
             raise ValueError('Серверный вызов из асинхронного задания пока не поддерживается')

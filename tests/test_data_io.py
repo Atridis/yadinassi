@@ -1,4 +1,5 @@
 """Ordinary owned data-I/O workflows and deterministic bounded admission tests."""
+from contextlib import closing
 from decimal import Decimal
 from pathlib import Path
 import tempfile
@@ -90,6 +91,36 @@ class DataIOTests(unittest.TestCase):
             with self.assertRaises((ValueError,TypeError)): source.read_to(value)
         with mock.patch.object(api,'MAX_MARKERS',1),self.assertRaises(ValueError): source.read_to(array('a','b'))
         self.assertEqual(source.source_stream().current_position(),0)
+
+    def test_direct_marker_arrays_for_read_skip_and_split(self):
+        with closing(Interpreter()) as vm:
+            vm.execute("""
+                M=New Array; M.Add(":"); M.Add("::");
+                R=New DataReader(GetBinaryDataFromString("a::b"));
+                X=R.ReadTo(M); Index=X.MarkerIndex; Size=X.Size; Tail=R.ReadChars();
+                R=New DataReader(GetBinaryDataFromString("a::b"));
+                Skipped=R.SkipTo(M); AfterSkip=R.ReadChars();
+                R=New DataReader(GetBinaryDataFromString("a::b"));
+                Parts=R.Split(M); PartsCount=Parts.Count(); Marker=Parts[0].MarkerIndex;
+            """)
+            self.assertEqual(tuple(vm.variables[name] for name in
+                ('index','size','tail','skipped','afterskip','partscount','marker')),
+                (Decimal(1),Decimal(1),'b',Decimal(1),'b',Decimal(2),Decimal(1)))
+
+    def test_exact_list_marker_validation_is_bounded_before_consumption(self):
+        class ForeignList(list):
+            def __iter__(self): raise AssertionError('foreign iteration')
+            def __len__(self): raise AssertionError('foreign length')
+            def __getitem__(self, key): raise AssertionError('foreign lookup')
+        source = reader(b'abc')
+        for bad in ([], ('a',), ForeignList(['a']), ['b', object()], ['a']*(api.MAX_MARKERS+1)):
+            with self.subTest(kind=type(bad)),self.assertRaises((TypeError,ValueError)):
+                source.read_to(bad)
+            self.assertEqual(source.source_stream().current_position(),0)
+        with self.assertRaisesRegex(ValueError,'Слишком много маркеров'):
+            source.read_to(['a']*(api.MAX_MARKERS+1))
+        self.assertEqual(source.source_stream().current_position(),0)
+        self.assertEqual(source.read_to(['b'])._data,b'a')
 
     def test_text_encoding_bom_and_line_conversion(self):
         stream = Memory(); writer = Writer(stream,'UTF-16BE',None,'!', '\r\n',True)

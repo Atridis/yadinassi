@@ -1,9 +1,33 @@
 """Interpreter dispatch for the native-backed default-state ValueList subset."""
 
 from decimal import Decimal
+from pathlib import Path
 import unittest
 
 from yadinassi import BSLError, Interpreter
+from tests.native_observations import extract_payload
+
+
+class NativeValueListPositionsTests(unittest.TestCase):
+    def test_positional_operations_match_all_eight_archived_records(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig')
+        expected = (root / 'tests/fixtures/native_windows/collections.out').read_text(encoding='utf-8-sig')
+        output = []
+        vm = Interpreter(output.append)
+        self.addCleanup(vm.close)
+        vm.execute(source.split('#Область МассивыИСтруктуры', 1)[0])
+        for name in ('insert.boundaries', 'insert.coercion', 'get.access', 'get.boundaries',
+                     'move.index', 'move.invalid', 'delete.index', 'id.find'):
+            with self.subTest(name=name):
+                label = 'list.' + name
+                code, = (line for line in source.splitlines()
+                         if line.startswith(f'НаблюдатьТаблицы("{label}",'))
+                output.clear()
+                vm.execute(code)
+                self.assertEqual(len(output), 1)
+                self.assertEqual(extract_payload(output[0], 'table.' + label),
+                                 extract_payload(expected, 'table.' + label))
 
 
 class ValueListRuntimeTests(unittest.TestCase):

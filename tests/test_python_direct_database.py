@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from yadinassi import Interpreter
+from yadinassi import BSLRuntimeError, Interpreter
 from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from sqlite_test_templates import copy_main_demo
@@ -39,6 +39,23 @@ class DirectDatabaseTests(unittest.TestCase):
         other.variables['foreign']=self.vm.variables['a']
         with self.assertRaises(BoundaryViolation):other.execute('foreign.Description="bad";')
         with self.assertRaises(Exception):self.vm.execute('secret=A._manager;')
+
+    def test_catalog_object_ref_can_be_forwarded_but_not_rebound(self):
+        vm=self.vm
+        vm.execute('''A=Catalogs.Склады.CreateItem(); A.Description="Warehouse"; A.Write();
+Function InspectRef(R) Return R.IsEmpty(); EndFunction
+Procedure ReplaceRef(R) R=Undefined; EndProcedure''')
+        for member in ('Ref','Ссылка'):
+            with self.subTest(member=member):
+                self.assertIs(vm.execute(f'InspectRef(A.{member})'),False)
+                with self.assertRaisesRegex(BSLRuntimeError,'Свойство недоступно для записи'):
+                    vm.execute(f'ReplaceRef(A.{member});')
+        self.assertIs(vm.execute('A.Ref.IsEmpty()'),False)
+        other=self.interpreter()
+        other.variables['foreign']=vm.variables['a']
+        with self.assertRaisesRegex(BoundaryViolation,'foreign database receiver'):
+            other.execute('Function InspectRef(R) Return R.IsEmpty(); EndFunction\n'
+                          'InspectRef(Foreign.Ref)')
 
     def test_denied_transaction_caller_is_rejected_before_effect_and_flag_restored(self):
         self.vm._transaction_activation_allowed=False

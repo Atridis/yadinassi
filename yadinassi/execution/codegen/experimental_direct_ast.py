@@ -843,7 +843,7 @@ class Emitter:
             native_test=self.node(py.BoolOp,t,op=py.Or(),values=[exact(kind) for kind in ('dict','_PlainMap','_TypedMap','_NakedMap','_DirectStructure')])
             host=self.invoke(self.attribute(self.name('_context',t),'resolve_member',t),[self.name(receiver,t),self.const('__getitem__',t)],t)
             other=self.node(py.IfExp,t,test=native_test,body=native,orelse=host)
-            other=self.node(py.IfExp,t,test=exact('_PlainValueList'),body=self.attribute(self.name(receiver,t),'get',t),orelse=other)
+            other=self.node(py.IfExp,t,test=exact('_PlainValueList'),body=self.attribute(self.name(receiver,t),'get_index',t),orelse=other)
             bound_list=self.call('_partial',[self.name('_list_get',t),self.name(receiver,t)],t)
             select=self.node(py.IfExp,t,test=exact('list'),body=bound_list,orelse=other)
             leaf=node.index

@@ -13,6 +13,8 @@ from yadinassi.configuration.configuration_business_profile import import_busine
 from yadinassi.configuration.configuration_document import DocumentObjectSession, DocumentImage, DocumentRowImage
 from yadinassi.configuration.configuration_runtime import ConfigurationApplication
 from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+from yadinassi.forms.form_runtime import FormSession
 from yadinassi.temporal.dates import literal_date
 from yadinassi.types.errors import BSLError
 from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
@@ -67,9 +69,30 @@ class BusinessRecoveryTests(unittest.TestCase):
     def test_mixed_form_factory_has_no_transaction_root_authority(self):
         app = ConfigurationApplication.from_database(self.context, side='server')
         self.addCleanup(lambda: app.close(force=True)); app.start()
+        for side, event, parameters in (('Client', 'OnOpen', 'Cancel'),
+                                       ('Server', 'OnCreateAtServer', 'Cancel, Standard')):
+            with self.subTest(side=side):
+                form = FormSession(
+                    f'&At{side}\nProcedure Opening({parameters})\n'
+                    'Try BeginTransaction(); Except EndTry;\n'
+                    'BeginTransaction();\nEndProcedure',
+                    bindings={event:'Opening'}, database_context=self.context,
+                    interpreter_factory=app.form_interpreter_factory)
+                self.addCleanup(form.interpreter.close)
+                self.assertFalse(form.interpreter._transaction_activation_allowed)
+                with patch.object(self.context.backend, 'begin_unit_of_work') as begin:
+                    with self.assertRaisesRegex(BSLError, r':4:\d+: Transactions require synchronous execution'):
+                        form.open()
+                    begin.assert_not_called()
+                self.assertEqual(form.state, 'failed')
+
+    def test_mixed_independent_child_has_no_standalone_entry(self):
+        app = ConfigurationApplication.from_database(self.context, side='server')
+        self.addCleanup(lambda: app.close(force=True)); app.start()
         child = app.interpreter_factory(lambda value: None, database_context=self.context)
         self.addCleanup(child.close)
         self.assertFalse(child._transaction_activation_allowed)
         with patch.object(self.context.backend, 'begin_unit_of_work') as begin:
-            with self.assertRaises(BSLError): child.execute('BeginTransaction();')
+            with self.assertRaisesRegex(PythonDirectUnsupported, 'configuration/server/NoContext contexts are not integrated'):
+                child.execute('BeginTransaction();')
             begin.assert_not_called()

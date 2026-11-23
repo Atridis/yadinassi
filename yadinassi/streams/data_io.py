@@ -193,7 +193,12 @@ class BSLDataReader(_DataIO):
         return self._stream.current_position()
     def _markers(self, value, encoding=None):
         codec = self._codec_for(encoding)
-        if type(value) in (BSLArray, BSLFixedArray):
+        if type(value) is list:
+            # Direct Array uses exact Python list storage. Copy only up to the
+            # first over-limit item, with no call to a supplied iterator.
+            values = value[:MAX_MARKERS+1]
+            if len(values) > MAX_MARKERS: raise ValueError('Слишком много маркеров')
+        elif type(value) in (BSLArray, BSLFixedArray):
             if len(value.items) > MAX_MARKERS: raise ValueError('Слишком много маркеров')
             values = list(value)
         else: values = [value]

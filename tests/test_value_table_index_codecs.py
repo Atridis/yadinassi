@@ -13,6 +13,7 @@ from tests.native_observations import extract_payload, inverse_stream, read_obse
 from yadinassi import Interpreter
 from yadinassi.formats.storage.serialization import value_from_string_internal as read
 from yadinassi.formats.storage.serialization import value_to_string_internal as write
+from yadinassi.formats.storage.value_storage_table import TableSnapshotError
 from yadinassi.collections.structures import BSLStructure
 from yadinassi.types.type_values import type_by_name, type_of
 from yadinassi.collections.value_tables import BSLCollectionIndex, BSLCollectionIndexes, BSLValueTable
@@ -173,14 +174,22 @@ class DefensiveIndexCodecTests(unittest.TestCase):
 
     def test_canonical_composites_and_declaration_order(self):
         table = sample()
-        for columns in ('Amount,Key', 'Second', 'Key,Amount'):
-            table.indexes.add(columns)
+        handle = table.indexes.add('Key,Amount')
+        table.indexes.add('Second')
+        self.assertEqual(list(handle), ['Key', 'Amount'])
         restored = read(write(table))
         self.assertEqual(restored.indexes.items, [(0, 2), (1,)])
+        self.assertEqual([list(index) for index in restored.indexes],
+                         [['Key', 'Amount'], ['Second']])
         self.assertEqual(write(restored), write(table))
-        for unsupported in ('', 'Key,Key'):
-            with self.assertRaises(ValueError):
-                table.indexes.add(unsupported)
+        for unsupported in ('', 'Key,Key', 'Key,Amount'):
+            with self.subTest(unsupported=unsupported):
+                table = sample()
+                table.indexes.add('Key,Amount')
+                added = table.indexes.add(unsupported)
+                self.assertIs(table.indexes.get_index(1), added)
+                with self.assertRaisesRegex(TableSnapshotError, 'unsupported index declaration'):
+                    write(table)
 
     def test_column_identity_survives_rename(self):
         table = self.indexed()
@@ -260,7 +269,8 @@ class DefensiveIndexCodecTests(unittest.TestCase):
                 if change == 'collection-owner':
                     table.indexes = sample().indexes
                 elif change == 'foreign-column':
-                    table.indexes.items[0] = (sample().columns.items[0],)
+                    handle = table.indexes.get_index(0)
+                    handle._columns = (sample().columns.items[0], table.columns.items[1])
                 elif change == 'removed-position':
                     table.indexes.items[0] = (3,)
                 elif change == 'declaration-mismatch':
@@ -269,8 +279,15 @@ class DefensiveIndexCodecTests(unittest.TestCase):
                     table.indexes.items[1] = (0, 1)
                 else:
                     table.indexes.items[0] = object()
-                with self.assertRaisesRegex(ValueError, 'индекс'):
-                    write(table)
+                # Container/search ownership errors originate in the wire
+                # writer; bad declarations are rejected by its shared snapshot
+                # validator before they reach the serialized stream.
+                if change in ('collection-owner', 'declaration-mismatch'):
+                    with self.assertRaisesRegex(ValueError, 'недопустимая коллекция индексов'):
+                        write(table)
+                else:
+                    with self.assertRaises(TableSnapshotError):
+                        write(table)
 
     def test_direct_bsl_typed_index_roundtrip_and_live_write(self):
         vm = Interpreter()
@@ -297,7 +314,7 @@ class DefensiveIndexCodecTests(unittest.TestCase):
 
     def test_deleted_standalone_children_still_follow_opaque_policy(self):
         table = self.indexed()
-        index = table.indexes.items[0]
+        index = table.indexes.get_index(0)
         table.indexes.clear()
         self.assertEqual(write(index), '{"#",' + INDEX_UUID + '}')
         self.assertIsNone(read(write(index)))

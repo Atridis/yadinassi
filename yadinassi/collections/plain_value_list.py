@@ -79,13 +79,25 @@ def _scalar_item_sort_key(item):
     return _sort_value(list.__getitem__(_item(item), 0), python_string_order=True, unsupported=TypeError)
 
 
-def _index(index):
+def _index(index, *, allow_boolean=False):
     kind = type(index)
     if kind is int:
         return index
-    if kind is not Decimal:
-        raise TypeError('ValueList index requires a number')
-    return int(index)
+    if kind is Decimal:
+        return int(index)
+    if kind is str:
+        digits = index[1:] if index.startswith(('+', '-')) else index
+        if digits.isascii() and digits.isdecimal():
+            return int(index)
+    if kind is bool and allow_boolean:
+        return int(index)
+    raise TypeError('ValueList index requires a number')
+
+
+def _checked_position(position, stop):
+    if not 0 <= position < stop:
+        raise IndexError('ValueList index out of bounds')
+    return position
 
 
 def _same(left, right):
@@ -238,7 +250,7 @@ class PlainValueList(list):
         return item
 
     def insert(self, index, value=None, presentation='', check=False, picture=None):
-        position = _index(index)
+        position = _checked_position(_index(index, allow_boolean=True), list.__len__(self) + 1)
         item = PlainValueListItem((
             value,
             presentation if type(presentation) is str else _normalize_presentation(presentation),
@@ -253,7 +265,22 @@ class PlainValueList(list):
         return item
 
     def get(self, index):
-        return _item(list.__getitem__(self, _index(index)))
+        position = _index(index)
+        if position < 0:
+            raise IndexError('ValueList index out of bounds')
+        return _item(list.__getitem__(self, position))
+
+    def get_index(self, index):
+        kind = type(index)
+        if kind is Decimal:
+            if not index.is_finite() or index != index.to_integral_value():
+                raise TypeError('ValueList bracket index requires an integer')
+            index = int(index)
+        elif kind is not int:
+            raise TypeError('ValueList bracket index requires an integer')
+        if index < 0:
+            raise IndexError('ValueList index out of bounds')
+        return _item(list.__getitem__(self, index))
 
     def count(self):
         return Decimal(list.__len__(self))
@@ -276,9 +303,7 @@ class PlainValueList(list):
         return _index(item_or_index)
 
     def delete(self, item_or_index):
-        position = self._position(item_or_index)
-        if not 0 <= position < list.__len__(self):
-            raise IndexError('ValueList index out of bounds')
+        position = _checked_position(self._position(item_or_index), list.__len__(self))
         item = _item(list.__getitem__(self, position))
         list.__delitem__(self, position)
         item._id = -1
@@ -292,13 +317,10 @@ class PlainValueList(list):
         list.clear(self)
 
     def move(self, item_or_index, offset):
-        position = self._position(item_or_index)
+        count = list.__len__(self)
+        position = _checked_position(self._position(item_or_index), count)
         shift = _index(offset)
-        if position < 0:
-            position += len(self)
-        if not 0 <= position < len(self):
-            raise IndexError('ValueList index out of bounds')
-        destination = max(0, min(position + shift, len(self) - 1))
+        destination = _checked_position(position + shift, count)
         if destination == position:
             return
         item = list.pop(self, position)

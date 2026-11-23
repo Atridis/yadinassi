@@ -48,10 +48,19 @@ class BatchContract:
         self.assertEqual(self.port.scan(self.reg), expected)
 
     def test_corrupt_last_payload_fails_whole_scan(self):
-        for key in [self.key, self.other_key()]:
+        keys = sorted((self.key, self.other_key()), key=lambda key: str(key.record_id))
+        for key in keys:
             self.port.replace(self.request(key))
-        self.c.execute(f"UPDATE {self.table}_movement SET values_json='[]' WHERE record_id=?",
-                       (max(row[0] for row in self.c.execute(f'SELECT record_id FROM {self.table}_partition')),))
+        before = self.port.scan(self.reg)
+        self.assertEqual([key for key, _ in before], keys)
+        # The typed layout stores an exact logical payload byte count. Corrupt
+        # the last row's count within the physical SQLite CHECK domain.
+        last = keys[-1]
+        cursor = self.c.execute(f'UPDATE {self.table} SET payload_bytes=payload_bytes+1 '
+                                'WHERE register_id=? AND document_id=? AND record_id=?',
+                                (str(self.reg), str(last.document_id), str(last.record_id)))
+        self.assertEqual(cursor.rowcount, 1)
+        self.assertEqual(self.port.read(self.reg, keys[0]), before[0][1])
         with self.assertRaises(BackendError) as caught:
             self.port.scan(self.reg)
         self.assertEqual(caught.exception.code, 'integrity')
@@ -73,13 +82,11 @@ class BatchContract:
 class RecorderBatchTests(BatchContract, unittest.TestCase):
     setUp = recorder_fixture.RecorderStorageTests.setUp
     request = recorder_fixture.RecorderStorageTests.request
-    table = 'recorder'
 
 
 class AccumulationBatchTests(BatchContract, unittest.TestCase):
     setUp = accumulation_fixture.AccumulationStorageTests.setUp
     request = accumulation_fixture.AccumulationStorageTests.request
-    table = 'accumulation'
 
     def test_duplicate_occurrences_remain_distinct(self):
         rows = (self.row, replace(self.row, line_number=2))
