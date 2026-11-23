@@ -242,7 +242,7 @@ class Emitter:
         self.http_body_receiver=False
         self.known_calls={};self.known_origins=();self.known_selection_reads=set();self.known_selection_adds=set()
         self.local_field_facts={};self.integer_lane=False;self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.module_boundaries=0;self.range_indices={};self.external_actuals=0
-        self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.current_module=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
+        self.handler_depth=0;self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.current_module=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
         self.standalone_script=False;self.row_cell_references=False;self.link_imports=False;self.import_links=[]
         self.import_names=frozenset();self.require_last_expression=None;self.region_active=False;self.region_ops={};self.region_states={};self.routines={};self.routine_symbols={};self.numeric_routine_symbols={};self.address_routine_symbols={};self.module_globals=set();self.scope=None;self.source_refs={};self.loop_increments=[];self.required=set();self.pure_builtins={};self.visits=0;self.python_nodes=0
     def node(self,kind,token,**fields):
@@ -280,12 +280,12 @@ class Emitter:
             self.scope['initialized'].add(key)
             journals=self.scope.get('initialization_journals',[])
             if journals:journals[-1].add(key)
-    def target(self,name,token):
+    def target(self,name,token,*,initializes=True):
         self.check_name(name)
         if self.scope is not None and name.casefold() not in self.scope['globals']:
             key=name.casefold()
             if key not in self.scope['slots']:self.scope['slots'][key]=self.temp()
-            self.initialize_local(key)
+            if initializes:self.initialize_local(key)
             address=self.scope.get('addresses',{}).get(key)
             if address is not None:
                 return self.node(py.Subscript,token,value=self.name(address[0],token),
@@ -361,6 +361,13 @@ class Emitter:
                         test=self.node(py.BoolOp,token,op=py.Or(),values=[forwarded,test])
                     missing=self.invoke(self.attribute(self.name('_context',token),'external_get',token),[self.const(key,token)],token) if key in self.scope['shadows'] else self.call('_missing',[self.const(name,token)],token)
                     return self.node(py.IfExp,token,test=test,body=value,orelse=missing)
+                if self.handler_depth and key not in self.scope['initialized'] and key not in self.scope['boxed']:
+                    # The thunk contains exactly one lexical load. In
+                    # particular, it cannot call a host value or accessor.
+                    empty=py.arguments(posonlyargs=[],args=[],vararg=None,kwonlyargs=[],
+                                       kw_defaults=[],kwarg=None,defaults=[])
+                    load=self.node(py.Lambda,token,args=empty,body=value)
+                    return self.call('_read_except_local',[load,self.const(name,token)],token)
                 return value
             return self.read_missing(name,key,token)
         temporary=self.temp()
@@ -1959,7 +1966,10 @@ class Emitter:
             body=error_path(node.body) or [self.node(py.Pass,t)]
             caught=self.temp()
             manager=self.call('_handled_error',[self.name('_context',t),self.name(caught,t),self.const(self.filename,t),self.name('_diagnostic_source',t)],t)
-            handler_body=self.node(py.With,t,items=[py.withitem(context_expr=manager,optional_vars=None)],body=error_path(node.handler) or [self.node(py.Pass,t)])
+            self.handler_depth+=1
+            try:handler=error_path(node.handler)
+            finally:self.handler_depth-=1
+            handler_body=self.node(py.With,t,items=[py.withitem(context_expr=manager,optional_vars=None)],body=handler or [self.node(py.Pass,t)])
             if self.scope is not None:
                 for key in paths[0].intersection(paths[1]):self.initialize_local(key)
             classes=self.node(py.Tuple,t,elts=[self.name(name,t) for name in ('ArithmeticError','ValueError','TypeError','IndexError','RecursionError','_BSLRuntimeError')],ctx=py.Load())
@@ -2284,7 +2294,8 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             target=emitter.read(name,token) if emitter.native_cells or emitter.source_scopes or emitter.host_bindings else (emitter.attribute(emitter.name(slot,token),'value',token) if boxed else emitter.name(slot,token))
             args=py.arguments(posonlyargs=[],args=[],vararg=None,kwonlyargs=[],kw_defaults=[],kwarg=None,defaults=[])
             prologue.append(emitter.node(py.FunctionDef,token,name=getter,args=args,body=[emitter.node(py.Return,token,value=target)],decorator_list=[],returns=None,type_comment=None))
-            target=emitter.target(name,token) if emitter.native_cells else (emitter.node(py.Attribute,token,value=emitter.name(slot,token),attr='value',ctx=py.Store()) if boxed else emitter.name(slot,token,True))
+            # Compiling a setter is not a BSL assignment to its slot.
+            target=emitter.target(name,token,initializes=False) if emitter.native_cells else (emitter.node(py.Attribute,token,value=emitter.name(slot,token),attr='value',ctx=py.Store()) if boxed else emitter.name(slot,token,True))
             assign=emitter.node(py.Assign,token,targets=[target],value=emitter.name('_new',token))
             body=[assign] if boxed else [emitter.node(py.Nonlocal,token,names=[slot]),assign]
             args=py.arguments(posonlyargs=[],args=[emitter.node(py.arg,token,arg='_new',annotation=None)],vararg=None,kwonlyargs=[],kw_defaults=[],kwarg=None,defaults=[])
@@ -2576,8 +2587,8 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     from yadinassi.execution.direct.python_direct_structure_references import local_member as _local_structure_member, STRUCTURE as _BoxedStructure
     from yadinassi.execution.direct.python_direct_structural_reads import TARGET_IDS, selects, count as structural_count
     from yadinassi.db.database_context import require_database_context
-    from .experimental_naked_errors import for_bound_unbound
-    namespace=dict(_for_bound_unbound=for_bound_unbound,_normalize_item_presentation=_normalize_presentation,_normalize_item_check=_normalize_check,
+    from .experimental_naked_errors import for_bound_unbound, read_except_local
+    namespace=dict(_for_bound_unbound=for_bound_unbound,_read_except_local=read_except_local,_normalize_item_presentation=_normalize_presentation,_normalize_item_check=_normalize_check,
         _require_database_context=require_database_context,_structural_count_ids=TARGET_IDS,_select_structural_read=selects,_structural_count=structural_count,_local_structure_member=_local_structure_member,_BoxedStructure=_BoxedStructure,_local_array_index=_local_array_index,_BoxedArray=_BoxedArray,_local_row_index=_local_row_index,_local_row_member=_local_row_member,_PlainTableRow=_vt.BSLValueTableRow,_raw_table_value=RowStorage.get_value,_raw_table_positional=_vt.BSLValueTableRow._positional_value,_dynamic_remainder=remainder,_dynamic_divide=divide,_dynamic_sign=sign,_dynamic_public_number=public_number,_plain_array_loop=_plain_array_loop,_plain_append_receiver=_plain_append_receiver,_list_append=list.append,_native_host_reference=_native_host_reference,_native_cell_reference=_native_cell_reference,_native_fragment_binding=_native_fragment_binding,_NativeCell=_NativeCell,_PublishedModuleCell=_PublishedModuleCell,_adapt_native_cell=_adapt_native_cell,_PrivateTable=_vt.BSLValueTable,_PrivateValueList=PlainValueList,_PlainValueList=PlainValueList,_PlainValueListItem=PlainValueListItem,_module_primitive_type_ids=frozenset(id(kind) for kind in (list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure)),_module_data_types=data_types,_module_data_type_ids=frozenset(id(kind) for kind in data_types),_native_dict_get=dict.get,_native_dict_setitem=dict.__setitem__,_PlainArray=_PlainArray,_Decimal=Decimal,_PlainMap=PlainMap,_plain_map=plain_map,_execute_fragment=execute_fragment,_fragment_binding=_fragment_binding,_bind_eval=bind_eval,_raise_arity_error=raise_arity_error,_host_omission_error=_host_omission_error,_host_omission_values=_host_omission_values,_dynamic_construct=dynamic_construct,_invalid_native_arity=_invalid_native_arity,_typed_find=scalar.typed_find,_list_delete=_list_delete,_native_ubound=_native_ubound,_readonly=readonly,_array_set_checked=_array_set_checked,_bounded_insert=bounded_insert,_structure_insert=structure_insert,_array_constructor_bounds=bounded_array,_new_structure=new_structure,_structure_from_schema=structure_from_schema,_host_name_reference=_host_name_reference,_Cell=_Cell,_ForwardReference=_ForwardReference,_as_ref=_as_ref,_bound_ref=_bound_ref,_UNSET_REF=_UNSET_REF,_OMITTED_REF=_OMITTED_REF,_argument_count_error=_argument_count_error,_routine_value_error=_routine_value_error,_procedure_value_error=_procedure_value_error,_identity_reference=_identity_reference,_IndexRef=_IndexRef,_AttributeRef=_AttributeRef,_SlotReference=live_state._SlotReference,_source_reference=source_reference,_canonical_reference=_canonical_reference,_structure_property=structure_property,_native_method_missing=_native_method_missing,_native_count=_native_count,_MapEntry=_MapEntry,_array_member=_array_member,_native_property_missing=_native_property_missing,_structure_get_known=structure_get_known,_structure_set_known=structure_set_known,_native_property_write_missing=_native_property_write_missing,_checked_array_index=_checked_array_index,_checked_literal_array_index=_checked_literal_array_index,_partial=partial,_native_getitem=_NATIVE_GETITEM,_list_get=_list_get,_TypedMap=_TypedMap,_NakedMap=_NakedMap,_DirectStructure=_DirectStructure,_host_reference=host_reference,_UNSET=UNSET,_missing=missing,_native_add=_NATIVE_ADD,_concatenate=scalar.concatenate,_divide=scalar.decimal_divide,_sign=scalar.decimal_sign,_order=scalar.uca_order,_truth=scalar.truth,_equal=equal,_not_equal=not_equal,_MISSING=_MISSING,_handled_error=handled_error,_reraise_handled=reraise_handled,_raise_error=raise_error,_presentation=scalar.presentation,_BSLRuntimeError=BSLRuntimeError)
     if emitter.known_calls:
         from yadinassi.execution.direct.python_direct_known_methods import execute, construct_table, detached_after_publication, generic_call

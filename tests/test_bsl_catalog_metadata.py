@@ -131,6 +131,17 @@ class CatalogMetadataRuntimeTests(unittest.TestCase):
                 with self.assertRaisesRegex(BSLRuntimeError, 'db required'):
                     missing.execute('ReadName()')
 
+    def test_server_metadata_stays_local_and_does_not_shadow_a_parameter(self):
+        runtime = Interpreter()
+        self.addCleanup(runtime.close)
+        runtime.execute('''&AtServer
+Function GetRoot() Return Metadata; EndFunction
+&AtServerNoContext
+Function Echo(Val Metadata) Return Metadata; EndFunction''')
+        self.assertEqual(runtime.execute('Echo("local")'), 'local')
+        with self.assertRaisesRegex(BSLRuntimeError, 'Межконтекстная передача'):
+            runtime.execute('GetRoot()')
+
     def test_method_name_catalogs_remain_accessible_without_guessing_precedence(self):
         runtime, _ = self.runtime(('Count', 'Find'))
         self.assertEqual(runtime.execute('Metadata.Catalogs.Count()'), Decimal(2))

@@ -146,6 +146,14 @@ class _ErrorLocations:
         return self.lines
 
 
+def read_except_local(load, name):
+    try:
+        return load()
+    except NameError:
+        # Only an emitter-owned single lexical-load thunk is passed here.
+        raise ValueError('Переменная или функция не определена: '+name) from None
+
+
 def for_bound_unbound(error):
     # An error raised by another routine or host callable has its own origin.
     # Only the generated routine's direct local-variable load belongs here.

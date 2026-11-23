@@ -7,6 +7,10 @@ from yadinassi.formats.xml.xml_io import XML_NODE_TYPES, XML_SPACES, XML_VALIDAT
 from yadinassi.http.http_client import BYTE_ORDER_MARK_USE
 from yadinassi.streams.binary_streams import POSITIONS_IN_STREAM, BYTE_ORDERS, FILE_OPEN_MODES, FILE_ACCESSES
 from yadinassi.streams.file_io import TEXT_ENCODINGS
+from yadinassi.streams.zip_archives import NAMESPACES as ZIP_NAMESPACES
+
+_ZIP_NAMESPACES = tuple(((ru.casefold(), en.casefold()), ns) for ru, en, ns in ZIP_NAMESPACES)
+_ZIP_ENUM_VALUES = tuple(item for _, ns in _ZIP_NAMESPACES for item in ns._enum)
 from yadinassi.streams.data_hashing import HASH_FUNCTIONS
 from yadinassi.text.chars import CHARS
 from yadinassi.collections.search_directions import BSLSearchDirection, SEARCH_DIRECTIONS
@@ -51,6 +55,7 @@ NAMES = MappingProxyType({
         (("jsonvaluetype", "типзначенияjson"), JSON_VALUE_TYPES),
         (("jsondateformat", "форматдатыjson"), JSON_DATE_FORMATS),
         (("jsondatewritingvariant", "вариантзаписидатыjson"), JSON_DATE_WRITING_VARIANTS),
+        *_ZIP_NAMESPACES,
     )
     for alias in aliases
 })
@@ -64,7 +69,8 @@ ITERABLES = (SEARCH_DIRECTIONS, SORT_DIRECTIONS, ROUND_MODES)
 # authority (including authority to dispatch a Python protocol).
 ITERABLE_IDS = frozenset(map(id, ITERABLES))
 OPAQUE_ENUM_VALUES = (*BSLSearchDirection, *BSLSortDirection, *BSLRoundMode, *BSLType,
-                      *BSLAllowedSign, *BSLAllowedLength, *BSLDateFractions)
+                      *BSLAllowedSign, *BSLAllowedLength, *BSLDateFractions, *_ZIP_ENUM_VALUES)
 OPAQUE_ENUM_IDS = frozenset(map(id, OPAQUE_ENUM_VALUES))
-FIELD_ONLY_NAMESPACE_IDS = frozenset(map(id, (ALLOWED_SIGNS, ALLOWED_LENGTHS, DATE_FRACTIONS)))
+FIELD_ONLY_NAMESPACE_IDS = frozenset(map(id, (ALLOWED_SIGNS, ALLOWED_LENGTHS, DATE_FRACTIONS,
+    *(ns for _, ns in _ZIP_NAMESPACES))))
 METHODLESS_NAMESPACE_IDS = ITERABLE_IDS | FIELD_ONLY_NAMESPACE_IDS | frozenset((id(CHARS),))

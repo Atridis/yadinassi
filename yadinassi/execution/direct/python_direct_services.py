@@ -9,7 +9,6 @@ from yadinassi.streams.file_io import (
     create_directory, copy_file, move_file, delete_files,
 )
 from yadinassi.streams.text_documents import BSLTextDocument
-from yadinassi.streams.zip_archives import BSLZipFileReader
 from . import python_direct_zip_reader as zip_reader
 from .source import python_direct_source_resources as text_resources
 from yadinassi.formats.storage.value_storage import BSLValueStorage
@@ -133,7 +132,7 @@ ORDINARY_CONSTRUCTORS = {
     'настройкисериализацииjson': BSLJSONSerializerSettings,
     'valuestorage': BSLValueStorage, 'хранилищезначения': BSLValueStorage,
     'deflation': BSLDeflation, 'сжатиеданных': BSLDeflation,
-    'zipfilereader': BSLZipFileReader, 'чтениеzipфайла': BSLZipFileReader,
+    **zip_reader.CONSTRUCTORS,
     'xmlstringprocessingmanager': None, 'менеджеробработкистрокиxml': None,
     'chars': None, 'символы': None,
     # Authenticated UUID observation: this spelling is rejected, not an alias.

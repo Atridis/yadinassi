@@ -241,7 +241,7 @@ class AccumulationPostingRuntimeTests(unittest.TestCase):
 
     def test_handler_observes_staged_reference_before_persistence(self):
         self.make('''Procedure Posting(Cancel,Mode)
-If Ref=Documents.Order.EmptyRef() Then Raise "empty staged reference";EndIf;
+If Not ValueIsFilled(Ref) Then Raise "empty staged reference";EndIf;
 AdditionalProperties.Insert("InsideRef",Ref);
 RegisterRecords.Rows.Write=True;
 EndProcedure''')
@@ -393,9 +393,13 @@ EndProcedure''')
 
     def test_detached_write_cannot_create_transaction(self):
         self.new()
-        with patch.object(self.backend,'begin_unit_of_work', wraps=self.backend.begin_unit_of_work) as begin_call:
-            with self.assertRaises(BSLRuntimeError): self.vm.execute('S.Write();')
-            begin_call.assert_not_called()
+        # Watch connection acquisition without shadowing a canonical backend
+        # method: the attempt must reach the real detached-movement guard.
+        with patch.object(sqlite3, 'connect', wraps=sqlite3.connect) as connect:
+            with self.assertRaisesRegex(BSLRuntimeError, 'unsupported'):
+                self.vm.execute('S.Write();')
+            connect.assert_not_called()
+        self.assertIsNone(self.backend._active)
         self.assertEqual(self.sql('SELECT COUNT(*) FROM document_record'), [(0,)])
 
     def test_period_active_and_write_flag_require_exact_types(self):

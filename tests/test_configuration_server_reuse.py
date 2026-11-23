@@ -3,6 +3,8 @@ import json
 import unittest
 from unittest.mock import patch
 from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.types.errors import BSLError
 from configuration_runtime_fixture import module_files
 from test_server_module_reuse_native_replay import application, application_files, NATIVE, replay_observations
@@ -12,6 +14,14 @@ SOURCE='Function Token(Val Key) Export Return String(New UUID); EndFunction'
 class ServerReuseTests(unittest.TestCase):
     def app(self):
         app=application();self.addCleanup(app.close,force=True);return app
+    def source_interpreter(self):
+        # Qualified file-mode calls use the same source owner as native replay.
+        # Keep ConfigurationApplication for its independent admission tests.
+        app = SourceApplication(import_source(application_files()))
+        self.addCleanup(app.close)
+        self.assertTrue(app.start())
+        return app.interpreter
+
     def from_source(self,source=SOURCE,flags=None):
         app=ConfigurationApplication.from_files(module_files([('Tools',source,{**FLAGS,**(flags or {})})]));self.addCleanup(app.close,force=True);app.start();return app
     def test_split_client_closed(self):
@@ -33,9 +43,9 @@ class ServerReuseTests(unittest.TestCase):
     def test_async_closed(self):
         with self.assertRaises(ValueError):self.from_source('Async '+SOURCE)
     def test_array_argument_closed(self):
-        with self.assertRaises(BSLError):self.app().execute('CachedServerCall.Token(New Array)')
+        with self.assertRaises(BSLError):self.source_interpreter().execute('CachedServerCall.Token(New Array)')
     def test_structure_argument_closed(self):
-        with self.assertRaises(BSLError):self.app().execute('CachedServerCall.Token(New Structure("Key",1))')
+        with self.assertRaises(BSLError):self.source_interpreter().execute('CachedServerCall.Token(New Structure("Key",1))')
     def test_array_result_closed(self):
         with self.assertRaises(BSLError):self.from_source(SOURCE.replace('String(New UUID)','New Array')).execute('Tools.Token("x")')
     def test_same_side_array_argument_closed(self):
@@ -48,12 +58,12 @@ class ServerReuseTests(unittest.TestCase):
         app=self.app();app.close(force=True)
         with self.assertRaises(ValueError):app.reusable_values.cache(app.interpreter,'DuringSession')
     def test_app_session_separation(self):
-        a,b=self.app(),self.app()
+        a,b=self.source_interpreter(),self.source_interpreter()
         self.assertNotEqual(a.execute('CachedServerCall.Token("same")'),b.execute('CachedServerCall.Token("same")'))
     def test_warm_cache_cannot_skip_transfer_guard(self):
-        app=self.app();app.execute('CachedServerCall.Token("warm")')
+        vm=self.source_interpreter();vm.execute('CachedServerCall.Token("warm")')
         with patch('yadinassi.db.database_transactions.forbid_transfer',side_effect=ValueError('denied')) as guard:
-            with self.assertRaises(BSLError):app.execute('CachedServerCall.Token("warm")')
+            with self.assertRaises(BSLError):vm.execute('CachedServerCall.Token("warm")')
             guard.assert_called_once()
     def test_request_cleanup_after_failure(self):
         app=self.app()
@@ -63,5 +73,5 @@ class ServerReuseTests(unittest.TestCase):
         expected=json.loads(NATIVE.read_bytes())['observations']
         self.assertEqual(replay_observations(),expected)
     def test_bad_arity_has_no_argument_effect(self):
-        app=self.app()
-        self.assertEqual(app.execute('Calls=0;Try CachedServerCall.Token(ArgumentValue(),ArgumentValue());Except EndTry;Calls'),0)
+        vm=self.source_interpreter()
+        self.assertEqual(vm.execute('Calls=0;Try CachedServerCall.Token(ArgumentValue(),ArgumentValue());Except EndTry;Calls'),0)

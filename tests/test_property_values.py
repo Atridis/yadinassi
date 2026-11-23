@@ -8,9 +8,15 @@ from yadinassi.collections.structures import BSLStructure, BSLFixedStructure, fi
 
 class PropertyValuesTests(unittest.TestCase):
     def setUp(self):
-        self.vm = Interpreter()
+        self.messages = []
+        self.vm = Interpreter(self.messages.append)
         self.vm.execute('target = New Structure("Имя,Количество,Оставить", "старое", 0, 9); '
                         'source = New Structure("иМя,Количество,Лишнее", "Я😀", 3, 42);')
+
+    def assert_target_keys(self):
+        start = len(self.messages)
+        self.vm.execute('For Each item In target Do Message(item.Key); EndDo;')
+        self.assertEqual(self.messages[start:], ['Имя', 'Количество', 'Оставить'])
 
     def test_aliases_case_and_intersection(self):
         for name in ('ЗаполнитьЗначенияСвойств', 'FillPropertyValues',
@@ -22,8 +28,7 @@ class PropertyValuesTests(unittest.TestCase):
             self.assertEqual(self.vm.execute('target.Оставить'), Decimal(9))
             self.assertEqual(self.vm.execute('target.Count()'), Decimal(3))
             self.assertFalse(self.vm.execute('target.Property("Лишнее")'))
-            self.assertEqual([p.key for p in self.vm.variables['target']],
-                             ['Имя', 'Количество', 'Оставить'])
+            self.assert_target_keys()
             self.assertEqual(self.vm.execute('source.Лишнее'), Decimal(42))
 
     def test_fixed_source_and_undefined_copy(self):
@@ -99,8 +104,7 @@ class PropertyValuesTests(unittest.TestCase):
             self.vm.execute(f'FillPropertyValues(target, {source}, "иМя");')
             self.assertEqual(self.vm.execute('target.Имя'), 'Я😀')
             self.assertEqual(self.vm.execute('target.Количество'), Decimal(0))
-            self.assertEqual([p.key for p in self.vm.variables['target']],
-                             ['Имя', 'Количество', 'Оставить'])
+            self.assert_target_keys()
 
     def test_multiple_selected_properties_and_duplicates(self):
         self.vm.execute('FillPropertyValues(target, source, "Количество,Имя,иМя");')

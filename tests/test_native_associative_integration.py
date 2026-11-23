@@ -143,7 +143,7 @@ class AssociativeHistoricalSourceTests(unittest.TestCase):
                     self.assertEqual(without_associative_order_harness(drift, path), drift)
 
 
-class ActualComparatorContractTests(unittest.TestCase):
+class ActualComparatorContractTests(fixtures.SyntheticFilesystemCase):
     def test_multiple_permitted_payloads_emit_canonical_evidence_order(self):
         from tests.test_native_associative_order import BoundProfileTests
         from tests.test_native_1c_map_contract import mapping,sequence,string,scalar,STRUCTURE,ARRAY,encode

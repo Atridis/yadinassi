@@ -13,6 +13,7 @@ import zipfile
 from yadinassi import Interpreter
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
 from yadinassi.syntax.parser import parse
+from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.streams.binary_streams import BSLMemoryStream, BSLPositionInStream, BSLBinaryDataBuffer
 from yadinassi.streams.zip_archives import (BSLZipFileReader as Reader, BSLZipFileWriter as Writer,
     BSLZIPStorePathMode as Paths, BSLZIPSubDirProcessingMode as Recurse,
@@ -167,6 +168,33 @@ class ZIPTests(unittest.TestCase):
         z=self.root/'z.zip';w=Writer(str(z));w.add(str(self.src/'a.bin'));w.write();out=[]
         Interpreter(out.append).execute(f'r=New ЧтениеZipФайла("{z}"); Message(TypeOf(r)=Type("ZipFileReader")); Message(r.Items[0].Name); For Each x In r.Items Do Message(x.UncompressedSize); EndDo; Try r.Items[0]=1; Except Message("readonly"); EndTry; r.Close();')
         self.assertEqual(out,['Да','a.bin','3','readonly'])
+    def test_direct_writer_file_and_binary_workflows(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        path = self.root / 'direct.zip'
+        vm.variables.update(path=str(path), source=str(self.src / 'a.bin'))
+        vm.execute("""
+            W=New ЗаписьZipФайла(Path,"","note",ZIPCompressionMethod.Copy);
+            W.Добавить(Source); W.Записать();
+            R=New ZipFileReader(Path); Comment=R.Comment; R.Close();
+            W=New ZipFileWriter; W.Add(Source);
+            Raw=W.GetBinaryData(); Raw.Write(Path);
+        """)
+        self.assertEqual(vm.variables['comment'], 'note')
+        with zipfile.ZipFile(path) as archive:
+            self.assertEqual(archive.read('a.bin'), b'a\x00\xff')
+
+    def test_direct_writer_rejects_foreign_values_and_stream_targets(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.variables.update(writer=Writer(), stream=BSLMemoryStream())
+        with mock.patch.object(module, '_write_file') as write:
+            with self.assertRaisesRegex(BoundaryViolation, 'foreign ZIP writer'):
+                vm.execute('Writer.Write();')
+            with self.assertRaisesRegex(BSLRuntimeError, 'ZIP: ожидается имя файла'):
+                vm.execute('W=New ZipFileWriter(Stream);')
+            write.assert_not_called()
+
     def test_direct_reader_open_metadata_and_no_extraction(self):
         path = self.root / 'read.zip'
         path.write_bytes(raw_zip([('entry.txt', b'abc')]))
@@ -199,6 +227,18 @@ class ZIPTests(unittest.TestCase):
                 self.assertTrue(vm.variables['writedenied'])
                 self.assertTrue(vm.variables['reflectiondenied'])
                 self.assertFalse(target.exists())
+
+    def test_direct_reader_missing_registration_remains_fatal_before_arguments(self):
+        vm = Interpreter(allow_extensions=True)
+        self.addCleanup(vm.close)
+        calls = []
+        vm.register_function('GetPath', lambda: calls.append('argument'))
+        del vm.types['zipfilereader']
+        with mock.patch.object(module, '_read_file') as read:
+            with self.assertRaisesRegex(BoundaryViolation, 'ZIP constructor requires canonical registration'):
+                vm.execute('Try R=New ZipFileReader(GetPath()); Except EndTry;')
+            read.assert_not_called()
+        self.assertEqual(calls, [])
 
     def test_direct_reader_rechecks_constructor_before_file_access(self):
         vm = Interpreter(allow_extensions=True)

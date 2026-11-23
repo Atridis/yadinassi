@@ -353,14 +353,32 @@ Procedure Change(Val Before, X = 1, Val After = 0) Message("entered"); EndProced
                      'Change(Effect(), (Owner().Value));',
                      'Change(Effect(), Effect());',
                      'Change(Effect(), 1);',
-                     'Change(Effect(), 1 + Effect());',
-                     'Change(Effect());'):
-            with self.subTest(call=call), self.assertRaisesRegex(
-                    BSLError, 'без Знач.*имя переменной'):
-                self.vm.execute(call)
-            self.assertEqual(effects, [])
-            self.assertEqual(self.messages, [])
-            self.assert_restored()
+                     'Change(Effect(), 1 + Effect());'):
+            with self.subTest(call=call):
+                with self.assertRaisesRegex(BSLError, 'без Знач.*имя переменной'):
+                    self.vm.execute(call)
+                self.assertEqual(effects, [])
+                self.assertEqual(self.messages, [])
+                self.assert_restored()
+
+    def test_omitted_non_val_default_crosses_without_a_copyback_target(self):
+        def effect(value):
+            self.messages.append(f'argument {value}')
+            return value
+
+        self.vm.register_function('Effect', effect)
+        self.vm.execute('''
+&AtServer
+Procedure Change(Val Before, X = 1, Val After = 0)
+    Message(Context()); Message(Before); Message(X); Message(After);
+    X = 43;
+EndProcedure
+''')
+        self.vm.execute('X=99; Change(Effect(2)); Change(Effect(3), , Effect(4)); Message(X);')
+        self.assertEqual(self.messages,
+                         ['argument 2', 'server', '2', '1', '0',
+                          'argument 3', 'argument 4', 'server', '3', '1', '4', '99'])
+        self.assert_restored()
 
     def test_non_storage_names_are_not_accepted_as_output_actuals(self):
         self.vm.execute('&AtServer\nProcedure Change(X) X = 43; EndProcedure')

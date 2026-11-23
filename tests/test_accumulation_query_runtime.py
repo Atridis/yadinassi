@@ -90,7 +90,9 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
             port.scan(register, _query_view=owner)
 
     def test_unchanged_native16_observer_and_handler_replay(self):
-        vm, _ = self.make(module=None)
+        # The observer has diagnostic callbacks; the posting handler itself
+        # remains on the ordinary, separately owned closed adapter.
+        vm, _ = self.make(module=None, allow_extensions=True)
         observed, diagnostics = [], []
         vm.register_function('ПодробноеПредставлениеОшибки', lambda info: info.get_member('Description'))
         vm.register_function('AccumulationEmit', lambda n, value: observed.append((int(n), value)), returns_value=False)

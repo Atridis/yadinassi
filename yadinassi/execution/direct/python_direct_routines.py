@@ -57,8 +57,11 @@ def prepare(vm, program, plan, *, retain_generated=True):
         from .python_direct import REPAIRS
         from .python_direct_services import ORDINARY_CONSTRUCTORS
         from .python_direct_names import NAMES
+        from .python_direct_database import METADATA_NAMES
         from yadinassi.db.database_context import SQLiteDBContext
-        external_names=tuple(NAMES)
+        # The server boundary already provides the same inert metadata root.
+        # Its collections request storage only when their data is read.
+        external_names=tuple(NAMES)+METADATA_NAMES
         base_constructors=tuple(ORDINARY_CONSTRUCTORS)+('uuid','уникальныйидентификатор')
         # Recognize Query even without a database; its factory checks at use.
         constructor_names=base_constructors+('query','запрос')

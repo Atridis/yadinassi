@@ -139,8 +139,8 @@ class AsyncRuntimeTests(unittest.TestCase):
         self.assertEqual(self.output, [])
         self.assertEqual(self.vm.pending_promises, ())
 
-    def test_async_task_denies_server_crossing_before_actuals(self):
-        self.run_code('''
+    def test_root_async_task_crosses_server_after_await(self):
+        self.run_code("""
         &AtServer
         Function OnServer(Val x) Message("server"); Return x; EndFunction
         &AtClient
@@ -148,12 +148,39 @@ class AsyncRuntimeTests(unittest.TestCase):
         &AtClient
         Async Function Work()
             Await 0;
-            Try Return OnServer(Effect()); Except Message("blocked"); EndTry;
+            Return OnServer(Effect());
         EndFunction
         result=Work();
-        ''')
+        """)
+        self.assertEqual(self.output, ['actual', 'server'])
+        promise = self.vm.variables['result']
+        self.assertEqual(promise.state, 'fulfilled')
+        self.assertEqual(promise.result, Decimal(4))
+        self.assertEqual(self.vm._context_stack, ['client'])
+        self.assertEqual(self.vm._module_context_stack, [True])
+
+    def test_imported_async_task_denies_contextful_server_crossing_before_actuals(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'Child.bsl').write_text("""
+            &AtServer
+            Function OnServer(Val x) Message("server"); Return x; EndFunction
+            &AtClient
+            Function Effect() Message("actual"); Return 4; EndFunction
+            &AtClient
+            Async Function Work() Export
+                Await 0;
+                Try Return OnServer(Effect()); Except Message("blocked"); EndTry;
+                Return 7;
+            EndFunction
+            """, encoding='utf-8')
+            self.vm.execute('// #Import Child.bsl\nresult=Child.Work();', str(root / 'Main.bsl'))
         self.assertEqual(self.output, ['blocked'])
-        self.assertEqual(self.vm.variables['result'].state, 'fulfilled')
+        promise = self.vm.variables['result']
+        self.assertEqual(promise.state, 'fulfilled')
+        self.assertEqual(promise.result, Decimal(7))
+        self.assertEqual(self.vm._context_stack, ['client'])
+        self.assertEqual(self.vm._module_context_stack, [True])
 
     def test_eager_call_and_yield_even_settled(self):
         self.run_code('''

@@ -182,6 +182,50 @@ class DirectRuntimeLanguageContractsTests(unittest.TestCase):
         self.assertEqual(effects, [])
         self.assertNotIn('result', vm.variables)
 
+    def test_except_local_use_reports_missing_with_existing_nested_diagnostics(self):
+        code = """
+        Function Observe(Val FailEarly)
+            Kept=7;
+            Try
+                If FailEarly Then Raise "early"; EndIf;
+                R=New Structure("Value", 5);
+                Raise "late";
+            Except
+                Outer=ErrorInfo().Description;
+                Try
+                    V=R.Value; Note=String(V);
+                Except
+                    Note=ErrorInfo().Description;
+                EndTry;
+                StillOuter=ErrorInfo().Description;
+                Return Outer+"|"+Note+"|"+StillOuter+"|"+String(Kept);
+            EndTry;
+        EndFunction
+        Early=Observe(True); Late=Observe(False);
+        """
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm=self.vm()
+                if prepared:
+                    vm.execute_prepared(vm.prepare(code))
+                else:
+                    vm.execute(code)
+                outer, inner, restored, kept=vm.variables['early'].split('|')
+                # A handled nested error deliberately discards outer details.
+                self.assertEqual((outer,restored,kept),('early','','7'))
+                self.assertIn('Переменная или функция не определена: R',inner)
+                self.assertEqual(vm.variables['late'],'late|5|late|7')
+
+    def test_except_does_not_catch_a_host_origin_unbound_local(self):
+        vm = self.vm(allow_extensions=True)
+        def bad():
+            raise UnboundLocalError('host origin')
+        vm.register_function('Bad',bad)
+        with self.assertRaisesRegex(UnboundLocalError,'host origin'):
+            vm.execute('Procedure P() Try Raise "outer"; Except '
+                       'Try Bad(); Except Message("must not run"); EndTry; '
+                       'EndTry; EndProcedure P();')
+
     def test_unbound_for_endpoint_is_catchable_before_counter_assignment(self):
         vm = self.vm()
         vm.execute("""Function F()
