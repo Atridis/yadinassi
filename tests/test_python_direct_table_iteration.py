@@ -63,12 +63,21 @@ Other=T.Add();Other.X=7;T.Delete(R);N=0;For Each Live In R Do N=N+Live.X;EndDo;'
         events=[]
         class Evil:
             def __getattribute__(self,name):events.append(name);raise AssertionError(name)
-        t=self.table();r=t.rows[0];value=Evil();r.cells[t.columns.items[0]]=value
+        t=self.table();r=t.rows[0];value=Evil();r.set_member('X',value)
+        self.assertEqual(len(list(resolve(self.context(),t)())),1)
+        self.assertEqual(len(list(resolve(self.context(),t.columns)())),2)
+        self.assertIs(list(resolve(self.context(),r)())[0],value)
+        vm=self.vm();vm.variables['row']=r
+        vm.execute('Seen=False; For Each Cell In Row Do If Not Seen Then First=Cell; EndIf; Seen=True; EndDo;')
+        self.assertIs(vm.variables['first'],value)
+
         def hook(*args):events.append('hook');raise AssertionError('hook')
-        with patch.object(BSLValueTable,'__iter__',hook),patch.object(BSLValueTableRow,'__getattribute__',hook),patch.object(BSLValueTableColumnCollection,'__iter__',hook):
-            self.assertEqual(len(list(resolve(self.context(),t)())),1)
-            self.assertEqual(len(list(resolve(self.context(),t.columns)())),2)
-            self.assertIs(list(resolve(self.context(),r)())[0],value)
+        for cls,name,receiver in ((BSLValueTable,'__iter__',t),
+                                  (BSLValueTableRow,'__getattribute__',r),
+                                  (BSLValueTableColumnCollection,'__iter__',t.columns)):
+            with self.subTest(cls=cls),patch.object(cls,name,hook):
+                with self.assertRaises(BoundaryViolation):
+                    list(resolve(self.context(),receiver)())
         self.assertEqual(events,[])
 
     def test_foreign_items_subclasses_and_malformed_storage_reject(self):
@@ -77,11 +86,18 @@ Other=T.Add();Other.X=7;T.Delete(R);N=0;For Each Live In R Do N=N+Live.X;EndDo;'
         with self.assertRaises(BoundaryViolation):vm.execute('For Each R In T Do EndDo;')
         for mode in ('row','column','cells','rows_container'):
             t=self.table();other=self.table();value=t
+            # The inspection views cannot be corrupted through their public
+            # tuple/mapping interfaces. Exercise actual malformed storage.
             if mode=='row':t.rows[:]=other.rows
-            elif mode=='column':t.columns.items[:]=other.columns.items;value=t.columns
-            elif mode=='cells':t.rows[0].cells={other.columns.items[0]:1};value=t.rows[0]
+            elif mode=='column':t.columns._items[:]=other.columns.items;value=t.columns
+            elif mode=='cells':list.clear(t.rows[0]);value=t.rows[0]
             else:t.rows=iter(t.rows)
-            with self.assertRaises(BoundaryViolation):list(resolve(self.context(),value)())
+            with self.subTest(mode=mode),self.assertRaises(BoundaryViolation):
+                list(resolve(self.context(),value)())
+            vm=self.vm();vm.variables['items']=value
+            with self.subTest(mode=mode,route='prepared'),self.assertRaises(BoundaryViolation):
+                vm.execute_prepared(vm.prepare('For Each Item In Items Do Reached=True; EndDo;'))
+            self.assertNotIn('reached',vm.variables)
 
     def test_forged_equality_hooks_are_rejected_without_descriptor_execution(self):
         t=self.table();events=[]

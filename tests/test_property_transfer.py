@@ -445,10 +445,10 @@ class PropertyTransferHostSafetyTests(unittest.TestCase):
         class Derived(BSLValueTableRow):
             def get_member(self, name): raise AssertionError('host getter')
         table = BSLValueTable(); table.columns.add('Text')
-        hostile = Derived(table)
+        hostile = Derived(table, table._storage.schema)
         with self.assertRaises(TypeError): fill_property_values(row(), hostile)
         target = row()
-        target._live = lambda: (_ for _ in ()).throw(AssertionError('host hook'))
+        target.set_member = lambda *args: (_ for _ in ()).throw(AssertionError('host hook'))
         with self.assertRaises(ValueError): fill_property_values(target, BSLStructure('Text', 'new'))
 
     def test_hostile_structure_internal_mapping_is_rejected_before_iteration(self):
@@ -462,9 +462,11 @@ class PropertyTransferHostSafetyTests(unittest.TestCase):
             target = row()
             if change == 'owner': target.table = object()
             elif change == 'column_owner': target.table.columns.items[0].table = BSLValueTable()
-            elif change == 'column_name': target.table.columns.items[0].name = object()
-            elif change == 'column_duplicate': target.table.columns.items.append(target.table.columns.items[0])
-            elif change == 'cells': target.cells.clear()
+            # Public name/column/cell providers already protect these edits;
+            # damage the exact current backing storage to reach the boundary.
+            elif change == 'column_name': target.table.columns._items[0]._name = object()
+            elif change == 'column_duplicate': target.table.columns._items.append(target.table.columns._items[0])
+            elif change == 'cells': list.clear(target)
             elif change == 'detached': target.table.rows.clear()
             else: target.table.columns.items[0].value_type = object()
             with self.subTest(change=change), self.assertRaises((ValueError, TypeError)):
