@@ -10,7 +10,8 @@ from yadinassi.types.values import BSLObject, BSLArray, HostFunction
 from yadinassi.execution.direct.python_direct_plain_array import _DIRECT_PLAIN_ARRAY_TYPE
 from yadinassi.types.type_descriptions import BSLTypeDescription
 from .plain_table_search import SearchIndexes
-from .value_tables import _adjust, _column_total, _default, _text
+from .value_tables import _adjust, _column_total, _default, _integer as _native_column_width_number, _text
+from .structures import _key as _identifier_name
 from .value_table_group import _scalar_key, _total_values
 from .plain_table_storage import RowStorage, TableStorage, Schema, scalar_equal, validate_row
 
@@ -31,6 +32,17 @@ def _insertion_position(value, size):
     else:raise TypeError('table index must be a finite number')
     # Native row and column Insert truncate, then append when out of range.
     return int(n) if 0 <= n < size else size
+
+
+def _column_name(name):
+    if type(name) is not str:raise TypeError('column name must be str')
+    if name:_identifier_name(name)  # The native anonymous column is valid.
+
+
+def _column_width(value):
+    # The existing native column protocol truncates then uses unsigned width.
+    # Check its established finite range before materializing a Python int.
+    return Decimal(_native_column_width_number(value) % (2 ** 32))
 
 
 def _writable(table):
@@ -79,9 +91,7 @@ class BSLValueTableColumn(BSLObject):
         elif key in ('title','заголовок'):
             if type(value) is not str:raise TypeError('title must be str')
             self.title=value
-        elif key in ('width','ширина'):
-            if type(value) is not Decimal or not value.is_finite():raise TypeError('width must be finite number')
-            self.width=value
+        elif key in ('width','ширина'):self.width=_column_width(value)
         else:super().set_member(name,value)
     def __str__(self):return 'КолонкаТаблицыЗначений'
 
@@ -94,10 +104,11 @@ class BSLValueTableColumnCollection(BSLObject):
     def __iter__(self):return iter(self._items)
     def add(self,name='',value_type=None,title='',width=Decimal(0)):
         _writable(self.table)
-        if type(name) is not str or type(title) is not str:raise TypeError('column text must be str')
+        _column_name(name)
+        if type(title) is not str:raise TypeError('column title must be str')
         if value_type is None:value_type=BSLTypeDescription()
         if type(value_type) is not BSLTypeDescription:raise TypeError('exact TypeDescription required')
-        if type(width) is not Decimal or not width.is_finite():raise TypeError('width must be finite')
+        width=_column_width(width)
         column=BSLValueTableColumn(self.table,name,value_type,title,width)
         default = _default(value_type) if value_type.types else None
         self.table._storage.add_column(name,column,default);self._items.append(column)
@@ -136,6 +147,7 @@ class BSLValueTableColumnCollection(BSLObject):
     def rename(self,column,name):
         _writable(self.table)
         column=self.resolve(column)
+        _column_name(name)
         self.table._storage.rename_column(column._name,name);column._name=name
     def delete(self,column):
         _writable(self.table)
@@ -144,8 +156,13 @@ class BSLValueTableColumnCollection(BSLObject):
         plan=indexes._without_column(column)
         self.table._storage.delete_column(column.name)
         indexes._apply_column_delete(plan)
-        self._items.remove(column);column._deleted=True
+        self._items.remove(column)
         self._query_columns -= _query_column(column.value_type)
+        # Keep the formerly returned handle detached but inspectable. Native
+        # deletion clears this descriptor, without renaming any live column.
+        column._deleted=True
+        column._name, column.title, column.width = '', '', Decimal(0)
+        column.value_type = BSLTypeDescription()
     def clear(self):
         for column in tuple(self._items):self.delete(column)
         self.table.clear()
@@ -161,10 +178,11 @@ class BSLValueTableColumnCollection(BSLObject):
         size=len(self._items)
         position=_insertion_position(index,size)
         if position==size:return self.add(name,value_type,title,width)
-        if type(name) is not str or type(title) is not str:raise TypeError('column text must be str')
+        _column_name(name)
+        if type(title) is not str:raise TypeError('column title must be str')
         if value_type is None:value_type=BSLTypeDescription()
         if type(value_type) is not BSLTypeDescription:raise TypeError('exact TypeDescription required')
-        if type(width) is not Decimal or not width.is_finite():raise TypeError('width must be finite')
+        width=_column_width(width)
         column=BSLValueTableColumn(self.table,name,value_type,title,width)
         default=_default(value_type) if value_type.types else None
         indexes=self.table.indexes

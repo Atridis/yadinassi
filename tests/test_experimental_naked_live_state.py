@@ -73,6 +73,29 @@ class LiveModuleStateTests(unittest.TestCase):
     def test_predeclaration_and_explicit_previous_module_names(self):
         self.assertIsNone(self.run_live('r=x;Var x;')['r'])
 
+    def test_plain_declarations_initialize_once_and_preserve_existing_values(self):
+        for prepared in (False,True):
+            with self.subTest(prepared=prepared):
+                vm=Interpreter(allow_extensions=True)
+                self.addCleanup(vm.close)
+                vm.variables['existing']=Decimal(9)
+                seen=[]
+                def observe_and_remove():
+                    seen.append((vm.variables['x'],vm.variables['existing']))
+                    del vm.variables['x']
+                vm.register_function('ObserveAndRemove',observe_and_remove)
+                source='ObserveAndRemove();Var X, Existing; Result=Existing;'
+                if prepared:
+                    plan=vm.prepare(source)
+                    self.assertNotIn('x',vm.variables)
+                    self.assertEqual(seen,[])
+                    vm.execute_prepared(plan)
+                else:
+                    vm.execute(source)
+                self.assertEqual(seen,[(None,Decimal(9))])
+                self.assertNotIn('x',vm.variables)
+                self.assertEqual(vm.variables['result'],Decimal(9))
+
     def test_explicit_previous_module_names(self):
         self.assertEqual(self.run_live('Function F() x=x+1;Return x;EndFunction r=F();', {'x': Decimal(8)}, module_names=('x',))['r'], 9)
 

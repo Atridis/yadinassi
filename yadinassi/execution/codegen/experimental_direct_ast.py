@@ -247,7 +247,7 @@ class Emitter:
         self.goto_destinations={};self.goto_transfers={};self.goto_dispatch=[]
         self.http_body_receiver=False
         self.known_calls={};self.known_origins=();self.known_selection_reads=set();self.known_selection_adds=set()
-        self.local_field_facts={};self.integer_lane=False;self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.scalar_prefix_reads=frozenset();self.module_boundaries=0;self.range_indices={};self.external_actuals=0
+        self.local_field_facts={};self.integer_lane=False;self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.scalar_prefix_reads=frozenset();self.module_boundaries=0;self.range_indices={};self.external_actuals=0;self.hoisted_module_var_ids=frozenset()
         self.handler_depth=0;self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.current_module=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
         self.standalone_script=False;self.row_cell_references=False;self.array_cell_references=False;self.link_imports=False;self.import_links=[]
         self.import_names=frozenset();self.require_last_expression=None;self.region_active=False;self.region_ops={};self.region_states={};self.routines={};self.routine_symbols={};self.numeric_routine_symbols={};self.address_routine_symbols={};self.module_globals=set();self.scope=None;self.source_refs={};self.loop_increments=[];self.required=set();self.pure_builtins={};self.visits=0;self.python_nodes=0
@@ -1774,6 +1774,7 @@ class Emitter:
             if self.scalar_routines:value=self.invoke(self.attribute(self.name('_context',t),'scalar_result',t),[value],t)
             return [self.node(py.Return,t,value=value)]
         if k is bsl.Var:
+            if id(node) in self.hoisted_module_var_ids:return []
             result=[]
             for name in node.names:
                 self.check_name(name)
@@ -2186,7 +2187,10 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         or bool(emitter.routines) and _profile is None and not imported and not async_bodies
            and not _authority and not _source_scopes and vm.allow_extensions)
     emitter.routine_symbols={key:emitter.temp() for key in emitter.routines}
-    emitter.module_globals={name.casefold() for node in program if type(node) is bsl.Var for name in node.names}|{name.casefold() for name in module_names}
+    module_declarations=[node for node in program if type(node) is bsl.Var]
+    if _profile is None and not emitter.routines:
+        emitter.hoisted_module_var_ids=frozenset(map(id,module_declarations))
+    emitter.module_globals={name.casefold() for node in module_declarations for name in node.names}|{name.casefold() for name in module_names}
     collisions=emitter.external_names & (emitter.module_globals|emitter.routines.keys())
     if _profile is None and collisions:
         # Do not reserve a previously legal explicit module declaration.
@@ -2590,6 +2594,15 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             declarations.append(emitter.node(py.Expr,t,value=initialize))
         initialize=emitter.node(py.If,t,test=emitter.const(True,t) if _exports else emitter.node(py.UnaryOp,t,op=py.Not(),operand=emitter.name('_bind_only',t)),body=declarations or [emitter.node(py.Pass,t)],orelse=[])
         body=[initialize,*definitions,bind_return,*body]
+    elif emitter.hoisted_module_var_ids:
+        # Plain modules without routines also install explicit Vars before
+        # source statements; previous module names are not declarations here.
+        declarations=[]
+        for key in dict.fromkeys(name.casefold() for node in module_declarations for name in node.names):
+            initialize=emitter.invoke(emitter.attribute(emitter.name('_initial',t),'setdefault',t),
+                                      [emitter.const(key,t),emitter.const(None,t)],t)
+            declarations.append(emitter.node(py.Expr,t,value=initialize))
+        body=declarations+body
     initialize_links=[emitter.node(py.Assign,t,targets=[emitter.name(slot,t,True)],value=emitter.name('_UNSET',t))
                       for slot in emitter.import_links]
     body=initialize_links+initializers+body

@@ -6,6 +6,7 @@ from decimal import Decimal, Inexact, Rounded, ROUND_FLOOR, localcontext
 import unittest
 from unittest.mock import patch
 
+from yadinassi import Interpreter
 from yadinassi.collections.structures import BSLStructure
 from yadinassi.types.type_descriptions import BSLTypeDescription as TD
 from yadinassi.types.type_qualifiers import BSLStringQualifiers, BSLAllowedLength
@@ -335,6 +336,38 @@ class ValueTableTests(unittest.TestCase):
         self.assertEqual(t.columns.index_of(c),D(4294967295))
         self.assertEqual(c.name,"")
         t.columns.delete(D(0)); self.assertEqual(t.rows,[])
+
+    def test_direct_column_descriptor_contract_and_failed_name_writes(self):
+        source = """
+        T=New ValueTable; C=T.Columns;
+        Held=C.Add("Original",New TypeDescription("Number"),"visible",-1);
+        Inserted=C.Insert(0,"Before",Undefined,"first",-1);
+        InsertWidth=Inserted.Width; InitialWidth=Held.Width;
+        Held.Width=-2; SetWidth=Held.Width;
+        Row=T.Add(); Row.Original=7;
+        Try C.Add("bad name"); Except BadAdd=True; EndTry;
+        Try C.Insert(0,"bad-name"); Except BadInsert=True; EndTry;
+        Try Held.Name="bad name"; Except BadRename=True; EndTry;
+        Before=Row.Original; LiveColumns=C.Count();
+        C.Delete(Held); DeletedIndex=C.IndexOf(Held);
+        DeletedName=Held.Name; DeletedTitle=Held.Title; DeletedWidth=Held.Width;
+        DeletedType=Held.ValueType; Remaining=C.Count();
+        """
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm=Interpreter()
+                self.addCleanup(vm.close)
+                if prepared:vm.execute_prepared(vm.prepare(source))
+                else:vm.execute(source)
+                state=vm.variables
+                self.assertEqual(tuple(state[k] for k in ('insertwidth','initialwidth','setwidth')),
+                                 (D(4294967295),D(4294967295),D(4294967294)))
+                for key in ('badadd','badinsert','badrename'):
+                    self.assertIs(state[key],True)
+                self.assertEqual((state['before'],state['livecolumns'],state['remaining']),(7,2,1))
+                self.assertEqual(tuple(state[k] for k in ('deletedindex','deletedname','deletedtitle','deletedwidth','deletedtype')),
+                                 (D(4294967295),'','',D(0),TD()))
+                self.assertEqual(state['t'].columns.items,(state['inserted'],))
 
     def test_lookup_copy_and_nested_sharing(self):
         t=sample(); r=t.rows[0]; nested=array(D(1)); r.set_member("Имя",nested)
