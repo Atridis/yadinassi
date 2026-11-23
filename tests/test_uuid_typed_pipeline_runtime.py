@@ -45,3 +45,84 @@ class UUIDTypedPipelineCandidateTests(unittest.TestCase):
         a.items=[BSLType.UUID]
         with self.assertRaises(ValueError): value_to_string_internal(a)
         with self.assertRaises(ValueError): value_from_string_internal('{"#",51e7a0d2-530b-11d4-b98a-008048da3034,{1,{"T",fc01b5df-97fe-449b-83d4-218a090e681e}}}')
+
+    def test_decoded_map_and_fixed_map_indexed_actuals_use_typed_live_slots(self):
+        from yadinassi.collections.maps import BSLFixedMap, BSLMap
+
+        source=f'''
+            Var C, Calls;
+            Function FixedKey()
+                Calls=Calls+1;
+                Return New УникальныйИдентификатор("{FIXED}");
+            EndFunction
+            Function Read(V)
+                Return V;
+            EndFunction
+            Procedure Write(V, Val Replacement)
+                V=Replacement;
+            EndProcedure
+            Procedure Forward(V, Val Replacement)
+                Write(V,Replacement);
+            EndProcedure
+            Calls=0;
+            FKey=New УникальныйИдентификатор("{FIXED}");
+            ZKey=New УникальныйИдентификатор("{ZERO}");
+            M=New Map;
+            M.Insert(FKey,ZKey);
+            M.Insert(ZKey,FKey);
+            M.Insert("{FIXED}","string key");
+            M.Insert(True,"boolean key");
+            M.Insert(1,"number key");
+            A=New Array; A.Add(M); A.Add(New FixedMap(M));
+            C=ValueFromStringInternal(ValueToStringInternal(A));
+            MutableRead=Read(C[0][FixedKey()]);
+            FixedRead=Read(C[1][ZKey]);
+            Forward(C[0][FixedKey()],"replaced");
+            Forward(C[0][True],"changed boolean");
+            Refused=False;
+            Try Forward(C[1][FKey],"forbidden"); Except Refused=True; EndTry;
+        '''
+        for prepared in (False,True):
+            with self.subTest(prepared=prepared):
+                vm=Interpreter()
+                self.addCleanup(vm.close)
+                if prepared:vm.execute_prepared(vm.prepare(source))
+                else:vm.execute(source)
+                mutable,fixed=vm.variables['c'].items
+                self.assertIs(type(mutable),BSLMap)
+                self.assertIs(type(fixed),BSLFixedMap)
+                self.assertEqual((str(vm.variables['mutableread']),str(vm.variables['fixedread'])),(ZERO,FIXED))
+                self.assertEqual(vm.variables['calls'],2)
+                self.assertTrue(vm.variables['refused'])
+                self.assertEqual(vm.execute('C[0][FKey]'),'replaced')
+                self.assertEqual(vm.execute('C[0][True]'),'changed boolean')
+                self.assertEqual(vm.execute('C[0][1]'),'number key')
+                self.assertEqual(vm.execute(f'C[0]["{FIXED}"]'),'string key')
+                self.assertEqual(str(vm.execute('C[1][FKey]')),ZERO)
+                self.assertEqual(str(vm.execute('M[FKey]')),ZERO)
+
+    def test_later_argument_mutation_is_visible_through_decoded_map_reference(self):
+        source=f'''
+            Var C, K, Calls;
+            Function Lookup()
+                Calls=Calls+1;
+                Return New УникальныйИдентификатор("{FIXED}");
+            EndFunction
+            Function Update()
+                C[0][K]="updated";
+                Return 0;
+            EndFunction
+            Function Observe(V, Val Ignored)
+                Return V;
+            EndFunction
+            Calls=0;
+            K=New УникальныйИдентификатор("{FIXED}");
+            M=New Map; M.Insert(K,"original"); A=New Array; A.Add(M);
+            C=ValueFromStringInternal(ValueToStringInternal(A));
+            R=Observe(C[0][Lookup()],Update());
+            R
+        '''
+        vm=Interpreter()
+        self.addCleanup(vm.close)
+        self.assertEqual(vm.execute_prepared(vm.prepare(source)),'updated')
+        self.assertEqual(vm.variables['calls'],1)

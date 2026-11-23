@@ -9,7 +9,7 @@ if 'grammar' not in globals():
     from scripts import native_1c_map_contract as grammar
 
 
-def signature(payload, *, expected_root=None, expected_count=None):
+def signature(payload, *, expected_root=None, expected_count=None, uuid_scalars=False):
     if type(payload) is str:
         payload = payload.encode('utf-8', errors='strict')
     if type(payload) is not bytes or len(payload) > grammar.MAX_RECORD:
@@ -33,7 +33,7 @@ def signature(payload, *, expected_root=None, expected_count=None):
         parser.whitespace()
         if parser.cursor != len(payload):
             raise grammar._Reject('unsupported_payload')
-        return prefix, grammar._value(root, associative=True), payload[end:]
+        return prefix, grammar._value(root, associative=True, uuid_scalars=uuid_scalars), payload[end:]
     except (grammar._Reject, UnicodeError) as error:
         raise ValueError(str(error)) from None
 

@@ -405,8 +405,25 @@ class CatalogBoundary:
         from yadinassi.types.values import Reference
         return _ForwardReference(Reference(read,write))
 
+    def _map_index_reference(self,value,index):
+        # Internal-string and ValueStorage readers can return a canonical
+        # BSLMap rather than PlainMap. Its existing BSL index operations
+        # already enforce the receiver/activation boundary and key semantics.
+        # The Python member registry is not the binder for this address.
+        def access(name,*arguments):
+            if type(value) is not BSLMap:
+                raise BoundaryViolation('canonical map reference receiver changed')
+            return self.resolve_member(value,name)(index,*arguments)
+        access('__getitem__')  # Validate once at binding; later reads stay live.
+        from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
+        from yadinassi.types.values import Reference
+        return _ForwardReference(Reference(lambda:access('__getitem__'),
+                                           lambda new:access('__setitem__',new)))
+
     def reference_index(self,value,index):
         kind=type(value)
+        if kind is BSLMap:
+            return self._map_index_reference(value,index)
         if kind is BSLFixedArray or kind is BSLFixedStructure or kind is BSLFixedMap or kind is PlainFixedMap:
             return self._readonly_property_reference(value,index,indexed=True)
         from . import python_direct_table_references as table_refs

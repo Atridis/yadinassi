@@ -16,6 +16,19 @@ class SourceXDTOJSONTests(unittest.TestCase):
         app=self.prepared();app.interpreter.execute('W=New JSONWriter;W.SetString();R=New JSONReader;');return app
     def write(self,vm,value='P'):
         vm.execute('XDTOFactory.WriteJSON(W,'+value+');S=W.Close();R.SetString(S);')
+    def test_ordinary_xdto_reader_copy_keeps_configured_json_available(self):
+        from test_xdto_family import factory, json_reader
+
+        plain = factory()
+        reader = json_reader('{"title":"ordinary"}')
+        value = plain.read_json(reader, plain.type('urn:test', 'Box'))
+        self.assertEqual(value.get('title'), 'ordinary')
+
+        app = self.ready()
+        app.interpreter.execute('R.SetString("{""Label"":""configured""}");'
+                                'Copy=XDTOFactory.ReadJSON(R,T);')
+        self.assertEqual(app.interpreter.execute('Copy.Label;'), 'configured')
+
     def test_nested_graph_scalar_lists_roundtrip(self):
         app=self.ready();vm=app.interpreter
         vm.execute('P.Label="parent";C.Label="child";D.Label="list child";P.Child=C;P.Children.Add(D);P.Labels.Add("quoted");P.Labels.Add("б");')

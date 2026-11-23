@@ -37,6 +37,33 @@ class AssociativeOrderTests(unittest.TestCase):
         for bad in (valid.replace(b'{1,',b'{2,',1),valid+b'garbage',valid.replace(b',\n',b';\n',1),b'{"S","'+b'x'*5000+b'"}',b'\xff'):
             with self.assertRaises(ValueError):equivalent(bad,bad)
         self.assertFalse(equivalent(valid,valid.replace(b',\n',b', ',1)))
+    def test_uuid_comparison_is_opt_in_and_preserves_keys_values_and_container_identity(self):
+        a=b'11111111-2222-4333-8444-55555555555a'
+        z=b'00000000-0000-0000-0000-000000000000'
+        type_id=b'fc01b5df-97fe-449b-83d4-218a090e681e'
+
+        def uuid(raw):
+            return b'{"#",'+type_id+b','+raw+b'}'
+
+        pairs=((uuid(a),uuid(z)),(uuid(z),uuid(a)),(string(a.decode()),scalar('U')))
+        left=mapping(pairs)
+        right=mapping(pairs[::-1])
+        with self.assertRaises(ValueError):signature(left)
+        self.assertNotEqual(left,right)
+        self.assertEqual(signature(left,uuid_scalars=True),signature(right,uuid_scalars=True))
+        self.assertNotEqual(signature(left,uuid_scalars=True),
+                            signature(mapping(((uuid(a),uuid(a)),*pairs[1:])),uuid_scalars=True))
+        for different in (mapping(pairs,FIXED_MAP),
+                          mapping(((string(a.decode()),uuid(z)), (uuid(z),uuid(a))))):
+            self.assertNotEqual(signature(left,uuid_scalars=True),signature(different,uuid_scalars=True))
+        source=sequence(ARRAY,(left,mapping(pairs,FIXED_MAP)))
+        swapped=sequence(ARRAY,(mapping(pairs,FIXED_MAP),left))
+        self.assertNotEqual(signature(source,uuid_scalars=True),signature(swapped,uuid_scalars=True))
+        for corrupt in (left.replace(a,a.upper(),1), left.replace(a,z,1),
+                        left.replace(type_id, b'00000000-0000-0000-0000-000000000000',1),
+                        left+b'unparsed'):
+            with self.assertRaises(ValueError):signature(corrupt,uuid_scalars=True)
+
     def test_descriptor_key_semantics_do_not_collapse_numeric_boolean_keys(self):
         def descriptor(kinds):
             return b'{"#",f5c65050-3bbb-11d5-b988-0050bae0a95d,{"Pattern"'+b''.join(b',{"'+k+b'"}' for k in kinds)+b'}}'

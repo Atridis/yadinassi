@@ -57,6 +57,7 @@ _TYPE_IDS = _CONTAINERS | frozenset({
     b"d47d59f8-73f0-481c-8b5e-f6384c0a4804",  # Type
 })
 _LABEL = re.compile(rb"[A-Za-z][A-Za-z0-9_.-]{0,127}: \[")
+_UUID_TYPE = b"fc01b5df-97fe-449b-83d4-218a090e681e"
 _UUID = re.compile(rb"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}")
 _NUMBER = re.compile(rb"[+-]?[0-9]+(?:\.[0-9]+)?")
 _COUNT = re.compile(rb"0|[1-9][0-9]{0,2}")
@@ -208,7 +209,16 @@ def _signature(node, children):
     return (b"group", node.gaps, tuple(children))
 
 
-def _scalar_key(node, *, associative=False):
+def _canonical_uuid(children):
+    if len(children) != 3 or _atom(children[1]) != _UUID_TYPE:
+        raise _Reject("unsupported_payload")
+    raw = _atom(children[2])
+    if _UUID.fullmatch(raw) is None:
+        raise _Reject("unsupported_payload")
+    return raw
+
+
+def _scalar_key(node, *, associative=False, uuid_scalars=False):
     """Reject duplicate scalar keys, without normalizing comparison signatures.
 
     Container keys have object identity that this restricted grammar cannot
@@ -217,6 +227,8 @@ def _scalar_key(node, *, associative=False):
     children = _group(node)
     tag = _atom(children[0], quoted=True)
     if tag == b'"#"':
+        if uuid_scalars and len(children) == 3 and _atom(children[1]) == _UUID_TYPE:
+            return _UUID_TYPE, _canonical_uuid(children)
         if associative:
             return b'descriptor', _descriptor_key(node)
         raise _Reject("unsupported_payload")
@@ -265,7 +277,7 @@ def _raw_signature(node):
     return _signature(node, [_raw_signature(child) for child in _group(node)])
 
 
-def _value(node, *, associative=False):
+def _value(node, *, associative=False, uuid_scalars=False):
     children = _group(node)
     tag = _atom(children[0], quoted=True)
     if tag in (b'"U"', b'"L"') and len(children) == 1:
@@ -288,6 +300,9 @@ def _value(node, *, associative=False):
                 raise _Reject("unsupported_payload") from None
     elif tag == b'"#"' and len(children) == 3:
         identifier = _atom(children[1])
+        if uuid_scalars and identifier == _UUID_TYPE:
+            _canonical_uuid(children)
+            return _raw_signature(node)
         if associative and identifier == _DESCRIPTOR:
             _descriptor_key(node)
             return _raw_signature(node)
@@ -300,15 +315,15 @@ def _value(node, *, associative=False):
             raise _Reject("unsupported_payload")
         values = []
         if identifier in _ARRAYS:
-            values = [_value(child, associative=associative) for child in items[1:]]
+            values = [_value(child, associative=associative, uuid_scalars=uuid_scalars) for child in items[1:]]
         else:
             keys = set()
             for pair in items[1:]:
                 binding = _group(pair)
                 if len(binding) != 2:
                     raise _Reject("unsupported_payload")
-                values.append(_signature(pair, [_value(child, associative=associative) for child in binding]))
-                key = _scalar_key(binding[0], associative=associative)
+                values.append(_signature(pair, [_value(child, associative=associative, uuid_scalars=uuid_scalars) for child in binding]))
+                key = _scalar_key(binding[0], associative=associative, uuid_scalars=uuid_scalars)
                 if identifier in _STRUCTURES:
                     if key[0] != b'"S"':
                         raise _Reject("unsupported_payload")

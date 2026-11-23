@@ -240,7 +240,7 @@ class FormSession:
     Exceptions retain completed BSL mutations and increment revision: clients
     must resynchronize, never assume a transaction rollback.
     """
-    def __init__(self, source, *, attributes=(), tables=(), initial_values=None, bindings=None, output=None, database_context=None, application_actions=(), server_bindings=(), parameters=None, interpreter_factory=None, reference_scope=None, allow_extensions=False):
+    def __init__(self, source, *, attributes=(), tables=(), initial_values=None, bindings=None, output=None, database_context=None, application_actions=(), server_bindings=(), parameters=None, interpreter_factory=None, reference_scope=None, allow_extensions=False, _catalog_server=False):
         if type(allow_extensions) is not bool:
             raise TypeError('allow_extensions requires a Boolean')
         if type(attributes) not in (tuple,list) or len(attributes)>MAX_ATTRIBUTES:
@@ -296,6 +296,14 @@ class FormSession:
         self.interpreter = factory(self, self._record_message, database_context=database_context, **profile_options)
         if not isinstance(self.interpreter, _FormInterpreter) or self.interpreter._form_session is not self:
             raise TypeError("form interpreter factory returned an invalid interpreter")
+        self._catalog_server = None
+        if _catalog_server is True:
+            from yadinassi.db.database_context import SQLiteDBContext
+            if (type(database_context) is not SQLiteDBContext or interpreter_factory is not None
+                    or reference_scope is not None or allow_extensions
+                    or self.interpreter.database_context is not database_context):
+                raise TypeError('catalog package requires its host-selected SQLite database')
+            self._catalog_server = (database_context, database_context.backend, self.interpreter._catalogs)
         from .form_program import admitted_program
         program = admitted_program(source, compilation_profile=self.interpreter.compilation_profile)
         if len(program)>MAX_HANDLERS*2 or any(not isinstance(node,(ast.Routine,ast.Var)) for node in program):

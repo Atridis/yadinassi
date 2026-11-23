@@ -6,6 +6,7 @@ import unittest
 from unittest import mock
 
 from yadinassi import Interpreter
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.syntax.parser import parse
 import native_1c_file_io_family_contract as wire
 import native_1c_tree_profiles as profiles
@@ -15,12 +16,9 @@ SOURCE_PATH = ROOT / 'integrational_tests/measurements/file_io_family.bsl'
 SOURCE = SOURCE_PATH.read_text(encoding='utf-8')
 
 
-def emit(*, missing=False, source=SOURCE):
+def emit(*, source=SOURCE):
     out = []
     vm = Interpreter(out.append)
-    if missing:
-        for name in ('base64value', 'base64значение'):
-            vm.functions.pop(name, None)
     with tempfile.TemporaryDirectory(prefix="file-family-test-") as tmp, mock.patch("tempfile.gettempdir", return_value=tmp):
         vm.execute(source)
         if list(Path(tmp).iterdir()):
@@ -62,7 +60,18 @@ class FILE_IOFamilyMeasurementTests(unittest.TestCase):
         raw = emit()
         self.assertEqual(len(wire.require_available(raw)), 33)
         self.assertFalse(any(row['status'] == 'observer-error' for row in wire.validate_output(raw)))
-        with self.assertRaises(wire.AvailabilityError): wire.require_available(emit(missing=True))
+
+    def test_missing_local_capability_fails_before_publishing_an_observation(self):
+        # Artificial registry removal is a boundary denial, not a BSL action error.
+        out = []
+        vm = Interpreter(out.append)
+        self.addCleanup(vm.close)
+        vm.functions.pop('base64value')
+        vm.functions.pop('base64значение')
+        with self.assertRaisesRegex(BoundaryViolation, 'unregistered host service: base64value'):
+            vm.execute('Target=Base64Value("AA=="); Message("unreachable");')
+        self.assertNotIn('target', vm.variables)
+        self.assertEqual(out, [])
 
     def test_action_failure_still_cleans_owned_paths(self):
         from yadinassi.streams.file_io import BSLTextWriter
@@ -71,6 +80,7 @@ class FILE_IOFamilyMeasurementTests(unittest.TestCase):
         records = wire.validate_output(raw)
         self.assertTrue(any(row['status'] == 'action-error' for row in records))
         self.assertFalse(any(row['status'] == 'observer-error' for row in records))
+        with self.assertRaises(wire.AvailabilityError): wire.require_available(raw)
 
     def test_unexpected_children_are_not_recursively_swept(self):
         import yadinassi.streams.file_io as files

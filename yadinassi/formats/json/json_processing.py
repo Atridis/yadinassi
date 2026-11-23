@@ -148,6 +148,10 @@ def _tokens(value, depth=0):
 
 
 class BSLJSONReader(BSLObject):
+    # Ordinary XDTO copies its reader. Seed copyreg's cache before the source
+    # codec seals this class so that a copy cannot change the class inventory.
+    __slotnames__ = []
+
     def __init__(self):
         self.close()
 

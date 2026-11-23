@@ -15,7 +15,7 @@ from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.forms.form_replication import ReplicatedFormServer, ReplicatedFormSession
 from yadinassi.execution.invocation import InvocationError
 from yadinassi.forms.form_replication import _decode_form_scalar
-from .form_package import load_client, load_server
+from .form_package import ServerPackage, load_client, load_server
 from .local_app import RuntimeBridge, LocalTransportError, LocalUIServer, _Handler, EXCHANGE_TIMEOUT
 from .protocol import encode_line, encode_value, decode_value, decode_line, MAX_LINE_BYTES, MAX_COUNTER
 
@@ -75,7 +75,9 @@ def create_server(package, context=None):
         handlers=package.handlers, attributes=package.attributes, tables=package.tables,
         initial_values=package.initial_values, bindings=package.lifecycle,
         database_context=context,
-        server_bindings=() if application is None else application.bindings())
+        server_bindings=() if application is None else application.bindings(),
+        _catalog_server=type(package) is ServerPackage and package.application is None
+                        and type(context) is SQLiteDBContext)
     return server
 
 

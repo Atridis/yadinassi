@@ -13,8 +13,7 @@ from yadinassi import Interpreter
 from yadinassi.db.catalog.catalog_backend import BackendError
 from yadinassi.configuration.configuration_import import load_configuration_directory
 from yadinassi.db.database_context import SQLiteDBContext
-from yadinassi.forms.form_replication import ReplicatedFormServer
-from yadinassi.ui.form_app import FormController, FormProcess, PROTOCOL
+from yadinassi.ui.form_app import FormController, FormProcess, PROTOCOL, create_server
 from yadinassi.ui.form_package import load_client, load_server
 from yadinassi.ui.protocol import encode_line
 
@@ -58,11 +57,7 @@ def row_values(result, row_id):
 
 
 def pair(context):
-    package = load_server(EXAMPLE)
-    server = ReplicatedFormServer(package.source, package.endpoints,
-        handlers=package.handlers, attributes=package.attributes, tables=package.tables,
-        initial_values=package.initial_values, bindings=package.lifecycle,
-        database_context=context)
+    server = create_server(load_server(EXAMPLE),context)
     return FormController(load_client(EXAMPLE), server.exchange), server
 
 
@@ -356,13 +351,28 @@ class FormTableControllerTests(IntakeHelpers, unittest.TestCase):
         vm = Interpreter(database_context=self.context)
         vm.execute('O=Catalogs.Orders.CreateItem(); O.Code="EXISTS"; O.Write();')
         vm.close()
-        self.header(self.controller, 'EXISTS')
-        result = event(self.controller)
-        self.assertEqual(result['error'], 'event_failed')
-        self.assertIn('already exists', item(result, 'FieldStatus')['value']['value'])
-        self.assertFalse(self.form_values(self.controller)['SaveAttempted'])
-        self.header(self.controller, 'O001')
-        self.good(event(self.controller))
+        from yadinassi.execution.direct.python_direct_form_catalog import PackageCatalogBoundary
+        detach = PackageCatalogBoundary._inert_reference
+        witnesses = []
+        def observe(boundary, value):
+            detached = detach(boundary,value)
+            self.assertIs(detached.value_type,value.value_type)
+            self.assertEqual(detached.reference_uuid,value.reference_uuid)
+            self.assertIsNone(detached.metadata)
+            self.assertIsNone(detached.read_member)
+            self.assertIsNone(detached.get_object)
+            witnesses.append(detached.is_empty())
+            return detached
+        with mock.patch.object(PackageCatalogBoundary,'_inert_reference',observe):
+            self.header(self.controller, 'EXISTS')
+            result = event(self.controller)
+            self.assertEqual(result['error'], 'event_failed')
+            self.assertIn('already exists', item(result, 'FieldStatus')['value']['value'])
+            self.assertFalse(self.form_values(self.controller)['SaveAttempted'])
+            self.header(self.controller, 'O001')
+            self.good(event(self.controller))
+        self.assertEqual(witnesses,[False,True])
+        self.assertTrue(self.form_values(self.controller)['Saved'])
 
     def test_failed_recalculation_keeps_previous_totals_and_close_cancels(self):
         first = self.line(self.controller)

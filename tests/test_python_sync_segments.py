@@ -7,31 +7,33 @@ import unittest
 from decimal import Decimal
 
 from yadinassi import Interpreter
+from yadinassi.types.values import HostFunction
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
 class PythonSyncSegmentTests(unittest.TestCase):
-    def test_module_segments_publish_and_reacquire_replaced_scope(self):
+    def test_module_segments_publish_and_reload_live_namespace(self):
         vm = Interpreter(execution_backend='python-direct', allow_extensions=True)
         seen = []
         def boundary():
             seen.append(vm.variables['s'])
-            vm.variables = {'s': Decimal(100)}
+            vm.variables['s'] = Decimal(100)
         vm.register_function('Boundary', boundary)
         vm.execute('s=0;For i=1 To 3 Do s=s+i;EndDo;Boundary();For i=1 To 3 Do s=s+i;EndDo;result=s;')
         self.assertEqual(seen, [6])
         self.assertEqual(vm.variables['result'], 106)
 
-    def test_mixed_routine_reacquires_locals_after_opaque_call_without_replay(self):
+    def test_mixed_routine_reloads_explicit_byref_after_callback_without_replay(self):
         vm = Interpreter(execution_backend='python-direct', allow_extensions=True)
         seen = []
-        def boundary():
-            seen.append(vm.locals['s'])
-            vm.locals = {'s': Decimal(100), 'n': Decimal(3)}
-        vm.register_function('Boundary', boundary)
+        def boundary(slot):
+            seen.append(slot.get())
+            slot.set(Decimal(100))
+        vm.functions['boundary'] = HostFunction('Boundary', boundary,
+                                                reference_parameters=frozenset({0}))
         vm.execute('''Function F(Val n)
         s=0;For i=1 To n Do s=s+i;EndDo;
-        Boundary();
+        Boundary(s);
         For i=1 To n Do s=s+i;EndDo;
         Return s;
         EndFunction result=F(3);''')

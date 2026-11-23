@@ -270,6 +270,10 @@ class FormProcessTests(unittest.TestCase):
             controller=FormController(load_client(PRODUCT),process.exchange); state(controller)
             for field,value in [('Code',{'type':'String','value':'P001'}),('Description',{'type':'String','value':'Owned product'}),('Amount',{'type':'Number','value':'12.75'})]:
                 self.assertIsNone(event(controller,'change','Field'+field,value=value)['error'])
+            with SQLiteDBContext(path) as reader:
+                probe=Interpreter(database_context=reader)
+                try:self.assertTrue(probe.execute('Catalogs.Products.FindByCode("P001").IsEmpty()'))
+                finally:probe.close()
             result=event(controller); self.assertIsNone(result['error'])
             self.assertFalse(next(x for x in result['state']['items'] if x['name']=='RunButton')['enabled'])
             self.assertIsNone(controller.session.interpreter.database_context)
@@ -279,6 +283,78 @@ class FormProcessTests(unittest.TestCase):
                 vm=Interpreter(database_context=context)
                 self.assertEqual(vm.execute('Catalogs.Products.FindByCode("P001").Amount'),Decimal('12.75'))
             finally: context.close()
+
+    def test_owned_package_catalogs_do_not_grant_query_or_unenrolled_form_writes(self):
+        from dataclasses import replace
+        from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+        from yadinassi.ui.form_app import create_server
+        package = load_server(PRODUCT)
+        config = load_configuration_directory(PRODUCT/'configuration')
+        with tempfile.TemporaryDirectory() as directory:
+            with SQLiteDBContext.create(Path(directory)/'owned.sqlite',config) as context:
+                unenrolled = ReplicatedFormServer(package.source,package.endpoints,
+                    handlers=package.handlers,attributes=package.attributes,
+                    initial_values=package.initial_values,bindings=package.lifecycle,database_context=context)
+                source = package.source.replace('P = Catalogs', 'Q = New Query; P = Catalogs')
+                with self.assertRaisesRegex(PythonDirectUnsupported,'constructor Query'):
+                    create_server(replace(package,source=source),context)
+                source = package.source + '\n&AtServerNoContext\nFunction Detached() Return 1; EndFunction'
+                with self.assertRaisesRegex(ValueError,'synchronous module-context routines'):
+                    create_server(replace(package,source=source),context)
+                controller = FormController(load_client(PRODUCT),unenrolled.exchange)
+                self.assertIsNone(state(controller)['error'])
+                for field,value in (('Code','P001'),('Description','Not saved')):
+                    self.assertIsNone(event(controller,'change','Field'+field,
+                                            value={'type':'String','value':value})['error'])
+                self.assertEqual(event(controller)['error'],'event_failed')
+                self.assertFalse(controller.session.uncertain)
+                event(controller,'close')
+                vm = Interpreter(database_context=context)
+                try:self.assertTrue(vm.execute('Catalogs.Products.FindByCode("P001").IsEmpty()'))
+                finally:vm.close()
+
+    def test_owned_package_catalog_indexing_cannot_spell_private_method(self):
+        from dataclasses import replace
+        from yadinassi.ui.form_app import create_server
+        package = load_server(PRODUCT)
+        config = load_configuration_directory(PRODUCT/'configuration')
+        with tempfile.TemporaryDirectory() as directory:
+            with SQLiteDBContext.create(Path(directory)/'owned.sqlite',config) as context:
+                for expression,error in (('Catalogs.__getitem__("Products")','event_failed'),
+                                         ('Catalogs["Products"]',None)):
+                    with self.subTest(expression=expression):
+                        source = package.source.replace('Catalogs.Products',expression)
+                        runtime = create_server(replace(package,source=source),context)
+                        controller = FormController(load_client(PRODUCT),runtime.exchange)
+                        self.assertIsNone(state(controller)['error'])
+                        for field,value in (('Code','P001'),('Description','Product')):
+                            self.assertIsNone(event(controller,'change','Field'+field,
+                                                    value={'type':'String','value':value})['error'])
+                        self.assertEqual(event(controller)['error'],error)
+                        self.assertFalse(controller.session.uncertain)
+                        event(controller,'close')
+
+    def test_owned_package_catalogs_denied_if_selected_database_is_replaced(self):
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.ui.form_app import create_server
+        config = load_configuration_directory(PRODUCT/'configuration')
+        with tempfile.TemporaryDirectory() as directory:
+            with SQLiteDBContext.create(Path(directory)/'owned.sqlite',config) as context, \
+                 SQLiteDBContext.create(Path(directory)/'other.sqlite',config) as other:
+                server = create_server(load_server(PRODUCT),context)
+                controller = FormController(load_client(PRODUCT),server.exchange)
+                self.assertIsNone(state(controller)['error'])
+                for field,value in (('Code','P001'),('Description','Not saved')):
+                    self.assertIsNone(event(controller,'change','Field'+field,
+                                            value={'type':'String','value':value})['error'])
+                with mock.patch.object(server.session.interpreter,'_database_context',other):
+                    with self.assertRaisesRegex(BoundaryViolation,'package server database owner changed'):
+                        event(controller)
+                self.assertTrue(controller.session.uncertain)
+                for database in (context,other):
+                    vm = Interpreter(database_context=database)
+                    try:self.assertTrue(vm.execute('Catalogs.Products.FindByCode("P001").IsEmpty()'))
+                    finally:vm.close()
 
     def test_missing_database_is_not_created_or_disclosed(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -407,6 +407,9 @@ def prepare_form(session, program, source, attributes, tables, *, install_metada
         from .python_direct import _admit_bindings
         _admit_bindings(session.interpreter,frozenset(),session._direct_source_constructors,frozenset())
     names = tuple(attr.name.casefold() for attr in attributes) + tuple(t.name.casefold() for t in tables) + SYSTEM_NAMES + (() if app is None else tuple(app._definitions))
+    if session._catalog_server is not None:
+        from .python_direct_form_catalog import NAMES
+        names += NAMES
     if source_mode:
         declared={node.name.casefold() for node in program if type(node) is ast.Routine}
         declared.update(name.casefold() for node in program if type(node) is ast.Var for name in node.names)
@@ -489,6 +492,9 @@ def invoke_form(session, handler, side, arguments, *, _export_routine=None):
             and getattr(session, '_direct_form_nocontext', None) is not None):
         from .python_direct_form_nocontext import FormWithNoContext
         boundary = FormWithNoContext
+    if side == 'server' and boundary is FormBoundary and session._catalog_server is not None:
+        from .python_direct_form_catalog import PackageCatalogBoundary
+        boundary = PackageCatalogBoundary
     if _export_routine is not None:
         return session._direct_handlers.invoke_export(handler, side, arguments,
                 is_function=routine.is_function,state=state,

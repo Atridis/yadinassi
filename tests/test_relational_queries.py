@@ -267,9 +267,11 @@ E=Catalogs.Products.CreateItem();E.Code="30";E.Write();''')
                     for row in section.rows),None)
             def close(self):self.closed=True
         logical=LogicalView()
-        with patch.object(backend,'begin_read',return_value=logical):
+        with (patch.object(backend, 'begin_query_read', return_value=logical) as open_port,
+              patch.object(backend, 'begin_read', side_effect=AssertionError('opened a raw read'))):
             result=self.rows('SELECT P.Code AS Owner,SUM(L.Amount) AS Total FROM Catalog.Products AS P '
                              'JOIN Catalog.Products.Lines AS L ON P.Ref=L.Ref GROUP BY P.Code ORDER BY P.Code')
+        open_port.assert_called_once_with(query_language=True)
         self.assertEqual(result,(('10',Decimal('22.35')),('20',Decimal(99))))
         self.assertTrue(logical.closed)
 

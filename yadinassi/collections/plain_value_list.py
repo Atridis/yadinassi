@@ -10,10 +10,12 @@ from decimal import Decimal
 from types import MappingProxyType
 from weakref import ReferenceType, ref
 
-from yadinassi.types.values import NULL, to_string
+from yadinassi.types.values import BSLType, NULL, to_string
+from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
+from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 from yadinassi.temporal.dates import BSLDate, _exact_date_text
 from .plain_table_storage import _sort_value
-from .sort_directions import _sort_descending
+from .sort_directions import BSLSortDirection, _sort_descending
 
 
 def _normalize_presentation(value):
@@ -74,9 +76,38 @@ def _item(item):
     return item
 
 
-def _scalar_item_sort_key(item):
-    # Reuse the scalar ranks, not ValueTable's string collation.
-    return _sort_value(list.__getitem__(_item(item), 0), python_string_order=True, unsupported=TypeError)
+def _value_family_key(value):
+    kind = type(value)
+    if kind is PlainArray or kind is list:
+        if list.__len__(value) == 0:
+            return 'collection', 0
+    elif kind is _DirectStructure:
+        if dict.__len__(value) == 0:
+            return 'collection', 1
+    elif value is BSLType.STRING:
+        return 'type', 0
+    elif value is BSLType.NUMBER:
+        return 'type', 1
+    elif value is BSLSortDirection.ASC:
+        return 'direction', 0
+    elif value is BSLSortDirection.DESC:
+        return 'direction', 1
+    return 'scalar', _sort_value(value, python_string_order=True, unsupported=TypeError)
+
+
+def _sorted_values(items, descending):
+    # Validate every key and its family before touching the live owner list.
+    family = None
+
+    def key(item):
+        nonlocal family
+        kind, order = _value_family_key(list.__getitem__(_item(item), 0))
+        if family is not None and family != kind:
+            raise TypeError('Смешанный порядок семейств списка значений не поддерживается')
+        family = kind
+        return order
+
+    return sorted(list.__iter__(items), key=key, reverse=descending)
 
 
 def _index(index, *, allow_boolean=False):
@@ -371,7 +402,6 @@ class PlainValueList(list):
 
     def load_values(self, values):
         # This is an explicit input boundary, not arbitrary iterable execution.
-        from yadinassi.execution.direct.python_direct_plain_array import PlainArray
         if type(values) is not list and type(values) is not PlainArray:
             raise TypeError('ValueList.LoadValues requires native array storage')
         self.clear()
@@ -406,7 +436,7 @@ class PlainValueList(list):
                     ((prior is int or prior is Decimal) and (kind is int or kind is Decimal)))):
                 # Validate and sort detached item references before changing
                 # the owner. Python's stable sort then preserves ties and IDs.
-                ordered = sorted(list.__iter__(self), key=_scalar_item_sort_key, reverse=descending)
+                ordered = _sorted_values(self, descending)
                 list.__setitem__(self, slice(None), ordered)
                 if len(ordered) > 1:
                     self._text_cache = None

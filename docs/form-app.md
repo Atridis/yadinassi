@@ -31,7 +31,11 @@ Enter a code, description and amount, then Create product. Server BSL performs
 example is a single new-product intake form, not an existing-record editor or
 an optimistic-concurrency implementation. Backend uniqueness/qualifier errors
 remain errors. A failed write does not claim that earlier independent effects
-were rolled back. The example never creates a database implicitly.
+were rolled back. The example never creates a database implicitly. The ordinary
+package server admits only its host-selected SQLite catalog namespace, exact
+code lookup/emptiness, and the create/edit/write buffer protocol including
+appending typed tabular rows. It does not grant Query, documents,
+registers, explicit transactions, or database access to the logical client.
 
 Installed Python entry point: `yadinassi-form PACKAGE_DIRECTORY [--f FILE]`.
 The frozen executable selects this mode only with its first argument
