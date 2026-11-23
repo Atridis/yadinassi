@@ -28,10 +28,32 @@ class RuntimeIdentityLookupTests(unittest.TestCase):
             with self.subTest(cls=cls.__name__):
                 # Uninitialized instances are enough: static type reflection must
                 # not read payloads or invoke constructor/descriptor effects.
-                try: value = object.__new__(cls)
-                except TypeError: value = cls()
+                try:
+                    allocate = list.__new__ if issubclass(cls, list) else object.__new__
+                    value = allocate(cls)
+                except TypeError:
+                    value = cls()
                 expected = next(kind for exact, kind, _ in _VALUE_TYPES if type(value) is exact)
                 self.assertIs(type_of(value), expected)
+
+    def test_public_typeof_matches_host_identity_for_table_and_tree_rows(self):
+        source = ("T=New ValueTable; T.Columns.Add(\"X\"); TableRow=T.Add(); TableRow.X=7; "
+                  "Tree=New ValueTree; Tree.Columns.Add(\"X\"); TreeRow=Tree.Rows.Add(); TreeRow.X=7; "
+                  "TableKind=TypeOf(TableRow); TreeKind=ТипЗнч(TreeRow);")
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                if prepared:
+                    vm.execute_prepared(vm.prepare(source))
+                else:
+                    vm.execute(source)
+                for row, kind, expected in (
+                    ('tablerow', 'tablekind', BSLType.VALUE_TABLE_ROW),
+                    ('treerow', 'treekind', BSLType.VALUE_TREE_ROW),
+                ):
+                    self.assertIs(vm.variables[kind], expected)
+                    self.assertIs(type_of(vm.variables[row]), expected)
 
     def test_foreign_type_and_subclass_reject_without_metaclass_hooks(self):
         class Meta(type):

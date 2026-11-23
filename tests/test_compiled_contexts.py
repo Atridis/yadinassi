@@ -69,17 +69,23 @@ class StrictContextTests(unittest.TestCase):
     def test_event_allowlist_budget_and_recovery(self):
         self.run_existing([
             'test_form_event_simulation.FormEventSimulationTests.test_client_trims_original_handler',
+            'test_form_event_simulation.FormEventSimulationTests.test_admission_budget_rejects_without_changing_warm_draft',
         ],('_EventInterpreter',))
 
-    def test_known_event_adapter_budget_not_unregistered_subclass(self):
+    def test_event_adapter_is_not_a_general_module_dispatch(self):
+        from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
         from yadinassi.forms.form_event_simulation import _EventInterpreter
+
+        class Unregistered(Interpreter):
+            pass
+
         with execution_backend_policy('python-direct'):
-            vm=_EventInterpreter(lambda value: None)
-            vm._remaining=0
-            with self.assertRaisesRegex(ValueError,'execution budget or node'):
-                vm.execute('x=1;')
-            self.assertEqual(vm._remaining,-1)
-            self.assertNotIn('x',vm.variables)
+            for vm in (_EventInterpreter(lambda value: None), Unregistered()):
+                self.addCleanup(vm.close)
+                with self.subTest(adapter=type(vm).__name__):
+                    with self.assertRaisesRegex(PythonDirectUnsupported, 'specialized Interpreter contexts'):
+                        vm.execute('x=1;')
+                    self.assertNotIn('x',vm.variables)
 
     def test_object_post_result_budget_and_live_reference(self):
         self.run_existing([

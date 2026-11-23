@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi.forms import form_event_simulation as sim
+from yadinassi.forms import form_module_analysis as analysis
 from yadinassi.forms.form_module_analysis import FormModuleAnalysisError
 from yadinassi.application.user_messages import UserMessageRecord
 from yadinassi.types.errors import BSLError
@@ -158,9 +159,23 @@ class FormEventSimulationTests(unittest.TestCase):
             self.run_event(description=' x ')
         self.assertEqual(self.run_event().messages, ())
 
-    def test_execution_budget_failure_then_fresh_success(self):
-        original = sim._EventInterpreter.__init__
-        def initialize(vm, sink):
-            original(vm, sink); vm._remaining = 0
-        with patch.object(sim._EventInterpreter, '__init__', initialize), self.assertRaisesRegex((ValueError, BSLError), 'execution budget or node'): self.run_event()
-        self.assertEqual(self.run_event().messages, ())
+    def test_admission_budget_rejects_without_changing_warm_draft(self):
+        draft = sim.FormDraftSession(SOURCE, binding(), catalog_xml=CATALOG, form_xml=FORM,
+                                     definition_xml=DEFINITION, code='01', description=' abc ')
+        _, nodes = analysis._parse(SOURCE)
+        # The exact source succeeds at the limit and warms both its source
+        # preparation and direct execution before testing one node over.
+        with patch.object(analysis, 'MAX_AST_NODES', nodes):
+            before = draft.change_description(' x ', revision=0)
+        self.assertEqual(dict(before.values)['Description'], 'x')
+        self.assertEqual(len(before.messages), 1)
+        with patch.object(analysis, 'MAX_AST_NODES', nodes - 1), \
+             patch.object(sim, '_EventInterpreter', side_effect=AssertionError('handler started')):
+            with self.assertRaisesRegex(FormModuleAnalysisError, 'AST budget'):
+                draft.change_description(' recovered ', revision=before.revision)
+        self.assertIs(draft.snapshot(), before)
+        with patch.object(analysis, 'MAX_AST_NODES', nodes):
+            after = draft.change_description(' recovered ', revision=before.revision)
+        self.assertEqual(after.revision, before.revision + 1)
+        self.assertEqual(dict(after.values)['Description'], 'recovered')
+        self.assertEqual(after.messages, ())
