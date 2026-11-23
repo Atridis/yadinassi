@@ -36,6 +36,8 @@ def constant_condition(plan, node):
 @dataclass(frozen=True, slots=True)
 class CountShape:
     include: bool
+    deletion_mark: bool | None = None
+    distinct_ref: bool = False
 
 
 def bind(plan):
@@ -54,17 +56,19 @@ def bind(plan):
     if any(not any(order is item for item in plan.projections) for order, _ in plan.orders):
         return None
 
-    counted = False
+    counted = distinct_ref = False
     def closed(value):
-        nonlocal counted
+        nonlocal counted, distinct_ref
         kind = type(value)
         if kind is _BoundAggregate:
             field = value.field
-            if (value.function != 'count' or value.distinct
-                    or field is not None and not (type(field) is _BoundField and field.source == 0
-                        and field.column.field == 'ref' and field.column.custom is None)):
+            identity = (type(field) is _BoundField and field.source == 0
+                        and field.column.field == 'ref' and field.column.custom is None)
+            if (value.function != 'count' or field is not None and not identity
+                    or value.distinct and (not identity or q.section is not None)):
                 return False
             counted = True
+            distinct_ref |= value.distinct
             return True
         if kind is syntax.Expression:
             return value.operator in _ARITHMETIC and all(closed(item) for item in value.arguments)
@@ -72,10 +76,17 @@ def bind(plan):
 
     if not all(closed(item) for item in plan.projections) or not counted:
         return None
-    if plan.predicate is None: return CountShape(True)
+    predicate = plan.predicate
+    if predicate is None: return CountShape(True, distinct_ref=distinct_ref)
+    if q.section is None and type(predicate) is syntax.Comparison and predicate.operator == 'eq':
+        field, value = predicate.field, predicate.value
+        if (type(field) is _BoundField and field.source == 0
+                and field.column.field == 'deletion_mark' and field.column.custom is None
+                and type(value) is bool):
+            return CountShape(True, value, distinct_ref)
     proved, truth = constant_condition(plan, plan.predicate)
     if not proved: return None
-    return CountShape(truth is True)
+    return CountShape(truth is True, distinct_ref=distinct_ref)
 
 
 def owned_sqlite_query_view(view, context):
@@ -114,7 +125,7 @@ def try_document(plan, view, budget, shape):
     if not owned_sqlite_query_view(view, plan.catalogs._context): return None
     manager, section = plan.managers[0], plan.sections[0]
     manager._check_view(view)
-    proof = count(view, manager._schema, section)
+    proof = count(view, manager._schema, section, deletion_mark=shape.deletion_mark)
     if proof is None: return None
     holders, selected, cells, text = proof
     budget[0] += cells

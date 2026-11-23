@@ -307,6 +307,31 @@ class GraphXDTOTests(unittest.TestCase):
             vm.execute('P.Validate();')
             self.assertGreater(audit.call_count,0)
 
+    def test_mutations_check_only_affected_ownership_graphs(self):
+        from yadinassi.execution.direct.source import python_direct_source_xdto_objects as direct
+        app=self.prepared();vm=app.interpreter
+        vm.execute('L=P.Children;L.Add(C); Other=XDTOFactory.Create(T);'
+                   'OtherList=Other.Children;OtherChild=XDTOFactory.Create(F);'
+                   'OtherChild.Label="independent";OtherList.Add(OtherChild);')
+        unrelated=tuple(vm.variables[name] for name in ('other','otherlist','otherchild'))
+        original=direct._saved_fields
+        seen=[]
+        def observe(records,value):
+            seen.append(value)
+            return original(records,value)
+
+        with patch.object(direct,'_saved_fields',observe):
+            vm.execute('L.Set(0,D); Bound=L.Set; Bound(0,C); L[0]=D;'
+                       'L.Insert(0,C); A=L.Delete(0); L.Clear(); P.Unset("Children");'
+                       'P.Child=C; P.Child=D; P.Unset("Child");')
+        self.assertTrue(seen)
+        self.assertFalse(any(value is outside for value in seen for outside in unrelated))
+        self.assertIs(vm.variables['a'],vm.variables['c'])
+        self.assertIsNone(vm.variables['c']._owner)
+        self.assertIsNone(vm.variables['d']._owner)
+        self.assertEqual(vm.execute('L.Count();'),0)
+        self.assertEqual(vm.execute('Other.Children[0].Label;'),'independent')
+
     def test_selected_reads_use_current_record_and_backlink(self):
         app=self.prepared();vm=app.interpreter
         vm.execute('C.Label="child";D.Label="other";L=P.Children;L.Add(C);L.Add(D);')

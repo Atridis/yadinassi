@@ -58,6 +58,29 @@ class DocumentCountTests(_Queries,unittest.TestCase):
                             (Decimal(0 if suffix else count),),)
                         self.compare_one_statement(f'SELECT {expression} FROM {source} AS D {suffix}',expected)
 
+    def test_header_distinct_identity_and_marked_count_share_full_witness(self):
+        self.seed(4)
+        self.sql("UPDATE document_record SET deletion_mark=1 WHERE rowid=(SELECT MIN(rowid) FROM document_record)")
+        for projection, predicate, expected in (
+                ('COUNT(DISTINCT D.Ref)', '', 4),
+                ('COUNT(*)', ' WHERE D.DeletionMark=FALSE', 3),
+                ('COUNT(DISTINCT D.Ref)', ' WHERE D.DeletionMark=TRUE', 1)):
+            with self.subTest(projection=projection, predicate=predicate):
+                self.compare_one_statement(
+                    f'SELECT {projection} FROM Document.Orders AS D{predicate}', ((Decimal(expected),),))
+        # A section's Ref is the owner, not the row identity. Two lines on
+        # the same owner must not count as two distinct references.
+        obj = self.object()
+        obj.get_member('Lines').add().set_member('Flag', True)
+        obj.get_member('Lines').add().set_member('Flag', False)
+        obj.write()
+        with patch('yadinassi.db.sqlite.sqlite_document_count.count',
+                   side_effect=AssertionError('header proof admitted for parts')):
+            actual = self.query('SELECT COUNT(DISTINCT Ref) FROM Document.Orders.Lines')._rows
+        self.assertEqual(actual, ((Decimal(5),),))
+        with patch.object(queries, '_MAX_CELLS', 1), self.assertRaisesRegex(BSLRuntimeError, 'input resource'):
+            self.query('SELECT COUNT(*) FROM Document.Orders WHERE DeletionMark=TRUE')
+
     def test_hidden_values_and_parts_remain_counted_toward_limits(self):
         self.seed(3)
         # Whole cards contain more cells than either this header or empty

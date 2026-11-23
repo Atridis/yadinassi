@@ -494,14 +494,81 @@ class LiveTablePrefixTests(unittest.TestCase):
                 self.assertNotIn('r',vm.variables)
                 self.assertNotIn('snapshot',vm.variables)
 
-    def test_goto_extensions_and_second_constructor_are_not_specialized(self):
+    def test_goto_and_extensions_are_not_specialized(self):
         for vm,suffix in ((self.vm(),'Goto ~Done; ~Done: Snapshot=T.Copy();'),
-                          (self.vm(allow_extensions=True),'Snapshot=T.Copy();'),
-                          (self.vm(),'Snapshot=T.Copy();')):
+                          (self.vm(allow_extensions=True),'Snapshot=T.Copy();')):
             with self.subTest(extension=vm.allow_extensions,suffix=suffix):
-                prefix=TABLE if vm.allow_extensions or suffix.startswith('Goto') else TABLE.replace(
-                    'T.Columns.Add("X");','U=New ValueTable; T.Columns.Add("X");')
-                plan=vm.prepare(prefix+suffix)
+                plan=vm.prepare(TABLE+suffix)
                 self.assertNotIn('_fresh_closed_table',plan._plan.generated_source)
                 vm.execute_prepared(plan)
                 self.assertEqual(vm.variables['snapshot'].count(),20)
+
+    def test_unused_table_before_loop_does_not_require_its_own_guard(self):
+        from unittest.mock import Mock, patch
+
+        for setup in ('U=New ValueTable; T.Columns.Add("X");',
+                      'T.Columns.Add("X",New TypeDescription("Number")); U=New ValueTable;',
+                      'U=New ValueTable; T.Columns.Add("X",New TypeDescription("Number"));'):
+            with self.subTest(setup=setup):
+                vm=self.vm()
+                source=TABLE.replace('T.Columns.Add("X");',setup)+'Snapshot=T.Copy(); R'
+                plan=vm.prepare(source)
+                code=plan._plan.generated_source
+                fast=code.split('if _fresh_closed_table',1)[1].split('        else:',1)[0]
+                self.assertIn('.set_member(',fast)
+                self.assertIn('.get_member(',fast)
+                self.assertNotIn('resolve_set_member',fast)
+                namespace=plan._plan.function.__globals__
+                admit=Mock(wraps=namespace['_fresh_closed_table'])
+                with patch.dict(namespace,_fresh_closed_table=admit):
+                    self.assertEqual(vm.execute_prepared(plan),210)
+                admit.assert_called_once()
+                self.assertIs(admit.call_args.args[1],vm.variables['t'])
+                self.assertEqual((vm.variables['u'].count(),vm.variables['snapshot'].count()),(0,20))
+                self.assertEqual(vm.execute(source),210)
+
+    def test_one_region_checks_each_used_table_and_keeps_live_aliases(self):
+        from unittest.mock import Mock, patch
+
+        vm=self.vm()
+        source=TABLE.replace('For I=1', """
+            U=New ValueTable;
+            U.Columns.Add("X",New TypeDescription("Number"));
+            Alias=U;
+            For I=1""").replace('Row.X=I;', 'Row.X=I; Other=Alias.Add(); Other.X=I+1;')
+        plan=vm.prepare(source+'One=T.Copy(); Two=U.Copy(); R')
+        code=plan._plan.generated_source
+        self.assertIn(' and _fresh_closed_table(',code)
+        namespace=plan._plan.function.__globals__
+        admit=Mock(wraps=namespace['_fresh_closed_table'])
+        with patch.dict(namespace,_fresh_closed_table=admit):
+            self.assertEqual(vm.execute_prepared(plan),210)
+        self.assertEqual(admit.call_count,2)
+        self.assertIs(vm.variables['alias'],vm.variables['u'])
+        self.assertEqual({id(call.args[1]) for call in admit.call_args_list},
+                         {id(vm.variables['t']),id(vm.variables['u'])})
+        self.assertEqual(vm.variables['two'].total('X'),230)
+
+    def test_fresh_later_region_after_observation_does_not_reuse_prior_facts(self):
+        from unittest.mock import Mock, patch
+        from yadinassi.collections.value_tables import BSLValueTable
+
+        observations=[]
+        replacement=BSLValueTable()
+        def observe(text):
+            observations.append((text,vm.variables['t'].count(),vm.variables['r']))
+            vm.variables['t']=replacement
+            vm.variables['r']=29
+        vm=self.vm(output=observe)
+        second=TABLE.replace('T=','U=').replace('T.','U.').replace('T[I]','U[I]').replace('R=','S=').replace('R+','S+')
+        plan=vm.prepare(TABLE+'Old=T; Message("between");'+second+'Snapshot=U.Copy(); R+S')
+        self.assertEqual(plan._plan.generated_source.count('if _fresh_closed_table'),2)
+        namespace=plan._plan.function.__globals__
+        admit=Mock(wraps=namespace['_fresh_closed_table'])
+        with patch.dict(namespace,_fresh_closed_table=admit):
+            self.assertEqual(vm.execute_prepared(plan),239)
+        self.assertEqual(observations,[('between',20,210)])
+        self.assertIs(admit.call_args_list[0].args[1],vm.variables['old'])
+        self.assertIs(admit.call_args_list[1].args[1],vm.variables['u'])
+        self.assertIs(vm.variables['t'],replacement)
+        self.assertEqual(vm.variables['snapshot'].count(),20)

@@ -76,6 +76,13 @@ class _EnumScope:
             raise BackendError('busy')
         self.backend._check_file()
 
+    def _require_form_snapshot(self, view):
+        self._require_owner()
+        captured = _POINT_READ.get()
+        if captured is not None and (captured[0] is not self or captured[1] is not view):
+            raise BackendError('unsupported')
+        self._require_snapshot(view)
+
     def require_live(self):
         self._require_owner()
         captured=_POINT_READ.get()

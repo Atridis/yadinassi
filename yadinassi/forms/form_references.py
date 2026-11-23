@@ -30,6 +30,7 @@ class _ReferenceRead:
         self._view = None
         self.normalized, self.presentations = {}, {}
         self.checked_targets = set()
+        self._enum_issuers = {}
 
     def revoke(self):
         self.active = False
@@ -37,6 +38,23 @@ class _ReferenceRead:
         self.normalized.clear()
         self.presentations.clear()
         self.checked_targets.clear()
+        self._enum_issuers.clear()
+
+    def enum_target(self, issuer, enum_id):
+        # Canonical issuer identity maps are built only after the actual
+        # owned view and the frozen namespace have both been admitted.
+        issuer_key = id(issuer)
+        targets = self._enum_issuers.get(issuer_key)
+        if targets is None:
+            issuer._form_namespace(self.view())
+            targets = self._enum_issuers[issuer_key] = {}
+        result = targets.get(enum_id)
+        if result is None:
+            references, identities = issuer._form_target(enum_id)
+            members = {id(value): (value, identity.int) for identity, value in zip(identities, references)}
+            result = targets[enum_id] = (
+                references[0], members, {identity: value for value, identity in members.values()})
+        return result
 
     def view(self):
         if not self.active or self.thread != get_ident():
@@ -122,6 +140,22 @@ class FormEnumBinding:
                 continue
             return self.storage.value(key,self.enum_id)
         raise ValueError('unregistered enum activation')
+    def _adjust_in_batch(self, batch, value):
+        empty, members, canonical = batch.enum_target(self.storage, self.enum_id)
+        if value is _MISSING:
+            return empty
+        if type(value) is not BSLEnumReference:
+            raise ValueError('foreign reference type/snapshot')
+        member = members.get(id(value))
+        if member is not None and member[0] is value:
+            return value
+        for source in self.sources:
+            _, members, _ = batch.enum_target(source, self.enum_id)
+            member = members.get(id(value))
+            if member is not None and member[0] is value:
+                return canonical[member[1]]
+        raise ValueError('unregistered enum activation')
+
     def presentation(self,value): return str(self.validate(value))
 
 
@@ -212,6 +246,10 @@ class FormReferenceScope:
         if target not in self.targets: raise ValueError('unknown reference target')
         if self.server:
             binding = self.targets[target]
+            if type(binding) is FormEnumBinding:
+                batch = active_reference_read(self)
+                if batch is not None:
+                    return binding._adjust_in_batch(batch, value)
             if value is _MISSING: value = binding.empty
             expected=BSLEnumReference if type(binding) is FormEnumBinding else BSLCatalogReference
             if type(value) is not expected:
@@ -238,7 +276,11 @@ class FormReferenceScope:
             else:
                 if len(self._keys) >= _MAX_IDENTITIES: raise ValueError('reference identity limit')
                 key = token_hex(16); self._keys[identity] = key
-            presentation = _text(self.targets[target].presentation(value))
+            binding = self.targets[target]
+            # The batch adjustment has already proven this exact canonical
+            # enum value; its presentation has no live callback.
+            presentation = _text(str(value) if type(binding) is FormEnumBinding
+                                 and active_reference_read(self) is not None else binding.presentation(value))
             if key is None and presentation != '':
                 raise ValueError('empty reference presentation must be empty')
             self._issued[(target, key)] = value

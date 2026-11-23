@@ -12,7 +12,7 @@ from .form_tables import (FormTableColumn, FormTableSchema, BSLFormDataCollectio
     MAX_TABLE_ALLOCATED as MAX_ROW_IDENTITIES, validate_table_data, table_text_size)
 from .form_model import BSLFormTable, MAX_TOTAL_TEXT, name, text, scalar
 from yadinassi.ui.protocol import encode_value, decode_value
-from .form_references import is_reference, adjust, encode, decode, reference_batch
+from .form_references import is_reference, adjust, encode, decode, reference_batch, active_reference_read
 from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.types.type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
     BSLDateQualifiers, BSLAllowedSign, BSLAllowedLength, BSLDateFractions)
@@ -74,16 +74,26 @@ def _decode_column(row, session):
 
 
 def pack_tables(form):
-    with reference_batch(getattr(form._session, "reference_scope", None)):
-        validate_table_data(form)
+    scope = getattr(form._session, "reference_scope", None)
+    with reference_batch(scope):
+        packet = validate_table_data(form)
         result = []
-        for table in form._tables.values():
-            snapshot = table._snapshot()
-            result.append({'id': table._identity, 'name': table.schema.name,
-                'title': table.schema.title, 'columns': [_column(c) for c in table.schema.columns],
-                'allocated': snapshot.allocated,
-                'rows': [[identity, [encode(c.value_type, value, encode_value) for c,value in zip(table.schema.columns,values)]]
-                         for identity, values in snapshot.rows]})
+        if active_reference_read(scope) is None:
+            # A custom presentation callback is a real effect. Keep the
+            # original snapshot/allocator and evaluate the header first.
+            for table in form._tables.values():
+                snapshot = table._snapshot()
+                result.append({'id': table._identity, 'name': table.schema.name,
+                    'title': table.schema.title, 'columns': [_column(c) for c in table.schema.columns],
+                    'allocated': snapshot.allocated,
+                    'rows': [[identity, [encode(c.value_type, value, encode_value)
+                                         for c, value in zip(table.schema.columns, values)]]
+                             for identity, values in snapshot.rows]})
+        else:
+            for table, (_, rows) in zip(form._tables.values(), packet):
+                result.append({'id': table._identity, 'name': table.schema.name,
+                    'title': table.schema.title, 'columns': [_column(c) for c in table.schema.columns],
+                    'allocated': table._allocated, 'rows': rows})
         return result
 
 

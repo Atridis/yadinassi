@@ -65,6 +65,76 @@ class EnumApplicationTests(unittest.TestCase):
         report=self.rpc('report',report='StockBalance',at='2026-11-12T00:00:00',start=None,end=None)['state']['report']
         self.assertEqual(report['rows'],[])
 
+    def test_add_line_admission_does_not_scale_with_mixed_reference_rows(self):
+        from collections import Counter
+        from decimal import Decimal
+        import sys
+        from yadinassi.configuration.demos.inventory_application_sessions import InventoryDocumentSession
+        from yadinassi.configuration.demos.inventory_enum_runtime import _EnumScope
+
+        product = self.open('Catalog.Products.Form.Card')
+        self.event(product, 'change', control='CodeInput', value='P1')
+        self.event(product, 'change', control='DescriptionInput', value='Product')
+        self.choose(product, 'UnitInput')
+        self.event(product, control='SaveButton')
+        sid = self.open('Document.Receipt.Form.Card')
+        server = self.broker.sessions[sid][0].session
+        table = next(iter(server.form._tables.values()))
+        labels = {InventoryDocumentSession.verify_source.__code__: 'source',
+                  _EnumScope.require_live.__code__: 'enum'}
+        def add():
+            counters = Counter()
+            def profile(frame, event, _):
+                if event == 'call' and frame.f_code in labels:
+                    counters[labels[frame.f_code]] += 1
+            previous = sys.getprofile()
+            sys.setprofile(profile)
+            try:
+                self.event(sid, control='AddLineButton')
+            finally:
+                sys.setprofile(previous)
+            self.assertIsNone(self.broker.objects[sid].context.backend._active)
+            return counters
+        # Two AddLine actions with different numbers of existing nonempty
+        # mixed cells. No timing or exact internal call-limit depends on CI.
+        self.event(sid, control='AddLineButton')
+        self.choose(sid, 'LinesTable', table._rows[-1]._row_id, 'Product')
+        self.choose(sid, 'LinesTable', table._rows[-1]._row_id, 'Unit')
+        first = add()
+        original = table._rows[0]
+        for _ in range(2):
+            self.choose(sid, 'LinesTable', table._rows[-1]._row_id, 'Product')
+            self.choose(sid, 'LinesTable', table._rows[-1]._row_id, 'Unit')
+            self.event(sid, control='AddLineButton')
+        self.choose(sid, 'LinesTable', table._rows[-1]._row_id, 'Product')
+        self.choose(sid, 'LinesTable', table._rows[-1]._row_id, 'Unit')
+        self.assertEqual(add(), first)
+        self.assertIs(table._rows[0], original)
+        self.assertEqual(str(original._data['product']), 'Product')
+        self.assertEqual(str(original._data['unit']), 'Piece')
+        self.assertTrue(table._rows[-1]._data['product'].is_empty())
+        self.assertTrue(table._rows[-1]._data['unit'].is_empty())
+        self.assertEqual(table._rows[-1]._data['quantity'], Decimal(1))
+
+    def test_mixed_reference_phase_does_not_keep_enum_authority_after_exit(self):
+        from contextvars import copy_context
+        from yadinassi.db.catalog.catalog_backend import BackendError
+        from yadinassi.forms.form_references import active_reference_read, reference_batch
+
+        sid = self.open('Document.Receipt.Form.Card')
+        owner = self.broker.objects[sid]
+        scope = self.broker.sessions[sid][0].session.reference_scope
+        state = owner.object.get_member('State')
+        target = next(key for key, binding in scope.targets.items()
+                      if scope.wire_type(key) == 'FormEnumRef' and binding.value_type == state.value_type)
+        with reference_batch(scope):
+            self.assertEqual(scope.encode(target, state)['text'], '')
+            saved = copy_context()
+        self.assertIsNone(saved.run(active_reference_read, scope))
+        self.broker.exchange({'operation': 'retire', 'session': sid, 'payload': {}})
+        with self.assertRaises(BackendError):
+            saved.run(scope.encode, target, state)
+
     def test_summary_projection_preserves_schema_bounds(self):
         from dataclasses import replace
         from yadinassi.ui.catalog_view import CatalogRepository

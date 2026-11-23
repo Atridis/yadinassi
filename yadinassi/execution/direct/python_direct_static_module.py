@@ -97,17 +97,28 @@ def ordered_if(node, *, literal_reachability, extended_reachability=True):
     yield OTHERWISE,node.otherwise,False,reaches,None
 
 
-def table_schema_setup(program, start):
-    """Locate possible setup calls; the transfer below proves their receivers."""
-    def collect(nodes, calls):
+def _table_origin(statement):
+    if type(statement) is bsl.Assign and type(statement.target) is bsl.Name:
+        value=_ungroup(statement.value)
+        if (type(value) is bsl.New and not value.arguments
+                and value.name.casefold() in ('valuetable','таблицазначений')):
+            return value
+    return None
+
+
+def _table_schema_setup(program, start):
+    """Locate possible setup calls and constructors; transfer proves their receivers."""
+    def collect(nodes, calls, origins):
         for statement in nodes:
             kind=type(statement)
             if kind in (bsl.For,bsl.While,bsl.ForEach):
                 return False
             if kind is bsl.If:
                 for _,body,_,live,_ in ordered_if(statement,literal_reachability=True):
-                    if live and not collect(body,calls):return False
+                    if live and not collect(body,calls,origins):return False
                 continue
+            origin=_table_origin(statement)
+            if origin is not None:origins.add(id(origin))
             if kind is bsl.ExpressionStatement:call=_ungroup(statement.expression)
             elif kind is bsl.Assign:call=_ungroup(statement.value)
             else:continue
@@ -117,15 +128,44 @@ def table_schema_setup(program, start):
                 calls.add(id(call))
         return True
 
-    positions = {}
-    for position in range(start, len(program)):
-        calls=set()
-        if not collect((program[position],),calls):break
-        if calls:positions[position]=calls
-    return positions
+    schema_calls=set();origins=set();cutoff=start
+    for position in range(start,len(program)):
+        calls=set();new=set()
+        if not collect((program[position],),calls,new):break
+        if calls or new:
+            schema_calls.update(calls);origins.update(new);cutoff=position
+    return cutoff, schema_calls, origins
 
 
-def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=None, builtin_external_names=(), numeric_routines=None, address_routines=None, literal_reachability=False, module_declarations=False, table_prefix_origin=None, extended_reachability=True, extended_tests=None, schema_setup=None):
+def table_regions(program, opaque_names=()):
+    """Find ordered closed islands entered only from ordinary table setup."""
+    cursor=0
+    while cursor<len(program):
+        while cursor<len(program) and _table_origin(program[cursor]) is None:
+            cursor+=1
+        if cursor==len(program):break
+        cutoff,calls,origins=_table_schema_setup(program,cursor)
+        phase=cutoff+1
+        while cursor<phase:
+            end,kinds,seeds=analyze(program,opaque_names=opaque_names,literal_reachability=True,
+                                    table_setup=(cursor,cutoff,calls,origins))
+            if end>=phase:break
+            # A generic effect invalidates all earlier setup facts, but not
+            # another ordinary constructor in the remaining setup sequence.
+            cursor=end+1
+            while cursor<phase and _table_origin(program[cursor]) is None:
+                cursor+=1
+        else:continue
+        configured=phase!=cursor+1
+        if end==len(program) and type(program[-1]) is bsl.ExpressionStatement:
+            end-=1  # keep the final expression / return outside any guard
+        if (seeds and phase<end and (configured or end<len(program))
+                and any(type(program[i]) is bsl.For for i in range(phase,end))):
+            yield phase,end,tuple(sorted(seeds)),configured,kinds
+        cursor=max(phase,end)
+
+
+def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=None, builtin_external_names=(), numeric_routines=None, address_routines=None, literal_reachability=False, module_declarations=False, table_setup=None, extended_reachability=True, extended_tests=None):
     builtin_results = builtin_results or {}
     kinds={};names=set();opaque=set(opaque_names)|{'thisobject','этотобъект'}
     checked=set();active=set();for_counters=[]
@@ -133,9 +173,9 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
     address_routines={} if address_routines is None else address_routines
     def require(condition):
         if not condition:raise _Decline
-    schema_calls=() if schema_setup is None else frozenset(call for calls in schema_setup[1].values() for call in calls)
-    schema_cutoff=-1 if schema_setup is None else max(schema_setup[1])
+    setup_start,schema_cutoff,schema_calls,table_origins=(-1,-1,(),()) if table_setup is None else table_setup
     before_schema_guard=False
+    table_seeds=();seed_reads=None
 
     def numeric_description(inner,env):
         require(1<=len(inner.arguments)<=2)
@@ -171,13 +211,15 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
         elif k is bsl.Literal:
             require(type(node.value) in (Decimal,bool,str));kind='number' if type(node.value) is Decimal else 'bool' if type(node.value) is bool else 'string'
         elif k is bsl.Name:
-            require(node.name.casefold() in env);kind=env[node.name.casefold()]
+            key=node.name.casefold()
+            require(key in env);kind=env[key]
+            if seed_reads is not None and key in table_seeds:seed_reads.add(key)
         elif k is bsl.New:
             name=node.name.casefold()
             if before_schema_guard and name in ('typedescription','описаниетипов'):
                 numeric_description(node,env);kind='numeric_column_type'
             else:
-                if table_prefix_origin is not None:require(node is table_prefix_origin)
+                if table_setup is not None:require(before_schema_guard and id(node) in table_origins)
                 constructors={'array':'array','массив':'array','map':'map','соответствие':'map','valuetable':'table','таблицазначений':'table','valuelist':'valuelist','списокзначений':'valuelist'}
                 require(name in constructors and not node.arguments);kind=constructors[name]
         elif k is bsl.Index:
@@ -281,7 +323,7 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
         for node in nodes:
             k=type(node)
             if k is bsl.Routine and (numeric_routines or address_routines):continue
-            if k is bsl.Var and table_prefix_origin is not None:continue
+            if k is bsl.Var and table_setup is not None:continue
             if k is bsl.Assign:
                 if scalar_prefix:require(type(node.target) is bsl.Name)
                 kind=expression(node.value,env)
@@ -369,23 +411,24 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
                 while len(kinds)>committed:kinds.popitem()
                 break
         return kinds
-    if table_prefix_origin is not None:
-        # Reuse the closed transfer rules, saving only successful top-level
-        # statements; the first unproved statement and all successors stay generic.
-        env={};prefix_kinds={}
-        for index,node in enumerate(program):
+    if table_setup is not None:
+        # Keep only successfully proved top-level statements. Generic setup
+        # can publish/reload locals: never reuse scalar, row or column facts.
+        env={};prefix_kinds={};used=set()
+        for index in range(setup_start,len(program)):
             before_schema_guard=index<=schema_cutoff
             kinds={}
-            try:sequence((node,),env)
-            except _Decline:return index,prefix_kinds
-            prefix_kinds.update(kinds)
-            if index==schema_cutoff:
-                # Ordinary construction may publish and rebind module slots.
-                # Only the table itself is readmitted by the runtime schema guard.
-                table_name=schema_setup[0]
-                if env.get(table_name)!='table':return index,prefix_kinds
-                env={table_name:'table'}
-        return len(program),prefix_kinds
+            if not before_schema_guard:seed_reads=set()
+            try:sequence((program[index],),env)
+            except _Decline:return index,prefix_kinds,used
+            if before_schema_guard:
+                if index==schema_cutoff:
+                    env={name:kind for name,kind in env.items() if kind=='table'}
+                    table_seeds=frozenset(env)
+                    if not table_seeds:return index,prefix_kinds,used
+            else:
+                prefix_kinds.update(kinds);used.update(seed_reads)
+        return len(program),prefix_kinds,used
     # Declarations are still lowered into their original export and scheduler
     # entry points. They are not execution edges of a closed module body.
     if module_declarations:program=(node for node in program if type(node) is not bsl.Routine)

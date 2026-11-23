@@ -122,8 +122,7 @@ class EnumStorageBinding:
         hook()
         self._require_namespace()
 
-    def _require_detached(self, *, conversion=False):
-        """Integrity/owner only; detached report operations acquire no lease."""
+    def _inventory_owner(self):
         from yadinassi.configuration.demos.inventory_enum_runtime import _EnumScope
         hook = self._hook
         if (type(hook) is not MethodType or type(self._hook_owner) is not _EnumScope
@@ -131,9 +130,35 @@ class EnumStorageBinding:
                 or hook.__func__ is not _EnumScope.require_live
                 or self._hook_function is not _EnumScope.require_live):
             raise BackendError('closed')
+        return self._hook_owner
+
+    def _require_detached(self, *, conversion=False):
+        """Integrity/owner only; detached report operations acquire no lease."""
+        self._inventory_owner()
         if conversion: self._hook_owner._require_conversion()
         else: self._hook_owner._require_owner()
         self._require_namespace()
+
+    def _form_namespace(self, view):
+        """Validate the issuer on the form's existing lexical read, not a new one."""
+        owner = self._inventory_owner()
+        owner._require_form_snapshot(view)
+        domain = self._domain
+        if (type(domain) is not EnumValueDomain or domain is not owner.backend._enum_domain
+                or not _same(domain.database_id, view.database_id)):
+            raise BackendError('invalid_input')
+        self._require_namespace()
+
+    def _form_target(self, enum_id):
+        # Whole target equivalence, once under the caller's admitted namespace.
+        # This is the same key membership that key()/value() prove individually.
+        entry = self._entry(enum_id)
+        references, ids = entry[7:9]
+        declared = self._domain._values(enum_id)
+        if (not _same(ids[0], self._domain.empty(enum_id).value_id)
+                or not _same(ids[1:], declared)):
+            raise BackendError('invalid_input')
+        return references, ids
 
     def _require_namespace(self):
         namespace = self._namespace

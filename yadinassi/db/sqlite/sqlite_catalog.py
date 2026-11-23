@@ -2763,13 +2763,20 @@ class _View:
         self._require()
         if type(request) is CatalogNumericAggregateRequest:
             return self._aggregate_numeric_catalog(catalog_id,request)
-        if type(request) is not CatalogAggregateRequest or request.operation not in ('count_all_v1', 'count_query_keys_v1'):
+        if (type(request) is not CatalogAggregateRequest
+                or request.operation not in ('count_all_v1', 'count_query_keys_v1', 'count_query_headers_v1')
+                or (request.deletion_mark is not None and (request.operation != 'count_query_headers_v1'
+                    or type(request.deletion_mark) is not bool))):
             raise BackendError('invalid_input')
         schema = self.catalog_schema(catalog_id)
         if (self._operation_id is not None or not self._cache_validation_allowed()
                 or self._backend.storage_version < 2 or schema.hierarchy != 'none'):
             return None
         table, _, where, args = self._source(schema)
+        if request.operation == 'count_query_headers_v1':
+            if not self._query_language or _validate: return None
+            from .sqlite_document_count import count_catalog_headers
+            return count_catalog_headers(self, schema, table, request.deletion_mark)
         if request.operation == 'count_query_keys_v1':
             if not self._query_language or _validate: return None
             # Canonical lowercase UUID spelling is injective over the admitted

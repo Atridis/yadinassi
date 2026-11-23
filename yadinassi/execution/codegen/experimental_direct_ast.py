@@ -35,7 +35,7 @@ from yadinassi.execution.direct.python_direct_execute import execute_fragment, l
 from yadinassi.execution.direct.python_direct_eval import bind_eval
 from yadinassi.execution.direct.python_direct import REPAIRS,PythonDirectUnsupported
 from yadinassi.execution.direct.python_direct_names import NAMES, CHARS_ALIASES, XML_CLEANUP_ALIASES, VALUE_LIST_CONSTRUCTOR_ALIASES
-from yadinassi.execution.direct.python_direct_static_module import analyze as analyze_static, ordered_if, OTHERWISE, _simple_literal_boolean, table_schema_setup
+from yadinassi.execution.direct.python_direct_static_module import analyze as analyze_static, ordered_if, OTHERWISE, _simple_literal_boolean, table_regions as analyze_table_regions
 from yadinassi.types.errors import BSLRuntimeError
 from dataclasses import fields, replace
 
@@ -2441,7 +2441,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         definitions.append(emitter.node(py.FunctionDef,routine.token,name=emitter.routine_symbols[key],args=args,body=routine_body,decorator_list=[],returns=None,type_comment=None))
     # Module locals are the register file; dynamic edges explicitly synchronize.
     static_facts=None
-    table_prefix_end=0;table_prefix_start=0;table_prefix_origin=0;table_prefix_kinds={};extended_tests=set()
+    table_regions=();extended_tests=set()
     builtin_results=None
     if pure_bindings is not None:
         from yadinassi.execution.direct.python_direct_pure_builtins import result_kinds
@@ -2505,25 +2505,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
                 emitter.scalar_kinds.update(local_scalars)
             if (static_facts is None and facts_reachability and pure_bindings is None
                     and not emitter.routines and not cells):
-                for offset,statement in enumerate(program):
-                    if type(statement) is not bsl.Assign or type(statement.target) is not bsl.Name:
-                        continue
-                    origin=statement.value
-                    if (type(origin) is not bsl.New or origin.name.casefold() not in ('valuetable','таблицазначений')
-                            or origin.arguments):
-                        continue
-                    key=statement.target.name.casefold()
-                    setup=table_schema_setup(program,offset+1)
-                    end,kinds=analyze_static(program,opaque_names=opaque,
-                        literal_reachability=True,table_prefix_origin=origin,
-                        schema_setup=(key,setup) if setup else None)
-                    phase=max(setup,default=offset)+1
-                    if setup and end==len(program) and type(program[-1]) is bsl.ExpressionStatement:
-                        end-=1  # Keep the module's final expression/return outside the guard.
-                    if (phase<end and (setup or end<len(program))
-                            and any(type(node) is bsl.For for node in program[phase:end])):
-                        table_prefix_origin,table_prefix_start,table_prefix_end,table_prefix_kinds=offset,phase,end,kinds
-                    break
+                table_regions=tuple(analyze_table_regions(program,opaque_names=opaque))
     if static_facts is not None and not emitter.module_cells and not emitter.authority and not emitter.catalog_bounds:
         integer_kinds=('number','bool','string','table','row','columns','column','map','map_insert','default_column_type')
         emitter.integer_lane=bool(static_facts[1]) and all(kind in integer_kinds for kind in static_facts[1].values())
@@ -2589,26 +2571,26 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     emitter.region_active=bool(region_end)
     if has_goto and type(program[-1]) is bsl.ExpressionStatement:
         emitter.goto_last_expression=program[-1]
-    if table_prefix_end:
-        # Keep the ordinary constructor and one shared register file. Switch
-        # lowering, never visibility: only normal generic edges and module exit
-        # publish, so no old (possibly finalizable) values retire early.
-        body=emitter.sequence(program[:table_prefix_start])
-        segment=program[table_prefix_start:table_prefix_end]
-        generic=emitter.sequence(segment)
-        emitter.static_module_kinds=table_prefix_kinds
-        # Use the ordinary Decimal counter/increments and public facade values.
-        emitter.table_prefix=True
-        specialized=emitter.sequence(segment)
-        emitter.table_prefix=False
-        emitter.static_module_kinds={}
-        slot=emitter.static_module_names[program[table_prefix_origin].target.name.casefold()]
-        arguments=[emitter.name('_context',t),emitter.name(slot,t)]
-        if table_prefix_start!=table_prefix_origin+1:
-            arguments.append(emitter.const(True,t))
-        test=emitter.call('_fresh_closed_table',arguments,t)
-        body.append(emitter.node(py.If,t,test=test,body=specialized,orelse=generic))
-        body+=emitter.sequence(program[table_prefix_end:])
+    if table_regions:
+        # Setup and effects retain ordinary publication. Each disjoint island
+        # starts with the exact live table slots that its proof consumes.
+        body=[];cursor=0
+        for start,end,seeds,configured,kinds in table_regions:
+            body+=emitter.sequence(program[cursor:start])
+            segment=program[start:end]
+            generic=emitter.sequence(segment)
+            emitter.static_module_kinds=kinds;emitter.table_prefix=True
+            specialized=emitter.sequence(segment)
+            emitter.table_prefix=False;emitter.static_module_kinds={}
+            tests=[]
+            for key in seeds:
+                arguments=[emitter.name('_context',t),emitter.name(emitter.static_module_names[key],t)]
+                if configured:arguments.append(emitter.const(True,t))
+                tests.append(emitter.call('_fresh_closed_table',arguments,t))
+            test=tests[0] if len(tests)==1 else emitter.node(py.BoolOp,t,op=py.And(),values=tests)
+            body.append(emitter.node(py.If,t,test=test,body=specialized,orelse=generic))
+            cursor=end
+        body+=emitter.sequence(program[cursor:])
     else:
         body=emitter.sequence(program[:region_end])
         emitter.region_active=False
@@ -2696,7 +2678,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     if emitter.known_selection_adds:
         from yadinassi.execution.direct.python_direct_known_methods import selection_add
         namespace['_known_selection_add']=selection_add
-    if table_prefix_end:
+    if table_regions:
         from yadinassi.execution.direct.python_direct_plain_tables import fresh_closed_table
         namespace['_fresh_closed_table']=fresh_closed_table
     if destinations:namespace['_GotoTransfer']=_GotoTransfer

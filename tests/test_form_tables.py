@@ -474,6 +474,39 @@ class IncrementalFormBudgetTests(unittest.TestCase):
         self.assertEqual(len(snapshot.tables[0].rows), 9)
         self.assert_usage_matches_full_transport(session)
 
+    def test_custom_presentation_packing_keeps_the_original_row_allocator(self):
+        from test_form_references import scopes
+        from yadinassi.forms.form_references import FormReferenceBinding
+        from yadinassi.forms.form_table_replication import pack_tables
+
+        scope, _, _, reference = scopes()
+        binding = scope.targets[1]
+        schema = FormTableSchema('References', (FormTableColumn('Ref', scope.descriptor(1)),))
+        session = FormSession('', tables=(schema,), reference_scope=scope)
+        self.addCleanup(session.interpreter.close)
+        table = session.form._tables['references']
+        calls = []
+        def presentation(value):
+            if value.is_empty():
+                return ''
+            calls.append(value)
+            # Validation presents twice. During full packing the first row
+            # is already snapshotted; the host effect is valid but not part
+            # of that packet's row list or allocator.
+            if len(calls) == 3:
+                table.add()
+            return 'known reference'
+
+        with active(session):
+            table.add().set_member('Ref', reference)
+            scope.targets[1] = FormReferenceBinding(binding.value_type, binding.empty,
+                                                     binding.validate, presentation)
+            packet, = pack_tables(session.form)
+            self.assertEqual(table.count(), Decimal(2))
+            self.assertEqual(table._allocated, 2)
+            self.assertEqual(packet['allocated'], 1)
+            self.assertEqual([row[0] for row in packet['rows']], [1])
+
     def test_server_reference_presentation_is_validated_when_it_can_change(self):
         from test_form_references import scopes
         from yadinassi.forms.form_references import FormReferenceBinding

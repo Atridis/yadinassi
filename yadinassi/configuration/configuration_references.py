@@ -124,14 +124,14 @@ def owned_reference_scope(owned, targets, enum_targets=()):
             bindings[target]=FormEnumBinding(storage,identity)
             managers[target]=storage._entry(identity)[2]
     scope = FormReferenceScope(bindings=bindings)
-    if targets and not enum_targets:
+    if targets or enum_targets:
         from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
         from .configuration_catalog import CatalogObjectSession
         from .configuration_document import DocumentObjectSession
         from .demos.inventory_application_sessions import InventoryDocumentSession
         from .demos.inventory_host_operations import InventoryRootOperations
         if type(owned.context.backend) is SQLiteCatalogBackend:
-            if type(owned) is CatalogObjectSession or type(owned) is DocumentObjectSession:
+            if not enum_targets and (type(owned) is CatalogObjectSession or type(owned) is DocumentObjectSession):
                 scope._batch_read = lambda: _ordinary_reference_read(owned, document=type(owned) is DocumentObjectSession)
             elif type(owned) is InventoryDocumentSession and type(owned.operations) is InventoryRootOperations:
                 @contextmanager

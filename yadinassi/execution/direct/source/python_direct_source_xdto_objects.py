@@ -134,11 +134,46 @@ def _check(boundary,target):
     return owner,factory,types.get(target._type) if type(target) is _OBJECT else target._prop
 
 
-def _saved_fields(records,value):
+def _graph_records(records,*roots):
+    # Find the connected ownership graphs using previously admitted edges,
+    # not current raw containers. A modified live edge must fail validation,
+    # not widen the set of values we traverse or get minted into a new seal.
+    selected={}
+    pending=list(roots)
+    while pending:
+        value=pending.pop()
+        if value is None:continue
+        kind=type(value)
+        if kind is not _OBJECT and kind is not _LIST and kind is not shared._VALUE:
+            raise BoundaryViolation('source XDTO unregistered child')
+        if value in selected:continue
+        record=_saved_record(records,value)
+        selected[value]=record
+        if kind is shared._VALUE:continue
+        for name,field in record[1]:
+            if name=='_owner':
+                if field is not None:pending.append(field)
+                break
+        if kind is _OBJECT:pending.extend(child for _,child in record[3])
+        else:pending.extend(record[3])
+    return selected
+
+
+def _check_graph(boundary,target,*related):
+    owner,factory,records=_scope(boundary,target)
+    types=_validate_records(factory,_graph_records(records,target,*related))
+    return owner,factory,types[target._type] if type(target) is _OBJECT else target._prop
+
+
+def _saved_record(records,value):
     record=records.get(value)
     if type(record) is not tuple or len(record)!=5 or record[0] is not value:
         raise BoundaryViolation('source XDTO value not produced here')
-    _,saved,container,entries,positions=record
+    return record
+
+
+def _saved_fields(records,value):
+    _,saved,container,entries,positions=_saved_record(records,value)
     current=_fields(value)
     if len(current)!=len(saved) or any(current.get(k) is not v for k,v in saved):
         raise BoundaryViolation('source XDTO value fields changed')
@@ -383,9 +418,9 @@ def get_property(factory,prop,name):
 def _list(boundary,owner,factory,obj,prop):
     if prop._upper==1:raise ValueError('XDTO: свойство не является списком')
     if prop._name not in obj._values:
-        _check(boundary,obj)
+        _check_graph(boundary,obj)
         _budget(factory,1);result=_GET_LIST(obj,prop)
-        _publish(boundary,owner,factory,obj,result);_check(boundary,obj)
+        _publish(boundary,owner,factory,obj,result);_check_graph(boundary,obj)
     return obj._values[prop._name]
 
 
@@ -408,7 +443,7 @@ def _input(boundary,owner,prop,value,old=None,present=False):
         return 0,0
     if type(prop._type) is _TYPE:
         if type(value) is not _OBJECT:raise TypeError('source XDTO property requires owned object')
-        _check(boundary,value)
+        _check_graph(boundary,value)
         if value._type is not prop._type or value._owner is not None:raise ValueError('source XDTO object type/owner mismatch')
         # Check the prospective complete tree against the tightest alias before
         # native _prepare (which sees only values.MAX_DEPTH) can attach anything.
@@ -441,15 +476,16 @@ def _input(boundary,owner,prop,value,old=None,present=False):
 
 def set_member(boundary,obj,name):
     if type(obj) is not _OBJECT:
-        _check(boundary,obj);raise ValueError('source XDTO list properties are read-only')
-    _,_,items=_check(boundary,obj);prop=_property(items,name)
+        _check_graph(boundary,obj);raise ValueError('source XDTO list properties are read-only')
+    _,_,items=_check_graph(boundary,obj);prop=_property(items,name)
     if prop._upper!=1:raise ValueError('XDTO: используйте методы списка')
     def assign(value):
-        owner,factory,current=_check(boundary,obj)
+        owner,factory,current=_check_graph(boundary,obj)
         if _property(current,name) is not prop:raise BoundaryViolation('source XDTO bound property changed')
         old=obj._values.get(name);nodes,units=_input(boundary,obj,prop,value,old,name in obj._values)
         _budget(factory,nodes,units);_SET(obj,name,value)
-        _publish(boundary,owner,factory,obj,old,obj._values[name]);_check(boundary,obj)
+        new=obj._values[name]
+        _publish(boundary,owner,factory,obj,old,new);_check_graph(boundary,obj,old,new)
     return assign
 
 
@@ -475,19 +511,20 @@ def resolve(boundary,value,name,*,require_value=False,argument_count=None,allow_
     # and again on entry to the bound call (args may perform host effects).
     scope=_scope(boundary,value)
     method,arity,returns,operation=_method(value,name)
-    whole=operation in _MUTATIONS or operation=='validate'
+    mutation=operation in _MUTATIONS
     def check(count=None,scope=None):
         if scope is None:scope=_scope(boundary,value)
         owner,factory,records=scope
-        if whole:
-            types=_validate_records(factory,records)
+        if mutation or operation=='validate':
+            relevant=_graph_records(records,value) if mutation else records
+            types=_validate_records(factory,relevant)
             items=types[value._type] if type(value) is _OBJECT else value._prop
         elif type(value) is _OBJECT:items=_object_read(factory,records,value)
         else:items=_list_read(factory,records,value)
         if validate is not None:validate()
         if require_value and not returns:raise ValueError('source XDTO procedure cannot be used as value')
         if count is not None and count not in arity:raise TypeError('source XDTO invalid method arity')
-        if operation in _MUTATIONS and type(value) is _LIST and value._owner._values.get(value._prop._name) is not value:
+        if mutation and type(value) is _LIST and value._owner._values.get(value._prop._name) is not value:
             raise ValueError('source XDTO orphan list is read-only')
         return owner,factory,records,items
     check(argument_count,scope)
@@ -538,10 +575,10 @@ def resolve(boundary,value,name,*,require_value=False,argument_count=None,allow_
         elif operation=='clear':changed.extend(value._items)
         _budget(factory,nodes,units)
         result=method(value,*args)
-        if operation in _MUTATIONS:
-            if type(result) is shared._VALUE or type(result) is _OBJECT:changed.append(result)
-            _publish(boundary,owner,factory,*changed)
-        _check(boundary,value);return result
+        if type(result) is shared._VALUE or type(result) is _OBJECT:changed.append(result)
+        _publish(boundary,owner,factory,*changed)
+        _check_graph(boundary,value,*changed)
+        return result
     if allow_references:call.requires_reference=lambda index:False
     return call
 

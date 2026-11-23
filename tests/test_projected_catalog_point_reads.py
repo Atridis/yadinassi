@@ -135,6 +135,35 @@ class CatalogPointProjectionTests(unittest.TestCase):
         self.assertEqual(points[2], points[3])
         self.assertNotEqual(points[0], points[2])
 
+    def test_repeated_live_member_observes_peer_commit_inside_selection_loop(self):
+        self.addCleanup(self.vm.close)
+        self.seed()
+        self.vm.execute('Q=New Query("SELECT TOP 1 P.Ref, P.Ref.Description AS Caption '
+                        'FROM Catalog.Products AS P ORDER BY P.Code"); '
+                        'Selection=Q.Execute().Select();')
+        with closing(SQLiteDBContext(self.path)) as peer, \
+                closing(Interpreter(database_context=peer)) as writer:
+            writer.execute('Card=Catalogs.Products.FindByCode("1").GetObject();')
+
+            def commit_between_reads(message):
+                self.assertEqual(message, 'commit between reads')
+                writer.execute('Card.Description="Changed by peer"; Card.Write();')
+
+            # The actual host output boundary deterministically interleaves
+            # a SQLite commit while keeping one BSL iteration and one selection.
+            self.vm.output = commit_between_reads
+            self.vm.execute_prepared(self.vm.prepare('''
+                While Selection.Next() Do
+                    Before=Selection.Ref.Description;
+                    Message("commit between reads");
+                    After=Selection.Ref.Description;
+                    Captured=Selection.Caption;
+                EndDo;
+            '''))
+        self.assertEqual(self.vm.variables['before'], 'Visible')
+        self.assertEqual(self.vm.variables['after'], 'Changed by peer')
+        self.assertEqual(self.vm.variables['captured'], 'Visible')
+
     def test_unrelated_corrupt_record_does_not_expand_point_validation_scope(self):
         self.seed();self.vm.execute('X=Catalogs.Products.CreateItem();X.Code="2";X.Write();')
         schema=self.vm._catalogs.get_index('Products')._schema

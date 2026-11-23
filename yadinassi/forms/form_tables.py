@@ -10,7 +10,7 @@ import json
 
 from yadinassi.streams.file_io import _methods
 from .form_model import BSLFormAttribute, _Owned, name, scalar, text, MAX_TOTAL_TEXT
-from .form_references import is_reference, adjust, encode, require_scope, reference_batch
+from .form_references import is_reference, adjust, encode, require_scope, reference_batch, active_reference_read
 from yadinassi.types.values import BSLType
 
 MAX_TABLES = 4
@@ -146,8 +146,13 @@ def _validate_rows(table, rows):
             raise ValueError('ТаблицаФормы: неверные ячейки')
         encoded = []
         for column, value in zip(table.schema.columns, values):
-            tagged = encode(column.value_type, value, encode_value)
-            if encode(column.value_type, adjust(column.value_type, value), encode_value) != tagged:
+            kind = column.value_type
+            tagged = encode(kind, value, encode_value)
+            # encode already normalizes reference values. On an owned,
+            # callback-free scope its canonical label cannot change between
+            # two encodings on this same snapshot.
+            owned_reference = is_reference(kind) and active_reference_read(kind.scope) is not None
+            if not owned_reference and encode(kind, adjust(kind, value), encode_value) != tagged:
                 raise ValueError('ТаблицаФормы: значение вне схемы')
             encoded.append(tagged)
             if type(value) is str: total_text += len(value)
@@ -181,6 +186,7 @@ def validate_table_data(form, replacements=None, scalar_data=None):
         raise ValueError('ТаблицаФормы: превышен предел данных')
     if _wire_bytes(packet) > MAX_TABLE_DATA_BYTES:
         raise ValueError('ТаблицаФормы: превышен предел передаваемых данных')
+    return packet
 
 
 class BSLFormDataCollection(_Owned):
@@ -272,12 +278,14 @@ class BSLFormDataCollection(_Owned):
         if self._allocated >= MAX_TABLE_ALLOCATED or len(self._rows) >= MAX_TABLE_ROWS:
             raise ValueError('ТаблицаФормы: превышен предел строк')
         identity = self._allocated + 1
-        values = tuple(adjust(c.value_type) for c in self.schema.columns)
         if _has_variable_wire(self._form):
-            rows = self._snapshot().rows + ((identity, values),)
-            validate_table_data(self._form, {self.schema.name.casefold(): rows})
+            with reference_batch(self._form._session.reference_scope):
+                values = tuple(adjust(c.value_type) for c in self.schema.columns)
+                rows = self._snapshot().rows + ((identity, values),)
+                validate_table_data(self._form, {self.schema.name.casefold(): rows})
             self._replace_rows(rows, identity)
             return self._by_id[identity]
+        values = tuple(adjust(c.value_type) for c in self.schema.columns)
         row_text, row_wire = _row_usage(self, identity, values)
         text_size = self._text_size + row_text
         wire_size = self._wire_size + row_wire + bool(self._rows)

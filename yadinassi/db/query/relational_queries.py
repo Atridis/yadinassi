@@ -972,6 +972,14 @@ class _Plan:
                 if b.source < index and a.source == index: return b, a
             return None
         pair = equality(condition)
+        if not pair:
+            from .query_simplify import total_scalar_condition, without_neutral_terms
+            normalized = without_neutral_terms(self, condition)
+            candidate = equality(normalized)
+            # Hash pruning would skip residual evaluation for key mismatches
+            # (including NULL). Only enable the new route for a total predicate.
+            if candidate and total_scalar_condition(self, normalized):
+                pair, condition = candidate, normalized
         lookup = {}
         if pair:
             for position, item in enumerate(right):

@@ -287,8 +287,11 @@ class CatalogAggregateRequest:
     and uniqueness of normalized logical record identities in the same view.
     The internal query-only count_query_keys_v1 operation may prove canonical
     physical row identities without admitting unprojected payloads.
+    The query-only count_query_headers_v1 proves all header scalars, since
+    DISTINCT Ref and deletion-mark queries validate hidden cells in residual.
     """
     operation: str = 'count_all_v1'
+    deletion_mark: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)

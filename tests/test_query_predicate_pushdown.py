@@ -73,6 +73,27 @@ class InnerPredicatePushdownTests(unittest.TestCase):
             self.execute('SELECT P.Code AS A,Q.Code AS B FROM Catalog.Products AS P '
                 'JOIN Catalog.Products AS Q ON P.Amount/0=Q.Amount WHERE P.Code="absent"')
 
+    def test_neutral_on_terms_keep_hash_join_for_every_join_kind(self):
+        for kind in ('INNER', 'LEFT', 'RIGHT', 'FULL'):
+            with self.subTest(kind=kind):
+                source = ('SELECT P.Code AS A, Q.Code AS B FROM Catalog.Products AS P '
+                          f'{kind} JOIN Catalog.Products AS Q ON ')
+                baseline = self.execute(source+'P.Code=Q.Code AND Q.Amount>=20 ORDER BY A,B')
+                with patch('yadinassi.db.query.relational_queries.MAX_JOIN_PAIRS', 3):
+                    self.assertEqual(self.execute(source+
+                        'NOT (1=1) OR (P.Code=Q.Code AND (NULL IS NULL AND Q.Amount>=20)) '
+                        'ORDER BY A,B'), baseline)
+
+    def test_non_neutral_on_terms_do_not_enable_hash_pruning(self):
+        source = ('SELECT COUNT(*) AS N FROM Catalog.Products AS P '
+                  'JOIN Catalog.Products AS Q ON ')
+        self.assertEqual(self.execute(source+'P.Code=Q.Code OR Q.Amount=20'), ((Decimal(5),),))
+        self.assertEqual(self.execute(source+'P.Code=Q.Code OR NULL=NULL'), ((Decimal(3),),))
+        # The mismatching pair can raise before checking equality.
+        with self.assertRaisesRegex(ValueError, 'division by zero'):
+            self.execute(source+'(P.Code=Q.Code AND 1=0) OR '
+                         '(P.Amount/(Q.Amount-P.Amount+10)=0 AND (P.Code=Q.Code OR 1=0))')
+
     def test_earlier_residual_error_must_not_be_hidden_by_later_conjunct(self):
         with self.assertRaisesRegex(ValueError, 'division by zero'):
             self.execute('SELECT P.Code AS A,Q.Code AS B FROM Catalog.Products AS P '

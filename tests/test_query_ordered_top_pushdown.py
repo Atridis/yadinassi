@@ -99,6 +99,107 @@ class OrderedTopMainDemoTests(unittest.TestCase):
                     self.assertEqual(len(trace), 1, trace)
                     self.assertTrue(trace[0].endswith('LIMIT 1'),trace)
 
+    def _seed_ascii_case_page(self):
+        manager = self.vm._catalogs.get_member('Склады')
+        for code, text in (('1', 'First'), ('2', 'Second'), ('3', 'Third')):
+            save = manager.create_item()
+            save.set_member('Code', code)
+            save.set_member('Description', text)
+            save.write()
+        return manager
+
+    def test_same_arms_keep_original_budget_horizon_in_one_statement(self):
+        from yadinassi.db.query.relational_queries import _Plan
+
+        expression = 'CASE WHEN Code>="2" THEN Description ELSE Description END'
+        text = f'SELECT TOP 2 {expression} AS Caption FROM Catalog.Склады ORDER BY Code DESC'
+        query = self.bound(text)
+        for expected in ((), (('Third',), ('Second',))):
+            if expected:
+                self._seed_ascii_case_page()
+            trace, traced = self.actual_trace()
+            with traced, patch.object(_Plan, 'load', side_effect=AssertionError('materialized input')):
+                result = query.execute()
+            self.assertEqual(result._rows, expected)
+            self.assertEqual((result._columns[0].name, result._columns[0].kind), ('Caption', 'string'))
+            self.assertEqual(len(trace), 1, trace)
+            self.assertIn('WITH proof AS', trace[0])
+            self.assertIn('LIMIT 2', trace[0])
+
+    def test_same_arms_keep_casefold_tie_order_from_residual(self):
+        from yadinassi.db.query import query_pushdown
+
+        manager = self._seed_ascii_case_page()
+        other = manager.create_item()
+        other.set_member('Code', '9')
+        other.set_member('Description', 'FIRST')
+        other.write()
+        query = self.bound('SELECT TOP 2 CASE WHEN Code=Code THEN Description ELSE Description END '
+                           'AS Caption, Code FROM Catalog.Склады ORDER BY Description')
+        with patch.object(query_pushdown, '_witnessed_case_projection', return_value=None):
+            original = query.execute()._rows
+        self.assertEqual({row[0] for row in original}, {'FIRST', 'First'})
+        trace, traced = self.actual_trace()
+        with traced:
+            self.assertEqual(query.execute()._rows, original)
+        self.assertEqual(len(trace), 1, trace)
+
+    def test_same_arms_keep_hidden_corruption_and_separate_budgets(self):
+        from yadinassi.db.catalog.catalog_backend import BackendError
+
+        manager = self._seed_ascii_case_page()
+        one = 'CASE WHEN Code=Code THEN Description ELSE Description END'
+        with patch('yadinassi.db.query.query_parser.MAX_ROWS', 2):
+            with self.assertRaisesRegex(ValueError, 'input resource'):
+                self.bound(f'SELECT TOP 1 {one} AS Caption FROM Catalog.Склады ORDER BY Code').execute()
+        with patch('yadinassi.db.sqlite.sqlite_catalog._MAX_ROWS', 2):
+            with self.assertRaisesRegex(BackendError, 'unsupported'):
+                self.bound(f'SELECT TOP 1 {one} AS Caption FROM Catalog.Склады ORDER BY Code').execute()
+        with patch('yadinassi.db.query.queries._MAX_RESULT_TEXT', 17):
+            with self.assertRaisesRegex(ValueError, 'input resource'):
+                self.bound(f'SELECT TOP 1 {one} AS Caption FROM Catalog.Склады ORDER BY Code').execute()
+        two = 'CASE WHEN Description=Description THEN Description ELSE Description END'
+        with patch('yadinassi.db.query.queries._MAX_RESULT_TEXT', 24):
+            with self.assertRaisesRegex(ValueError, 'result resource'):
+                self.bound(f'SELECT TOP 1 {two} AS A,{two} AS B FROM Catalog.Склады ORDER BY Description').execute()
+
+        table = self.context.backend._layout.table_name(manager._schema.identity)
+        text = f'SELECT TOP 1 {one} AS Caption FROM Catalog.Склады ORDER BY Code'
+        with closing(sqlite3.connect(self.path)) as connection, connection:
+            register_query_collations(connection)
+            connection.execute(f'UPDATE "{table}" SET description=? WHERE code=?', ('Живой', '3'))
+        self.assertEqual(self.bound(text).execute()._rows, (('First',),))
+        with closing(sqlite3.connect(self.path)) as connection, connection:
+            register_query_collations(connection)
+            connection.execute(f'UPDATE "{table}" SET description=? WHERE code=?', ('bad'*100, '3'))
+        with self.assertRaisesRegex(BackendError, 'integrity'):
+            self.bound(text).execute()
+
+    def test_same_arms_decline_when_cold_statement_capability_is_too_low(self):
+        self._seed_ascii_case_page()
+        query = self.bound('SELECT TOP 1 CASE WHEN Code=Code THEN Description ELSE Description END '
+                           'AS Caption FROM Catalog.Склады ORDER BY Code')
+        backend = self.context.backend
+        backend._close_idle_read_handle()
+        with closing(backend.begin_query_read(query_language=True)):
+            pass
+        connection = backend._read_handle.connection
+        limit = getattr(connection, 'setlimit', None)
+        if limit is None:
+            self.assertEqual(query.execute()._rows, (('First',),))
+            return
+        old = limit(sqlite3.SQLITE_LIMIT_SQL_LENGTH, 700)
+        try:
+            with patch('yadinassi.db.sqlite.sqlite_case_page.fetch_all',
+                       side_effect=AssertionError('attempted optional SQL')):
+                self.assertEqual(query.execute()._rows, (('First',),))
+        finally:
+            limit(sqlite3.SQLITE_LIMIT_SQL_LENGTH, old)
+        trace, traced = self.actual_trace()
+        with traced:
+            self.assertEqual(query.execute()._rows, (('First',),))
+        self.assertEqual(len(trace), 1, trace)
+
     def test_row_dependent_or_raising_case_does_not_use_top_fast_path(self):
         self.seed()
         for expression, expected in (

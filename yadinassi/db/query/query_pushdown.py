@@ -60,6 +60,8 @@ def try_count(plan,view,budget):
             or view.catalog_schema(manager._schema.identity)!=manager._schema):
         raise BackendError('schema_changed')
     request = (CatalogAggregateRequest() if shape is True else
+               CatalogAggregateRequest("count_query_headers_v1", shape.deletion_mark)
+               if shape.distinct_ref or shape.deletion_mark is not None else
                CatalogAggregateRequest("count_query_keys_v1"))
     result=aggregate(manager._schema.identity,request)
     if plan.enum_scope is not None: plan.enum_scope.require_current()
@@ -68,9 +70,11 @@ def try_count(plan,view,budget):
     if type(result) is not CatalogAggregateResult or type(result.count) is not int or result.count<0:
         raise BackendError('integrity')
     from .queries import BSLQueryResult,_MAX_CELLS,_MAX_RESULT_TEXT
-    # Canonical COUNT(*) load binds exactly Ref: one validated non-text cell per
-    # input row. Preserve its input budget even without constructing BSL rows.
+    # Only exact Ref and DeletionMark input fields are admitted. Preserve
+    # both cell charges when the aggregate and WHERE refer to distinct fields.
     budget[0]+=result.count
+    if shape is not True and shape.deletion_mark is not None and len(plan.fields[0]) == 2:
+        budget[0]+=result.count  # Ref and DeletionMark are both bound.
     if result.count>syntax.MAX_ROWS or budget[0]>_MAX_CELLS or budget[1]>_MAX_RESULT_TEXT:
         raise ValueError('Query input resource limit exceeded')
     if shape is True:
@@ -278,6 +282,33 @@ def bounded_projection(plan):
     return columns, assemble
 
 
+def _witnessed_case_projection(plan):
+    from .query_simplify import total_scalar_condition
+    from .relational_queries import _BoundField
+
+    fields = []
+    simplified = False
+    for expression in plan.projections:
+        if type(expression) is syntax.Expression and expression.operator == 'case':
+            # Numeric CASE also performs its merged-scale representability
+            # check on every row. It cannot be replaced by a plain field.
+            if plan.describe(expression).kind not in ('string', 'boolean', 'datetime'):
+                return None
+            branches, otherwise = expression.arguments
+            if (type(otherwise) is not _BoundField
+                    or not all(type(result) is _BoundField and result == otherwise
+                               and total_scalar_condition(plan, condition)
+                               for condition, result in branches)):
+                return None
+            expression = otherwise
+            simplified = True
+        if (type(expression) is not _BoundField or expression.source != 0
+                or expression.column.kind not in ('string', 'boolean', 'number', 'datetime')):
+            return None
+        fields.append(expression.column)
+    return (tuple(fields), tuple) if simplified else None
+
+
 def try_ordered_select(plan, view, budget=None):
     """Select a bounded physical page, then project only proven safe values."""
     from .relational_queries import _BoundField
@@ -302,7 +333,21 @@ def try_ordered_select(plan, view, budget=None):
         if q.limit != 1 or any(field.column.field not in projected for field, _ in plan.orders):
             return None
     projection = bounded_projection(plan)
-    if projection is None: return None
+    witnessed = projection is None
+    if witnessed:
+        if (q.family != 'catalog' or q.section is not None or q.distinct or plan.predicate is not None
+                or budget is None or any(field.column.kind not in ('string','boolean','number','datetime')
+                                         for field, _ in plan.orders)):
+            return None
+        projection = _witnessed_case_projection(plan)
+        if projection is None: return None
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _View
+        from yadinassi.db.sqlite.sqlite_documents import DocumentView
+        raw = view._view if type(view) is DocumentView else view
+        if (type(raw) is not _View or type(raw._backend) is not SQLiteCatalogBackend
+                or raw._backend is not plan.managers[0]._backend or not raw._query_language
+                or raw._operation_id is not None):
+            return None
     condition = _ordered_predicate(plan)
     if q.section is not None:
         if q.family not in ('catalog','document'): return None
@@ -371,8 +416,20 @@ def try_ordered_select(plan, view, budget=None):
                 or view.catalog_schema(manager._schema.identity) != manager._schema):
             raise BackendError('schema_changed')
     request = CatalogScanRequest(predicate,order,q.limit,string_comparison='casefold_v1')
-    page = (select(manager._schema.identity, request, fields, scalar_filter=True) if filtered
-            else select(manager._schema.identity, request, fields))
+    full_cost = None
+    if witnessed:
+        if len(fields) != len(plan.fields[0]):
+            return None
+        from yadinassi.db.sqlite.sqlite_case_page import read
+        admitted = read(raw, manager._schema, request, fields,
+                        tuple(column.field for column in projection[0]), tuple(budget[:2]))
+        if admitted is None:
+            return None
+        page, cells, units = admitted
+        full_cost = cells, units
+    else:
+        page = (select(manager._schema.identity, request, fields, scalar_filter=True) if filtered
+                else select(manager._schema.identity, request, fields))
     if plan.enum_scope is not None: plan.enum_scope.require_current()
     elif plan.enum_binding is not None: plan.enum_binding._live()
     if page is None: return None
@@ -384,6 +441,7 @@ def try_ordered_select(plan, view, budget=None):
     positions = tuple(ordinals[column.field] for column in columns)
     rows, seen, text_units = [], set(), 0
     input_text = 0
+    measure_input = budget is not None and full_cost is None
     for record in page.rows:
         if type(record) is not row_type or type(record.key) is not key_type:
             raise BackendError('integrity')
@@ -402,7 +460,7 @@ def try_ordered_select(plan, view, budget=None):
                     or type(ref.record_id) is not UUID or ref != key):
                 raise BackendError('integrity')
         seen.add(key.record_id)
-        if budget is not None:
+        if measure_input:
             input_text += sum(len(value) for value in record.values if type(value) is str)
         values = (_section_value(manager,column.custom,record.values[index]) if column.custom is not None
                   else _ordered_header_value(manager,column.field,record.values[index]) if document
@@ -414,8 +472,9 @@ def try_ordered_select(plan, view, budget=None):
         if len(rows)*len(plan.columns) > _MAX_CELLS or text_units > _MAX_RESULT_TEXT:
             raise ValueError('Query result resource limit exceeded')
     if budget is not None:
-        budget[0] += len(rows)*len(fields)
-        budget[1] += input_text
+        cells, units = (len(rows)*len(fields), input_text) if full_cost is None else full_cost
+        budget[0] += cells
+        budget[1] += units
         if budget[0] > _MAX_CELLS or budget[1] > _MAX_RESULT_TEXT:
             raise ValueError('Query input resource limit exceeded')
     return BSLQueryResult(plan.columns,tuple(rows))
