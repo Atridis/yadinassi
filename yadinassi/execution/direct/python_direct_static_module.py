@@ -310,6 +310,7 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
                 require(expression(node.start,env)=='number' and expression(node.end,env)=='number')
                 assign(node.name,'number',env);nested=dict(env);sequence(node.body,nested)
                 require(all(nested.get(key)==kind for key,kind in env.items()))
+                kinds[id(node)]='number'  # The body preserves numeric induction.
             elif k is bsl.ForEach and not scalar_prefix:
                 require(expression(node.collection,env)=='array')
                 nested=dict(env);assign(node.name,'number',nested);sequence(node.body,nested)

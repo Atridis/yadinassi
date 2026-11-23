@@ -104,6 +104,38 @@ class PlainTableRuntimeTests(unittest.TestCase):
         t.columns.delete('Renamed')
         self.assertEqual(a.get_member('Other'),7);self.assertEqual(a.get(0),7)
         self.assertTrue(validate(t))
+
+    def test_direct_insert_outside_bounds_appends_and_refreshes_warm_index(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('T=New ValueTable; T.Columns.Add("N"); '
+                   'Front=T.Add(); Front.N="first"; T.Indexes.Add("N"); '
+                   'Filter=New Structure("N",Undefined); Before=T.FindRows(Filter).Count(); '
+                   'Negative=T.Insert(-1); Past=T.Вставить(9); '
+                   'Hits=T.FindRows(Filter); CountFound=Hits.Count(); '
+                   'FirstHit=Hits[0]; SecondHit=Hits[1]; '
+                   'FirstRow=T[0]; SecondRow=T[1]; ThirdRow=T[2];')
+        values = vm.variables
+        self.assertEqual((values['before'], values['countfound']), (0, 2))
+        for actual, expected in (('firstrow', 'front'), ('secondrow', 'negative'),
+                                 ('thirdrow', 'past'), ('firsthit', 'negative'),
+                                 ('secondhit', 'past')):
+            self.assertIs(values[actual], values[expected])
+
+    def test_insert_refuses_bad_index_without_mutating_rows(self):
+        table = self.table()
+        first = table.add()
+        for index in (True, '1', Decimal('NaN'), Decimal('Infinity')):
+            with self.subTest(index=index), self.assertRaises(TypeError):
+                table.insert(index)
+        for index in (-1, 9):
+            with self.subTest(index=index), self.assertRaises(IndexError):
+                table.get(index)
+            with self.subTest(index=index), self.assertRaises(IndexError):
+                table.delete(index)
+        self.assertEqual(table.count(), 1)
+        self.assertIs(table.get(0), first)
+
     def test_copy_has_independent_rows_schema_and_defaults(self):
         t=self.table();a=t.add();a.set_member('N',Decimal(1))
         copied=t.copy();other=copied.get(0)

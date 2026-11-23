@@ -174,10 +174,39 @@ class WholeRoutineBehaviorTests(unittest.TestCase):
     def test_boolean_counter_mutation_reports_error(self):
         # A one-iteration bound avoids a runaway loop if bool is mistakenly
         # treated as native int: that regression is a normal assertion failure.
-        vm=Interpreter();self.addCleanup(vm.close)
-        with self.assertRaises(BSLError):
-            vm.execute('Function F() For i=1 To 1 Do i=True;EndDo;Return i;EndFunction r=F();')
-        self.assertNotIn('r',vm.variables)
+        for body in ('i=True;', 'i=True; Continue;'):
+            for prepared in (False,True):
+                with self.subTest(body=body,prepared=prepared):
+                    messages=[]
+                    vm=Interpreter(messages.append);self.addCleanup(vm.close)
+                    source=('Function F() For i=1 To 1 Do Message("body");'+body+
+                            'EndDo;Message("after");Return i;EndFunction r=F();')
+                    with self.assertRaisesRegex(BSLError, 'Ожидается число'):
+                        if prepared:vm.execute_prepared(vm.prepare(source))
+                        else:vm.execute(source)
+                    self.assertNotIn('r',vm.variables)
+                    self.assertEqual(messages,['body'])
+        # Break does not advance a counter, so its value can remain Boolean.
+        self.execute('Function F() For i=1 To 1 Do i=True;Break;EndDo;Return i;EndFunction r=F();kind=TypeOf(r)=Type("Boolean");',{'r':True,'kind':True})
+
+    def test_live_opaque_counter_releases_before_following_statement(self):
+        for prepared in (False,True):
+            with self.subTest(prepared=prepared):
+                events=[]
+                vm=Interpreter(events.append,allow_extensions=True);self.addCleanup(vm.close)
+                class Counter:
+                    def __add__(self, increment):
+                        events.append(('add',increment))
+                        return Decimal(2)
+                    def __del__(self):
+                        events.append('release')
+                vm.register_function('Make',Counter)
+                source=('Function F() For i=1 To 1 Do i=Make(); EndDo; '
+                        'Message("after"); Return i; EndFunction R=F();')
+                if prepared:vm.execute_prepared(vm.prepare(source))
+                else:vm.execute(source)
+                self.assertEqual(events,[('add',1),'release','after'])
+                self.assertEqual(vm.variables['r'],Decimal(2))
 
     def test_loop_and_branch_results(self):
         for n,expected in [(-1,0),(0,0),(1,1),(10,55),(101,5151)]:

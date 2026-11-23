@@ -144,7 +144,12 @@ def read_source(connection, *, _prepared=None, _with_layout=False, _expected_ver
                    MAIN_PROFILE:MainDemoConfiguration}[profile]
     info=connection.execute('SELECT database_uuid,configuration_uuid,name,generation,activated,activation_issues FROM database_info WHERE singleton=1').fetchone()
     if info is None:raise BackendError('integrity')
-    database_id=_stored_uuid(info[0])
+    database_uuid,configuration_uuid,name,generation,activated,issues=info
+    # These format-16 invariants do not depend on source. Reject a changed
+    # envelope before it can turn a prepared-source hit into importer work
+    # (including form compilation inside an explicit writer activation).
+    if generation!=1 or activated!=1 or issues!='[]':raise BackendError('integrity')
+    database_id=_stored_uuid(database_uuid)
     key=('inventory-enum',database_id,
         (application_id, user_version, schema_version),
         info,tuple(marker),tuple(sorted(entries)))
@@ -156,7 +161,8 @@ def read_source(connection, *, _prepared=None, _with_layout=False, _expected_ver
         except (ValueError,TypeError):raise BackendError('integrity') from None
     if type(config) is not expected_type or config.profile!=profile:raise BackendError('integrity')
     if marker!=[(1,profile,config.source_digest)]:raise BackendError('integrity')
-    if info!=(str(database_id),str(config.identity),config.name,1,1,'[]'):raise BackendError('integrity')
+    if database_uuid!=str(database_id) or configuration_uuid!=str(config.identity) or name!=config.name:
+        raise BackendError('integrity')
     domain=EnumValueDomain(database_id,config.enumerations)
     if profile == MAIN_PROFILE:
         from .sqlite_main_demo_profile import validate_main_demo_ddl

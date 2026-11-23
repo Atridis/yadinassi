@@ -41,6 +41,12 @@ from dataclasses import fields, replace
 
 
 
+def _checked_live_counter(value):
+    if type(value) is bool:
+        raise TypeError('Ожидается число')
+    return value
+
+
 def _reject(message):
     raise PythonDirectUnsupported('direct-AST: '+message)
 
@@ -1560,8 +1566,12 @@ class Emitter:
             self.loop_increments.pop()
             if journals is not None:
                 journals.pop();self.scope['initialized'].difference_update(changes)
-    def increment(self,name,t):
-        value=self.node(py.BinOp,t,left=self.read(name,t),op=py.Add(),right=self.const(1,t))
+    def increment(self,name,t,known_numeric=False):
+        current=self.read(name,t)
+        if not known_numeric:
+            # Never retain an extra compiler local across the actual add.
+            current=self.call('_checked_live_counter',[current],t)
+        value=self.node(py.BinOp,t,left=current,op=py.Add(),right=self.const(1,t))
         return self.assign_name(name,value,t)
     def checkpoint_loop(self,loop,t):
         if self.authority and not self.standalone_script:
@@ -1611,7 +1621,7 @@ class Emitter:
             eligible=self.node(py.BoolOp,t,op=py.And(),values=[unmetered,eligible])
         append=self.node(py.Expr,member.token,value=self.call('_list_append',[self.name(receiver,t),self.read(node.name,value.token)],member.token))
         generic=slow[-1]
-        fast=self.node(py.While,node.token,test=deepcopy(generic.test),body=[append,self.increment(node.name,node.token)],orelse=[])
+        fast=self.node(py.While,node.token,test=deepcopy(generic.test),body=[append,self.increment(node.name,node.token,known_numeric=True)],orelse=[])
         self.checkpoint_loop(generic,node.token)
         finished=self.node(py.Expr,t,value=deepcopy(check))
         chosen=self.node(py.If,t,test=eligible,body=[fast] if self.standalone_script else [fast,finished],orelse=[generic])
@@ -1910,8 +1920,10 @@ class Emitter:
                     body=[self.node(py.Expr,t,value=convert)])
                 bounds=[self.node(py.Try,t,body=bounds,handlers=[handler],orelse=[],finalbody=[])]
             result=[*bounds,self.assign_name(node.name,self.name(first,t),t)]
-            body=self.loop_body(node.body,(node.name,t))
-            body.append(self.increment(node.name,t))
+            known_numeric=self.scalar_kinds.get(id(node))=='number' or self.static_module_kinds.get(id(node))=='number'
+            increment=(node.name,t,known_numeric)
+            body=self.loop_body(node.body,increment)
+            body.append(self.increment(*increment))
             condition=self.node(py.Compare,t,left=self.read(node.name,t),ops=[py.LtE()],comparators=[self.name(last,t)])
             result.append(self.node(py.While,t,test=condition,body=body,orelse=[]));return self.plain_array_loop(node,result)
         if k is bsl.ForEach:
@@ -2601,7 +2613,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     from yadinassi.execution.direct.python_direct_structural_reads import TARGET_IDS, selects, count as structural_count
     from yadinassi.db.database_context import require_database_context
     from .experimental_naked_errors import for_bound_unbound, read_except_local
-    namespace=dict(_for_bound_unbound=for_bound_unbound,_read_except_local=read_except_local,_normalize_item_presentation=_normalize_presentation,_normalize_item_check=_normalize_check,
+    namespace=dict(_checked_live_counter=_checked_live_counter,_for_bound_unbound=for_bound_unbound,_read_except_local=read_except_local,_normalize_item_presentation=_normalize_presentation,_normalize_item_check=_normalize_check,
         _require_database_context=require_database_context,_structural_count_ids=TARGET_IDS,_select_structural_read=selects,_structural_count=structural_count,_local_structure_member=_local_structure_member,_BoxedStructure=_BoxedStructure,_local_array_index=_local_array_index,_BoxedArray=_BoxedArray,_local_row_index=_local_row_index,_local_row_member=_local_row_member,_PlainTableRow=_vt.BSLValueTableRow,_raw_table_value=RowStorage.get_value,_raw_table_positional=_vt.BSLValueTableRow._positional_value,_dynamic_remainder=remainder,_dynamic_divide=divide,_dynamic_sign=sign,_dynamic_public_number=public_number,_plain_array_loop=_plain_array_loop,_plain_append_receiver=_plain_append_receiver,_list_append=list.append,_native_host_reference=_native_host_reference,_native_cell_reference=_native_cell_reference,_native_fragment_binding=_native_fragment_binding,_NativeCell=_NativeCell,_PublishedModuleCell=_PublishedModuleCell,_adapt_native_cell=_adapt_native_cell,_PrivateTable=_vt.BSLValueTable,_PrivateValueList=PlainValueList,_PlainValueList=PlainValueList,_PlainValueListItem=PlainValueListItem,_module_primitive_type_ids=frozenset(id(kind) for kind in (list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure)),_module_data_types=data_types,_module_data_type_ids=frozenset(id(kind) for kind in data_types),_native_dict_get=dict.get,_native_dict_setitem=dict.__setitem__,_PlainArray=_PlainArray,_Decimal=Decimal,_PlainMap=PlainMap,_plain_map=plain_map,_execute_fragment=execute_fragment,_fragment_binding=_fragment_binding,_bind_eval=bind_eval,_raise_arity_error=raise_arity_error,_host_omission_error=_host_omission_error,_host_omission_values=_host_omission_values,_dynamic_construct=dynamic_construct,_invalid_native_arity=_invalid_native_arity,_typed_find=scalar.typed_find,_list_delete=_list_delete,_native_ubound=_native_ubound,_readonly=readonly,_array_set_checked=_array_set_checked,_bounded_insert=bounded_insert,_structure_insert=structure_insert,_array_constructor_bounds=bounded_array,_new_structure=new_structure,_structure_from_schema=structure_from_schema,_host_name_reference=_host_name_reference,_Cell=_Cell,_ForwardReference=_ForwardReference,_as_ref=_as_ref,_bound_ref=_bound_ref,_UNSET_REF=_UNSET_REF,_OMITTED_REF=_OMITTED_REF,_argument_count_error=_argument_count_error,_routine_value_error=_routine_value_error,_procedure_value_error=_procedure_value_error,_identity_reference=_identity_reference,_IndexRef=_IndexRef,_AttributeRef=_AttributeRef,_SlotReference=live_state._SlotReference,_source_reference=source_reference,_canonical_reference=_canonical_reference,_structure_property=structure_property,_native_method_missing=_native_method_missing,_native_count=_native_count,_MapEntry=_MapEntry,_array_member=_array_member,_native_property_missing=_native_property_missing,_structure_get_known=structure_get_known,_structure_set_known=structure_set_known,_native_property_write_missing=_native_property_write_missing,_checked_array_index=_checked_array_index,_checked_literal_array_index=_checked_literal_array_index,_partial=partial,_native_getitem=_NATIVE_GETITEM,_list_get=_list_get,_TypedMap=_TypedMap,_NakedMap=_NakedMap,_DirectStructure=_DirectStructure,_host_reference=host_reference,_UNSET=UNSET,_missing=missing,_native_add=_NATIVE_ADD,_concatenate=scalar.concatenate,_divide=scalar.decimal_divide,_sign=scalar.decimal_sign,_order=scalar.uca_order,_truth=scalar.truth,_equal=equal,_not_equal=not_equal,_MISSING=_MISSING,_handled_error=handled_error,_reraise_handled=reraise_handled,_raise_error=raise_error,_presentation=scalar.presentation,_BSLRuntimeError=BSLRuntimeError)
     if emitter.known_calls:
         from yadinassi.execution.direct.python_direct_known_methods import execute, construct_table, detached_after_publication, generic_call

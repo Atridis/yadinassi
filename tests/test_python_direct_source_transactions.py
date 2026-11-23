@@ -45,6 +45,23 @@ class DirectSourceTransactionTests(unittest.TestCase):
             with self.subTest(sql=sql),self.assertRaises((BackendError,BSLRuntimeError)):
                 self.vm.execute('A=Catalogs.Склады.CreateItem();A.Description="bad";BeginTransaction();Corrupt();A.Write();CommitTransaction();')
             self.clean();self.assertEqual(self.count(),0)
+    def test_invalid_format16_envelope_is_rejected_before_source_reparse(self):
+        self.vm = fixture.DirectDatabaseTests.interpreter(self, allow_extensions=True)
+        backend = self.context.backend
+        for sql in ('UPDATE database_info SET generation=2',
+                    'UPDATE database_info SET activated=0',
+                    "UPDATE database_info SET activation_issues='not admitted'"):
+            def corrupt():
+                tx.current(backend).unit._view._connection.execute(sql)
+            self.vm.register_function('Corrupt', corrupt)
+            with self.subTest(sql=sql), patch(
+                    'yadinassi.configuration.configuration_main_demo.import_main_demo_configuration',
+                    side_effect=AssertionError('an invalid envelope cannot reach the source importer')):
+                with self.assertRaisesRegex(BSLRuntimeError, 'integrity'):
+                    self.vm.execute('A=Catalogs.Склады.CreateItem();BeginTransaction();Corrupt();A.Write();CommitTransaction();')
+            self.clean()
+            self.assertEqual(self.count(), 0)
+
     def test_refused_handler_rolls_back_prior_staging(self):
         with self.assertRaises((BackendError,BSLRuntimeError)):
             self.vm.execute('A=Catalogs.Склады.CreateItem();A.Description="staged";B=Catalogs.Номенклатура.CreateItem();B.Description="product";BeginTransaction();A.Write();B.Write();CommitTransaction();')

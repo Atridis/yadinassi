@@ -15,14 +15,22 @@ from .value_table_group import _scalar_key, _total_values
 from .plain_table_storage import RowStorage, TableStorage, Schema, scalar_equal, validate_row
 
 
-def _index(value,count,inserting=False):
+def _index(value,count):
     if type(value) is int:
-        if not 0 <= value < count + inserting:raise IndexError("table index out of range")
+        if not 0 <= value < count:raise IndexError("table index out of range")
         return value
     elif type(value) is Decimal and value.is_finite():n=value.to_integral_value(rounding=ROUND_DOWN)
     else:raise TypeError('table index must be a finite number')
-    if not 0<=n<count+int(inserting):raise IndexError('table index out of range')
+    if not 0<=n<count:raise IndexError('table index out of range')
     return int(n)
+
+
+def _insertion_position(value, size):
+    if type(value) is int:n=value
+    elif type(value) is Decimal and value.is_finite():n=value.to_integral_value(rounding=ROUND_DOWN)
+    else:raise TypeError('table index must be a finite number')
+    # Native row and column Insert truncate, then append when out of range.
+    return int(n) if 0 <= n < size else size
 
 
 def _writable(table):
@@ -150,14 +158,9 @@ class BSLValueTableColumnCollection(BSLObject):
         return Decimal(self._index_of(column))
     def insert(self,index,name='',value_type=None,title='',width=Decimal(0)):
         _writable(self.table)
-        if type(index) is int:n=index
-        elif type(index) is Decimal and index.is_finite():n=index.to_integral_value(rounding=ROUND_DOWN)
-        else:raise TypeError('table index must be a finite number')
         size=len(self._items)
-        # The native collections fixture observes both negative and past-end
-        # insertion as append. In that case retain the ordinary append path.
-        if not 0<=n<size:return self.add(name,value_type,title,width)
-        position=int(n)
+        position=_insertion_position(index,size)
+        if position==size:return self.add(name,value_type,title,width)
         if type(name) is not str or type(title) is not str:raise TypeError('column text must be str')
         if value_type is None:value_type=BSLTypeDescription()
         if type(value_type) is not BSLTypeDescription:raise TypeError('exact TypeDescription required')
@@ -495,7 +498,7 @@ class BSLValueTable(BSLObject):
     def insert(self,index):
         _writable(self)
         if self.columns._query_columns:raise ValueError('default row values for query columns are not supported')
-        return self._storage.insert(_index(index,len(self.rows),True))
+        return self._storage.insert(_insertion_position(index,len(self.rows)))
     def get(self,index):return self.rows[_index(index,len(self.rows))]
     get_index=get
     def set_index(self,*args):raise ValueError('rows cannot be replaced')
