@@ -10,6 +10,7 @@ from yadinassi.streams.file_io import (
 )
 from yadinassi.streams.text_documents import BSLTextDocument
 from . import python_direct_zip_reader as zip_reader
+from . import python_direct_http_security as http_security
 from .source import python_direct_source_resources as text_resources
 from yadinassi.formats.storage.value_storage import BSLValueStorage
 from yadinassi.streams.data_compression import BSLDeflation
@@ -133,6 +134,7 @@ ORDINARY_CONSTRUCTORS = {
     'valuestorage': BSLValueStorage, 'хранилищезначения': BSLValueStorage,
     'deflation': BSLDeflation, 'сжатиеданных': BSLDeflation,
     **zip_reader.CONSTRUCTORS,
+    **http_security.CONSTRUCTORS,
     'xmlstringprocessingmanager': None, 'менеджеробработкистрокиxml': None,
     'chars': None, 'символы': None,
     # Authenticated UUID observation: this spelling is rejected, not an alias.
@@ -479,6 +481,8 @@ class ServicesBoundary:
             return text_resources.resolve_constructor(self,key,**kwargs)
         if key.startswith('new:') and key[4:] in zip_reader.NAMES:
             return zip_reader.constructor(self,key[4:],self.vm.types.get(key[4:]),**kwargs)
+        if key.startswith('new:') and key[4:] in http_security.CONSTRUCTORS:
+            return http_security.constructor(self,key[4:],self.vm.types.get(key[4:]),**kwargs)
         if key.startswith('new:') and key[4:] in ORDINARY_CONSTRUCTORS:
             if self._verify_context:self._check()
             expected=ORDINARY_CONSTRUCTORS[key[4:]]

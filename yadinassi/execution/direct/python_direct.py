@@ -402,6 +402,12 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=N
         def current_module(self):
             return vm._self_module
 
+        def missing_value(self,name):
+            if name.casefold() in getattr(vm,'_direct_routine_modules',{}):
+                from yadinassi.execution.codegen.experimental_naked_collections import _routine_value_error
+                return _routine_value_error(name)
+            return super().missing_value(name)
+
         def resolve_optional_service(self,name,*args,_non_name_actuals=(),**kwargs):
             key=name.casefold()
             module=getattr(vm,'_direct_routine_modules',{}).get(key)

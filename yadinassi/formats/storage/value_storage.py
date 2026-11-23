@@ -25,7 +25,13 @@ from yadinassi.collections.value_tables import BSLValueTable
 from .value_storage_table import TableSnapshotError, restore_table, take_table
 from yadinassi.types.values import BSLArray, BSLFixedArray, BSLObject, HostFunction, NULL
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray as _PlainArray
-from yadinassi.execution.direct.python_direct_plain_map import PlainMap as _PlainMap, native_map_items, native_map_storage_key
+from yadinassi.execution.direct.python_direct_plain_map import (
+    PlainMap as _PlainMap, PlainFixedMap as _PlainFixedMap, _DIRECT_FIXED_MAP_STORAGE,
+    native_map_items, native_map_storage_key,
+)
+
+_NATIVE_TRUE_KEY = native_map_storage_key(True)
+_NATIVE_FALSE_KEY = native_map_storage_key(False)
 
 # Local defensive budgets, not platform limits. Nodes count occurrences,
 # including scalars and map keys; text/binary/digit totals count occurrences.
@@ -144,7 +150,8 @@ class _Capture:
                             or kind is BSLBinaryData or kind is BSLValueStorage
                             or kind is BSLValueTable
                             or self.source_direct and (kind is list or kind is _PlainArray or kind is _PlainMap
-                                                       or kind is self.direct_structure or kind is self.direct_map))
+                                                       or kind is _PlainFixedMap or kind is self.direct_structure
+                                                       or kind is self.direct_map))
         if identity_bearing:
             self.remember(value, depth)
         try:
@@ -227,6 +234,27 @@ class _Capture:
                 # Preserve direct-map numeric equivalence and the distinct
                 # Boolean domain. The existing map tag restores BSLMap.
                 return ("native_map", tuple(entries))
+            if kind is _PlainFixedMap:
+                # The existing fixed-map tag restores the same BSL type. Read
+                # only the retained backing slot, not mutable receiver hooks.
+                try:
+                    backing = _DIRECT_FIXED_MAP_STORAGE.__get__(value, _PlainFixedMap)
+                except AttributeError:
+                    raise SnapshotError("missing internal snapshot field") from None
+                if type(backing) is not dict or len(backing) > (MAX_NODES - self.nodes) // 2:
+                    raise SnapshotError("invalid or oversized map")
+                entries = []
+                for key, item in dict.items(backing):
+                    # Decode only canonical Boolean sentinels. No dict probes
+                    # or unwrap of identity/value-key objects from the backing.
+                    if key is _NATIVE_TRUE_KEY:
+                        key = True
+                    elif key is _NATIVE_FALSE_KEY:
+                        key = False
+                    elif type(key) is bool or not _native_map_key(type(key)):
+                        raise SnapshotError("invalid native map key")
+                    entries.append((self.take(key, depth + 1), self.take(item, depth + 1)))
+                return ("fixed_map", tuple(entries))
             if kind is self.direct_map:
                 if dict.__len__(value) > (MAX_NODES - self.nodes) // 2:
                     raise SnapshotError("invalid or oversized map")
@@ -479,6 +507,7 @@ _DIRECT_VALUE_STORAGE_ABI=tuple((cls,name,getattr(cls,name)) for cls,names in (
 _DIRECT_VALUE_STORAGE_FROM_SNAPSHOT=vars(BSLValueStorage)['_from_snapshot']
 _DIRECT_VALUE_STORAGE_FIELDS=((BSLValueStorage,'_snapshot',vars(BSLValueStorage)['_snapshot']),
                               (Snapshot,'_root',vars(Snapshot)['_root']),
+                              (_PlainFixedMap,'_snapshot',_DIRECT_FIXED_MAP_STORAGE),
                               (BSLDate,'ticks',vars(BSLDate)['ticks']),
                               (BSLDate,'boundary',vars(BSLDate)['boundary']),
                               (BSLUUID,'text',vars(BSLUUID)['text']))
@@ -486,7 +515,7 @@ _DIRECT_VALUE_STORAGE_FUNCTIONS=tuple((name,globals()[name]) for name in (
     'capture','restore','_required_field','_bounded_decimal','_native_map_key','native_map_items','native_map_storage_key','compression_degree',
     'compress_payload','expand_payload','map_key','structure_key','take_table','restore_table'))
 
-_DIRECT_VALUE_STORAGE_CLASSES=tuple((name,globals()[name]) for name in ('_Capture','_Restore','BSLValueStorage','Snapshot','BSLDate','BSLUUID'))
+_DIRECT_VALUE_STORAGE_CLASSES=tuple((name,globals()[name]) for name in ('_Capture','_Restore','BSLValueStorage','Snapshot','BSLDate','BSLUUID','_PlainFixedMap'))
 
 _DIRECT_VALUE_STORAGE_DYNAMIC_FIELDS=(
     (_Capture,('source_no_nested_storage','source_direct','direct_structure','direct_map','nodes',

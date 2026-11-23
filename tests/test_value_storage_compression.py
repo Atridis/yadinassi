@@ -6,6 +6,7 @@ from unittest.mock import patch
 import zlib
 
 from yadinassi import Interpreter, BSLError
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.streams.data_compression import BSLDeflation, compression_degree
 from yadinassi.streams.file_io import BSLBinaryData
 from yadinassi.collections.structures import BSLStructure
@@ -32,7 +33,18 @@ class ValueStorageCompressionTests(unittest.TestCase):
             self.assertIs(vm.variables['y'], BSLType.DEFLATION)
             self.assertIs(type_by_name('Deflation'), BSLType.DEFLATION)
             self.assertIs(type_of(BSLDeflation()), BSLType.DEFLATION)
-            with self.assertRaises(BSLError): vm.execute('New DataCompression;')
+            # Not an alias. A statically unknown constructor is rejected
+            # before any part of the source runs, not inside the BSL Try.
+            with self.assertRaisesRegex(PythonDirectUnsupported, 'constructor DataCompression'):
+                vm.execute('Touched=True; Try New DataCompression; Except Caught=True; EndTry;')
+            self.assertNotIn('touched', vm.variables)
+            self.assertNotIn('caught', vm.variables)
+            with self.assertRaisesRegex(ValueError, 'DataCompression'):
+                type_by_name('DataCompression')
+            # Dynamic lookup is an ordinary BSL operation and can be caught.
+            vm.execute('Caught=False; Try New("DataCompression"); Except Caught=True; EndTry;')
+            self.assertIs(vm.variables['caught'], True)
+            self.assertEqual(vm.execute('Stored=New ValueStorage("ok",New Deflation(9)); Stored.Get()'), 'ok')
         finally: vm.close()
 
     def test_integer_levels_and_default(self):

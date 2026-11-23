@@ -328,6 +328,11 @@ class Emitter:
                 and key in ('runcallback','выполнитьобработкуоповещения')):
             return self.invoke(self.attribute(self.name('_context',token),'capture_run_callback',token),
                                [self.const(key,token)],token)
+        if key in self.routines:
+            return self.call('_routine_value_error',[self.const(name,token)],token)
+        if not self.owned_constructors:
+            return self.invoke(self.attribute(self.name('_context',token),'missing_value',token),
+                               [self.const(name,token)],token)
         return self.call('_missing',[self.const(name,token)],token)
 
     def read(self,name,token):
@@ -336,7 +341,7 @@ class Emitter:
             if name.casefold() in self.module_cells:value=self.node(py.Subscript,token,value=value,slice=self.const(0,token),ctx=py.Load())
             if self.static_module_kinds:return value
             test=self.node(py.Compare,token,left=value,ops=[py.IsNot()],comparators=[self.name('_UNSET',token)])
-            return self.node(py.IfExp,token,test=test,body=value,orelse=self.call('_missing',[self.const(name,token)],token))
+            return self.node(py.IfExp,token,test=test,body=value,orelse=self.read_missing(name,name.casefold(),token))
         if self.external_name(name):return self.invoke(self.attribute(self.name('_context',token),'external_get',token),[self.const(name.casefold(),token)],token)
         self.check_name(name)
         key=name.casefold()
@@ -706,12 +711,10 @@ class Emitter:
             return self.import_call(node,self.import_path(node.callee),require_value)
         if k is bsl.Literal:return self.literal(node.value,t)
         if k is bsl.Name:
-            if node.name.casefold() in self.routines:
-                key=node.name.casefold()
-                if self.scope is None or key in self.scope['globals']:
-                    present=self.node(py.Compare,t,left=self.const(key,t),ops=[py.In()],comparators=[self.name('_initial',t)])
-                else:present=self.const(key in self.scope['initialized'],t)
-                return self.node(py.IfExp,t,test=present,body=self.read(node.name,t),orelse=self.call('_routine_value_error',[self.const(node.name,t)],t))
+            key=node.name.casefold()
+            if (key in self.routines and self.scope is not None and key not in self.scope['globals']
+                    and key in self.scope['bindings'] and key not in self.scope['initialized']):
+                return self.call('_routine_value_error',[self.const(node.name,t)],t)
             return self.read(node.name,t)
         if k is bsl.Group:return self.expr(node.expression,require_value)
         if k is bsl.Unary:

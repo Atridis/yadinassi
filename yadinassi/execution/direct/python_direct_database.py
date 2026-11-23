@@ -5,6 +5,7 @@ No arbitrary getattr, no backend access and no replacement for writer validation
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from . import python_direct_movements as movements
 from . import python_direct_zip_reader as zip_reader
+from . import python_direct_http_security as http_security
 from .python_direct_plain_map import PlainFixedMap
 from yadinassi.db.registers.accumulation_posting_values import BSLAccumulationRow
 from yadinassi.db.catalog.catalogs import BSLCatalogs, BSLCatalogManager, BSLCatalogObject, BSLCatalogSelection
@@ -69,6 +70,10 @@ NAMES=(*METADATA_NAMES,*DATABASE_ROOT_NAMES,'enums','перечисления','
 _DOM_LISTS=(BSLDOMNodeList,BSLDOMElementList,BSLDOMAttributeMap)
 _DETACHED_TYPES=(*_NODE_CLASSES,*_DOM_LISTS,BSLDOMBuilder,BSLDOMWriter,BSLDOMNamespaceResolver,BSLDOMXPathResult,BSLXMLReader, BSLXMLReaderSettings, BSLXMLNamespaceContext, BSLXMLWriter, BSLXMLWriterSettings, BSLValueList, BSLValueTable, BSLTypeDescription, BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers, BSLQueryResult, BSLQueryResultSelection, BSLStructure, BSLFixedStructure, BSLKeyAndValue, BSLArray, BSLFixedArray, BSLFixedMap, BSLRegexResult, BSLRegexGroup, BSLFile, BSLBinaryData, BSLTextReader, BSLTextWriter, BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BSLBinaryDataBuffer, BSLMemoryStream, BSLFileStream, BSLStream, BSLDataHashing, BSLDataReader, BSLDataWriter, BSLReadDataResult, BSLMap, BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings, BSLJSONSerializerSettings)
 _DETACHED_TYPE_IDS=frozenset(map(id,_DETACHED_TYPES))
+_OWNED_STANDALONE_READS = {
+    **dict.fromkeys(zip_reader.TYPE_IDS, zip_reader),
+    **dict.fromkeys(http_security.TYPE_IDS, http_security),
+}
 _DATE_TYPE = _DIRECT_EQUALITY_DATE_STATE[0]
 _METHODLESS_TYPE_IDS=frozenset(map(id, (
     _DATE_TYPE, BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers,
@@ -305,7 +310,8 @@ class CatalogBoundary:
             if key in _PLAIN_VALUE_LIST_DEFAULT_PROPERTIES:
                 if self._verify_context: self._check()
                 return BSLTypeDescription() if key in _PLAIN_VALUE_LIST_TYPE_PROPERTIES else None
-        if id(kind) in zip_reader.TYPE_IDS:return zip_reader.get(self,value,name)
+        adapter = _OWNED_STANDALONE_READS.get(id(kind))
+        if adapter is not None:return adapter.get(self,value,name)
         if kind is _DATE_TYPE or id(value) in OPAQUE_ENUM_IDS:
             if self._verify_context:self._check()
             raise ValueError('Поле объекта не обнаружено: '+name)
@@ -418,8 +424,9 @@ class CatalogBoundary:
         return self.resolve_member(value,name)
 
     def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
-        if id(type(value)) in zip_reader.TYPE_IDS:
-            return zip_reader.resolve(self,value,name,require_value=require_value,omitted=omitted)
+        adapter = _OWNED_STANDALONE_READS.get(id(type(value)))
+        if adapter is not None:
+            return adapter.resolve(self,value,name,require_value=require_value,omitted=omitted)
         # A spelled member call must not reach the internal protocol names
         # emitted for indexing and For Each. These namespaces have no
         # methods; individual enum members and Date have no member protocol.

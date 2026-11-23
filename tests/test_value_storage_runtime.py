@@ -141,6 +141,46 @@ class ValueStorageRuntimeTests(unittest.TestCase):
         vm.execute(source.decode('utf-8'))
         self.assertEqual(output, lines)
 
+    def test_direct_fixed_map_snapshot_keeps_key_domains_and_independent_children(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('M=New Map; A=New Array; A.Add("original"); M.Insert(True,A); '
+                   'M.Insert(1,"number"); M.Insert(Undefined,"undefined"); '
+                   'F=New FixedMap(M); S=New ValueStorage(F); A[0]="source changed"; '
+                   'R=S.Get(); R[True][0]="first changed"; Q=S.Get();')
+        self.assertIs(type_of(vm.variables['q']), BSLType.FIXED_MAP)
+        self.assertEqual(vm.execute('R[True][0]'), 'first changed')
+        self.assertEqual(vm.execute('Q[True][0]'), 'original')
+        self.assertEqual(vm.execute('Q[1]'), 'number')
+        self.assertEqual(vm.execute('Q[Undefined]'), 'undefined')
+        self.assertEqual(vm.execute('Q.Count()'), 3)
+
+    def test_direct_fixed_map_snapshot_keeps_budgets_and_rejects_identity_keys(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('M=New Map; M.Insert(True,"value"); F=New FixedMap(M);')
+        with patch('yadinassi.formats.storage.value_storage.MAX_NODES', 2):
+            with self.assertRaisesRegex(SnapshotError, 'invalid or oversized map'):
+                capture(vm.variables['f'], _source_direct=True)
+        with patch('yadinassi.formats.storage.value_storage.MAX_NODES', 3):
+            capture(vm.variables['f'], _source_direct=True)
+        vm.execute('A=New Array; M.Insert(A,"key"); F=New FixedMap(M);')
+        with self.assertRaisesRegex(SnapshotError, 'invalid native map key'):
+            capture(vm.variables['f'], _source_direct=True)
+        vm.execute('M.Clear(); M.Insert("cycle",A); F=New FixedMap(M); A.Add(F);')
+        with self.assertRaisesRegex(SnapshotError, 'cyclic values'):
+            capture(vm.variables['f'], _source_direct=True)
+
+    def test_boxed_fixed_map_snapshot_still_uses_existing_logical_tags(self):
+        source = BSLMap()
+        source.insert(True, 'boolean')
+        source.insert(Decimal(1), 'number')
+        box = BSLFixedMap(source)
+        restored = BSLValueStorage(box).get()
+        self.assertIs(type(restored), BSLFixedMap)
+        self.assertEqual(restored.get(True), 'boolean')
+        self.assertEqual(restored.get(Decimal(1)), 'number')
+
     def test_12_methods_arity_and_unmeasured_presentation(self):
         holder = BSLValueStorage(Decimal(1))
         self.assertEqual(holder.get_method('Получить')(), Decimal(1))

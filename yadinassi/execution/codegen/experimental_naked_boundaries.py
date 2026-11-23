@@ -71,6 +71,10 @@ class BoundaryContext:
         self._check()
         raise TypeError("Форма: передача реквизита без Знач пока не поддерживается")
 
+    def missing_value(self,name):
+        from .experimental_naked_live_state import missing
+        return missing(name)
+
     def _validate_host_function(self,value,require_value,allow_references=False):
         if type(value) is not HostFunction:raise TypeError('Значение не является функцией')
         if value.reference_parameters and not allow_references:

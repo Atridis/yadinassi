@@ -1,3 +1,4 @@
+import cProfile
 import unittest
 from yadinassi import Interpreter
 from yadinassi.types.errors import BSLRuntimeError
@@ -19,6 +20,24 @@ class NamespaceTests(unittest.TestCase):
 
     def test_variable_value_still_accessible(self):
         self.run_case('Function F() Return 1;EndFunction F=7;r=F+F();', 8)
+
+    def test_prepared_value_lookup_distinguishes_live_routine_from_storage(self):
+        vm=Interpreter();self.addCleanup(vm.close)
+        prepared=vm.prepare('F;')
+        with self.assertRaisesRegex(BSLRuntimeError, 'не определена: F'):
+            vm.execute_prepared(prepared)
+        vm.execute('Function F() Return 1; EndFunction')
+        with self.assertRaisesRegex(BSLRuntimeError, 'необходимо вызвать: F'):
+            vm.execute_prepared(prepared)
+        vm.execute('F=7;')
+        profile=cProfile.Profile()
+        self.assertEqual(profile.runcall(vm.execute_prepared, prepared), 7)
+        self.assertFalse(any(getattr(entry.code, 'co_name', '') == 'missing_value'
+                             for entry in profile.getstats()))
+        self.assertEqual(vm.execute('F()'), 1)
+        del vm.variables['f']
+        with self.assertRaisesRegex(BSLRuntimeError, 'необходимо вызвать: F'):
+            vm.execute_prepared(prepared)
 
     def test_recursion(self):
         self.run_case('Function F(Val n) If n=0 Then Return 0;EndIf;Return F(n-1)+1;EndFunction r=F(10);', 10)

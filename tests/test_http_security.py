@@ -11,8 +11,10 @@ from yadinassi import Interpreter, BSLError
 from yadinassi.http import http_client as http
 from yadinassi.http import http_security as api
 from yadinassi.collections.maps import BSLMap
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.types.type_values import type_of
 from yadinassi.types.values import BSLType
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
 class SecurityObjectTests(unittest.TestCase):
@@ -172,6 +174,47 @@ Message(C.Port); Message(C.IsSecure); Message(Tls.СертификатКлиен
         vm.execute('P=New InternetProxy(False); Ca=New OSCertificationAuthorityCertificates; Tls=New OpenSSLSecureConnection(,Ca);')
         for code in ('ValueToStringInternal(P)', 'ValueToStringInternal(Ca)', 'ValueToStringInternal(Tls)', 'Tls._context()', 'P._protocols', 'Ca._context()'):
             with self.subTest(code=code), self.assertRaises(BSLError): vm.execute(code)
+
+    def test_direct_passive_settings_never_open_trust_stores_files_or_transport(self):
+        vm = Interpreter(lambda _: None)
+        self.addCleanup(vm.close)
+        vm.variables['fileca'] = object.__new__(api.BSLFileCertificationAuthorityCertificates)
+        with (mock.patch.object(api.ssl, 'SSLContext') as context,
+              mock.patch.object(api, '_open_regular') as open_file,
+              mock.patch.object(http, '_Connection') as transport):
+            vm.execute("""
+                Ca=New OSCertificationAuthorityCertificates;
+                Tls=New ЗащищенноеСоединениеOpenSSL(,Ca);
+                P=New InternetProxy; P.Set("https","localhost",3128);
+                C=New HTTPConnection("example.invalid",,,,P,,Tls);
+                Returned=Tls.CertificationAuthorityCertificates;
+                Proxy=C.Proxy; Secure=C.SecureConnection;
+            """)
+            with self.assertRaises(PythonDirectUnsupported):
+                vm.execute('New FileCertificationAuthorityCertificates("unused.pem")')
+            for code in ('New OpenSSLSecureConnection(,FileCa)',
+                         'New OpenSSLSecureConnection(Undefined,Undefined)'):
+                with self.subTest(code=code), self.assertRaises(BSLError):
+                    vm.execute(code)
+            context.assert_not_called()
+            open_file.assert_not_called()
+            transport.assert_not_called()
+        self.assertIs(vm.variables['ca'], vm.variables['returned'])
+        self.assertIs(vm.variables['p'], vm.variables['proxy'])
+        self.assertIs(vm.variables['tls'], vm.variables['secure'])
+
+    def test_direct_settings_cannot_be_used_in_another_owner(self):
+        first, second = Interpreter(), Interpreter()
+        self.addCleanup(first.close)
+        self.addCleanup(second.close)
+        first.execute('P=New InternetProxy; Ca=New OSCertificationAuthorityCertificates;')
+        for name in ('p', 'ca'):
+            second.variables[name] = first.variables[name]
+        with self.assertRaises(BoundaryViolation):
+            second.execute('P.Set("http","localhost");')
+        with self.assertRaises(BoundaryViolation):
+            second.execute('Tls=New OpenSSLSecureConnection(,Ca);')
+        self.assertEqual(first.execute('P.Port("http")'), 0)
 
     def test_proxy_procedure_expression_and_required_holes_guard_side_effects(self):
         vm = Interpreter(lambda _: None, allow_extensions=True); vm.execute('P=New InternetProxy(False);')
