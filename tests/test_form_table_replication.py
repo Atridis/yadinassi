@@ -71,7 +71,7 @@ def scalar_delta():
 
 
 class ReplicatedTableTests(unittest.TestCase):
-    def pair(self, *, server_source=SERVER, client_source=CLIENT, tables=(SCHEMA,), exchange=None):
+    def pair(self, *, server_source=SERVER, client_source=CLIENT, tables=(SCHEMA,), exchange=None, reuse_tables=False):
         server = ReplicatedFormServer(server_source, {1: 'Work'}, handlers=HANDLERS,
             attributes=attributes(), tables=tables, bindings={'OnCreateAtServer': 'Create'})
         requests = []; replies = []
@@ -80,7 +80,8 @@ class ReplicatedTableTests(unittest.TestCase):
             reply = server.exchange(raw) if exchange is None else exchange(server, raw)
             self.assertIs(type(reply), bytes); replies.append(reply)
             return reply
-        client = ReplicatedFormSession(client_source, transport, handlers=HANDLERS, bindings=(REMOTE,))
+        client = ReplicatedFormSession(client_source, transport, handlers=HANDLERS, bindings=(REMOTE,),
+                                       reuse_tables=reuse_tables)
         return client, server, requests, replies
 
     def command(self, client):
@@ -377,15 +378,42 @@ EndFunction
 
     def test_live_row_cannot_escape_as_scalar_endpoint_result(self):
         source = SERVER.replace('Return Calls;', 'Return Lines.Get(0);')
-        client, server, requests, replies = self.pair(server_source=source); client.open()
-        before = client.snapshot()
-        with self.assertRaises((BSLError, ValueError)): self.command(client)
-        self.assertFalse(client.uncertain)
-        self.assertEqual(decode_line(replies[-1])['reason'], 'server_error')
+        for reuse in (False, True):
+            with self.subTest(reuse_tables=reuse):
+                client, server, requests, replies = self.pair(server_source=source, reuse_tables=reuse)
+                before = client.open()
+                with self.assertRaisesRegex((BSLError, ValueError), 'server_error'):
+                    self.command(client)
+                self.assertFalse(client.uncertain)
+                reply = decode_line(replies[-1])
+                self.assertTrue(reply['accepted'])
+                self.assertEqual(reply['reason'], 'server_error')
+                self.assertNotIn('value', reply)
+                self.assertEqual(client.snapshot().tables, before.tables)
+                self.assertEqual(dict(server.session.snapshot().attributes)['Calls'], Decimal(1))
+                self.assertEqual(dict(client.snapshot().attributes)['Calls'], Decimal(1))
+                self.assertNotIn(b'BSLFormDataCollectionItem', replies[-1])
+                self.assertEqual(len(requests), 2)
+                self.assertEqual(client.dispatch('close', revision=client.revision).state, 'closed')
+                self.assertEqual(len(requests), 3)
+                self.assertEqual(dict(server.session.snapshot().attributes)['Calls'], Decimal(1))
+
+    def test_unrepresentable_reply_state_still_leaves_the_client_uncertain(self):
+        client, server, requests, replies = self.pair()
+        before = client.open()
+        with patch('yadinassi.forms.form_replication._pack_state', side_effect=ValueError('state invalid')):
+            with self.assertRaisesRegex((BSLError, ValueError), 'outcome_unknown'):
+                self.command(client)
+        reply = decode_line(replies[-1])
+        self.assertTrue(reply['accepted'])
+        self.assertEqual(reply['reason'], 'result_unavailable')
+        self.assertIsNone(reply['state'])
+        self.assertTrue(client.uncertain)
         self.assertEqual(client.snapshot().tables, before.tables)
+        with self.assertRaisesRegex((BSLError, ValueError), 'outcome_unknown'):
+            self.command(client)
+        self.assertEqual(len(requests), 2)
         self.assertEqual(dict(server.session.snapshot().attributes)['Calls'], Decimal(1))
-        self.assertEqual(dict(client.snapshot().attributes)['Calls'], Decimal(1))
-        self.assertNotIn(b'BSLFormDataCollectionItem', replies[-1])
 
     def test_date_default_and_fractional_ticks_roundtrip_without_invocation_widening(self):
         from yadinassi.execution.invocation import _encode_scalar

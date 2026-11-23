@@ -2,6 +2,7 @@
 from decimal import Decimal
 from uuid import uuid4
 import unittest
+from unittest.mock import patch
 from configuration_runtime_fixture import module_files, SERVER
 from yadinassi.configuration.configuration_runtime import ConfigurationApplication
 from yadinassi.configuration.configuration_source import import_source
@@ -93,11 +94,41 @@ class ConfigurationSessionParameterTests(unittest.TestCase):
         self.assertEqual(app.interpreter.execute('Access.Read("Calls")'),Decimal(0))
 
     def test_server_dot_and_index_share_values(self):
-        app=self.application(side='server')
-        app.execute('SessionParameters.Text="value";')
-        self.assertEqual(app.execute('ПараметрыСеанса["text"]'),'value')
-        app.execute('SessionParameters["Flag"]=True;')
-        self.assertTrue(app.execute('ПараметрыСеанса.Flag'))
+        from yadinassi.execution.invocation import InvocationPort, InvocationServer
+
+        files = files_for_session()
+        files['CommonModules/Access/Ext/Module.bsl'] += b"\n" + '''Function DotToIndex() Export
+            SessionParameters.Text="value";
+            Return ПараметрыСеанса["text"];
+        EndFunction
+        Function IndexToDot() Export
+            SessionParameters["Flag"]=True;
+            Return ПараметрыСеанса.Flag;
+        EndFunction'''.encode()
+        app = self.application(files,side='server')
+        server = InvocationServer.from_handlers(app.server_endpoints,message_scope=app.event_messages)
+        port = InvocationPort(server.exchange)
+        bindings = {binding.name:binding for binding in app.server_bindings}
+        self.assertEqual(port.invoke(bindings['DotToIndex'],[]),'value')
+        self.assertIs(port.invoke(bindings['IndexToDot'],[]),True)
+        self.assertEqual(port.invoke(bindings['Read'],['Text']),'value')
+        self.assertIs(port.invoke(bindings['Read'],['Flag']),True)
+
+    def test_server_facade_denies_direct_command_without_running_it(self):
+        from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+        from yadinassi.execution.invocation import InvocationPort, InvocationServer
+
+        output = []
+        app = self.application(side='server',output=output.append)
+        before = dict(app.session_parameters._values)
+        with self.assertRaisesRegex(PythonDirectUnsupported,'require a client application'):
+            app.execute('Message("must not emit");SessionParameters.Text="must not write";')
+        self.assertEqual(app.session_parameters._values,before)
+        self.assertEqual(output,[])
+        self.assertEqual(app.state,'running')
+        server = InvocationServer.from_handlers(app.server_endpoints,message_scope=app.event_messages)
+        binding = next(binding for binding in app.server_bindings if binding.name=='Read')
+        self.assertIs(InvocationPort(server.exchange).invoke(binding,['Ready']),True)
 
     def test_logical_client_has_no_session_parameter_global(self):
         app=self.source_application()
@@ -117,9 +148,21 @@ class ConfigurationSessionParameterTests(unittest.TestCase):
         self.assertEqual(a.interpreter.execute('Access.Read("Text")'),'only a')
 
     def test_closed_namespace_cannot_be_reused_in_another_application(self):
-        app=self.application(side='server');namespace=app.execute('SessionParameters');app.close(force=True)
-        other=self.application(side='server');other.interpreter.variables['old']=namespace
-        with self.assertRaisesRegex(BSLRuntimeError,'closed application'):other.execute('Old.Flag')
+        app = self.application(side='server')
+        namespace = app.session_parameters
+        app.close(force=True)
+        other = self.application(side='server')
+        binding = next(binding for binding in other.server_bindings if binding.name=='Read')
+        _, invoke = other.server_endpoints[binding.endpoint]
+        before = dict(other.session_parameters._values)
+        # Enter the still-running second application through its admitted
+        # server endpoint, with the retired first application's store.
+        with patch.object(other,'session_parameters',namespace):
+            with self.assertRaisesRegex(BSLRuntimeError,'another or closed application'):
+                invoke(['Flag'])
+        self.assertEqual(namespace._values,{})
+        self.assertEqual(other.session_parameters._values,before)
+        self.assertFalse(invoke(['Flag']))
 
     def test_recursive_lazy_access_is_bounded(self):
         source='''Procedure SessionParametersSetting(P)

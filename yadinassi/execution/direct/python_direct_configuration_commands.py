@@ -372,6 +372,10 @@ def _validate_command(program,app):
 
 
 def execute_command(app,text,source):
+    # An explicit server process has exported endpoint plans, not a root
+    # client command plan. Refuse before parsing or reading the absent plan.
+    if app.side == 'server':
+        raise PythonDirectUnsupported('direct configuration commands require a client application')
     program=parse(text,source,compilation_profile=app.interpreter.compilation_profile)
     return _execute_program(app,program,text,source)
 

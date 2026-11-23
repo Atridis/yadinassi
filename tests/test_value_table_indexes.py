@@ -421,34 +421,41 @@ class IndexSafetyTests(unittest.TestCase):
         self.assertEqual(found(table, Key=D('1.00')), [table.rows[5]])
         self.assertEqual(found(table, Key=array(1)), [])
 
-    def test_index_and_key_resource_failures_are_atomic(self):
+    def test_invalid_declarations_are_atomic_and_cache_eviction_is_not_a_quota(self):
         table = sample()
-        with patch('yadinassi.collections.value_tables._MAX_INDEXES', 1):
-            saved = table.indexes.add('Key')
-            with self.assertRaisesRegex(ValueError, 'ресурсов'):
-                table.indexes.add('Second')
+        table.columns.add('Extra')
+        first, second = table.rows
+        saved = table.indexes.add('Key')
+        self.assertEqual(found(table, Key='a'), [first, second])
+        warmed = table._search.cache[(0,)]
+        for bad in ('Key,Missing', True):
+            with self.subTest(bad=bad), self.assertRaises((ValueError, TypeError)):
+                table.indexes.add(bad)
             self.assertEqual(list(table.indexes), [saved])
-        with patch('yadinassi.collections.value_tables._MAX_INDEX_COLUMNS', 2):
-            with self.assertRaisesRegex(ValueError, 'предел'):
-                table.indexes.add('Key,,Second')
-            with self.assertRaisesRegex(ValueError, 'ресурсов'):
-                table.indexes.add('Key,Second')
-        with patch('yadinassi.collections.value_tables._MAX_INDEX_CELLS', 2):
-            with self.assertRaisesRegex(ValueError, 'ресурсов'):
-                table.add()
-            self.assertEqual(len(table.rows), 2)
-            with self.assertRaisesRegex(ValueError, 'ресурсов'):
-                table.indexes.add('Second')
-        old = table.rows[0].get_member('Key')
-        for value in (D('NaN'), D('Infinity'), D('1e4097'), D((0, (1,) * 4097, 0))):
-            with self.assertRaises(ValueError):
-                table.rows[0].set_member('Key', value)
-            self.assertEqual(table.rows[0].get_member('Key'), old)
-            self.assertEqual(found(table, Key='a'), table.rows)
-        with patch('yadinassi.collections.value_tables._MAX_TEXT', 3):
-            with self.assertRaisesRegex(ValueError, 'ресурсов'):
-                table.rows[0].set_member('Key', 'xxxx')
-        self.assertEqual(found(table, Key='a'), table.rows)
+            self.assertIs(table._search.cache[(0,)], warmed)
+        keys = [('Second',), ('Amount',), ('Extra',), ('Key', 'Second'),
+                ('Key', 'Amount'), ('Key', 'Extra'), ('Second', 'Amount'),
+                ('Second', 'Extra'), ('Amount', 'Extra')]
+        for fields in keys:
+            table.indexes.add(','.join(fields))
+        self.assertEqual(table._search.builds, 1)
+        self.assertEqual(names(table), [['Key']] + [list(fields) for fields in keys])
+        keys_with_values = {'Key': 'a', 'Second': D(1), 'Amount': D(1), 'Extra': None}
+        for fields in keys:
+            expected = [first, second] if set(fields) <= {'Key', 'Extra'} else [first]
+            self.assertEqual(found(table, **{name: keys_with_values[name] for name in fields}), expected)
+        self.assertLessEqual(len(table._search.cache), 8)
+        self.assertIsNot(table._search.cache.get((0,)), warmed)
+        self.assertEqual(len(table._search.declarations), 10)
+        # Eviction changes retention, never public index state or epoch results.
+        last = table.add()
+        long_key = 'x' * 4097
+        large_number = D('1e4097')
+        last.set_member('Key', long_key)
+        last.set_member('Second', large_number)
+        self.assertEqual(found(table, Key=long_key, Second=large_number), [last])
+        self.assertEqual(found(table, Key='a'), [first, second])
+        self.assertEqual(len(table._search.declarations), 10)
 
     def test_key_replacement_and_row_removal_keep_other_declarations_live(self):
         table = sample()
@@ -596,7 +603,7 @@ class IndexSafetyTests(unittest.TestCase):
         self.assertEqual(found(table, Key='z', Second=D(2)), [second])
         self.assertIs(first.get_member('Second'), long_number)
 
-    def test_duplicate_field_lookup_is_bounded_only_when_order_ambiguous(self):
+    def test_duplicate_fields_are_preserved_but_do_not_supply_a_distinct_lookup(self):
         table = sample()
         saved = table.indexes.add('Key,Key')
         self.assertEqual(list(saved), ['Key', 'Key'])
@@ -604,11 +611,10 @@ class IndexSafetyTests(unittest.TestCase):
         first, second = table.rows
         first.set_member('Key', 'b')
         first.set_member('Key', 'a')
-        with self.assertRaisesRegex(ValueError, 'повторными колонками'):
-            found(table, Key='a')
+        self.assertEqual(found(table, Key='a'), [first, second])
         for columns in ('Key', None, ''):
-            with self.assertRaisesRegex(ValueError, 'повторными колонками'):
-                table.find('a', columns)
+            self.assertIs(table.find('a', columns), first)
+        self.assertEqual(table._search.builds, 0)
         self.assertEqual(list(saved), ['Key', 'Key'])
         self.assertEqual(table.rows, [first, second])
         # A normal exact index can establish the same result independently.
@@ -632,35 +638,43 @@ class IndexSafetyTests(unittest.TestCase):
         self.assertEqual(table._search.cache, {})
         self.assertEqual(table._search.builds, 0)
 
-    def test_indexed_nonappend_insert_is_reserved_before_mutation(self):
-        table = sample()
-        table.indexes.add('Key')
-        first, second = table.rows
-        first.set_member('Key', 'a')
-        before = [list(row) for row in table]
-        for position in (D(0), D(1), D('0.9')):
-            with self.assertRaisesRegex(ValueError, 'не в конец'):
-                table.insert(position)
-            self.assertEqual([list(row) for row in table], before)
-            self.assertEqual(found(table, Key='a'), [second, first])
-        last = table.insert(D(len(table.rows)))
-        self.assertIs(table.rows[-1], last)
-        table.indexes.clear()
-        inserted = table.insert(D(1))
-        self.assertIs(table.rows[1], inserted)
+    def test_indexed_insert_updates_positions_without_reordering_matching_writes(self):
+        # This is a lazy-runtime identity and invalidation invariant, not a
+        # native ordering claim about insertion into an active index.
+        for position, physical in ((D(0), 0), (D(1), 1), (D('0.9'), 0), (D(2), 2)):
+            with self.subTest(position=position):
+                table = sample()
+                table.indexes.add('Key')
+                first, second = table.rows
+                first.set_member('Key', 'a')
+                self.assertEqual(found(table, Key='a'), [second, first])
+                warmed = table._search.cache[(0,)]
+                inserted = table.insert(position)
+                self.assertIs(table.rows[physical], inserted)
+                self.assertEqual(found(table, Key='a'), [second, first])
+                self.assertIsNot(table._search.cache[(0,)], warmed)
+                self.assertEqual(found(table, Key=None), [inserted])
+                inserted.set_member('Key', 'a')
+                self.assertEqual(found(table, Key='a'), [second, first, inserted])
+                self.assertIs(table.find('a', 'Key'), second)
 
-    def test_indexed_copy_empty_column_string_is_reserved(self):
+    def test_indexed_copy_empty_column_string_is_an_explicit_unindexed_selection(self):
         table = sample()
         saved = table.indexes.add('Key')
-        with self.assertRaisesRegex(ValueError, 'пустым списком'):
-            table.copy(None, '')
+        self.assertEqual(found(table, Key='a'), table.rows)
+        warm = table._search.cache[(0,)]
+        explicit = table.copy(None, '')
         self.assertEqual(list(table.indexes), [saved])
+        self.assertIs(table._search.cache[(0,)], warm)
+        self.assertEqual(names(explicit), [])
+        self.assertEqual([list(row) for row in explicit], [list(row) for row in table])
+        self.assertIsNot(explicit.rows[0], table.rows[0])
         self.assertEqual(names(table.copy()), [['Key']])
         self.assertEqual(names(table.copy(None, 'Key,Second,Amount')), [])
         table.indexes.clear()
         self.assertEqual([list(row) for row in table.copy(None, '')], [list(row) for row in table])
 
-    def test_implicit_find_is_reserved_only_when_candidate_first_rows_diverge(self):
+    def test_implicit_find_keeps_physical_order_when_explicit_index_diverges(self):
         for single_column in (False, True):
             with self.subTest(single_column=single_column):
                 table = sample()
@@ -673,23 +687,35 @@ class IndexSafetyTests(unittest.TestCase):
                 self.assertIs(table.find('a', ''), first)
                 first.set_member('Key', 'a')
                 self.assertIs(table.find('a', 'Key'), second)
+                warm = table._search.cache[(0,)]
                 for columns in (None, ''):
-                    with self.assertRaisesRegex(ValueError, 'без списка колонок'):
-                        table.find('a', columns)
+                    self.assertIs(table.find('a', columns), first)
+                self.assertIs(table._search.cache[(0,)], warm)
                 self.assertEqual(table.rows, [first, second])
                 self.assertEqual(found(table, Key='a'), [second, first])
                 table.sort('Key')
+                self.assertIs(table.find('a', 'Key'), first)
                 self.assertIs(table.find('a'), first)
                 self.assertIs(table.find('a', ''), first)
                 self.assertIsNone(table.find('missing'))
 
-    def test_failed_key_creation_does_not_install_partial_index(self):
+    def test_unsupported_key_uses_scan_until_a_valid_lazy_rebuild(self):
         table = sample()
         table.rows[1].set_member('Key', D('NaN'))
-        with self.assertRaises(ValueError):
-            table.indexes.add('Key')
-        self.assertEqual(names(table), [])
-        self.assertEqual(table.indexes._budget(), None)
+        index = table.indexes.add('Key')
+        self.assertEqual(table._search.cache, {})
+        self.assertEqual(found(table, Key='a'), [table.rows[0]])
+        unavailable = table._search.cache[(0,)]
+        self.assertIsNone(unavailable.buckets)
+        self.assertEqual(found(table, Key='missing'), [])
+        self.assertIs(table._search.cache[(0,)], unavailable)
+        self.assertEqual(names(table), [['Key']])
+        self.assertTrue(table.rows[1].get_member('Key').is_nan())
+        table.rows[1].set_member('Key', 'a')
+        self.assertEqual(found(table, Key='a'), table.rows)
+        self.assertIsNot(table._search.cache[(0,)], unavailable)
+        self.assertIsNotNone(table._search.cache[(0,)].buckets)
+        self.assertIs(next(iter(table.indexes)), index)
 
     def test_host_equality_is_not_guessed_or_invoked(self):
         class Host(BSLObject):

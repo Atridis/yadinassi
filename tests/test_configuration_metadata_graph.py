@@ -12,7 +12,8 @@ from yadinassi import Interpreter, BSLRuntimeError
 from yadinassi.db.catalog.catalog_backend import BackendError
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.configuration.configuration_xml import import_configuration
-from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.configuration.metadata import BSLMetadata, is_metadata_collection
 from sqlite_catalog_fixture import configuration_files
@@ -204,13 +205,17 @@ class MetadataGraphTests(unittest.TestCase):
 
     def test_common_module_registry_without_database(self):
         source='Function Fields() Export Return Metadata.Name; EndFunction'
-        app=ConfigurationApplication.from_files(module_files([('Tools',source,{})])); self.addCleanup(app.close)
+        files = module_files([('Tools', source, {})])
+        files.setdefault('Ext/ManagedApplicationModule.bsl', b'')
+        app = SourceApplication(import_source(files))
+        self.addCleanup(app.close)
+        app.start()
         vm=app.interpreter
         self.assertEqual(vm.execute('Metadata.CommonModules.Get(0).FullName()'),'ОбщийМодуль.Tools')
         self.assertTrue(vm.execute('Metadata.CommonModules.Contains(Metadata.FindByFullName("CommonModule.Tools"))'))
         vm.execute('N=0; For Each M In Metadata.CommonModules Do N=N+1; EndDo;')
         self.assertEqual(vm.execute('N'),Decimal(1))
-        self.assertEqual(vm.execute('Tools.Fields()'),app.configuration.name)
+        self.assertEqual(vm.execute('Tools.Fields()'),app.source.name)
 
     def test_current_generation_mismatch_is_rejected(self):
         vm,_=self.runtime(document_files());vm.execute('Metadata.Catalogs.Count()')

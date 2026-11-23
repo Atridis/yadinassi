@@ -234,12 +234,15 @@ class DirectFormReferenceTests(unittest.TestCase):
         session,context=self.boundary();items=session.form.items
         field=items.get_member('Field');ref=context.reference_member(field,'Title')
         items.delete(field)
-        for operation in (ref.get,lambda:ref.set('bad')):
-            with self.assertRaises(BoundaryViolation):operation()
+        for name,operation in (('get',ref.get),('set',lambda:ref.set('bad'))):
+            with self.subTest(retired='control',operation=name):
+                with self.assertRaisesRegex(ValueError,'^Форма: объект удален$'):operation()
         slot=context.reference_member(session.form.commands,'Apply')
         from yadinassi.forms.form_model import BSLFormCommands
         session.form.commands=BSLFormCommands(session.form)
-        with self.assertRaises(BoundaryViolation):slot.get()
+        for name,operation in (('get',slot.get),('set',lambda:slot.set('bad'))):
+            with self.subTest(retired='collection',operation=name):
+                with self.assertRaises(BoundaryViolation):operation()
 
     def test_retained_reference_requires_active_open_family(self):
         from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation

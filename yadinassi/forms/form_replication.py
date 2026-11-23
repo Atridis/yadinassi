@@ -513,7 +513,15 @@ class ReplicatedFormServer:
                 response['table_generation'] = None if image is None else image.generation
             for message in response['messages']:
                 bounded_text(message, 1024)
-            response['value' if reason is None else 'reason'] = _encode_scalar(value) if reason is None else reason
+            if reason is None:
+                try:
+                    response['value'] = _encode_scalar(value)
+                except (TypeError, ValueError):
+                    # The endpoint ran and its state is representable; only
+                    # the returned value was outside the scalar wire envelope.
+                    response['status'], response['reason'] = 'error', 'server_error'
+            else:
+                response['reason'] = reason
             raw = encode_line(response)
             if accepted:
                 self._table_image = image

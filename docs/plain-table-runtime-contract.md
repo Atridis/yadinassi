@@ -109,3 +109,22 @@ history for tables without valid indexes. This history orders the existing
 lazy, bounded bucket build on the first exact lookup after an epoch change;
 warm lookups reuse those buckets. The cache's existing retention limits
 remain; they are not table size or insertion quotas.
+
+The Windows index archive also covers duplicate-column declarations, skipped
+empty tokens in column lists, rejection of unknown columns, and independent
+full versus projected copies. Beyond those observations, the current direct
+runtime has these local rules:
+
+- A declaration with repeated fields stays visible but cannot supply a
+  distinct-column search predicate.
+- A positional insert into an indexed table invalidates cached positions
+  without moving the rows already ordered by indexed writes.
+- An explicit empty column string in `Copy` selects all columns but does
+  not copy index declarations. Omitting the column argument copies them.
+- An unsupported key such as a host-supplied nonfinite Decimal leaves the
+  declaration visible. An exact search falls back to the normal scan until
+  the data changes and a later lazy build can complete.
+
+The corresponding tests pin these runtime rules, not additional native
+observations for ambiguous indexed searches, explicit-empty indexed copies,
+or nonfinite keys.

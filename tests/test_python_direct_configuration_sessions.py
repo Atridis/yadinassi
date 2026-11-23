@@ -150,6 +150,60 @@ class DirectConfigurationSessionTests(unittest.TestCase):
         self.assertEqual(first.session_parameters._initializing,set())
         self.assertEqual(second.session_parameters._initializing,set())
 
+    def test_revoked_configured_wire_endpoint_gives_a_finite_unknown_outcome(self):
+        from yadinassi.execution.invocation import InvocationError, InvocationPort, InvocationServer
+
+        app = self.app(files_for_session(), side='server')
+        self.assertTrue(app.start())
+        server = InvocationServer.from_handlers(app.server_endpoints, message_scope=app.event_messages)
+        binding = next(item for item in app.server_bindings if item.name == 'Read')
+        owner = app._modules['access', 'server'].interpreter
+        before = dict(app.session_parameters._values)
+        with patch.object(server, 'exchange', wraps=server.exchange) as exchange:
+            port = InvocationPort(exchange)
+            with patch.dict(owner.server_routines):
+                del owner.server_routines['read']
+                with self.assertRaisesRegex(InvocationError, 'result_unavailable'):
+                    port.invoke(binding, ['Ready'])
+            self.assertTrue(port.uncertain)
+            with self.assertRaisesRegex(InvocationError, 'outcome_unknown'):
+                port.invoke(binding, ['Ready'])
+            exchange.assert_called_once()
+        self.assertEqual(app.session_parameters._values, before)
+
+    def test_configured_wire_discards_output_from_revoked_endpoint(self):
+        from yadinassi.application.session_parameters import BSLSessionParameters
+        from yadinassi.execution.invocation import InvocationError, InvocationPort, InvocationServer
+
+        files = files_for_session()
+        files['CommonModules/Access/Ext/Module.bsl'] += b"""
+Function Check() Export
+    Message("before denial");
+    Try
+        Return SessionParameters.Ready;
+    Except
+        Mark();
+        Return False;
+    EndTry;
+EndFunction
+"""
+        caught = []
+        app = self.app(files, side='server', host_services={
+            'Mark': HostFunction('Mark', lambda: caught.append(True), returns_value=False)})
+        self.assertTrue(app.start())
+        server = InvocationServer.from_handlers(app.server_endpoints, message_scope=app.event_messages)
+        port = InvocationPort(server.exchange)
+        binding = next(item for item in app.server_bindings if item.name == 'Check')
+        messages = []
+        with patch.object(server, '_message', wraps=server._message) as emit, \
+                patch.object(BSLSessionParameters, 'read', side_effect=AssertionError('unadmitted read')):
+            with self.assertRaisesRegex(InvocationError, 'result_unavailable'):
+                port.invoke(binding, [], output=messages.append)
+            emit.assert_called_once_with('before denial')
+        self.assertEqual(caught, [])
+        self.assertEqual(messages, [])
+        self.assertTrue(port.uncertain)
+
     def test_explicit_server_lazy_failure_releases_initializer(self):
         from yadinassi.execution.invocation import InvocationError
         app=self.app(files_for_session('''Procedure SessionParametersSetting(P)

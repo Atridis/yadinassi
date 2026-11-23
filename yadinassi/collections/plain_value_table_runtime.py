@@ -79,6 +79,11 @@ class BSLValueTableColumn(BSLObject):
     def get_member(self,name):
         key=name.casefold()
         if key in ('name','имя'):return self._name
+        table=self.table
+        if type(table) is BSLValueTable and table._bounded_slice_read:
+            columns=table.columns._items
+            if key not in ('valuetype','типзначения') or not columns or columns[0] is not self:
+                raise ValueError('slice column schema inspection is not admitted')
         if key in ('valuetype','типзначения'):return self.value_type
         if key in ('title','заголовок'):return self.title
         if key in ('width','ширина'):return self.width
@@ -243,7 +248,11 @@ class BSLValueTableColumnCollection(BSLObject):
         indexes._replace_signatures(bindings)
     def get_member(self,name):return self.get_index(name)
     def set_index(self,*args):raise ValueError('columns cannot be replaced')
-    def get_method(self,name):return _method(self,name,(
+    def get_method(self,name):
+        if self.table._bounded_slice_read and name.casefold() not in (
+                'count','количество','get','получить','find','найти','indexof','индекс'):
+            raise ValueError('slice schema mutation is not admitted')
+        return _method(self,name,(
         (('add','добавить'),'add',True),(('get','получить'),'get',True),
         (('find','найти'),'find',True),(('count','количество'),'count',True),
         (('indexof','индекс'),'index_of',True),(('delete','удалить'),'delete',False),
@@ -634,6 +643,7 @@ class BSLValueTable(BSLObject):
         self._storage.sort(terms)
         if self._search.declarations:self._search.reordered()
     def copy_columns(self,columns=None):
+        _writable(self)
         result=BSLValueTable()
         for name in self._selection(columns):
             c=self.columns.find(name);result.columns.add(c.name,c.value_type,c.title,c.width)
@@ -778,9 +788,15 @@ class BSLValueTable(BSLObject):
 
     def get_member(self,name):
         if name.casefold() in ('columns','колонки'):return self.columns
-        if name.casefold() in ('indexes','индексы'):return self.indexes
+        if name.casefold() in ('indexes','индексы'):
+            if self._bounded_slice_read:raise ValueError('slice auxiliary collections are not admitted')
+            return self.indexes
         return super().get_member(name)
-    def get_method(self,name):return _method(self,name,(
+    def get_method(self,name):
+        if self._bounded_slice_read and name.casefold() not in (
+                'count','количество','get','получить','indexof','индекс','findrows','найтистроки'):
+            raise ValueError('only bounded slice reads are admitted')
+        return _method(self,name,(
         (('add','добавить'),'add',True),(('insert','вставить'),'insert',True),(('get','получить'),'get',True),
         (('count','количество'),'count',True),(('delete','удалить'),'delete',False),(('clear','очистить'),'clear',False),
         (('move','сдвинуть'),'move',False),(('indexof','индекс'),'index_of',True),(('find','найти'),'find',True),

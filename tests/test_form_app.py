@@ -33,9 +33,10 @@ def request(method='hello', **params):
             'params': {'protocol': PROTOCOL} if method == 'hello' else params}
 
 
-def pair(directory=EXAMPLE):
+def pair(directory=EXAMPLE, *, server_source=None):
     package = load_server(directory)
-    server = ReplicatedFormServer(package.source, package.endpoints, handlers=package.handlers,
+    server = ReplicatedFormServer(package.source if server_source is None else server_source,
+        package.endpoints, handlers=package.handlers,
         attributes=package.attributes, initial_values=package.initial_values, bindings=package.lifecycle)
     return FormController(load_client(directory), server.exchange), server
 
@@ -186,17 +187,40 @@ class FormControllerTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
 
     def test_server_error_keeps_authoritative_state_and_finite_reason(self):
+        source = load_server(EXAMPLE).source
+        run = 'Procedure Run()\n'
+        self.assertEqual(source.count(run), 1)
+        source = source.replace(run, run + '''
+    If ThisObject.Status <> "partial" Then
+        ThisObject.Status = "partial";
+        Raise "private";
+    EndIf;
+''')
+        self.controller, self.server = pair(server_source=source)
         state(self.controller)
-        original = self.server._routines[1]
-        from yadinassi.syntax.parser import parse
-        self.server._routines[1] = parse('&AtServer\nProcedure Run() ThisObject.Status="partial"; Raise "private"; EndProcedure')[0]
         result = event(self.controller)
         self.assertEqual(result['error'], 'event_failed')
         self.assertFalse(result['state']['uncertain'])
         self.assertIn({'type':'String','value':'partial'}, [x['value'] for x in result['state']['items']])
         self.assertNotIn(b'private', encode_line(result))
-        self.server._routines[1] = original
         self.assertIsNone(event(self.controller)['error'])
+
+    def test_edited_rpc_endpoint_cannot_execute_or_report_success(self):
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.syntax.parser import parse
+
+        state(self.controller)
+        original = self.server._routines[1]
+        before = self.server.session.snapshot().attributes
+        try:
+            self.server._routines[1] = parse(
+                '&AtServer\nProcedure Run() ThisObject.Status="foreign"; EndProcedure')[0]
+            with self.assertRaisesRegex(BoundaryViolation, 'binding changed'):
+                event(self.controller)
+            self.assertEqual(self.server.session.snapshot().attributes, before)
+            self.assertTrue(self.controller.session.uncertain)
+        finally:
+            self.server._routines[1] = original
 
     def test_failed_open_is_not_retried_on_reattach(self):
         calls=[]

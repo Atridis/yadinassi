@@ -403,6 +403,11 @@ class InvocationServer:
                     with self._message_scope(self._message):
                         result = self._callbacks[request['endpoint']](values)
                     return self._reply(request_id, value=result)
+                except BoundaryViolation:
+                    # A changed host authority may be reported after an effect.
+                    # Do not publish its messages or imply it is safe to retry.
+                    self._messages.clear()
+                    return self._reply(request_id, reason='result_unavailable')
                 except Exception:
                     return self._reply(request_id, reason='server_error')
             try:

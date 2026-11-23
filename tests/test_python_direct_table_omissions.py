@@ -56,7 +56,7 @@ class DirectTableOmissionsTests(unittest.TestCase):
                 return 'H'
             vm.register_function('Effect',effect)
             with self.subTest(action=action),self.assertRaises(BoundaryViolation):vm.execute('Cols.Add(,,Effect());')
-            self.assertEqual(columns.items,[])
+            self.assertEqual(columns.items,())
 
     def test_computed_receiver_and_subclass_remain_unadmitted(self):
         vm=Interpreter(allow_extensions=True);seen=[]
@@ -72,9 +72,29 @@ class DirectTableOmissionsTests(unittest.TestCase):
     def test_bounded_slice_write_guard_is_not_relaxed(self):
         vm=Interpreter(allow_extensions=True);vm.execute('T=New ValueTable;');table=vm.variables['t'];table._bounded_slice_read=True
         seen=[];vm.register_function('Effect',lambda:seen.append('effect') or 'H')
-        for code in ('T.Columns.Add(,,Effect());','T.FillValues(Effect(),);','T.Copy(,);'):
+        for code in ('T.Columns.Add(,,Effect());','T.Columns.Add(Effect());',
+                     'T.FillValues(Effect(),);','T.Copy(,Effect());','T.Copy(,);'):
             with self.assertRaises(BSLError):vm.execute(code)
             self.assertEqual(seen,[])
+        self.assertEqual(table.columns.items,())
+        self.assertEqual(table.count(),0)
+
+    def test_bound_copy_does_not_export_a_table_restricted_during_actuals(self):
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close)
+        vm.execute('T=New ValueTable;T.Columns.Add("X");T.Add().X=7;')
+        table=vm.variables['t'];seen=[]
+        def restrict():
+            seen.append('restrict')
+            table._bounded_slice_read=True
+            return 'X'
+        vm.register_function('Restrict',restrict)
+        for call in ('T.Copy(,Restrict())','T.CopyColumns(Restrict())'):
+            table._bounded_slice_read=False
+            with self.subTest(call=call),self.assertRaises(BSLError):
+                vm.execute_prepared(vm.prepare('Result='+call+';'))
+            self.assertNotIn('result',vm.variables)
+            self.assertEqual(table.get(0).get_member('X'),7)
+        self.assertEqual(seen,['restrict','restrict'])
 
     def test_native_default_column_record_is_distinct_from_omission_control(self):
         fixture=(Path(__file__).resolve().parents[1]/'tests/fixtures/native_windows/collections.out').read_text(encoding='utf-8-sig')

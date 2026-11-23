@@ -54,6 +54,9 @@ the application does not admit direct catalog writes, transactions, external
 Python extensions or additional client/server crossings. Ordinary BSL
 operations inside an owned CLI module do not emit redundant checks; calls at
 an actual application, database or transport boundary remain checked.
+A separately started `side='server'` application exposes its admitted exported
+endpoints to the configured invocation host; it does not accept top-level
+`application.execute()` commands.
 
 ## Common modules and exports
 
