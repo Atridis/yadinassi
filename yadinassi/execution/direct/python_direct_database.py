@@ -79,6 +79,7 @@ _OWNED_STANDALONE_READS = {
 _OWNED_SYNTAX = {**dict.fromkeys(zip_reader.TYPE_IDS, zip_reader),
                  **dict.fromkeys(live_metadata.TYPE_IDS, live_metadata)}
 _DATE_TYPE = _DIRECT_EQUALITY_DATE_STATE[0]
+_NUMERIC_BOOLEAN_TYPE_IDS = frozenset(map(id, (int, Decimal, bool)))
 _METHODLESS_TYPE_IDS=frozenset(map(id, (
     _DATE_TYPE, BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers,
 )))
@@ -560,7 +561,7 @@ class CatalogBoundary:
             if (identity in OPAQUE_ENUM_IDS or identity in FIELD_ONLY_NAMESPACE_IDS
                     or id(type(value)) in _METHODLESS_TYPE_IDS
                     or (name!='__iter__' and identity in ITERABLE_IDS)
-                    or (name=='__iter__' and value is CHARS)):
+                    or (name=='__iter__' and (value is CHARS or receiver_kind in _NUMERIC_BOOLEAN_TYPE_IDS))):
                 if self._verify_context:self._check()
                 if name=='__iter__':raise ValueError('Для Каждого ожидает массив или коллекцию')
                 raise ValueError('Индексирование для этого типа не поддерживается')
