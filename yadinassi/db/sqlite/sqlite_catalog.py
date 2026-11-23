@@ -2128,6 +2128,18 @@ class _View:
         if self.database_id != backend.database_id or self.configuration_generation != backend.configuration_generation:
             raise BackendError('schema_changed')
 
+    @_boundary
+    def _pin_query_snapshot(self):
+        """Hold the same SQLite read snapshot for composed query data scans."""
+        self._require()
+        connection = self._connection
+        handle = self._read_handle
+        if (not self._query_language or self._backend._active is not self
+                or handle is None or handle.connection is not connection):
+            raise BackendError('closed')
+        if not connection.in_transaction:
+            connection.execute('BEGIN')
+
     @property
     def _catalog_layout(self):
         data = self._catalog_data
@@ -3482,7 +3494,7 @@ class _View:
                 _close_owned_connection(self)
                 return
             self._connection.execute('ROLLBACK')
-            if self._catalog_data is None:
+            if self._catalog_data is None and not self._query_language:
                 handle.complete(self._validated_sources)
             self._validated_sources.clear()
             self._connection = None

@@ -1,3 +1,4 @@
+import ast
 import unittest
 from decimal import Decimal
 from yadinassi import Interpreter
@@ -91,6 +92,52 @@ class DirectByrefContracts(unittest.TestCase):
                 self.assertEqual(caught.exception.line,1)
                 self.assertEqual(events,[])
                 self.assertNotIn('missing',vm.variables)
+
+    def test_named_module_reference_distinguishes_missing_from_undefined(self):
+        source = (
+            'Procedure F(A, Val B) Message("called"); A=B; EndProcedure '
+            'Function Later() Message("later"); Return 9; EndFunction '
+            'Try F((Missing),Later()); Except Rejected=True; EndTry; '
+            'Missing=Undefined; F(Missing,Later());')
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                effects=[]
+                vm=Interpreter(effects.append);self.addCleanup(vm.close)
+                if prepared:vm.execute_prepared(vm.prepare(source))
+                else:vm.execute(source)
+                self.assertEqual(effects,['later','called'])
+                self.assertIs(vm.variables['rejected'],True)
+                self.assertEqual(vm.variables['missing'],9)
+
+    def test_proven_named_numeric_reference_has_no_loop_presence_check(self):
+        vm=Interpreter();self.addCleanup(vm.close)
+        source=('Procedure F(X, Y) X=X+0.5; Y=Y+1; EndProcedure '
+                'A=0; For I=1 To 3 Do F(A,A); EndDo;')
+        plan=vm.prepare(source)
+        tree=ast.parse(plan._plan.generated_source)
+        loop=next(node for node in ast.walk(tree) if type(node) is ast.For)
+        hot=ast.unparse(loop)
+        self.assertNotIn('_UNSET',hot)
+        self.assertNotIn('_context._check',hot)
+        vm.execute_prepared(plan)
+        self.assertEqual(vm.variables['a'],Decimal('4.5'))
+
+    def test_numeric_foreach_iterator_keeps_shared_reference_before_after_loop(self):
+        procedure='Procedure F(X) X=X+1; EndProcedure '
+        cases=(
+            ('A.Add(1); A.Add(2); S=0; For Each V In A Do F(V); S=S+V; EndDo;', 5, 3),
+            ('A.Add(1); V=10; S=0; For Each V In A Do S=S+V; EndDo; F(V);', 1, 2),
+            ('V=10; S=0; For Each V In A Do S=S+V; EndDo; F(V);', 0, 11),
+            ('A.Add(2); V=0; F(V); S=0; For Each V In A Do V=V+1; S=S+V; EndDo;', 3, 3),
+        )
+        for body,total,iterator in cases:
+            for prepared in (False, True):
+                with self.subTest(body=body,prepared=prepared):
+                    vm=Interpreter();self.addCleanup(vm.close)
+                    src=procedure+'A=New Array; '+body
+                    if prepared:vm.execute_prepared(vm.prepare(src))
+                    else:vm.execute(src)
+                    self.assertEqual((vm.variables['s'],vm.variables['v']),(total,iterator))
 
     def test_host_reference_parameters_keep_same_actual_alias(self):
         def host(x,y): x.set(x.get()+1); y.set(y.get()+2)

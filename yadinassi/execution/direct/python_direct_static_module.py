@@ -127,7 +127,7 @@ def table_schema_setup(program, start, table_name):
 def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=None, builtin_external_names=(), numeric_routines=None, address_routines=None, literal_reachability=False, module_declarations=False, table_prefix_origin=None, extended_reachability=True, extended_tests=None, schema_setup=None):
     builtin_results = builtin_results or {}
     kinds={};names=set();opaque=set(opaque_names)|{'thisobject','этотобъект'}
-    checked=set();active=set()
+    checked=set();active=set();for_counters=[]
     numeric_routines={} if numeric_routines is None else numeric_routines
     address_routines={} if address_routines is None else address_routines
     def require(condition):
@@ -286,10 +286,17 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
                 elif type(call) is bsl.Call and type(call.callee) is bsl.Name and call.callee.name.casefold() in address_routines:
                     name=call.callee.name.casefold();routine=address_routines[name]
                     require(len(call.arguments)==len(routine.parameters))
+                    indexed=True
                     for parameter,arg in zip(routine.parameters,call.arguments):
                         while type(arg) is bsl.Group:arg=arg.expression
                         if not parameter.by_value:
-                            require(type(arg) is bsl.Index and expression(arg.object,env)=='array')
+                            if type(arg) is bsl.Name:
+                                # Mutation of a live For counter needs its generic
+                                # loop, not the closed range-based induction.
+                                require(arg.name.casefold() not in for_counters)
+                                indexed=False
+                            else:
+                                require(type(arg) is bsl.Index and expression(arg.object,env)=='array')
                         require(expression(arg,env)=='number')
                     if name not in checked:
                         active.add(name)
@@ -298,7 +305,7 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
                             for statement in routine.body:require(expression(statement.value,local)=='number')
                         finally:active.remove(name)
                         checked.add(name)
-                    kinds[id(call)]='address_call'
+                    if indexed:kinds[id(call)]='address_call'
                 elif type(call) is bsl.Call and type(call.callee) is bsl.Attribute and call.callee.name.casefold() in ('add','добавить') and expression(call.callee.object,env)=='array':
                     require(expression(call.callee.object,env)=='array' and len(call.arguments)==1)
                     require(expression(call.arguments[0],env)=='number');kinds[id(call)]='append'
@@ -308,7 +315,10 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
                 else:expression(call,env)
             elif k is bsl.For:
                 require(expression(node.start,env)=='number' and expression(node.end,env)=='number')
-                assign(node.name,'number',env);nested=dict(env);sequence(node.body,nested)
+                assign(node.name,'number',env);nested=dict(env)
+                for_counters.append(node.name.casefold())
+                try:sequence(node.body,nested)
+                finally:for_counters.pop()
                 require(all(nested.get(key)==kind for key,kind in env.items()))
                 kinds[id(node)]='number'  # The body preserves numeric induction.
             elif k is bsl.ForEach and not scalar_prefix:

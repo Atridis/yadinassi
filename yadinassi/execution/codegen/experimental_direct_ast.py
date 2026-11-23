@@ -1186,9 +1186,18 @@ class Emitter:
                             key=plain.name.casefold()
                             if self.scope is None and key in self.module_cells:
                                 actual=self.name(self.static_module_names[key],plain.token)
+                                # Bind the live named slot now, not on the callee's first read:
+                                # opaque previous calls can remove it even after assignment.
+                                if id(plain) not in self.static_module_kinds:
+                                    current=self.node(py.Subscript,plain.token,value=actual,slice=self.const(0,plain.token),ctx=py.Load())
+                                    initialized=self.node(py.Compare,plain.token,left=current,ops=[py.IsNot()],
+                                        comparators=[self.name('_UNSET',plain.token)])
                                 if self.external_actuals:
                                     actual=self.call('_PublishedModuleCell',[actual,self.name('_initial',plain.token),
                                                                              self.const(key,plain.token)],plain.token)
+                                if id(plain) not in self.static_module_kinds:
+                                    missing=self.call('_missing',[self.const(plain.name,plain.token)],plain.token)
+                                    actual=self.node(py.IfExp,plain.token,test=initialized,body=actual,orelse=missing)
                             elif self.scope is not None and key in self.scope['boxed'] and key not in self.scope['globals']:
                                 actual=self.name(self.scope['slots'][key],plain.token)
                             else:actual=self.call('_adapt_native_cell',[self.output_reference(plain,node.callee.token),self.name('_context',node.callee.token)],node.callee.token)
@@ -1967,9 +1976,13 @@ class Emitter:
         if k is bsl.ForEach:
             self.check_name(node.name)
             if self.scope is None and self.static_module_kinds.get(id(node.collection))=='array':
-                slot=self.static_module_names[node.name.casefold()]
+                key=node.name.casefold()
+                slot=self.static_module_names[key]
                 body=self.loop_body(node.body,None)
-                return [self.node(py.For,t,target=self.name(slot,t,True),iter=self.expr(node.collection),
+                # Assign into a shared cell rather than replacing the address.
+                target=(self.node(py.Subscript,t,value=self.name(slot,t),slice=self.const(0,t),ctx=py.Store())
+                        if key in self.module_cells else self.name(slot,t,True))
+                return [self.node(py.For,t,target=target,iter=self.expr(node.collection),
                                   body=body or [self.node(py.Pass,t)],orelse=[],type_comment=None)]
             receiver=self.temp();bound=self.temp();iterator=self.temp();key=self.temp();value=self.temp()
             def assign(name,value):return self.node(py.Assign,t,targets=[self.name(name,t,True)],value=value)

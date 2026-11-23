@@ -3,11 +3,12 @@ from yadinassi.forms.form_model import (BSLFormItems,BSLFormCommands,BSLFormFiel
                          BSLFormGroup,BSLFormButton,BSLFormCommand,BSLFormAttribute,FORM_FIELD_VIEWS)
 from yadinassi.forms.form_tables import BSLFormDataCollection,BSLFormDataCollectionItem
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.types.values import HostFunction
+from yadinassi.types.values import HostFunction, _DIRECT_COLLECTION_CLASS_ABI
 from yadinassi.types.type_descriptions import BSLTypeDescription
 COLLECTIONS=(BSLFormItems,BSLFormCommands)
 CONTROLS=(BSLFormField,BSLFormTable,BSLFormGroup,BSLFormButton,BSLFormCommand,BSLFormAttribute,FORM_FIELD_VIEWS)
 KINDS=(BSLFormAttribute,BSLTypeDescription)+COLLECTIONS+CONTROLS+(BSLFormDataCollection,BSLFormDataCollectionItem)
+_CONTROL_FIELDS = dict(_DIRECT_COLLECTION_CLASS_ABI[0][2])['__dict__']
 
 def recognized(value):return type(value) in KINDS or value is FORM_FIELD_VIEWS
 
@@ -31,6 +32,13 @@ def require(session,value):
     if type(value) in CONTROLS:
         registry=form.commands if type(value) is BSLFormCommand else form.items
         if registry._values.get(value.name.casefold()) is not value:
+            # A model-retired control still belongs to this form. Its usual
+            # deletion error is catchable, but it cannot resolve to a new
+            # control with the same name. An unexplained mismatch stays fatal.
+            fields = _CONTROL_FIELDS.__get__(value)
+            if any(type(key) is str and key == '_removed' and marker is True
+                   for key, marker in fields.items()):
+                raise ValueError('Форма: объект удален')
             raise BoundaryViolation('retired form control')
     value._check()
 

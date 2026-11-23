@@ -6,7 +6,8 @@ Input/intermediate bounds fail explicitly, never return partial aggregate totals
 String equality/order uses the existing casefold_v1 host policy, not regional 1C
 collation. Decimal aggregation uses an owned context, not the caller's context.
 """
-from yadinassi.db.database_transactions import open_query_read as _open_query_read, query_view as _transaction_query_view
+from yadinassi.db.database_transactions import (open_query_read as _open_query_read,
+    query_view as _transaction_query_view, pin_query_snapshot)
 
 from dataclasses import dataclass, replace
 from decimal import Context, Decimal, InvalidOperation, ROUND_HALF_EVEN
@@ -1025,12 +1026,16 @@ class _Plan:
                 if self.dereference is not None:
                     return self.dereference.execute(self, view, budget)
                 self.prepare_memberships(view, budget)
+                if owner and self.hierarchies: pin_query_snapshot(view)
                 self.prepare_hierarchies(view, budget)
                 from .query_pushdown import try_count, try_numeric, try_ordered_select
                 pushed = try_ordered_select(self, view, budget)
                 if pushed is None:pushed = try_count(self, view, budget)
                 if pushed is None:pushed = try_numeric(self, view, budget)
                 if pushed is not None:return pushed
+                if (owner and not self.hierarchies and len(self.managers) > 1
+                        and sum(manager is not None for manager in self.managers) > 1):
+                    pin_query_snapshot(view)
                 sources = [self.load(i, view, budget) for i in range(len(self.sources))]
         finally:
             if owner: view.close()

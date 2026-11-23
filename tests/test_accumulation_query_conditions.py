@@ -120,7 +120,7 @@ class DimensionConditionRuntimeTests(unittest.TestCase):
     def make(self,path):
         context=create_prepared(path,prepare_directory(ROOT/'scripts/inventory_reference_behavior/runtime_source',profile=PROFILE))
         self.addCleanup(context.close)
-        vm=Interpreter(database_context=context,output=lambda text:None, allow_extensions=True);self.addCleanup(vm.close)
+        vm=Interpreter(database_context=context,output=lambda text:None);self.addCleanup(vm.close)
         return context,vm
 
     def seed(self):
@@ -295,11 +295,16 @@ class DimensionConditionRuntimeTests(unittest.TestCase):
             self.query('SELECT QuantityTurnover FROM '+REG+'Turnovers(&A,&B) WHERE Product=&P')
 
     def test_query_inside_writer_observes_staging_and_rollback(self):
-        seen=[]
-        def read():seen.append(self.report()._rows)
-        self.vm.register_function('ReadScoped',read,returns_value=False)
-        self.vm.execute('BeginTransaction(); D=Move("T",P,W,Date(2024,1,5),7); ReadScoped(); RollbackTransaction();')
-        self.assertEqual(seen,[((Decimal(7),),)])
+        select = 'SELECT QuantityBalance FROM ' + REG + 'Balance(&At,Product=&P AND Warehouse=&W)'
+        self.vm.execute('BeginTransaction(); D=Move("T",P,W,Date(2024,1,5),7);'
+            'Q=New Query("'+select+';'+select+'");'
+            'Q.SetParameter("At",Date(2024,3,31,23,59,59));'
+            'Q.SetParameter("P",P);Q.SetParameter("W",W);'
+            'Results=Q.ExecuteBatch();First=Results[0].Select();Second=Results[1].Select();'
+            'First.Next();Second.Next();A=First.QuantityBalance;B=Second.QuantityBalance;'
+            'RollbackTransaction();')
+        self.assertEqual((self.vm.execute('A'), self.vm.execute('B')), (Decimal(7), Decimal(7)))
+        self.assertIsNone(self.context.backend._active)
         self.assertEqual(self.report()._rows,((Decimal(0),),))
 
     def test_reference_results_keep_owned_types_in_unload(self):

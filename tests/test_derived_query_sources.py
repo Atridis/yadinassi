@@ -1,5 +1,7 @@
 """Bounded derived-table reporting contract, not native parity evidence."""
+from contextlib import closing
 from decimal import Decimal
+import sqlite3
 import unittest
 from unittest.mock import patch
 
@@ -9,6 +11,7 @@ from yadinassi.db.query.queries import BSLQuery
 from yadinassi.db.query.query_packages import BSLTempTablesManager
 from yadinassi.types.values import NULL
 from yadinassi.db.sqlite.sqlite_catalog import _View
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
 import test_catalog_queries as catalog_fixtures
 import test_document_queries as document_fixtures
 import test_periodic_information_registers as register_fixtures
@@ -181,9 +184,71 @@ class DerivedQueryTests(unittest.TestCase):
         text = 'SELECT D.Item FROM (SELECT Code AS Item,Amount FROM Catalog.Products WHERE Amount IN '
         text += '(SELECT X.N FROM (SELECT Amount AS N FROM Catalog.Products) AS X WHERE X.N<30)) AS D ORDER BY D.Item'
         backend = self.context.backend
-        with patch.object(backend, 'begin_read', wraps=backend.begin_read) as begin:
+        with patch.object(backend, 'begin_query_read', wraps=backend.begin_query_read) as begin:
             self.assertEqual(self.rows(text), (('1',),('2',)))
-            self.assertEqual(begin.call_count, 1)
+            begin.assert_called_once_with(query_language=True)
+
+    def test_composed_query_reads_one_sqlite_snapshot_despite_peer_write(self):
+        backend = self.context.backend
+        schema = next(s for s in backend._schemas if s.name == 'Products')
+        amount = next(f for f in schema.fields if f.name == 'Amount')
+        table = quote_identifier(backend._layout.table_name(schema.identity))
+        column = quote_identifier(backend._layout.field_name(schema.identity, amount.identity))
+        scans = []
+        busy = []
+        original = _View.scan_catalog_values
+
+        def update(peer):
+            peer.execute(f'UPDATE {table} SET {column}=? WHERE code=?', (9900, '1'))
+
+        def scanned(view, *args, **kwargs):
+            page = original(view, *args, **kwargs)
+            scans.append((view, view._connection.in_transaction))
+            if len(scans) == 1:
+                try:
+                    update(peer)
+                except sqlite3.OperationalError as error:
+                    code = getattr(error, 'sqlite_errorcode', None)
+                    if code is None:  # Python 3.10 has no SQLite error-code attribute.
+                        self.assertEqual(str(error), 'database is locked')
+                    else:
+                        self.assertEqual(code, sqlite3.SQLITE_BUSY)
+                    busy.append(True)
+            return page
+
+        with closing(sqlite3.connect(backend.path, timeout=0, isolation_level=None)) as peer:
+            for text in (
+                    'SELECT D.Before AS N1,P.Amount AS N2 FROM '
+                    '(SELECT Code AS KeyCode,Amount AS Before FROM Catalog.Products WHERE Code="1") AS D '
+                    'INNER JOIN Catalog.Products AS P ON P.Code=D.KeyCode',
+                    'SELECT P.Amount AS N1,Q.Amount AS N2 FROM Catalog.Products AS P '
+                    'INNER JOIN Catalog.Products AS Q ON P.Code=Q.Code WHERE P.Code="1"'):
+                with self.subTest(text=text):
+                    scans.clear()
+                    busy.clear()
+                    with patch.object(_View, 'scan_catalog_values', scanned):
+                        self.assertEqual(self.rows(text), ((Decimal(10), Decimal(10)),))
+                    self.assertGreaterEqual(len(scans), 2)
+                    self.assertTrue(all(view is scans[0][0] and locked for view, locked in scans))
+                    self.assertEqual(busy, [True])
+                    self.assertIsNone(backend._active)
+            update(peer)
+        self.assertEqual(self.rows('SELECT TOP 1 Amount FROM Catalog.Products WHERE Code="1"'),
+                         ((Decimal(99),),))
+
+    def test_single_native_projection_does_not_open_transaction(self):
+        backend = self.context.backend
+        self.rows('SELECT TOP 1 Code FROM Catalog.Products ORDER BY Code')
+        connection = backend._read_handle.connection
+        trace = []
+        connection.set_trace_callback(trace.append)
+        try:
+            self.assertEqual(self.rows('SELECT TOP 1 Code FROM Catalog.Products ORDER BY Code'), (('1',),))
+        finally:
+            connection.set_trace_callback(None)
+        self.assertEqual(len(trace), 1)
+        self.assertTrue(trace[0].startswith('SELECT '))
+        self.assertFalse(connection.in_transaction)
 
     def test_external_value_table_nested_source(self):
         value = table([('N', number())], [(Decimal(20),)])

@@ -59,15 +59,21 @@ class InventoryReportUITests(unittest.TestCase):
         self.event(sid,control='UndoPostingButton');self.assertIsNone(self.app.report)
         self.assertEqual(self.report()['state']['report']['rows'],[])
 
-    def test_pending_receipt_blocks_report_without_resolution(self):
+    def test_uncertain_write_blocks_report_before_opening_a_reader(self):
         sid=self.open('Document.Receipt.Form.Card');owned=self.broker.objects[sid]
         owned.pending_commit=True
         try:
-            with patch.object(owned.operations,'resolve',side_effect=AssertionError('no recovery')):
-                result=self.app.exchange({'jsonrpc':'2.0','id':1,'method':'application.report','params':{
+            with patch.object(self.broker, '_report_service',
+                              side_effect=AssertionError('a busy report must not open a reader')) as read:
+                result = self.app.exchange({'jsonrpc':'2.0','id':1,'method':'application.report','params':{
                     'report':'StockBalance','at':'2026-11-12T00:00:00','start':None,'end':None}})['result']
-            self.assertEqual(result['error'],'report_busy');self.assertIsNone(result['state']['report'])
-        finally:owned.pending_commit=False
+                read.assert_not_called()
+            self.assertEqual(result['error'], 'report_busy')
+            self.assertIsNone(result['state']['report'])
+            self.assertIs(owned.pending_commit, True)
+        finally:
+            owned.pending_commit = False
+        self.assertIsNone(self.report()['error'])
 
     def test_invalid_date_or_unknown_report_is_bounded_refusal(self):
         for name,at in [('StockBalance','2026-02-30T00:00:00'),('SELECT *','2026-11-12T00:00:00')]:

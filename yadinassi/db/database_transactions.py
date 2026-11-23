@@ -357,6 +357,15 @@ def open_query_read(backend):
     return backend.begin_query_read()
 
 
+def pin_query_snapshot(view):
+    """Only promote the SQLite autocommit read lease; never nest a writer lease."""
+    from .sqlite.sqlite_catalog import _View, DocumentView
+    if type(view) is DocumentView:
+        raw = view._view
+        if type(raw) is _View and raw._query_language:
+            raw._pin_query_snapshot()
+
+
 def query_view(manager):
     """Query-only borrowed port; detached object reads use their own checks."""
     backend = manager._backend

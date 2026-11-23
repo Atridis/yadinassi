@@ -73,10 +73,13 @@ resource or execution failures leave the manager as it was before the package,
 including tables destroyed earlier in the failed package. This is an in-memory
 package guarantee, not a persistent database transaction/write API.
 
-All catalog reads in one package share one logical CatalogReadView snapshot;
-read views close on success and failure. Temporary-only packages do not open a
-database read view. The executor continues to use the logical read port, not SQL
-or backend table names.
+All catalog reads in one package share one logical CatalogReadView snapshot.
+SQLite pins a read transaction for composed packages that fetch more than one
+stored source, or borrows the existing writer snapshot during an explicit
+transaction. Independent native single-statement reads stay in autocommit;
+there is no new schema validation step. The view closes on success or failure.
+Temporary-only packages do not open a database read view. The executor
+continues to use the logical read port, not SQL or backend table names.
 
 Materialized columns retain scalar kinds and qualifiers, NULL values, and catalog
 reference identity even when a table has no rows. Temporary references therefore

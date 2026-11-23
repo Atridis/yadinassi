@@ -639,14 +639,55 @@ class BSLValueTable(BSLObject):
         for name in self._selection(columns):
             c=self.columns.find(name);result.columns.add(c.name,c.value_type,c.title,c.width)
         return result
+
+    def _validate_foreign_copy_row(self,row):
+        from yadinassi.execution.direct.python_direct_plain_tables import column_check, raw, validate
+        from yadinassi.execution.direct.python_direct_plain_map import _scalar_map_key
+
+        fields=raw(row)
+        if any(type(key) is not str for key in fields):raise ValueError('invalid copy row storage')
+        owner=fields.get('table')
+        if type(owner) is not BSLValueTable or fields.get('_deleted') is not False:
+            raise ValueError('invalid copy row owner or lifetime')
+        validate(row,row_only=True)
+        if owner._bounded_slice_read:raise ValueError('cannot copy a foreign bounded row')
+        _,original,_,_,columns=validate(self,iteration=True)
+        for position,column in enumerate(columns):
+            column_check(column,self,original._names,original._metadata,position)
+        schema=owner._storage.schema
+        # The native witness establishes foreign copies only for identical
+        # ordered scalar schemas; do not infer a mapping across layouts.
+        try:
+            matches=(schema._names==original._names and
+                all(_scalar_map_key(source.value_type)==_scalar_map_key(target.value_type)
+                    for source,target in zip(schema._metadata,original._metadata)))
+        except TypeError:matches=False
+        if not matches:
+            raise ValueError('foreign copy row has a different schema')
+
     def copy(self,rows=None,columns=None):
         selected=self._selection(columns);result=self.copy_columns(columns)
+        explicit_rows=False
         if rows is None:source=self.rows
-        elif type(rows) is BSLArray:source=rows.items
+        elif type(rows) is BSLArray or type(rows) is list or type(rows) is _DIRECT_PLAIN_ARRAY_TYPE:
+            source=rows.items if type(rows) is BSLArray else rows
+            if type(source) is not list and type(source) is not _DIRECT_PLAIN_ARRAY_TYPE:
+                raise TypeError('Array requires native storage')
+            source=list.__iter__(source)
+            explicit_rows=True
         else:source=self.find_rows(rows).items
         for row in source:
-            if type(row) is not BSLValueTableRow or row.table is not self:raise ValueError('foreign copy row')
+            if type(row) is not BSLValueTableRow:raise ValueError('foreign copy row')
+            if row.table is not self:
+                if not explicit_rows:raise ValueError('foreign copy row')
+                self._validate_foreign_copy_row(row)
+            elif explicit_rows:
+                # A zero-column copy never reaches get_member's live-row
+                # check, but still must not manufacture an extra row.
+                validate_row(row,self._storage.schema,self,row_type=BSLValueTableRow)
             copied=result.add()
+            # Matching metadata is not a proof of conforming payload values.
+            # The same public conversion must apply to both source owners.
             for name in selected:copied.set_member(name,row.get_member(name))
         if columns is None:self.indexes._copy_definitions(result.indexes)
         return result

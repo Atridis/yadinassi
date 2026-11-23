@@ -4,7 +4,8 @@ These are explicit host semantics, not native temporary-table storage or measure
 native statement-result parity. A package borrows one read-only connection,
 or the existing transaction when present. No table rows escape as mutable buffers.
 """
-from yadinassi.db.database_transactions import open_query_read as _open_query_read, query_view as _transaction_query_view
+from yadinassi.db.database_transactions import (open_query_read as _open_query_read,
+    query_view as _transaction_query_view, pin_query_snapshot)
 from yadinassi.db.catalog.catalog_backend import BackendError
 
 from dataclasses import dataclass
@@ -75,19 +76,27 @@ class BSLTempTablesManager(BSLObject):
 def _package_sources(statements, validate_node=None):
     """Collect all source requirements in the same pre-order as binding."""
     families, external = set(), {}
+    stored_sources = 0
+    reads_hierarchy = False
     for node in syntax.walk_nodes(statements):
         if validate_node is not None:
             validate_node(node)
+        if type(node) is syntax.Hierarchy:
+            reads_hierarchy = True
         if type(node) is syntax.Select:
             families.add(node.family)
             if node.external:
                 external[node.catalog.casefold()] = None
+            elif not node.temporary and node.derived is None:
+                stored_sources += 1
             for join in node.joins:
                 source = join.source
                 families.add(source.family)
                 if source.external:
                     external[source.catalog.casefold()] = None
-    return families, tuple(external)
+                elif not source.temporary and source.derived is None:
+                    stored_sources += 1
+    return families, tuple(external), stored_sources > 1 or (stored_sources != 0 and reads_hierarchy)
 
 
 def execute_owned_package(owner, statements, catalogs, parameters, manager, documents,
@@ -102,6 +111,7 @@ def execute_owned_package(owner, statements, catalogs, parameters, manager, docu
     parameters = _preflight_parameters(owner, catalogs, parameters)
     view, scope = _open_query_read(owner.backend), None
     try:
+        if sources[2]: pin_query_snapshot(view)
         with read_snapshot(owner.metadata, view):
             if (view.database_id != view._view.database_id
                     or view.configuration_generation != view._view.configuration_generation):
@@ -145,7 +155,7 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
             raise ValueError('Temporary table manager is busy')
     view = _owned_view
     try:
-        families, external_names = (_package_sources(statements) if _sources is None else _sources)
+        families, external_names, shared_snapshot = (_package_sources(statements) if _sources is None else _sources)
         documents_needed = 'document' in families
         registers_needed = 'information_register' in families
         accumulation_needed = 'accumulation_register' in families
@@ -212,6 +222,7 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
                 else:
                     view = (_open_query_read(backend) if composite
                             else _transaction_query_view(bindings[0].issuer))
+                if shared_snapshot: pin_query_snapshot(view)
             validate_view(bindings, view)
         result = BSLArray()
         budget = [0, 0, 0, 0] if _enum_scope is not None else [0, 0]
@@ -234,6 +245,7 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
                     raise ValueError('Source package cannot acquire legacy manager view')
                 if view is None and source_manager is not None:
                     view = (_open_query_read(catalogs._context.backend) if composite else _transaction_query_view(source_manager))
+                    if shared_snapshot: pin_query_snapshot(view)
                 output = plan.execute(view=view, budget=budget)
                 if statement.into is not None:
                     tables[statement.into.casefold()] = _Table(output._columns, output._rows)
