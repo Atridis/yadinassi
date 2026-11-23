@@ -97,30 +97,31 @@ def ordered_if(node, *, literal_reachability, extended_reachability=True):
     yield OTHERWISE,node.otherwise,False,reaches,None
 
 
-def table_schema_setup(program, start, table_name):
-    """Locate explicit numeric descriptors on the table's top-level setup statements."""
+def table_schema_setup(program, start):
+    """Locate possible setup calls; the transfer below proves their receivers."""
+    def collect(nodes, calls):
+        for statement in nodes:
+            kind=type(statement)
+            if kind in (bsl.For,bsl.While,bsl.ForEach):
+                return False
+            if kind is bsl.If:
+                for _,body,_,live,_ in ordered_if(statement,literal_reachability=True):
+                    if live and not collect(body,calls):return False
+                continue
+            if kind is bsl.ExpressionStatement:call=_ungroup(statement.expression)
+            elif kind is bsl.Assign:call=_ungroup(statement.value)
+            else:continue
+            if (type(call) is bsl.Call and 2<=len(call.arguments)<=4
+                    and type(call.callee) is bsl.Attribute
+                    and call.callee.name.casefold() in ('add','добавить')):
+                calls.add(id(call))
+        return True
+
     positions = {}
     for position in range(start, len(program)):
-        statement = program[position]
-        if type(statement) in (bsl.For, bsl.While, bsl.ForEach, bsl.If):
-            break
-        if type(statement) is not bsl.ExpressionStatement:
-            continue
-        call = statement.expression
-        if (type(call) is not bsl.Call or len(call.arguments) != 2
-                or type(call.callee) is not bsl.Attribute
-                or call.callee.name.casefold() not in ('add', 'добавить')):
-            continue
-        columns = _ungroup(call.callee.object)
-        if (type(columns) is not bsl.Attribute
-                or columns.name.casefold() not in ('columns', 'колонки')):
-            continue
-        table = _ungroup(columns.object)
-        description = _ungroup(call.arguments[1])
-        if (type(table) is bsl.Name and table.name.casefold() == table_name
-                and type(description) is bsl.New
-                and description.name.casefold() in ('typedescription', 'описаниетипов')):
-            positions[position] = id(call)
+        calls=set()
+        if not collect((program[position],),calls):break
+        if calls:positions[position]=calls
     return positions
 
 
@@ -132,26 +133,33 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
     address_routines={} if address_routines is None else address_routines
     def require(condition):
         if not condition:raise _Decline
-    schema_calls=() if schema_setup is None else frozenset(schema_setup[1].values())
+    schema_calls=() if schema_setup is None else frozenset(call for calls in schema_setup[1].values() for call in calls)
     schema_cutoff=-1 if schema_setup is None else max(schema_setup[1])
+    before_schema_guard=False
+
+    def numeric_description(inner,env):
+        require(1<=len(inner.arguments)<=2)
+        name=_ungroup(inner.arguments[0])
+        require(type(name) is bsl.Literal and type(name.value) is str
+                and name.value.strip().casefold() in ('number','число'))
+        expression(inner.arguments[0],env)
+        if len(inner.arguments)==2:
+            q=_ungroup(inner.arguments[1])
+            require(type(q) is bsl.New and q.name.casefold() in ('numberqualifiers','квалификаторычисла')
+                    and len(q.arguments)<=2)
+            require(all(expression(arg,env)=='number' for arg in q.arguments))
+            kinds[id(q)]='numeric_column_type'
+
     def column_description(node,env,call):
         inner=_ungroup(node)
         if type(inner) is bsl.Literal and inner.value is None:
             kind='default_column_type'
+        elif id(call) in schema_calls and type(inner) is bsl.OmittedArgument:
+            kind='default_column_type'
         else:
-            require(id(call) in schema_calls and type(inner) is bsl.New and inner.name.casefold() in ('typedescription','описаниетипов'))
-            require(1<=len(inner.arguments)<=2)
-            name=_ungroup(inner.arguments[0])
-            require(type(name) is bsl.Literal and type(name.value) is str
-                    and name.value.strip().casefold() in ('number','число'))
-            expression(inner.arguments[0],env)
-            if len(inner.arguments)==2:
-                q=_ungroup(inner.arguments[1])
-                require(type(q) is bsl.New and q.name.casefold() in ('numberqualifiers','квалификаторычисла')
-                        and len(q.arguments)<=2)
-                require(all(expression(arg,env)=='number' for arg in q.arguments))
-                kinds[id(q)]='numeric_column_type'
-            kind='numeric_column_type'
+            require(id(call) in schema_calls)
+            kind=expression(node,env)
+            require(kind=='numeric_column_type')
         kinds[id(inner)]=kinds[id(node)]=kind
 
     def expression(node,env):
@@ -165,9 +173,13 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
         elif k is bsl.Name:
             require(node.name.casefold() in env);kind=env[node.name.casefold()]
         elif k is bsl.New:
-            if table_prefix_origin is not None:require(node is table_prefix_origin)
-            constructors={'array':'array','массив':'array','map':'map','соответствие':'map','valuetable':'table','таблицазначений':'table','valuelist':'valuelist','списокзначений':'valuelist'}
-            require(node.name.casefold() in constructors and not node.arguments);kind=constructors[node.name.casefold()]
+            name=node.name.casefold()
+            if before_schema_guard and name in ('typedescription','описаниетипов'):
+                numeric_description(node,env);kind='numeric_column_type'
+            else:
+                if table_prefix_origin is not None:require(node is table_prefix_origin)
+                constructors={'array':'array','массив':'array','map':'map','соответствие':'map','valuetable':'table','таблицазначений':'table','valuelist':'valuelist','списокзначений':'valuelist'}
+                require(name in constructors and not node.arguments);kind=constructors[name]
         elif k is bsl.Index:
             owner=expression(node.object,env);index=expression(node.index,env)
             require(owner in ('array','map','table','valuelist','row') and
@@ -241,10 +253,13 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
             elif method in ('add','добавить'):
                 if receiver_kind=='table':require(not node.arguments);kind='row'
                 elif receiver_kind=='columns':
-                    require(1<=len(node.arguments)<=2 and expression(node.arguments[0],env)=='string')
-                    if len(node.arguments)==2:
+                    require(1<=len(node.arguments)<=(4 if id(node) in schema_calls else 2)
+                            and expression(node.arguments[0],env)=='string')
+                    if len(node.arguments)>=2:
                         require(extended_reachability)
                         column_description(node.arguments[1],env,node)
+                    for optional,kind in zip(node.arguments[2:],('string','number')):
+                        require(type(optional) is bsl.OmittedArgument or expression(optional,env)==kind)
                     kind='column'
                 elif receiver_kind=='valuelist':require(len(node.arguments)==1 and expression(node.arguments[0],env)=='number');kind='item'
                 else:raise _Decline
@@ -359,6 +374,7 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
         # statements; the first unproved statement and all successors stay generic.
         env={};prefix_kinds={}
         for index,node in enumerate(program):
+            before_schema_guard=index<=schema_cutoff
             kinds={}
             try:sequence((node,),env)
             except _Decline:return index,prefix_kinds

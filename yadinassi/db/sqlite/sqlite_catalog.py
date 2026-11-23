@@ -49,6 +49,8 @@ from yadinassi.db.catalog.catalog_backend import (BackendError, Capabilities, Ca
                               _TabularSectionChanges, _point_predicate, CatalogFieldComparison)
 
 _APPLICATION_ID = 0x59414449
+_CANONICAL_UUID_GLOB = '-'.join('[0-9a-f]' * digits for digits in (8, 4, 4, 4, 12))
+_ZERO_RECORD_ID = '00000000-0000-0000-0000-000000000000'
 _MAX_ROWS = 10000
 _MAX_FILES = 2048
 _MAX_CONFIG_BYTES = 16 * 1024 * 1024
@@ -2760,13 +2762,46 @@ class _View:
         self._require()
         if type(request) is CatalogNumericAggregateRequest:
             return self._aggregate_numeric_catalog(catalog_id,request)
-        if type(request) is not CatalogAggregateRequest or request.operation != 'count_all_v1':
+        if type(request) is not CatalogAggregateRequest or request.operation not in ('count_all_v1', 'count_query_keys_v1'):
             raise BackendError('invalid_input')
         schema = self.catalog_schema(catalog_id)
         if (self._operation_id is not None or not self._cache_validation_allowed()
                 or self._backend.storage_version < 2 or schema.hierarchy != 'none'):
             return None
         table, _, where, args = self._source(schema)
+        if request.operation == 'count_query_keys_v1':
+            if not self._query_language or _validate: return None
+            # Canonical lowercase UUID spelling is injective over the admitted
+            # TEXT primary key. A noncanonical spelling can be legitimate;
+            # only the original UUID decoder can distinguish all of its aliases
+            # from malformed/zero IDs and detect their logical duplicates.
+            from .sqlite_single_statement import fetch_one
+            clause = '' if where == '1' and not args else ' WHERE ' + where
+            sql = ("SELECT COUNT(*),COUNT(CASE WHEN typeof(record_id)='text' "
+                   'AND length(CAST(record_id AS BLOB))=36 AND record_id GLOB ? '
+                   'AND record_id!=? THEN 1 END) FROM '+table+clause)
+            bindings = (_CANONICAL_UUID_GLOB, _ZERO_RECORD_ID)+args
+            getlimit = getattr(self._connection, 'getlimit', None)
+            if getlimit is not None:
+                # Optional proof: decline before preparing on small connections.
+                # Reserve headroom for the fixed CASE tree and scan bytecode.
+                depth = getlimit(sqlite3.SQLITE_LIMIT_EXPR_DEPTH)
+                if ((depth and depth < 16)
+                        or getlimit(sqlite3.SQLITE_LIMIT_VDBE_OP) < 256
+                        or getlimit(sqlite3.SQLITE_LIMIT_COLUMN) < 2
+                        or getlimit(sqlite3.SQLITE_LIMIT_FUNCTION_ARG) < 2
+                        or getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER) < len(bindings)
+                        or getlimit(sqlite3.SQLITE_LIMIT_SQL_LENGTH) < len(sql.encode('utf-8'))
+                        or getlimit(sqlite3.SQLITE_LIMIT_LENGTH) < len(_CANONICAL_UUID_GLOB)
+                        or getlimit(sqlite3.SQLITE_LIMIT_LIKE_PATTERN_LENGTH) < len(_CANONICAL_UUID_GLOB)):
+                    return None
+            row = fetch_one(self._connection,sql,bindings)
+            if (type(row) is not tuple or len(row)!=2 or type(row[0]) is not int
+                    or type(row[1]) is not int or not 0 <= row[1] <= row[0]):
+                raise BackendError('integrity')
+            if row[0]!=row[1]: return None
+            if row[0]>_MAX_ROWS: raise BackendError('unsupported')
+            return CatalogAggregateResult(row[0])
         if self._query_language and not _validate:
             clause = '' if where == '1' and not args else ' WHERE ' + where
             row = self._connection.execute('SELECT COUNT(*) FROM '+table+clause,args).fetchone()

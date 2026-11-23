@@ -13,7 +13,7 @@ from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.types.type_qualifiers import BSLAllowedLength, BSLAllowedSign, BSLDateFractions
 from yadinassi.collections.value_tables import (BSLValueTable, BSLValueTableColumn,
                            BSLValueTableColumnCollection, BSLValueTableRow)
-from yadinassi.collections.plain_table_storage import Schema, TableStorage, validate_row
+from yadinassi.collections.plain_table_storage import Schema, TableStorage, StorageError, validate_row, _owned_offsets
 from yadinassi.types.values import BSLType, NULL
 
 
@@ -117,11 +117,12 @@ def _snapshot(value, budget, catalogs=None, documents=None):
     original, schema = columns_view._items, storage.schema
     if not 1 <= len(original) <= 128 or len(storage.rows) > syntax.MAX_ROWS:
         raise ValueError('External query source size limit exceeded')
+    try:offsets = _owned_offsets(schema)[2]
+    except StorageError as error:raise TypeError('Malformed external query table schema') from error
     if (type(schema._names) is not list or type(schema._keys) is not list
             or type(schema._metadata) is not list or type(schema._defaults) is not list
-            or type(schema._offsets) is not dict
             or not len(original) == len(schema._names) == len(schema._keys)
-            == len(schema._metadata) == len(schema._defaults) == len(schema._offsets)):
+            == len(schema._metadata) == len(schema._defaults) == len(offsets)):
         raise TypeError('Malformed external query table schema')
     schema.validate()
     budget[0] += len(original) * len(storage.rows)

@@ -2513,7 +2513,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
                             or origin.arguments):
                         continue
                     key=statement.target.name.casefold()
-                    setup=table_schema_setup(program,offset+1,key)
+                    setup=table_schema_setup(program,offset+1)
                     end,kinds=analyze_static(program,opaque_names=opaque,
                         literal_reachability=True,table_prefix_origin=origin,
                         schema_setup=(key,setup) if setup else None)

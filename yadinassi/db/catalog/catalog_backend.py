@@ -285,6 +285,8 @@ class CatalogAggregateRequest:
     Version 1 permits only COUNT(*) of one complete catalog. Backends may return
     None to decline this shape; accepted results prove complete row validation
     and uniqueness of normalized logical record identities in the same view.
+    The internal query-only count_query_keys_v1 operation may prove canonical
+    physical row identities without admitting unprojected payloads.
     """
     operation: str = 'count_all_v1'
 

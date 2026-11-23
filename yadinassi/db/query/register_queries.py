@@ -160,3 +160,50 @@ def try_ordered_register(plan, view, budget, projection, condition):
         if len(rows)*len(plan.columns)>_MAX_CELLS or text>_MAX_RESULT_TEXT:
             raise ValueError('Query result resource limit exceeded')
     return BSLQueryResult(plan.columns,tuple(rows))
+
+
+def try_count_register(plan,view,budget):
+    """Only COUNT(*) of a flat independent register on the SQLite query lease."""
+    q=plan.query
+    if (type(q) is not syntax.Select or q.family!='information_register'
+            or len(plan.sources)!=1 or q.section is not None
+            or q.temporary or q.external or q.derived is not None or q.into is not None
+            or q.virtual_condition is not None or q.joins or q.groups or q.predicate is not None
+            or q.having is not None or q.order or q.distinct
+            or plan.memberships or plan.hierarchies or plan.enum_scope is not None
+            or plan.enum_binding is not None or len(plan.projections)!=1):
+        return None
+    from .relational_queries import _BoundAggregate
+    item=plan.projections[0]
+    if (type(item) is not _BoundAggregate or item.function!='count'
+            or item.field is not None or item.distinct is not False):
+        return None
+    from yadinassi.db.registers.information_registers import BSLInformationRegisterManager
+    from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _View
+    from yadinassi.db.sqlite.sqlite_documents import DocumentView
+    manager=plan.managers[0]
+    if type(manager) is not BSLInformationRegisterManager or type(view) is not DocumentView:
+        return None
+    raw=view._view
+    if (type(raw) is not _View or type(raw._backend) is not SQLiteCatalogBackend
+            or not raw._query_language or raw._operation_id is not None):
+        return None
+    if manager._backend is not raw._backend:
+        raise BackendError('schema_changed')
+    if raw._backend._active is not raw:
+        raise BackendError('closed')
+    manager._check_view(view)
+    from yadinassi.db.sqlite.sqlite_register_count import count_register
+    result=count_register(view._register_reader(),manager._schema)
+    if result is None:return None
+    count,text=result
+    from decimal import Decimal
+    from .queries import BSLQueryResult, _MAX_CELLS, _MAX_RESULT_TEXT
+    # The residual charges every logical field, even under COUNT(*).
+    budget[0]+=len(manager._schema.fields)*count
+    budget[1]+=text
+    if count>syntax.MAX_ROWS or (count and (budget[0]>_MAX_CELLS or budget[1]>_MAX_RESULT_TEXT)):
+        raise ValueError('Query input resource limit exceeded')
+    if _MAX_CELLS<1:
+        raise ValueError('Query result resource limit exceeded')
+    return BSLQueryResult(plan.columns,((Decimal(count),),) if q.limit else ())

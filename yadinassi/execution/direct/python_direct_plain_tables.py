@@ -94,9 +94,11 @@ def validate(value,pure=False,*,row_only=False,iteration=False,fresh=False):
         # Decline nonempty or reused origin state without a graph traversal.
         schema=kernel.schema
         if kind is not _TABLE or rows or kernel.epoch:return False
-        for group,expected in ((schema._keys,list),(schema._names,list),
-                               (schema._metadata,list),(schema._defaults,list),(schema._offsets,dict)):
-            if type(group) is not expected or group:return False
+        try:offsets=storage._owned_offsets(schema)[2]
+        except storage.StorageError:fail()
+        if offsets or any(type(group) is not list or group for group in
+                          (schema._keys,schema._names,schema._metadata,schema._defaults)):
+            return False
     if iteration:
         # A read-only iterator need not admit indexes, names or row contents
         # it will never consume. Bind the owners and shared storage here; each
@@ -131,12 +133,13 @@ def validate(value,pure=False,*,row_only=False,iteration=False,fresh=False):
     # Exact key types before any hashing, comparison, or user dictionary lookup.
     if type(schema._keys) is not list or any(type(k) is not str for k in schema._keys):fail()
     if type(schema._names) is not list or any(type(k) is not str for k in schema._names):fail()
-    if type(schema._offsets) is not dict or type(schema._defaults) is not list or type(schema._metadata) is not list:fail()
-    if any(type(k) is not str for k in schema._offsets):fail()
+    if type(schema._defaults) is not list or type(schema._metadata) is not list:fail()
+    try:offsets=storage._owned_offsets(schema)[2]
+    except storage.StorageError:fail()
     keys=schema._keys
     if [n.casefold() for n in schema._names]!=keys or len(set(keys))!=len(keys):fail()
-    if set(schema._offsets)!=set(keys) or len(schema._defaults)!=len(keys) or len(schema._metadata)!=len(keys):fail()
-    if any(type(schema._offsets[k]) is not int or schema._offsets[k]!=i for i,k in enumerate(keys)):fail()
+    if set(offsets)!=set(keys) or len(schema._defaults)!=len(keys) or len(schema._metadata)!=len(keys):fail()
+    if any(type(offsets[k]) is not int or offsets[k]!=i for i,k in enumerate(keys)):fail()
     cols=raw(columns);ix=raw(indexes)
     if any(type(k) is not str for k in cols) or any(type(k) is not str for k in ix):fail()
     if set(cols)!={'table','_items','_query_columns'} or cols['table'] is not table or type(cols['_items']) is not list:fail()

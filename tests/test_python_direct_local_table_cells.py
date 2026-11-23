@@ -217,6 +217,21 @@ class LocalTableCellTests(unittest.TestCase):
         self.assertEqual(seen,[])
         self.assertEqual(row.get(0),1)
 
+    def test_foreign_layout_view_is_not_admitted_even_with_same_columns(self):
+        vm=self.vm()
+        vm.execute(_SETUP)
+        plan=vm.prepare(_STEP+'Step(Row.X,2);')
+        row=vm.variables['row']
+        other=BSLValueTable()
+        other.columns.add('X');other.columns.add('Y')
+        original=row.schema._offsets
+        row.schema._offsets=other._storage.schema._offsets
+        try:
+            with self.assertRaises(BoundaryViolation):vm.execute_prepared(plan)
+        finally:
+            row.schema._offsets=original
+        self.assertEqual(row.get_member('X'),1)
+
     def test_bridge_import_does_not_reseal_edited_public_code(self):
         completed=subprocess.run([sys.executable,'-c','''
 import sys

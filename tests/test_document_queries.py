@@ -358,7 +358,11 @@ Message(Q.Execute().Unload()[0].Total);''')
         def oversized(view, identity, request):
             page = original(view, identity, request)
             return replace(page, rows=page.rows*2)
-        with patch('yadinassi.db.query.document_queries._owned_projection_view', return_value=False), patch.object(DocumentView, 'scan_documents', oversized), self.assertRaises(BackendError):
+        # Exercise the residual provider-page boundary which the injected
+        # oversized page belongs to, rather than the separate SQLite aggregate.
+        with patch('yadinassi.db.query.document_queries._owned_projection_view', return_value=False), \
+                patch('yadinassi.db.query.query_pushdown.try_count', return_value=None), \
+                patch.object(DocumentView, 'scan_documents', oversized), self.assertRaises(BackendError):
             self.rows('SELECT COUNT(*) AS N FROM Document.Orders')
         self.assertIsNone(self.context.backend._active)
 

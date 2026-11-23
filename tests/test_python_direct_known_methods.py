@@ -341,3 +341,91 @@ class KnownQueryLoopTests(unittest.TestCase):
         with methods:self.vm.execute_prepared(plan)
         self.assertIs(self.vm.variables['r'],True)
         self.assertEqual(reached,['Next'])
+
+    def test_query_parameter_write_preserves_only_query_provenance(self):
+        from test_query_ordered_top_pushdown import OrderedTopMainDemoTests
+        OrderedTopMainDemoTests.seed_folded_codes(self, size=3)
+        for lexical in (False, True):
+            for filtered in (False, True):
+                where=' WHERE DeletionMark=&Deleted' if filtered else ''
+                source=('Q=New Запрос("SELECT TOP 3 Code FROM Catalog.Склады'+where+' ORDER BY Code");'
+                        'Alias=Q; Flag=False; Alias.УстановитьПараметр("Deleted",Flag);Alias=0;'
+                        'S=Q.Execute().Select(); R=0; While S.Next() Do R=R+1; EndDo;')
+                if lexical:
+                    source=('Function Work() Var Q,Alias,Flag,S,R;'+source+
+                            'Return R;EndFunction\nR=Work();')
+                with self.subTest(lexical=lexical,filtered=filtered):
+                    plan=self.vm.prepare_program(parse(source))
+                    generated=plan._plan.generated_source
+                    self.assertIn('_known_query_execute(',generated)
+                    self.assertIn('.next()',generated)
+                    self.vm.execute_prepared(plan)
+                    for prepared in (False,True):
+                        trace,traced=OrderedTopMainDemoTests.actual_trace(self)
+                        reached,methods=self.methods()
+                        with traced,methods:
+                            if prepared:self.vm.execute_prepared(plan)
+                            else:self.vm.execute(source)
+                        self.assertEqual(self.vm.variables['r'],Decimal(2 if filtered else 3))
+                        self.assertEqual(reached,[])
+                        self.assertEqual(len(trace),1,trace)
+
+    def test_opaque_parameter_actual_keeps_bind_order_and_dynamic_execution(self):
+        self.seed()
+        source=(
+            'Function Parameter(Receiver) '
+            'Receiver=New Query("SELECT TOP 1 Code FROM Catalog.Склады ORDER BY Code");'
+            'Return False;EndFunction\n'
+            'Q=New Query("SELECT TOP 3 Code FROM Catalog.Склады WHERE DeletionMark=&Deleted ORDER BY Code");'
+            'Old=Q;Q.SetParameter("Deleted",Parameter(Q));'
+            'S=Q.Execute().Select(); R=0; While S.Next() Do R=R+1; EndDo;'
+            'S=Old.Execute().Select(); N=0; While S.Next() Do N=N+1; EndDo;')
+        plan=self.vm.prepare_program(parse(source))
+        self.assertNotIn('_known_query_execute(',plan._plan.generated_source)
+        self.assertNotIn('.next()',plan._plan.generated_source)
+        for prepared in (False,True):
+            if prepared:self.vm.execute_prepared(plan)
+            else:self.vm.execute(source)
+            # The actual changes Q after SetParameter has bound the method
+            # on Old. Old receives the filter; Q is a separate TOP 1.
+            state=self.vm.variables
+            self.assertEqual((state['r'],state['n']),(Decimal(1),Decimal(3)))
+            self.assertEqual(state['old']._parameters,{'deleted':False})
+            self.assertEqual(state['q']._parameters,{})
+
+    def test_invalid_query_parameter_stops_before_execute(self):
+        from test_query_ordered_top_pushdown import OrderedTopMainDemoTests
+        self.seed()
+        source=(self.QUERY.split('S=')[0]+'Q.SetParameter("",False);'
+                'S=Q.Execute().Select();R=S.Next();')
+        plan=self.vm.prepare_program(parse(source))
+        self.assertIn('_known_query_execute(',plan._plan.generated_source)
+        for prepared in (False,True):
+            trace,traced=OrderedTopMainDemoTests.actual_trace(self)
+            with traced,self.assertRaises(BSLRuntimeError):
+                if prepared:self.vm.execute_prepared(plan)
+                else:self.vm.execute(source)
+            self.assertEqual(trace,[])
+            self.assertNotIn('r',self.vm.variables)
+
+    def test_parameter_hint_does_not_certify_overridden_query_dispatch(self):
+        from yadinassi.db.query.queries import BSLQuery
+        self.seed()
+        source=(self.QUERY.replace('S=','Q.SetParameter("Unused",False);S=',1)+
+                'R=0; While S.Next() Do R=R+1; EndDo;')
+        plan=self.vm.prepare_program(parse(source))
+        self.assertIn('_known_query_execute(',plan._plan.generated_source)
+        self.assertIn('.next()',plan._plan.generated_source)
+        original=BSLQuery.get_method
+        for prepared in (False,True):
+            observed=[]
+            def dispatch(query,name):
+                observed.append(name.casefold())
+                return original(query,name)
+            reached,methods=self.methods()
+            with methods,patch.object(BSLQuery,'get_method',dispatch):
+                if prepared:self.vm.execute_prepared(plan)
+                else:self.vm.execute(source)
+            self.assertEqual(observed,['setparameter','execute'])
+            self.assertEqual(reached,['Next']*4)
+            self.assertEqual(self.vm.variables['r'],Decimal(3))

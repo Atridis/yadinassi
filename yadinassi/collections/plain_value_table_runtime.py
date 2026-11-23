@@ -13,7 +13,7 @@ from .plain_table_search import SearchIndexes
 from .value_tables import _adjust, _column_total, _default, _integer as _native_column_width_number, _text
 from .structures import _key as _identifier_name
 from .value_table_group import _scalar_key, _total_values
-from .plain_table_storage import RowStorage, TableStorage, Schema, scalar_equal, validate_row
+from .plain_table_storage import RowStorage, TableStorage, Schema, scalar_equal, validate_row, _owned_offsets
 
 
 def _index(value,count):
@@ -127,8 +127,7 @@ class BSLValueTableColumnCollection(BSLObject):
         self._query_columns += _query_column(description)
     def find(self,name):
         if type(name) is not str:raise TypeError('column name must be str')
-        offsets=self.table._storage.schema._offsets
-        if type(offsets) is not dict or any(type(k) is not str for k in offsets):raise ValueError('noncanonical schema lookup')
+        offsets=_owned_offsets(self.table._storage.schema)[2]
         pos=offsets.get(name.casefold())
         if pos is not None and type(pos) is not int:raise ValueError('noncanonical schema offset')
         return None if pos is None else self._items[pos]

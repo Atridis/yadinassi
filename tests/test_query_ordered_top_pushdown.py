@@ -79,6 +79,47 @@ class OrderedTopMainDemoTests(unittest.TestCase):
                 self.assertNotIn('literal',trace[0])
                 self.assertNotIn('constant',trace[0])
 
+    def test_closed_case_projection_keeps_one_ordered_sql_page(self):
+        self.seed()
+        cases = (
+            ('CASE WHEN TRUE=TRUE THEN Description ELSE Description END', 'Straße'),
+            ('CASE WHEN NULL = NULL THEN "unused" WHEN FALSE=FALSE THEN Description ELSE "other" END', 'Straße'),
+            ('CASE WHEN (1+1=2 AND 2<>3) THEN "fixed" ELSE Description END', 'fixed'),
+        )
+        from yadinassi.db.query.relational_queries import _Plan
+        for expression, expected in cases:
+            for where, rows in (('', ((expected,),)), (' WHERE Code="missing"', ())):
+                with self.subTest(expression=expression, where=where):
+                    query = self.bound(f'SELECT TOP 1 {expression} AS Caption FROM Catalog.Склады{where} ORDER BY Code')
+                    trace,traced = self.actual_trace()
+                    with traced, patch.object(_Plan, 'load', side_effect=AssertionError('materialized input')):
+                        result = query.execute()
+                    self.assertEqual(result._rows, rows)
+                    self.assertEqual((result._columns[0].name, result._columns[0].kind), ('Caption', 'string'))
+                    self.assertEqual(len(trace), 1, trace)
+                    self.assertTrue(trace[0].endswith('LIMIT 1'),trace)
+
+    def test_row_dependent_or_raising_case_does_not_use_top_fast_path(self):
+        self.seed()
+        for expression, expected in (
+            ('CASE WHEN Code="1" THEN Description ELSE "other" END', 'Straße'),
+            ('CASE WHEN 1/0=0 THEN Description ELSE "other" END', None),
+        ):
+            with self.subTest(expression=expression):
+                query = self.bound(f'SELECT TOP 1 {expression} AS Caption FROM Catalog.Склады ORDER BY Code')
+                trace,traced = self.actual_trace()
+                with traced:
+                    if expected is None:
+                        with self.assertRaisesRegex(ValueError, 'division by zero'):
+                            query.execute()
+                    else:
+                        self.assertEqual(query.execute()._rows, ((expected,),))
+                self.assertTrue(trace)
+                self.assertFalse(any(sql.endswith('LIMIT 1') for sql in trace), trace)
+        empty = self.bound('SELECT TOP 1 CASE WHEN 1/0=0 THEN Description ELSE "other" END '
+                           'AS Caption FROM Catalog.Склады WHERE Code="missing" ORDER BY Code')
+        self.assertEqual(empty.execute()._rows, ())
+
     def seed_folded_codes(self, size=2, codes=('CaseFold','casefold')):
         manager = self.vm._catalogs.get_member('Склады')
         backend = self.context.backend

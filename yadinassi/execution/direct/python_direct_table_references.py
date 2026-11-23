@@ -72,6 +72,7 @@ _KEPOCH=_KERNEL_SLOTS['epoch']
 _KEYS=_SCHEMA_SLOTS['_keys']
 _NAMES=_SCHEMA_SLOTS['_names']
 _OFFSETS=_SCHEMA_SLOTS['_offsets']
+_OFFSET_LAYOUT=dict(storage._DIRECT_BINDINGS)['_offset_layout']
 _METADATA=_SCHEMA_SLOTS['_metadata']
 _DATA_EPOCH=_SCHEMA_SLOTS['data_epoch']
 _INDEX_SEARCH=_SCHEMA_SLOTS['_index_search']
@@ -120,6 +121,14 @@ def _same_code(function, specs):
 
 
 
+def _live_offsets(schema):
+    # Both direct and ordinary reference writers read the live attested layout.
+    # Neither foreign dicts nor views from another schema grant row access.
+    entry=_OFFSET_LAYOUT(id(schema))
+    if entry is None or entry[0]() is not schema or entry[1] is not _OFFSETS.__get__(schema,_SCHEMA):fail()
+    return entry[2]
+
+
 def _admit_bound_write(root, row, key, indexed):
     # The generic boundary has just validated the live schema and column vector.
     # Leave rejection of deleted rows, readonly slices and missing keys to the
@@ -128,7 +137,7 @@ def _admit_bound_write(root, row, key, indexed):
     if state['_bounded_slice_read'] or raw(row)['_deleted']:return
     schema=_KSCHEMA.__get__(state['_storage'],_KERNEL)
     if type(key) is str:
-        position=_OFFSETS.__get__(schema,_SCHEMA).get(key.casefold())
+        position=_live_offsets(schema).get(key.casefold())
         if position is None:return
     elif indexed and (type(key) is int or type(key) is Decimal):
         keys=_KEYS.__get__(schema,_SCHEMA)
@@ -253,14 +262,8 @@ class _RowAddress(_Reference):
         return position,column
 
     def _named_position(self,schema,keys):
-        offsets=_OFFSETS.__get__(schema,_SCHEMA)
-        if type(offsets) is not dict:fail()
-        # The existing schema exposes a raw mutable dict. A foreign collision
-        # key must fail before lookup invokes its equality; no cached offsets.
-        for k in offsets:
-            if type(k) is not str:fail()
-        position=offsets.get(self.name)
-        if position is None and self.name not in offsets:raise _STORAGE_ERROR('column not found: '+self.key)
+        position=_live_offsets(schema).get(self.name)
+        if position is None:raise _STORAGE_ERROR('column not found: '+self.key)
         if type(position) is not int:fail()
         if not 0<=position<len(keys) or type(keys[position]) is not str or keys[position]!=self.name:fail()
         return position

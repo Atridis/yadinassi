@@ -21,15 +21,30 @@ def aggregate_shape(plan):
 
 def count_eligible(plan):
     from .relational_queries import _BoundAggregate
-    if not aggregate_shape(plan) or len(plan.projections)!=1:return False
-    expression=plan.projections[0]
-    return (type(expression) is _BoundAggregate and expression.function=='count'
-            and expression.field is None and expression.distinct is False)
+    if aggregate_shape(plan) and len(plan.projections) == 1:
+        expression = plan.projections[0]
+        if (type(expression) is _BoundAggregate and expression.function == 'count'
+                and expression.field is None and expression.distinct is False):
+            return True
+    if not plan.grouped:
+        return False
+    from .query_count import bind
+    return bind(plan)
 
 
 def try_count(plan,view,budget):
     """Return None for an unsupported physical shape; never hide a read error."""
-    if not count_eligible(plan):return None
+    if type(plan.query) is syntax.Select and plan.query.family == 'information_register':
+        from .register_queries import try_count_register
+        return try_count_register(plan,view,budget)
+    shape = count_eligible(plan)
+    if not shape:return None
+    if plan.query.family == 'document':
+        from .query_count import try_document
+        return try_document(plan, view, budget, shape)
+    if shape is not True:
+        from .query_count import owned_sqlite_query_view
+        if not owned_sqlite_query_view(view, plan.catalogs._context): return None
     aggregate=getattr(view,'aggregate_catalog',None)
     if aggregate is None:return None
     if plan.enum_scope is not None:
@@ -44,7 +59,9 @@ def try_count(plan,view,budget):
     if ((view.database_id,view.configuration_generation)!=(metadata._database_id,metadata._generation)
             or view.catalog_schema(manager._schema.identity)!=manager._schema):
         raise BackendError('schema_changed')
-    result=aggregate(manager._schema.identity,CatalogAggregateRequest())
+    request = (CatalogAggregateRequest() if shape is True else
+               CatalogAggregateRequest("count_query_keys_v1"))
+    result=aggregate(manager._schema.identity,request)
     if plan.enum_scope is not None: plan.enum_scope.require_current()
     elif plan.enum_binding is not None: plan.enum_binding._live()
     if result is None:return None
@@ -56,8 +73,15 @@ def try_count(plan,view,budget):
     budget[0]+=result.count
     if result.count>syntax.MAX_ROWS or budget[0]>_MAX_CELLS or budget[1]>_MAX_RESULT_TEXT:
         raise ValueError('Query input resource limit exceeded')
-    if _MAX_CELLS<1:raise ValueError('Query result resource limit exceeded')
-    rows=((Decimal(result.count),),) if plan.query.limit else ()
+    if shape is True:
+        if _MAX_CELLS<1:raise ValueError('Query result resource limit exceeded')
+        rows=((Decimal(result.count),),) if plan.query.limit else ()
+    else:
+        from .query_count import project
+        row = project(plan, result.count if shape.include else 0)
+        if len(row)>_MAX_CELLS or sum(len(value) for value in row if type(value) is str)>_MAX_RESULT_TEXT:
+            raise ValueError('Query result resource limit exceeded')
+        rows=(row,) if plan.query.limit else ()
     return BSLQueryResult(plan.columns,rows)
 
 
@@ -198,6 +222,27 @@ def _ordered_predicate(plan):
     # Do not invent a new unfiltered or empty route for constant-only WHERE.
     return normalized if truth is None else plan.predicate
 
+def _constant_case_arm(plan, expression):
+    """Choose a row-independent, non-numeric arm without changing its result type."""
+    from .query_count import constant_condition
+    while type(expression) is syntax.Expression and expression.operator == 'case':
+        # Numeric CASE applies its merged scale/range to the chosen value.
+        # Do not skip a range error on a row beyond the physical TOP page.
+        if plan.describe(expression).kind not in ('string', 'boolean', 'datetime', 'null'):
+            return None
+        branches, otherwise = expression.arguments
+        for condition, branch in branches:
+            proved, truth = constant_condition(plan, condition)
+            if not proved:
+                return None
+            if truth is True:
+                expression = branch
+                break
+        else:
+            expression = otherwise
+    return expression
+
+
 def bounded_projection(plan):
     """Prove and bind the final-page projection without changing descriptors."""
     from .relational_queries import _BoundField
@@ -206,6 +251,10 @@ def bounded_projection(plan):
     columns = []
     recipe = []
     for expression in plan.projections:
+        if type(expression) is syntax.Expression and expression.operator == 'case':
+            expression = _constant_case_arm(plan, expression)
+            if expression is None:
+                return None
         kind = type(expression)
         if kind is _BoundField:
             if expression.source != 0: return None

@@ -286,6 +286,79 @@ class LiveTablePrefixTests(unittest.TestCase):
                 self.assertEqual(vm.execute(source),expected)
                 self.assertIs(type(vm.variables['r']),Decimal)
 
+    def test_numeric_setup_bindings_select_the_same_real_fast_loop(self):
+        from unittest.mock import patch
+
+        loop=TABLE.split('For I=1',1)[1]
+        cases=(
+            ('Kind=New TypeDescription("Number"); T.Columns.Add("X",Kind);','',0),
+            ('C=T.Columns; C.Add("X",New TypeDescription("Number"));','',0),
+            ('If True Then T.Columns.Add("X",New TypeDescription("Number")); Else Raise "dead"; EndIf;','',0),
+            ('T.Columns.Add("X",New TypeDescription("Number"),"Header",10);','Header',10),
+            ('Kind=New TypeDescription("Number"); C=T.Columns; '
+             'If True Then C.Add("X",Kind,"Header",10); EndIf;','Header',10),
+            ('Kind=New TypeDescription("Number"); C=T.Columns; '
+             'C.Add("A",Kind); If False Then Raise "dead"; ElsIf True Then C.Add("X",Kind, ,10); EndIf;','',10),
+        )
+        for setup,title,width in cases:
+            with self.subTest(setup=setup):
+                source='T=New ValueTable; '+setup+' For I=1'+loop+'R'
+                vm=self.vm()
+                plan=vm.prepare(source)
+                generated=plan._plan.generated_source
+                fast=generated.split('if _fresh_closed_table',1)[1].split('        else:',1)[0]
+                self.assertIn('.set_member(',fast)
+                self.assertNotIn('resolve_set_member',fast)
+                namespace=plan._plan.function.__globals__
+                original=namespace['_fresh_closed_table']
+                seen=[]
+                def guard(context,table,configured):
+                    accepted=original(context,table,configured)
+                    seen.append((configured,table.count(),accepted))
+                    return accepted
+                with patch.dict(namespace,_fresh_closed_table=guard):
+                    self.assertEqual(vm.execute_prepared(plan),210)
+                self.assertEqual(seen,[(True,0,True)])
+                column=vm.variables['t'].columns.find('X')
+                self.assertEqual((column.title,column.width),(title,width))
+                self.assertEqual(vm.execute(source),210)
+
+    def test_dynamic_descriptor_and_escaped_alias_do_not_prove_a_loop(self):
+        from yadinassi.types.type_descriptions import BSLTypeDescription
+
+        loop=TABLE.split('For I=1',1)[1]
+        effects=[]
+        def observe(text):
+            effects.append((text,vm.variables['c'] is vm.variables['t'].columns))
+            vm.variables['kind']=BSLTypeDescription('Number')
+
+        vm=self.vm(output=observe)
+        vm.variables['kind']=BSLTypeDescription('Number')
+        for setup in ('C=T.Columns; C.Add("X",Kind);',
+                      'Kind=New TypeDescription("Number"); C=T.Columns; Message("before"); C.Add("X",Kind);'):
+            with self.subTest(setup=setup):
+                source='T=New ValueTable; '+setup+' For I=1'+loop+'R'
+                plan=vm.prepare(source)
+                self.assertNotIn('_fresh_closed_table',plan._plan.generated_source)
+                self.assertEqual(vm.execute_prepared(plan),210)
+        self.assertEqual(effects,[('before',True)])
+
+    def test_setup_error_is_not_reordered_below_admission(self):
+        from unittest.mock import patch
+
+        source=TABLE.replace('T.Columns.Add("X");','''
+            Kind=New TypeDescription("Number"); C=T.Columns;
+            If True Then C.Add("X",Kind,"Header",1/0); EndIf;
+        ''')+'R'
+        vm=self.vm()
+        plan=vm.prepare(source)
+        namespace=plan._plan.function.__globals__
+        self.assertIn('_fresh_closed_table',plan._plan.generated_source)
+        with patch.dict(namespace,_fresh_closed_table=lambda *a:self.fail('guard ran before setup')):
+            with self.assertRaises(BSLError):
+                vm.execute_prepared(plan)
+        self.assertEqual((vm.variables['t'].count(),vm.variables['c'].count()),(0,0))
+
     def test_typed_schema_publication_and_reload_precede_fast_loop(self):
         seen=[]
         vm=self.vm()

@@ -231,7 +231,21 @@ def analyze(program, *, database, local_slots=None):
                     if result is not None:facts[name]=result
                     else:facts.clear()
                 elif kind is ast.ExpressionStatement:
-                    expression(node.expression,facts)
+                    call=node.expression
+                    # Keep only Query receiver hints through a parameter write.
+                    # The setter still uses ordinary dispatch (including bind
+                    # before arguments), and Execute re-admits its live receiver
+                    # before it can arm a detached-result origin.
+                    if (database and type(call) is ast.Call and type(call.callee) is ast.Attribute
+                            and call.callee.name.casefold() in ('setparameter','установитьпараметр')
+                            and len(call.arguments)==2
+                            and expression(call.callee.object,facts)[0]=='query'):
+                        if all(expression(arg,facts)[0]=='scalar' for arg in call.arguments):
+                            facts={name: kind for name,kind in facts.items() if kind=='query'}
+                        elif lexical:raise _OpaqueLocal
+                        else:facts.clear()
+                    else:
+                        expression(call,facts)
                 elif kind is ast.Var and lexical and all(name.casefold() in local_slots for name in node.names):
                     for name in node.names:facts.setdefault(name.casefold(),'scalar')
                 elif kind is ast.Return:

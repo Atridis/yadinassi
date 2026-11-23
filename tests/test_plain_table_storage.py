@@ -222,7 +222,7 @@ class PlainTableStorageTests(unittest.TestCase):
             def __hash__(self):return hash('amount')
             def __eq__(self,other):effects.append('eq');raise AssertionError
         table=self.storage();row=table.add()
-        table.schema._offsets.clear();table.schema._offsets[Key()]=1
+        table.schema._offsets={Key():1}
         for action in (table.validate,):
             with self.assertRaises(StorageError):action()
         self.assertEqual(effects,[])
@@ -230,8 +230,21 @@ class PlainTableStorageTests(unittest.TestCase):
     def test_foreign_row_and_corrupted_offsets_rejected(self):
         table=self.storage();other=self.storage();row=other.add();table.rows.append(row)
         with self.assertRaises(StorageError):table.validate()
-        table.rows.clear();table.schema._offsets['name']=True
+        table.rows.clear()
+        with self.assertRaises(TypeError):table.schema._offsets['name']=True
+        table.schema._offsets={'name':True}
         with self.assertRaises(StorageError):table.validate()
+
+    def test_delete_column_does_not_publish_noncanonical_schema(self):
+        for broken in (0, 1):
+            with self.subTest(broken=broken):
+                table=self.storage(); row=table.add(); schema=table.schema
+                schema._names[broken]=None
+                layout=schema._offsets; version=schema.version; epoch=table.epoch
+                with self.assertRaises(StorageError):table.delete_column('Name')
+                self.assertIs(schema._offsets,layout)
+                self.assertEqual((schema.version,table.epoch),(version,epoch))
+                self.assertEqual(len(row),2)
 
     def test_row_initial_data_requires_exact_shape(self):
         table=self.storage()

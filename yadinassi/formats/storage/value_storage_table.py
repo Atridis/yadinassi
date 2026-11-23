@@ -7,7 +7,7 @@ Owner graphs are rebuilt; cached index buckets and host objects are never copied
 from decimal import Decimal
 
 from yadinassi.temporal.dates import BSLDate
-from yadinassi.collections.plain_table_storage import Schema, TableStorage
+from yadinassi.collections.plain_table_storage import Schema, TableStorage, StorageError, _owned_offsets
 from yadinassi.collections.plain_table_search import SearchIndexes
 from yadinassi.collections.plain_value_table_runtime import public_cell
 from yadinassi.collections.structures import _key
@@ -322,11 +322,13 @@ def take_table(table, *, encode, charge_text, reserve, charge_default_text=None)
         if (len(col_items) > MAX_COLUMNS or len(rows) > MAX_ROWS
                 or len(col_items) * len(rows) > MAX_CELLS or (not col_items and rows)):
             raise TableSnapshotError('invalid or oversized table shape')
-        names, keys, offsets, metadata, defaults = (
+        names, keys, metadata, defaults = (
             _field(schema_storage, name) for name in
-            ('_names','_keys','_offsets','_metadata','_defaults'))
+            ('_names','_keys','_metadata','_defaults'))
+        try:offsets = _owned_offsets(schema_storage)[2]
+        except StorageError as error:raise TableSnapshotError('invalid direct table schema') from error
         if (type(names) is not list or type(keys) is not list
-                or type(offsets) is not dict or type(metadata) is not list
+                or type(metadata) is not list
                 or type(defaults) is not list
                 or not len(names)==len(keys)==len(offsets)==len(metadata)==len(defaults)==len(col_items)):
             raise TableSnapshotError('invalid direct table schema')

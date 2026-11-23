@@ -25,7 +25,7 @@ from yadinassi.types.type_qualifiers import (BSLAllowedLength, BSLAllowedSign, B
                               BSLDateFractions, BSLDateQualifiers, BSLNumberQualifiers,
                               BSLStringQualifiers, _MAX_LENGTH_UNITS, _MAX_NUMBER_DIGITS)
 from yadinassi.types.values import BSLType
-from .plain_table_storage import Schema, TableStorage
+from .plain_table_storage import Schema, TableStorage, StorageError, _owned_offsets
 from .value_tables import (BSLValueTable,
                            BSLValueTableColumn, BSLValueTableColumnCollection, BSLValueTableRow)
 from .value_trees import (BSLValueTree, BSLValueTreeColumn, BSLValueTreeColumnCollection,
@@ -264,7 +264,8 @@ def _row_endpoint(row, budget, target, readable_rows=False):
         if _get(row, '_owner') is not owner or _get(row, 'schema') is not schema:
             _invalid('неверная схема или владелец строки')
         keys = _sequence(schema._keys, list)
-        offsets = _sequence(schema._offsets, dict)
+        try:offsets = _owned_offsets(schema)[2]
+        except StorageError:_invalid("неверная схема строки")
         metadata = _sequence(schema._metadata, list)
         if not len(keys)==len(offsets)==len(metadata)==len(items)==list.__len__(row):
             _invalid('состав ячеек не соответствует колонкам')

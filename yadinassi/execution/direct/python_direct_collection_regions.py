@@ -240,6 +240,8 @@ def _admitted(context, state, specification, writes):
 
 def helpers():
     from yadinassi.collections import value_tables as t, value_lists as v
+    from yadinassi.collections import plain_table_storage as storage
+    _owned_offsets=dict(storage._DIRECT_BINDINGS)['_owned_offsets']
     # Pinned exact builtin weak-reference construction cannot execute a host
     # replacement of weakref.ref. All public rows/items remain canonical.
     ref=v._DIRECT_REGION_WEAKREF
@@ -256,12 +258,13 @@ def helpers():
         position=index.to_integral_value(rounding='ROUND_DOWN')
         if not 0<=position<len(value.rows):raise IndexError('table index out of range')
         return value.rows[int(position)]
-    def row_get(row,name):return list.__getitem__(row,row.schema._offsets[name.casefold()])
+    def row_get(row,name):return list.__getitem__(row,_owned_offsets(row.schema)[2][name.casefold()])
     def row_set(row,name,value):
         key=name.casefold()
-        if key not in row.schema._offsets:raise ValueError('column not found: '+name)
+        position=_owned_offsets(row.schema)[2].get(key)
+        if position is None:raise ValueError('column not found: '+name)
         row.table._storage.epoch += 1
-        list.__setitem__(row,row.schema._offsets[key],value)
+        list.__setitem__(row,position,value)
     def list_add(value,number):
         if value._next_id+1>list_limits['_MAX_ID']:raise ValueError('СписокЗначений: превышен предел идентификаторов Yadinassi')
         if type(number) is Decimal:

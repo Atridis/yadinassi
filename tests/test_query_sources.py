@@ -344,6 +344,13 @@ Message(A[2].IsEmpty());M.Close();''')
             with self.assertRaises((TypeError, ValueError)):
                 self.rows('SELECT N FROM &T', [('T', source)])
 
+    def test_external_requires_canonical_layout_before_reading_shape(self):
+        source = table([('N', number())], [(Decimal(1),)])
+        schema = source._storage.schema
+        schema._offsets = {'n': 0}
+        with self.assertRaisesRegex(TypeError, 'Malformed external query table schema'):
+            self.rows('SELECT N FROM &T', [('T', source)])
+
     def test_external_checks_utf16_fixed_and_date_fraction_limits(self):
         cases = [(string(1), '😀'), (string(4,True),'x'), (string(4),'\ud800'),
                  (BSLTypeDescription('Date',None,None,BSLDateQualifiers(BSLDateFractions.DATE)), BSLDate(1))]

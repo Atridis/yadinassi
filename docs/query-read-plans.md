@@ -36,6 +36,32 @@ and TOP cannot evade the input budget. Other backends retain the complete-card
 fallback and its full validation. This is a local host contract, not additional
 native parity evidence.
 
+## Structural counts on the owned SQLite query port
+
+The flat catalog `COUNT(*)` data path does not materialize or validate
+unprojected payloads. This includes a non-distinct `COUNT(Ref)` of the
+non-null physical row identity, row-independent WHERE conditions, inert
+constant companion projections, closed Decimal arithmetic around COUNT, and
+ORDER BY an already-evaluated projected expression. A known false or unknown
+WHERE selects no input while the same native count still charges the existing
+input-row/cell budget. An admitted one-row aggregate result keeps its original
+bound column descriptors. The bare count keeps its structural SQLite count;
+normalized forms prove canonical, nonzero physical UUID keys in the same SQL
+statement. Unusual physical spellings fall back to the existing UUID decoder
+and logical duplicate check, so a valid alias is not rejected or a bad key
+counted. This does not check unrelated payload corruption. Richer predicates, nullable fields, DISTINCT counts,
+and sources with different integrity/budget contracts remain residual. Explicit
+writers and raw storage readers retain their existing validation paths.
+
+On owned SQLite document reads, the same closed COUNT expressions can also
+count a header source or a document tabular part in one statement. This path
+proves the whole document source, including hidden fields and sibling parts,
+and charges its original cell, text, row and physical byte budgets. The
+witness covers canonical keys, typed scalar fields, stored posting status,
+applicable catalog-reference presence and part line order. Unproved data
+(including non-ASCII text) falls back to the original reader rather than
+changing what it accepts or which error it reports.
+
 ## Paging and explicit indexes
 
 SQL catalog continuations carry the last lexicographic sort key rather than an

@@ -81,16 +81,19 @@ def number_storage(field):
 
 def number_definition(quoted_name, field):
     """Declaration suffix for a provider-owned, already quoted column name."""
+    return f"{number_storage(field)} NOT NULL CHECK({number_check(quoted_name,field)})"
+
+
+def number_check(column, field):
+    """Validate the exact persisted coefficient, including externally damaged rows."""
     precision,_,sign = _number_domain(field)
     high = 10**precision-1
     low = 0 if sign == 'Nonnegative' else -high
     if precision <= 18:
-        return (f"INTEGER NOT NULL CHECK(typeof({quoted_name})='integer' AND "
-                f"{quoted_name} BETWEEN {low} AND {high})")
+        return (f"typeof({column})='integer' AND {column} BETWEEN {low} AND {high}")
     lo = (low+_WIDE_BIAS).to_bytes(16,'big').hex()
     hi = (high+_WIDE_BIAS).to_bytes(16,'big').hex()
-    return (f"BLOB NOT NULL CHECK(typeof({quoted_name})='blob' AND length({quoted_name})=16 AND "
-            f"{quoted_name} BETWEEN x'{lo}' AND x'{hi}')")
+    return (f"typeof({column})='blob' AND length({column})=16 AND {column} BETWEEN x'{lo}' AND x'{hi}'")
 
 
 def encode_number(value, field):

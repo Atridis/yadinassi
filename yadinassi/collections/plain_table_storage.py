@@ -7,6 +7,7 @@ bless arbitrary host-mutated list subclasses. Defaults/metadata/payloads are
 opaque references. There is no qualifier coercion, codec or index engine here.
 """
 from decimal import Decimal
+from weakref import ref
 
 from yadinassi.temporal.dates import BSLDate, _sort_date_ticks
 from yadinassi.text.sort_keys import text_sort_key
@@ -29,14 +30,41 @@ def key(name):
     return name.casefold()
 
 
+# A schema publishes an identity-only handle. The sole live lookup dictionary
+# is private to structural operations, not reachable through the handle.
+_offset_layouts = {}
+_offset_layout = _offset_layouts.get
+
+
+def _prepare_offsets(schema, offsets):
+    ident = id(schema)
+    def discard(dead):
+        current = _offset_layout(ident)
+        if current is not None and current[0] is dead:
+            del _offset_layouts[ident]
+    return ref(schema, discard), object(), offsets
+
+
+def _publish_offsets(schema, entry):
+    _offset_layouts[id(schema)] = entry
+    schema._offsets = entry[1]
+
+
+def _owned_offsets(schema):
+    entry = _offset_layout(id(schema))
+    if entry is None or entry[0]() is not schema or entry[1] is not schema._offsets:
+        raise StorageError('noncanonical schema lookup')
+    return entry
+
+
 class Schema:
     """Ordered schema and a reusable default row; no per-row schema objects."""
-    __slots__ = ('_names', '_keys', '_offsets', '_metadata', '_defaults', 'version', 'data_epoch', '_index_search')
+    __slots__ = ('_names', '_keys', '_offsets', '_metadata', '_defaults', 'version', 'data_epoch', '_index_search', '__weakref__')
 
     def __init__(self):
         self._names = []
         self._keys = []
-        self._offsets = {}
+        _publish_offsets(self, _prepare_offsets(self, {}))
         self._metadata = []
         self._defaults = []
         self.version = 0
@@ -58,44 +86,49 @@ class Schema:
 
     def resolve(self, name):
         normalized = key(name)
-        if type(self._offsets) is not dict or any(type(k) is not str for k in self._offsets):
-            raise StorageError('noncanonical schema lookup')
-        if normalized not in self._offsets:
+        if normalized not in _owned_offsets(self)[2]:
             raise StorageError('column not found: ' + name)
         return normalized
 
     def offset(self, name):
-        result=self._offsets[self.resolve(name)]
+        result=_owned_offsets(self)[2].get(key(name))
+        if result is None:raise StorageError('column not found: ' + name)
         if type(result) is not int or type(self._keys) is not list or not 0<=result<len(self._keys):
             raise StorageError('noncanonical schema offset')
         return result
 
     def validate(self):
         if (type(self._names) is not list or type(self._keys) is not list
-                or type(self._metadata) is not list or type(self._offsets) is not dict
+                or type(self._metadata) is not list
                 or type(self._defaults) is not list or type(self.version) is not int):
             raise StorageError('noncanonical schema storage')
-        if (any(type(k) is not str for k in self._offsets)
-                or any(type(n) is not str for n in self._names)
+        offsets = _owned_offsets(self)[2]
+        if (any(type(n) is not str for n in self._names)
                 or any(type(k) is not str for k in self._keys)):
             raise StorageError('noncanonical schema keys')
         keys = [n.casefold() for n in self._names]
         if (keys != self._keys or len(set(keys)) != len(keys)
                 or len(self._metadata) != len(keys)
                 or len(self._defaults) != len(keys)
-                or len(self._offsets) != len(keys)):
+                or len(offsets) != len(keys)):
             raise StorageError('inconsistent schema')
         for index, name in enumerate(keys):
-            value = self._offsets.get(name)
+            value = offsets.get(name)
             if type(value) is not int or value != index:
                 raise StorageError('inconsistent column offset')
 
     def _publish(self, names, metadata, defaults):
-        # Inputs are prepared internally before touching this schema.
+        # Do not promote raw mutable column names into an owned lookup.
+        if type(names) is not list or any(type(name) is not str for name in names):
+            raise StorageError('noncanonical schema names')
         keys = [n.casefold() for n in names]
         offsets = {name: i for i, name in enumerate(keys)}
+        if len(offsets) != len(keys):
+            raise StorageError('inconsistent schema')
+        layout = _prepare_offsets(self, offsets)
         self._names, self._keys = names, keys
-        self._metadata, self._defaults, self._offsets = metadata, defaults, offsets
+        self._metadata, self._defaults = metadata, defaults
+        _publish_offsets(self, layout)
         self.version += 1
 
 
@@ -285,21 +318,22 @@ class TableStorage:
         # scanning payload cells or reconstructing the existing schema.
         if type(schema) is not Schema or type(self.rows) is not list:
             raise StorageError('noncanonical structural storage')
-        if (type(schema._offsets) is not dict or type(schema._names) is not list
+        if (type(schema._names) is not list
                 or type(schema._keys) is not list or type(schema._metadata) is not list
                 or type(schema._defaults) is not list or type(schema.version) is not int):
             raise StorageError('noncanonical schema storage')
-        if any(type(k) is not str for k in schema._offsets) or any(type(k) is not str for k in schema._names) or any(type(k) is not str for k in schema._keys):
+        offsets = _owned_offsets(schema)[2]
+        if any(type(k) is not str for k in schema._names) or any(type(k) is not str for k in schema._keys):
             raise StorageError('noncanonical schema keys')
-        if any(type(i) is not int or not 0<=i<len(schema._names) for i in schema._offsets.values()):
+        if any(type(i) is not int or not 0<=i<len(schema._names) for i in offsets.values()):
             raise StorageError('noncanonical schema offsets')
         width=len(schema._names)
-        if not (len(schema._keys)==len(schema._metadata)==len(schema._defaults)==len(schema._offsets)==width):
+        if not (len(schema._keys)==len(schema._metadata)==len(schema._defaults)==len(offsets)==width):
             raise StorageError('inconsistent schema width')
         for row in self.rows:
             if type(row) is not self.row_factory or row._owner is not self.owner or row.schema is not schema or row._deleted is not False or list.__len__(row)!=width:
                 raise StorageError('foreign or malformed row storage')
-        if normalized in schema._offsets:
+        if normalized in offsets:
             raise StorageError('duplicate column: ' + name)
         position = len(schema._names)
         self.epoch += 1
@@ -307,7 +341,7 @@ class TableStorage:
         schema._keys.append(normalized)
         schema._metadata.append(metadata)
         schema._defaults.append(default)
-        schema._offsets[normalized] = position
+        offsets[normalized] = position
         for row in self.rows:
             list.append(row, default)
         schema.version += 1
@@ -320,7 +354,7 @@ class TableStorage:
         schema = self.schema
         if not 0 <= position <= len(schema._names):
             raise IndexError('column index out of range')
-        if key(name) in schema._offsets:
+        if key(name) in _owned_offsets(schema)[2]:
             raise StorageError('duplicate column: ' + name)
         names, descriptors, defaults = schema._names[:], schema._metadata[:], schema._defaults[:]
         names.insert(position, name)
@@ -355,20 +389,23 @@ class TableStorage:
         schema = self.schema
         old = schema.resolve(old_name)
         new = key(new_name)
-        if new != old and new in schema._offsets:
+        offsets = _owned_offsets(schema)[2]
+        if new != old and new in offsets:
             raise StorageError('duplicate column: ' + new_name)
-        position = schema._offsets[old]
+        position = offsets[old]
         # Rows are positional and need no mutation or payload copying.
         self.epoch += 1
-        schema._offsets[new] = position
+        offsets[new] = position
         if new != old:
-            del schema._offsets[old]
+            del offsets[old]
         schema._names[position] = new_name
         schema._keys[position] = new
         schema.version += 1
 
     def delete_column(self, name):
         schema = self.schema
+        if type(schema) is not Schema:raise StorageError('noncanonical schema storage')
+        schema.validate()
         position = schema.offset(name)
         names = schema._names[:position] + schema._names[position + 1:]
         metadata = schema._metadata[:position] + schema._metadata[position + 1:]
@@ -376,8 +413,8 @@ class TableStorage:
         # Keep all removed references alive until schema and rows agree.
         previous = (schema._metadata, schema._defaults,
                     [list.__getitem__(row, position) for row in self.rows])
-        self.epoch += 1
         schema._publish(names, metadata, defaults)
+        self.epoch += 1
         for row in self.rows:
             list.__delitem__(row, position)
         if not names:
