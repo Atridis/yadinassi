@@ -4,6 +4,18 @@ from decimal import Decimal as D
 from yadinassi import Interpreter
 
 
+def native_field_reads(source, key):
+    return sum(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == '_native_dict_get'
+        and len(node.args) >= 2
+        and isinstance(node.args[1], ast.Constant)
+        and node.args[1].value == key
+        for node in ast.walk(ast.parse(source))
+    )
+
+
 class LocalFieldsTests(unittest.TestCase):
     def test_local_value_function_has_no_operator_dispatch_or_per_iteration_check(self):
         vm = Interpreter()
@@ -39,7 +51,9 @@ class LocalFieldsTests(unittest.TestCase):
         generated = plan._plan.generated_source
         self.assertIn(' in range(0, 64):', generated)
         self.assertIn('_structure_set_known(', generated)
-        self.assertIn('_structure_get_known(', generated)
+        self.assertEqual(native_field_reads(generated, 'value'), 1)
+        self.assertNotIn('_structure_get_known', generated)
+        self.assertNotIn('_context.get_member', generated)
         self.assertNotIn('resolve_set_member', generated)
         self.assertNotIn('_dynamic_depth', generated)
         self.assertEqual(vm.execute_prepared(plan), D(2016))
@@ -57,7 +71,9 @@ class LocalFieldsTests(unittest.TestCase):
         self.assertNotIn('resolve_set_member',source)
         self.assertNotIn("_context.get_member",source)
         self.assertIn('_structure_set_known',source)
-        self.assertIn('_structure_get_known',source)
+        self.assertEqual(native_field_reads(source, 'amount'), 2)
+        self.assertEqual(native_field_reads(source, 'title'), 1)
+        self.assertNotIn('_structure_get_known', source)
         loop=next(n for n in ast.walk(ast.parse(source)) if isinstance(n,(ast.For,ast.While)))
         self.assertNotIn('_publish_module',ast.unparse(loop))
         self.assertNotIn('_reload_module',ast.unparse(loop))
@@ -77,7 +93,8 @@ class LocalFieldsTests(unittest.TestCase):
         self.assertEqual(vm.variables['before'],D(2))
         self.assertEqual(vm.variables['after'],'changed2');self.assertEqual(vm.variables['r'],D(8))
         self.assertIn("_context.get_member",source)
-        self.assertGreaterEqual(source.count('_structure_get_known'),3)
+        self.assertEqual(native_field_reads(source, 'n'), 3)
+        self.assertNotIn('_structure_get_known', source)
 
     def test_loop_alias_changes_do_not_leave_false_numeric_facts(self):
         vm,plan,_=self.prepare('S=New Structure("N",1);T=New Structure("N",1);For I=1 To 2 Do S=T;EndDo;T.N="x";R=S.N;')

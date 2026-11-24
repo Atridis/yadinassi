@@ -6,7 +6,11 @@ from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 class PlainArrayTests(unittest.TestCase):
     def test_native_list_storage_and_explicit_index_tradeoff(self):
         a=PlainArray([D(10),D(20)])
-        self.assertIsInstance(a,list);self.assertEqual(a.get(D(-1)),D(20));self.assertEqual(a.get(D('0.9')),D(10))
+        self.assertIsInstance(a,list)
+        # Native Array.Get(-1) rejects rather than using Python negative indexing
+        # (1C run 45423566791, array.get.minus-one).
+        with self.assertRaises(IndexError):a.get(D(-1))
+        self.assertEqual(a.get(D('0.9')),D(10))
     def test_foreign_index_hooks_never_run(self):
         seen=[]
         class Index:
@@ -67,7 +71,7 @@ class PlainArrayTests(unittest.TestCase):
         self.assertEqual(vm.variables['r'],D(6));self.assertEqual(vm.variables['i'],D(6))
     def test_range_break_continue_and_final_counter(self):
         vm=Interpreter();self.addCleanup(vm.close)
-        vm.execute('A=New Array;For I=0 To 4 Do If I=2 Then Continue;EndIf;A.Add(I);EndDo;R=A[-1];')
+        vm.execute('A=New Array;For I=0 To 4 Do If I=2 Then Continue;EndIf;A.Add(I);EndDo;R=A[3];')
         self.assertEqual(vm.variables['r'],D(4));self.assertEqual(vm.variables['i'],D(5));self.assertIs(type(vm.variables['a']),PlainArray)
         vm.execute('A=New Array;For I=0 To 4 Do If I=2 Then Break;EndIf;A.Add(I);EndDo;R=A[0];')
         self.assertEqual(vm.variables['i'],D(2))

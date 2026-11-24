@@ -42,6 +42,26 @@ class SourceLoopChecksTests(unittest.TestCase):
                 self.assertEqual(self.profile(owner, text, SourceBoundary.checkpoint), 129 if enabled else 0)
                 self.assertEqual(owner.variables['total'], 8256)
 
+    def test_for_each_keeps_only_profile_checkpoints_and_can_stop_before_advance(self):
+        text = ('A=New Array; A.Add(1); A.Add(2); A.Add(3); Total=0; '
+                'For Each X In A Do Total=Total+X; EndDo;')
+        for enabled in (False, True):
+            with self.subTest(extensions=enabled):
+                owner = self.owner(extensions=enabled)
+                self.assertEqual(self.profile(owner, text, SourceBoundary.checkpoint), 4 if enabled else 0)
+                self.assertEqual(owner.variables['total'], 6)
+
+        owner = self.owner(extensions=True)
+        original = SourceBoundary.checkpoint
+        def checkpoint(context):
+            context.loop_budget = 2
+            return original(context)
+
+        with patch.object(SourceBoundary, 'checkpoint', checkpoint):
+            with self.assertRaises(BoundaryViolation):
+                owner.execute(text)
+        self.assertEqual((owner.variables['total'], owner.variables['x']), (3, 2))
+
     def test_native_array_reads_and_append_do_not_use_host_audits(self):
         owner = self.owner()
         self.assertEqual(self.profile(owner, 'A=New Array; Total=0; '

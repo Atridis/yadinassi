@@ -53,11 +53,34 @@ class DirectHostValuesTests(unittest.TestCase):
             vm.execute('New FixedArray(Foreign)')
 
     def test_host_array_indexes_keep_canonical_bounds_and_type_checks(self):
-        vm=Interpreter();vm.execute('A=StrSplit("a,b",",");')
-        for index in ('-1','0.5','True','2'):
-            for expression in (f'A[{index}]',f'A.Get({index})',f'A.Получить({index})',f'A[{index}]="bad";'):
-                with self.subTest(expression=expression),self.assertRaises(BSLRuntimeError):vm.execute(expression)
-        self.assertEqual(vm.variables['a'].items,['a','b'])
+        # Real 1C StrSplit-produced arrays have the same access rules as
+        # New Array (native run 45467963783, 8.3.27.1508).
+        vm=Interpreter()
+        self.addCleanup(vm.close)
+        letters=('a','b')
+        reset=vm.prepare('A=StrSplit("a,b",",");')
+        cases=(('-1',None,None),('-0.5',None,0),('0.5',0,0),
+               ('1.9',1,1),('True',None,1),('2',None,None))
+        for index,bracket,method in cases:
+            operations=((f'A[{index}]',bracket,False),
+                        (f'A.Get({index})',method,False),
+                        (f'A.Получить({index})',method,False),
+                        (f'A[{index}]="written";',bracket,True),
+                        (f'A.Set({index},"written");',method,True),
+                        (f'A.Установить({index},"written");',method,True))
+            for expression,position,write in operations:
+                with self.subTest(expression=expression):
+                    vm.execute_prepared(reset)
+                    expected=list(letters)
+                    if position is None:
+                        with self.assertRaises(BSLRuntimeError):
+                            vm.execute(expression)
+                    elif write:
+                        vm.execute(expression)
+                        expected[position]='written'
+                    else:
+                        self.assertEqual(vm.execute(expression),letters[position])
+                    self.assertEqual(vm.variables['a'].items,expected)
 
     def test_get_aliases_preserve_nested_identity_and_live_mutations(self):
         nested=BSLArray();nested.add(Decimal(3))

@@ -25,6 +25,7 @@ from .experimental_naked_collections import Program, _host_name_reference, _host
 from .experimental_naked_boundaries import BoundaryContext, _MISSING
 from .experimental_naked_live_state import UNSET,missing,readonly,host_reference,source_reference,_SlotReference,_ForwardReference
 from . import experimental_naked_scalar_semantics as scalar
+from .python_scalar_emission import ScalarEmitter
 from .experimental_naked_errors import handled_error,reraise_handled
 from yadinassi.execution.direct.python_direct_error_info import raise_error, raise_arity_error
 from yadinassi.execution.direct.python_direct_dynamic_new import construct as dynamic_construct
@@ -48,6 +49,15 @@ def _native_method_missing(receiver,name):
     if kind is PlainMap or kind is _TypedMap or kind is _NakedMap:
         raise ValueError('Метод соответствия не найден: '+name)
     raise ValueError('Метод структуры не найден: '+name)
+
+
+class _MissingStructureField:
+    __slots__=('name',)
+
+    def __init__(self,name):self.name=name
+
+    def __getitem__(self,index):
+        raise ValueError('Свойство структуры не найдено: '+self.name)
 
 
 def _checked_live_counter(value):
@@ -168,9 +178,36 @@ def _array_method_get(receiver,index):
     return receiver[array_offset(receiver,index,method=True)]
 
 
+class _BoundBracketRead:
+    """Bridge an already-admitted bound operation, not a collection."""
+    __slots__ = ('read',)
+
+    def __init__(self,read):
+        self.read=read
+
+    def __getitem__(self,key):
+        return self.read(key)
+
+
+def _ordinary_bracket_reader(context,value,kind):
+    # Raw dictionaries have a BSL Undefined-on-missing contract; managed
+    # receivers still resolve and bind before the index expression runs.
+    if kind in _BRACKET_MAP_ADAPTER_IDS:read=value.get
+    elif kind==_BRACKET_LIST_ADAPTER_ID:read=value.get_index
+    else:read=context.resolve_member(value,'__getitem__')
+    return read
+
+
 def _checked_literal_array_index(receiver,index):
     if index>=len(receiver):raise IndexError(f'Индекс массива вне границ: {index}')
     return index
+
+
+_ORDINARY_ARRAY_IDS=frozenset(map(id,(list,_PlainArray)))
+_BRACKET_MAP_ADAPTER_IDS=frozenset(map(id,(dict,_TypedMap,_NakedMap)))
+_BRACKET_LIST_ADAPTER_ID=id(PlainValueList)
+_ORDINARY_BRACKET_READ_IDS=_ORDINARY_ARRAY_IDS|frozenset(map(id,(PlainMap,_DirectStructure)))
+_ORDINARY_BRACKET_WRITE_IDS=_ORDINARY_BRACKET_READ_IDS|_BRACKET_MAP_ADAPTER_IDS
 
 
 def _array_member(receiver,name):
@@ -178,6 +215,41 @@ def _array_member(receiver,name):
     return register(array_method_value(receiver,name,
         insert=_array_insert_shape,find=scalar.typed_find,
         delete=lambda obj,key:obj.__delitem__(_checked_array_index(obj,key))))
+
+
+def _map_iteration(entries):
+    # BSL yields entry objects, not dict keys. Its reached mutation error must
+    # also be catchable by BSL Try; don't catch exceptions from the loop body.
+    try:
+        yield from entries
+    except RuntimeError:
+        raise ValueError('Изменение состава соответствия во время обхода пока не поддерживается') from None
+
+
+def _for_each_iterable(context,receiver,plain_value_list=True,translate_map_error=True):
+    kind=type(receiver)
+    if kind is list or kind is _PlainArray:return iter(receiver)
+    if plain_value_list and kind is PlainValueList:return list.__iter__(receiver)
+    mapping=kind is dict or kind is PlainMap or kind is _TypedMap or kind is _NakedMap
+    if mapping or kind is _DirectStructure:
+        entries=(_MapEntry(key=key,value=value) for key,value in receiver.items())
+        return _map_iteration(entries) if mapping and translate_map_error else entries
+    # Custom iteration still uses the same admitted boundary, once per loop.
+    return context.resolve_member(receiver,'__iter__')()
+
+
+def _metered_for_each(context, iterable):
+    # Match the checked lane: authorize the attempt before advancing,
+    # including the final attempt that discovers exhaustion.
+    iterator=iter(iterable)
+    def checked():
+        while True:
+            context.checkpoint()
+            try:
+                yield next(iterator)
+            except StopIteration:
+                return
+    return checked()
 
 
 def _identity_reference(value):return value
@@ -265,7 +337,7 @@ _REQUEST_BODY_METHODS = frozenset((
 ))
 
 
-class Emitter:
+class Emitter(ScalarEmitter):
     missing_database_roots=()
     missing_metadata_roots=()
     def __init__(self,filename):
@@ -277,7 +349,7 @@ class Emitter:
         self.known_calls={};self.known_origins=();self.known_selection_reads=set();self.known_selection_adds=set()
         self.local_field_facts={};self.integer_lane=False;self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.scalar_prefix_reads=frozenset();self.module_boundaries=0;self.range_indices={};self.external_actuals=0;self.hoisted_module_var_ids=frozenset()
         self.handler_depth=0;self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.current_module=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
-        self.standalone_script=False;self.row_cell_references=False;self.array_cell_references=False;self.link_imports=False;self.import_links=[]
+        self.ordinary_native_collections=False;self.standalone_script=False;self.row_cell_references=False;self.array_cell_references=False;self.link_imports=False;self.import_links=[]
         self.import_names=frozenset();self.require_last_expression=None;self.region_active=False;self.region_ops={};self.region_states={};self.routines={};self.routine_symbols={};self.numeric_routine_symbols={};self.address_routine_symbols={};self.module_globals=set();self.scope=None;self.source_refs={};self.loop_increments=[];self.required=set();self.pure_builtins={};self.visits=0;self.python_nodes=0
     def node(self,kind,token,**fields):
         if kind is py.FunctionDef and 'type_params' in kind._fields:fields.setdefault('type_params',[])
@@ -305,10 +377,6 @@ class Emitter:
     def region_selected(self,selected,operation,receiver,token,extra=()):
         helper=self.call('_partial',[self.region_helper(operation,token),self.name('_context',token),self.name(receiver,token),*extra],token)
         return self.node(py.IfExp,token,test=self.name('_collection_fast',token),body=helper,orelse=selected)
-    def literal(self,value,token):
-        if self.integer_lane and type(value) is Decimal and value.is_finite() and value.as_tuple().exponent == 0 and not (value.is_zero() and value.is_signed()):return self.const(int(value),token)
-        index=len(self.constants);self.constants.append(value)
-        return self.node(py.Subscript,token,value=self.name('_constants',token),slice=self.const(index,token),ctx=py.Load())
     def initialize_local(self,key):
         if key not in self.scope['initialized']:
             self.scope['initialized'].add(key)
@@ -582,19 +650,45 @@ class Emitter:
         if type(leaf) is bsl.Name:
             counter = self.range_indices.get(leaf.name.casefold())
             if counter is not None and counter[1]:
-                return self.name(counter[0],node.token)
+                return self.name(counter[0],node.token),False
         if type(leaf) is bsl.Literal:
             value=leaf.value
             if (type(value) is Decimal and value.is_finite() and value.as_tuple().exponent==0
                     and 0<=value<=2**63-1):
-                return self.const(int(value),node.token)
+                return self.const(int(value),node.token),False
         # A raw count used only as an index cannot escape into collection data.
         if type(leaf) is bsl.Call and type(leaf.callee) is bsl.Attribute and not leaf.arguments:
             owner=self.static_module_kinds.get(id(leaf.callee.object))
             method=leaf.callee.name.casefold()
-            if owner=='array' and method in ('count','количество'):
-                return self.call('len',[self.expr(leaf.callee.object)],node.token)
-        return None
+            if owner=='array' and method in ('count','количество','ubound','вграница'):
+                count=self.call('len',[self.expr(leaf.callee.object)],node.token)
+                if method in ('count','количество'):return count,False
+                # len-1 can be negative. Python would silently index from the
+                # end of a different, nonempty receiver instead of rejecting.
+                return self.node(py.BinOp,node.token,left=count,op=py.Sub(),
+                                 right=self.const(1,node.token)),True
+        return None,False
+
+    def guarded_array_offset(self,receiver,index,t,*,bind=None):
+        size=self.invoke(self.attribute(self.name('list',t),'__len__',t),
+                         [self.name(receiver,t)],t)
+        test=self.node(py.Compare,t,left=self.const(0,t),ops=[py.LtE(),py.Lt()],
+                       comparators=[bind if bind is not None else self.name(index,t),size])
+        invalid=self.call('_array_offset',[self.name(receiver,t),self.name(index,t)],t)
+        return self.node(py.IfExp,t,test=test,body=self.name(index,t),orelse=invalid)
+
+    def native_array_read(self,receiver,index,t,*,method=False):
+        offset,guarded=self.native_array_index(index)
+        if offset is None:
+            return self.call('_array_method_get' if method else '_list_get',
+                             [receiver,self.expr(index)],t)
+        if guarded:
+            target,slot=self.temp(),self.temp()
+            receiver=self.node(py.NamedExpr,t,target=self.name(target,t,True),value=receiver)
+            bind=self.node(py.NamedExpr,t,target=self.name(slot,t,True),value=offset)
+            offset=self.guarded_array_offset(target,slot,t,bind=bind)
+        return self.node(py.Subscript,t,value=receiver,slice=offset,ctx=py.Load())
+
     def expr(self,node,require_value=True):
         value=self._expr(node,require_value)
         if self.static_module_names and not self.static_module_kinds:
@@ -619,6 +713,16 @@ class Emitter:
                 and key not in self.module_globals
                 and (self.scope is None or key not in self.scope['local_declarations']))
 
+    def structure_field(self,value,node,t):
+        # The exact owned Structure stores (original spelling, value) under
+        # its folded field name. Retrieve the pair once using Python dict.get.
+        index=len(self.constants)
+        self.constants.append(_MissingStructureField(node.name))
+        missing=self.node(py.Subscript,t,value=self.name('_constants',t),
+            slice=self.const(index,t),ctx=py.Load())
+        entry=self.call('_native_dict_get',[value,self.const(node.name.casefold(),t),missing],t)
+        return self.node(py.Subscript,t,value=entry,slice=self.const(1,t),ctx=py.Load())
+
     def member_read(self,node,receiver,t):
         def exact(kind):return self.exact_native(kind,self.name(receiver,t),t)
         host=self.invoke(self.attribute(self.name('_context',t),'get_member',t),[self.name(receiver,t),self.const(node.name,t)],t)
@@ -629,14 +733,14 @@ class Emitter:
             item=self.call('_dynamic_public_number',[self.attribute(self.name(receiver,t),field,t)],t)
             host=self.node(py.IfExp,t,test=exact('_MapEntry'),body=item,orelse=host)
         host=self.node(py.IfExp,t,test=exact('list'),body=self.call('_array_member',[self.name(receiver,t),self.const(node.name,t)],t),orelse=host)
-        structure=self.call('_structure_get_known',[self.name(receiver,t),self.const(node.name.casefold(),t),self.const(node.name,t)],t)
-        host=self.node(py.IfExp,t,test=exact('_DirectStructure'),body=structure,orelse=host)
         dictionary=self.node(py.Subscript,t,value=self.name(receiver,t),slice=self.const(node.name,t),ctx=py.Load())
         read=self.node(py.IfExp,t,test=exact('dict'),body=dictionary,orelse=host)
         field=_VALUE_LIST_ITEM_FIELDS.get(node.name.casefold())
         if field is not None:
             item=self.node(py.Subscript,t,value=self.name(receiver,t),slice=self.const(field,t),ctx=py.Load())
             read=self.node(py.IfExp,t,test=exact('_PlainValueListItem'),body=item,orelse=read)
+        structure=self.structure_field(self.name(receiver,t),node,t)
+        read=self.node(py.IfExp,t,test=exact('_DirectStructure'),body=structure,orelse=read)
         operation=self.region_ops.get(id(node)) if self.region_active else None
         if operation in ('row_get','item_get'):
             arguments=[self.name('_context',t),self.name(receiver,t)]
@@ -690,6 +794,41 @@ class Emitter:
             return self.dynamic_call(bound,node,references=False)
         return self.invoke(bound,[self.expr(arg) for arg in node.arguments],t)
 
+    def ordinary_index_read(self,node,receiver):
+        t=node.token;r=self.name(receiver,t)
+        kind,key=self.temp(),self.temp()
+        def bind(name,value):
+            return self.node(py.NamedExpr,t,target=self.name(name,t,True),value=value)
+        def recognized(name,left):
+            return self.node(py.Compare,t,left=left,ops=[py.In()],comparators=[self.name(name,t)])
+        classify=bind(kind,self.call('id',[self.call('type',[r],t)],t))
+        fallback=self.call('_ordinary_bracket_reader',[self.name('_context',t),r,self.name(kind,t)],t)
+        leaf=node.index
+        while type(leaf) is bsl.Group:leaf=leaf.expression
+        if type(leaf) in (bsl.Name,bsl.Literal):
+            # Simple leaves do not carry a recursive subtree. Emit direct
+            # branches here without allocating a bound adapter or index tuple.
+            left=self.node(py.Subscript,t,value=r,
+                        slice=self.call('_array_offset',[r,self.expr(leaf)],t),ctx=py.Load())
+            right=self.node(py.Subscript,t,value=r,slice=self.expr(leaf),ctx=py.Load())
+            choose=self.node(py.IfExp,t,test=recognized('_ordinary_bracket_read_types',self.name(kind,t)),
+                        body=right,orelse=self.invoke(fallback,[self.expr(leaf)],t))
+            return self.node(py.IfExp,t,test=recognized('_ordinary_array_types',classify),
+                        body=left,orelse=choose)
+        native=recognized('_ordinary_bracket_read_types',classify)
+        owner=self.node(py.IfExp,t,test=native,body=r,
+                        orelse=self.call('_BoundBracketRead',[fallback],t))
+        # Receiver admission precedes the single index subtree. Keep opaque
+        # index values on the stack only: a lookup error must not retain them
+        # in a compiler temporary after BSL catches the exception.
+        key_parts=self.node(py.Tuple,t,elts=[self.name(key,t),bind(key,self.const(None,t))],ctx=py.Load())
+        take=self.node(py.Subscript,t,value=key_parts,slice=self.const(0,t),ctx=py.Load())
+        check=recognized('_ordinary_array_types',self.name(kind,t))
+        offset=self.node(py.IfExp,t,test=check,body=self.call('_array_offset',[r,take],t),orelse=take)
+        parts=self.node(py.Tuple,t,elts=[bind(key,self.expr(node.index)),offset],ctx=py.Load())
+        return self.node(py.Subscript,t,value=owner,
+            slice=self.node(py.Subscript,t,value=parts,slice=self.const(-1,t),ctx=py.Load()),ctx=py.Load())
+
     def _expr(self,node,require_value=True):
         if type(node) is bsl.Await:
             if self.scope is None or not self.scope.get('async'):
@@ -704,11 +843,6 @@ class Emitter:
             if k is bsl.New and self.address_routine_symbols and self.static_module_kinds[id(node)]=='array':
                 return self.call('_array_constructor_bounds',[],t)
             if k is bsl.New:return self.call({'map':'_PlainMap','array':'_PlainArray','table':'_PrivateTable','valuelist':'_PrivateValueList'}[self.static_module_kinds[id(node)]],[],t)
-            if k is bsl.Binary and node.operator=='+':
-                left,right=self.expr(node.left),self.expr(node.right)
-                if self.static_module_kinds[id(node)]=='string':
-                    return self.call('_concatenate',[left,right],t)
-                return self.node(py.BinOp,t,left=left,op=py.Add(),right=right)
             if k is bsl.Attribute:
                 owner=self.static_module_kinds[id(node.object)];receiver=self.expr(node.object)
                 if owner=='table':return self.attribute(receiver,'columns',t)
@@ -725,9 +859,7 @@ class Emitter:
                 if owner in ('table','valuelist'):
                     return self.invoke(self.attribute(self.expr(node.object),'get',t),[self.expr(node.index)],t)
                 if self.static_module_kinds[id(node.object)]=='map':return self.call('_native_dict_get',[self.expr(node.object),self.expr(node.index)],t)
-                offset=self.native_array_index(node.index)
-                if offset is None:return self.call('_list_get',[self.expr(node.object),self.expr(node.index)],t)
-                return self.node(py.Subscript,t,value=self.expr(node.object),slice=offset,ctx=py.Load())
+                return self.native_array_read(self.expr(node.object),node.index,t)
             if k is bsl.Call and type(node.callee) is bsl.Attribute:
                 receiver=self.expr(node.callee.object);method=node.callee.name.casefold()
                 owner=self.static_module_kinds[id(node.callee.object)]
@@ -750,9 +882,7 @@ class Emitter:
                     return self.call('_native_dict_setitem',[receiver,*[self.expr(arg) for arg in node.arguments]],t)
                 if method in ('get','получить'):
                     if self.static_module_kinds[id(node.callee.object)]=='map':return self.call('_native_dict_get',[receiver,self.expr(node.arguments[0])],t)
-                    offset=self.native_array_index(node.arguments[0])
-                    if offset is None:return self.call('_array_method_get',[receiver,self.expr(node.arguments[0])],t)
-                    return self.node(py.Subscript,t,value=receiver,slice=offset,ctx=py.Load())
+                    return self.native_array_read(receiver,node.arguments[0],t,method=True)
                 if method in ('count','количество','ubound','вграница'):
                     return self.call('_native_count' if method in ('count','количество') else '_native_ubound',[receiver],t)
         if k is bsl.Call and type(node.callee) is bsl.Group:
@@ -772,58 +902,8 @@ class Emitter:
                 return self.call('_routine_value_error',[self.const(node.name,t)],t)
             return self.read(node.name,t,proven_initialized=id(node) in self.scalar_prefix_reads)
         if k is bsl.Group:return self.expr(node.expression,require_value)
-        if k is bsl.Unary:
-            if self.integer_lane and node.operator in ('+','-'):
-                return self.call('_dynamic_sign',[self.expr(node.operand),self.const(node.operator,t)],t)
-            if node.operator in ('+','-'):return self.call('_sign',[self.expr(node.operand),self.const(node.operator,t)],t)
-            if node.operator=='NOT':return self.node(py.UnaryOp,t,op=py.Not(),operand=self.truth(node.operand,t))
-        if k is bsl.Binary:
-            op=node.operator
-            if not self.catalog_bounds and op=='+' and type(node.left) is bsl.Literal and type(node.right) is bsl.Literal and type(node.left.value) is str:
-                return self.literal(scalar.concatenate(node.left.value,node.right.value),t)
-            if op in ('AND','OR'):
-                return self.node(py.BoolOp,t,op=py.And() if op=='AND' else py.Or(),values=[self.truth(node.left,t),self.truth(node.right,t)])
-            left=self.expr(node.left);right=self.expr(node.right)
-            left_kind=self.scalar_kinds.get(id(node.left))
-            right_kind=self.scalar_kinds.get(id(node.right))
-            if op=='+':
-                left_value=node.left
-                while type(left_value) is bsl.Group:left_value=left_value.expression
-                if (left_kind=='string'
-                        or (type(left_value) is bsl.Literal and type(left_value.value) is str)):
-                    # BSL converts a non-string RHS when the left operand is a string.
-                    # No runtime type dispatch is needed for a known string.
-                    if id(node) in self.known_selection_adds:
-                        return self.known_selection_add(self.name('_concatenate',t),left,right,t)
-                    return self.call('_concatenate',[left,right],t)
-            if id(node) in self.scalar_kinds and left_kind==right_kind:
-                if op=='+' and left_kind=='number':
-                    return self.node(py.BinOp,t,left=left,op=py.Add(),right=right)
-                if left_kind in ('number','bool'):
-                    relation={'=':py.Eq,'<>':py.NotEq,'<':py.Lt,'<=':py.LtE,'>':py.Gt,'>=':py.GtE}.get(op)
-                    if relation is not None:
-                        return self.node(py.Compare,t,left=left,ops=[relation()],comparators=[right])
-            if op=='+':
-                if left_kind in ('number','bool') or type(left_value) is bsl.Literal:
-                    if id(node) in self.known_selection_adds:
-                        return self.known_selection_add(self.name('_native_add',t),left,right,t)
-                    return self.node(py.BinOp,t,left=left,op=py.Add(),right=right)
-                # Preserve ordinary-direct left-temporary lifetime, evaluate
-                # the type decision before RHS, and emit RHS only once.
-                temporary=self.temp()
-                bound=self.node(py.NamedExpr,t,target=self.name(temporary,t,True),value=left)
-                kind=self.call('type',[bound],t)
-                test=self.node(py.Compare,t,left=kind,ops=[py.Is()],comparators=[self.name('str',t)])
-                operation=self.node(py.IfExp,t,test=test,body=self.name('_concatenate',t),orelse=self.name('_native_add',t))
-                if id(node) in self.known_selection_adds:
-                    return self.known_selection_add(operation,self.name(temporary,t),right,t)
-                return self.invoke(operation,[self.name(temporary,t),right],t)
-            helpers={'/':'_divide','=':'_equal','<>':'_not_equal'}
-            if op in helpers:return self.call('_dynamic_divide' if self.integer_lane and op=='/' else helpers[op],[left,right],t)
-            if op in ('<','<=','>','>='):return self.call('_order',[left,right,self.const(op,t)],t)
-            if self.integer_lane and op=='%':return self.call('_dynamic_remainder',[left,right],t)
-            operators={'-':py.Sub,'*':py.Mult,'%':py.Mod}
-            if op in operators:return self.node(py.BinOp,t,left=left,op=operators[op](),right=right)
+        if k is bsl.Unary and node.operator in ('+','-','NOT'):return self.scalar_unary(node)
+        if k is bsl.Binary:return self.scalar_binary(node)
         if k is bsl.DynamicNew:
             return self.call('_dynamic_construct',[self.name('_context',t),self.expr(node.type_expression),self.expr(node.parameters) if node.parameters is not None else self.const(None,t)],t)
         if k is bsl.New:
@@ -864,6 +944,8 @@ class Emitter:
             if kindname in ('map','соответствие'):
                 return self.call('_plain_map',args,t) if args else self.call('_PlainMap',[],t)
             if kindname in ('structure','структура'):
+                if not args and self.ordinary_native_collections:
+                    return self.call('_DirectStructure',[],t)
                 keys=node.arguments[0] if node.arguments else None
                 while type(keys) is bsl.Group:keys=keys.expression
                 if keys is None or type(keys) is bsl.Literal and type(keys.value) is str:
@@ -881,7 +963,7 @@ class Emitter:
             return value
         if k is bsl.Attribute:
             if self.local_field_facts.get(id(node))=='structure':
-                return self.call('_structure_get_known',[self.expr(node.object),self.const(node.name.casefold(),t),self.const(node.name,t)],t)
+                return self.structure_field(self.expr(node.object),node,t)
             receiver=self.temp()
             bind=self.node(py.NamedExpr,t,target=self.name(receiver,t,True),value=self.expr(node.object))
             read=self.member_read(node,receiver,t)
@@ -899,6 +981,11 @@ class Emitter:
         if k is bsl.Index:
             receiver=self.temp()
             bind=self.node(py.NamedExpr,t,target=self.name(receiver,t,True),value=self.expr(node.object))
+            if self.ordinary_native_collections:
+                read=self.ordinary_index_read(node,receiver)
+                read=self.receiver_boundary(read,receiver,t,native_array=True)
+                pair=self.node(py.Tuple,t,elts=[bind,read],ctx=py.Load())
+                return self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
             def exact(kind):
                 return self.exact_native(kind,self.name(receiver,t),t)
             bound_native=self.call('_partial',[self.name('_native_getitem',t),self.name(receiver,t)],t)
@@ -926,8 +1013,7 @@ class Emitter:
             call=self.receiver_boundary(call,receiver,t,native_array=True)
             pair=self.node(py.Tuple,t,elts=[bind,call],ctx=py.Load())
             return self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
-        if k is bsl.Conditional:
-            return self.node(py.IfExp,t,test=self.truth(node.condition,t),body=self.expr(node.when_true),orelse=self.expr(node.when_false))
+        if k is bsl.Conditional:return self.scalar_conditional(node)
         if k is bsl.Call and type(node.callee) is bsl.Attribute and self.implicit_module_receiver(node.callee.object):
             callee=node.callee
             bound=self.invoke(self.attribute(self.name('_context',t),'resolve_public_module_call',t),
@@ -1038,7 +1124,14 @@ class Emitter:
                 read=self.member_read(projected,structural_receiver,projected.token)
                 bind=self.node(py.NamedExpr,t,target=self.name(receiver,t,True),value=read)
             def exact(kind):return self.exact_native(kind,self.name(receiver,t),t)
-            native_test=self.node(py.BoolOp,t,op=py.Or(),values=[exact(kind) for kind in ('list','dict','_PlainMap','_TypedMap','_NakedMap','_DirectStructure')])
+            if generic:
+                # Unknown methods only distinguish native containers, which
+                # have no such method, from a real boundary resolver.
+                kind=self.call('id',[self.call('type',[self.name(receiver,t)],t)],t)
+                native_test=self.node(py.Compare,t,left=kind,ops=[py.In()],
+                    comparators=[self.name('_plain_method_type_ids',t)])
+            else:
+                native_test=self.node(py.BoolOp,t,op=py.Or(),values=[exact(kind) for kind in ('list','dict','_PlainMap','_TypedMap','_NakedMap','_DirectStructure')])
             host=self.member_call(receiver,callee.name,require_value,(),len(node.arguments),t)
             if generic:native=self.call('_native_method_missing',[self.name(receiver,t),self.const(callee.name,t)],t)
             elif method in ('count','ubound'):
@@ -1071,6 +1164,14 @@ class Emitter:
                 fail=self.call('_native_method_missing',[self.name(receiver,t),self.const(callee.name,t)],t)
                 native=self.node(py.IfExp,t,test=exact('list'),body=native,orelse=fail)
             selected=self.node(py.IfExp,t,test=native_test,body=native,orelse=host)
+            if not invalid_arity and not (self.source_scopes or self.host_bindings):
+                # These native branches already split arrays from all other
+                # collections. Take the Python list method first rather than
+                # repeating the same array classification through the ladder.
+                if method in ('add','set','find','ubound','get','delete'):
+                    other_native=self.node(py.BoolOp,t,op=py.Or(),values=[exact(kind) for kind in ('dict','_PlainMap','_TypedMap','_NakedMap','_DirectStructure')])
+                    selected=self.node(py.IfExp,t,test=native.test,body=native.body,
+                        orelse=self.node(py.IfExp,t,test=other_native,body=native.orelse,orelse=host))
             # Plain Map is the ordinary native representation. One receiver
             # classification preserves the host boundary for rebound values;
             # no token wrapper or repeated native-type ladder on this arm.
@@ -1421,14 +1522,14 @@ class Emitter:
             field={'key':'key','ключ':'key','value':'value','значение':'value'}.get(node.name.casefold())
             if field is not None:read=self.node(py.IfExp,t,test=exact('_MapEntry'),body=self.attribute(self.name(receiver,t),field,t),orelse=read)
             read=self.node(py.IfExp,t,test=exact('list'),body=self.call('_array_member',[self.name(receiver,t),self.const(node.name,t)],t),orelse=read)
-            structure=self.call('_structure_get_known',[self.name(receiver,t),self.const(node.name.casefold(),t),self.const(node.name,t)],t)
-            read=self.node(py.IfExp,t,test=exact('_DirectStructure'),body=structure,orelse=read)
             dictionary=self.node(py.Subscript,t,value=self.name(receiver,t),slice=self.const(node.name,t),ctx=py.Load())
             read=self.node(py.IfExp,t,test=exact('dict'),body=dictionary,orelse=read)
             item_field=_VALUE_LIST_ITEM_FIELDS.get(node.name.casefold())
             if item_field is not None:
                 item=self.node(py.Subscript,t,value=self.name(receiver,t),slice=self.const(item_field,t),ctx=py.Load())
                 read=self.node(py.IfExp,t,test=exact('_PlainValueListItem'),body=item,orelse=read)
+            structure=self.structure_field(self.name(receiver,t),node,t)
+            read=self.node(py.IfExp,t,test=exact('_DirectStructure'),body=structure,orelse=read)
             result=self.node(py.IfExp,rt,test=self.name(mode,rt),body=reference,orelse=read)
         converter=self.node(py.IfExp,rt,test=self.name(mode,rt),body=self.name('_canonical_reference',rt),orelse=self.name('_identity_reference',rt))
         converted=self.invoke(converter,[result],rt)
@@ -1543,15 +1644,6 @@ class Emitter:
         pair=self.node(py.Tuple,t,elts=[*setup,invoked],ctx=py.Load())
         return self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
 
-    def truth(self,node,token):
-        if type(node) is bsl.Literal:
-            if type(node.value) is bool:return self.expr(node)
-            if not self.catalog_bounds and type(node.value) is Decimal:return self.literal(node.value!=0,token)
-        kind=self.scalar_kinds.get(id(node))
-        if kind=='bool':return self.expr(node)
-        if kind=='number':
-            return self.node(py.Compare,token,left=self.expr(node),ops=[py.NotEq()],comparators=[self.const(0,token)])
-        return self.call('_truth',[self.expr(node)],token)
     def goto_signal(self,target,t):
         return self.node(py.Raise,t,exc=self.call('_GotoTransfer',[self.const(target,t)],t),cause=self.const(None,t))
     def loop_transfer(self,continuing,t):
@@ -1782,26 +1874,38 @@ class Emitter:
                 target=node.target;receiver=self.temp();index=self.temp();stored=self.temp()
                 def assign(name,value):return self.node(py.Assign,t,targets=[self.name(name,t,True)],value=value)
                 is_map=self.static_module_kinds[id(target.object)]=='map'
-                native_index=None if is_map else self.native_array_index(target.index)
+                native_index,guarded=(None,False) if is_map else self.native_array_index(target.index)
                 key=self.expr(target.index) if native_index is None else native_index
                 body=[assign(receiver,self.expr(target.object)),assign(index,key),assign(stored,self.expr(node.value))]
                 if is_map:
                     write=self.call('_native_dict_setitem',[self.name(receiver,t),self.name(index,t),self.name(stored,t)],t)
                     body.append(self.node(py.Expr,t,value=write));return body
-                position=(self.call('_array_offset',[self.name(receiver,t),self.name(index,t)],t)
-                          if native_index is None else self.name(index,t))
+                if guarded:position=self.guarded_array_offset(receiver,index,t)
+                elif native_index is None:position=self.call('_array_offset',[self.name(receiver,t),self.name(index,t)],t)
+                else:position=self.name(index,t)
                 slot=self.node(py.Subscript,t,value=self.name(receiver,t),slice=position,ctx=py.Store())
                 body.append(self.node(py.Assign,t,targets=[slot],value=self.name(stored,t)));return body
             target=node.target;receiver=self.temp();writer=self.temp();index=self.temp();stored=self.temp()
             def assign(name,value):return self.node(py.Assign,t,targets=[self.name(name,t,True)],value=value)
             def exact(kind):return self.exact_native(kind,self.name(receiver,t),t)
-            native=self.node(py.BoolOp,t,op=py.Or(),values=[exact(kind) for kind in ('list','dict','_PlainMap','_TypedMap','_NakedMap','_DirectStructure')])
+            body=[assign(receiver,self.expr(target.object))]
+            if self.ordinary_native_collections:
+                kind=self.temp()
+                owner=self.call('type',[self.name(receiver,t)],t)
+                body.append(assign(kind,self.call('id',[owner],t)))
+                def recognized(name):
+                    return self.node(py.Compare,t,left=self.name(kind,t),ops=[py.In()],comparators=[self.name(name,t)])
+                native=recognized('_ordinary_bracket_write_types')
+                array=recognized('_ordinary_array_types')
+            else:
+                native=self.node(py.BoolOp,t,op=py.Or(),values=[exact(kind) for kind in ('list','dict','_PlainMap','_TypedMap','_NakedMap','_DirectStructure')])
+                array=exact('list')
             resolver=self.invoke(self.attribute(self.name('_context',t),'resolve_member',t),[self.name(receiver,t),self.const('__setitem__',t)],t)
             selected=self.node(py.IfExp,t,test=native,body=self.const(None,t),orelse=resolver)
-            body=[assign(receiver,self.expr(target.object)),assign(writer,selected),assign(index,self.expr(target.index)),assign(stored,self.expr(node.value))]
+            body.extend([assign(writer,selected),assign(index,self.expr(target.index)),assign(stored,self.expr(node.value))])
             invoke=self.node(py.Expr,t,value=self.invoke(self.name(writer,t),[self.name(index,t),self.name(stored,t)],t))
             checked=self.call('_array_offset',[self.name(receiver,t),self.name(index,t)],t)
-            position=self.node(py.IfExp,t,test=exact('list'),body=checked,orelse=self.name(index,t))
+            position=self.node(py.IfExp,t,test=array,body=checked,orelse=self.name(index,t))
             slot=self.node(py.Subscript,t,value=self.name(receiver,t),slice=position,ctx=py.Store())
             write=self.node(py.Assign,t,targets=[slot],value=self.name(stored,t))
             test=self.node(py.Compare,t,left=self.name(writer,t),ops=[py.IsNot()],comparators=[self.const(None,t)])
@@ -2015,23 +2119,36 @@ class Emitter:
                         if key in self.module_cells else self.name(slot,t,True))
                 return [self.node(py.For,t,target=target,iter=self.expr(node.collection),
                                   body=body or [self.node(py.Pass,t)],orelse=[],type_comment=None)]
-            receiver=self.temp();bound=self.temp();iterator=self.temp();key=self.temp();value=self.temp()
+            key=node.name.casefold()
+            if (not self.external_name(key) and
+                    key not in ('thisobject','этотобъект') and key not in self.module_cells and
+                    (self.scope is None or key not in self.scope['boxed'] and
+                     key not in self.scope.get('addresses',{}))):
+                # Just a Python for. The exceptions are special assignment
+                # targets (external, implicit ThisObject, or reference cells)
+                # that have their own setter protocol, not collection types.
+                context=self.name('_context',t)
+                args=[context,self.expr(node.collection)]
+                if self.owned_constructors:args.append(self.const(False,t))
+                iterable=self.call('_for_each_iterable',args,t)
+                if self.authority and not self.standalone_script:
+                    iterable=self.call('_metered_for_each',[self.name('_context',t),iterable],t)
+                changes=set()
+                journals=self.scope.setdefault('initialization_journals',[]) if self.scope is not None else None
+                if journals is not None:journals.append(changes)
+                try:
+                    store=self.assign_name(node.name,self.const(None,t),t)
+                    body=self.loop_body(node.body,None)
+                finally:
+                    if journals is not None:
+                        journals.pop();self.scope['initialized'].difference_update(changes)
+                return [self.node(py.For,t,target=store.targets[0],iter=iterable,
+                                 body=body or [self.node(py.Pass,t)],orelse=[],type_comment=None)]
+            receiver=self.temp();bound=self.temp();iterator=self.temp()
             def assign(name,value):return self.node(py.Assign,t,targets=[self.name(name,t,True)],value=value)
             def exact(kind):return self.exact_native(kind,self.name(receiver,t),t)
-            entry=self.call('_MapEntry',[],t,[self.node(py.keyword,t,arg='key',value=self.name(key,t)),self.node(py.keyword,t,arg='value',value=self.name(value,t))])
-            pair=self.node(py.Tuple,t,elts=[self.name(key,t,True),self.name(value,t,True)],ctx=py.Store())
-            items=self.invoke(self.attribute(self.name(receiver,t),'items',t),[],t)
-            generator=self.node(py.GeneratorExp,t,elt=entry,generators=[py.comprehension(target=pair,iter=items,ifs=[],is_async=0)])
-            dictionary=self.call('isinstance',[self.name(receiver,t),self.name('dict',t)],t)
-            iterable=self.node(py.IfExp,t,test=dictionary,body=generator,orelse=self.name(receiver,t))
-            native=self.node(py.BoolOp,t,op=py.Or(),values=[exact(kind) for kind in ('list','dict','_PlainMap','_TypedMap','_NakedMap','_DirectStructure')])
-            host=self.invoke(self.invoke(self.attribute(self.name('_context',t),'resolve_member',t),[self.name(receiver,t),self.const('__iter__',t)],t),[],t)
-            if not self.owned_constructors:
-                # Keep the live item identities and ordinary list traversal.
-                # Bind the exact storage operation, not a host __iter__ hook.
-                plain=self.invoke(self.attribute(self.name('list',t),'__iter__',t),[self.name(receiver,t)],t)
-                host=self.node(py.IfExp,t,test=exact('_PlainValueList'),body=plain,orelse=host)
-            selected=self.node(py.IfExp,t,test=native,body=self.call('iter',[iterable],t),orelse=host)
+            selected=self.call('_for_each_iterable',[self.name('_context',t),self.name(receiver,t),
+                                     self.const(not self.owned_constructors,t),self.const(False,t)],t)
             result=[assign(receiver,self.expr(node.collection)),assign(bound,selected),assign(iterator,self.call('iter',[self.name(bound,t)],t))]
             changes=set();journals=self.scope.setdefault('initialization_journals',[]) if self.scope is not None else None
             if journals is not None:journals.append(changes)
@@ -2238,6 +2355,8 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         _profile is None and not _authority and not _source_scopes and not vm.allow_extensions)
     emitter.literal_reachability=(emitter.standalone_script and _profile is None and not imported
                                   and vm.database_context is None and not has_goto and not has_label)
+    emitter.ordinary_native_collections=(emitter.standalone_script and _profile is None
+                                         and vm.database_context is None and not imported)
     emitter.link_imports=bool(imported) and emitter.standalone_script and (
         vm._family_owner.__dict__.get('_standalone_script') is True)
     if _require_last_expression:emitter.require_last_expression=program[-1]
@@ -2733,7 +2852,11 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     from yadinassi.db.database_context import require_database_context
     from .experimental_naked_errors import for_bound_unbound, read_except_local
     namespace=dict(_module_property_reference=module_property_reference,_checked_live_counter=_checked_live_counter,_for_bound_unbound=for_bound_unbound,_read_except_local=read_except_local,_normalize_item_presentation=_normalize_presentation,_normalize_item_check=_normalize_check,
-        _require_database_context=require_database_context,_structural_count_ids=TARGET_IDS,_select_structural_read=selects,_structural_count=structural_count,_local_structure_member=_local_structure_member,_BoxedStructure=_BoxedStructure,_local_array_index=_local_array_index,_BoxedArray=_BoxedArray,_local_row_index=_local_row_index,_local_row_member=_local_row_member,_PlainTableRow=_vt.BSLValueTableRow,_raw_table_value=RowStorage.get_value,_raw_table_positional=_vt.BSLValueTableRow._positional_value,_dynamic_remainder=remainder,_dynamic_divide=divide,_dynamic_sign=sign,_dynamic_public_number=public_number,_plain_array_loop=_plain_array_loop,_plain_append_receiver=_plain_append_receiver,_list_append=list.append,_native_host_reference=_native_host_reference,_native_cell_reference=_native_cell_reference,_native_fragment_binding=_native_fragment_binding,_NativeCell=_NativeCell,_PublishedModuleCell=_PublishedModuleCell,_adapt_native_cell=_adapt_native_cell,_PrivateTable=_vt.BSLValueTable,_PrivateValueList=PlainValueList,_PlainValueList=PlainValueList,_PlainValueListItem=PlainValueListItem,_module_primitive_type_ids=frozenset(id(kind) for kind in (list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure)),_module_data_types=data_types,_module_data_type_ids=frozenset(id(kind) for kind in data_types),_native_dict_get=dict.get,_native_dict_setitem=dict.__setitem__,_PlainArray=_PlainArray,_Decimal=Decimal,_PlainMap=PlainMap,_plain_map=plain_map,_execute_fragment=execute_fragment,_fragment_binding=_fragment_binding,_bind_eval=bind_eval,_raise_arity_error=raise_arity_error,_host_omission_error=_host_omission_error,_host_omission_values=_host_omission_values,_dynamic_construct=dynamic_construct,_invalid_native_arity=_invalid_native_arity,_typed_find=scalar.typed_find,_list_delete=_list_delete,_native_ubound=_native_ubound,_readonly=readonly,_array_set_checked=_array_set_checked,_bounded_insert=bounded_insert,_structure_insert=structure_insert,_array_constructor_bounds=bounded_array,_new_structure=new_structure,_structure_from_schema=structure_from_schema,_host_name_reference=_host_name_reference,_Cell=_Cell,_ForwardReference=_ForwardReference,_as_ref=_as_ref,_bound_ref=_bound_ref,_UNSET_REF=_UNSET_REF,_OMITTED_REF=_OMITTED_REF,_argument_count_error=_argument_count_error,_routine_value_error=_routine_value_error,_procedure_value_error=_procedure_value_error,_identity_reference=_identity_reference,_IndexRef=_IndexRef,_AttributeRef=_AttributeRef,_SlotReference=live_state._SlotReference,_source_reference=source_reference,_canonical_reference=_canonical_reference,_structure_property=structure_property,_native_method_missing=_native_method_missing,_native_count=_native_count,_MapEntry=_MapEntry,_array_member=_array_member,_native_property_missing=_native_property_missing,_structure_get_known=structure_get_known,_structure_set_known=structure_set_known,_native_property_write_missing=_native_property_write_missing,_checked_array_index=_checked_array_index,_checked_literal_array_index=_checked_literal_array_index,_partial=partial,_native_getitem=_NATIVE_GETITEM,_list_get=_list_get,_array_method_get=_array_method_get,_array_offset=array_offset,_TypedMap=_TypedMap,_NakedMap=_NakedMap,_DirectStructure=_DirectStructure,_host_reference=host_reference,_UNSET=UNSET,_missing=missing,_native_add=_NATIVE_ADD,_concatenate=scalar.concatenate,_divide=scalar.decimal_divide,_sign=scalar.decimal_sign,_order=scalar.uca_order,_truth=scalar.truth,_equal=equal,_not_equal=not_equal,_MISSING=_MISSING,_handled_error=handled_error,_reraise_handled=reraise_handled,_raise_error=raise_error,_presentation=scalar.presentation,_BSLRuntimeError=BSLRuntimeError)
+        _BoundBracketRead=_BoundBracketRead,_ordinary_bracket_reader=_ordinary_bracket_reader,
+        _ordinary_array_types=_ORDINARY_ARRAY_IDS,
+        _ordinary_bracket_read_types=_ORDINARY_BRACKET_READ_IDS,
+        _ordinary_bracket_write_types=_ORDINARY_BRACKET_WRITE_IDS,
+        _require_database_context=require_database_context,_structural_count_ids=TARGET_IDS,_select_structural_read=selects,_structural_count=structural_count,_local_structure_member=_local_structure_member,_BoxedStructure=_BoxedStructure,_local_array_index=_local_array_index,_BoxedArray=_BoxedArray,_local_row_index=_local_row_index,_local_row_member=_local_row_member,_PlainTableRow=_vt.BSLValueTableRow,_raw_table_value=RowStorage.get_value,_raw_table_positional=_vt.BSLValueTableRow._positional_value,_dynamic_remainder=remainder,_dynamic_divide=divide,_dynamic_sign=sign,_dynamic_public_number=public_number,_plain_array_loop=_plain_array_loop,_plain_append_receiver=_plain_append_receiver,_list_append=list.append,_native_host_reference=_native_host_reference,_native_cell_reference=_native_cell_reference,_native_fragment_binding=_native_fragment_binding,_NativeCell=_NativeCell,_PublishedModuleCell=_PublishedModuleCell,_adapt_native_cell=_adapt_native_cell,_PrivateTable=_vt.BSLValueTable,_PrivateValueList=PlainValueList,_PlainValueList=PlainValueList,_PlainValueListItem=PlainValueListItem,_module_primitive_type_ids=frozenset(id(kind) for kind in (list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure)),_module_data_types=data_types,_module_data_type_ids=frozenset(id(kind) for kind in data_types),_native_dict_get=dict.get,_native_dict_setitem=dict.__setitem__,_PlainArray=_PlainArray,_Decimal=Decimal,_PlainMap=PlainMap,_plain_map=plain_map,_execute_fragment=execute_fragment,_fragment_binding=_fragment_binding,_bind_eval=bind_eval,_raise_arity_error=raise_arity_error,_host_omission_error=_host_omission_error,_host_omission_values=_host_omission_values,_dynamic_construct=dynamic_construct,_invalid_native_arity=_invalid_native_arity,_typed_find=scalar.typed_find,_list_delete=_list_delete,_native_ubound=_native_ubound,_readonly=readonly,_array_set_checked=_array_set_checked,_bounded_insert=bounded_insert,_structure_insert=structure_insert,_array_constructor_bounds=bounded_array,_new_structure=new_structure,_structure_from_schema=structure_from_schema,_host_name_reference=_host_name_reference,_Cell=_Cell,_ForwardReference=_ForwardReference,_as_ref=_as_ref,_bound_ref=_bound_ref,_UNSET_REF=_UNSET_REF,_OMITTED_REF=_OMITTED_REF,_argument_count_error=_argument_count_error,_routine_value_error=_routine_value_error,_procedure_value_error=_procedure_value_error,_identity_reference=_identity_reference,_IndexRef=_IndexRef,_AttributeRef=_AttributeRef,_SlotReference=live_state._SlotReference,_source_reference=source_reference,_canonical_reference=_canonical_reference,_structure_property=structure_property,_native_method_missing=_native_method_missing,_native_count=_native_count,_MapEntry=_MapEntry,_array_member=_array_member,_native_property_missing=_native_property_missing,_structure_get_known=structure_get_known,_structure_set_known=structure_set_known,_native_property_write_missing=_native_property_write_missing,_checked_array_index=_checked_array_index,_checked_literal_array_index=_checked_literal_array_index,_partial=partial,_native_getitem=_NATIVE_GETITEM,_list_get=_list_get,_array_method_get=_array_method_get,_for_each_iterable=_for_each_iterable,_metered_for_each=_metered_for_each,_array_offset=array_offset,_TypedMap=_TypedMap,_NakedMap=_NakedMap,_DirectStructure=_DirectStructure,_host_reference=host_reference,_UNSET=UNSET,_missing=missing,_native_add=_NATIVE_ADD,_concatenate=scalar.concatenate,_divide=scalar.decimal_divide,_sign=scalar.decimal_sign,_order=scalar.uca_order,_truth=scalar.truth,_equal=equal,_not_equal=not_equal,_MISSING=_MISSING,_handled_error=handled_error,_reraise_handled=reraise_handled,_raise_error=raise_error,_presentation=scalar.presentation,_BSLRuntimeError=BSLRuntimeError,_plain_method_type_ids=frozenset(map(id, (list, _PlainArray, dict, PlainMap, _TypedMap, _NakedMap, _DirectStructure))))
     if emitter.known_calls:
         from yadinassi.execution.direct.python_direct_known_methods import execute, construct_table, detached_after_publication, generic_call
         namespace.update(_known_query_execute=execute,_known_construct_table=construct_table,
