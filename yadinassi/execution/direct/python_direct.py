@@ -184,10 +184,8 @@ def _contract(vm):
 
 
 def _compile(vm,program,nodes,source_text,source_name,*,_exports=False):
-    # One compiler path. Unsupported forms fail; there is no text/legacy retry.
-    from yadinassi.execution.codegen.experimental_direct_ast import compile_module
-    return compile_module(vm,program,nodes,source_text,source_name,_exports=_exports,
-                          _whole_source=_extension_source_audit(vm),_allow_pure_builtins=True)
+    from yadinassi.execution.codegen.direct_emitter import compile_module
+    return compile_module(vm,program,nodes,source_text,source_name,_exports=_exports)
 
 
 def _extension_source_audit(vm):

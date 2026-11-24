@@ -346,11 +346,10 @@ class Emitter(ScalarEmitter):
         self.goto_destinations={};self.goto_transfers={};self.goto_dispatch=[]
         self.http_body_receiver=False
         self.extension_value_list_binding=False
-        self.known_calls={};self.known_origins=();self.known_selection_reads=set();self.known_selection_adds=set()
-        self.local_field_facts={};self.integer_lane=False;self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.scalar_kinds={};self.scalar_prefix_reads=frozenset();self.module_boundaries=0;self.range_indices={};self.external_actuals=0;self.hoisted_module_var_ids=frozenset()
+        self.local_field_facts={};self.integer_lane=False;self.native_cells=False;self.static_module_kinds={};self.scalar_kinds={};self.scalar_prefix_reads=frozenset();self.range_indices={};self.hoisted_module_var_ids=frozenset()
         self.handler_depth=0;self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.current_module=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
         self.ordinary_native_collections=False;self.standalone_script=False;self.row_cell_references=False;self.array_cell_references=False;self.link_imports=False;self.import_links=[]
-        self.import_names=frozenset();self.require_last_expression=None;self.region_active=False;self.region_ops={};self.region_states={};self.routines={};self.routine_symbols={};self.numeric_routine_symbols={};self.address_routine_symbols={};self.module_globals=set();self.scope=None;self.source_refs={};self.loop_increments=[];self.required=set();self.pure_builtins={};self.visits=0;self.python_nodes=0
+        self.import_names=frozenset();self.require_last_expression=None;self.routines={};self.routine_symbols={};self.numeric_routine_symbols={};self.address_routine_symbols={};self.module_globals=set();self.scope=None;self.source_refs={};self.loop_increments=[];self.required=set();self.pure_builtins={};self.visits=0;self.python_nodes=0
     def node(self,kind,token,**fields):
         if kind is py.FunctionDef and 'type_params' in kind._fields:fields.setdefault('type_params',[])
         result=kind(**fields);self.python_nodes+=1
@@ -372,11 +371,6 @@ class Emitter(ScalarEmitter):
         if kind=='list':return self.node(py.BoolOp,token,op=py.Or(),values=[compare('_PlainArray'),compare('list')])
         return compare(kind)
     def invoke(self,func,args,token,keywords=()):return self.node(py.Call,token,func=func,args=args,keywords=list(keywords))
-    def region_helper(self,operation,token):
-        return self.node(py.Subscript,token,value=self.name('_collection_helpers',token),slice=self.const(operation,token),ctx=py.Load())
-    def region_selected(self,selected,operation,receiver,token,extra=()):
-        helper=self.call('_partial',[self.region_helper(operation,token),self.name('_context',token),self.name(receiver,token),*extra],token)
-        return self.node(py.IfExp,token,test=self.name('_collection_fast',token),body=helper,orelse=selected)
     def initialize_local(self,key):
         if key not in self.scope['initialized']:
             self.scope['initialized'].add(key)
@@ -414,10 +408,6 @@ class Emitter(ScalarEmitter):
             check=self.node(py.IfExp,t,test=allowed,body=self.name(saved,t),orelse=self.call('_readonly',[self.const(key,t)],t))
             value=self.node(py.Subscript,t,value=self.node(py.Tuple,t,elts=[binding,check],ctx=py.Load()),slice=self.const(-1,t),ctx=py.Load())
         targets=[self.target(name,t)]
-        if self.scope is None and key in self.static_module_names:
-            local=self.name(self.static_module_names[key],t,True)
-            if key in self.module_cells:local=self.node(py.Subscript,t,value=self.name(self.static_module_names[key],t),slice=self.const(0,t),ctx=py.Store())
-            targets=[local]
         return self.node(py.Assign,t,targets=targets,value=value)
     def read_missing(self,name,key,token):
         # A local or module value wins; only an actual unbound read reaches here.
@@ -438,12 +428,6 @@ class Emitter(ScalarEmitter):
         return self.call('_missing',[self.const(name,token)],token)
 
     def read(self,name,token,*,proven_initialized=False):
-        if self.scope is None and name.casefold() in self.static_module_names:
-            value=self.name(self.static_module_names[name.casefold()],token)
-            if name.casefold() in self.module_cells:value=self.node(py.Subscript,token,value=value,slice=self.const(0,token),ctx=py.Load())
-            if self.static_module_kinds or proven_initialized:return value
-            test=self.node(py.Compare,token,left=value,ops=[py.IsNot()],comparators=[self.name('_UNSET',token)])
-            return self.node(py.IfExp,token,test=test,body=value,orelse=self.read_missing(name,name.casefold(),token))
         if self.external_name(name):return self.invoke(self.attribute(self.name('_context',token),'external_get',token),[self.const(name.casefold(),token)],token)
         self.check_name(name)
         key=name.casefold()
@@ -531,41 +515,10 @@ class Emitter(ScalarEmitter):
             values=[self.call('_native_fragment_binding' if self.native_cells else '_fragment_binding',[self.name(self.scope['slots'][key],t)],t) for key in names])
         visible=None if self.scope is None else tuple(sorted(self.scope['globals']))
         return [self.name('_context',t),self.name('_initial',t),bindings,self.const(visible,t)]
-    def module_sync(self,t,reload):
-        return self.call('_reload_module' if reload else '_publish_module',[],t)
-    def module_sync_body(self,t,reload):
-        check=lambda:self.invoke(self.attribute(self.name("_context",t),"_check",t),[],t)
-        operations=[] if reload or self.standalone_script else [check()]
-        for key,slot in self.static_module_names.items():
-            if reload:
-                read=self.invoke(self.attribute(self.name('_initial',t),'get',t),[self.const(key,t),self.name('_UNSET',t)],t)
-                if key in self.module_cells:
-                    operations.append(self.invoke(self.attribute(self.name(slot,t),'__setitem__',t),[self.const(0,t),read],t))
-                else:operations.append(self.node(py.NamedExpr,t,target=self.name(slot,t,True),value=read))
-            else:
-                value=self.name(slot,t)
-                if key in self.module_cells:value=self.node(py.Subscript,t,value=value,slice=self.const(0,t),ctx=py.Load())
-                present=self.node(py.Compare,t,left=value,ops=[py.IsNot()],comparators=[self.name('_UNSET',t)])
-                published=value
-                if self.integer_lane:
-                    integer=self.node(py.Compare,t,left=self.call('type',[value],t),ops=[py.Is()],comparators=[self.name('int',t)])
-                    published=self.node(py.IfExp,t,test=integer,body=self.call('_Decimal',[value],t),orelse=value)
-                write=self.invoke(self.attribute(self.name('_initial',t),'__setitem__',t),[self.const(key,t),published],t)
-                checked=write if self.standalone_script else self.node(py.Tuple,t,elts=[write,check()],ctx=py.Load())
-                operations.append(self.node(py.IfExp,t,test=present,body=checked,orelse=self.const(None,t)))
-        return self.node(py.Tuple,t,elts=operations,ctx=py.Load())
-    def external_receiver(self,receiver,t):
-        # Identity-only classification. This chooses namespace visibility, never
-        # grants access: the existing authority resolver remains in both arms.
-        kind=self.call('id',[self.call('type',[self.name(receiver,t)],t)],t)
-        return self.node(py.Compare,t,left=kind,ops=[py.NotIn()],comparators=[self.name('_module_data_type_ids',t)])
     def receiver_boundary(self,value,receiver,t,*,native_array=False):
-        if self.static_module_kinds:return value
         if self.standalone_script:
             # The resolver handles actual external calls. Built-in collections
             # in a standalone script do not need synthetic liveness probes.
-            if self.static_module_names:
-                return self.module_boundary(value,t,self.external_receiver(receiver,t))
             return value
         # Low-level containers have no authority resolver of their own. A
         # public alias may already exist; namespace copying is unnecessary but
@@ -586,7 +539,6 @@ class Emitter(ScalarEmitter):
             packed=self.node(py.Tuple,t,elts=[*value.args,guard],ctx=py.Load())
             args=self.node(py.Subscript,t,value=packed,slice=self.node(py.Slice,t,lower=None,upper=self.const(-1,t),step=None),ctx=py.Load())
             value.args=[self.node(py.Starred,t,value=args,ctx=py.Load())]
-        if self.static_module_names:return self.module_boundary(value,t,self.external_receiver(receiver,t),primitive)
         # Routine/public-input native calls have no module register file to
         # synchronize, but aliases remain externally visible and revocable.
         mode=self.temp();result=self.temp()
@@ -597,53 +549,12 @@ class Emitter(ScalarEmitter):
         bind=self.node(py.NamedExpr,t,target=self.name(result,t,True),value=value)
         parts=self.node(py.Tuple,t,elts=[capture,check(),bind,check(),self.name(result,t)],ctx=py.Load())
         return self.node(py.Subscript,t,value=parts,slice=self.const(-1,t),ctx=py.Load())
-    def live_result(self,value,t):
-        if self.standalone_script:return value
-        result=self.temp()
-        bind=self.node(py.NamedExpr,t,target=self.name(result,t,True),value=value)
-        check=self.invoke(self.attribute(self.name('_context',t),'_check',t),[],t)
-        parts=self.node(py.Tuple,t,elts=[bind,check,self.name(result,t)],ctx=py.Load())
-        return self.node(py.Subscript,t,value=parts,slice=self.const(-1,t),ctx=py.Load())
-    def module_boundary(self,value,t,condition=None,primitive=None):
-        self.module_boundaries+=1
-        def depth(change):
-            updated=self.node(py.BinOp,t,left=self.name('_dynamic_depth',t),op=py.Add(),right=self.const(change,t))
-            return self.node(py.NamedExpr,t,target=self.name('_dynamic_depth',t,True),value=updated)
-        before=[self.module_sync(t,False),depth(1)];after=[self.module_sync(t,True),depth(-1)]
-        prefix=[]
-        if condition is not None:
-            mode=self.temp();prefix=[self.node(py.NamedExpr,t,target=self.name(mode,t,True),value=condition)]
-            def guarded(parts):
-                return self.node(py.IfExp,t,test=self.name(mode,t),body=self.node(py.Tuple,t,elts=parts,ctx=py.Load()),orelse=self.const(None,t))
-            before=[guarded(before)];after=[guarded(after)]
-            if primitive is not None:
-                checked=self.temp();prefix.append(self.node(py.NamedExpr,t,target=self.name(checked,t,True),value=primitive))
-                def check():
-                    call=self.invoke(self.attribute(self.name('_context',t),'_check',t),[],t)
-                    return self.node(py.IfExp,t,test=self.name(checked,t),body=call,orelse=self.const(None,t))
-                before.append(check());after.insert(0,check())
-        # The tuple keeps the result alive during reload, without leaving a
-        # hidden reference in the module frame after a discarded expression.
-        parts=[*prefix,*before,value,*after]
-        return self.node(py.Subscript,t,value=self.node(py.Tuple,t,elts=parts,ctx=py.Load()),slice=self.const(-len(after)-1,t),ctx=py.Load())
     def receiver_statements(self,body,receiver,t):
-        if self.static_module_kinds:return body
-        if not self.static_module_names:
-            if self.standalone_script:return body
-            def check():return self.node(py.Expr,t,value=self.invoke(self.attribute(self.name('_context',t),'_check',t),[],t))
-            return [body[0],check(),*body[1:-1],check(),body[-1],check()]
-        self.module_boundaries+=1
-        mode=self.temp()
-        capture=self.node(py.Assign,t,targets=[self.name(mode,t,True)],value=self.external_receiver(receiver,t))
-        check=self.node(py.Expr,t,value=self.invoke(self.attribute(self.name('_context',t),'_check',t),[],t))
-        enter=self.node(py.If,t,test=self.name(mode,t),body=[
-            self.node(py.Expr,t,value=self.module_sync(t,False)),
-            self.node(py.AugAssign,t,target=self.name('_dynamic_depth',t,True),op=py.Add(),value=self.const(1,t))],orelse=[])
-        leave=self.node(py.If,t,test=self.name(mode,t),body=[
-            self.node(py.Expr,t,value=self.module_sync(t,True)),
-            self.node(py.AugAssign,t,target=self.name('_dynamic_depth',t,True),op=py.Sub(),value=self.const(1,t))],orelse=[])
-        if self.standalone_script:return [body[0],capture,enter,*body[1:],leave]
-        return [body[0],capture,check,enter,*body[1:-1],check,body[-1],check,leave]
+        if self.standalone_script:
+            return body
+        def check():
+            return self.node(py.Expr, t, value=self.invoke(self.attribute(self.name('_context', t), '_check', t), [], t))
+        return [body[0], check(), *body[1:-1], check(), body[-1], check()]
     def native_array_index(self,node):
         leaf=node
         while type(leaf) is bsl.Group:leaf=leaf.expression
@@ -691,14 +602,6 @@ class Emitter(ScalarEmitter):
 
     def expr(self,node,require_value=True):
         value=self._expr(node,require_value)
-        if self.static_module_names and not self.static_module_kinds:
-            callee=node.callee if type(node) is bsl.Call else None
-            while type(callee) is bsl.Group:callee=callee.expression
-            internal=type(callee) is bsl.Name and (callee.name.casefold() in self.routines or callee.name.casefold() in self.pure_builtins)
-            external=(type(node) is bsl.Call and type(callee) is not bsl.Attribute and not internal) or type(node) is bsl.DynamicNew
-            external=external or (type(node) is bsl.New and node.name.casefold() not in ('array','массив','map','соответствие','structure','структура'))
-            if external:value=self.module_boundary(value,node.token)
-            elif type(node) in (bsl.Binary,bsl.Unary) and id(node) not in self.scalar_kinds:value=self.live_result(value,node.token)
         if not self.catalog_bounds:return value
         t=node.token
         step=self.invoke(self.attribute(self.name('_context',t),'preparation_step',t),[],t)
@@ -741,12 +644,6 @@ class Emitter(ScalarEmitter):
             read=self.node(py.IfExp,t,test=exact('_PlainValueListItem'),body=item,orelse=read)
         structure=self.structure_field(self.name(receiver,t),node,t)
         read=self.node(py.IfExp,t,test=exact('_DirectStructure'),body=structure,orelse=read)
-        operation=self.region_ops.get(id(node)) if self.region_active else None
-        if operation in ('row_get','item_get'):
-            arguments=[self.name('_context',t),self.name(receiver,t)]
-            if operation=='row_get':arguments.append(self.const(node.name,t))
-            fast=self.invoke(self.region_helper(operation,t),arguments,t)
-            read=self.node(py.IfExp,t,test=self.name('_collection_fast',t),body=fast,orelse=read)
         read=self.receiver_boundary(read,receiver,t)
         return read
 
@@ -759,30 +656,8 @@ class Emitter(ScalarEmitter):
             keywords.append(self.node(py.keyword,t,arg='argument_count',value=self.const(count,t)))
         return self.invoke(self.attribute(self.name('_context',t),method,t),[self.name(receiver,t),self.const(name,t)],t,keywords)
 
-    def known_method_phase(self,t):
-        if self.scope is not None and 'known_phase' in self.scope:
-            return self.name(self.scope['known_phase'],t)
-        return self.attribute(self.name('_context',t),'_known_methods_live',t)
 
-    def known_method_origin(self,value,t):
-        if self.scope is None or 'known_phase' not in self.scope:return value
-        # A generic fallback or caller callback must never arm this routine's
-        # candidate. Capture the one selected origin before later local uses.
-        phase=self.node(py.NamedExpr,t,target=self.name(self.scope['known_phase'],t,True),
-            value=self.attribute(self.name('_context',t),'_known_methods_live',t))
-        parts=self.node(py.Tuple,t,elts=[value,phase],ctx=py.Load())
-        return self.node(py.Subscript,t,value=parts,slice=self.const(0,t),ctx=py.Load())
 
-    def known_selection_add(self,operation,left,right,t):
-        call=self.call('_known_selection_add',[self.name('_context',t),operation,left,right],t)
-        if self.scope is None or 'known_phase' not in self.scope:return call
-        # An operator can retire the lexical proof but is never a new origin.
-        phase=self.scope['known_phase']
-        live=self.node(py.BoolOp,t,op=py.And(),values=[
-            self.name(phase,t),self.attribute(self.name('_context',t),'_known_methods_live',t)])
-        keep=self.node(py.NamedExpr,t,target=self.name(phase,t,True),value=live)
-        pair=self.node(py.Tuple,t,elts=[call,keep],ctx=py.Load())
-        return self.node(py.Subscript,t,value=pair,slice=self.const(0,t),ctx=py.Load())
 
     def extension_value_list(self,node):
         t=node.token
@@ -839,52 +714,6 @@ class Emitter(ScalarEmitter):
         if (k is bsl.New and self.extension_value_list_binding
                 and node.name.casefold() in VALUE_LIST_CONSTRUCTOR_ALIASES):
             return self.extension_value_list(node)
-        if self.static_module_kinds:
-            if k is bsl.New and self.address_routine_symbols and self.static_module_kinds[id(node)]=='array':
-                return self.call('_array_constructor_bounds',[],t)
-            if k is bsl.New:return self.call({'map':'_PlainMap','array':'_PlainArray','table':'_PrivateTable','valuelist':'_PrivateValueList'}[self.static_module_kinds[id(node)]],[],t)
-            if k is bsl.Attribute:
-                owner=self.static_module_kinds[id(node.object)];receiver=self.expr(node.object)
-                if owner=='table':return self.attribute(receiver,'columns',t)
-                if owner=='item':return self.node(py.Subscript,t,value=receiver,slice=self.const(0,t),ctx=py.Load())
-                if self.integer_lane and owner=='row':return self.call('_raw_table_value',[receiver,self.const(node.name,t)],t)
-                return self.invoke(self.attribute(receiver,'get_member',t),[self.const(node.name,t)],t)
-            if k is bsl.Index:
-                owner=self.static_module_kinds[id(node.object)]
-                if owner=='row':
-                    if self.integer_lane:
-                        getter='_raw_table_positional' if self.static_module_kinds[id(node.index)]=='number' else '_raw_table_value'
-                        return self.call(getter,[self.expr(node.object),self.expr(node.index)],t)
-                    return self.invoke(self.attribute(self.expr(node.object),'get_index',t),[self.expr(node.index)],t)
-                if owner in ('table','valuelist'):
-                    return self.invoke(self.attribute(self.expr(node.object),'get',t),[self.expr(node.index)],t)
-                if self.static_module_kinds[id(node.object)]=='map':return self.call('_native_dict_get',[self.expr(node.object),self.expr(node.index)],t)
-                return self.native_array_read(self.expr(node.object),node.index,t)
-            if k is bsl.Call and type(node.callee) is bsl.Attribute:
-                receiver=self.expr(node.callee.object);method=node.callee.name.casefold()
-                owner=self.static_module_kinds[id(node.callee.object)]
-                if owner=='row' and self.integer_lane:
-                    return self.call('_raw_table_positional',[receiver,self.expr(node.arguments[0])],t)
-                if owner=='row':
-                    return self.invoke(self.attribute(receiver,'get',t),[self.expr(node.arguments[0])],t)
-                if self.integer_lane and owner in ('table','columns') and method in ('count','количество'):
-                    storage=self.attribute(receiver,'rows' if owner=='table' else '_items',t)
-                    return self.call('len',[storage],t)
-                if owner in ('table','columns') and method in ('indexof','индекс'):
-                    name='_index_of' if self.integer_lane else 'index_of'
-                    return self.invoke(self.attribute(receiver,name,t),[self.expr(node.arguments[0])],t)
-                if owner in ('table','valuelist','columns'):
-                    name={'add':'add','добавить':'add','get':'get','получить':'get','count':'count','количество':'count','total':'total','итог':'total'}[method]
-                    return self.invoke(self.attribute(receiver,name,t),[self.expr(arg) for arg in node.arguments],t)
-                if method in ('add','добавить'):
-                    return self.invoke(self.attribute(receiver,'append',t),[self.expr(node.arguments[0])],t)
-                if method in ('insert','вставить'):
-                    return self.call('_native_dict_setitem',[receiver,*[self.expr(arg) for arg in node.arguments]],t)
-                if method in ('get','получить'):
-                    if self.static_module_kinds[id(node.callee.object)]=='map':return self.call('_native_dict_get',[receiver,self.expr(node.arguments[0])],t)
-                    return self.native_array_read(receiver,node.arguments[0],t,method=True)
-                if method in ('count','количество','ubound','вграница'):
-                    return self.call('_native_count' if method in ('count','количество') else '_native_ubound',[receiver],t)
         if k is bsl.Call and type(node.callee) is bsl.Group:
             callee=node.callee
             while type(callee) is bsl.Group:callee=callee.expression
@@ -957,9 +786,6 @@ class Emitter(ScalarEmitter):
             bound=self.invoke(self.attribute(self.name('_context',t),'resolve_service',t),[self.const(key,t)],t,
                     [self.node(py.keyword,t,arg='argument_count',value=self.const(len(node.arguments),t))] if self.source_scopes else [])
             value=self.invoke(bound,args,t)
-            if id(node) in self.known_origins:
-                value=self.call('_known_construct_table',[self.name('_context',t),value],t)
-                value=self.known_method_origin(value,t)
             return value
         if k is bsl.Attribute:
             if self.local_field_facts.get(id(node))=='structure':
@@ -967,15 +793,7 @@ class Emitter(ScalarEmitter):
             receiver=self.temp()
             bind=self.node(py.NamedExpr,t,target=self.name(receiver,t,True),value=self.expr(node.object))
             read=self.member_read(node,receiver,t)
-            if id(node) in self.known_selection_reads:
-                protocol=self.call('_known_selection_read_protocol',[self.name('_context',t),self.name(receiver,t)],t)
-                if self.scope is not None and 'known_phase' in self.scope:
-                    retire=self.node(py.NamedExpr,t,target=self.name(self.scope['known_phase'],t,True),value=self.const(0,t))
-                    protocol=self.node(py.BoolOp,t,op=py.Or(),values=[protocol,retire])
-                live=self.node(py.Compare,t,left=self.known_method_phase(t),ops=[py.Eq()],comparators=[self.const(1,t)])
-                check=self.node(py.BoolOp,t,op=py.And(),values=[live,protocol])
-                parts=[bind,check,read]
-            else:parts=[bind,read]
+            parts = [bind, read]
             pair=self.node(py.Tuple,t,elts=parts,ctx=py.Load())
             return self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
         if k is bsl.Index:
@@ -1068,34 +886,6 @@ class Emitter(ScalarEmitter):
             call=self.receiver_boundary(call,receiver,t)
             pair=self.node(py.Tuple,t,elts=[bind,call],ctx=py.Load())
             return self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
-        if k is bsl.Call and id(node) in self.known_calls:
-            entry,fresh=self.known_calls[id(node)];callee=node.callee
-            location=callee
-            while type(location) in (bsl.Attribute,bsl.Group,bsl.Call):
-                location=location.object if type(location) is bsl.Attribute else location.expression if type(location) is bsl.Group else location.callee
-            t=location.token;receiver=self.temp()
-            bind=self.node(py.NamedExpr,t,target=self.name(receiver,t,True),value=self.expr(callee.object))
-            if entry.effect=='database':
-                call=self.call('_known_query_execute',[self.name('_context',t),self.name(receiver,t),self.const(callee.name,t),
-                    self.const(require_value,t)],t)
-                call=self.receiver_boundary(call,receiver,t)
-                call=self.known_method_origin(call,t)
-            else:
-                fallback=self.call('_known_generic_call',[self.name('_context',t),self.name(receiver,t),
-                    self.const(callee.name,t),self.const(require_value,t)],t)
-                direct=self.invoke(self.attribute(self.name(receiver,t),entry.method,t),[],t)
-                if fresh:
-                    fallback=self.receiver_boundary(fallback,receiver,t)
-                    phase=1 if entry.kind.startswith('query-') else 2
-                    live=self.node(py.Compare,t,left=self.known_method_phase(t),
-                        ops=[py.Eq()],comparators=[self.const(phase,t)])
-                else:
-                    live=self.call('_known_detached_after_publication',[self.name('_context',t),
-                        self.name(receiver,t),self.const(entry.kind,t)],t)
-                call=self.node(py.IfExp,t,test=live,body=direct,orelse=fallback)
-                if not fresh:call=self.receiver_boundary(call,receiver,t)
-            pair=self.node(py.Tuple,t,elts=[bind,call],ctx=py.Load())
-            return self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
         if k is bsl.Call and type(node.callee) is bsl.Attribute:
             callee=node.callee;location=callee
             while type(location) in (bsl.Attribute,bsl.Group,bsl.Call):
@@ -1178,9 +968,6 @@ class Emitter(ScalarEmitter):
             if (method,len(node.arguments)) in (('insert',2),('get',1)):
                 plain=self.attribute(self.name(receiver,t),'get' if method=='get' else '__setitem__',t)
                 selected=self.node(py.IfExp,t,test=self.node(py.BoolOp,t,op=py.Or(),values=[exact('_PlainMap'),exact('dict')]),body=plain,orelse=selected)
-            operation=self.region_ops.get(id(node)) if self.region_active else None
-            if operation in ('table_add','list_add','table_get','list_get'):
-                selected=self.region_selected(selected,operation,receiver,t)
             dynamic=self.source_scopes or self.host_bindings
             if self.source_scopes:
                 host=self.invoke(self.attribute(self.name('_context',t),'resolve_source_member',t),[self.name(receiver,t),self.const(callee.name,t)],t,
@@ -1313,21 +1100,7 @@ class Emitter(ScalarEmitter):
                     if self.native_cells:
                         if type(plain) is bsl.Name:
                             key=plain.name.casefold()
-                            if self.scope is None and key in self.module_cells:
-                                actual=self.name(self.static_module_names[key],plain.token)
-                                # Bind the live named slot now, not on the callee's first read:
-                                # opaque previous calls can remove it even after assignment.
-                                if id(plain) not in self.static_module_kinds:
-                                    current=self.node(py.Subscript,plain.token,value=actual,slice=self.const(0,plain.token),ctx=py.Load())
-                                    initialized=self.node(py.Compare,plain.token,left=current,ops=[py.IsNot()],
-                                        comparators=[self.name('_UNSET',plain.token)])
-                                if self.external_actuals:
-                                    actual=self.call('_PublishedModuleCell',[actual,self.name('_initial',plain.token),
-                                                                             self.const(key,plain.token)],plain.token)
-                                if id(plain) not in self.static_module_kinds:
-                                    missing=self.call('_missing',[self.const(plain.name,plain.token)],plain.token)
-                                    actual=self.node(py.IfExp,plain.token,test=initialized,body=actual,orelse=missing)
-                            elif self.scope is not None and key in self.scope['boxed'] and key not in self.scope['globals']:
+                            if self.scope is not None and key in self.scope['boxed'] and key not in self.scope['globals']:
                                 actual=self.name(self.scope['slots'][key],plain.token)
                             else:actual=self.call('_adapt_native_cell',[self.output_reference(plain,node.callee.token),self.name('_context',node.callee.token)],node.callee.token)
                         elif type(plain) in (bsl.Index,bsl.Attribute):actual=self.call('_adapt_native_cell',[self.output_reference(plain,node.callee.token,local_row=self.row_cell_references,local_array=self.array_cell_references),self.name('_context',node.callee.token)],node.callee.token)
@@ -1414,18 +1187,6 @@ class Emitter(ScalarEmitter):
         if type(node) in (bsl.Name,bsl.Index,bsl.Attribute):
             reference_token=None if type(node) is bsl.Name and not self.external_name(node.name) else token
             fallback=self.output_reference(node,reference_token)
-            if native_structure is not None and self.scope is None and type(node) is bsl.Name:
-                key=node.name.casefold()
-                if key in self.module_cells:
-                    cell=self.name(self.static_module_names[key],token)
-                    if not self.static_module_kinds:
-                        # A surrounding opaque actual may already have published
-                        # the slots. Its reload must see this output write.
-                        published=self.call('_PublishedModuleCell',
-                            [cell,self.name('_initial',token),self.const(key,token)],token)
-                        cell=self.node(py.IfExp,token,test=self.name('_dynamic_depth',token),body=published,orelse=cell)
-                    live=self.call('_module_property_reference',[cell,self.const(node.name,token)],token)
-                    return self.node(py.IfExp,token,test=native_structure,body=live,orelse=fallback)
             return fallback
         # A non-addressable actual has a disposable output slot. Its
         # expression still runs exactly once, at the original argument point.
@@ -1537,15 +1298,7 @@ class Emitter(ScalarEmitter):
         return self.node(py.Subscript,rt,value=pair,slice=self.const(-1,rt),ctx=py.Load())
 
     def dynamic_call(self,bound,node,references=True,call_token=None,native_mode=None,argument_guard=None):
-        # A direct collection member may take its native path. A named
-        # dynamic dispatch owns a state synchronization boundary throughout.
-        external_actuals=bool(native_mode is None and self.scope is None
-                              and self.static_module_names and not self.static_module_kinds)
-        self.external_actuals+=external_actuals
-        try:
-            return self._dynamic_call(bound,node,references,call_token,native_mode,argument_guard)
-        finally:
-            self.external_actuals-=external_actuals
+        return self._dynamic_call(bound,node,references,call_token,native_mode,argument_guard)
 
     def callback_module_slot(self,node):
         if not self.import_names:return -1
@@ -1746,108 +1499,18 @@ class Emitter(ScalarEmitter):
             loop.test=self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
         return loop
 
-    def plain_array_loop(self,node,slow):
-        """Move liveness checks out of an exact native append loop."""
-        if (self.has_goto or self.catalog_bounds or self.region_active or len(node.body)!=1
-                or self.source_scopes and not self.authority):
-            return slow
-        start,end=node.start,node.end
-        if (type(start) is not bsl.Literal or type(end) is not bsl.Literal
-                or type(start.value) is not Decimal or type(end.value) is not Decimal
-                or not start.value.is_finite() or not end.value.is_finite() or start.value>end.value):
-            return slow
-        statement=node.body[0]
-        call=statement.expression if type(statement) is bsl.ExpressionStatement else None
-        if type(call) is not bsl.Call or type(call.callee) is not bsl.Attribute or len(call.arguments)!=1:
-            return slow
-        member=call.callee;array=member.object;value=call.arguments[0]
-        if (member.name.casefold() not in ('add','добавить') or type(array) is not bsl.Name
-                or type(value) is not bsl.Name or value.name.casefold()!=node.name.casefold()
-                or array.name.casefold()==node.name.casefold()):
-            return slow
-        for name in (array.name,node.name):
-            key=name.casefold()
-            if (self.external_name(name) or key in self.import_names or key in self.shadowable
-                    or key in self.module_cells or key in ('thisobject','этотобъект')
-                    or self.scope is not None and (key in self.scope['boxed'] or key in self.scope['shadows'])):
-                return slow
-
-        # Prefix (including the initial counter write) is identical. In
-        # particular, dropping the old value can invoke a Python finalizer.
-        t=array.token;receiver=self.temp()
-        value_of_array=self.read(array.name,t)
-        bind=self.node(py.NamedExpr,t,target=self.name(receiver,t,True),value=value_of_array)
-        check=self.invoke(self.attribute(self.name('_context',t),'_check',t),[],t)
-        exact=self.call('_plain_append_receiver',[bind],t)
-        pair=self.node(py.Tuple,t,elts=[check,exact],ctx=py.Load())
-        eligible=exact if self.standalone_script else self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
-        if self.authority and not self.standalone_script:
-            # The metered path keeps its own checkpoint and error order.
-            unmetered=self.call('_plain_array_loop',[self.name('_context',t)],t)
-            eligible=self.node(py.BoolOp,t,op=py.And(),values=[unmetered,eligible])
-        append=self.node(py.Expr,member.token,value=self.call('_list_append',[self.name(receiver,t),self.read(node.name,value.token)],member.token))
-        generic=slow[-1]
-        fast=self.node(py.While,node.token,test=deepcopy(generic.test),body=[append,self.increment(node.name,node.token,known_numeric=True)],orelse=[])
-        self.checkpoint_loop(generic,node.token)
-        finished=self.node(py.Expr,t,value=deepcopy(check))
-        chosen=self.node(py.If,t,test=eligible,body=[fast] if self.standalone_script else [fast,finished],orelse=[generic])
-        return [*slow[:-1],chosen]
-
     def statement(self,node):
         t=node.token
-        before_boundaries=self.module_boundaries
-        statement_boundary=bool(self.static_module_names and not self.static_module_kinds and type(node) is bsl.Assign and (type(node.target) is bsl.Name and self.external_name(node.target.name)))
         result=[]
-        if statement_boundary:
-            self.module_boundaries+=1
-            result.append(self.node(py.Expr,t,value=self.module_sync(t,False)))
-            result.append(self.node(py.AugAssign,t,target=self.name('_dynamic_depth',t,True),op=py.Add(),value=self.const(1,t)))
         if self.catalog_bounds:result.append(self.node(py.Expr,t,value=self.invoke(self.attribute(self.name('_context',t),'preparation_step',t),[],t)))
-        def reset():return self.node(py.Assign,t,targets=[self.name('_collection_fast',t,True)],value=self.const(False,t))
-        if self.region_active and ((type(node) is bsl.Assign and type(node.value) is bsl.New) or (type(node) is bsl.ExpressionStatement and type(node.expression) is bsl.Call and id(node.expression) not in self.region_ops)):
-            result.append(reset())
-        if self.region_active and type(node) is bsl.For and id(node) in self.region_states:
-            specification,writes=self.region_states[id(node)]
-            # Compile-owned immutable-by-convention proof metadata, like old repr literals.
-            metadata=self.node(py.Dict,t,keys=[self.const(key,t) for key in specification],values=[self.const(value,t) for value in specification.values()])
-            state=self.name('_initial',t)
-            if self.scope is not None:
-                # No locals() snapshot or retained temporary: a new observer
-                # would extend unrelated host-object/finalizer lifetimes.
-                keys=sorted((set(specification)|set(writes)) & (self.scope['initialized']|self.scope['globals']))
-                values=[self.invoke(self.attribute(self.name('_initial',t),'get',t),[self.const(key,t),self.const(None,t)],t) if key in self.scope['globals'] else self.name(self.scope['slots'][key],t) for key in keys]
-                state=self.node(py.Dict,t,keys=[self.const(key,t) for key in keys],values=values)
-            admission=self.call('_collection_admitted',[self.name('_context',t),state,metadata,self.const(writes,t)],t)
-            if self.scope is not None:
-                safe=self.call('_routine_region_state_safe',[self.name('_initial',t)],t)
-                admission=self.node(py.BoolOp,t,op=py.And(),values=[safe,admission])
-            result.append(self.node(py.Assign,t,targets=[self.name('_collection_fast',t,True)],value=admission))
         emitted=self._statement(node)
         if self.authority and not self.standalone_script and type(node) in (bsl.For,bsl.While,bsl.ForEach):
             for loop in emitted:
                 if type(loop) is py.While:self.checkpoint_loop(loop,t)
         result.extend(emitted)
-        if statement_boundary:
-            result.append(self.node(py.Expr,t,value=self.module_sync(t,True)))
-            result.append(self.node(py.AugAssign,t,target=self.name('_dynamic_depth',t,True),op=py.Sub(),value=self.const(1,t)))
-        if self.region_active and type(node) is bsl.For:result.append(reset())
-        if self.static_module_names and self.module_boundaries!=before_boundaries:
-            reload=self.node(py.Expr,t,value=self.module_sync(t,True))
-            clear=self.node(py.Assign,t,targets=[self.name('_dynamic_depth',t,True)],value=self.const(0,t))
-            cleanup=self.node(py.If,t,test=self.name('_dynamic_depth',t),body=[reload,clear],orelse=[])
-            # A successful boundary expression already balances its depth and
-            # reloads. Only an exception can interrupt that sequence.
-            rethrow=self.node(py.Raise,t,exc=None,cause=None)
-            recover=self.node(py.ExceptHandler,t,type=None,name=None,body=[cleanup,rethrow])
-            result=[self.node(py.Try,t,body=result,handlers=[recover],orelse=[],finalbody=[])]
         return result
     def without_module_facts(self, lower, node, *args, keep_integer_lane=False):
-        # Still lower and validate the whole source. A proven-dead arm has
-        # neither closed facts nor a live register file to synchronize.
-        kinds,names,integer=self.static_module_kinds,self.static_module_names,self.integer_lane
-        self.static_module_kinds,self.static_module_names,self.integer_lane={},{},integer and keep_integer_lane
-        try:return lower(node,*args)
-        finally:self.static_module_kinds,self.static_module_names,self.integer_lane=kinds,names,integer
+        return lower(node,*args)
 
     def _statement(self,node):
         self.visits+=1;t=node.token;k=type(node)
@@ -1855,7 +1518,6 @@ class Emitter(ScalarEmitter):
         if k is bsl.Goto:return [self.goto_signal(self.goto_transfers[id(node)],t)]
         if k is bsl.Execute:
             call=self.call('_execute_fragment',[self.expr(node.expression),*self.fragment_arguments(t)],t)
-            if self.static_module_names:call=self.module_boundary(call,t)
             return [self.node(py.Expr,t,value=call)]
         if k is bsl.Assign and self.import_path(node.target) is not None:
             path=self.import_path(node.target)
@@ -1870,21 +1532,6 @@ class Emitter(ScalarEmitter):
             value=self.expr(node.value)
             return [self.assign_name(node.target.name,value,node.target.token)]
         if k is bsl.Assign and type(node.target) is bsl.Index:
-            if self.static_module_kinds:
-                target=node.target;receiver=self.temp();index=self.temp();stored=self.temp()
-                def assign(name,value):return self.node(py.Assign,t,targets=[self.name(name,t,True)],value=value)
-                is_map=self.static_module_kinds[id(target.object)]=='map'
-                native_index,guarded=(None,False) if is_map else self.native_array_index(target.index)
-                key=self.expr(target.index) if native_index is None else native_index
-                body=[assign(receiver,self.expr(target.object)),assign(index,key),assign(stored,self.expr(node.value))]
-                if is_map:
-                    write=self.call('_native_dict_setitem',[self.name(receiver,t),self.name(index,t),self.name(stored,t)],t)
-                    body.append(self.node(py.Expr,t,value=write));return body
-                if guarded:position=self.guarded_array_offset(receiver,index,t)
-                elif native_index is None:position=self.call('_array_offset',[self.name(receiver,t),self.name(index,t)],t)
-                else:position=self.name(index,t)
-                slot=self.node(py.Subscript,t,value=self.name(receiver,t),slice=position,ctx=py.Store())
-                body.append(self.node(py.Assign,t,targets=[slot],value=self.name(stored,t)));return body
             target=node.target;receiver=self.temp();writer=self.temp();index=self.temp();stored=self.temp()
             def assign(name,value):return self.node(py.Assign,t,targets=[self.name(name,t,True)],value=value)
             def exact(kind):return self.exact_native(kind,self.name(receiver,t),t)
@@ -1915,13 +1562,6 @@ class Emitter(ScalarEmitter):
                 target=node.target
                 call=self.call('_structure_set_known',[self.expr(target.object),self.const(target.name.casefold(),t),self.const(target.name,t),self.expr(node.value)],t)
                 return [self.node(py.Expr,t,value=call)]
-            if self.static_module_kinds:
-                target=node.target;owner=self.static_module_kinds[id(target.object)]
-                receiver=self.expr(target.object);value=self.expr(node.value)
-                if owner=='item':
-                    return [self.node(py.Assign,t,targets=[self.node(py.Subscript,t,value=receiver,slice=self.const(0,t),ctx=py.Store())],value=value)]
-                write=self.invoke(self.attribute(receiver,'set_member',t),[self.const(target.name,t),value],t)
-                return [self.node(py.Expr,t,value=write)]
             target=node.target;receiver=self.temp();writer=self.temp();stored=self.temp()
             def assign(name,value):return self.node(py.Assign,t,targets=[self.name(name,t,True)],value=value)
             def exact(kind):return self.exact_native(kind,self.name(receiver,t),t)
@@ -1930,8 +1570,6 @@ class Emitter(ScalarEmitter):
             selected=self.node(py.IfExp,t,test=native,body=self.const(None,t),orelse=resolver)
             item_field=_VALUE_LIST_ITEM_FIELDS.get(target.name.casefold())
             if item_field is not None:selected=self.node(py.IfExp,t,test=exact('_PlainValueListItem'),body=self.const(None,t),orelse=selected)
-            if self.region_active and self.region_ops.get(id(node))=='row_set':
-                selected=self.region_selected(selected,'row_set',receiver,t,[self.const(target.name,t)])
             body=[assign(receiver,self.expr(target.object)),assign(writer,selected),assign(stored,self.expr(node.value))]
             invoke=self.node(py.Expr,t,value=self.invoke(self.name(writer,t),[self.name(stored,t)],t))
             slot=self.node(py.Subscript,t,value=self.name(receiver,t),slice=self.const(target.name,t),ctx=py.Store())
@@ -1959,11 +1597,6 @@ class Emitter(ScalarEmitter):
             result=[]
             for name in node.names:
                 self.check_name(name)
-                if self.static_module_names and name.casefold() in self.static_module_names:
-                    slot=self.name(self.static_module_names[name.casefold()],t)
-                    absent=self.node(py.Compare,t,left=slot,ops=[py.Is()],comparators=[self.name('_UNSET',t)])
-                    assign=self.node(py.Assign,t,targets=[self.name(self.static_module_names[name.casefold()],t,True)],value=self.const(None,t))
-                    result.append(self.node(py.If,t,test=absent,body=[assign],orelse=[]));continue
                 if self.scope is not None and name.casefold() not in self.scope['globals']:
                     if name.casefold() in self.scope['boxed']:
                         slot=self.name(self.scope['slots'][name.casefold()],t)
@@ -2014,84 +1647,8 @@ class Emitter(ScalarEmitter):
             for branch in reversed(branches):branch.orelse=tail;tail=[branch]
             return tail
         if k is bsl.For:
-            routine_path=self.native_cells and bool(self.routines) and node.name.casefold() in self.static_module_names
-            local_path=self.scope is None and node.name.casefold() in self.static_module_names and not self.authority and not self.catalog_bounds and not self.source_scopes
-            if (not self.table_prefix and (self.static_module_kinds or routine_path or local_path)
-                    and type(node.start) is bsl.Literal and type(node.end) is bsl.Literal):
-                start,end=node.start.value,node.end.value
-                pending=list(node.body);mutated=False
-                while pending:
-                    value=pending.pop()
-                    if type(value) is bsl.Assign and type(value.target) is bsl.Name and value.target.name.casefold()==node.name.casefold():mutated=True
-                    if type(value) in (bsl.For,bsl.ForEach) and value.name.casefold()==node.name.casefold():mutated=True
-                    if routine_path and not self.static_module_kinds:
-                        # Preserve the existing direct-routine path: an
-                        # opaque call or passing the counter by reference
-                        # still requires the live counter loop.
-                        if type(value) in (bsl.Execute,bsl.DynamicNew):mutated=True
-                        if type(value) is bsl.Call:
-                            callee=value.callee
-                            if type(callee) is not bsl.Name or callee.name.casefold() not in self.routines:mutated=True
-                            else:
-                                for parameter,arg in zip(self.routines[callee.name.casefold()].parameters,value.arguments):
-                                    while type(arg) is bsl.Group:arg=arg.expression
-                                    if not parameter.by_value and type(arg) is bsl.Name and arg.name.casefold()==node.name.casefold():mutated=True
-                    elif not self.static_module_kinds:
-                        # Unknown calls, including known routines that may write
-                        # module globals, can change the induction variable.
-                        # A call elsewhere in the module does not affect this loop.
-                        if type(value) in (bsl.Execute,bsl.DynamicNew,bsl.Call,bsl.New):mutated=True
-                        if type(value) is bsl.Attribute and id(value) in self.local_field_facts:continue
-                        if type(value) in (bsl.Attribute,bsl.Index):mutated=True
-                        if type(value) in (bsl.Name,bsl.Binary,bsl.Unary) and id(value) not in self.scalar_kinds:mutated=True
-                    if type(value) is bsl.Assign and (type(value.target) is bsl.Name or id(value) in self.local_field_facts):pending.append(value.value)
-                    elif type(value) is bsl.If and self.static_module_kinds and self.literal_reachability:
-                        pending.extend(_live_if_children(value))
-                    elif isinstance(value,bsl.Node):pending.extend(getattr(value,f.name) for f in fields(value) if f.name!='token' and not (type(value) is bsl.Literal and f.name=='value'))
-                    elif type(value) in (list,tuple):pending.extend(value)
-                if not mutated and type(start) is Decimal and type(end) is Decimal and start.is_finite() and end.is_finite() and start.as_tuple().exponent==0 and end.as_tuple().exponent==0:
-                    name=node.name.casefold()
-                    slot_counter=self.static_module_names.get(name) if self.integer_lane else None
-                    counter=slot_counter or self.temp()
-                    initialize=self.assign_name(node.name,self.literal(start,t),t)
-                    # A counter used only for native indexing need not make a
-                    # Decimal and immediately convert it back to int. Other uses
-                    # still see Decimal, once per iteration, not per reference.
-                    pending=list(node.body);decimal_use=False
-                    def is_counter(value):
-                        while type(value) is bsl.Group:value=value.expression
-                        return type(value) is bsl.Name and value.name.casefold()==name
-                    while pending:
-                        value=pending.pop()
-                        if type(value) is bsl.Name and value.name.casefold()==name:decimal_use=True
-                        if type(value) is bsl.Index and is_counter(value.index) and self.static_module_kinds.get(id(value.object))!='valuelist':
-                            pending.append(value.object);continue
-                        if type(value) is bsl.Call and type(value.callee) is bsl.Attribute and value.callee.name.casefold() in ('get','получить') and len(value.arguments)==1 and is_counter(value.arguments[0]) and self.static_module_kinds.get(id(value.callee.object))!='valuelist':
-                            pending.append(value.callee.object);continue
-                        if type(value) is bsl.If and self.static_module_kinds and self.literal_reachability:
-                            pending.extend(_live_if_children(value))
-                        elif isinstance(value,bsl.Node):pending.extend(getattr(value,f.name) for f in fields(value) if f.name!='token' and not (type(value) is bsl.Literal and f.name=='value'))
-                        elif type(value) in (list,tuple):pending.extend(value)
-                    raw=self.name(counter,t)
-                    advance=([] if slot_counter else [self.assign_name(
-                        node.name,self.call('_Decimal',[raw],t) if decimal_use and not self.integer_lane else raw,t)])
-                    previous=self.range_indices.get(name);self.range_indices[name]=(counter,start>=0)
-                    body=self.loop_body(node.body,None)
-                    if previous is None:self.range_indices.pop(name)
-                    else:self.range_indices[name]=previous
-                    # For-else keeps the reached counter on Break, and otherwise
-                    # publishes the historical post-increment value (or start).
-                    final=max(int(start),int(end)+1)
-                    done=self.assign_name(node.name,self.literal(Decimal(final),t),t)
-                    loop=self.node(py.For,t,target=self.name(counter,t,True),iter=self.call('range',[self.const(int(start),t),self.const(int(end)+1,t)],t),body=[*advance,*body] or [self.node(py.Pass,t)],orelse=[done],type_comment=None)
-                    # Internal integer induction must not escape through Break,
-                    # an exception, or a following read/append of the BSL slot.
-                    slot=self.read(node.name,t)
-                    integer=self.node(py.Compare,t,left=self.call('type',[slot],t),ops=[py.Is()],comparators=[self.name('int',t)])
-                    normalize=self.assign_name(node.name,self.call('_Decimal',[slot],t),t)
-                    cleanup=self.node(py.If,t,test=integer,body=[normalize],orelse=[])
-                    if self.integer_lane:return [initialize,loop]
-                    return [initialize,self.node(py.Try,t,body=[loop],handlers=[],orelse=[],finalbody=[cleanup])]
+            # Python range would discard BSL writes to the live counter
+            # and cannot preserve a fractional start. Emit one while body.
             first=self.temp();last=self.temp()
             bounds=[self.node(py.Assign,t,targets=[self.name(first,t,True)],value=self.expr(node.start)),
                     self.node(py.Assign,t,targets=[self.name(last,t,True)],value=self.expr(node.end))]
@@ -2107,21 +1664,12 @@ class Emitter(ScalarEmitter):
             body=self.loop_body(node.body,increment)
             body.append(self.increment(*increment))
             condition=self.node(py.Compare,t,left=self.read(node.name,t),ops=[py.LtE()],comparators=[self.name(last,t)])
-            result.append(self.node(py.While,t,test=condition,body=body,orelse=[]));return self.plain_array_loop(node,result)
+            result.append(self.node(py.While,t,test=condition,body=body,orelse=[]));return result
         if k is bsl.ForEach:
             self.check_name(node.name)
-            if self.scope is None and self.static_module_kinds.get(id(node.collection))=='array':
-                key=node.name.casefold()
-                slot=self.static_module_names[key]
-                body=self.loop_body(node.body,None)
-                # Assign into a shared cell rather than replacing the address.
-                target=(self.node(py.Subscript,t,value=self.name(slot,t),slice=self.const(0,t),ctx=py.Store())
-                        if key in self.module_cells else self.name(slot,t,True))
-                return [self.node(py.For,t,target=target,iter=self.expr(node.collection),
-                                  body=body or [self.node(py.Pass,t)],orelse=[],type_comment=None)]
             key=node.name.casefold()
             if (not self.external_name(key) and
-                    key not in ('thisobject','этотобъект') and key not in self.module_cells and
+                    key not in ('thisobject','этотобъект') and
                     (self.scope is None or key not in self.scope['boxed'] and
                      key not in self.scope.get('addresses',{}))):
                 # Just a Python for. The exceptions are special assignment
@@ -2230,40 +1778,8 @@ def _source_roundtrip(tree,filename):
     return parsed,source,visited
 
 
-def _routine_region_state_safe(state):
-    # Before extra snapshot lookups, reject hostile key equality and mapping
-    # overrides. The ordinary path retains its original operation ordering.
-    return type(state) is dict and all(type(key) is str for key in state)
 
 
-def _routine_region(routine, scope):
-    """Prove straight-line routine loops with an explicit binding-state lattice.
-
-    Analysis-only numeric seeds never execute. A possibly-bound old local may
-    have a finalizer, so an uncertain overwrite disables that loop's fast arm;
-    absence is used only when no previous path could have bound the slot.
-    """
-    if scope['boxed'] or scope['host_helpers']:return 0, {}, {}
-    from yadinassi.execution.direct.python_direct_collection_regions import analyze
-    seeds=[bsl.Assign(p.token,bsl.Name(p.token,p.name),bsl.Literal(p.token,Decimal(0))) for p in routine.parameters]
-    end,operations,states=analyze(seeds+routine.body,opaque_names=scope['externals'])
-    end-=len(seeds)
-    if end<=0:return 0, {}, {}
-    prefix=routine.body[:end]
-    top_loops={id(node) for node in prefix if type(node) is bsl.For}
-    if not set(states)<=top_loops:return 0, {}, {}  # Nested regions deferred.
-    definite={p.name.casefold() for p in routine.parameters};possible=set(definite)
-    for node in prefix:
-        if type(node) is bsl.Assign and type(node.target) is bsl.Name:
-            key=node.target.name.casefold();definite.add(key);possible.add(key)
-        elif type(node) is bsl.For:
-            specification,writes=states[id(node)]
-            relevant=(set(specification)|set(writes))-scope['globals']
-            if relevant & (possible-definite):del states[id(node)]
-            possible.update(writes)
-            definite.add(node.name.casefold());possible.add(node.name.casefold())
-    if not states:return 0, {}, {}
-    return end,operations,states
 
 
 def _live_if_children(node):
@@ -2272,36 +1788,6 @@ def _live_if_children(node):
         if live_body:yield from body
 
 
-def _module_registers(program, emitter, *, literal_reachability):
-    names=set();cells=set();pending=list(program)
-    while pending:
-        value=pending.pop()
-        if type(value) is bsl.Routine:continue
-        callee=value.callee if type(value) is bsl.Call else None
-        # Register discovery must see the same named callee as call lowering.
-        while type(callee) is bsl.Group:callee=callee.expression
-        if type(callee) is bsl.Name and callee.name.casefold() in emitter.routines:
-            signature=emitter.routines[callee.name.casefold()]
-            for parameter,arg in zip(signature.parameters,value.arguments):
-                while type(arg) is bsl.Group:arg=arg.expression
-                if not parameter.by_value and type(arg) is bsl.Name:
-                    cells.add(arg.name.casefold());names.add(arg.name.casefold())
-        if type(callee) is bsl.Attribute and callee.name.casefold() in ('property','свойство') and len(value.arguments)==2:
-            output=value.arguments[1]
-            while type(output) is bsl.Group:output=output.expression
-            if type(output) is bsl.Name:
-                key=output.name.casefold()
-                if key not in emitter.import_names:cells.add(key)
-        if type(value) is bsl.Assign and type(value.target) is bsl.Name:names.add(value.target.name.casefold())
-        if type(value) is bsl.For:names.add(value.name.casefold())
-        if type(value) is bsl.Var:names.update(name.casefold() for name in value.names)
-        if type(value) is bsl.If and literal_reachability:
-            pending.extend(_live_if_children(value))
-        elif isinstance(value,bsl.Node):
-            pending.extend(getattr(value,f.name) for f in fields(value) if f.name!='token' and not (type(value) is bsl.Literal and f.name=='value'))
-        elif type(value) in (list,tuple):pending.extend(value)
-    names-=emitter.external_names|emitter.module_globals|{'thisobject','этотобъект'}
-    return names,cells & names
 
 
 def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_whole_source=False,_require_last_expression=False,_profile=None,_source_scopes=False,_authority=False,_scalar_routines=False,_callable_externals=(),_shadowable=(),_configuration_calls=False,_host_bindings=False,_catalog_bounds=False,_lean_configuration=False,_retain_generated=True,_allow_pure_builtins=False,_current_module=False):
@@ -2327,24 +1813,6 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         source_text='\n'.join(lines.get(line,'') for line in range(1,max(lines,default=0)+1))
     emitter=Emitter(filename)
     emitter.extension_value_list_binding=_profile is None and vm.allow_extensions
-    pure_bindings=None
-    pure_prefix=0
-    if _allow_pure_builtins and _profile is None and not _whole_source and not vm.allow_extensions and not imported:
-        from yadinassi.execution.direct.python_direct_pure_builtins import analyze, prefix, result_kinds
-        candidate=analyze(nodes)
-        active=candidate is not None and candidate.active(vm)
-        if not active and not has_goto and not has_label and not any(
-                type(node) in (bsl.Routine,bsl.Var) for node in program):
-            pure_prefix,candidate=prefix(program)
-            if candidate is not None:
-                facts=analyze_static(program[:pure_prefix],opaque_names=NAMES,
-                                     builtin_results=result_kinds(candidate.services))
-                if facts is None:candidate=None
-            active=candidate is not None and candidate.active(vm)
-        if active:
-            pure_bindings=candidate
-            emitter.pure_builtins={name:'_pure_'+name for name in candidate.services}
-        else:pure_prefix=0
     emitter.has_goto=has_goto
     emitter.goto_destinations=destinations;emitter.goto_transfers=transfers
     emitter.current_module=_profile is None or _current_module
@@ -2369,15 +1837,6 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     if emitter.missing_database_roots:emitter.missing_metadata_roots=METADATA_NAMES
     if _profile is None and vm.database_context is not None:
         emitter.external_names.update(DATABASE_NAMES);emitter.constructor_names|={'query','запрос'}
-    known_methods=(_profile is None and emitter.standalone_script and not has_goto
-            and any(type(node) is bsl.New and node.name.casefold() in
-                    ('query','запрос','valuetable','таблицазначений') for node in nodes))
-    if known_methods:
-        from yadinassi.execution.direct.python_direct_known_methods import analyze as analyze_known
-        emitter.known_calls,emitter.known_origins,emitter.known_selection_reads,emitter.known_selection_adds=analyze_known(
-            program,database=vm.database_context is not None)
-        if not emitter.known_calls:
-            emitter.known_origins=set();emitter.known_selection_reads.clear();emitter.known_selection_adds.clear()
     if _profile is not None:
         module_names,external_names,constructors=_profile
         emitter.external_names={name.casefold() for name in external_names}
@@ -2419,7 +1878,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         from yadinassi.execution.direct.python_direct import _reject as reject_contract
         reject_contract('external names collide with module declarations')
     conditional_shadow_names=emitter.module_globals|emitter.external_names|{'thisobject','этотобъект'}
-    definitions=[];any_region=False
+    definitions=[]
     from yadinassi.execution.direct.python_direct_collection_regions import analyze,admitted,helpers
     for key,routine in emitter.routines.items():
         link_start=len(emitter.import_links)
@@ -2549,27 +2008,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             args=py.arguments(posonlyargs=[],args=[emitter.node(py.arg,token,arg='_new',annotation=None)],vararg=None,kwonlyargs=[],kw_defaults=[],kwarg=None,defaults=[])
             prologue.append(emitter.node(py.FunctionDef,token,name=setter,args=args,body=body,decorator_list=[],returns=None,type_comment=None))
         if shadows and has_fragments:_reject('source implicit namespace shadow with Execute/Eval is not integrated')
-        if known_methods and not imported and not has_fragments and routine.execution_context=='client' and not routine.is_dual:
-            # Host getter/setter closures are not an escape by themselves.
-            # The known-method analysis ends the lexical phase at a reachable
-            # opaque call; dead or later calls need not poison earlier facts.
-            local_slots=(assigned|declarations)-parameters-globals_-emitter.scope['externals']-emitter.scope['boxed']
-            calls,origins,selection_reads,selection_adds=analyze_known(routine.body,database=vm.database_context is not None,local_slots=local_slots)
-            if calls:
-                emitter.scope['known_phase']=emitter.temp()
-                emitter.known_calls.update(calls)
-                emitter.known_origins.update(origins)
-                emitter.known_selection_reads.update(selection_reads)
-                emitter.known_selection_adds.update(selection_adds)
-        routine_end,emitter.region_ops,emitter.region_states=(0,{}, {}) if routine.is_async or has_goto or emitter.authority or emitter.source_scopes else _routine_region(routine,emitter.scope)
-        emitter.region_active=bool(routine_end)
-        region_body=emitter.sequence(routine.body[:routine_end])
-        emitter.region_active=False
-        ordinary_body=emitter.sequence(routine.body[routine_end:])
-        if routine_end:
-            any_region=True
-            prologue.append(emitter.node(py.Assign,routine.token,targets=[emitter.name('_collection_fast',routine.token,True)],value=emitter.const(False,routine.token)))
-        routine_body=prologue+(region_body+ordinary_body or [emitter.node(py.Pass,routine.token)])
+        routine_body=prologue+(emitter.sequence(routine.body) or [emitter.node(py.Pass,routine.token)])
         if emitter.native_cells and lexical:
             activation=emitter.node(py.Assign,routine.token,targets=[emitter.name('_cell_activation',routine.token,True)],value=emitter.node(py.List,routine.token,elts=[emitter.const(True,routine.token)],ctx=py.Load()))
             retire=emitter.node(py.Assign,routine.token,targets=[emitter.node(py.Subscript,routine.token,value=emitter.name('_cell_activation',routine.token),slice=emitter.const(0,routine.token),ctx=py.Store())],value=emitter.const(False,routine.token))
@@ -2580,7 +2019,6 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         elif emitter.authority and not emitter.standalone_script:
             check=lambda:emitter.node(py.Expr,routine.token,value=emitter.invoke(emitter.attribute(emitter.name('_context',routine.token),'_check',routine.token),[],routine.token))
             routine_body=[check(),emitter.node(py.Try,routine.token,body=routine_body,handlers=[],orelse=[],finalbody=[check()])]
-        emitter.region_ops={};emitter.region_states={}
         emitter.scope=None
         args=py.arguments(posonlyargs=[],args=[emitter.node(py.arg,parameter.token,arg=slots[parameter.name.casefold()],annotation=None) for parameter in routine.parameters],vararg=None,kwonlyargs=[],kw_defaults=[],kwarg=None,defaults=[])
         first_optional=next((index for index,parameter in enumerate(routine.parameters) if parameter.default is not None),len(routine.parameters))
@@ -2602,211 +2040,25 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
                  emitter.const('@async:'+key,token),actuals,emitter.const(not routine.is_function,token)],token)
             routine_body=[emitter.node(py.Return,token,value=start)]
         definitions.append(emitter.node(py.FunctionDef,routine.token,name=emitter.routine_symbols[key],args=args,body=routine_body,decorator_list=[],returns=None,type_comment=None))
-    # Module locals are the register file; dynamic edges explicitly synchronize.
-    static_facts=None
-    table_regions=();extended_tests=set()
-    builtin_results=None
-    if pure_bindings is not None and not pure_prefix:
-        from yadinassi.execution.direct.python_direct_pure_builtins import has_literal_output, result_kinds
-        # Observer elimination does not change ordinary arithmetic or loop
-        # lowering in programs that previously required generic dispatch.
-        if not has_literal_output(pure_bindings):
-            builtin_results=result_kinds(pure_bindings.services)
-    numeric_routines={};address_routines={}
-    closed_with_declarations=emitter.literal_reachability
-    if ((not async_bodies or closed_with_declarations) and _profile is None and not imported
-            and not vm.allow_extensions and not _authority and not _source_scopes):
-        for name,routine in emitter.routines.items():
-            if (routine.is_async or not routine.is_function or not routine.body
-                    or not all(p.by_value for p in routine.parameters)
-                    or type(routine.body[-1]) is not bsl.Return or routine.body[-1].value is None
-                    or any(type(stmt) is not bsl.Assign or type(stmt.target) is not bsl.Name
-                           for stmt in routine.body[:-1])):
-                continue
-            formals={p.name.casefold() for p in routine.parameters}
-            locals_={stmt.target.name.casefold() for stmt in routine.body[:-1]}-formals
-            if ((locals_ | formals) & emitter.routines.keys()
-                    or locals_ & (emitter.external_names | emitter.module_globals | {'thisobject','этотобъект'})):
-                continue
-            numeric_routines[name]=routine
-        for name,routine in emitter.routines.items():
-            if (routine.is_async or routine.is_function or not routine.body
-                    or not any(not p.by_value for p in routine.parameters)
-                    or any(p.default is not None for p in routine.parameters)):
-                continue
-            formals={p.name.casefold() for p in routine.parameters}
-            if all(type(stmt) is bsl.Assign and type(stmt.target) is bsl.Name
-                    and stmt.target.name.casefold() in formals for stmt in routine.body):
-                address_routines[name]=routine
-    if ((not async_bodies or closed_with_declarations) and _profile is None and not imported
-            and not _exports and not _require_last_expression and vm.database_context is None):
-        facts_reachability=emitter.literal_reachability
-        names,cells=_module_registers(program,emitter,literal_reachability=facts_reachability)
-        builtin_external_names=() if builtin_results is None else pure_bindings.names-names
-        if names or builtin_results or numeric_routines or address_routines:
-            static_facts=analyze_static(program,opaque_names=emitter.external_names|emitter.module_globals,
-               builtin_results=builtin_results,builtin_external_names=builtin_external_names,
-               numeric_routines=numeric_routines,address_routines=address_routines,
-               literal_reachability=facts_reachability,module_declarations=closed_with_declarations,extended_tests=extended_tests)
-            emitter.static_module_kinds={} if static_facts is None else static_facts[1]
-        # Starting a task (directly or through a reachable same-module
-        # routine), Eval, and all opaque edges decline this closed proof.
-        # Preserve the original dictionary-backed async module for them.
-        if not async_bodies or static_facts is not None:
-            if static_facts is not None:names.update(static_facts[0])
-            elif facts_reachability:
-                names,cells=_module_registers(program,emitter,literal_reachability=False)
-                builtin_external_names=() if builtin_results is None else pure_bindings.names-names
-            if vm.allow_extensions:
-                # Explicit host callbacks can replace a named module binding
-                # with a canonical Reference. Resolve it from the live state
-                # at argument binding rather than boxing it as a scalar.
-                names.difference_update(cells)
-                cells.clear()
-            emitter.module_cells.update(cells)
-            emitter.static_module_names={key:emitter.temp() for key in sorted(names)}
-            if not has_goto:
-                opaque=emitter.external_names|emitter.module_globals|emitter.module_cells
-                emitter.scalar_kinds=analyze_static(program,opaque_names=opaque,scalar_prefix=True,
-                   builtin_results=builtin_results,builtin_external_names=builtin_external_names)
-                emitter.scalar_prefix_reads=frozenset(emitter.scalar_kinds)
-            if (not has_goto and static_facts is None and not emitter.authority and not emitter.source_scopes
-                    and not emitter.catalog_bounds and (not emitter.routines or emitter.native_cells)):
-                from yadinassi.execution.direct.python_direct_local_facts import analyze as analyze_local
-                emitter.local_field_facts,local_scalars=analyze_local(program,opaque_names=opaque,routines=emitter.routines)
-                emitter.scalar_kinds.update(local_scalars)
-            if (static_facts is None and facts_reachability and (pure_bindings is None or pure_prefix)
-                    and not emitter.routines and not cells):
-                table_regions=tuple(analyze_table_regions(program,opaque_names=opaque))
-                if table_regions and pure_prefix:
-                    # Preserve the existing independently proven table
-                    # islands. A new scalar prefix must not displace them.
-                    pure_prefix=0
-                    pure_bindings=None
-                    emitter.pure_builtins={}
-    if static_facts is not None and not emitter.module_cells and not emitter.authority and not emitter.catalog_bounds:
-        integer_kinds=('number','bool','string','table','row','columns','column','map','map_insert','default_column_type')
-        emitter.integer_lane=bool(static_facts[1]) and all(kind in integer_kinds for kind in static_facts[1].values())
-        if emitter.integer_lane and (extended_tests or 'default_column_type' in static_facts[1].values()):
-            # Newly closed table shapes may still use direct access without
-            # switching old Decimal operations to a different numeric lane.
-            previous=analyze_static(program,opaque_names=emitter.external_names|emitter.module_globals,
-                builtin_results=builtin_results,builtin_external_names=builtin_external_names,
-                numeric_routines=numeric_routines,address_routines=address_routines,
-                literal_reachability=facts_reachability,module_declarations=closed_with_declarations,
-                extended_reachability=False)
-            emitter.integer_lane=(previous is not None and bool(previous[1])
-                and all(kind in integer_kinds for kind in previous[1].values()))
-        if emitter.integer_lane:
-            emitter.scalar_kinds.update(static_facts[1])
-            proven={name:routine for name,routine in numeric_routines.items()
-                    if id(routine.body[-1].value) in static_facts[1]}
-            emitter.numeric_routine_symbols={name:emitter.temp() for name in proven}
-            # Only closed numeric calls use these definitions. The existing
-            # generic definitions still own every persisted/exported signature.
-            for name,routine in proven.items():
-                keys={p.name.casefold():emitter.temp() for p in routine.parameters}
-                for stmt in routine.body[:-1]:
-                    key=stmt.target.name.casefold()
-                    if key not in keys:keys[key]=emitter.temp()
-                emitter.scope={'slots':keys,'bindings':set(keys),'globals':set(),'externals':set(),
-                               'boxed':set(),'local_declarations':set(keys),'initialized':set(keys)}
-                token=routine.token
-                arguments=py.arguments(posonlyargs=[],args=[emitter.node(py.arg,p.token,arg=keys[p.name.casefold()],annotation=None)
-                                       for p in routine.parameters],vararg=None,kwonlyargs=[],kw_defaults=[],kwarg=None,defaults=[])
-                body=emitter.sequence(routine.body)
-                definitions.append(emitter.node(py.FunctionDef,token,name=emitter.numeric_routine_symbols[name],
-                                               args=arguments,body=body,decorator_list=[],returns=None,type_comment=None))
-            emitter.scope=None
-    if static_facts is not None and any(kind=='address_call' for kind in static_facts[1].values()):
-        proven={name:routine for name,routine in address_routines.items()
-                if id(routine.body[0].value) in static_facts[1]}
-        emitter.address_routine_symbols={name:emitter.temp() for name in proven}
-        emitter.scalar_kinds.update(static_facts[1])
-        module_kinds=emitter.static_module_kinds
-        emitter.static_module_kinds={}
-        for name,routine in proven.items():
-            keys={p.name.casefold():emitter.temp() for p in routine.parameters}
-            accesses={p.name.casefold():(keys[p.name.casefold()],emitter.temp())
-                      for p in routine.parameters if not p.by_value}
-            emitter.scope={'slots':keys,'bindings':set(keys),'globals':set(),'externals':set(),
-                           'boxed':set(),'local_declarations':set(keys),'initialized':set(keys),'addresses':accesses}
-            token=routine.token;slots=[]
-            for p in routine.parameters:
-                key=p.name.casefold()
-                slots.extend(emitter.node(py.arg,p.token,arg=slot,annotation=None)
-                             for slot in accesses.get(key,(keys[key],)))
-            arguments=py.arguments(posonlyargs=[],args=slots,vararg=None,kwonlyargs=[],kw_defaults=[],kwarg=None,defaults=[])
-            body=emitter.sequence(routine.body)
-            definitions.append(emitter.node(py.FunctionDef,token,name=emitter.address_routine_symbols[name],
-                                           args=arguments,body=body,decorator_list=[],returns=None,type_comment=None))
-        emitter.scope=None
-        emitter.static_module_kinds=module_kinds
-    from yadinassi.execution.direct.python_direct_collection_regions import analyze,admitted,helpers
-    region_end=0
-    if not has_goto and not emitter.static_module_names and not emitter.routines and not emitter.authority and not emitter.source_scopes:
-        region_end,emitter.region_ops,emitter.region_states=analyze(program,opaque_names=emitter.external_names)
-    emitter.region_active=bool(region_end)
+    # Module slots are already live. Do not generate a shadow register
+    # file with publish/reload around possible effects. Routine locals
+    # continue to use Python locals and real ByRef addresses.
+    if not has_goto and _profile is None and not imported:
+        opaque=emitter.external_names|emitter.module_globals
+        emitter.scalar_kinds=analyze_static(program,opaque_names=opaque,scalar_prefix=True)
+        emitter.scalar_prefix_reads=frozenset(emitter.scalar_kinds)
+        if not emitter.authority and not emitter.source_scopes and not emitter.catalog_bounds and (not emitter.routines or emitter.native_cells):
+            from yadinassi.execution.direct.python_direct_local_facts import analyze as analyze_local
+            emitter.local_field_facts,local_scalars=analyze_local(program,opaque_names=opaque,routines=emitter.routines)
+            emitter.scalar_kinds.update(local_scalars)
     if has_goto and type(program[-1]) is bsl.ExpressionStatement:
         emitter.goto_last_expression=program[-1]
-    if pure_prefix:
-        # Only builtin calls change here. Retain ordinary arithmetic and loop
-        # lowering, including Decimal rounding of the induction variable.
-        body=emitter.sequence(program[:pure_prefix])
-        # No proof crosses the first effect. The original suffix still owns
-        # publication/reload and resolves all calls against the live VM.
-        emitter.pure_builtins={}
-        body+=emitter.sequence(program[pure_prefix:])
-    elif table_regions:
-        # Setup and effects retain ordinary publication. Each disjoint island
-        # starts with the exact live table slots that its proof consumes.
-        body=[];cursor=0
-        for start,end,seeds,configured,kinds in table_regions:
-            body+=emitter.sequence(program[cursor:start])
-            segment=program[start:end]
-            generic=emitter.sequence(segment)
-            emitter.static_module_kinds=kinds;emitter.table_prefix=True
-            specialized=emitter.sequence(segment)
-            emitter.table_prefix=False;emitter.static_module_kinds={}
-            tests=[]
-            for key in seeds:
-                arguments=[emitter.name('_context',t),emitter.name(emitter.static_module_names[key],t)]
-                if configured:arguments.append(emitter.const(True,t))
-                tests.append(emitter.call('_fresh_closed_table',arguments,t))
-            test=tests[0] if len(tests)==1 else emitter.node(py.BoolOp,t,op=py.And(),values=tests)
-            body.append(emitter.node(py.If,t,test=test,body=specialized,orelse=generic))
-            cursor=end
-        body+=emitter.sequence(program[cursor:])
-    else:
-        body=emitter.sequence(program[:region_end])
-        emitter.region_active=False
-        body+=emitter.sequence([node for node in program[region_end:] if type(node) is not bsl.Routine])
-    if region_end:body.insert(0,emitter.node(py.Assign,t,targets=[emitter.name('_collection_fast',t,True)],value=emitter.const(False,t)))
+    body=emitter.sequence([node for node in program if type(node) is not bsl.Routine])
     if not has_goto and type(program[-1]) is bsl.ExpressionStatement:
         last=body.pop()
         if emitter.integer_lane:last.value=emitter.call('_dynamic_public_number',[last.value],program[-1].token)
-        if type(last) is py.Try and emitter.static_module_names:
-            last.body[-1]=emitter.node(py.Return,program[-1].token,value=last.body[-1].value);body.append(last)
-        else:body.append(emitter.node(py.Return,program[-1].token,value=last.value))
+        body.append(emitter.node(py.Return, program[-1].token, value=last.value))
     else:body.append(emitter.node(py.Return,t,value=emitter.node(py.Dict,t,keys=[],values=[]) if _exports and not emitter.routines else emitter.name('_initial',t)))
-    if emitter.static_module_names:
-        load=[]
-        for key,slot in emitter.static_module_names.items():
-            value=emitter.invoke(emitter.attribute(emitter.name('_initial',t),'get',t),[emitter.const(key,t),emitter.name('_UNSET',t)],t)
-            if key in emitter.module_cells:value=emitter.call('_NativeCell',[value],t)
-            load.append(emitter.node(py.Assign,t,targets=[emitter.name(slot,t,True)],value=value))
-        depth=([emitter.node(py.Assign,t,targets=[emitter.name('_dynamic_depth',t,True)],value=emitter.const(0,t))]
-               if emitter.module_boundaries else [])
-        final=[emitter.node(py.Expr,t,value=emitter.module_sync(t,False))]
-        sync_helpers=[]
-        for reload in ((False,True) if emitter.module_boundaries else (False,)):
-            helperbody=[]
-            if reload:helperbody.append(emitter.node(py.Nonlocal,t,names=list(emitter.static_module_names.values())))
-            helperbody.append(emitter.node(py.Expr,t,value=emitter.module_sync_body(t,reload)))
-            args=emitter.node(py.arguments,t,posonlyargs=[],args=[],vararg=None,kwonlyargs=[],kw_defaults=[],kwarg=None,defaults=[])
-            sync_helpers.append(emitter.node(py.FunctionDef,t,name='_reload_module' if reload else '_publish_module',args=args,body=helperbody,decorator_list=[],returns=None,type_comment=None))
-        body=[*load,*sync_helpers,*depth,emitter.node(py.Try,t,body=body,handlers=[],orelse=[],finalbody=final)]
-        emitter.static_module_names={};emitter.static_module_kinds={}
     initializers=[emitter.node(py.Assign,t,targets=[emitter.name(slot,t,True)],value=emitter.call('_SlotReference',[emitter.name('_initial',t),emitter.const(key,t)],t)) for key,slot in emitter.source_refs.items()]
     if emitter.routines:
         exports=emitter.node(py.Dict,t,keys=[emitter.const(key,t) for key in emitter.routines]+
@@ -2857,20 +2109,6 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         _ordinary_bracket_read_types=_ORDINARY_BRACKET_READ_IDS,
         _ordinary_bracket_write_types=_ORDINARY_BRACKET_WRITE_IDS,
         _require_database_context=require_database_context,_structural_count_ids=TARGET_IDS,_select_structural_read=selects,_structural_count=structural_count,_local_structure_member=_local_structure_member,_BoxedStructure=_BoxedStructure,_local_array_index=_local_array_index,_BoxedArray=_BoxedArray,_local_row_index=_local_row_index,_local_row_member=_local_row_member,_PlainTableRow=_vt.BSLValueTableRow,_raw_table_value=RowStorage.get_value,_raw_table_positional=_vt.BSLValueTableRow._positional_value,_dynamic_remainder=remainder,_dynamic_divide=divide,_dynamic_sign=sign,_dynamic_public_number=public_number,_plain_array_loop=_plain_array_loop,_plain_append_receiver=_plain_append_receiver,_list_append=list.append,_native_host_reference=_native_host_reference,_native_cell_reference=_native_cell_reference,_native_fragment_binding=_native_fragment_binding,_NativeCell=_NativeCell,_PublishedModuleCell=_PublishedModuleCell,_adapt_native_cell=_adapt_native_cell,_PrivateTable=_vt.BSLValueTable,_PrivateValueList=PlainValueList,_PlainValueList=PlainValueList,_PlainValueListItem=PlainValueListItem,_module_primitive_type_ids=frozenset(id(kind) for kind in (list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure)),_module_data_types=data_types,_module_data_type_ids=frozenset(id(kind) for kind in data_types),_native_dict_get=dict.get,_native_dict_setitem=dict.__setitem__,_PlainArray=_PlainArray,_Decimal=Decimal,_PlainMap=PlainMap,_plain_map=plain_map,_execute_fragment=execute_fragment,_fragment_binding=_fragment_binding,_bind_eval=bind_eval,_raise_arity_error=raise_arity_error,_host_omission_error=_host_omission_error,_host_omission_values=_host_omission_values,_dynamic_construct=dynamic_construct,_invalid_native_arity=_invalid_native_arity,_typed_find=scalar.typed_find,_list_delete=_list_delete,_native_ubound=_native_ubound,_readonly=readonly,_array_set_checked=_array_set_checked,_bounded_insert=bounded_insert,_structure_insert=structure_insert,_array_constructor_bounds=bounded_array,_new_structure=new_structure,_structure_from_schema=structure_from_schema,_host_name_reference=_host_name_reference,_Cell=_Cell,_ForwardReference=_ForwardReference,_as_ref=_as_ref,_bound_ref=_bound_ref,_UNSET_REF=_UNSET_REF,_OMITTED_REF=_OMITTED_REF,_argument_count_error=_argument_count_error,_routine_value_error=_routine_value_error,_procedure_value_error=_procedure_value_error,_identity_reference=_identity_reference,_IndexRef=_IndexRef,_AttributeRef=_AttributeRef,_SlotReference=live_state._SlotReference,_source_reference=source_reference,_canonical_reference=_canonical_reference,_structure_property=structure_property,_native_method_missing=_native_method_missing,_native_count=_native_count,_MapEntry=_MapEntry,_array_member=_array_member,_native_property_missing=_native_property_missing,_structure_get_known=structure_get_known,_structure_set_known=structure_set_known,_native_property_write_missing=_native_property_write_missing,_checked_array_index=_checked_array_index,_checked_literal_array_index=_checked_literal_array_index,_partial=partial,_native_getitem=_NATIVE_GETITEM,_list_get=_list_get,_array_method_get=_array_method_get,_for_each_iterable=_for_each_iterable,_metered_for_each=_metered_for_each,_array_offset=array_offset,_TypedMap=_TypedMap,_NakedMap=_NakedMap,_DirectStructure=_DirectStructure,_host_reference=host_reference,_UNSET=UNSET,_missing=missing,_native_add=_NATIVE_ADD,_concatenate=scalar.concatenate,_divide=scalar.decimal_divide,_sign=scalar.decimal_sign,_order=scalar.uca_order,_truth=scalar.truth,_equal=equal,_not_equal=not_equal,_MISSING=_MISSING,_handled_error=handled_error,_reraise_handled=reraise_handled,_raise_error=raise_error,_presentation=scalar.presentation,_BSLRuntimeError=BSLRuntimeError,_plain_method_type_ids=frozenset(map(id, (list, _PlainArray, dict, PlainMap, _TypedMap, _NakedMap, _DirectStructure))))
-    if emitter.known_calls:
-        from yadinassi.execution.direct.python_direct_known_methods import execute, construct_table, detached_after_publication, generic_call
-        namespace.update(_known_query_execute=execute,_known_construct_table=construct_table,
-                         _known_detached_after_publication=detached_after_publication,
-                         _known_generic_call=generic_call)
-    if emitter.known_selection_reads:
-        from yadinassi.execution.direct.python_direct_known_methods import selection_read_protocol
-        namespace['_known_selection_read_protocol']=selection_read_protocol
-    if emitter.known_selection_adds:
-        from yadinassi.execution.direct.python_direct_known_methods import selection_add
-        namespace['_known_selection_add']=selection_add
-    if table_regions:
-        from yadinassi.execution.direct.python_direct_plain_tables import fresh_closed_table
-        namespace['_fresh_closed_table']=fresh_closed_table
     if destinations:namespace['_GotoTransfer']=_GotoTransfer
     namespace['_nonconstructible_type'] = _nonconstructible_type
     if emitter.http_body_receiver:
@@ -2879,11 +2117,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     # Exception handlers share the module source instead of emitting one literal each.
     namespace['_diagnostic_source'] = source_text
     namespace['_plain_value_list_write'] = _plain_value_list_write
-    if pure_bindings is not None:
-        from yadinassi.execution.direct.python_direct_pure_builtins import resolve
-        namespace.update({'_pure_'+name:resolve(name,native_numbers=emitter.integer_lane)
-                          for name in pure_bindings.services})
-    if region_end or any_region:namespace.update(_collection_admitted=admitted,_collection_helpers=helpers(),_routine_region_state_safe=_routine_region_state_safe)
+    namespace['_TextAddend'] = scalar.TextAddend
     # Every route genuinely compiles executable code before source effects.
     # Whole-source research additionally parses the actual source, not a fake
     # notification or an ignored authorization probe.
@@ -2908,7 +2142,6 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     result._source_implicit_shadows=frozenset(emitter.implicit_shadows)
     result._research_lowering_counts=(count,emitter.visits,emitter.python_nodes)
     result._research_roundtrip_visits=roundtrip_visits
-    result._pure_bindings=pure_bindings
     return result
 
 

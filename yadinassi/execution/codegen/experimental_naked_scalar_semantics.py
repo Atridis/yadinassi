@@ -21,6 +21,17 @@ from .experimental_naked_collections import _NakedMap, _TypedMap
 from .experimental_naked_structure import _DirectStructure
 
 
+class TextAddend:
+    """Only string-left addition differs from Python's native operation."""
+    __slots__ = ('text',)
+
+    def __init__(self, text):
+        self.text = text
+
+    def __add__(self, right):
+        return concatenate(self.text, right)
+
+
 class UnsupportedScalarSemantics(BoundaryViolation):
     pass
 

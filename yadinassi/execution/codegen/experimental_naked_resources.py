@@ -17,8 +17,10 @@ def array_widths(dimensions=(), *, max_slots=None, max_dimensions=None):
         raise ValueError('Массив: превышен предел измерений Yadinassi (64)')
     # Validate all dimensions before any allocation or integer materialization.
     for size in sizes:
-        if type(size) is not Decimal:raise TypeError('Ожидается число')
-        if not size.is_finite() or size!=size.to_integral_value():raise ValueError('Ожидается целое число')
+        kind=type(size)
+        if kind is Decimal:
+            if not size.is_finite() or size!=size.to_integral_value():raise ValueError('Ожидается целое число')
+        elif kind is not int:raise TypeError('Ожидается число')
         if size<0:raise ValueError('Размер массива не может быть отрицательным')
         if len(sizes)>1 and size==0:raise ValueError('Размеры многомерного массива должны быть положительными')
     widths=[];parents=1;cost=0

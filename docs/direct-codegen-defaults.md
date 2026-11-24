@@ -6,6 +6,17 @@ An adapter should handle only a concrete semantic difference demonstrated by
 a regression test. Preserve existing host, database, and transfer admission:
 a Python protocol is not permission to call it on an arbitrary host object.
 
+### Scope of an exception
+
+An exception to direct lowering must have a behavioral witness, a named
+operation or boundary, and the smallest scope that preserves that behavior.
+For example, BSL string addition may convert the right operand and rejoin
+UTF-16 halves. Adapt that addition only; do not recompile its loop, routine,
+or module with a different generator. A test for an exception should show
+both the different result and that adjacent ordinary operations still use
+their normal lowering. Do not use a whole-program proof, alternate program
+body, or legacy evaluator as the default complement to an exception.
+
 The ordinary `For Each` lowering is a Python `for`, including when a prepared
 program does not know the collection type. The loop asks for the iterable at
 entry; its body does not call `next()` or handle exhaustion manually. Normal

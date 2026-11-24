@@ -167,24 +167,18 @@ class ScalarEmitter:
     def scalar_add(self, node, lhs, kind, left, right):
         t = node.token
         closed = self.static_module_kinds.get(id(node))
-        known_selection = id(node) in self.known_selection_adds
         if kind == 'string' or closed == 'string' or type(lhs) is bsl.Literal and type(lhs.value) is str:
             # The BSL string operator coerces the RHS and rejoins surrogate halves.
-            if known_selection:
-                return self.known_selection_add(self.name('_concatenate', t), left, right, t)
             return self.call('_concatenate', [left, right], t)
         if kind in ('number', 'bool') or closed == 'number' or type(lhs) is bsl.Literal:
-            if known_selection:
-                return self.known_selection_add(self.name('_native_add', t), left, right, t)
             return self.node(py.BinOp, t, left=left, op=py.Add(), right=right)
-        # Resolve the only type-dependent arithmetic operator before evaluation
-        # of RHS, while preserving the established lifetime of the left value.
+        # The only adaptation is the BSL string operator. Keep one
+        # occurrence of each operand in the emitted tree and execute +.
         temporary = self.temp()
         bound = self.node(py.NamedExpr, t, target=self.name(temporary, t, True), value=left)
         test = self.node(py.Compare, t, left=self.call('type', [bound], t), ops=[py.Is()],
                          comparators=[self.name('str', t)])
-        operation = self.node(py.IfExp, t, test=test, body=self.name('_concatenate', t),
-                              orelse=self.name('_native_add', t))
-        if known_selection:
-            return self.known_selection_add(operation, self.name(temporary, t), right, t)
-        return self.invoke(operation, [self.name(temporary, t), right], t)
+        saved = self.name(temporary, t)
+        left = self.node(py.IfExp, t, test=test,
+                         body=self.call('_TextAddend', [saved], t), orelse=saved)
+        return self.node(py.BinOp, t, left=left, op=py.Add(), right=right)

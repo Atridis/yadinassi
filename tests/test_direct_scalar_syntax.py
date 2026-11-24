@@ -53,6 +53,47 @@ class DirectScalarSyntaxTests(unittest.TestCase):
         self.assertEqual(events, ['left', 'right', 'chosen'])
         self.assertEqual(tuple(vm.variables[k] for k in 'abc'), (3, True, 7))
 
+    def test_unknown_addition_has_one_python_operand_tree(self):
+        vm = Interpreter(allow_extensions=True)
+        self.addCleanup(vm.close)
+        events = []
+        vm.register_function('Mark', lambda key, value: events.append(key) or value)
+        source = 'Result=Mark("a","x")+(Mark("b",1)+(Mark("c",2)+Mark("d",3)));'
+        plan = vm.prepare(source)
+        tree = ast.parse(plan._plan.generated_source)
+        self.assertNotIn('_native_add', plan._plan.generated_source)
+        additions = [node for node in ast.walk(tree)
+                     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add)
+                     and isinstance(node.left, ast.IfExp)]
+        self.assertEqual(len(additions), 3)
+        vm.execute_prepared(plan)
+        self.assertEqual(vm.variables['result'], 'x6')
+        self.assertEqual(events, ['a', 'b', 'c', 'd'])
+
+    def test_string_addition_exception_does_not_change_neighboring_lowering(self):
+        vm = Interpreter(allow_extensions=True)
+        self.addCleanup(vm.close)
+        calls = []
+        vm.register_function('ReadValue', lambda: calls.append('read') or 'prefix')
+        source = ('Before=1+2; Text=ReadValue()+3; '
+                  'After=0; For I=1 To 4 Do After=After+I; EndDo;')
+        plan = vm.prepare(source)
+        generated = plan._plan.generated_source
+        tree = ast.parse(generated)
+        calls_to = lambda name: [node for node in ast.walk(tree)
+                                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                                 and node.func.id == name]
+        self.assertEqual(len(calls_to('_TextAddend')), 1)
+        self.assertFalse(calls_to('_publish_module'))
+        self.assertFalse(calls_to('_reload_module'))
+        loops = [node for node in ast.walk(tree) if isinstance(node, (ast.While, ast.For))]
+        self.assertEqual(len(loops), 1)
+        self.assertNotIn('_TextAddend', ast.unparse(loops[0]))
+        vm.execute_prepared(plan)
+        self.assertEqual(calls, ['read'])
+        self.assertEqual([vm.variables[key] for key in ('before', 'text', 'after')],
+                         [Decimal(3), 'prefix3', Decimal(10)])
+
     def test_unknown_truth_does_not_use_foreign_python_truth_hook(self):
         events = []
         class Foreign:

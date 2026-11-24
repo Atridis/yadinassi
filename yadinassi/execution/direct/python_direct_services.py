@@ -407,7 +407,8 @@ class ServicesBoundary:
                             or function.reference_parameters):
                         raise BoundaryViolation('canonical JSON service changed during argument evaluation')
                     return bound(*values)
-                invoke.requires_reference=bound.requires_reference
+                if hasattr(bound,'requires_reference'):
+                    invoke.requires_reference=bound.requires_reference
                 invoke.accepts_callback_module=getattr(bound,'accepts_callback_module',False)
                 return invoke,dict.fromkeys(positions,None)
             bound.prepare_omissions=prepare_omissions
