@@ -1,6 +1,6 @@
+import sys
 import unittest
 from decimal import Decimal
-from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.types.values import Reference,HostFunction
 from yadinassi.execution.codegen.experimental_naked_live_state import source_reference,_SlotReference
@@ -53,9 +53,47 @@ class CachedSourceRefsTests(unittest.TestCase):
         self.assertEqual(vm.variables['x'],1);self.assertEqual(vm.variables['i'],1)
 
     def test_one_slot_allocation_per_name_per_module_invocation(self):
-        import yadinassi.execution.codegen.experimental_naked_live_state as live
-        with patch.object(live,'_SlotReference',wraps=_SlotReference) as factory:
-            vm=Interpreter();vm.execute('Procedure F(a,b) a=a+1;b=b+1;EndProcedure x=0;For i=1 To 20 Do F(x,x);EndDo;')
-            self.assertEqual(factory.call_count,1);self.assertEqual(vm.variables['x'],40)
+        from yadinassi.execution.direct.python_direct_cells import (
+            CellReference, NativeCell, PublishedModuleCell,
+        )
+
+        # Observe real allocations without swapping factories and changing
+        # the prepared code's native call path.
+        allocators = {factory.__code__ for factory in (
+            NativeCell, CellReference.__init__, PublishedModuleCell.__init__,
+            _SlotReference.__init__,
+        )}
+        for prepared in (False, True):
+            for iterations, names in ((20, ('x',)), (1, ('x', 'y')), (101, ('x', 'y'))):
+                with self.subTest(prepared=prepared, iterations=iterations, names=names):
+                    vm = Interpreter()
+                    self.addCleanup(vm.close)
+                    assignments = ''.join(f'{name}=0;' for name in names)
+                    calls = ''.join(f'F({name},{name});' for name in names)
+                    source = ('Procedure F(a,b) a=a+1;b=b+1;EndProcedure '
+                              f'{assignments}For i=1 To {iterations} Do {calls}EndDo;')
+                    plan = vm.prepare(source) if prepared else None
+                    for _ in range(2):
+                        allocations = 0
+
+                        def profile(frame, event, arg):
+                            nonlocal allocations
+                            if event == 'call' and frame.f_code in allocators:
+                                allocations += 1
+
+                        previous = sys.getprofile()
+                        sys.setprofile(profile)
+                        try:
+                            if prepared:
+                                vm.execute_prepared(plan)
+                            else:
+                                vm.execute(source)
+                        finally:
+                            sys.setprofile(previous)
+
+                        self.assertEqual(allocations, len(names))
+                        self.assertEqual([vm.variables[name] for name in names],
+                                         [2 * iterations] * len(names))
+
 
 if __name__=='__main__':unittest.main()
