@@ -449,6 +449,54 @@ class DirectValueTreeTests(unittest.TestCase):
         for source in ('T.Columns.Get(0)','For Each C In T.Columns Do EndDo;'):
             with self.subTest(source=source),self.assertRaises(BoundaryViolation):vm.execute(source)
 
+    def test_structural_row_exposure_does_not_inspect_cell_keys(self):
+        import sys
+        from yadinassi.execution.direct import python_direct_value_tree as bridge
+
+        vm = self.vm()
+        tree, first = self.setup_tree(vm)
+        for index in range(12):
+            tree.columns.add(f"Extra{index}")
+        second = tree.rows.add()
+        iterate = vm.prepare('For Each Item In T.Rows Do Last = Item; EndDo;')
+        positional = vm.prepare('T.Rows.Get(0)')
+        codes = {bridge._row_cells.__code__, bridge._column_state.__code__}
+        checks = []
+
+        def observe(frame, event, argument):
+            if event == 'call' and frame.f_code in codes:
+                checks.append(frame.f_code.co_name)
+
+        previous = sys.getprofile()
+        sys.setprofile(observe)
+        try:
+            vm.execute_prepared(iterate)
+            self.assertIs(vm.execute_prepared(positional), first)
+        finally:
+            sys.setprofile(previous)
+        self.assertIs(vm.variables['last'], second)
+        self.assertEqual(checks, [])
+
+    def test_structurally_returned_row_still_checks_cells_before_read(self):
+        vm = self.vm()
+        tree, row = self.setup_tree(vm)
+        cells = row.cells
+        foreign_column = trees.BSLValueTree().columns.add('Name')
+        try:
+            row.cells = {foreign_column: 'not a cell of this row'}
+            vm.execute('For Each Item In T.Rows Do Last = Item; EndDo;')
+            self.assertIs(vm.variables['last'], row)
+            with self.assertRaises(BoundaryViolation):
+                vm.execute('Last.Name')
+            with patch.object(trees, '_MAX_COLUMNS', 1):
+                row.cells = {**row.cells, tree.columns.items[0]: 'one'}
+                with self.assertRaisesRegex(BoundaryViolation, 'ValueTree cell budget changed'):
+                    vm.execute('T.Rows.Get(0)')
+        finally:
+            row.cells = cells
+        vm.execute('Last.Name = "current";')
+        self.assertEqual(vm.execute('Last.Name'), 'current')
+
     def test_iteration_admits_abi_once_per_resume_and_rechecks_next_resume(self):
         import sys
         from yadinassi.execution.direct.python_direct import make_boundary

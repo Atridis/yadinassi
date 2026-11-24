@@ -173,17 +173,18 @@ class ExecutePreparationReuseTests(unittest.TestCase):
         vm.variables['fragments']=sources+[sources[0]]
         with patch.object(parser,'parse_fragment',wraps=parser.parse_fragment) as parse:
             vm.execute('For Each Fragment In fragments Do Execute(Fragment);EndDo;')
-            self.assertEqual(parse.call_count,18)
+            self.assertEqual(parse.call_count,17)
             vm.execute('Execute("X=0;");')
-            self.assertEqual(parse.call_count,19)
+            self.assertEqual(parse.call_count,18)
 
-    def test_text_budget_evicts_even_below_entry_limit(self):
+    def test_repeated_text_can_displace_resident_to_fit_source_budget(self):
         from yadinassi.syntax import parser
         a='//'+('a'*33000)+'\nX=1;';b='//'+('b'*33000)+'\nX=2;'
         vm=Interpreter();vm.variables.update(a=a,b=b)
         with patch.object(parser,'parse_fragment',wraps=parser.parse_fragment) as parse:
-            vm.execute('Execute(a);Execute(b);Execute(a);')
-        self.assertEqual(parse.call_count,3)
+            vm.execute('X=0;Execute(a);Execute(b);Execute(a);Execute(b);Execute(a);')
+        self.assertEqual(parse.call_count,4)
+        self.assertEqual(vm.variables['x'],1)
 
     def test_limits_rechecked_after_cache_hit(self):
         vm=Interpreter(allow_extensions=True)
@@ -203,7 +204,7 @@ class ExecutePreparationReuseTests(unittest.TestCase):
         def track(scope,*args):
             original(scope,*args);refs.append(weakref.ref(scope))
             contexts.append(weakref.ref(scope.context))
-            units.extend(scope.context._execute_units.values())
+            units.extend(scope.context._execute_units.units.values())
         vm=Interpreter();vmref=weakref.ref(vm)
         with patch.object(fragments.FragmentScope,'__init__',track):
             vm.execute('X=0;For I=1 To 3 Do Execute("X=X+1;");EndDo;')

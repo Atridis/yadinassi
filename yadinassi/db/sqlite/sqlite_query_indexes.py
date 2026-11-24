@@ -8,7 +8,9 @@ from .sqlite_catalog_layout import quote_identifier
 def register_query_collations(connection):
     """Install versioned comparators on readers, writers and migration handles."""
     from .sqlite_catalog_numbers import register_aggregates
+    from .sqlite_text_witness import valid_utf8_text
     register_aggregates(connection)
+    connection.create_function('yadinassi_valid_utf8_text_v1', 2, valid_utf8_text, deterministic=True)
     def compare(a, b): return (a > b) - (a < b)
     connection.create_collation('yadinassi_casefold_v1', lambda a, b: compare(a.casefold(), b.casefold()))
     connection.create_collation('yadinassi_uuid_v1', lambda a, b: compare(UUID(a).int, UUID(b).int))

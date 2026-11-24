@@ -469,7 +469,11 @@ def _read_row_item(state,collection,data,item):
     if (raw['collection'] is not collection or raw['parent'] is not parent or raw['_deleted']
             or raw['depth']!=(0 if parent is None else _row_state(state,parent)['depth']+1)):
         raise BoundaryViolation('foreign ValueTree row result')
-    _row_cells(state,raw)
+    # Expose the checked row identity, not its cell contents. The exact
+    # dictionary shape and size still apply; readers that look up cell data
+    # independently seal every key before using Python's hashing.
+    if len(raw['cells'])>state[-1]['_MAX_COLUMNS']:
+        raise BoundaryViolation('ValueTree cell budget changed')
     return item
 
 

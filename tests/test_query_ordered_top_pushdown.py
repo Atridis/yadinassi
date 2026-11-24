@@ -175,6 +175,26 @@ class OrderedTopMainDemoTests(unittest.TestCase):
         with self.assertRaisesRegex(BackendError, 'integrity'):
             self.bound(text).execute()
 
+    def test_same_arms_and_total_true_where_share_unicode_page_witness(self):
+        self._seed_ascii_case_page()
+        self.vm.execute('W=Catalogs.Склады.FindByCode("3").GetObject();W.Description="Ё😀";W.Write();')
+        expression = 'CASE WHEN Code=Code THEN Description ELSE Description END'
+        statement = f'SELECT TOP 1 {expression} AS Caption FROM Catalog.Склады'
+        from yadinassi.db.query.relational_queries import _Plan
+
+        for predicate in ('1=1', '1=1 AND (NULL IS NULL OR 2=3)'):
+            query = self.bound(statement+f' WHERE {predicate} ORDER BY Description')
+            with patch('yadinassi.db.query.query_pushdown._witnessed_case_projection', return_value=None):
+                expected = query.execute()._rows
+            trace, traced = self.actual_trace()
+            with traced, patch.object(_Plan, 'load', side_effect=AssertionError('materialized input')):
+                self.assertEqual(query.execute()._rows, expected)
+            self.assertEqual(len(trace), 1, trace)
+            self.assertIn('WITH proof AS', trace[0])
+        self.assertEqual(self.bound(statement+' WHERE NULL=NULL ORDER BY Code').execute()._rows, ())
+        with self.assertRaisesRegex(ValueError, 'division by zero'):
+            self.bound(statement+' WHERE 1/0=1 ORDER BY Code').execute()
+
     def test_same_arms_decline_when_cold_statement_capability_is_too_low(self):
         self._seed_ascii_case_page()
         query = self.bound('SELECT TOP 1 CASE WHEN Code=Code THEN Description ELSE Description END '

@@ -443,7 +443,10 @@ class FormHTTPTests(unittest.TestCase):
 
     def test_wrong_origin_token_host_and_other_protocol_reject(self):
         for headers in ({'Host':'other.invalid'},{'Origin':'https://evil.invalid'},{'X-Yadinassi-Session':'b'*43}):
-            self.assertEqual(self.http(headers=headers)[0],403)
+            with self.subTest(header=next(iter(headers))):
+                # Header admission deliberately closes without consuming a body.
+                self.assertEqual(self.http(headers=headers,body=b'')[0],403)
+        self.assertEqual(self.http(body=b'')[0],413)  # Valid headers reach the body limit.
         bad=request();bad['method']='editor.hello'
         self.assertEqual(self.http(body=encode_line(bad))[0],400)
         self.assertFalse(self.controller._opened)

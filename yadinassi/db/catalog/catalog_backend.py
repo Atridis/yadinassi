@@ -297,6 +297,8 @@ class CatalogAggregateRequest:
 @dataclass(frozen=True, slots=True)
 class CatalogAggregateResult:
     count: int
+    # Whole-source header count when the proof validates more than it returns.
+    input_count: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

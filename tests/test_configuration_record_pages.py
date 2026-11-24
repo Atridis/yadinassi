@@ -137,10 +137,12 @@ class ConfigurationRecordPagesTests(unittest.TestCase):
         server=LocalUIServer(self.app,handler=ConfigurationHandler)
         thread=Thread(target=server.serve_forever,kwargs={'poll_interval':.01},daemon=True);thread.start()
         try:
-            def call(method,params,*,origin=None,status=200):
+            def call(method,params,*,origin=None,status=200,body=None):
                 connection=HTTPConnection(*server.server_address,timeout=10)
                 try:
-                    connection.request('POST','/rpc',encode_line({'jsonrpc':'2.0','id':1,'method':'application.'+method,'params':params}),
+                    if body is None:
+                        body=encode_line({'jsonrpc':'2.0','id':1,'method':'application.'+method,'params':params})
+                    connection.request('POST','/rpc',body,
                         {'Origin':origin or server.origin,'Content-Type':'application/x-ndjson','X-Yadinassi-Session':server.token})
                     response=connection.getresponse();raw=response.read();self.assertEqual(response.status,status)
                     return decode_line(raw)['result'] if status==200 else None
@@ -148,7 +150,7 @@ class ConfigurationRecordPagesTests(unittest.TestCase):
             entry=self.app.names['catalog.warehouses.form.card']
             first=call('catalog',{'entry':entry})['state']['catalog'];nav=first['navigation']
             page_params={'entry':entry,'snapshot':nav['snapshot'],'cursor':nav['next']}
-            call('catalogPage',page_params,origin='https://untrusted.invalid',status=403)
+            call('catalogPage',page_params,origin='https://untrusted.invalid',status=403,body=b'')
             call('catalogUnknown',page_params,status=400)
             page=call('catalogPage',page_params)['state']['catalog'];self.assertEqual(page['navigation']['page'],2)
             filtered=call('catalogFilter',{'entry':entry,'snapshot':page['navigation']['snapshot'],'query':'X0049','order':'code'})

@@ -39,6 +39,36 @@ class SourceXDTOJSONTests(unittest.TestCase):
         self.assertEqual(vm.execute('Copy.Labels.Get(1);'),'б')
         vm.execute('Copy.Child.Label="independent";')
         self.assertEqual(vm.execute('P.Child.Label;'),'child')
+    def test_sibling_list_writes_preserve_unique_object_backlinks_and_equal_scalars(self):
+        app=self.ready();vm=app.interpreter
+        vm.variables['input']='{"Children":[{"Label":"same"},{"Label":"same"}],"Labels":["a","a"]}'
+        vm.execute('R.SetString(Input);P=XDTOFactory.ReadJSON(R,T);'
+                   'Children=P.GetList("Children");Labels=P.GetList("Labels");'
+                   'First=Children.GetXDTO(0);Second=Children.GetXDTO(1);')
+        first=vm.variables['first'];second=vm.variables['second'];parent=vm.variables['p']
+        self.assertIsNot(first,second)
+        self.assertIs(vm.execute('First.Owner();'),parent)
+        self.assertIs(vm.execute('Second.Owner();'),parent)
+        self.assertEqual((vm.execute('Labels.Get(0);'),vm.execute('Labels.Get(1);')),('a','a'))
+        with self.assertRaises(basic.DENIED):
+            vm.execute('Children.Set(1,First);')
+        self.assertIs(vm.execute('Children.GetXDTO(1);'),second)
+
+        # A same-length, duplicated live edge is not the sealed snapshot.
+        items=vm.variables['children']._items
+        items[1]=first
+        try:
+            with self.assertRaisesRegex(basic.DENIED,'list entries changed'):
+                vm.execute('Labels.Set(0,"changed");')
+        finally:
+            items[1]=second
+        self.assertEqual(vm.execute('Labels.Get(0);'),'a')
+        vm.execute('Labels.Set(0,"changed");')
+        self.assertEqual(vm.execute('Labels.Get(0);'),'changed')
+        self.assertEqual(vm.execute('Labels.Get(1);'),'a')
+        self.assertIs(vm.execute('Children.GetXDTO(0);'),first)
+        self.assertIs(vm.execute('Children.GetXDTO(1);'),second)
+
     def test_original_source_xdto_xml_json_scenario(self):
         original=existing.SourceXDTOTests();self.addCleanup(original.doCleanups)
         original.test_qualified_native_package_xml_and_json()

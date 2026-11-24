@@ -20,6 +20,15 @@ Apply configuration changes through the database lifecycle and reopen the
 backend to bind new metadata. External SQL that edits the configuration or
 schema in place is not a way to refresh a running query's metadata.
 
+When selecting a join, the planner can discard repeated total comparisons and
+neutral Boolean terms without changing the evaluation order of the remaining
+condition or converting query NULL into False. Recognized neutral conditions
+also preserve a proved COUNT or bounded CASE plan. Range, resource, and
+integrity checks still apply to the same data as the corresponding original
+plan. For catalog and document SQL witnesses, valid UTF-8 strings use their
+declared UTF-16 qualifier and exact character-budget cost. Text that the SQL
+proof cannot certify (including embedded NUL) still uses the strict reader.
+
 ## Fields of a reference in a query
 
 A flat SQLite query can project fields through a declared reference. For

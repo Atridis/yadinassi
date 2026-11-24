@@ -1,5 +1,6 @@
 """Expression-only direct evaluation over live caller addresses."""
 from decimal import Decimal
+from .python_direct_fragment_cache import FragmentUnitCache
 
 
 def bind_eval(bound,context,parent,bindings,visible):
@@ -74,8 +75,8 @@ def _evaluate(value,context,parent,bindings,visible,profile):
             cache=prepared_cache(context,'eval')
         else:
             cache=getattr(context,'_eval_units',None)
-            if cache is None:cache=context._eval_units={}
-        unit=cache.get(key)
+            if cache is None:cache=context._eval_units=FragmentUnitCache()
+        unit=cache.units.get(key)
         if unit is None:
             try:expression=parse_expression(text)
             except BSLError as error:
@@ -100,9 +101,7 @@ def _evaluate(value,context,parent,bindings,visible,profile):
                 raise UnsupportedNakedSyntax(str(error)) from None
             # Retain compilation only, never AST, mutable Program, bindings or authority.
             unit=(routines,constructors,calls,plan.function,plan.constants,plan.source_name,plan.source_text)
-            while cache and (len(cache)>=16 or sum(len(k[0]) for k in cache)+len(text)>EVAL_MAX_SOURCE):
-                del cache[next(iter(cache))]
-            cache[key]=unit
+            cache.remember(key,unit,EVAL_MAX_SOURCE)
         else:
             _admit_bindings(vm,*unit[:3])
         function,constants,source_name,source_text=unit[3:]

@@ -113,14 +113,17 @@ class EvalPreparationReuseTests(unittest.TestCase):
         with self.assertRaises(BSLError):vm.execute('Eval("Effect(New Array)");Change();Eval("Effect(New Array)");')
         self.assertEqual(len(seen),1)
 
-    def test_entry_and_text_eviction_and_activation_isolation(self):
+    def test_first_overflow_keeps_resident_and_activation_isolation(self):
         from yadinassi.syntax import parser
-        for expressions in ([str(i) for i in range(17)]+['0'],['1'+(' '*33000),'2'+(' '*33000),'1'+(' '*33000)]):
-            vm=Interpreter();vm.variables['expressions']=expressions
+        small = [str(i) for i in range(17)] + ['0']
+        large = ['1'+(' '*33000), '2'+(' '*33000), '1'+(' '*33000)]
+        for expressions, parses in ((small, 17), (large, 2)):
+            vm=Interpreter();self.addCleanup(vm.close)
+            vm.variables['expressions']=expressions
             with patch.object(parser,'parse_expression',wraps=parser.parse_expression) as parse:
                 vm.execute('For Each E In expressions Do R=Eval(E);EndDo;')
-                self.assertEqual(parse.call_count,len(expressions))
-                vm.execute('R=Eval("0");');self.assertEqual(parse.call_count,len(expressions)+1)
+                self.assertEqual(parse.call_count,parses)
+                vm.execute('R=Eval("0");');self.assertEqual(parse.call_count,parses+1)
 
     def test_limits_are_checked_after_warmup(self):
         from yadinassi import BSLError
@@ -139,7 +142,7 @@ class EvalPreparationReuseTests(unittest.TestCase):
         units=[];refs=[];original=fragments.FragmentScope.__init__
         def track(scope,*args):
             original(scope,*args);refs.extend((weakref.ref(scope),weakref.ref(scope.context)))
-            units.extend(scope.context._eval_units.values())
+            units.extend(scope.context._eval_units.units.values())
         vm=Interpreter();ref=weakref.ref(vm)
         with patch.object(fragments.FragmentScope,'__init__',track):vm.execute('S=0;For I=1 To 3 Do S=Eval("S+1");EndDo;')
         vm.close();del vm;gc.collect()

@@ -298,6 +298,9 @@ def _validate_records(factory,records):
             if len(value._items)!=len(entries) or any(a is not b for a,b in zip(value._items,entries)):
                 raise BoundaryViolation('source XDTO list entries changed')
         elif type(value) is not shared._VALUE:raise BoundaryViolation('source XDTO value inventory changed')
+    # Build counts on demand, only after the inventory has proved the exact
+    # live list and its entries against the seal. Keep nothing across checks.
+    backlinks={}
     for value in records:
         if type(value) is shared._VALUE:continue
         if type(value) is _LIST:
@@ -332,8 +335,18 @@ def _validate_records(factory,records):
                     slot=ancestor._values.get(prop._name)
                     if prop._upper==1:
                         if slot is not trail:raise BoundaryViolation('source XDTO owner backlink changed')
-                    elif type(slot) is not _LIST or slot not in records or sum(c is trail for c in slot._items)!=1:
-                        raise BoundaryViolation('source XDTO list backlink changed')
+                    else:
+                        if type(slot) is not _LIST or slot not in records:
+                            raise BoundaryViolation('source XDTO list backlink changed')
+                        key=id(slot)
+                        counts=backlinks.get(key)
+                        if counts is None:
+                            counts=backlinks[key]={}
+                            for child in slot._items:
+                                child_key=id(child)
+                                counts[child_key]=counts.get(child_key,0)+1
+                        if counts.get(id(trail))!=1:
+                            raise BoundaryViolation('source XDTO list backlink changed')
                 elif trail._owning is not None:raise BoundaryViolation('source XDTO detached property changed')
                 trail=ancestor
         for prop,child in children:

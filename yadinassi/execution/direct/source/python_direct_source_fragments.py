@@ -2,6 +2,7 @@
 from contextlib import contextmanager
 from contextvars import ContextVar
 from weakref import WeakKeyDictionary
+from ..python_direct_fragment_cache import FragmentUnitCache
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 _ACTIVE=ContextVar('direct_source_fragments',default=())
@@ -15,7 +16,7 @@ def prepared_cache(context,kind):
     if hasattr(context,'_execute_units') or hasattr(context,'_eval_units'):
         raise BoundaryViolation('source fragment cache replaced')
     caches=_UNITS.get(context)
-    if caches is None:caches=_UNITS[context]=({}, {})
+    if caches is None:caches=_UNITS[context]=(FragmentUnitCache(), FragmentUnitCache())
     return caches[0 if kind=='execute' else 1]
 
 def release(context):

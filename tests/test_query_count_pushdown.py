@@ -204,6 +204,126 @@ class CountPushdownTests(unittest.TestCase):
             row = raw._connection.execute(f'SELECT SUM({valid}),SUM({units}) FROM {table} AS src', args).fetchone()
         self.assertEqual(row, (3, 15))
 
+    def test_total_neutrals_and_nonascii_hidden_text_keep_native_header_count(self):
+        table = self.table()
+        self.sql('UPDATE '+table+' SET description=? WHERE code=?', ('Склад😀', '1'))
+        self.query()
+        connection = self.context.backend._read_handle.connection
+        cases = (
+            ('SELECT COUNT(DISTINCT Ref) FROM Catalog.Products', 3),
+            ('SELECT COUNT(*) FROM Catalog.Products WHERE DeletionMark=FALSE AND 1=1', 3),
+            ('SELECT COUNT(*) FROM Catalog.Products WHERE (1=0 OR NOT (NULL IS NOT NULL)) '
+             'AND (DeletionMark=FALSE OR 2=3)', 3),
+        )
+        for statement, count in cases:
+            with self.subTest(statement=statement):
+                trace = []
+                connection.set_trace_callback(trace.append)
+                try:
+                    with patch.object(relational_queries._Plan, 'load',
+                                      side_effect=AssertionError('materialized input')):
+                        self.assertEqual(self.query(statement)._rows, ((Decimal(count),),))
+                finally:
+                    connection.set_trace_callback(None)
+                self.assertEqual(len(trace), 1, trace)
+                self.assertTrue(trace[0].startswith('SELECT COUNT(*)'), trace)
+        with self.assertRaisesRegex(ValueError, 'division by zero'):
+            self.query('SELECT COUNT(*) FROM Catalog.Products WHERE DeletionMark=FALSE AND 1/0=1')
+        self.assertEqual(self.query('SELECT COUNT(*) FROM Catalog.Products WHERE '
+                                    'DeletionMark=FALSE AND NULL=NULL')._rows, ((Decimal(0),),))
+
+    def test_neutral_filter_keeps_original_full_input_charge(self):
+        table = self.table()
+        self.sql('UPDATE '+table+' SET deletion_mark=1 WHERE code=?', ('1',))
+        prefix = 'SELECT COUNT(*) FROM Catalog.Products WHERE '
+        with patch.object(queries, '_MAX_CELLS', 1):
+            self.assertEqual(self.query(prefix+'DeletionMark=TRUE')._rows, ((Decimal(1),),))
+            self.assertEqual(self.query(prefix+'DeletionMark=TRUE AND DeletionMark=TRUE')._rows,
+                             ((Decimal(1),),))
+            for predicate in ('DeletionMark=TRUE AND 1=1', 'DeletionMark=TRUE OR 1=0'):
+                with self.subTest(predicate=predicate):
+                    for native in (False, True):
+                        from contextlib import nullcontext
+                        oracle = (nullcontext() if native else
+                                  patch.object(query_pushdown, 'count_eligible', return_value=False))
+                        with oracle, self.assertRaisesRegex(ValueError, 'input resource'):
+                            self.query(prefix+predicate)
+
+    def test_unicode_witness_accounts_characters_and_declines_invalid_utf8(self):
+        from yadinassi.db.sqlite.sqlite_document_count import catalog_header_witness
+        table = self.table()
+        length = self.manager._schema.description_length
+        describe = 'Склад😀'
+        self.sql('UPDATE '+table+' SET description=?', (describe,))
+        with closing(self.context.backend.begin_query_read()) as view:
+            raw = view._view
+            valid, units, args = catalog_header_witness(raw, self.manager._schema,
+                                                       text_fields=('description',))
+            sql = f'SELECT SUM({valid}), SUM({units}) FROM {table}'
+            self.assertEqual(raw._connection.execute(sql,args).fetchone(), (3, 3*len(describe)))
+        statement = 'SELECT COUNT(DISTINCT Ref) FROM Catalog.Products'
+        # Keep the storage failure and its classification on the strict residual.
+        self.sql('UPDATE '+table+" SET description=CAST(x'ff' AS TEXT) WHERE code='1'")
+        with patch.object(query_pushdown, 'count_eligible', return_value=False):
+            with self.assertRaises(BackendError) as expected:
+                self.query(statement)
+        with self.assertRaises(BackendError) as actual:
+            self.query(statement)
+        self.assertEqual(actual.exception.code, expected.exception.code)
+        self.sql('UPDATE '+table+' SET description=? WHERE code=?', ('😀'*length, '1'))
+        with self.assertRaisesRegex(BackendError, 'integrity'):
+            self.query(statement)
+
+    def test_sql_unicode_witness_matches_strict_utf16_qualifier_boundaries(self):
+        from yadinassi.db.catalog.catalog_qualifiers import validate_string
+        from yadinassi.db.sqlite.sqlite_query_indexes import register_query_collations
+        from yadinassi.db.sqlite.sqlite_text_witness import text_check
+
+        with closing(sqlite3.connect(':memory:')) as connection:
+            connection.execute('CREATE TABLE sample(text TEXT)')
+            register_query_collations(connection)
+            for value, units in (('А', 1), ('😀', 2), ('e\u0301', 2), ('😀a', 3)):
+                with self.subTest(value=value):
+                    validate_string(value, units)
+                    with self.assertRaisesRegex(ValueError, 'catalog String length'):
+                        validate_string(value, units-1)
+                    connection.execute('DELETE FROM sample')
+                    connection.execute('INSERT INTO sample VALUES(?)', (value,))
+                    fitting, too_short = (text_check('text', limit) for limit in (units, units-1))
+                    self.assertEqual(connection.execute(
+                        f'SELECT {fitting},{too_short},length(text) FROM sample').fetchone(),
+                        (1, 0, len(value)))
+            validate_string('А\0', 2)
+            connection.execute("INSERT INTO sample VALUES(?),(CAST(x'ff' AS TEXT))", ('А\0',))
+            witness = text_check('text', 2)
+            self.assertEqual(connection.execute(
+                f'SELECT {witness} FROM sample WHERE rowid>1 ORDER BY rowid').fetchall(), [(0,), (0,)])
+
+    def test_tight_unicode_catalog_header_remains_on_native_count(self):
+        table = self.table()
+        units = self.manager._schema.description_length
+        value = '😀'*(units//2)+'А'*(units%2)
+        self.sql('UPDATE '+table+' SET description=? WHERE code=?', (value, '1'))
+        with patch.object(relational_queries._Plan, 'load',
+                          side_effect=AssertionError('qualifier-fitting row declined')):
+            self.assertEqual(self.query('SELECT COUNT(DISTINCT Ref) FROM Catalog.Products')._rows,
+                             ((Decimal(3),),))
+        self.sql('UPDATE '+table+' SET description=? WHERE code=?', (value+'А', '1'))
+        with self.assertRaisesRegex(BackendError, 'integrity'):
+            self.query('SELECT COUNT(DISTINCT Ref) FROM Catalog.Products')
+
+    def test_sql_unicode_witness_cannot_treat_utf16_database_blob_as_utf8(self):
+        from yadinassi.db.sqlite.sqlite_query_indexes import register_query_collations
+        from yadinassi.db.sqlite.sqlite_text_witness import text_check
+        with closing(sqlite3.connect(':memory:')) as connection:
+            connection.execute("PRAGMA encoding='UTF-16le'")
+            connection.execute('CREATE TABLE sample(text TEXT)')
+            register_query_collations(connection)
+            connection.execute('INSERT INTO sample VALUES(?)', ('꧃',))
+            witness = text_check('text', 1)
+            self.assertEqual(connection.execute(
+                f'SELECT hex(CAST(text AS BLOB)),{witness} FROM sample').fetchone(), ('C3A9', 0))
+
     def test_deletion_mark_parameter_requires_exact_boolean(self):
         query = BSLQuery(self.vm._catalogs, 'SELECT COUNT(*) FROM Catalog.Products WHERE DeletionMark=&Mark')
         query.set_parameter('Mark', False)

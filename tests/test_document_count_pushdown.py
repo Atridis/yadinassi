@@ -126,6 +126,22 @@ class DocumentCountTests(_Queries,unittest.TestCase):
                 finally:
                     self.sql(f'UPDATE "{table}" SET "{column}"=? WHERE rowid=?',(previous,row))
 
+    def test_unicode_documents_and_parts_keep_strict_single_statement_count(self):
+        obj = self.object()
+        obj.set_member('Text', 'Склад😀')
+        obj.set_member('Number', 'Ю😀')
+        obj.get_member('Lines').add().set_member('Flag', True)
+        obj.write()
+        self.compare_one_statement('SELECT COUNT(*) FROM Document.Orders AS D '
+                                   'WHERE D.DeletionMark=FALSE AND 1=1', ((Decimal(1),),))
+        self.compare_one_statement('SELECT COUNT(Ref) FROM Document.Orders.Lines '
+                                   'WHERE NULL IS NULL', ((Decimal(1),),))
+        # The logical text budget counts characters (not UTF-8 bytes or
+        # qualifier code units), even when all of the text is hidden.
+        with patch.object(queries, '_MAX_RESULT_TEXT', len('Склад😀Ю😀')-1), self.assertRaisesRegex(
+                BSLRuntimeError, 'input resource'):
+            self.query('SELECT COUNT(*) FROM Document.Orders')
+
     def test_unicode_and_embedded_nul_use_the_existing_decoder(self):
         obj = self.object()
         obj.set_member('Text','Буква\0😀')

@@ -11,19 +11,12 @@ from .sqlite_catalog_layout import quote_identifier
 from .sqlite_document_layout import data_table, section_table
 from .sqlite_single_statement import fetch_one
 from .sqlite_typed_rows import attribute_column, number_check
+from .sqlite_text_witness import text_check
 
 
 def _uuid(column, *, zero=False):
     return (f"typeof({column})='text' AND length(CAST({column} AS BLOB))=36 "
             f"AND {column} GLOB :uuid" + ('' if zero else f' AND {column}!=:zero'))
-
-
-def _text(column, length, *, nonempty=False):
-    # Printable ASCII has one UTF-16 unit and one SQLite character per byte.
-    # Non-ASCII, NUL and controls remain valid only if the legacy decoder says so.
-    return (f"typeof({column})='text' AND length(CAST({column} AS BLOB))=length({column}) "
-            f"AND {column} NOT GLOB '*[^ -~]*' "
-            f"AND length({column}) BETWEEN {int(nonempty)} AND {length}")
 
 
 def _date(column):
@@ -60,7 +53,7 @@ class _Witness:
             column = prefix + quote_identifier(physical_name(field))
             kind = field.kind
             if kind == 'string':
-                tests.append(_text(column, field.qualifiers[0]))
+                tests.append(text_check(column, field.qualifiers[0]))
                 text.append(f'length({column})')
             elif kind == 'number':
                 tests.append(number_check(column,field))
@@ -130,7 +123,7 @@ def count(view, schema, section, *, deletion_mark=None):
     if fields is None: return None
     tests, text, size = fields
     tests.extend((_uuid('r.record_id'),"typeof(r.revision)='integer' AND r.revision>0",
-                  _text('r.number',min(36,schema.number_length),nonempty=True),
+                  text_check('r.number',min(36,schema.number_length),nonempty=True),
                   _date('r.date'),_boolean('r.deletion_mark'),f'({size})<={_MAX_ROW}'))
     joins, attribute_count = '', None
     if schema.fields:
@@ -190,10 +183,10 @@ def count(view, schema, section, *, deletion_mark=None):
 
 
 def catalog_header_witness(view, schema, *, alias='', text_fields=()):
-    """Validity CASE, exact projected ASCII text units, and named bindings.
+    """Validity CASE, exact projected character counts, and named bindings.
 
     The caller must apply these expressions to the complete physical source;
-    filter/LIMIT belongs outside that witness. Non-ASCII rows decline.
+    filter/LIMIT belongs outside that witness. Unsupported encodings decline.
     """
     if view._backend.storage_version < 2 or schema.hierarchy != 'none': return None
     witness = _Witness(view._backend, schema.identity)
@@ -206,8 +199,8 @@ def catalog_header_witness(view, schema, *, alias='', text_fields=()):
     if fields is None: return None
     tests = fields[0]
     tests.extend((_uuid(prefix+'record_id'), f"typeof({prefix}revision)='integer' AND {prefix}revision>0",
-                  _text(prefix+'code', schema.code_length),
-                  _text(prefix+'description', schema.description_length),
+                  text_check(prefix+'code', schema.code_length),
+                  text_check(prefix+'description', schema.description_length),
                   _boolean(prefix+'deletion_mark')))
     units = '0'
     if text_fields:
@@ -243,4 +236,4 @@ def count_catalog_headers(view, schema, table, deletion_mark):
         raise BackendError('integrity')
     if row[0] != row[1]: return None
     if row[0] > _MAX_ROWS: raise BackendError('unsupported')
-    return CatalogAggregateResult(row[2])
+    return CatalogAggregateResult(row[2], row[0])

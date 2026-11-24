@@ -72,10 +72,15 @@ def try_count(plan,view,budget):
     from .queries import BSLQueryResult,_MAX_CELLS,_MAX_RESULT_TEXT
     # Only exact Ref and DeletionMark input fields are admitted. Preserve
     # both cell charges when the aggregate and WHERE refer to distinct fields.
-    budget[0]+=result.count
+    input_count = result.count
+    if shape is not True and shape.full_input:
+        input_count = result.input_count
+        if type(input_count) is not int or input_count < result.count:
+            raise BackendError('integrity')
+    budget[0] += input_count
     if shape is not True and shape.deletion_mark is not None and len(plan.fields[0]) == 2:
-        budget[0]+=result.count  # Ref and DeletionMark are both bound.
-    if result.count>syntax.MAX_ROWS or budget[0]>_MAX_CELLS or budget[1]>_MAX_RESULT_TEXT:
+        budget[0] += input_count  # Ref and DeletionMark are both bound.
+    if input_count>syntax.MAX_ROWS or budget[0]>_MAX_CELLS or budget[1]>_MAX_RESULT_TEXT:
         raise ValueError('Query input resource limit exceeded')
     if shape is True:
         if _MAX_CELLS<1:raise ValueError('Query result resource limit exceeded')
@@ -335,12 +340,15 @@ def try_ordered_select(plan, view, budget=None):
     projection = bounded_projection(plan)
     witnessed = projection is None
     if witnessed:
-        if (q.family != 'catalog' or q.section is not None or q.distinct or plan.predicate is not None
-                or budget is None or any(field.column.kind not in ('string','boolean','number','datetime')
+        if (q.family != 'catalog' or q.section is not None or q.distinct or budget is None or any(field.column.kind not in ('string','boolean','number','datetime')
                                          for field, _ in plan.orders)):
             return None
         projection = _witnessed_case_projection(plan)
         if projection is None: return None
+        if plan.predicate is not None:
+            from .query_count import constant_condition
+            proved, truth = constant_condition(plan, plan.predicate)
+            if not proved or truth is not True: return None
         from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _View
         from yadinassi.db.sqlite.sqlite_documents import DocumentView
         raw = view._view if type(view) is DocumentView else view
@@ -348,7 +356,7 @@ def try_ordered_select(plan, view, budget=None):
                 or raw._backend is not plan.managers[0]._backend or not raw._query_language
                 or raw._operation_id is not None):
             return None
-    condition = _ordered_predicate(plan)
+    condition = None if witnessed else _ordered_predicate(plan)
     if q.section is not None:
         if q.family not in ('catalog','document'): return None
         from .query_ordered_parts import try_ordered_parts

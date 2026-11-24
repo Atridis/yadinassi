@@ -38,6 +38,7 @@ class CountShape:
     include: bool
     deletion_mark: bool | None = None
     distinct_ref: bool = False
+    full_input: bool = False
 
 
 def bind(plan):
@@ -76,15 +77,21 @@ def bind(plan):
 
     if not all(closed(item) for item in plan.projections) or not counted:
         return None
-    predicate = plan.predicate
+    from .query_simplify import normalize_condition
+    predicate = normalize_condition(plan, plan.predicate)
     if predicate is None: return CountShape(True, distinct_ref=distinct_ref)
     if q.section is None and type(predicate) is syntax.Comparison and predicate.operator == 'eq':
         field, value = predicate.field, predicate.value
         if (type(field) is _BoundField and field.source == 0
                 and field.column.field == 'deletion_mark' and field.column.custom is None
                 and type(value) is bool):
-            return CountShape(True, value, distinct_ref)
-    proved, truth = constant_condition(plan, plan.predicate)
+            # The residual scanned all headers when its original predicate
+            # could not be sent to storage. Normalizing must keep that input
+            # budget, not charge only the rows surviving the normalized filter.
+            full_input = (q.family == 'catalog' and predicate is not plan.predicate
+                          and plan.storage_predicate(plan.predicate, 0) is None)
+            return CountShape(True, value, distinct_ref, full_input)
+    proved, truth = constant_condition(plan, predicate)
     if not proved: return None
     return CountShape(truth is True, distinct_ref=distinct_ref)
 

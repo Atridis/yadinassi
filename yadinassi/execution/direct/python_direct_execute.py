@@ -2,6 +2,7 @@
 from yadinassi.types.values import Reference
 from yadinassi.execution.codegen.experimental_naked_collections import _Cell, _UNSET_REF
 from yadinassi.execution.codegen.experimental_naked_live_state import _SlotReference, _ForwardReference, missing
+from .python_direct_fragment_cache import FragmentUnitCache
 
 
 def local_exists(value):
@@ -115,8 +116,8 @@ def _execute_fragment(text,context,parent,bindings,visible,profile):
             cache=prepared_cache(context,'execute')
         else:
             cache=getattr(context,'_execute_units',None)
-            if cache is None:cache=context._execute_units={}
-        unit=cache.get(key)
+            if cache is None:cache=context._execute_units=FragmentUnitCache()
+        unit=cache.units.get(key)
         if unit is None:
             try:program=parse_fragment(text)
             except BSLError as error:
@@ -140,10 +141,7 @@ def _execute_fragment(text,context,parent,bindings,visible,profile):
                 raise UnsupportedNakedSyntax(str(error)) from None
             # No AST, mutable Program, caller scope, references or authorization is retained.
             unit=(routines,constructors,calls,plan.function,plan.constants,plan.source_name,plan.source_text)
-            if len(text)<=EXECUTE_MAX_SOURCE:
-                while cache and (len(cache)>=16 or sum(len(k[0]) for k in cache)+len(text)>EXECUTE_MAX_SOURCE):
-                    del cache[next(iter(cache))]
-                cache[key]=unit
+            cache.remember(key,unit,EXECUTE_MAX_SOURCE)
         else:
             _admit_bindings(vm,*unit[:3])
         function,constants,source_name,source_text=unit[3:]
