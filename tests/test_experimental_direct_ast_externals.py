@@ -1,5 +1,6 @@
 """External namespace operations retain their live context boundary."""
 import unittest
+from contextlib import closing
 from decimal import Decimal
 from yadinassi import Interpreter
 from yadinassi.types.errors import BSLRuntimeError
@@ -39,18 +40,45 @@ class DirectASTExternalTests(DirectSourceAssertions,unittest.TestCase):
             ('Function F(Val Chars) Return Chars+1;EndFunction;R=F(3);', {'expected': {'r': 4}}),
             ('Function F() Var Chars;Chars=7;Return Chars;EndFunction;R=F();', {'expected': {'r': 7}}),
             ('Function F() Chars=Touch();Return 1;EndFunction;R=F();', dict(error='read-only', touches=1)),
-            ('Procedure P(X) X=1;EndProcedure;P(Chars);', dict(error='передача реквизита', touches=0)),
+            ('Procedure P(X) X=1;EndProcedure;P(Chars);', dict(error='только для чтения', touches=0)),
             ('Var Chars;R=Chars.LF;', dict(error='external names collide', touches=0, kind=PythonDirectUnsupported)),
         ):
             with self.subTest(source=source):self.check_source(source,**checks)
 
+        # The ordinary borrowed reference refuses writes and leaves the
+        # canonical namespace intact; this is not an owned form attribute.
+        with closing(Interpreter()) as vm:
+            plan=vm.prepare('Procedure P(X) X=1;EndProcedure;Before=Chars.LF;'
+                            'Caught=False;Try P(Символы);Except Caught=True;'
+                            'Problem=ErrorDescription();EndTry;After=Символы.LF;')
+            vm.execute_prepared(plan)
+            self.assertIs(vm.variables['caught'],True)
+            self.assertIn('только для чтения',vm.variables['problem'])
+            self.assertEqual((vm.variables['before'],vm.variables['after']),('\n','\n'))
+            self.assertNotIn('символы',vm.variables)
+
     def test_reserved_name_read_write_and_scope(self):
         for source, checks in (
             ('ThisObject=Touch();', dict(error='только для чтения', touches=1)),
-            ('R=ThisObject;', dict(error='не определена', touches=0)),
             ('Var ThisObject;ThisObject=7;R=ThisObject;', {'expected': {'r': 7, 'thisobject': 7}}),
             ('Function F(Val ThisObject) ThisObject=ThisObject+1;Return ThisObject;EndFunction;R=F(3);', {'expected': {'r': 4}}),
             ('Function F() ThisObject=Touch();Return 1;EndFunction;R=F();', dict(error='только для чтения', touches=1)),
         ):
             with self.subTest(source=source):self.check_source(source,**checks)
         self.check_source('ThisObject=Touch();R=ThisObject;',setup=lambda vm:vm.variables.update(thisobject=Decimal(1)),expected={'r':7,'thisobject':7},touches=1)
+
+        # A standalone owner can be captured during startup, but its public
+        # exports are not ready until the first execution completes.
+        for prepared in (False,True):
+            with self.subTest(prepared=prepared),closing(Interpreter()) as vm:
+                def run(source):
+                    if prepared:return vm.execute_prepared(vm.prepare(source))
+                    return vm.execute(source)
+                run('Var Shared Export;Shared=7;Captured=ThisObject;EarlyBlocked=False;'
+                    'Try Early=Captured.Shared;Except EarlyBlocked=True;EndTry;')
+                self.assertIs(vm.variables['earlyblocked'],True)
+                self.assertNotIn('early',vm.variables)
+                self.assertEqual(run('Captured.Shared'),7)
+                self.assertEqual(run('ЭтотОбъект.Shared'),7)
+                run('Shared=11;')
+                self.assertEqual(run('Captured.Shared'),11)

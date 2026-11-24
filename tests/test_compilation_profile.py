@@ -12,6 +12,7 @@ import unittest
 from unittest import mock
 
 from yadinassi import BSLError, BSLRuntimeError, Interpreter
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.syntax import ast
 from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.configuration.configuration_xml import import_configuration
@@ -523,7 +524,7 @@ class ManagedCompilationProfileTests(unittest.TestCase):
             (self.vm.execution_context, self.vm._has_module_context)))
         self.vm.execute('''
 #If Server Then
-Function Ordinary() Return 42; EndFunction
+Function Ordinary() Observe(); Return 42; EndFunction
 Observe();
 #EndIf
 &AtClientAtServerNoContext
@@ -544,13 +545,17 @@ Message(Dual()); Message(ServerCall()); Message(Detached());
         self.assertEqual(self.messages, ["both", "both", "both"])
         self.assertEqual(seen, [("client", True), ("client", False), ("server", False),
                                ("server", True), ("server", False), ("server", False)])
-        self.assertEqual(self.vm.routines["ordinary"].execution_context, "client")
-        self.assertNotIn("ordinary", self.vm.server_routines)
+        # The Server compilation symbol did not make Ordinary a server routine.
+        # Check real calls rather than the old visitor's routine registries.
+        self.assertEqual(self.vm.execute("Ordinary()"), Decimal(42))
+        self.assertEqual(seen[6:], [("client", True)])
+        self.vm.execute("&AtServer\nFunction Denied() Return Ordinary(); EndFunction")
+        with self.assertRaisesRegex(BSLRuntimeError, "клиентской подпрограммы с сервера"):
+            self.vm.execute("Denied()")
         self.assertEqual(self.vm._context_stack, ["client"])
         self.assertEqual(self.vm._module_context_stack, [True])
-        self.vm.execute("&AtServer\nFunction Denied() Return Ordinary(); EndFunction")
-        with self.assertRaisesRegex(BSLError, "клиентской подпрограммы с сервера"):
-            self.vm.execute("Denied()")
+        self.assertEqual(len(seen), 7)
+        self.assertEqual(self.messages, ["both", "both", "both"])
 
     def test_database_context_and_builtin_availability_are_not_selected_by_profile(self):
         with tempfile.TemporaryDirectory(prefix="managed-profile-db-") as temporary:
@@ -575,8 +580,12 @@ Message(Dual()); Message(ServerCall()); Message(Detached());
         self.assertIsNone(self.vm.database_context)
         with self.assertRaisesRegex(BSLRuntimeError, "db required for further code execution"):
             self.vm.execute("InfoBaseConnectionString()")
-        with self.assertRaises(BSLRuntimeError):
-            self.vm.execute("New Form")
+        # Forms require an explicitly activated configuration/metadata owner,
+        # not a standalone constructor (docs/configuration-forms.md).
+        with self.assertRaisesRegex(PythonDirectUnsupported, r"\bconstructor Form\b"):
+            self.vm.execute('FormEffect = 1; Message("must-not-run"); New Form;')
+        self.assertNotIn("formeffect", self.vm.variables)
+        self.assertEqual(self.messages, [])
 
     def test_unknown_and_combined_side_symbols_still_fail_before_effects(self):
         for unknown in ("UnknownProfileFlag", "FutureUnsupportedClient", "AtClientAtServer",
