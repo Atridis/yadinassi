@@ -79,11 +79,24 @@ class FamilyIdentityTests(unittest.TestCase):
         with self.assertRaises(ValueError): child.execute('X=1;')
 
     def test_cancel_preserves_scope_and_children(self):
-        child=Interpreter(database_context=self.context,family_owner=self.root)
-        self.addCleanup(child.close)
-        old=child._catalogs.get_index('Categories').empty_ref()
-        self.root.cancel_pending(); child.execute('X=1;')
-        obj=self.root._catalogs.get_index('Products').create_item(); obj.set_member('Category',old)
+        helper = self.path.parent / 'Helper.bsl'
+        helper.write_text('Function Ref() Export Return Catalogs.Categories.EmptyRef(); EndFunction',
+                          encoding='utf-8')
+        source = str(self.path.parent / 'main.bsl')
+        old = self.root.execute('// #Import Helper.bsl\nHelper.Ref()', source)
+        imported = self.root.imports['helper']
+        self.assertIs(imported.interpreter.database_context, self.context)
+
+        self.root.cancel_pending()
+        new = self.root.execute('Helper.Ref()', source)
+        self.assertIs(self.root.imports['helper'], imported)
+        self.assertIs(new.value_type, old.value_type)
+        self.assertEqual(new, old)
+
+        self.root.variables['before_cancel'] = old
+        result = self.root.execute('P=Catalogs.Products.CreateItem();'
+                                   'P.Category=Before_Cancel;P.Category;', source)
+        self.assertEqual(result, new)
 
     def test_document_reference_type_and_query_share_family_scope(self):
         from test_document_configuration_xml import document_files

@@ -8,7 +8,6 @@ import unittest
 
 from yadinassi import BSLError, Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.types.values import BSLObject, HostFunction
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_SHA = '16bd5c91f17225906ef9e9e579371b8884eff74dafd67167b06e5a2dda2e55d5'
@@ -47,7 +46,7 @@ def quote(s): return '"'+s.replace('"','""')+'"'
 class InstrumentationTests(unittest.TestCase):
     def setUp(self):
         self.out=[]
-        self.vm=Interpreter(self.out.append, allow_extensions=True)
+        self.vm=Interpreter(self.out.append)
         self.helpers = fragments()[0]
         self.vm.execute(self.helpers)
 
@@ -99,25 +98,30 @@ class InstrumentationTests(unittest.TestCase):
            'textdoc.next: [ok|R=S1:0041|none]'])
 
     def test_snapshot_readers_are_independent_and_partial_mutation_is_visible(self):
-        # Fake methods deliberately inconsistent: these are harness controls,
-        # not a TextDocument model or proposed native semantic expectations.
-        class Witness(BSLObject):
-            def __init__(self):self.text='before'; self.calls=[]
-            def get_member(self,name):
-                def count():self.calls.append('count'); return D(2)
-                def text():self.calls.append('text'); return self.text
-                def line(i):
-                    self.calls.append(('line',i))
-                    if i==D(1):raise ValueError('synthetic')
-                    return 'Q'
-                return HostFunction(name, {'количествострок':count,'получитьтекст':text,'получитьстроку':line}[name.casefold()])
-        w=Witness()
-        self.vm.register_function('GetWitness',lambda:w)
-        def mutate():w.text='X'; raise ValueError('synthetic')
-        self.vm.register_function('MutateWitness',mutate)
-        self.observe('partial',setup='Документ = GetWitness();',action='MutateWitness();',readback='Пост = СнимокТекстовогоДокумента(Документ);')
-        self.assertEqual(self.out,['textdoc.partial: [action-error|R=U|C=2|T=1:0058|L=1=line-error,2=1:0051]'])
-        self.assertEqual(w.calls,['count','text',('line',D(1)),('line',D(2))])
+        # Exercise the unchanged observer through the public TextDocument API,
+        # not an arbitrary Python receiver. These are harness controls only.
+        setup = 'Документ = New TextDocument; Документ.SetText("before");'
+        readback = 'Пост = СнимокТекстовогоДокумента(Документ);'
+        self.observe('partial', setup=setup,
+                     action='Документ.SetText("X"+Chars.LF+"Q"); Raise "synthetic";',
+                     readback=readback)
+
+        # The observer's output bound rejects the whole text and line 1.
+        # Count and the second line must still be observed independently.
+        self.observe('reader-bound', setup=setup,
+                     action='Документ.SetText('+quote('X'*65)+'+Chars.LF+"Q");',
+                     readback=readback)
+
+        # The inverse: count exceeds the observer's bound, but text is valid.
+        self.observe('count-bound', setup=setup,
+                     action='Документ.SetText('+'+Chars.LF+'.join(['"Q"']*9)+');',
+                     readback=readback)
+        self.assertEqual(self.out, [
+            'textdoc.partial: [action-error|R=U|C=2|T=3:0058000a0051|L=1=1:0058,2=1:0051]',
+            'textdoc.reader-bound: [ok|R=U|C=2|T=text-error|L=1=line-error,2=1:0051]',
+            'textdoc.count-bound: [ok|R=U|C=count-error|T=17:'
+            + '0051000a'*8 + '0051|L=count-error]',
+        ])
 
     def test_record_size_failure_is_explicit_not_truncated(self):
         self.observe('long',readback='Пост = '+quote('x'*1024)+';')

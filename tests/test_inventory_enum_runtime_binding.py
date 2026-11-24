@@ -138,9 +138,22 @@ class InventoryEnumRuntimeBindingTests(unittest.TestCase):
             with self.assertRaises(BackendError):self.bridge.key(foreign,self.units)
 
     def test_child_family_reuses_namespace(self):
-        with closing(Interpreter(database_context=self.context,family_owner=self.vm)) as child:
-            self.assertIs(child._metadata,self.vm._metadata)
-            self.assertIs(child.execute('Enums.Units.Piece'),self.ref)
+        from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+        module = self.path.parent / 'EnumHelper.bsl'
+        module.write_text('Function Unit() Export Return Enums.Units.Piece; EndFunction',
+                          encoding='utf-8')
+        source = str(self.path.parent / 'main.bsl')
+        result = self.vm.execute('// #Import EnumHelper.bsl\nEnumHelper.Unit()', source)
+        child = self.vm.imports['enumhelper'].interpreter
+        self.assertIs(child.database_context, self.context)
+        self.assertIs(child._metadata, self.vm._metadata)
+        self.assertIs(result, self.ref)
+        # Merely constructing a child of the family does not enroll it
+        # as an imported module owned by the root.
+        with closing(Interpreter(database_context=self.context, family_owner=self.vm)) as bare:
+            self.assertIs(bare._metadata, self.vm._metadata)
+            with self.assertRaises(PythonDirectUnsupported):
+                bare.execute('Enums.Units.Piece')
 
     def test_fabricated_equal_reference_is_not_storage_authority(self):
         with self.assertRaises(BackendError):self.bridge.key(replace(self.ref),self.units)
