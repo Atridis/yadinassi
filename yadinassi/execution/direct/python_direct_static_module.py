@@ -168,7 +168,7 @@ def table_regions(program, opaque_names=()):
 def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=None, builtin_external_names=(), numeric_routines=None, address_routines=None, literal_reachability=False, module_declarations=False, table_setup=None, extended_reachability=True, extended_tests=None):
     builtin_results = builtin_results or {}
     kinds={};names=set();opaque=set(opaque_names)|{'thisobject','этотобъект'}
-    checked=set();active=set();for_counters=[]
+    checked=set();active=set();for_counters=[];introduced=[]
     numeric_routines={} if numeric_routines is None else numeric_routines
     address_routines={} if address_routines is None else address_routines
     def require(condition):
@@ -315,10 +315,29 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
             else:raise _Decline
         else:raise _Decline
         kinds[id(node)]=kind;return kind
+    def add_fact(env,key,kind):
+        env[key]=kind
+        if introduced:introduced[-1].append(key)
+
     def assign(name,kind,env):
         key=name.casefold();require(key not in opaque)
         if key in env:require(env[key]==kind)
-        env[key]=kind;names.add(key)
+        else:add_fact(env,key,kind)
+        names.add(key)
+
+    def scoped(nodes,env,*,counter=None,retain=False):
+        # Existing facts cannot change kind (assign) or disappear (branch
+        # joins below). A nested path only needs to undo its newly bound names.
+        journal=[]
+        introduced.append(journal)
+        try:
+            if counter is not None:assign(counter,'number',env)
+            sequence(nodes,env)
+            if retain:return {key:env[key] for key in journal}
+        finally:
+            introduced.pop()
+            for key in journal:del env[key]
+
     def sequence(nodes,env):
         for node in nodes:
             k=type(node)
@@ -372,20 +391,17 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
                 else:expression(call,env)
             elif k is bsl.For:
                 require(expression(node.start,env)=='number' and expression(node.end,env)=='number')
-                assign(node.name,'number',env);nested=dict(env)
+                assign(node.name,'number',env)
                 for_counters.append(node.name.casefold())
-                try:sequence(node.body,nested)
+                try:scoped(node.body,env)
                 finally:for_counters.pop()
-                require(all(nested.get(key)==kind for key,kind in env.items()))
                 kinds[id(node)]='number'  # The body preserves numeric induction.
             elif k is bsl.ForEach and not scalar_prefix:
                 require(expression(node.collection,env)=='array')
-                nested=dict(env);assign(node.name,'number',nested);sequence(node.body,nested)
-                require(all(nested.get(key)==kind for key,kind in env.items()))
+                scoped(node.body,env,counter=node.name)
             elif k is bsl.While:
                 require(expression(node.condition,env) in ('number','bool'))
-                nested=dict(env);sequence(node.body,nested)
-                require(all(nested.get(key)==kind for key,kind in env.items()))
+                scoped(node.body,env)
             elif k is bsl.If:
                 branches=[]
                 for condition,body,live_test,live_body,literal in ordered_if(
@@ -393,10 +409,12 @@ def analyze(program, opaque_names=(), *, scalar_prefix=False, builtin_results=No
                     if extended_tests is not None and live_test and literal is not None and _simple_literal_boolean(condition) is None:
                         extended_tests.add(id(condition))
                     if live_test and literal is None:require(expression(condition,env) in ('number','bool'))
-                    if live_body:
-                        nested=dict(env);sequence(body,nested);branches.append(nested)
-                merged={key:kind for key,kind in branches[0].items() if all(branch.get(key)==kind for branch in branches)}
-                env.clear();env.update(merged)
+                    if live_body:branches.append(scoped(body,env,retain=True))
+                # Only additions shared by every live path become visible.
+                first=branches[0];others=branches[1:]
+                for key,kind in first.items():
+                    if all(branch.get(key)==kind for branch in others):
+                        add_fact(env,key,kind)
             elif k in (bsl.Break,bsl.Continue):pass
             else:raise _Decline
         return env

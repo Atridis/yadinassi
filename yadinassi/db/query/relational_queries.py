@@ -973,8 +973,8 @@ class _Plan:
             return None
         pair = equality(condition)
         if not pair:
-            from .query_simplify import total_scalar_condition, without_neutral_terms
-            normalized = without_neutral_terms(self, condition)
+            from .query_simplify import normalize_condition, total_scalar_condition
+            normalized = normalize_condition(self, condition)
             candidate = equality(normalized)
             # Hash pruning would skip residual evaluation for key mismatches
             # (including NULL). Only enable the new route for a total predicate.

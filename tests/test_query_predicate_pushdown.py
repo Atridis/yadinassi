@@ -84,6 +84,29 @@ class InnerPredicatePushdownTests(unittest.TestCase):
                         'NOT (1=1) OR (P.Code=Q.Code AND (NULL IS NULL AND Q.Amount>=20)) '
                         'ORDER BY A,B'), baseline)
 
+    def test_repeated_total_join_terms_keep_linear_candidate_budget(self):
+        source = ('SELECT P.Code AS A, Q.Code AS B FROM Catalog.Products AS P '
+                  '{kind} JOIN Catalog.Products AS Q ON {condition} ORDER BY A,B')
+        for kind in ('INNER', 'LEFT', 'RIGHT', 'FULL'):
+            with self.subTest(kind=kind), patch('yadinassi.db.query.relational_queries.MAX_JOIN_PAIRS', 3):
+                plain = self.execute(source.format(kind=kind, condition='P.Code=Q.Code'))
+                self.assertEqual(self.execute(source.format(kind=kind,
+                    condition='P.Code=Q.Code OR (Q.Код=P.Код OR P.Code=Q.Code)')), plain)
+
+    def test_normalized_join_preserves_unknown_and_reached_errors(self):
+        from yadinassi.types.values import NULL
+        prefix = ('SELECT P.Code AS A, R.Code AS B FROM Catalog.Products AS P '
+                  'LEFT JOIN Catalog.Products AS Q ON P.Code=Q.Code AND Q.Amount>30 '
+                  'LEFT JOIN Catalog.Products AS R ON ')
+        self.assertEqual(self.execute(prefix+'Q.Code=R.Code OR R.Code=Q.Code ORDER BY A'),
+                         (('1', NULL), ('2', NULL), ('3', NULL)))
+        source = ('SELECT COUNT(*) AS N FROM Catalog.Products AS P '
+                  'JOIN Catalog.Products AS Q ON ')
+        for terms in ('P.Code=Q.Code OR Q.Code=P.Code OR P.Amount/0=Q.Amount',
+                      'P.Amount/0=Q.Amount OR P.Code=Q.Code OR Q.Code=P.Code'):
+            with self.subTest(terms=terms), self.assertRaisesRegex(ValueError, 'division by zero'):
+                self.execute(source+terms)
+
     def test_non_neutral_on_terms_do_not_enable_hash_pruning(self):
         source = ('SELECT COUNT(*) AS N FROM Catalog.Products AS P '
                   'JOIN Catalog.Products AS Q ON ')
