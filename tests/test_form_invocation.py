@@ -280,15 +280,41 @@ F = Items.Add''')
         self.assertEqual(dict(self.command(session).attributes)['Result'], Decimal(61))
 
     def test_local_server_cannot_dispatch_remote_alias_or_evaluate_its_arguments(self):
-        source = SOURCE.replace('F = Items.Add', 'RemoteTotal(Effect(), 3);\nF = Items.Add') + '''
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+
+        call = 'RemoteTotal(Effect(), 3);'
+        effect = '''
 &AtServer
-Function Effect() Message("must not run"); Return 2; EndFunction'''
-        session, port, server, requests = self.setup_form(source=source)
-        with self.assertRaises(BSLError): session.open()
-        self.assertEqual(session.messages, ())
-        self.assertEqual(requests, [])
-        self.assertEqual(session.state, 'failed')
-        self.assertFalse(port.uncertain)
+Function Effect() Message("argument evaluated"); Return 2; EndFunction'''
+        # The documented alias is available only on the client side; a
+        # local server event must fail closed before evaluating the actuals.
+        with self.subTest(side='server'):
+            source = SOURCE.replace('F = Items.Add',
+                'ThisObject.Status = "entered local server";\n' + call + '\nF = Items.Add') + effect
+            session, port, _, requests = self.setup_form(source=source)
+            self.addCleanup(session.interpreter.close)
+            with self.assertRaises(BoundaryViolation):
+                session.open()
+            self.assertEqual(session.messages, ())
+            self.assertEqual(requests, [])
+            self.assertEqual(session.state, 'failed')
+            self.assertFalse(port.uncertain)
+            self.assertEqual(dict(session.snapshot().attributes)['Status'], 'entered local server')
+
+        with self.subTest(side='client'):
+            source = SOURCE.replace(COMMAND, 'ThisObject.Result = ' + call) + effect
+            session, port, _, requests = self.setup_form(source=source)
+            self.addCleanup(session.interpreter.close)
+            session.open()
+            result = self.command(session)
+            self.assertEqual(dict(result.attributes)['Result'], Decimal(6))
+            self.assertEqual(session.messages, ('argument evaluated', 'server total'))
+            self.assertEqual(len(requests), 1)
+            self.assertEqual(decode_line(requests[0])['arguments'], [
+                {'type': 'Number', 'value': '2'}, {'type': 'Number', 'value': '3'},
+            ])
+            self.assertEqual(session.state, 'open')
+            self.assertFalse(port.uncertain)
 
     def test_form_objects_and_bare_static_attribute_references_do_not_cross(self):
         for argument in ('ThisObject', 'Items', 'Price'):
