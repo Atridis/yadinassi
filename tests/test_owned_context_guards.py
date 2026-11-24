@@ -24,7 +24,8 @@ class OwnedContextGuardTests(unittest.TestCase):
 
     def test_event_and_object_guards_preserve_real_execution_budgets(self):
         self.run_direct_cases([
-            'tests.test_compiled_contexts.StrictContextTests.test_known_event_adapter_budget_not_unregistered_subclass',
+            'tests.test_form_event_simulation.FormEventSimulationTests.test_admission_budget_rejects_without_changing_warm_draft',
+            'tests.test_compiled_contexts.StrictContextTests.test_event_adapter_is_not_a_general_module_dispatch',
             'tests.test_catalog_object_preparation.CatalogObjectPreparationTests.test_bounded_text_expansion',
         ])
 

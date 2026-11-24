@@ -10,7 +10,7 @@ still a failing test, never an expected failure, skip or fallback.
 
 | Old concern | Current executable coverage |
 | --- | --- |
-| Event/object budgets | `test_event_and_object_guards_preserve_real_execution_budgets`: original event budget and real catalog preparation cases; unsupported event entry stays red |
+| Event/object budgets | `test_event_and_object_guards_preserve_real_execution_budgets`: scalar form source cap, specialized adapter-only entry, and real catalog preparation expansion; managed form execution budget remains a separate live test |
 | Constant/posting live references | Actual constant handler byref storage, native posting outcomes, Boolean cancellation and same-owner query scenarios; no synthetic legacy `argument()` generator |
 | Configuration declaration/import authority | Original declaration identity allowed, unrelated same-name declaration and file import denied |
 | Foreign AST classes | Direct source-AST preflight must reject before `Touch` or assignment |
