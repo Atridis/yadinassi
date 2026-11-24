@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLError
 from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.execution.codegen.experimental_naked_scalar_semantics import typed_find, UnsupportedScalarSemantics
 from yadinassi.types.values import BSLType, equal
 from yadinassi.types.type_values import type_of
@@ -20,7 +21,9 @@ ZERO = '00000000-0000-0000-0000-000000000000'
 
 class UUIDCandidateTests(unittest.TestCase):
     def setUp(self):
-        self.vm = Interpreter(output=lambda _: None)
+        self.output = []
+        self.vm = Interpreter(output=self.output.append)
+        self.addCleanup(self.vm.close)
 
     def test_canonical_parser_and_immutable_value_identity(self):
         a, b = BSLUUID(A), BSLUUID(A.upper())
@@ -138,9 +141,21 @@ r.Add(f.Get("{A}")); r.Add(f[other]); r.Add(m.Get(u));
                 self.assertIs(self.vm.execute("(" + expr + ")"), True)
         for expr in ['New UUID(Undefined)', 'New UUID(,)', 'New UUID("'+A+'", 1)',
                      'Type("UniqueIdentifier")', 'New UniqueIdentifier',
-                     'u.text', 'u.is_filled()', 'u < u', 'u + 1', 'Type("UnknownTree")']:
+                     'u < u', 'u + 1', 'Type("UnknownTree")']:
             with self.subTest(expr=expr), self.assertRaises(BSLError):
                 self.vm.execute(expr)
+        # Python implementation attributes are not a BSL UUID interface.
+        original = self.vm.variables['u']
+        for expr in ('u.text', 'u.is_filled()'):
+            for source in (expr, f'Message({expr});'):
+                with self.subTest(expr=source):
+                    with self.assertRaises(BoundaryViolation) as denied:
+                        self.vm.execute(source)
+                    self.assertIs(type(denied.exception), BoundaryViolation)
+                    self.assertEqual(self.output, [])
+                    self.assertIs(self.vm.variables['u'], original)
+        self.assertEqual(self.vm.execute('Строка(u)'), A)
+        self.assertIs(self.vm.execute('ЗначениеЗаполнено(u)'), True)
 
     def test_array_find_compares_uuid_values_without_matching_strings(self):
         source = f'''
