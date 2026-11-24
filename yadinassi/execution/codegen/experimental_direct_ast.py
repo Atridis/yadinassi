@@ -1237,7 +1237,7 @@ class Emitter:
         if k is bsl.Call and type(node.callee) is bsl.Name:
             name=node.callee.name.casefold();self.check_name(name);self.required.add(name)
             if name in self.pure_builtins:
-                args=[]
+                args=[self.name('_context',t)] if name in ('message','сообщить') else []
                 for arg in node.arguments:
                     value=self.expr(arg)
                     if self.integer_lane and self.scalar_kinds.get(id(arg))=='number':
@@ -2195,12 +2195,23 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     emitter=Emitter(filename)
     emitter.extension_value_list_binding=_profile is None and vm.allow_extensions
     pure_bindings=None
+    pure_prefix=0
     if _allow_pure_builtins and _profile is None and not _whole_source and not vm.allow_extensions and not imported:
-        from yadinassi.execution.direct.python_direct_pure_builtins import analyze
+        from yadinassi.execution.direct.python_direct_pure_builtins import analyze, prefix, result_kinds
         candidate=analyze(nodes)
-        if candidate is not None and candidate.active(vm):
+        active=candidate is not None and candidate.active(vm)
+        if not active and not has_goto and not has_label and not any(
+                type(node) in (bsl.Routine,bsl.Var) for node in program):
+            pure_prefix,candidate=prefix(program)
+            if candidate is not None:
+                facts=analyze_static(program[:pure_prefix],opaque_names=NAMES,
+                                     builtin_results=result_kinds(candidate.services))
+                if facts is None:candidate=None
+            active=candidate is not None and candidate.active(vm)
+        if active:
             pure_bindings=candidate
             emitter.pure_builtins={name:'_pure_'+name for name in candidate.services}
+        else:pure_prefix=0
     emitter.has_goto=has_goto
     emitter.goto_destinations=destinations;emitter.goto_transfers=transfers
     emitter.current_module=_profile is None or _current_module
@@ -2458,9 +2469,12 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     static_facts=None
     table_regions=();extended_tests=set()
     builtin_results=None
-    if pure_bindings is not None:
-        from yadinassi.execution.direct.python_direct_pure_builtins import result_kinds
-        builtin_results=result_kinds(pure_bindings.services)
+    if pure_bindings is not None and not pure_prefix:
+        from yadinassi.execution.direct.python_direct_pure_builtins import has_literal_output, result_kinds
+        # Observer elimination does not change ordinary arithmetic or loop
+        # lowering in programs that previously required generic dispatch.
+        if not has_literal_output(pure_bindings):
+            builtin_results=result_kinds(pure_bindings.services)
     numeric_routines={};address_routines={}
     closed_with_declarations=emitter.literal_reachability
     if ((not async_bodies or closed_with_declarations) and _profile is None and not imported
@@ -2491,7 +2505,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             and not _exports and not _require_last_expression and vm.database_context is None):
         facts_reachability=emitter.literal_reachability
         names,cells=_module_registers(program,emitter,literal_reachability=facts_reachability)
-        builtin_external_names=() if pure_bindings is None else pure_bindings.names-names
+        builtin_external_names=() if builtin_results is None else pure_bindings.names-names
         if names or builtin_results or numeric_routines or address_routines:
             static_facts=analyze_static(program,opaque_names=emitter.external_names|emitter.module_globals,
                builtin_results=builtin_results,builtin_external_names=builtin_external_names,
@@ -2505,7 +2519,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             if static_facts is not None:names.update(static_facts[0])
             elif facts_reachability:
                 names,cells=_module_registers(program,emitter,literal_reachability=False)
-                builtin_external_names=() if pure_bindings is None else pure_bindings.names-names
+                builtin_external_names=() if builtin_results is None else pure_bindings.names-names
             if vm.allow_extensions:
                 # Explicit host callbacks can replace a named module binding
                 # with a canonical Reference. Resolve it from the live state
@@ -2524,9 +2538,15 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
                 from yadinassi.execution.direct.python_direct_local_facts import analyze as analyze_local
                 emitter.local_field_facts,local_scalars=analyze_local(program,opaque_names=opaque,routines=emitter.routines)
                 emitter.scalar_kinds.update(local_scalars)
-            if (static_facts is None and facts_reachability and pure_bindings is None
+            if (static_facts is None and facts_reachability and (pure_bindings is None or pure_prefix)
                     and not emitter.routines and not cells):
                 table_regions=tuple(analyze_table_regions(program,opaque_names=opaque))
+                if table_regions and pure_prefix:
+                    # Preserve the existing independently proven table
+                    # islands. A new scalar prefix must not displace them.
+                    pure_prefix=0
+                    pure_bindings=None
+                    emitter.pure_builtins={}
     if static_facts is not None and not emitter.module_cells and not emitter.authority and not emitter.catalog_bounds:
         integer_kinds=('number','bool','string','table','row','columns','column','map','map_insert','default_column_type')
         emitter.integer_lane=bool(static_facts[1]) and all(kind in integer_kinds for kind in static_facts[1].values())
@@ -2592,7 +2612,15 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     emitter.region_active=bool(region_end)
     if has_goto and type(program[-1]) is bsl.ExpressionStatement:
         emitter.goto_last_expression=program[-1]
-    if table_regions:
+    if pure_prefix:
+        # Only builtin calls change here. Retain ordinary arithmetic and loop
+        # lowering, including Decimal rounding of the induction variable.
+        body=emitter.sequence(program[:pure_prefix])
+        # No proof crosses the first effect. The original suffix still owns
+        # publication/reload and resolves all calls against the live VM.
+        emitter.pure_builtins={}
+        body+=emitter.sequence(program[pure_prefix:])
+    elif table_regions:
         # Setup and effects retain ordinary publication. Each disjoint island
         # starts with the exact live table slots that its proof consumes.
         body=[];cursor=0
@@ -2712,7 +2740,8 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     namespace['_plain_value_list_write'] = _plain_value_list_write
     if pure_bindings is not None:
         from yadinassi.execution.direct.python_direct_pure_builtins import resolve
-        namespace.update({symbol:resolve(name,native_numbers=emitter.integer_lane) for name,symbol in emitter.pure_builtins.items()})
+        namespace.update({'_pure_'+name:resolve(name,native_numbers=emitter.integer_lane)
+                          for name in pure_bindings.services})
     if region_end or any_region:namespace.update(_collection_admitted=admitted,_collection_helpers=helpers(),_routine_region_state_safe=_routine_region_state_safe)
     # Every route genuinely compiles executable code before source effects.
     # Whole-source research additionally parses the actual source, not a fake

@@ -2128,6 +2128,7 @@ _DIRECT_TRANSACTION_ABI = (Interpreter._begin_transaction, Interpreter._commit_t
 
 # Definition-time Message identity for the finite direct configuration command lane.
 _DIRECT_CONFIGURATION_MESSAGE_ABI = Interpreter._message
+_DIRECT_MESSAGE_CODE = Interpreter._message.__code__
 
 # Definition-time execute lease; instance/class rebinding cannot replace it.
 _DIRECT_EXECUTION_SCOPE_ABI = Interpreter._direct_execution_scope

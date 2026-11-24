@@ -304,6 +304,7 @@ def to_string(value: object) -> str:
 
 # Definition-time identity for canonical direct String adaptation.
 _DIRECT_TO_STRING_ABI = to_string
+_DIRECT_TO_STRING_CODE = to_string.__code__
 
 def number(value: object) -> Decimal:
     if isinstance(value, bool):

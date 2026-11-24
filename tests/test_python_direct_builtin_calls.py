@@ -96,3 +96,103 @@ class DirectBuiltinCallsTests(unittest.TestCase):
         vm.execute('Function StrLen(Val S) Return 91; EndFunction')
         vm.execute('R=Eval("StrLen(""abc"")"); A=0; Execute("A=StrLen(""def"");");')
         self.assertEqual((vm.variables['r'], vm.variables['a']), (Decimal(91), Decimal(91)))
+
+    def test_pure_prefix_before_effect_uses_live_suffix_state(self):
+        observed = []
+
+        def output(message):
+            observed.append((message, vm.variables['r'], vm.variables['i']))
+            vm.variables['r'] = Decimal(41)
+
+        vm = self.vm(output=output)
+        plan = vm.prepare('R=0; For I=1 To 20 Do R=R+StrLen("abc"); EndDo; Message("tail"); R+1')
+        profile = cProfile.Profile()
+        self.assertEqual(profile.runcall(vm.execute_prepared, plan), Decimal(42))
+        self.assertEqual(observed, [('tail', Decimal(60), Decimal(21))])
+        self.assertEqual(vm.variables['r'], Decimal(41))
+        counts = {entry.code.co_name: entry.callcount for entry in profile.getstats()
+                  if not isinstance(entry.code, str) and entry.code.co_name.startswith('_reload')}
+        self.assertEqual(counts, {'_reload_module': 1})
+
+    def test_pure_prefix_does_not_capture_suffix_after_output(self):
+        observed = []
+
+        def output(message):
+            observed.append((message, vm.variables['r']))
+            vm.functions['strlen'].function = lambda value: self.fail('unregistered extension called')
+
+        vm = self.vm(output=output)
+        plan = vm.prepare('R=StrLen("abc"); Message("tail"); S=StrLen("abcd");')
+        with self.assertRaises(BoundaryViolation):
+            vm.execute_prepared(plan)
+        self.assertEqual(observed, [('tail', Decimal(3))])
+        self.assertNotIn('s', vm.variables)
+
+    def test_prepared_pure_prefix_declines_new_routine_binding(self):
+        observed = []
+        vm = self.vm(output=observed.append)
+        plan = vm.prepare('R=StrLen("abc"); Message(R);')
+        vm.execute_prepared(plan)
+        vm.execute('Function StrLen(Val X) Return 17; EndFunction')
+        with patch('yadinassi.execution.direct.python_direct._compile',
+                   side_effect=AssertionError('prepared execution recompiled')):
+            vm.execute_prepared(plan)
+        self.assertEqual(observed, ['3', '17'])
+
+    def test_pure_prefix_preserves_decimal_counter_rounding(self):
+        start = '99999999999999999999999999999999999999'
+        end = '100000000000000000000000000000000000001'
+        expected = Decimal('1.0000000000000000000000000000000000000E+38')
+        for prepared in (False, True):
+            for boundary, body in ((start, ''), (end, 'If R>=9 Then Break; EndIf;')):
+                with self.subTest(prepared=prepared, boundary=boundary):
+                    vm = self.vm(output=[].append)
+                    source = (f'R=0; For I={start} To {boundary} Do R=R+StrLen("abc"); '
+                              f'{body} EndDo; Message("tail"); I')
+                    result = vm.execute_prepared(vm.prepare(source)) if prepared else vm.execute(source)
+                    self.assertEqual(result.as_tuple(), expected.as_tuple())
+                    self.assertEqual(vm.variables['i'].as_tuple(), expected.as_tuple())
+
+    def test_pure_prefix_does_not_displace_existing_table_region(self):
+        vm = self.vm()
+        plan = vm.prepare('R=StrLen("abc"); T=New ValueTable; T.Columns.Add("X"); '
+                          'For I=1 To 30 Do Row=T.Add(); Row.X=I; EndDo; T.Count()')
+        profile = cProfile.Profile()
+        self.assertEqual(profile.runcall(vm.execute_prepared, plan), Decimal(30))
+        self.assertEqual(vm.variables['r'], Decimal(3))
+        self.assertEqual(vm.execute('T[29].X'), Decimal(30))
+        calls = {entry.code.co_name for entry in profile.getstats()
+                 if not isinstance(entry.code, str)}
+        self.assertNotIn('resolve_member_call', calls)
+    def test_literal_output_collection_does_not_synchronize_unused_registers(self):
+        output = []
+        vm = self.vm(output=output.append)
+        prefix = ''.join(f'X{i}={i};' for i in range(64))
+        plan = vm.prepare(prefix + 'For I=1 To 50 Do Message("e"); Сообщить("р"); EndDo; R=42; R')
+        profile = cProfile.Profile()
+        self.assertEqual(profile.runcall(vm.execute_prepared, plan), Decimal(42))
+        self.assertEqual(output, ['e', 'р'] * 50)
+        self.assertEqual([vm.variables[f'x{i}'] for i in range(64)], list(range(64)))
+        counts = {entry.code.co_name: entry.callcount for entry in profile.getstats()
+                  if not isinstance(entry.code, str)}
+        self.assertEqual(counts['_publish_module'], 1)
+        self.assertNotIn('_reload_module', counts)
+
+    def test_prepared_literal_output_collection_declines_observing_sink(self):
+        output = []
+        vm = self.vm(output=output.append)
+        plan = vm.prepare('X=1; For I=1 To 3 Do Message("effect"); EndDo; X')
+        traced = []
+
+        def sink(message):
+            traced.append((message, vm.variables['i'], vm.variables['x']))
+            vm.variables['x'] += 1
+
+        vm.output = sink
+        self.assertEqual(vm.execute_prepared(plan), Decimal(4))
+        self.assertEqual(traced, [
+            ('effect', Decimal(1), Decimal(1)),
+            ('effect', Decimal(2), Decimal(2)),
+            ('effect', Decimal(3), Decimal(3)),
+        ])
+        self.assertEqual(output, [])
