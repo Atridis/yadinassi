@@ -5,6 +5,7 @@ import tempfile
 import unittest
 
 from yadinassi import BSLError, Interpreter
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.types.values import BSLArray, BSLObject, BSLType
 
@@ -200,11 +201,43 @@ class TypeValueTests(unittest.TestCase):
                 self.vm.execute(code)
 
     def test_type_values_do_not_add_scalar_constructors(self):
-        for code in ['New Type("Number")', 'New Тип("Число")',
-                     'New Number', 'New Undefined', 'New KeyAndValue',
-                     'New (Type("Number"))']:
-            with self.subTest(code=code), self.assertRaises(BSLError):
-                self.vm.execute(code)
+        # Descriptors are not factories. Named New binds at direct admission,
+        # Undefined is a keyword rather than a constructor name, and the
+        # functional form resolves the descriptor only during execution.
+        cases = (
+            ('New Type("Number")', 'Type', PythonDirectUnsupported),
+            ('New Тип("Число")', 'Тип', PythonDirectUnsupported),
+            ('New Number', 'Number', PythonDirectUnsupported),
+            ('New Undefined', None, BSLError),
+            ('New KeyAndValue', 'KeyAndValue', PythonDirectUnsupported),
+            ('New (Type("Number"))', None, BSLRuntimeError),
+        )
+        for expression, name, error in cases:
+            for prepared in (False, True):
+                with self.subTest(expression=expression, prepared=prepared):
+                    vm = Interpreter()
+                    self.addCleanup(vm.close)
+                    vm.execute('Result = "unchanged";')
+                    source = f'Before = 1;\nResult = {expression};\nAfter = 1;'
+                    reached = error is BSLRuntimeError
+                    plan = vm.prepare(source, 'types.bsl') if prepared and reached else None
+                    with self.assertRaises(error) as caught:
+                        if plan is not None:
+                            vm.execute_prepared(plan)
+                        elif prepared:
+                            vm.prepare(source, 'types.bsl')
+                        else:
+                            vm.execute(source, 'types.bsl')
+                    self.assertIs(type(caught.exception), error)
+                    if name is not None:
+                        self.assertRegex(str(caught.exception), rf'constructor {name}\b')
+                    else:
+                        self.assertEqual((caught.exception.source, caught.exception.line),
+                                         ('types.bsl', 2))
+                    if reached:
+                        self.assertIn('не имеет direct конструктора', caught.exception.message)
+                    expected = {'before': 1} if reached else {}
+                    self.assertEqual(dict(vm.variables), dict(expected, result='unchanged'))
         self.assertIs(self.evaluate('TypeOf(New Array) = Type("Array")'), True)
         self.assertIs(self.evaluate('TypeOf(New (Type("Array"))) = Type("Array")'), True)
 
