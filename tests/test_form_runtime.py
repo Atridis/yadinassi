@@ -165,15 +165,43 @@ class FormIntegrityTests(unittest.TestCase):
         self.assertNotIn('good',session.form._attributes)
 
     def test_nocontext_cannot_access_form(self):
-        source=SOURCE.replace('ThisObject.Dynamic = "command";', 'Detached();')+'''
+        from yadinassi import BSLRuntimeError
+        from yadinassi.execution.invocation import InvocationBinding, InvocationPort, InvocationServer
+
+        # Use the documented client-to-NoContext binding, not a monolithic
+        # FormSession initializer (which refuses detached declarations).
+        source=SOURCE.replace('ThisObject.Dynamic = "command";', 'Detached();')
+        for statement, denied in (('Local = "safe";', False), ('ThisObject.Dynamic = "wrong";', True)):
+            with self.subTest(statement=statement):
+                session=make(source)
+                self.addCleanup(session.interpreter.close)
+                server=InvocationServer('''
 &AtServerNoContext
 Procedure Detached()
- ThisObject.Dynamic = "wrong";
+ Message("entered detached");
+ Try
+  '''+statement+'''
+ Except
+  Message(ErrorDescription());
+  Raise;
+ EndTry;
+ Message("finished detached");
 EndProcedure
-'''
-        session=make(source);session.open()
-        with self.assertRaises(Exception):session.dispatch('command',revision=1,control='ApplyButton')
-        self.assertEqual(dict(session.snapshot().attributes)['Dynamic'],'created:open')
+''', {1:'Detached'})
+                port=InvocationPort(server.exchange)
+                port.bind_form(session,InvocationBinding('Detached',1,(),False))
+                self.assertEqual(dict(session.open().attributes)['Dynamic'],'created:open')
+                if denied:
+                    with self.assertRaisesRegex(BSLRuntimeError,'server_error'):
+                        session.dispatch('command',revision=1,control='ApplyButton')
+                    entered, description=session.messages
+                    self.assertEqual(entered,'entered detached')
+                    self.assertTrue(description.endswith(
+                        'Переменная или функция не определена: ThisObject'),description)
+                else:
+                    session.dispatch('command',revision=1,control='ApplyButton')
+                    self.assertEqual(session.messages,('entered detached','finished detached'))
+                self.assertEqual(dict(session.snapshot().attributes)['Dynamic'],'created:open')
 
     def test_contextful_server_updates_form(self):
         source=SOURCE.replace('ThisObject.Dynamic = "command";', 'UpdateAtServer();')+'''
