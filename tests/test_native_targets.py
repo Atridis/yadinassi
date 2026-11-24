@@ -15,6 +15,7 @@ from yadinassi.execution.codegen.native_targets import (
     LINUX_8_3_27_1508, WINDOWS_8_3_27_2342,
     current_native_target, target_context,
 )
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.syntax.parser import parse
 from yadinassi.collections.structures import BSLStructure, fill_property_values
 
@@ -109,27 +110,34 @@ class NativeTargetTests(unittest.TestCase):
         with self.assertRaises(KeyboardInterrupt):
             vm.execute('InterruptHost();')
 
-    def test_reentrant_other_interpreter_and_error_restore_callers_target(self):
+    def test_other_vm_nesting_and_same_vm_refusal_preserve_callers_target(self):
         outer = Interpreter(native_target=LINUX_8_3_27_1508, allow_extensions=True)
         inner = Interpreter(allow_extensions=True)
         seen = []
         for vm in (outer, inner):
+            self.addCleanup(vm.close)
             vm.register_function('TargetName', current_native_target)
 
         def reenter():
             seen.append(current_native_target())
             seen.append(inner.execute('TargetName()'))
             self.assertEqual(current_native_target(), LINUX_8_3_27_1508)
-            with self.assertRaises(BSLError):
+            with self.assertRaisesRegex(BSLError, 'inner failure'):
                 inner.execute('Raise "inner failure";')
             seen.append(current_native_target())
-            return outer.execute('TargetName()')
+            with self.assertRaisesRegex(
+                PythonDirectUnsupported,
+                r'^python-direct: nested or asynchronous execution is not integrated$',
+            ):
+                outer.execute('TargetName()')
+            return current_native_target()
 
         outer.register_function('Reenter', reenter)
         self.assertEqual(outer.execute('Reenter()'), LINUX_8_3_27_1508)
         self.assertEqual(seen, [LINUX_8_3_27_1508, WINDOWS_8_3_27_2342,
                                 LINUX_8_3_27_1508])
         self.assertEqual(inner.execute('TargetName()'), WINDOWS_8_3_27_2342)
+        self.assertEqual(outer.execute('TargetName()'), LINUX_8_3_27_1508)
 
     def test_eval_execute_fragments_and_caught_errors_keep_target(self):
         output = []

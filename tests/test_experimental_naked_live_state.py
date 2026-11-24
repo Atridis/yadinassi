@@ -70,6 +70,31 @@ class LiveModuleStateTests(unittest.TestCase):
         self.assertEqual(box[0], 2)
         self.assertIs(state['x'], ref)
 
+    def test_prepared_reference_binding_follows_current_module_slot(self):
+        vm = Interpreter(allow_extensions=True)
+        self.addCleanup(vm.close)
+        values = [Decimal(20)]
+        ref = Reference(lambda: values[0], lambda value: values.__setitem__(0, value))
+
+        def replace():
+            vm.variables['x'] = ref
+
+        def restore():
+            self.assertIs(vm.variables['x'], ref)
+            vm.variables['x'] = Decimal(50)
+
+        vm.register_function('Replace', replace)
+        vm.register_function('Restore', restore)
+        plan = vm.prepare(
+            'Procedure Add(A, B) A=A+1; B=B+2; EndProcedure '
+            'X=1; Add(X,X); First=X; Replace(); Add(X,X); Restore(); Add(X,X); Last=X;'
+        )
+        for expected in (23, 26):
+            vm.execute_prepared(plan)
+            self.assertEqual(values[0], expected)
+            self.assertEqual(vm.variables['first'], 4)
+            self.assertEqual(vm.variables['last'], 53)
+
     def test_predeclaration_and_explicit_previous_module_names(self):
         self.assertIsNone(self.run_live('r=x;Var x;')['r'])
 

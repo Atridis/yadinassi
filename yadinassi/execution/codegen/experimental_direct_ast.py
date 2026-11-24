@@ -2506,6 +2506,12 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             elif facts_reachability:
                 names,cells=_module_registers(program,emitter,literal_reachability=False)
                 builtin_external_names=() if pure_bindings is None else pure_bindings.names-names
+            if vm.allow_extensions:
+                # Explicit host callbacks can replace a named module binding
+                # with a canonical Reference. Resolve it from the live state
+                # at argument binding rather than boxing it as a scalar.
+                names.difference_update(cells)
+                cells.clear()
             emitter.module_cells.update(cells)
             emitter.static_module_names={key:emitter.temp() for key in sorted(names)}
             if not has_goto:

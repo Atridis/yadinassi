@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.syntax.parser import parse
 from yadinassi.types.errors import BSLRuntimeError
 
@@ -29,12 +30,17 @@ class SnapshotContractTests(unittest.TestCase):
         vm.execute_program(p)
         self.assertEqual(vm.variables['r'],Decimal(2))
 
-    def test_reentrant_readmission_cannot_replace_active_version(self):
+    def test_refused_same_vm_readmission_keeps_active_version_until_idle(self):
         out=[];vm=Interpreter(execution_backend='python-direct',output=out.append, allow_extensions=True)
+        self.addCleanup(vm.close)
         p=parse('Function F() Return 1; EndFunction Procedure A() Host();Message(F()); EndProcedure A();')
         def host():
             p[0].body[0].value.value=Decimal(2)
-            vm.execute_program([p[0]])
+            with self.assertRaisesRegex(
+                PythonDirectUnsupported,
+                r'^python-direct: nested or asynchronous execution is not integrated$',
+            ):
+                vm.execute_program([p[0]])
         vm.register_function('Host',host,returns_value=False)
         vm.execute_program(p);self.assertEqual(out,['1'])
         vm.execute('r=F();');self.assertEqual(vm.variables['r'],Decimal(1))
