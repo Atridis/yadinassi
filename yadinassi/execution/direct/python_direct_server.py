@@ -9,17 +9,24 @@ from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryCo
 from .python_direct_database import CatalogBoundary
 from .python_direct_services import ServicesBoundary
 from yadinassi.types.values import HostFunction, Reference, NULL
+from yadinassi.temporal.dates import BSLDate as _PacketDate
 from yadinassi.execution.codegen.experimental_naked_collections import _Cell, _OMITTED_REF
 from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
+from .python_direct_plain_array import _DIRECT_PLAIN_ARRAY_TYPE as _PlainArray
 
 
-def transfer(value):
+def transfer(value, *, standalone_arrays=False):
     """Copy the bounded direct Array/Structure envelope, preserving no aliases."""
+    # The standalone compiler may publish either representation of an Array.
+    # Both carry only detached list contents, with no ownership or host protocol.
+    array_kind = _PlainArray if standalone_arrays else list
     # A packet of immutable scalars needs a fresh envelope, not a recursive copier.
     # Include the envelope itself in the same 10,000-node budget as the slow path.
     if type(value) is list and len(value)<10000:
         for item in value:
-            if item is not None and item is not NULL and type(item) not in (str,bool,Decimal):
+            kind = type(item)
+            if (item is not None and item is not NULL and kind is not str
+                    and kind is not bool and kind is not Decimal):
                 break
         else:return value.copy()
     from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
@@ -31,17 +38,20 @@ def transfer(value):
         nonlocal remaining
         remaining-=1
         if remaining<0 or depth>64:raise ValueError('Межконтекстная передача: превышен предел размера или глубины')
-        if item is None or item is NULL or type(item) in (str,bool,Decimal):return item
-        if type(item) not in (list,_DirectStructure,BSLArray,BSLStructure):
-            return Interpreter._copy_context_packet([item])[0]
+        kind=type(item)
+        if item is None or item is NULL or kind is str or kind is bool or kind is Decimal:return item
+        direct_array=kind is list or kind is array_kind
+        if not direct_array and kind is not _DirectStructure and kind is not BSLArray and kind is not BSLStructure:
+            if kind is _PacketDate:return Interpreter._copy_context_packet([item])[0]
+            raise TypeError("Межконтекстная передача поддерживает скаляры, Массив и Структуру")
         if id(item) in active:raise ValueError('Межконтекстная передача циклических коллекций пока не поддерживается')
         active.add(id(item))
         try:
-            if type(item) is list:return [copy(child,depth+1) for child in item]
-            if type(item) is BSLArray:
+            if direct_array:return [copy(child,depth+1) for child in list.__iter__(item)]
+            if kind is BSLArray:
                 result=BSLArray();result.items=[copy(child,depth+1) for child in item.items]
                 return result
-            if type(item) is BSLStructure:
+            if kind is BSLStructure:
                 result=BSLStructure()
                 for key,(spelling,child) in item._items.items():result._items[key]=(spelling,copy(child,depth+1))
                 return result
@@ -244,7 +254,7 @@ def resolve_server(parent,module,name,*,require_value,allow_references,allow_omi
             parent._check()
             try:return reference.get()
             finally:parent._check()
-        packet=transfer([read_argument(i,value) for i,value in enumerate(arguments)])
+        packet=transfer([read_argument(i,value) for i,value in enumerate(arguments)],standalone_arrays=True)
         # Omission positions are call metadata, not values admitted by transfer.
         # Restore the marker only after the validated input packet was copied.
         if omitted:
@@ -271,7 +281,7 @@ def resolve_server(parent,module,name,*,require_value,allow_references,allow_omi
                             raise converted from None
                         context._check()
                     result=execute(context,packet)
-                    outgoing=transfer([result]+[packet[i].value for i,_ in outputs])
+                    outgoing=transfer([result]+[packet[i].value for i,_ in outputs],standalone_arrays=True)
                 finally:context._check()
             finally:context.leave()
         finally:

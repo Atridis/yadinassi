@@ -86,11 +86,40 @@ X=1;A=New Array;A.Add(1);Try Fail(X,A);Except Caught=True;EndTry;''')
         self.assertEqual(vm.execution_context,'client')
 
     def test_output_validation_is_atomic_and_combines_budget(self):
-        for body in ('A.Add(A);','For I=1 To 6000 Do A.Add(0);EndDo;'):
-            vm=Interpreter();vm.execute('&AtServer\nFunction F(X,A) X=9;'+body+'Return A;EndFunction X=1;A=New Array;')
-            with self.assertRaises(BSLRuntimeError):vm.execute('F(X,A);')
-            self.assertEqual((vm.variables['x'],vm.variables['a']),(1,[]))
-            self.assertEqual(vm.execution_context,'client')
+        # Both native and boxed arrays must reach the same output policy.
+        for constructor in ('New Array', 'StrSplit("", ",", False)'):
+            large = 'For I=1 To 6000 Do A.Add(0);EndDo;'
+            for body, error in (('A.Add(A);', 'циклических коллекций'),
+                                (large, 'превышен предел размера')):
+                with self.subTest(constructor=constructor, error=error):
+                    output = []
+                    vm = Interpreter(output.append)
+                    self.addCleanup(vm.close)
+                    vm.execute('&AtServer\nFunction F(X,A) X=9;' + body +
+                               'Message("returning");Return A;EndFunction '
+                               f'X=1;A={constructor};R=17;')
+                    original = vm.variables['a']
+                    with self.assertRaisesRegex(BSLRuntimeError, error):
+                        vm.execute('R=F(X,A);')
+                    self.assertEqual(output, ['returning'])
+                    self.assertEqual((vm.variables['x'], vm.variables['r']), (1, 17))
+                    self.assertIs(vm.variables['a'], original)
+                    self.assertEqual(vm.execution_context, 'client')
+                    self.assertEqual(vm.execute('A.Count()'), 0)
+
+            with self.subTest(constructor=constructor, error=None):
+                # One 6000-element output fits. Returning it as well as copying it
+                # back by reference must share the budget, not reset it per output.
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                vm.execute('&AtServer\nFunction F(X,A) X=9;' + large +
+                           'Return 23;EndFunction '
+                           f'X=1;A={constructor};Original=A;R=F(X,A);')
+                self.assertEqual((vm.variables['x'], vm.variables['r']), (9, 23))
+                self.assertIsNot(vm.variables['a'], vm.variables['original'])
+                self.assertEqual(vm.execute('Original.Count()'), 0)
+                self.assertEqual(vm.execute('A.Count()'), 6000)
+                self.assertEqual(vm.execution_context, 'client')
 
     def test_input_budget_is_shared_across_arguments(self):
         vm=Interpreter(allow_extensions=True);effects=[];vm.register_function('Effect',lambda:effects.append(1))
