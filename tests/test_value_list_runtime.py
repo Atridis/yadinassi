@@ -4,7 +4,7 @@ from decimal import Decimal
 from pathlib import Path
 import unittest
 
-from yadinassi import BSLError, Interpreter
+from yadinassi import BSLError, BSLRuntimeError, Interpreter
 from tests.native_observations import extract_payload
 
 
@@ -150,6 +150,39 @@ class ValueListRuntimeTests(unittest.TestCase):
                      'values.AvailableValues = Undefined;', 'first.Picture = Undefined;'):
             with self.assertRaises(BSLError):
                 self.vm.execute(code)
+
+    def test_plain_list_readonly_and_missing_properties_are_catchable(self):
+        self.vm.execute(
+            'Var Touches; Touches=0; '
+            'Function Touch() Touches=Touches+1; Return 99; EndFunction'
+        )
+        cases = (
+            ('values.ТипЗначения=Touch();', 'недоступно для записи'),
+            ('values.AvailableValues=Touch();', 'недоступно для записи'),
+            ('values.UnknownMember=Touch();', 'не обнаружено'),
+            ('values.UnknownMember;', 'не обнаружено'),
+        )
+        source = 'value-list-properties.bsl'
+        for prepared in (False, True):
+            for code, reason in cases:
+                with self.subTest(prepared=prepared, code=code):
+                    program = '\n' + code
+                    plan = self.vm.prepare(program, source) if prepared else None
+                    with self.assertRaisesRegex(BSLRuntimeError, reason) as failure:
+                        if prepared:
+                            self.vm.execute_prepared(plan)
+                        else:
+                            self.vm.execute(program, source)
+                    self.assertEqual((failure.exception.source, failure.exception.line,
+                                      failure.exception.source_line), (source, 2, code))
+        self.vm.execute('Denied=False; Try values.ValueType=Touch(); '
+                        'Except Denied=True; EndTry;')
+        self.assertIs(self.vm.execute('Denied'), True)
+        self.assertEqual(self.vm.execute('Touches'), 0)
+        self.assertEqual(self.vm.execute('values.Count()'), 2)
+        self.assertIs(self.vm.execute('values.Get(0)'), self.vm.variables['first'])
+        self.assertEqual(self.vm.execute('values.ValueType.Types().Count()'), 0)
+        self.assertIsNone(self.vm.execute('values.ДоступныеЗначения'))
 
     def test_bilingual_methods_and_detached_fields(self):
         self.vm.execute('inserted = values.Вставить(0, 30); '

@@ -312,10 +312,11 @@ class CatalogBoundary:
     def get_member(self,value,name):
         kind=type(value)
         if kind is PlainValueList:
+            if self._verify_context:self._check()
             key = name.casefold()
             if key in _PLAIN_VALUE_LIST_DEFAULT_PROPERTIES:
-                if self._verify_context: self._check()
                 return BSLTypeDescription() if key in _PLAIN_VALUE_LIST_TYPE_PROPERTIES else None
+            raise ValueError('Поле объекта не обнаружено: '+name)
         receiver_kind=id(kind)
         adapter = _OWNED_STANDALONE_READS.get(receiver_kind)
         if adapter is not None and (adapter is not live_metadata or live_metadata.server_receiver(self)):
@@ -333,6 +334,11 @@ class CatalogBoundary:
             if verify:self._check_effect()
 
     def resolve_set_member(self,value,name):
+        if type(value) is PlainValueList:
+            if self._verify_context:self._check()
+            if name.casefold() in _PLAIN_VALUE_LIST_DEFAULT_PROPERTIES:
+                raise ValueError('Свойство недоступно для записи: '+name)
+            raise ValueError('Поле объекта не обнаружено: '+name)
         if id(value) in OPAQUE_ENUM_IDS or type(value) is _DATE_TYPE:
             if self._verify_context:self._check()
             raise ValueError('Свойство недоступно для записи: '+name)

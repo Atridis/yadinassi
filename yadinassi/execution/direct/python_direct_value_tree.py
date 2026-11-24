@@ -2,6 +2,7 @@
 from yadinassi.collections import value_trees as model
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from decimal import Decimal
+from operator import is_
 from weakref import ReferenceType
 from yadinassi.types.values import BSLObject, HostFunction
 
@@ -20,6 +21,31 @@ _ENUM_MEMBERS=model._DIRECT_TREE_ENUM_MEMBERS
 _ENUM_MEMBER_IDS=frozenset(id(member) for member,_ in _ENUM_MEMBERS)
 _LIMITS=model._DIRECT_TREE_LIMITS
 _SCHEMA_BINDINGS=model._DIRECT_TREE_SCHEMA_BINDINGS+model._DIRECT_TREE_DEPENDENCY_BINDINGS
+# The model owns the definition-time snapshots. Prepare their parallel
+# vectors once; each check still reads the actual live class namespace.
+def _identity_vectors(fields):
+    return tuple(zip(*fields)) if fields else ((), ())
+
+
+def _abi_vectors(classes):
+    return tuple((cls,mro,*_identity_vectors(fields)) for cls,mro,fields in classes)
+
+
+_CLASS_VECTORS=_abi_vectors(_ABI)
+_ARRAY_VECTORS=_abi_vectors(_ARRAY_ABI)
+_BASE_VECTORS=_abi_vectors(_BASE_ABI)
+_SCALAR_VECTORS=tuple((cls,mro,*_identity_vectors(fields),slotnames)
+                      for cls,mro,fields,slotnames in _SCALAR_ABI)
+_ENUM_VECTORS=tuple((member,*_identity_vectors(fields)) for member,fields in _ENUM_MEMBERS)
+_ABSENT=object()
+
+
+def _matching_bindings(current,names,expected):
+    # map/all avoid a Python generator frame per entry. No object equality,
+    # snapshot copies or caching a successful admission.
+    return all(map(is_,map(current.get,names),expected))
+
+
 _QUALIFIERS=model._direct_qualifiers
 _ROW_COLLECTION=object()
 _ROW_READS={alias: spec for aliases,spec in (
@@ -43,40 +69,41 @@ def hooks():
         if vars(model).get(name) is not value:raise BoundaryViolation('ValueTree model binding changed')
     try:model._registry_hooks()
     except ValueError as error:raise BoundaryViolation(str(error)) from None
-    for cls,mro,fields in _ARRAY_ABI:
+    for cls,mro,names,expected in _ARRAY_VECTORS:
         current=vars(cls)
-        if cls.__mro__ is not mro or len(current)!=len(fields) or any(current.get(k) is not v for k,v in fields):
+        if cls.__mro__ is not mro or len(current)!=len(names) or not _matching_bindings(current,names,expected):
             raise BoundaryViolation('ValueTree output array hooks changed')
         slots=current.get('__slotnames__')
         if type(slots) is not list or slots:raise BoundaryViolation('ValueTree output array copy cache changed')
     for namespace,name,value in _SCHEMA_BINDINGS:
         if namespace.get(name) is not value:raise BoundaryViolation('ValueTree schema binding changed')
-    for cls,mro,fields in _ABI:
+    for cls,mro,names,expected in _CLASS_VECTORS:
         current=vars(cls)
-        if cls.__mro__ is not mro or len(current)!=len(fields) or any(current.get(k) is not v for k,v in fields):
+        if cls.__mro__ is not mro or len(current)!=len(names) or not _matching_bindings(current,names,expected):
             raise BoundaryViolation('ValueTree class hooks changed')
         slots=current.get('__slotnames__')
         if slots is not None and (type(slots) is not list or slots):raise BoundaryViolation('ValueTree copy metadata changed')
-    for member,fields in _ENUM_MEMBERS:
+    for member,names,expected in _ENUM_VECTORS:
         current=vars(member)
         # Inspect keys before any lookup: foreign keys may collide with the
         # canonical strings and supply an equality callback.
-        if type(current) is not dict or len(current)!=len(fields) or any(type(key) is not str for key in current):
+        if type(current) is not dict or len(current)!=len(names) or any(type(key) is not str for key in current):
             raise BoundaryViolation('ValueTree enum member fields changed')
-        if any(current.get(key) is not value for key,value in fields):
+        if not _matching_bindings(current,names,expected):
             raise BoundaryViolation('ValueTree enum member state changed')
-    for cls,mro,fields in _BASE_ABI:
-        current={k:v for k,v in vars(cls).items() if k!='__slotnames__'}
-        if cls.__mro__ is not mro or len(current)!=len(fields) or any(current.get(k) is not v for k,v in fields):
+    for cls,mro,names,expected in _BASE_VECTORS:
+        current=vars(cls);slots=current.get('__slotnames__',_ABSENT)
+        if (cls.__mro__ is not mro or len(current)-(slots is not _ABSENT)!=len(names)
+                or not _matching_bindings(current,names,expected)):
             raise BoundaryViolation('ValueTree base hooks changed')
-        slots=vars(cls).get('__slotnames__',[])
-        if type(slots) is not list or slots:raise BoundaryViolation('ValueTree base copy metadata changed')
-    for cls,mro,fields,slotnames in _SCALAR_ABI:
-        current={k:v for k,v in vars(cls).items() if k!='__slotnames__'}
-        if cls.__mro__ is not mro or len(current)!=len(fields) or any(current.get(k) is not v for k,v in fields):
+        if slots is not _ABSENT and (type(slots) is not list or slots):
+            raise BoundaryViolation('ValueTree base copy metadata changed')
+    for cls,mro,names,expected,slotnames in _SCALAR_VECTORS:
+        current=vars(cls);slots=current.get('__slotnames__',_ABSENT)
+        if (cls.__mro__ is not mro or len(current)-(slots is not _ABSENT)!=len(names)
+                or not _matching_bindings(current,names,expected)):
             raise BoundaryViolation('ValueTree scalar hooks changed')
-        slots=vars(cls).get('__slotnames__')
-        if slots is not None and (type(slots) is not list or any(type(name) is not str for name in slots) or tuple(slots)!=slotnames):
+        if slots is not _ABSENT and slots is not None and (type(slots) is not list or any(type(name) is not str for name in slots) or tuple(slots)!=slotnames):
             raise BoundaryViolation('ValueTree scalar copy cache changed')
     for name,maximum in _LIMITS:
         value=vars(model).get(name)
