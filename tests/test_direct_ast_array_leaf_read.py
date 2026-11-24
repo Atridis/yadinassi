@@ -21,7 +21,10 @@ class ArrayLeafReadTests(unittest.TestCase):
             vm.variables['a']=receiver;vm.variables['i']=Decimal(0)
             vm.execute_prepared(plan)
         vm.variables['a']=[Decimal(7)]
-        for index in (Decimal(-1),Decimal('0.5'),Decimal(1)):
+        vm.variables['i']=Decimal('0.5')
+        vm.execute_prepared(plan)
+        self.assertEqual(vm.variables['r'],Decimal(7))
+        for index in (Decimal(-1),Decimal('-0.5'),True,Decimal(1)):
             vm.variables['i']=index
             with self.assertRaises(Exception):vm.execute_prepared(plan)
     def test_complex_index_and_receiver_effects_remain_once(self):

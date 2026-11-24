@@ -35,7 +35,7 @@ def _items(array, *, writing=False):
                 _invalid()
     # Inspect raw descriptors; never invoke a replacement class method.
     for cls, name, method, code, defaults in _DIRECT_ARRAY_ADDRESS_ABI:
-        if name == ('get' if writing else 'set'):
+        if name in (('get', 'get_index') if writing else ('set', 'set_index')):
             continue
         if (vars(cls).get(name) is not method or method.__code__ is not code
                 or method.__defaults__ is not defaults or cls is not ARRAY and name in vars(ARRAY)):

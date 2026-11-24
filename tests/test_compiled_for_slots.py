@@ -8,7 +8,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from yadinassi import Interpreter
+from yadinassi import BSLError, Interpreter
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.syntax.parser import parse
 from yadinassi.types.errors import BSLRuntimeError
@@ -82,10 +82,36 @@ class CompiledForSlotTests(unittest.TestCase):
             vm.execute('For ThisObject=1 To 2 Do Install();EndDo;')
         self.assertNotIn('thisobject', vm.variables)
 
-    def test_var_shadowing_invalidates_module_counter_slot(self):
-        source = 'Var i;Procedure F() For i=1 To 2 Do Var i;i=10;EndDo;EndProcedure F();'
-        values = []
-        for mode in ('python-direct',):
-            vm = Interpreter(execution_backend=mode);vm.execute(source)
-            values.append(vm.variables['i'])
-        self.assertEqual(values, [Decimal(1)])
+    def test_lexical_var_shadows_module_counter_slot(self):
+        # Both ordinary prefixes were observed on Linux 1C 8.3.27.1508:
+        # a routine-local counter leaves the outer value intact; without the
+        # declaration, the same loop mutates that outer value.
+        for var, outer in (('Var i;', 42), ('', 11)):
+            source = ('Var i;Procedure F() ' + var +
+                      'For i=1 To 2 Do i=10;EndDo;EndProcedure i=42;F();')
+            for entry in ('execute', 'prepare'):
+                with self.subTest(var=var, entry=entry):
+                    vm = Interpreter()
+                    self.addCleanup(vm.close)
+                    if entry == 'prepare':
+                        vm.execute_prepared(vm.prepare(source))
+                    else:
+                        vm.execute(source)
+                    self.assertEqual(vm.variables['i'], Decimal(outer))
+
+    def test_supplied_ast_rejects_declaration_moved_into_routine_loop(self):
+        for entry in ('execute_program', 'prepare_program'):
+            with self.subTest(entry=entry):
+                source = 'Procedure F()\nVar i;For i=1 To 2 Do i=10;EndDo;EndProcedure F();'
+                program = parse(source, 'moved-declaration.bsl')
+                body = program[0].body
+                declaration = body.pop(0)
+                body[0].body.insert(0, declaration)
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                with self.assertRaisesRegex(BSLError, 'внутри цикла подпрограммы') as caught:
+                    getattr(vm, entry)(program)
+                error = caught.exception
+                self.assertEqual((error.source, error.line, error.column),
+                                 ('moved-declaration.bsl', 2, 1))
+                self.assertFalse(vm.variables)

@@ -588,12 +588,16 @@ class CatalogBoundary:
         self._catalog_owner(value,verify=verify)
         if type(value) in (BSLArray, BSLFixedArray) and name.casefold() in ('get','получить'):
             function=value.get
+        elif type(value) is BSLArray and name=='__getitem__':
+            function=value.get_index
+        elif type(value) is BSLArray and name=='__setitem__':
+            function=value.set_index
         elif name=='__getitem__' and any(type(value) is kind for kind in _DOM_LISTS):
             function=value.item
         elif name=='__getitem__':
-            function=value.get if type(value) in (BSLArray, BSLFixedArray, BSLMap, BSLFixedStructure) else lambda index:value.get_index(index)
+            function=value.get if type(value) in (BSLFixedArray, BSLMap, BSLFixedStructure) else lambda index:value.get_index(index)
         elif name=='__setitem__':
-            function=value.set if type(value) in (BSLArray, BSLFixedArray, BSLMap, BSLFixedMap, BSLFixedStructure) else lambda index,new:value.set_index(index,new)
+            function=value.set if type(value) in (BSLFixedArray, BSLMap, BSLFixedMap, BSLFixedStructure) else lambda index,new:value.set_index(index,new)
         elif name=='__iter__':
             if type(value) not in (BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure, BSLMap, BSLFixedMap, BSLValueList, BSLCollectionIndex, BSLCollectionIndexes, BSLInformationRegisterRecordSet, BSLCatalogSection, BSLDocumentLines, BSLBinaryDataBuffer) and id(value) not in ITERABLE_IDS and not any(type(value) is kind for kind in _DOM_LISTS):
                 raise BoundaryViolation('direct database iterator not connected')

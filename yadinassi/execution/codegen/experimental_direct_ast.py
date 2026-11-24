@@ -37,6 +37,7 @@ from yadinassi.execution.direct.python_direct import REPAIRS,PythonDirectUnsuppo
 from yadinassi.execution.direct.python_direct_names import NAMES, CHARS_ALIASES, XML_CLEANUP_ALIASES, VALUE_LIST_CONSTRUCTOR_ALIASES
 from yadinassi.execution.direct.python_direct_static_module import analyze as analyze_static, ordered_if, OTHERWISE, _simple_literal_boolean, table_regions as analyze_table_regions
 from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.types.array_index import array_offset
 from dataclasses import fields, replace
 
 
@@ -160,7 +161,11 @@ def _fragment_binding(storage):
                          lambda:local_exists(storage),storage)
 
 def _list_get(receiver,index):
-    return receiver[_checked_array_index(receiver,index)]
+    return receiver[array_offset(receiver,index)]
+
+
+def _array_method_get(receiver,index):
+    return receiver[array_offset(receiver,index,method=True)]
 
 
 def _checked_literal_array_index(receiver,index):
@@ -170,7 +175,7 @@ def _checked_literal_array_index(receiver,index):
 
 def _array_member(receiver,name):
     from yadinassi.execution.direct.python_direct_captured_values import register
-    return register(array_method_value(receiver,name,index=_checked_array_index,
+    return register(array_method_value(receiver,name,
         insert=_array_insert_shape,find=scalar.typed_find,
         delete=lambda obj,key:obj.__delitem__(_checked_array_index(obj,key))))
 
@@ -574,16 +579,22 @@ class Emitter:
     def native_array_index(self,node):
         leaf=node
         while type(leaf) is bsl.Group:leaf=leaf.expression
-        if type(leaf) is bsl.Name and leaf.name.casefold() in self.range_indices:
-            return self.name(self.range_indices[leaf.name.casefold()],node.token)
+        if type(leaf) is bsl.Name:
+            counter = self.range_indices.get(leaf.name.casefold())
+            if counter is not None and counter[1]:
+                return self.name(counter[0],node.token)
+        if type(leaf) is bsl.Literal:
+            value=leaf.value
+            if (type(value) is Decimal and value.is_finite() and value.as_tuple().exponent==0
+                    and 0<=value<=2**63-1):
+                return self.const(int(value),node.token)
         # A raw count used only as an index cannot escape into collection data.
         if type(leaf) is bsl.Call and type(leaf.callee) is bsl.Attribute and not leaf.arguments:
             owner=self.static_module_kinds.get(id(leaf.callee.object))
             method=leaf.callee.name.casefold()
-            if owner=='array' and method in ('count','количество','ubound','вграница'):
-                count=self.call('len',[self.expr(leaf.callee.object)],node.token)
-                return count if method in ('count','количество') else self.node(py.BinOp,node.token,left=count,op=py.Sub(),right=self.const(1,node.token))
-        return self.call('int',[self.expr(node)],node.token)
+            if owner=='array' and method in ('count','количество'):
+                return self.call('len',[self.expr(leaf.callee.object)],node.token)
+        return None
     def expr(self,node,require_value=True):
         value=self._expr(node,require_value)
         if self.static_module_names and not self.static_module_kinds:
@@ -714,8 +725,9 @@ class Emitter:
                 if owner in ('table','valuelist'):
                     return self.invoke(self.attribute(self.expr(node.object),'get',t),[self.expr(node.index)],t)
                 if self.static_module_kinds[id(node.object)]=='map':return self.call('_native_dict_get',[self.expr(node.object),self.expr(node.index)],t)
-                if self.address_routine_symbols:return self.call('_list_get',[self.expr(node.object),self.expr(node.index)],t)
-                return self.node(py.Subscript,t,value=self.expr(node.object),slice=self.native_array_index(node.index),ctx=py.Load())
+                offset=self.native_array_index(node.index)
+                if offset is None:return self.call('_list_get',[self.expr(node.object),self.expr(node.index)],t)
+                return self.node(py.Subscript,t,value=self.expr(node.object),slice=offset,ctx=py.Load())
             if k is bsl.Call and type(node.callee) is bsl.Attribute:
                 receiver=self.expr(node.callee.object);method=node.callee.name.casefold()
                 owner=self.static_module_kinds[id(node.callee.object)]
@@ -738,8 +750,9 @@ class Emitter:
                     return self.call('_native_dict_setitem',[receiver,*[self.expr(arg) for arg in node.arguments]],t)
                 if method in ('get','получить'):
                     if self.static_module_kinds[id(node.callee.object)]=='map':return self.call('_native_dict_get',[receiver,self.expr(node.arguments[0])],t)
-                    if self.address_routine_symbols:return self.call('_list_get',[receiver,self.expr(node.arguments[0])],t)
-                    return self.node(py.Subscript,t,value=receiver,slice=self.native_array_index(node.arguments[0]),ctx=py.Load())
+                    offset=self.native_array_index(node.arguments[0])
+                    if offset is None:return self.call('_array_method_get',[receiver,self.expr(node.arguments[0])],t)
+                    return self.node(py.Subscript,t,value=receiver,slice=offset,ctx=py.Load())
                 if method in ('count','количество','ubound','вграница'):
                     return self.call('_native_count' if method in ('count','количество') else '_native_ubound',[receiver],t)
         if k is bsl.Call and type(node.callee) is bsl.Group:
@@ -1051,7 +1064,7 @@ class Emitter:
                 maps=self.node(py.BoolOp,t,op=py.Or(),values=[exact('_PlainMap'),exact('dict'),exact('_TypedMap'),exact('_NakedMap')])
                 fail=self.call('_native_method_missing',[self.name(receiver,t),self.const(callee.name,t)],t)
                 mapped=self.node(py.IfExp,t,test=maps,body=self.attribute(self.name(receiver,t),'get',t),orelse=fail)
-                native=self.node(py.IfExp,t,test=exact('list'),body=self.call('_partial',[self.name('_list_get',t),self.name(receiver,t)],t),orelse=mapped)
+                native=self.node(py.IfExp,t,test=exact('list'),body=self.call('_partial',[self.name('_array_method_get',t),self.name(receiver,t)],t),orelse=mapped)
             else:
                 native=self.attribute(self.name(receiver,t),'append',t)
                 if not node.arguments:native=self.call('_partial',[native,self.const(None,t)],t)
@@ -1768,12 +1781,15 @@ class Emitter:
             if self.static_module_kinds:
                 target=node.target;receiver=self.temp();index=self.temp();stored=self.temp()
                 def assign(name,value):return self.node(py.Assign,t,targets=[self.name(name,t,True)],value=value)
-                body=[assign(receiver,self.expr(target.object)),assign(index,self.expr(target.index)),assign(stored,self.expr(node.value))]
-                if self.static_module_kinds[id(target.object)]=='map':
+                is_map=self.static_module_kinds[id(target.object)]=='map'
+                native_index=None if is_map else self.native_array_index(target.index)
+                key=self.expr(target.index) if native_index is None else native_index
+                body=[assign(receiver,self.expr(target.object)),assign(index,key),assign(stored,self.expr(node.value))]
+                if is_map:
                     write=self.call('_native_dict_setitem',[self.name(receiver,t),self.name(index,t),self.name(stored,t)],t)
                     body.append(self.node(py.Expr,t,value=write));return body
-                position=(self.call('_checked_array_index',[self.name(receiver,t),self.name(index,t)],t)
-                          if self.address_routine_symbols else self.call('int',[self.name(index,t)],t))
+                position=(self.call('_array_offset',[self.name(receiver,t),self.name(index,t)],t)
+                          if native_index is None else self.name(index,t))
                 slot=self.node(py.Subscript,t,value=self.name(receiver,t),slice=position,ctx=py.Store())
                 body.append(self.node(py.Assign,t,targets=[slot],value=self.name(stored,t)));return body
             target=node.target;receiver=self.temp();writer=self.temp();index=self.temp();stored=self.temp()
@@ -1784,7 +1800,7 @@ class Emitter:
             selected=self.node(py.IfExp,t,test=native,body=self.const(None,t),orelse=resolver)
             body=[assign(receiver,self.expr(target.object)),assign(writer,selected),assign(index,self.expr(target.index)),assign(stored,self.expr(node.value))]
             invoke=self.node(py.Expr,t,value=self.invoke(self.name(writer,t),[self.name(index,t),self.name(stored,t)],t))
-            checked=self.call('_checked_array_index',[self.name(receiver,t),self.name(index,t)],t)
+            checked=self.call('_array_offset',[self.name(receiver,t),self.name(index,t)],t)
             position=self.node(py.IfExp,t,test=exact('list'),body=checked,orelse=self.name(index,t))
             slot=self.node(py.Subscript,t,value=self.name(receiver,t),slice=position,ctx=py.Store())
             write=self.node(py.Assign,t,targets=[slot],value=self.name(stored,t))
@@ -1955,7 +1971,7 @@ class Emitter:
                     raw=self.name(counter,t)
                     advance=([] if slot_counter else [self.assign_name(
                         node.name,self.call('_Decimal',[raw],t) if decimal_use and not self.integer_lane else raw,t)])
-                    previous=self.range_indices.get(name);self.range_indices[name]=counter
+                    previous=self.range_indices.get(name);self.range_indices[name]=(counter,start>=0)
                     body=self.loop_body(node.body,None)
                     if previous is None:self.range_indices.pop(name)
                     else:self.range_indices[name]=previous
@@ -2305,7 +2321,9 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             elif kind is bsl.Assign and type(stmt.target) in (bsl.Name,bsl.Index,bsl.Attribute):
                 if type(stmt.target) is bsl.Name:assigned.add(stmt.target.name.casefold())
             elif kind is bsl.Var:
-                if in_loop:_reject('routine loop-local Var outside research subset')
+                if in_loop:
+                    from yadinassi.syntax.parser import reject_loop_local_var
+                    reject_loop_local_var(stmt.token)
                 if id(stmt) not in direct_vars and any(name.casefold() in conditional_shadow_names for name in stmt.names):
                     _reject('conditional local Var shadowing module storage is unsupported')
                 declarations.update(name.casefold() for name in stmt.names)
@@ -2715,7 +2733,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     from yadinassi.db.database_context import require_database_context
     from .experimental_naked_errors import for_bound_unbound, read_except_local
     namespace=dict(_module_property_reference=module_property_reference,_checked_live_counter=_checked_live_counter,_for_bound_unbound=for_bound_unbound,_read_except_local=read_except_local,_normalize_item_presentation=_normalize_presentation,_normalize_item_check=_normalize_check,
-        _require_database_context=require_database_context,_structural_count_ids=TARGET_IDS,_select_structural_read=selects,_structural_count=structural_count,_local_structure_member=_local_structure_member,_BoxedStructure=_BoxedStructure,_local_array_index=_local_array_index,_BoxedArray=_BoxedArray,_local_row_index=_local_row_index,_local_row_member=_local_row_member,_PlainTableRow=_vt.BSLValueTableRow,_raw_table_value=RowStorage.get_value,_raw_table_positional=_vt.BSLValueTableRow._positional_value,_dynamic_remainder=remainder,_dynamic_divide=divide,_dynamic_sign=sign,_dynamic_public_number=public_number,_plain_array_loop=_plain_array_loop,_plain_append_receiver=_plain_append_receiver,_list_append=list.append,_native_host_reference=_native_host_reference,_native_cell_reference=_native_cell_reference,_native_fragment_binding=_native_fragment_binding,_NativeCell=_NativeCell,_PublishedModuleCell=_PublishedModuleCell,_adapt_native_cell=_adapt_native_cell,_PrivateTable=_vt.BSLValueTable,_PrivateValueList=PlainValueList,_PlainValueList=PlainValueList,_PlainValueListItem=PlainValueListItem,_module_primitive_type_ids=frozenset(id(kind) for kind in (list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure)),_module_data_types=data_types,_module_data_type_ids=frozenset(id(kind) for kind in data_types),_native_dict_get=dict.get,_native_dict_setitem=dict.__setitem__,_PlainArray=_PlainArray,_Decimal=Decimal,_PlainMap=PlainMap,_plain_map=plain_map,_execute_fragment=execute_fragment,_fragment_binding=_fragment_binding,_bind_eval=bind_eval,_raise_arity_error=raise_arity_error,_host_omission_error=_host_omission_error,_host_omission_values=_host_omission_values,_dynamic_construct=dynamic_construct,_invalid_native_arity=_invalid_native_arity,_typed_find=scalar.typed_find,_list_delete=_list_delete,_native_ubound=_native_ubound,_readonly=readonly,_array_set_checked=_array_set_checked,_bounded_insert=bounded_insert,_structure_insert=structure_insert,_array_constructor_bounds=bounded_array,_new_structure=new_structure,_structure_from_schema=structure_from_schema,_host_name_reference=_host_name_reference,_Cell=_Cell,_ForwardReference=_ForwardReference,_as_ref=_as_ref,_bound_ref=_bound_ref,_UNSET_REF=_UNSET_REF,_OMITTED_REF=_OMITTED_REF,_argument_count_error=_argument_count_error,_routine_value_error=_routine_value_error,_procedure_value_error=_procedure_value_error,_identity_reference=_identity_reference,_IndexRef=_IndexRef,_AttributeRef=_AttributeRef,_SlotReference=live_state._SlotReference,_source_reference=source_reference,_canonical_reference=_canonical_reference,_structure_property=structure_property,_native_method_missing=_native_method_missing,_native_count=_native_count,_MapEntry=_MapEntry,_array_member=_array_member,_native_property_missing=_native_property_missing,_structure_get_known=structure_get_known,_structure_set_known=structure_set_known,_native_property_write_missing=_native_property_write_missing,_checked_array_index=_checked_array_index,_checked_literal_array_index=_checked_literal_array_index,_partial=partial,_native_getitem=_NATIVE_GETITEM,_list_get=_list_get,_TypedMap=_TypedMap,_NakedMap=_NakedMap,_DirectStructure=_DirectStructure,_host_reference=host_reference,_UNSET=UNSET,_missing=missing,_native_add=_NATIVE_ADD,_concatenate=scalar.concatenate,_divide=scalar.decimal_divide,_sign=scalar.decimal_sign,_order=scalar.uca_order,_truth=scalar.truth,_equal=equal,_not_equal=not_equal,_MISSING=_MISSING,_handled_error=handled_error,_reraise_handled=reraise_handled,_raise_error=raise_error,_presentation=scalar.presentation,_BSLRuntimeError=BSLRuntimeError)
+        _require_database_context=require_database_context,_structural_count_ids=TARGET_IDS,_select_structural_read=selects,_structural_count=structural_count,_local_structure_member=_local_structure_member,_BoxedStructure=_BoxedStructure,_local_array_index=_local_array_index,_BoxedArray=_BoxedArray,_local_row_index=_local_row_index,_local_row_member=_local_row_member,_PlainTableRow=_vt.BSLValueTableRow,_raw_table_value=RowStorage.get_value,_raw_table_positional=_vt.BSLValueTableRow._positional_value,_dynamic_remainder=remainder,_dynamic_divide=divide,_dynamic_sign=sign,_dynamic_public_number=public_number,_plain_array_loop=_plain_array_loop,_plain_append_receiver=_plain_append_receiver,_list_append=list.append,_native_host_reference=_native_host_reference,_native_cell_reference=_native_cell_reference,_native_fragment_binding=_native_fragment_binding,_NativeCell=_NativeCell,_PublishedModuleCell=_PublishedModuleCell,_adapt_native_cell=_adapt_native_cell,_PrivateTable=_vt.BSLValueTable,_PrivateValueList=PlainValueList,_PlainValueList=PlainValueList,_PlainValueListItem=PlainValueListItem,_module_primitive_type_ids=frozenset(id(kind) for kind in (list,dict,_PlainArray,PlainMap,PlainValueList,PlainValueListItem,_TypedMap,_NakedMap,_DirectStructure)),_module_data_types=data_types,_module_data_type_ids=frozenset(id(kind) for kind in data_types),_native_dict_get=dict.get,_native_dict_setitem=dict.__setitem__,_PlainArray=_PlainArray,_Decimal=Decimal,_PlainMap=PlainMap,_plain_map=plain_map,_execute_fragment=execute_fragment,_fragment_binding=_fragment_binding,_bind_eval=bind_eval,_raise_arity_error=raise_arity_error,_host_omission_error=_host_omission_error,_host_omission_values=_host_omission_values,_dynamic_construct=dynamic_construct,_invalid_native_arity=_invalid_native_arity,_typed_find=scalar.typed_find,_list_delete=_list_delete,_native_ubound=_native_ubound,_readonly=readonly,_array_set_checked=_array_set_checked,_bounded_insert=bounded_insert,_structure_insert=structure_insert,_array_constructor_bounds=bounded_array,_new_structure=new_structure,_structure_from_schema=structure_from_schema,_host_name_reference=_host_name_reference,_Cell=_Cell,_ForwardReference=_ForwardReference,_as_ref=_as_ref,_bound_ref=_bound_ref,_UNSET_REF=_UNSET_REF,_OMITTED_REF=_OMITTED_REF,_argument_count_error=_argument_count_error,_routine_value_error=_routine_value_error,_procedure_value_error=_procedure_value_error,_identity_reference=_identity_reference,_IndexRef=_IndexRef,_AttributeRef=_AttributeRef,_SlotReference=live_state._SlotReference,_source_reference=source_reference,_canonical_reference=_canonical_reference,_structure_property=structure_property,_native_method_missing=_native_method_missing,_native_count=_native_count,_MapEntry=_MapEntry,_array_member=_array_member,_native_property_missing=_native_property_missing,_structure_get_known=structure_get_known,_structure_set_known=structure_set_known,_native_property_write_missing=_native_property_write_missing,_checked_array_index=_checked_array_index,_checked_literal_array_index=_checked_literal_array_index,_partial=partial,_native_getitem=_NATIVE_GETITEM,_list_get=_list_get,_array_method_get=_array_method_get,_array_offset=array_offset,_TypedMap=_TypedMap,_NakedMap=_NakedMap,_DirectStructure=_DirectStructure,_host_reference=host_reference,_UNSET=UNSET,_missing=missing,_native_add=_NATIVE_ADD,_concatenate=scalar.concatenate,_divide=scalar.decimal_divide,_sign=scalar.decimal_sign,_order=scalar.uca_order,_truth=scalar.truth,_equal=equal,_not_equal=not_equal,_MISSING=_MISSING,_handled_error=handled_error,_reraise_handled=reraise_handled,_raise_error=raise_error,_presentation=scalar.presentation,_BSLRuntimeError=BSLRuntimeError)
     if emitter.known_calls:
         from yadinassi.execution.direct.python_direct_known_methods import execute, construct_table, detached_after_publication, generic_call
         namespace.update(_known_query_execute=execute,_known_construct_table=construct_table,

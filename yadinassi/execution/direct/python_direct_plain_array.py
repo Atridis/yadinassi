@@ -1,21 +1,17 @@
-"""Research native list surface: no BSLArray proxy or per-read dispatcher.
+"""Native storage for mutable Arrays; the emitter supplies BSL brackets.
 
-Explicit get/set Decimal indices truncate; inherited list indexing uses Python semantics. These
-are explicit compatibility tradeoffs, not native-1C parity claims. Foreign index
-objects/subclasses do not gain __index__/__int__ callback authority.
+Inherited Python list subscripting is intentionally different from BSL
+brackets. The public BSL Get/Set operations normalize the index themselves.
 """
-from decimal import Decimal
+from yadinassi.types.array_index import array_offset
+
 
 class PlainArray(list):
     __slots__=()
     def get(self,index):
-        if type(index) is not int and type(index) is not Decimal:
-            raise TypeError('Ожидается число')
-        return list.__getitem__(self,int(index))
+        return list.__getitem__(self,array_offset(self,index,method=True))
     def set(self,index,value):
-        if type(index) is not int and type(index) is not Decimal:
-            raise TypeError('Ожидается число')
-        list.__setitem__(self,int(index),value)
+        list.__setitem__(self,array_offset(self,index,method=True),value)
     def __eq__(self,other):return self is other
     def __ne__(self,other):return self is not other
     add=list.append

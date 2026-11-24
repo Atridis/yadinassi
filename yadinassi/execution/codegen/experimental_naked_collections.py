@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from .experimental_naked_boundaries import _HostMemberReference, _HostIndexReference, _MISSING, BoundaryViolation
 
+from yadinassi.types.array_index import array_offset
 from yadinassi.types.values import Reference as _CanonicalReference, BSLFixedArray as _CanonicalFixedArray
 from yadinassi.collections.maps import _DIRECT_FIXED_MAP_SNAPSHOT
 from yadinassi.collections.plain_value_list import _normalize_presentation, _normalize_check
@@ -160,7 +161,7 @@ def _checked_array_index(obj,key):
 
 def _array_set_checked(obj,key,value):
     # Ordinary Python argument binding evaluates value before bounds validation.
-    obj[_checked_array_index(obj,key)]=value
+    obj[array_offset(obj,key,method=True)]=value
 
 def _array_set_raw(obj,key,value):
     obj[int(key)]=value

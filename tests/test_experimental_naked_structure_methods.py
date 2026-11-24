@@ -16,7 +16,7 @@ def vm_values(source,*names):
 
 def method(array,name):
     def delete(a,index):del a[_checked_array_index(a,index)]
-    return array_method_value(array,name,index=_checked_array_index,insert=_array_insert_shape,find=typed_find,delete=delete)
+    return array_method_value(array,name,insert=_array_insert_shape,find=typed_find,delete=delete)
 
 class StructureDirectTests(unittest.TestCase):
     def test_casefold(self):

@@ -7,6 +7,7 @@ behavior remains an ordinary failing test, never an oracle equality or skip.
 from decimal import Decimal, localcontext, Inexact, Rounded
 import unittest
 from yadinassi import Interpreter, BSLError
+from yadinassi.syntax.parser import parse
 
 
 class WholeRoutineBehaviorTests(unittest.TestCase):
@@ -165,8 +166,37 @@ class WholeRoutineBehaviorTests(unittest.TestCase):
     def test_declared_local_retains_prior_value(self):
         self.execute('Function F() x=3;Var x;Return x;EndFunction r=F();',{'r':3})
 
-    def test_conditional_local_counter_shadows_module_variable(self):
-        self.execute('Var i;Procedure F() For i=1 To 2 Do Var i;i=10;EndDo;EndProcedure F();',{'i':1})
+    def test_routine_loop_local_var_is_a_source_error_before_execution(self):
+        # Linux 1C 8.3.27.1508 refuses this exact module at 1:37
+        # (native Actions run 45423566791, artifact 14934532505).
+        source = ('Var i;Procedure F() For i=1 To 2 Do Var i;i=10;EndDo;EndProcedure F();\n'
+                  'Message("var.loop-local: observed|" + ЗначениеВСтрокуВнутр(i));')
+        for entry in ('parse', 'execute', 'prepare'):
+            with self.subTest(entry=entry):
+                effects = []
+                vm = Interpreter(output=effects.append)
+                self.addCleanup(vm.close)
+                compilation = parse if entry == 'parse' else getattr(vm, entry)
+                with self.assertRaisesRegex(BSLError, 'внутри цикла подпрограммы') as caught:
+                    compilation(source, 'loop-local.bsl')
+                error = caught.exception
+                self.assertEqual((error.source, error.line, error.column), ('loop-local.bsl', 1, 37))
+                self.assertFalse(vm.variables)
+                self.assertEqual(effects, [])
+
+    def test_loop_local_var_guard_includes_nested_unreachable_blocks(self):
+        for opening in ('For i=1 To 0 Do', 'For Each i In New Array Do', 'While False Do'):
+            with self.subTest(opening=opening):
+                source = ('Function F() ' + opening +
+                          '\nIf False Then Перем i;EndIf;EndDo;Return 0;EndFunction')
+                with self.assertRaisesRegex(BSLError, 'внутри цикла подпрограммы') as caught:
+                    parse(source, 'nested-local.bsl')
+                self.assertEqual((caught.exception.line, caught.exception.column), (2, 15))
+
+        # This change is concerned only with loops inside a routine, not
+        # different source placements whose native semantics are unmeasured.
+        parse('While False Do Var i;EndDo;')
+        parse('Procedure F() If False Then Var i;EndIf;EndProcedure')
 
     def test_conditional_backward_goto_does_not_replay_prefix(self):
         self.execute('Function F(Val n) n=n+2;~Again:n=n-1;If n>0 Then Goto ~Again;EndIf;Return n;EndFunction r=F(3);',{'r':0})

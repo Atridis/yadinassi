@@ -14,6 +14,14 @@ PRECEDENCE = {
     "+": 4, "-": 4,
     "*": 5, "/": 5, "%": 5,
 }
+
+
+def reject_loop_local_var(token: Token) -> None:
+    """Report an invalid procedural declaration at its Var token."""
+    raise BSLError("Объявление переменной внутри цикла подпрограммы недопустимо",
+                   token.source, token.line, token.column)
+
+
 class Parser:
     def __init__(self, tokens: list[Token], compilation_context: str | None = None):
         self.compilation_context = compilation_context
@@ -316,6 +324,8 @@ class Parser:
             self.pos += 1
             return ast.Break(token) if token.kind == "BREAK" else ast.Continue(token)
         if self.accept("VAR"):
+            if self.routine_kind is not None and self.loop_depth:
+                reject_loop_local_var(token)
             if self.compilation_context == "server" and self.routine_kind is None and self.block_depth:
                 self.fail("Объявления внутри серверного инициализатора не поддерживаются")
             names = []

@@ -7,6 +7,7 @@ import re
 from typing import Callable
 
 from yadinassi.temporal.dates import BSLDate
+from .array_index import array_offset
 
 
 class BSLNull(Enum):
@@ -556,8 +557,21 @@ class BSLArray(_ArrayBase):
         # Publish only the complete shape; failed validation leaves self intact.
         self.items: list[object] = create(0)
 
+    def get(self, index: object) -> object:
+        items = self.items
+        return list.__getitem__(items, array_offset(items, index, method=True))
+
     def set(self, index: object, value: object) -> None:
-        self.items[self.checked_index(index)] = value
+        items = self.items
+        list.__setitem__(items, array_offset(items, index, method=True), value)
+
+    def get_index(self, index: object) -> object:
+        items = self.items
+        return list.__getitem__(items, array_offset(items, index))
+
+    def set_index(self, index: object, value: object) -> None:
+        items = self.items
+        list.__setitem__(items, array_offset(items, index), value)
 
     def add(self, value: object = None) -> None:
         self.items.append(value)
@@ -715,7 +729,7 @@ _DIRECT_COLLECTION_CLASS_ABI = tuple((cls, cls.__mro__, tuple(vars(cls).items())
     for cls in (BSLObject, _ArrayBase, BSLArray, HostFunction))
 _DIRECT_HOST_FUNCTION_CALL_CODE = HostFunction.__call__.__code__
 _DIRECT_COLLECTION_HELPER_ABI = tuple((name, globals()[name]) for name in (
-    'integer', 'require_number', 'equal', 'BSLArray', 'HostFunction',
+    'integer', 'require_number', 'equal', 'array_offset', 'BSLArray', 'HostFunction',
     'BSLFixedCollection', '_MAX_INSERT_GROWTH', '_MAX_ARRAY_CONSTRUCTION',
     '_MAX_ARRAY_DIMENSIONS'))
 
@@ -728,9 +742,11 @@ _DIRECT_ARRAY_TYPE = BSLArray
 # A compiler-owned element address does not grant general host indexing.
 # Retain the precise public methods it replaces before the lazy bridge loads.
 _DIRECT_ARRAY_ADDRESS_ABI = tuple((cls, name, method, method.__code__, method.__defaults__)
-    for cls, name, method in ((_ArrayBase, 'get', _ArrayBase.get),
+    for cls, name, method in ((BSLArray, 'get', BSLArray.get),
                               (_ArrayBase, 'checked_index', _ArrayBase.checked_index),
-                              (BSLArray, 'set', BSLArray.set)))
+                              (BSLArray, 'set', BSLArray.set),
+                              (BSLArray, 'get_index', BSLArray.get_index),
+                              (BSLArray, 'set_index', BSLArray.set_index)))
 _DIRECT_FIXED_ARRAY_TYPE = BSLFixedArray
 _DIRECT_FIXED_FIND_ABI=(_ArrayBase.find,tuple((cls,cls.__mro__,tuple(vars(cls).items()))
     for cls in BSLFixedArray.__mro__))

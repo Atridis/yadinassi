@@ -47,10 +47,10 @@ class DirectArrayElementAddressTests(unittest.TestCase):
         vm.execute_prepared(plan)
         self.assertEqual(vm.variables['t'],[D(8)])
 
-    def test_indexed_assignment_validates_after_rhs_and_never_truncates(self):
+    def test_indexed_assignment_validates_after_rhs_and_truncates_positive_fraction(self):
         for index,rhs,expected in (('-1','1/0','Деление на ноль'),
                                    ('-1','2','Индекс массива вне границ'),
-                                   ('0.5','2','Ожидается целое число')):
+                                   ('-0.5','2','Индекс массива вне границ')):
             with self.subTest(index=index,rhs=rhs):
                 vm=self.vm()
                 source=('Procedure Update(X) X=X+1; EndProcedure '
@@ -58,6 +58,10 @@ class DirectArrayElementAddressTests(unittest.TestCase):
                 with self.assertRaisesRegex(BSLRuntimeError,expected):
                     vm.execute_prepared(vm.prepare(source))
                 self.assertEqual(vm.variables['t'],[D(5)])
+        vm=self.vm()
+        vm.execute_prepared(vm.prepare('Procedure Update(X) X=X+1; EndProcedure '
+                                       'T=New Array; T.Add(5); T[0.5]=2; Update(T[0]);'))
+        self.assertEqual(vm.variables['t'],[D(3)])
 
     def test_bad_address_precedes_later_actual_and_write_survives_error(self):
         for prepare in (False,True):

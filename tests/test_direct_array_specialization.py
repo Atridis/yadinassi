@@ -1,6 +1,7 @@
 """Public direct array loop behavior, independent of retired generator source."""
 import unittest
 from yadinassi import Interpreter
+from yadinassi.types.errors import BSLRuntimeError
 
 class ArraySpecializationTests(unittest.TestCase):
     def test_numeric_loop_and_count_bound(self):
@@ -15,6 +16,8 @@ class ArraySpecializationTests(unittest.TestCase):
 
     def test_negative_index_and_counter_write_are_finite(self):
         vm=Interpreter();self.addCleanup(vm.close)
-        vm.execute('A=New Array;A.Add(7);For I=0 To 0 Do I=-1;R=A.Get(I);Break;EndDo;')
-        self.assertEqual(vm.variables['r'],7)
+        with self.assertRaisesRegex(BSLRuntimeError, 'Индекс массива вне границ'):
+            vm.execute('A=New Array;A.Add(7);For I=0 To 0 Do I=-1;R=A.Get(I);Break;EndDo;')
         self.assertEqual(vm.variables['i'],-1)
+        self.assertNotIn('r',vm.variables)
+        self.assertEqual(vm.execute('A.Get(0)'),7)

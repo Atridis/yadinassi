@@ -33,7 +33,7 @@ class DirectCollectionContracts(unittest.TestCase):
         self.assertIsNone(vm.variables['other'])
 
     def test_invalid_indices_rejected(self):
-        for index in ('-1', 'True', '0.5'):
+        for index in ('-1', 'True', '-0.5', '1'):
             with self.subTest(index=index):
                 vm = Interpreter()
                 self.addCleanup(vm.close)
