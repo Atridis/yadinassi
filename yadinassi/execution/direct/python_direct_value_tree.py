@@ -87,9 +87,17 @@ def hooks():
         current=vars(member)
         # Inspect keys before any lookup: foreign keys may collide with the
         # canonical strings and supply an equality callback.
-        if type(current) is not dict or len(current)!=len(names) or any(type(key) is not str for key in current):
+        if type(current) is not dict or len(current)!=len(names):
             raise BoundaryViolation('ValueTree enum member fields changed')
-        if not _matching_bindings(current,names,expected):
+        if all(map(is_,current,names)):
+            # Identical definition-time keys prove exact str names and order.
+            # Check current values by identity without looking them up again.
+            valid=all(map(is_,current.values(),expected))
+        else:
+            if any(type(key) is not str for key in current):
+                raise BoundaryViolation('ValueTree enum member fields changed')
+            valid=_matching_bindings(current,names,expected)
+        if not valid:
             raise BoundaryViolation('ValueTree enum member state changed')
     for cls,mro,names,expected in _BASE_VECTORS:
         current=vars(cls);slots=current.get('__slotnames__',_ABSENT)

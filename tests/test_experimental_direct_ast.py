@@ -265,3 +265,35 @@ else:raise AssertionError('bare AST gate absent')
                     self.assertIn('e',vm.variables)
                     self.assertIn('getter failed',vm.variables['e'].description)
             self.assertEqual(events,['get',('called',Decimal(2))] if mode=='normal' else ['get'])
+
+    def test_forwarded_host_reference_reads_only_when_requested(self):
+        from yadinassi.types.values import HostFunction, Reference
+
+        for call in ('Host(A, Later());', 'Procedure F(A) Host(A, Later()); EndProcedure; F(A);'):
+            with self.subTest(call=call):
+                vm = Interpreter(allow_extensions=True)
+                self.addCleanup(vm.close)
+                values = [Decimal(1)]
+                events = []
+
+                def getter():
+                    events.append('get')
+                    return values[0]
+
+                def later():
+                    events.append('later')
+                    values[0] = Decimal(2)
+
+                def host(ref, ignored):
+                    events.append('host')
+                    events.append(ref.get())
+                    ref.set(Decimal(3))
+                    events.append(ref.get())
+
+                vm.variables['a'] = Reference(getter, lambda value: values.__setitem__(0, value))
+                vm.register_function('Later', later)
+                vm.functions['host'] = HostFunction(
+                    'Host', host, reference_parameters=(0,), returns_value=False)
+                vm.execute(call)
+                self.assertEqual(events, ['later', 'host', 'get', Decimal(2), 'get', Decimal(3)])
+                self.assertEqual(values[0], Decimal(3))

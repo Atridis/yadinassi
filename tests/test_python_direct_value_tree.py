@@ -388,6 +388,42 @@ class DirectValueTreeTests(unittest.TestCase):
         with self.assertRaises(BoundaryViolation):vm.execute('R.Name="new";')
         self.assertEqual(events,[])
 
+    def test_full_tree_audit_observes_live_enum_state_not_dictionary_order(self):
+        from yadinassi.types.values import BSLType
+
+        vm = self.vm()
+        tree, _ = self.setup_tree(vm)
+        expected = tree.columns.items[0].value_type
+        # ValueType takes the full checked getter, even in ordinary mode.
+        plan = vm.prepare('C.ValueType')
+        self.assertIs(vm.execute_prepared(plan), expected)
+        current = vars(BSLType.STRING)
+        saved = tuple(current.items())
+        recreated = tuple((key.encode().decode(), value) for key, value in saved)
+        self.assertTrue(any(key is not other for (key, _), (other, _) in zip(saved, recreated)))
+
+        def replace(entries):
+            current.clear()
+            current.update(entries)
+
+        try:
+            replace(recreated)
+            self.assertIs(vm.execute_prepared(plan), expected)
+            replace(reversed(saved))
+            self.assertIs(vm.execute_prepared(plan), expected)
+            replace((*saved[:-1], (object(), saved[-1][1])))
+            with self.assertRaisesRegex(BoundaryViolation, 'enum member fields changed'):
+                vm.execute_prepared(plan)
+            # Both identity and alternative-order lanes must read live values.
+            for entries in (saved, tuple(reversed(saved))):
+                replace(entries)
+                current[entries[0][0]] = object()
+                with self.assertRaisesRegex(BoundaryViolation, 'enum member state changed'):
+                    vm.execute_prepared(plan)
+        finally:
+            replace(saved)
+        self.assertIs(vm.execute_prepared(plan), expected)
+
     def test_retained_write_reference_and_iterator_do_not_revive(self):
         from yadinassi.execution.direct.python_direct import make_boundary
         vm=self.vm();tree,row=self.setup_tree(vm);context=make_boundary(vm);context.enter()

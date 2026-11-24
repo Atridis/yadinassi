@@ -90,6 +90,22 @@ def host_reference(getter,setter,name,storage,activation,context):
         check();return getter()
     def set(value):
         check();setter(value);check()
+    if type(storage) is ReferenceCell and storage.context is context:
+        from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
+        from yadinassi.runtime import Interpreter
+        from yadinassi.types.values import Reference
+        owner=getattr(context,'vm',None)
+        forwarded=storage.reference
+        if (type(owner) is Interpreter and owner.allow_extensions is True
+                and owner.database_context is None and owner._configuration_runtime is None
+                and not getattr(context,'_server_side',False)
+                and type(forwarded) is _ForwardReference and type(forwarded.reference) is Reference):
+            # Source binding already verified the name. Do not read a
+            # caller-owned getter just to forward its address to an extension.
+            check()
+            reference=Reference(get,set)
+            reference._direct_name_sink=True
+            return reference
     reference=_host_name_reference(get,set,name)
     if (getattr(context,'_check_lent_reference',False) is True
             and (storage is None or type(storage) is list and len(storage)==1)):

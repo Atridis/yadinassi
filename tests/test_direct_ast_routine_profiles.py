@@ -101,13 +101,29 @@ R=Server(); C=Both();
         from yadinassi.execution.direct.python_direct_handlers import prepare_handlers
         from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
         from yadinassi.syntax.parser import parse
+        from yadinassi.types.errors import BSLRuntimeError
         text='Procedure Event() Capture(Field);EndProcedure'
         plan=prepare_handlers(parse(text),source_text=text)
-        seen=[];context=BoundaryContext(services={'capture':seen.append})
+        seen=[];state={'field':42}
+        def context():
+            return BoundaryContext(services={'capture':seen.append})
         # A same-named undeclared state value is not an implicit lexical grant.
-        with self.assertRaises((UnboundLocalError,NameError)):
-            plan.invoke('Event','client',[],state={'field':42},context_factory=lambda:context)
-        self.assertEqual(seen,[])
+        with self.assertRaises(BSLRuntimeError) as denied:
+            plan.invoke('Event','client',[],state=state,context_factory=context)
+        error=denied.exception
+        self.assertIs(type(error),BSLRuntimeError)
+        self.assertEqual((error.source,error.line,error.source_line),('<direct-form>',1,text))
+        code=self.test_unknown_handler_argument_does_not_gain_module_authority.__code__
+        positions=getattr(code,'co_positions',None)
+        has_columns=positions is not None and any(pos[2] is not None for pos in positions())
+        self.assertEqual(error.column,27 if has_columns else 1)
+        self.assertIn('Field',error.message)
+        self.assertEqual(seen,[]);self.assertEqual(state,{'field':42})
+        # The same body and service see the value when the source declares it.
+        declared='Var Field;\n'+text
+        plan=prepare_handlers(parse(declared),source_text=declared)
+        plan.invoke('Event','client',[],state=state,context_factory=context)
+        self.assertEqual(seen,[42]);self.assertEqual(state,{'field':42})
 
     def test_unknown_source_host_argument_never_leaks_unset_sentinel(self):
         from test_python_direct_source_scopes import ScopeContext
