@@ -56,12 +56,6 @@ def _native_property_missing(name):
 def _native_property_write_missing(name):
     raise ValueError('Свойство недоступно для записи: '+name)
 
-def _native_method_missing(receiver,name):
-    kind=type(receiver)
-    if kind is list:raise ValueError('Метод или свойство не найдено: '+name)
-    if id(kind) in _MAP_TYPE_IDS:raise ValueError('Метод соответствия не найден: '+name)
-    raise ValueError('Метод структуры не найден: '+name)
-
 def _invalid_native_arity(message):
     raise TypeError(message)
 

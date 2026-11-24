@@ -68,9 +68,20 @@ class PythonDirectDefaultTests(unittest.TestCase):
    with self.assertRaises(PythonDirectUnsupported):Interpreter().execute('x=1;')
   finally:safe_mode._CURRENT.reset(token)
  def test_unsupported_syntax_has_no_silent_fallback_or_prior_effect(self):
-  vm=Interpreter()
-  with self.assertRaises(PythonDirectUnsupported):vm.execute('x=1;If True Then Goto ~finish;EndIf;~finish:x=2;')
-  self.assertEqual(vm.variables,{})
+  # Outward Goto is supported; the combination with a routine Var
+  # declaration still requires initialization analysis (docs/direct-goto.md).
+  for prepared in (False,True):
+   out=[];vm=Interpreter(out.append);self.addCleanup(vm.close)
+   with self.subTest(prepared=prepared):
+    def run(source):
+     if prepared:return vm.execute_prepared(vm.prepare(source))
+     return vm.execute(source)
+
+    with self.assertRaisesRegex(PythonDirectUnsupported,'outward Goto with routine Var'):
+     run('x=1;Message("before");Function F() If True Then Goto ~finish;EndIf;Var N;~finish:Return N;EndFunction;F();')
+    self.assertEqual(vm.variables,{});self.assertEqual(out,[])
+    run('x=1;If True Then Goto ~finish;EndIf;Message("skipped");x=99;~finish:x=2;')
+    self.assertEqual(vm.variables,{'x':2});self.assertEqual(out,[])
  def test_constructor_override_not_silently_ignored(self):
   effects=[];vm=Interpreter(allow_extensions=True);vm.register_type('Array',lambda:effects.append(1))
   with self.assertRaises(PythonDirectUnsupported):vm.execute('x=1;a=New Array;')

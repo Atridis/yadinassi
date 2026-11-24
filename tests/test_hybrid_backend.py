@@ -9,7 +9,8 @@ import random
 import subprocess
 import sys
 import unittest
-from decimal import Decimal, localcontext
+from contextlib import closing
+from decimal import Decimal, getcontext, localcontext
 
 from yadinassi import Interpreter
 from yadinassi.types.errors import BSLRuntimeError
@@ -76,11 +77,28 @@ class DirectBehaviorTests(unittest.TestCase):
         self.assertNotIn('r',vm.variables)
 
     def test_decimal_context_is_not_host_precision(self):
-        with localcontext() as context:
-            context.prec=7
-            vm=self.vm();vm.execute('For i=1 To 1 Do r=12345678901234567890*12345678901234567890;EndDo;')
-            self.assertEqual(len(vm.variables['r'].as_tuple().digits),38)
-            self.assertEqual(context.prec,7)
+        # This checks isolation from Python's ambient precision, not native
+        # 1C's rules for results wider than 38 digits. The old integer witness
+        # has the same numeric value even if its stored coefficient is rounded
+        # over a trailing zero. The fraction exercises actual Decimal math.
+        cases = (
+            ('12345678901234567890*12345678901234567890',
+             Decimal('152415787532388367501905199875019052100')),
+            ('12345678.1234*2.5', Decimal('30864195.3085')),
+        )
+        for expression, expected in cases:
+            source=f'For i=1 To 1 Do r={expression};EndDo;'
+            for prepared in (False, True):
+                with self.subTest(expression=expression, prepared=prepared):
+                    with localcontext() as context, closing(self.vm()) as vm:
+                        context.prec=7
+                        if prepared:
+                            vm.execute_prepared(vm.prepare_program(parse(source)))
+                        else:
+                            vm.execute(source)
+                        self.assertEqual(vm.variables['r'],expected)
+                        self.assertIs(getcontext(),context)
+                        self.assertEqual(context.prec,7)
 
     def test_new_ast_execution_observes_explicit_edit(self):
         nodes=parse('For i=1 To 2 Do r=1;EndDo;');vm=self.vm()

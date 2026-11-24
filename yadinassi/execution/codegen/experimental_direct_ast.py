@@ -10,7 +10,7 @@ import _operator as _OPERATOR_MODULE
 from types import ModuleType as _ModuleType
 from _operator import add as _NATIVE_ADD, getitem as _NATIVE_GETITEM
 from functools import partial
-from .experimental_naked_collections import _TypedMap, _NakedMap, _checked_array_index, _native_property_write_missing, _native_property_missing, _MapEntry, _array_insert_shape, _native_method_missing, _ALIASES, _canonical_reference, _IndexRef, _AttributeRef, _procedure_value_error, _routine_value_error, _argument_count_error, _OMITTED_REF, _Cell, _as_ref, _bound_ref, _UNSET_REF
+from .experimental_naked_collections import _TypedMap, _NakedMap, _checked_array_index, _native_property_write_missing, _native_property_missing, _MapEntry, _array_insert_shape, _ALIASES, _canonical_reference, _IndexRef, _AttributeRef, _procedure_value_error, _routine_value_error, _argument_count_error, _OMITTED_REF, _Cell, _as_ref, _bound_ref, _UNSET_REF
 from .experimental_naked_structure import _DirectStructure, structure_get_known, structure_set_known, structure_property
 from .experimental_naked_array_methods import array_method_value
 from yadinassi.execution.direct.python_direct_cells import host_reference as _native_host_reference, module_property_reference
@@ -39,6 +39,14 @@ from yadinassi.execution.direct.python_direct_static_module import analyze as an
 from yadinassi.types.errors import BSLRuntimeError
 from dataclasses import fields, replace
 
+
+
+def _native_method_missing(receiver,name):
+    kind=type(receiver)
+    if kind is list:raise ValueError('Метод или свойство не найдено: '+name)
+    if kind is PlainMap or kind is _TypedMap or kind is _NakedMap:
+        raise ValueError('Метод соответствия не найден: '+name)
+    raise ValueError('Метод структуры не найден: '+name)
 
 
 def _checked_live_counter(value):

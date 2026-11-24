@@ -17,9 +17,29 @@ class NativeMethodsTests(DirectSourceAssertions,unittest.TestCase):
             ('M=New Map;M.Get(Touch(),Touch());', dict(error='Get ожидает', touches=2)),
             ('M=New Map;M.Find(Touch());', dict(error='Метод соответствия не найден: Find', touches=0)),
             ('M=New Map;M.Add(Touch(),Touch());', dict(error='Метод соответствия не найден: Add', touches=0)),
-            ('R=SearchDirection.Get();', dict(error='Метод или свойство не найдено: Get', touches=0)),
+            ('R=SearchDirection.Get(Touch());', dict(error='Метод объекта не обнаружен: Get', touches=0)),
         ):
             with self.subTest(source=source):self.check_source(source,**checks)
+
+    def test_plain_map_missing_method_names_receiver_and_does_not_evaluate_arguments(self):
+        from contextlib import closing
+        from yadinassi import Interpreter
+
+        for method in ('Find', 'Добавить'):
+            for prepared in (False, True):
+                with self.subTest(method=method, prepared=prepared), closing(Interpreter()) as vm:
+                    source = (
+                        'Var Calls; Function Touch() Calls=Calls+1; Return 7; EndFunction '
+                        'Calls=0; M=New Map; M.Insert("k",1); '
+                        f'Try M.{method}(Touch()); Except Problem=ErrorDescription(); EndTry; '
+                        'N=M.Count(); V=M.Get("k");'
+                    )
+                    if prepared:
+                        vm.execute_prepared(vm.prepare(source))
+                    else:
+                        vm.execute(source)
+                    self.assertIn('Метод соответствия не найден: '+method, vm.variables['problem'])
+                    self.assertEqual((vm.variables['calls'], vm.variables['n'], vm.variables['v']), (0, 1, 1))
 
     def test_invalid_arity_drops_arguments_before_handler(self):
         from yadinassi import Interpreter
