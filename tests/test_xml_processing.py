@@ -159,11 +159,25 @@ class XMLStringProcessingManagerTests(unittest.TestCase):
         self.assertIs(type_of(XML_STRING_PROCESSING), BSLType.XML_STRING_PROCESSING_MANAGER)
 
     def test_no_implicit_globals_constructor_iteration_or_reflection(self):
-        vm = Interpreter()
+        messages = []
+        vm = Interpreter(messages.append)
+        self.addCleanup(vm.close)
         vm.variables['manager'] = XML_STRING_PROCESSING
-        for expression in ('DeleteDisallowedXMLCharacters("text")',
-                           'УдалитьНедопустимыеСимволыXML("text")',
-                           'New XMLStringProcessingManager', 'New МенеджерОбработкиСтрокиXML',
+        vm.execute('Function Arg() Message("argument"); Return "text"; EndFunction')
+        for name in ('DeleteDisallowedXMLCharacters', 'УдалитьНедопустимыеСимволыXML'):
+            for argument in ('"text"', 'Arg()'):
+                expression = f'{name}({argument})'
+                with self.subTest(expression=expression):
+                    with self.assertRaises(BoundaryViolation) as denied:
+                        vm.execute(expression)
+                    self.assertIs(type(denied.exception), BoundaryViolation)
+                    self.assertEqual(str(denied.exception), 'unregistered host service: ' + name.casefold())
+                    self.assertEqual(messages, [])
+            # The same argument is evaluated when the public method is qualified.
+            self.assertEqual(vm.execute(f'manager.{name}(Arg())'), 'text')
+            self.assertEqual(messages, ['argument'])
+            messages.clear()
+        for expression in ('New XMLStringProcessingManager', 'New МенеджерОбработкиСтрокиXML',
                            'New (TypeOf(manager))', 'manager()', 'manager[0]',
                            'manager.__class__', 'manager.__dict__', 'manager.get_member("x")',
                            'manager.FindDisallowedXMLCharacters("x")',

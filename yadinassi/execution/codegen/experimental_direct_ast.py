@@ -55,8 +55,15 @@ def _checked_live_counter(value):
     return value
 
 
-def _reject(message):
-    raise PythonDirectUnsupported('direct-AST: '+message)
+def _reject(message, token=None):
+    message='direct-AST: '+message
+    if token is None:
+        raise PythonDirectUnsupported(message)
+    # Preserve the public compiler admission type, not a BSL runtime error.
+    error=PythonDirectUnsupported(f'{token.source}:{token.line}:{token.column}: {message}')
+    error.message=message
+    error.source,error.line,error.column=token.source,token.line,token.column
+    raise error
 
 
 def _nonconstructible_type(name,source,line,column):
@@ -822,7 +829,7 @@ class Emitter:
                 if kindname in ('date','дата','sortdirection','направлениесортировки','promise','обещание') and not node.arguments:
                     return self.call('_nonconstructible_type',[self.const(value,t) for value in
                         (node.name,self.filename,t.line,t.column)],t)
-                _reject(f'constructor {node.name}; outside research subset')
+                _reject(f'constructor {node.name}; unavailable in this execution profile',t)
             if any(type(arg) is bsl.OmittedArgument for arg in node.arguments):
                 if native:return self.call('_host_omission_error',[],t)
                 key='new:'+kindname;self.required.add(key)

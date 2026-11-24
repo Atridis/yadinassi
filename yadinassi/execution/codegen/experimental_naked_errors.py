@@ -1,7 +1,7 @@
 """Optional experiment-only source mapping; no checks on the success hot path."""
 import ast
 from contextlib import contextmanager
-from decimal import DivisionByZero
+from decimal import Decimal, DivisionByZero, InvalidOperation
 from types import CodeType
 from yadinassi.types.errors import BSLError, BSLRuntimeError
 from yadinassi.syntax import ast as bsl_ast
@@ -163,6 +163,35 @@ def for_bound_unbound(error):
     raise ValueError('Локальная переменная используется до присваивания').with_traceback(trace) from None
 
 
+def _remainder_site(trace,source_line,column):
+    if column is not None and source_line:
+        return source_line[column:column+1]=='%'
+    # Python 3.10 (or disabled debug ranges) has no expression column.
+    # Inspect only the failed instruction, never re-evaluate either operand.
+    from dis import get_instructions
+    instruction=next((step for step in get_instructions(trace.tb_frame.f_code)
+                      if step.offset==trace.tb_lasti),None)
+    return instruction is not None and (instruction.opname=='BINARY_MODULO'
+        or instruction.opname=='BINARY_OP' and instruction.argrepr=='%')
+
+
+def _decimal_remainder_message(trace,source_line,column):
+    invalid='Не удалось вычислить остаток: недопустимая десятичная операция'
+    inner=trace.tb_next
+    if inner is None:
+        return invalid if _remainder_site(trace,source_line,column) else None
+    from yadinassi.execution.direct.python_direct_numbers import remainder
+    if inner.tb_next is not None or inner.tb_frame.f_code is not remainder.__code__:
+        return None
+    # The existing integer-lane helper still has the converted operands in
+    # its fault frame, so this case can name the actual zero divisor.
+    operands=inner.tb_frame.f_locals
+    left,right=operands.get('left'),operands.get('right')
+    if type(left) is Decimal and type(right) is Decimal and left.is_finite() and right.is_zero():
+        return 'Деление на ноль'
+    return invalid
+
+
 def convert_error(error,filename,source,*,_context=None):
     """Convert only recoverable runtime errors, preserving nonrecoverable boundaries."""
     if (getattr(_context,'_async_scheduler',None) is not None
@@ -180,7 +209,7 @@ def convert_error(error,filename,source,*,_context=None):
         locations=getattr(_context,'_error_locations',None)
         if locations is None:
             locations=_ErrorLocations();_context._error_locations=locations
-    line,column=chosen.tb_lineno,0
+    line,column=chosen.tb_lineno,None
     # SourceMap already rewrites AST line numbers to BSL lines on Python 3.10.
     # PEP 657 adds expression columns on 3.11+; their absence is diagnostic only.
     if hasattr(chosen.tb_frame.f_code, 'co_positions'):
@@ -188,12 +217,14 @@ def convert_error(error,filename,source,*,_context=None):
         positions=tuple(code.co_positions()) if locations is None else locations.for_code(code)
         index=chosen.tb_lasti//2
         if index<len(positions):line,_,column,_=positions[index]
-    line=line or chosen.tb_lineno;column=(column or 0)+1
-    message=str(error) or type(error).__name__
-    if isinstance(error,(ZeroDivisionError,DivisionByZero)):message='Деление на ноль'
+    line=line or chosen.tb_lineno
     lines=source.splitlines() if locations is None else locations.for_source(source)
     source_line=lines[line-1] if 0<line<=len(lines) else ''
-    return BSLRuntimeError(message,filename,line,column,source_line=source_line)
+    message=str(error) or type(error).__name__
+    if isinstance(error,(ZeroDivisionError,DivisionByZero)):message='Деление на ноль'
+    elif type(error) is InvalidOperation:
+        message=_decimal_remainder_message(chosen,source_line,column) or message
+    return BSLRuntimeError(message,filename,line,(column or 0)+1,source_line=source_line)
 
 
 class _HandledError:
