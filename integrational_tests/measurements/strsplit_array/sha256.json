@@ -1,0 +1,22 @@
+{
+  "integrational_tests/launcher_1c/Launcher.xml": "719b5df645763c6adf04ccc9aa0265a312cf1677edb633dd702dd783258fe0bd",
+  "integrational_tests/launcher_1c/Launcher/Ext/ObjectModule.bsl": "ccac8b96c0ec92a14a47930fcbc095a2af42479de1a3255f7dbe84ca543c10af",
+  "integrational_tests/launcher_1c/Launcher/Forms/Main.xml": "b21910e73df0952f79708abe9122615d545e41e498da8a6aa5396594d4ffdcb2",
+  "integrational_tests/launcher_1c/Launcher/Forms/Main/Ext/Form.xml": "cee17b4d8e3b91cb4455ce0f1df5d348961e18f1085ef0e0d61ccf3a4e389363",
+  "integrational_tests/launcher_1c/Launcher/Forms/Main/Ext/Form/Module.bsl": "01092d0267bf3a260c81ddc792177fb15c74e34baef2a063703e28e36cf41686",
+  "integrational_tests/launcher_1c/TestModule.xml": "33cf0c96d6a11cf43ceeea49d1e1ba8fc2b9e2f57f9a0612f15ef1d5d4484558",
+  "integrational_tests/launcher_1c/TestModule/Ext/ObjectModule.bsl": "2ebc42c4106acf8626ac5e865afaa2f90e2b83d9b66f1c15b90ec1ec4d054885",
+  "integrational_tests/measurements/strsplit_array/01_strsplit_array_indices.bsl": "a58d5577c5925a96d2a649fa493596e9c2560ed2a2ab74f1a368eacf76c0abd7",
+  "integrational_tests/test_launcher.py": "8139d897d8bac4dae554f14bbc709b55eb0920acb0b9b48484f3069324663fea",
+  "scripts/native_1c_bootstrap/diagnostics.py": "99c3e37d2f28125f181f3c973359e09d405007aae4ef43f5d8da6e8a8fcd056c",
+  "scripts/native_1c_bootstrap/evidence_gates.py": "3f2b2135ab751bb4ef3e2dbaafcc11ef62e5bf5d9e22f00bc09672c5ce671201",
+  "scripts/native_1c_bootstrap/inject_modules.py": "96bc53b556b3940acb75c3b9fd219348e4d0aa5499450baf9ac6bbc2c93146d3",
+  "scripts/native_1c_bootstrap/modules/ManagedApplicationModule.bsl": "3202dc1614d75792844d96faac398ff4847d8e8bd08d91d19929dd3ec0b09b49",
+  "scripts/native_1c_bootstrap/modules/SessionModule.bsl": "1768a8e0d2cc444f36e01b6c1d133be16574cefcda3d1b51890692860d075717",
+  "scripts/native_1c_bootstrap/run_stage.py": "07ed15d47555102fdac9a2ef0ed4717d5969f4faa961cb1c40bbb7c66666f509",
+  "scripts/native_1c_bootstrap/simple_smoke.bsl": "2a771501ff99dc45456c7a5a1b419940644919474924488d5b69bb17f55ac739",
+  "scripts/native_1c_ci_policy.py": "00f1004c3d712c446cc0de4108542b1001d378a5e8c83805bf91ffbfee6ee422",
+  "scripts/native_1c_full_host.py": "137af08338356de33b6ed461b4e4f1ca5987ab59a949807348ed4fbe5e5f2bc7",
+  "scripts/native_1c_smoke.py": "4a2dff6d75068f304f3357656bda7bba557bd6f871d415a5f936b20abc365119",
+  "scripts/native_1c_smoke_probe.sh": "cf615137f0ac3c234ac79b7b46ec9a2bf3ff0e181e05b495d3cf5c2a2c6a19fe"
+}

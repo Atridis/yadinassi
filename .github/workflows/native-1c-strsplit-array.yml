@@ -1,0 +1,103 @@
+name: Native 1C StrSplit Array observation
+on:
+  push:
+    branches: [codex/native-strsplit-array-reviewed]
+permissions: {}
+concurrency:
+  group: native-strsplit-array-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  eligibility:
+    if: >-
+      github.repository == 'Atridis/yadinassi' && github.repository_id == '359770628' &&
+      github.repository_owner_id == '30860798' && github.actor == 'Atridis' &&
+      github.actor_id == '30860798' && github.triggering_actor == 'Atridis' &&
+      github.ref == 'refs/heads/codex/native-strsplit-array-reviewed'
+    permissions: {}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify real owner and reviewed source without checkout
+        env:
+          NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: |
+          python3 -I -B - <<'PYTHON'
+          import json
+          import os
+          import re
+
+          def need(ok):
+              if not ok:
+                  raise ValueError("admission_denied")
+
+          def unique(pairs):
+              value = {}
+              for k, v in pairs:
+                  need(k not in value)
+                  value[k] = v
+              return value
+
+          def owner(v):
+              return (type(v) is dict and v.get("login") == "Atridis"
+                      and type(v.get("id")) is int and v["id"] == 30860798 and v.get("type") == "User")
+
+          try:
+              env = os.environ
+              expected = dict(GITHUB_REPOSITORY="Atridis/yadinassi", GITHUB_REPOSITORY_ID="359770628",
+                              GITHUB_REPOSITORY_OWNER="Atridis", GITHUB_REPOSITORY_OWNER_ID="30860798",
+                              GITHUB_ACTOR="Atridis", GITHUB_ACTOR_ID="30860798", NATIVE_TRIGGERING_ACTOR="Atridis",
+                              GITHUB_EVENT_NAME="push", GITHUB_REF_TYPE="branch")
+              need(all(env.get(k) == v for k, v in expected.items()))
+              ref = "refs/heads/codex/native-strsplit-array-reviewed"
+              sha = env["GITHUB_SHA"]
+              need(re.fullmatch(r"[0-9a-f]{40}", sha) and sha != "0" * 40)
+              need(env["GITHUB_REF"] == ref and env["GITHUB_WORKFLOW_SHA"] == sha
+                   and env["GITHUB_WORKFLOW_REF"] == "Atridis/yadinassi/.github/workflows/native-1c-strsplit-array.yml@" + ref)
+              with open(env["GITHUB_EVENT_PATH"], "rb") as source:
+                  raw = source.read(8 * 1048576 + 1)
+              need(len(raw) <= 8 * 1048576)
+              event = json.loads(raw, object_pairs_hook=unique)
+              repo = event["repository"]
+              need(type(repo) is dict and repo.get("full_name") == "Atridis/yadinassi"
+                   and type(repo.get("id")) is int and repo["id"] == 359770628
+                   and repo.get("fork") is False and owner(repo.get("owner")) and owner(event.get("sender")))
+              need(event["ref"] == ref and event["after"] == event["head_commit"]["id"] == sha
+                   and event["deleted"] is False and event["forced"] is False
+                   and not event.get("inputs")
+                   and event["created"] is True and event["before"] == "0" * 40)
+          except Exception:
+              raise SystemExit("Native StrSplit Array admission denied.") from None
+          PYTHON
+  observe:
+    needs: eligibility
+    if: needs.eligibility.result == 'success'
+    env:
+      NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+          submodules: false
+          lfs: false
+      - name: Bind exact clean checkout and input hashes before package access
+        run: python3 -I -B scripts/native_1c_strsplit_array.py --verify
+      - name: Acquire the fixed StrSplit and constructor observations in the existing isolated image
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: python3 -I -B scripts/native_1c_strsplit_array.py --execute-approved-image
+      - name: Upload only the finite observation and its provenance
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: native-strsplit-array-observation
+          path: ${{ runner.temp }}/native-strsplit-array.json
+          if-no-files-found: ignore
+          retention-days: 7
