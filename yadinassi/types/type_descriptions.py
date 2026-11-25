@@ -396,6 +396,14 @@ class BSLTypeDescription(BSLObject):
             raise TypeError("СодержитТип: ожидается значение Тип")
         return kind in self.types
 
+    def _adjust_bsl_value(self, value=_OMITTED):
+        # The emitter keeps whole numbers as ints; typed BSL values use Decimal.
+        if type(value) is int:
+            if value.bit_length() > _MAX_NUMBER_DIGITS * 4:
+                raise ValueError("ПривестиЗначение: превышен предел ресурсов Yadinassi (4096 разрядов)")
+            value = Decimal(value)
+        return self.adjust_value(value)
+
     def adjust_value(self, value=_OMITTED):
         if self._query_reference is not None:
             from yadinassi.db.query.query_reference_tables import description_binding
@@ -492,7 +500,7 @@ class BSLTypeDescription(BSLObject):
             return members[key]
         methods = {"types": self.get_types, "типы": self.get_types,
                    "containstype": self.contains_type, "содержиттип": self.contains_type,
-                   "adjustvalue": self.adjust_value, "привестизначение": self.adjust_value}
+                   "adjustvalue": self._adjust_bsl_value, "привестизначение": self._adjust_bsl_value}
         method = methods.get(key)
         return super().get_member(name) if method is None else HostFunction(name, method)
 

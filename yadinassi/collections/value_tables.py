@@ -114,7 +114,7 @@ def _adjust(description, value):
         return Decimal(0)
     if description.types == (BSLType.BOOLEAN,) and type(value) is str and value == "Истина":
         return True
-    return description.adjust_value(value)
+    return description._adjust_bsl_value(value)
 
 
 def _array(items):

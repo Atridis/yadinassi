@@ -275,6 +275,16 @@ def _move_number(value):
     return result
 
 
+def _column_width(value):
+    if type(value) is int:
+        if 0 <= value <= 2 ** 32 - 1:
+            return Decimal(value)
+    elif type(value) is Decimal and value.is_finite() and 0 <= value <= 2 ** 32 - 1:
+        if value == value.to_integral_value():
+            return value
+    raise ValueError("ДеревоЗначений: ширина вне поддерживаемых границ")
+
+
 class BSLValueTreeColumn(BSLObject):
     __slotnames__ = []
     def __init__(self,table,name,value_type,title,width):
@@ -309,9 +319,7 @@ class BSLValueTreeColumn(BSLObject):
         elif key in ("title", "заголовок"):
             self.title = _text(value)
         elif key in ("width", "ширина"):
-            if type(value) is not Decimal or not value.is_finite() or value != value.to_integral_value() or not 0 <= value <= 2 ** 32 - 1:
-                raise ValueError("ДеревоЗначений: ширина вне поддерживаемых границ")
-            self.width = value
+            self.width = _column_width(value)
         else:
             super().set_member(name, value)
 
@@ -372,8 +380,7 @@ class BSLValueTreeColumnCollection(BSLObject):
         if type(value_type) is not BSLTypeDescription:
             raise TypeError("Ожидается ОписаниеТипов")
         title = _text(title)
-        if type(width) is not Decimal or not width.is_finite() or width != width.to_integral_value() or not 0 <= width <= 2 ** 32 - 1:
-            raise ValueError("ДеревоЗначений: ширина вне поддерживаемых границ")
+        width = _column_width(width)
         self.table._budget(len(self.table._all_rows), len(self.items) + 1)
         default = _default(value_type)
         if (sum(len(c.default) for c in self.items if type(c.default) is str)
