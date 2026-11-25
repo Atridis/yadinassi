@@ -1,4 +1,4 @@
-"""Closed module facts follow source-order branch reachability."""
+"""Control flow, module state and table effects on the common direct path."""
 import unittest
 
 from yadinassi import BSLError, Interpreter
@@ -34,11 +34,7 @@ class ModuleReachabilityTests(unittest.TestCase):
             EndIf;
         ''')
         generated=plan._plan.generated_source
-        self.assertIn('_PrivateTable()',generated)
-        self.assertIn('_raw_table_value',generated)
-        # The skipped arms still go through the compiler; they are emitted
-        # with the generic lowering but cannot arm live synchronization.
-        self.assertIn('_execute_fragment',generated)
+        self.assertNotIn('_PrivateTable()',generated)
         self.assertNotIn('_reload_module',generated)
         vm.execute_prepared(plan)
         self.assertEqual((vm.variables['r'],vm.variables['n']),(210,20))
@@ -58,8 +54,7 @@ class ModuleReachabilityTests(unittest.TestCase):
                         Z=T.Copy();
                     EndIf;
                 ''')
-                self.assertIn('_PrivateTable()',plan._plan.generated_source)
-                self.assertIn('_raw_table_value',plan._plan.generated_source)
+                self.assertNotIn('_PrivateTable()',plan._plan.generated_source)
                 self.assertNotIn('_reload_module',plan._plan.generated_source)
                 vm.execute_prepared(plan)
                 self.assertEqual((vm.variables['r'],vm.variables['n']),(210,20))
@@ -116,7 +111,6 @@ class ModuleReachabilityTests(unittest.TestCase):
                 R=R+I;
             EndDo;
         ''')
-        self.assertIn('in range(1, 11):',plan._plan.generated_source)
         vm.execute_prepared(plan)
         self.assertEqual((vm.variables['r'],vm.variables['i']),(55,11))
 
@@ -165,7 +159,7 @@ class ModuleDeclarationReachabilityTests(unittest.TestCase):
             with self.subTest(declaration=declaration):
                 vm,output=self.vm()
                 plan=vm.prepare(TABLE+declaration)
-                self.assertIn('_PrivateTable()',plan._plan.generated_source)
+                self.assertNotIn('_PrivateTable()',plan._plan.generated_source)
                 vm.execute_prepared(plan)
                 self.assertEqual(vm.variables['r'],210)
                 self.assertEqual(output,[])
@@ -198,7 +192,7 @@ class ModuleDeclarationReachabilityTests(unittest.TestCase):
             If True Then M=Increment(2); Else Deferred(); EndIf;
         '''
         plan=vm.prepare(source)
-        self.assertIn('_PrivateTable()',plan._plan.generated_source)
+        self.assertNotIn('_PrivateTable()',plan._plan.generated_source)
         vm.execute_prepared(plan)
         self.assertEqual((vm.variables['r'],vm.variables['m']),(210,3))
         self.assertEqual(output,[])
@@ -213,18 +207,13 @@ class LiveTablePrefixTests(unittest.TestCase):
         return vm
 
     def test_scalar_prefix_and_declarations_do_not_hide_fresh_origin(self):
-        from unittest.mock import Mock, patch
-
         for prefix in ('R=0;', 'Var Z;', 'Var Z; R=0;'):
             with self.subTest(prefix=prefix):
                 source=prefix+TABLE+'Z=T.Copy(); R'
                 vm=self.vm()
                 plan=vm.prepare(source)
-                namespace=plan._plan.function.__globals__
-                admitted=Mock(wraps=namespace['_fresh_closed_table'])
-                with patch.dict(namespace,_fresh_closed_table=admitted):
-                    self.assertEqual(vm.execute_prepared(plan),210)
-                admitted.assert_called_once()
+                self.assertNotIn('_fresh_closed_table',plan._plan.generated_source)
+                self.assertEqual(vm.execute_prepared(plan),210)
                 self.assertEqual((vm.variables['z'].count(),vm.execute(source)),(20,210))
 
     def test_literal_short_circuit_and_arithmetic_keep_proved_table_access(self):
@@ -233,9 +222,7 @@ class LiveTablePrefixTests(unittest.TestCase):
                 source=TABLE.replace('For I=1', f'If {condition} Then Z=T.Copy(); EndIf; For I=1')+'R'
                 vm=self.vm()
                 plan=vm.prepare(source)
-                generated=plan._plan.generated_source
-                self.assertIn('.set_member(',generated)
-                self.assertNotIn('resolve_set_member',generated)
+                self.assertNotIn('_fresh_closed_table',plan._plan.generated_source)
                 self.assertEqual((vm.execute_prepared(plan),vm.execute(source)),(210,210))
                 self.assertNotIn('z',vm.variables)
 
@@ -261,7 +248,6 @@ class LiveTablePrefixTests(unittest.TestCase):
 
     def test_default_and_qualified_columns_keep_original_conversions(self):
         from decimal import Decimal
-        from unittest.mock import Mock, patch
 
         for column_type, body, expected in (
                 ('Undefined','Row.X=I',Decimal(210)),
@@ -272,23 +258,12 @@ class LiveTablePrefixTests(unittest.TestCase):
                 source=TABLE.replace('Add("X")',f'Add("X", {column_type})').replace('Row.X=I',body)+'R'
                 vm=self.vm()
                 plan=vm.prepare(source)
-                self.assertIn('.set_member(',plan._plan.generated_source)
-                namespace=plan._plan.function.__globals__
-                if column_type=='Undefined':
-                    self.assertNotIn('resolve_set_member',plan._plan.generated_source)
-                    self.assertEqual(vm.execute_prepared(plan),expected)
-                else:
-                    admitted=Mock(wraps=namespace['_fresh_closed_table'])
-                    with patch.dict(namespace,_fresh_closed_table=admitted):
-                        self.assertEqual(vm.execute_prepared(plan),expected)
-                    admitted.assert_called_once()
-                    self.assertEqual(admitted.call_args.args[2:],(True,))
+                self.assertNotIn('_fresh_closed_table',plan._plan.generated_source)
+                self.assertEqual(vm.execute_prepared(plan),expected)
                 self.assertEqual(vm.execute(source),expected)
                 self.assertIs(type(vm.variables['r']),Decimal)
 
     def test_numeric_setup_bindings_select_the_same_real_fast_loop(self):
-        from unittest.mock import patch
-
         loop=TABLE.split('For I=1',1)[1]
         cases=(
             ('Kind=New TypeDescription("Number"); T.Columns.Add("X",Kind);','',0),
@@ -305,20 +280,8 @@ class LiveTablePrefixTests(unittest.TestCase):
                 source='T=New ValueTable; '+setup+' For I=1'+loop+'R'
                 vm=self.vm()
                 plan=vm.prepare(source)
-                generated=plan._plan.generated_source
-                fast=generated.split('if _fresh_closed_table',1)[1].split('        else:',1)[0]
-                self.assertIn('.set_member(',fast)
-                self.assertNotIn('resolve_set_member',fast)
-                namespace=plan._plan.function.__globals__
-                original=namespace['_fresh_closed_table']
-                seen=[]
-                def guard(context,table,configured):
-                    accepted=original(context,table,configured)
-                    seen.append((configured,table.count(),accepted))
-                    return accepted
-                with patch.dict(namespace,_fresh_closed_table=guard):
-                    self.assertEqual(vm.execute_prepared(plan),210)
-                self.assertEqual(seen,[(True,0,True)])
+                self.assertNotIn('_fresh_closed_table',plan._plan.generated_source)
+                self.assertEqual(vm.execute_prepared(plan),210)
                 column=vm.variables['t'].columns.find('X')
                 self.assertEqual((column.title,column.width),(title,width))
                 self.assertEqual(vm.execute(source),210)
@@ -344,19 +307,15 @@ class LiveTablePrefixTests(unittest.TestCase):
         self.assertEqual(effects,[('before',True)])
 
     def test_setup_error_is_not_reordered_below_admission(self):
-        from unittest.mock import patch
-
         source=TABLE.replace('T.Columns.Add("X");','''
             Kind=New TypeDescription("Number"); C=T.Columns;
             If True Then C.Add("X",Kind,"Header",1/0); EndIf;
         ''')+'R'
         vm=self.vm()
         plan=vm.prepare(source)
-        namespace=plan._plan.function.__globals__
-        self.assertIn('_fresh_closed_table',plan._plan.generated_source)
-        with patch.dict(namespace,_fresh_closed_table=lambda *a:self.fail('guard ran before setup')):
-            with self.assertRaises(BSLError):
-                vm.execute_prepared(plan)
+        self.assertNotIn('_fresh_closed_table',plan._plan.generated_source)
+        with self.assertRaises(BSLError):
+            vm.execute_prepared(plan)
         self.assertEqual((vm.variables['t'].count(),vm.variables['c'].count()),(0,0))
 
     def test_typed_schema_publication_and_reload_precede_fast_loop(self):
@@ -376,14 +335,10 @@ class LiveTablePrefixTests(unittest.TestCase):
         vm=self.vm()
         source=TABLE.replace('T.Columns.Add("X");','R=5; T.Columns.Add("X",New TypeDescription("Number"));')
         plan=vm.prepare(source.replace('R=0;', '')+'R')
-        fast_arm=plan._plan.generated_source.split('if _fresh_closed_table',1)[1].split('        else:',1)[0]
-        self.assertIn('.set_member(',fast_arm)
-        self.assertNotIn('.get_member(',fast_arm)  # Old R is read only by the generic suffix.
+        self.assertNotIn('_fresh_closed_table',plan._plan.generated_source)
         self.assertEqual(vm.execute_prepared(plan),215)
 
     def test_warm_repeats_keep_one_table_origin_and_same_aliases(self):
-        from unittest.mock import Mock, patch
-
         vm=self.vm()
         plan=vm.prepare(TABLE+'''
             Alias=T;
@@ -391,20 +346,16 @@ class LiveTablePrefixTests(unittest.TestCase):
             Alias[0].X=99;
             N=Snapshot[0].X;
         ''')
-        namespace=plan._plan.function.__globals__
-        admitted=Mock(wraps=namespace['_fresh_closed_table'])
+        self.assertNotIn('_fresh_closed_table',plan._plan.generated_source)
         previous=None
-        with patch.dict(namespace,_fresh_closed_table=admitted):
-            for _ in range(3):
-                vm.execute_prepared(plan)
-                table=vm.variables['t']
-                self.assertIsNot(table,previous)
-                self.assertIs(vm.variables['alias'],table)
-                self.assertEqual((table.get_index(0).get_member('X'),vm.variables['n']),(99,1))
-                self.assertIsNot(vm.variables['snapshot'],table)
-                previous=table
-        self.assertEqual(admitted.call_count,3)
-        self.assertEqual(len({id(call.args[1]) for call in admitted.call_args_list}),3)
+        for _ in range(3):
+            vm.execute_prepared(plan)
+            table=vm.variables['t']
+            self.assertIsNot(table,previous)
+            self.assertIs(vm.variables['alias'],table)
+            self.assertEqual((table.get_index(0).get_member('X'),vm.variables['n']),(99,1))
+            self.assertIsNot(vm.variables['snapshot'],table)
+            previous=table
 
     def test_exact_copy_does_not_move_module_publication_before_finalizer(self):
         from decimal import Decimal
@@ -421,7 +372,7 @@ class LiveTablePrefixTests(unittest.TestCase):
                     observed.append(type(error))
         vm.variables['zz']=Retired()
         plan=vm.prepare(TABLE+'Alias=T; ZZ=1; Snapshot=T.Copy();')
-        self.assertIn('_fresh_closed_table',plan._plan.generated_source)
+        self.assertNotIn('_fresh_closed_table',plan._plan.generated_source)
         vm.execute_prepared(plan)
         self.assertEqual(observed,[(True,20)])
         self.assertEqual(vm.variables['t'].get_index(0).get_member('X'),999)
@@ -453,17 +404,23 @@ class LiveTablePrefixTests(unittest.TestCase):
         self.assertEqual(vm.variables['alias'].get_index(0).get_member('X'),18)
 
     def test_declined_origin_uses_same_generic_path_without_retry(self):
-        from unittest.mock import Mock, patch
+        from unittest.mock import patch
+        from yadinassi.collections.value_tables import BSLValueTable
 
         vm=self.vm()
         plan=vm.prepare(TABLE+'Snapshot=T.Copy();')
-        namespace=plan._plan.function.__globals__
-        declined=Mock(return_value=False)
-        with patch.dict(namespace,_fresh_closed_table=declined):
+        self.assertNotIn('_fresh_closed_table',plan._plan.generated_source)
+        copy=BSLValueTable.copy
+        copied=[]
+        def observe(table,*args,**kwargs):
+            copied.append(table)
+            return copy(table,*args,**kwargs)
+        with patch.object(BSLValueTable,'copy',observe):
             vm.execute_prepared(plan)
-        declined.assert_called_once()
+        self.assertEqual(len(copied),1)
+        self.assertIs(copied[0],vm.variables['t'])
         self.assertEqual((vm.variables['r'],vm.variables['snapshot'].count()),(210,20))
-        self.assertIs(declined.call_args.args[1],vm.variables['t'])
+        self.assertIsNot(vm.variables['snapshot'],vm.variables['t'])
 
     def test_failed_prefix_and_suffix_keep_only_completed_effects(self):
         for source, row_count, value in (
@@ -472,7 +429,7 @@ class LiveTablePrefixTests(unittest.TestCase):
             with self.subTest(row_count=row_count):
                 vm=self.vm()
                 plan=vm.prepare(source)
-                self.assertIn('_fresh_closed_table',plan._plan.generated_source)
+                self.assertNotIn('_fresh_closed_table',plan._plan.generated_source)
                 with self.assertRaises(BSLError):
                     vm.execute_prepared(plan)
                 self.assertEqual((vm.variables['t'].count(),vm.variables.get('r')),(row_count,value))
@@ -486,7 +443,7 @@ class LiveTablePrefixTests(unittest.TestCase):
                     If {condition} Then R=99; EndIf;
                     Snapshot=T.Copy();
                 ''')
-                self.assertIn('_fresh_closed_table',plan._plan.generated_source)
+                self.assertNotIn('_fresh_closed_table',plan._plan.generated_source)
                 with self.assertRaises(BSLError):
                     vm.execute_prepared(plan)
                 self.assertEqual(vm.variables['t'].count(),20)
@@ -504,8 +461,6 @@ class LiveTablePrefixTests(unittest.TestCase):
                 self.assertEqual(vm.variables['snapshot'].count(),20)
 
     def test_unused_table_before_loop_does_not_require_its_own_guard(self):
-        from unittest.mock import Mock, patch
-
         for setup in ('U=New ValueTable; T.Columns.Add("X");',
                       'T.Columns.Add("X",New TypeDescription("Number")); U=New ValueTable;',
                       'U=New ValueTable; T.Columns.Add("X",New TypeDescription("Number"));'):
@@ -513,23 +468,12 @@ class LiveTablePrefixTests(unittest.TestCase):
                 vm=self.vm()
                 source=TABLE.replace('T.Columns.Add("X");',setup)+'Snapshot=T.Copy(); R'
                 plan=vm.prepare(source)
-                code=plan._plan.generated_source
-                fast=code.split('if _fresh_closed_table',1)[1].split('        else:',1)[0]
-                self.assertIn('.set_member(',fast)
-                self.assertIn('.get_member(',fast)
-                self.assertNotIn('resolve_set_member',fast)
-                namespace=plan._plan.function.__globals__
-                admit=Mock(wraps=namespace['_fresh_closed_table'])
-                with patch.dict(namespace,_fresh_closed_table=admit):
-                    self.assertEqual(vm.execute_prepared(plan),210)
-                admit.assert_called_once()
-                self.assertIs(admit.call_args.args[1],vm.variables['t'])
+                self.assertNotIn('_fresh_closed_table',plan._plan.generated_source)
+                self.assertEqual(vm.execute_prepared(plan),210)
                 self.assertEqual((vm.variables['u'].count(),vm.variables['snapshot'].count()),(0,20))
                 self.assertEqual(vm.execute(source),210)
 
     def test_one_region_checks_each_used_table_and_keeps_live_aliases(self):
-        from unittest.mock import Mock, patch
-
         vm=self.vm()
         source=TABLE.replace('For I=1', """
             U=New ValueTable;
@@ -537,20 +481,14 @@ class LiveTablePrefixTests(unittest.TestCase):
             Alias=U;
             For I=1""").replace('Row.X=I;', 'Row.X=I; Other=Alias.Add(); Other.X=I+1;')
         plan=vm.prepare(source+'One=T.Copy(); Two=U.Copy(); R')
-        code=plan._plan.generated_source
-        self.assertIn(' and _fresh_closed_table(',code)
-        namespace=plan._plan.function.__globals__
-        admit=Mock(wraps=namespace['_fresh_closed_table'])
-        with patch.dict(namespace,_fresh_closed_table=admit):
-            self.assertEqual(vm.execute_prepared(plan),210)
-        self.assertEqual(admit.call_count,2)
+        self.assertNotIn('_fresh_closed_table',plan._plan.generated_source)
+        self.assertEqual(vm.execute_prepared(plan),210)
         self.assertIs(vm.variables['alias'],vm.variables['u'])
-        self.assertEqual({id(call.args[1]) for call in admit.call_args_list},
-                         {id(vm.variables['t']),id(vm.variables['u'])})
+        self.assertIsNot(vm.variables['t'],vm.variables['u'])
+        self.assertEqual(vm.variables['one'].total('X'),210)
         self.assertEqual(vm.variables['two'].total('X'),230)
 
     def test_fresh_later_region_after_observation_does_not_reuse_prior_facts(self):
-        from unittest.mock import Mock, patch
         from yadinassi.collections.value_tables import BSLValueTable
 
         observations=[]
@@ -562,13 +500,11 @@ class LiveTablePrefixTests(unittest.TestCase):
         vm=self.vm(output=observe)
         second=TABLE.replace('T=','U=').replace('T.','U.').replace('T[I]','U[I]').replace('R=','S=').replace('R+','S+')
         plan=vm.prepare(TABLE+'Old=T; Message("between");'+second+'Snapshot=U.Copy(); R+S')
-        self.assertEqual(plan._plan.generated_source.count('if _fresh_closed_table'),2)
-        namespace=plan._plan.function.__globals__
-        admit=Mock(wraps=namespace['_fresh_closed_table'])
-        with patch.dict(namespace,_fresh_closed_table=admit):
-            self.assertEqual(vm.execute_prepared(plan),239)
+        self.assertNotIn('_fresh_closed_table',plan._plan.generated_source)
+        self.assertEqual(vm.execute_prepared(plan),239)
         self.assertEqual(observations,[('between',20,210)])
-        self.assertIs(admit.call_args_list[0].args[1],vm.variables['old'])
-        self.assertIs(admit.call_args_list[1].args[1],vm.variables['u'])
+        self.assertIsNot(vm.variables['old'],vm.variables['u'])
+        self.assertIsNot(vm.variables['snapshot'],vm.variables['u'])
+        self.assertEqual(vm.variables['old'].count(),20)
         self.assertIs(vm.variables['t'],replacement)
         self.assertEqual(vm.variables['snapshot'].count(),20)
