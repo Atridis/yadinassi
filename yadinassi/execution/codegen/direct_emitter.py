@@ -836,17 +836,20 @@ class Emit:
         bound=self.routines[key]
         params=self.parameters[key]
         omitted=self.omissions(args)
-        if len(args)>len(params) or any(params[i].default is None for i in omitted):
+        if len(args)>len(params):
             return call('_InvalidOmissions')
         def actual(i):
+            if i in omitted:
+                return literal(None) if params[i].by_value else call('_Cell',literal(None))
             return self.expr(args[i]) if params[i].by_value else self.reference(args[i],known_local=True)
-        if not omitted:
+        defaults=tuple(i for i in omitted if params[i].default is not None)
+        if not defaults:
             return call(bound,*(actual(i) for i in range(len(args))))
-        # Only a call with a positional hole needs spelling its suffix by name.
-        prefix=omitted[0]
+        # Skip a defaulted hole; an explicitly skipped required slot is Undefined.
+        prefix=defaults[0]
         return call(bound,*(actual(i) for i in range(prefix)),
                     **{params[i].name.casefold():actual(i)
-                       for i in range(prefix,len(args)) if i not in omitted})
+                       for i in range(prefix,len(args)) if i not in defaults})
 
     def reference(self,arg,known_local=False):
         while type(arg) is b.Group:

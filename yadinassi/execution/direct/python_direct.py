@@ -414,7 +414,7 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=N
                                            argument_count=kwargs.get('argument_count'),crossing_omissions=True,
                                            non_name_actuals=_non_name_actuals)
             if module is not None and key not in module.server_names and key not in module.dual_names:
-                bound=self.resolve_service(name,*args,**kwargs)
+                bound=self.resolve_service(name,*args,_local_omissions=True,**kwargs)
                 if getattr(self.vm,'_direct_routine_modules',{}).get(key) is module:
                     return bind_omissions(bound)
                 return bound
@@ -434,7 +434,7 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=N
                 raise ValueError('Переменная или функция не определена: '+name)
             super()._unregistered_service(name)
 
-        def resolve_service(self,name,*args,_non_name_actuals=(),**kwargs):
+        def resolve_service(self,name,*args,_non_name_actuals=(),_local_omissions=False,**kwargs):
             modules=getattr(vm,'_direct_routine_modules',None)
             key=name.casefold()
             ports=getattr(vm,'_direct_invocation_ports',None)
@@ -449,7 +449,7 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=N
                 routine=resolve_routine(self,key,require_value=kwargs.get('require_value',False),
                                         allow_references=kwargs.get('allow_references',False),
                                         argument_count=kwargs.get('argument_count'),
-                                        non_name_actuals=_non_name_actuals)
+                                        non_name_actuals=_non_name_actuals,local_omissions=_local_omissions)
                 if routine is not None:return routine
             if key in ('new:uuid','new:уникальныйидентификатор'):
                 from yadinassi.types.unique_identifiers import BSLUUID

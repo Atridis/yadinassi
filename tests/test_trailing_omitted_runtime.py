@@ -89,6 +89,18 @@ class TrailingOmittedArgumentTests(unittest.TestCase):
         self.assertIsNone(self.vm.locals)
         self.assertEqual(self.vm._execute_depth[0], 0)
 
+    def test_mixed_required_and_defaulted_holes_in_direct_and_persisted_calls(self):
+        self.vm.execute("""
+            Function Mix(Required, Val Fallback = 4, Val Tail = 5)
+                If Required = Undefined Then Required = 7; EndIf;
+                Return Required * 100 + Fallback * 10 + Tail;
+            EndFunction
+            Direct = Mix(,,9);
+        """)
+        self.vm.execute('Persisted = 0; Execute("Persisted = Mix(,,9);");')
+        self.assertEqual(self.vm.variables['direct'], Decimal(749))
+        self.assertEqual(self.vm.variables['persisted'], Decimal(749))
+
     def test_arity_rejection_precedes_argument_and_body_effects(self):
         self.vm.execute(ROUTINES)
         for expression, count in (('Required()', 0), ('Required(,,)', 3),

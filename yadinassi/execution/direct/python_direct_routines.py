@@ -175,7 +175,10 @@ def resolve(context, name, *, require_value=False, allow_references=False, argum
         try:
             function=exports[name]
             if local_omissions:
-                from yadinassi.execution.codegen.direct_collections import _OMITTED_REF
+                from yadinassi.execution.codegen.direct_collections import _Cell, _OMITTED_REF
+                arguments=tuple((_Cell(None) if i in references else None)
+                                if i<minimum and value is _OMITTED_REF else value
+                                for i,value in enumerate(arguments))
                 first=next((i for i,value in enumerate(arguments) if value is _OMITTED_REF),len(arguments))
                 if first<len(arguments):
                     names=function.__code__.co_varnames
