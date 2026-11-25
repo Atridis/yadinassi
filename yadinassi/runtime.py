@@ -749,8 +749,8 @@ class Interpreter:
 
     def execute_program(self, program: list[ast.Node]) -> object:
         """Compile and execute the supplied AST through the direct compiler only."""
-        from .execution.direct.python_direct import execute
-        return execute(self, program)
+        from .execution.direct.python_direct import execute, _snapshot
+        return execute(self, _snapshot(program))
 
 
     @staticmethod

@@ -622,8 +622,11 @@ class CatalogBoundary:
             if type(function) is not HostFunction:
                 raise BoundaryViolation('database method requires canonical HostFunction')
         if verify:self._check_effect()
-        normalize_position = (type(value) is BSLCatalogSection and name.casefold() in
-                              ('get','получить','delete','удалить','__getitem__'))
+        key = name.casefold()
+        normalize_position = (type(value) is BSLCatalogSection and key in
+                              ('get','получить','delete','удалить','__getitem__')
+                              or type(value) is BSLArray and key in
+                              ('insert','вставить','delete','удалить'))
         def invoke(*args):
             self._catalog_owner(value,verify=verify)
             if normalize_position and args and type(args[0]) is int:

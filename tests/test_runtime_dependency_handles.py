@@ -138,7 +138,6 @@ class DependencyHandleTests(unittest.TestCase):
 
 
     def test_direct_unsupported_descriptor_has_no_authorization_effect_or_lazy_work(self):
-        from yadinassi import runtime
         forbidden=('reusable_values','common_templates','temporary_storage')
         for warm in (False,True):
             with self.subTest(warm=warm):
@@ -151,12 +150,12 @@ class DependencyHandleTests(unittest.TestCase):
                 effect=Mock(side_effect=AssertionError('argument must not run'))
                 vm.register_function('Denied',InterpreterCall(1,1,authorize,dispatch))
                 vm.register_function('Effect',effect)
-                original=runtime._runtime_module;reached=[]
+                original=dependencies.runtime_module;reached=[]
                 def dependency(name):
                     reached.append(name)
                     if name in forbidden:self.fail('dependency reached before unsupported refusal')
                     return original(name)
-                with patch.object(runtime,'_runtime_module',dependency):
+                with patch.object(dependencies,'runtime_module',dependency):
                     with self.assertRaisesRegex(BSLRuntimeError,'explicit interpreter dispatch') as caught:
                         vm.execute('Denied(Effect());')
                 self.assertIs(type(caught.exception),BSLRuntimeError)

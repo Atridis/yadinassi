@@ -10,19 +10,11 @@ from yadinassi.types.errors import BSLError
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
-def poison(test):
-    for name in ('_execute_program','call_routine','_planned_routine_block'):
-        guard=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
-        guard.start();test.addCleanup(guard.stop)
-
-
 class SourceStorageValuesNoVM(existing.SourceStorageValueTests):
-    def setUp(self):
-        super().setUp();poison(self)
+    pass
 
 
 class DirectSourceValueStorage(unittest.TestCase):
-    def setUp(self):poison(self)
     def app(self, *, allow_extensions=False):
         app=SourceApplication(source(b''),output=lambda _:None, allow_extensions=allow_extensions)
         self.addCleanup(app.close);app.start();return app

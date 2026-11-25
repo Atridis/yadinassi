@@ -39,9 +39,10 @@ class DirectHostileBoundaryTests(unittest.TestCase):
                 with self.assertRaisesRegex(PythonDirectUnsupported,'immutable parser values'):vm.execute_program(program)
                 self.assertEqual(events,[]);self.assertEqual(output,[])
 
-    def test_custom_visitor_policy_not_silently_ignored(self):
+    def test_custom_storage_policy_not_silently_ignored(self):
         output=[];vm=Interpreter(output=output.append);self.addCleanup(vm.close)
-        with self.assertRaisesRegex(PythonDirectUnsupported,'custom visitor hooks'):
+        with patch.object(vm,'set_variable',side_effect=AssertionError('storage hook called')), \
+             self.assertRaisesRegex(PythonDirectUnsupported,'custom storage hooks'):
             vm.execute('Message("bad");')
         self.assertEqual(output,[])
 

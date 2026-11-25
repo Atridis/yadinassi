@@ -5,6 +5,7 @@ from decimal import Decimal
 from operator import is_
 from weakref import ReferenceType
 from yadinassi.types.values import BSLObject, HostFunction
+from .python_direct_numbers import public_number
 
 CONSTRUCTOR_NAMES=('valuetree','деревозначений','valuetreerow','строкадеревазначений',
                    'valuetreecolumn','колонкадеревазначений','valuetreerowcollection','коллекциястрокдеревазначений')
@@ -853,6 +854,7 @@ class ValueTreeBoundary:
             kind is _ROWS and key in ('get','получить','__getitem__')
             or kind is _COLUMNS and key in ('get','получить')
         )
+        moving=kind in (_ROWS,_COLUMNS) and key in ('move','сдвинуть')
         scalar_read=key in ('count','количество','owner','владелец','level','уровень')
         row_read=_ROW_READS.get(key) if kind is _ROWS else None
         copying=kind is _TREE and key in ('copy','скопировать')
@@ -875,7 +877,9 @@ class ValueTreeBoundary:
             # exact tree receivers first so host hooks cannot run inside them.
             for argument in arguments:
                 if owns(argument):check(self,argument)
-            if type(value) is _ROWS and arguments:
+            if moving:
+                arguments=tuple(map(public_number,arguments))
+            elif kind is _ROWS and arguments:
                 arguments=self._tree_arguments(key,arguments)
             if type(value) is _COLUMNS and key in ('add','добавить','insert','вставить'):
                 position=1 if key in ('add','добавить') else 2

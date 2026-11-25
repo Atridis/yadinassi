@@ -44,6 +44,18 @@ class BSLDate:
         other.require_known()
         return self.ticks == other.ticks
 
+    def __lt__(self, other):
+        return _require_date(self).ticks < _require_date(other).ticks
+
+    def __le__(self, other):
+        return _require_date(self).ticks <= _require_date(other).ticks
+
+    def __gt__(self, other):
+        return _require_date(self).ticks > _require_date(other).ticks
+
+    def __ge__(self, other):
+        return _require_date(self).ticks >= _require_date(other).ticks
+
     def __add__(self, other):
         # Direct generated Python uses the same pure tick arithmetic as the
         # reference backend, without routing ordinary numeric operations here.
@@ -233,11 +245,12 @@ def read_codec(text: str) -> BSLDate:
     return _canonical(text, (14,))
 
 
-def add_month(value: BSLDate, months: Decimal) -> BSLDate:
+def add_month(value: BSLDate, months: Decimal | int) -> BSLDate:
     value = _require_date(value)
-    if type(months) is not Decimal or not months.is_finite():
+    kind = type(months)
+    if kind is not int and (kind is not Decimal or not months.is_finite()):
         raise TypeError("ДобавитьМесяц: ожидается конечное число месяцев")
-    if len(months.as_tuple().digits) > _MAX_DIGITS:
+    if kind is Decimal and len(months.as_tuple().digits) > _MAX_DIGITS:
         raise ValueError("ДобавитьМесяц: превышен предел ресурсов Yadinassi (4096 разрядов)")
     # Bound before int(): an enormous positive exponent must not allocate a
     # huge integer. No shift this large can yield a supported Gregorian date.
