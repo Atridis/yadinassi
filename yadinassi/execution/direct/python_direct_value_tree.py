@@ -937,6 +937,8 @@ class ValueTreeBoundary:
 
     def _tree_arguments(self,key,arguments):
         from yadinassi.execution.codegen.direct_structure import _DirectStructure
+        if key in ('loadcolumn','загрузитьколонку') and len(arguments) == 2 and type(arguments[1]) is int:
+            arguments = (arguments[0], model._bsl_tree_number(arguments[1]))
         if key in ('loadcolumn','загрузитьколонку') and type(arguments[0]) is list:
             from yadinassi.types.values import _DIRECT_COLLECTION_CLASS_ABI as abi
             source=arguments[0]

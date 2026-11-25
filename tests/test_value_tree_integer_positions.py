@@ -1,6 +1,8 @@
 import unittest
 from decimal import Decimal as D
 from unittest.mock import patch
+
+from yadinassi import Interpreter
 from yadinassi.collections.value_trees import (
     BSLValueTree, BSLValueTreeColumnCollection, BSLValueTreeRowCollection, _position)
 
@@ -39,3 +41,35 @@ class ValueTreeIntegerPositionsTests(unittest.TestCase):
         for collection in (tree.rows, tree.columns):
             with self.assertRaises(TypeError): collection.get(True)
             with self.assertRaises(TypeError): collection.get(D('0.5'))
+
+    def test_native_bsl_integers_reach_tree_number_operations(self):
+        setup = """
+        T = New ValueTree;
+        T.Columns.Add("N");
+        A = T.Rows.Add();
+        A.N = 1;
+        B = T.Rows.Add();
+        B.N = True;
+        C = A.Rows.Add();
+        C.N = 4.5 - 3.5;
+        """
+        cases = (
+            ('R = T.Rows.Итог(0, 1);', D(2)),
+            ('R = T.Rows.Total("N");', D(1)),
+            ('R = T.Rows.UnloadColumn(0).Count();', D(2)),
+            ('V = New Array; V.Add(9); T.Rows.ЗагрузитьКолонку(V, 0); R = A.N;', D(9)),
+            ('R = T.Rows.Find(4.5 - 3.5, "N").N;', D(1)),
+            ('R = T.Rows.Find(1, "N", 1).N;', D(1)),
+            ('R = T.Rows.FindRows(New Structure("N", 1), 1).Count();', D(2)),
+            ('R = T.Rows.FindRows(New Structure("N", True), 1).Count();', D(1)),
+        )
+        for prepared in (False, True):
+            for code, expected in cases:
+                with self.subTest(prepared=prepared, code=code):
+                    vm = Interpreter()
+                    source = setup + code
+                    if prepared:
+                        vm.execute_prepared(vm.prepare(source))
+                    else:
+                        vm.execute(source)
+                    self.assertEqual(vm.variables['r'], expected)

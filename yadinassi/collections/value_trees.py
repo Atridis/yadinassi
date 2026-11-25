@@ -218,6 +218,17 @@ def _search_scalar(value, budget):
     return units
 
 
+def _bsl_tree_number(value):
+    """Adapt generated integers at tree operations that consume BSL numbers."""
+    if type(value) is not int:
+        return value
+    # Bound conversion even if a large integer came from BSL arithmetic.
+    # Existing operation validation enforces the exact decimal digit limit.
+    if value.bit_length() > 4 * _MAX_NUMBER_DIGITS:
+        raise ValueError("ДеревоЗначений: число вне ресурсных границ")
+    return Decimal(value)
+
+
 def _search_name(name, budget):
     if type(name) is not str:
         raise TypeError("ДеревоЗначений: ожидается имя колонки")
@@ -874,6 +885,9 @@ class BSLValueTreeRowCollection(BSLObject):
     def _find(self, value, columns="", recursive=False, *, admit=None):
         self._live()
         budget = _SearchBudget()
+        if admit is not None:
+            value = _bsl_tree_number(value)
+            recursive = _bsl_tree_number(recursive)
         query_units = _search_scalar(value, budget)
         # Only the two measured scalar forms extend the Boolean domain here.
         # Keep FindRows' separately documented converter policy unchanged.
@@ -948,6 +962,8 @@ class BSLValueTreeRowCollection(BSLObject):
             values = []
             for column in selected:
                 cell = row.cells[column]
+                if admit is not None and type(cell) is int:
+                    cell = _bsl_tree_number(cell)
                 _search_scalar(cell, budget)
                 budget.charge(query_units)
                 values.append(cell)
@@ -978,6 +994,8 @@ class BSLValueTreeRowCollection(BSLObject):
         if len(filters._items) > _MAX_COLUMNS or len(self.tree.columns.items) > _MAX_COLUMNS:
             raise ValueError("ДеревоЗначений: превышен предел колонок поиска Yadinassi")
         budget = _SearchBudget()
+        if admit is not None:
+            recursive = _bsl_tree_number(recursive)
         recursive = _search_recursive(recursive, budget)
         result = BSLArray()
         if not filters._items:
@@ -993,6 +1011,8 @@ class BSLValueTreeRowCollection(BSLObject):
             column = columns.get(key)
             if column is None:
                 raise ValueError("Колонка поиска дерева не найдена")
+            if admit is not None and type(value) is int:
+                value = _bsl_tree_number(value)
             selected.append((column, value))
         prepared = [(column, value, _search_scalar(value, budget))
                     for column, value in selected]
@@ -1024,6 +1044,8 @@ class BSLValueTreeRowCollection(BSLObject):
             # Charge both operands before equality, including repeated query text.
             for column, query, units in prepared:
                 value = row.cells[column]
+                if admit is not None and type(value) is int:
+                    value = _bsl_tree_number(value)
                 _search_scalar(value, budget)
                 budget.charge(units)
                 values.append(value)
@@ -1111,6 +1133,9 @@ class BSLValueTreeRowCollection(BSLObject):
               or type(self.parent.depth) is not int or not 0 <= self.parent.depth <= _MAX_DEPTH):
             raise ValueError("ДеревоЗначений: посторонний дочерний получатель итога")
         budget = _SearchBudget()
+        if admit is not None:
+            column = _bsl_tree_number(column)
+            recursive = _bsl_tree_number(recursive)
         if type(recursive) is not bool:
             kind = type(recursive)
             if kind is not Decimal and kind is not str:
@@ -1203,6 +1228,8 @@ class BSLValueTreeRowCollection(BSLObject):
                     value = Decimal(int(cell))
                 elif type(cell) is Decimal:
                     value = cell
+                elif admit is not None and type(cell) is int:
+                    value = _bsl_tree_number(cell)
                 elif kinds == frozenset((BSLType.NUMBER,)):
                     raise TypeError("ДеревоЗначений: нечисловая ячейка итога")
                 else:
@@ -1251,6 +1278,8 @@ class BSLValueTreeRowCollection(BSLObject):
         if len(columns) > _MAX_COLUMNS or len(self.items) > _MAX_ROWS:
             raise ValueError("ДеревоЗначений: превышен предел выгрузки Yadinassi")
         budget = _SearchBudget()
+        if admit is not None:
+            column = _bsl_tree_number(column)
         kind = type(column)
         if kind is str:
             key = _search_name(column, budget)
