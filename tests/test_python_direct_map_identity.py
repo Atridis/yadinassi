@@ -41,6 +41,17 @@ class DirectMapIdentityTests(unittest.TestCase):
 
     def test_operand_effect_order(self):
         vm=Interpreter(allow_extensions=True);seen=[]
-        vm.register_function('Left',lambda:seen.append('left') or _TypedMap())
-        vm.register_function('Right',lambda:seen.append('right') or _TypedMap())
-        self.assertIs(vm.execute('(Left()=Right())'),False);self.assertEqual(seen,['left','right'])
+        self.addCleanup(vm.close)
+        left,right=_TypedMap(),_TypedMap()
+        vm.register_function('Left',lambda:seen.append('left') or left)
+        vm.register_function('Right',lambda:seen.append('right') or right)
+        for expression, expected, order in (
+                ('(Left()=Right())',False,['left','right']),
+                ('(Left()<>Right())',True,['left','right']),
+                ('(Left()=Left())',True,['left','left']),
+                ('(Left()<>Left())',False,['left','left'])):
+            with self.subTest(expression=expression):
+                seen.clear()
+                result=vm.execute(expression)
+                self.assertEqual(seen,order)
+                self.assertIs(result,expected)

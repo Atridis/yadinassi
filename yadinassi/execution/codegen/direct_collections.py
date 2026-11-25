@@ -81,6 +81,12 @@ def _reject_opaque_date_key(key):
             'внутреннее представление; дальнейшая операция пока не поддерживается')
 
 class _TypedMap(dict):
+    def __eq__(self, other):
+        return self is other
+
+    def __ne__(self, other):
+        return self is not other
+
     @staticmethod
     def token(key):
         if type(key) is _MAP_DATE_TYPE:_reject_opaque_date_key(key)
