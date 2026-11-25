@@ -4,12 +4,9 @@ from pathlib import Path
 import subprocess
 import sys
 import unittest
-from yadinassi.execution.codegen import experimental_naked_collections as runtime
+from yadinassi.execution.codegen import direct_collections as runtime
 
 class RetiredCompilerTests(unittest.TestCase):
-    def test_runtime_has_no_old_generator_entrypoints(self):
-        for name in ('prepare','compile_source','execute'):
-            self.assertNotIn(name,vars(runtime))
 
     def test_production_imports_no_test_oracle(self):
         root=Path(runtime.__file__).parent

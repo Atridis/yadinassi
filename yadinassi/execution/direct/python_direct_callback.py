@@ -5,7 +5,7 @@ from weakref import ReferenceType, ref
 
 from yadinassi.application.callbacks import run_callback_marker
 from yadinassi.application.direct_callbacks import CallbackDescription
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.types.values import HostFunction, Reference
 
 
@@ -71,7 +71,7 @@ def _arity():
 
 def callback_actuals(bound, *values):
     """Callback values use fresh temporary slots for declared ByRef parameters."""
-    from yadinassi.execution.codegen.experimental_naked_collections import _Cell
+    from yadinassi.execution.codegen.direct_collections import _Cell
     actuals = []
     for index, value in enumerate(values):
         if type(value) is not Reference and bound.requires_reference(index):
@@ -115,7 +115,7 @@ def bind(context, key, service, *, argument_count):
 
     def omissions(bound, positions, count):
         if count != 2 or positions != (1,):
-            from yadinassi.execution.codegen.experimental_naked_collections import _host_omission_error
+            from yadinassi.execution.codegen.direct_collections import _host_omission_error
             _host_omission_error()
         return bound, {1: None}
 

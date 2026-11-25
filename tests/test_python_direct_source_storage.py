@@ -6,7 +6,7 @@ import unittest
 from test_source_catalog_records import package as catalogs
 from test_source_constants_runtime import package as constants
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.types.errors import BSLError
 
 

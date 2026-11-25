@@ -1,6 +1,6 @@
 """Weak provenance separating owning XML handles from detached XML objects."""
 from weakref import ref
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 _HANDLES={}
 

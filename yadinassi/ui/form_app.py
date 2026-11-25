@@ -34,9 +34,6 @@ class FormProcess(RuntimeBridge):
             command = [sys.executable, '-m', 'yadinassi.ui.form_app', '--runtime', str(Path(directory).resolve())]
         if database is not None:
             command += ['--f', str(Path(database).resolve())]
-        from yadinassi.execution.execution_policy import ui_backend
-        self.execution_backend = ui_backend()
-        command += ['--execution-backend', self.execution_backend]
         self._start(command, environment)
 
     def exchange(self, raw):

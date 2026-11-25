@@ -1,5 +1,8 @@
 # Direct selected source forms
 
+> Historical measurements below that name `compiled-strict` describe a retired
+> backend. Current builds use only the direct BSL-to-Python generator.
+
 Selected memory-only source forms now use the existing FormSession,
 PreparedHandlers, FormBoundary model protocol and replication/InvocationPort
 lifecycle with an exact source-form boundary. This is not a browser/native parity

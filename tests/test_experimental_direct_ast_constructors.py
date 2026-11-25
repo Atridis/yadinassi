@@ -4,7 +4,7 @@ import json
 from decimal import Decimal
 from yadinassi import Interpreter, BSLError
 from yadinassi.collections.plain_value_list import PlainValueList
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 class DirectASTCanonicalConstructorTests(unittest.TestCase):
     def vm(self):

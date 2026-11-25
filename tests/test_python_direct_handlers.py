@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from decimal import Decimal
 from yadinassi.syntax.parser import parse
 from yadinassi.execution.direct.python_direct_handlers import prepare_handlers
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext,BoundaryViolation
 from yadinassi.types.errors import BSLRuntimeError
 
 class DirectHandlerTests(unittest.TestCase):

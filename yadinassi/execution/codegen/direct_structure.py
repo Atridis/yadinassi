@@ -62,24 +62,6 @@ def new_structure(keys='', *values):
     return result
 
 
-def prepare_structure_schema(keys):
-    """Compile literal field metadata; invalid literals keep runtime diagnostics."""
-    fields={}
-    names=[part.strip(_WHITESPACE) for part in keys.split(',') if part.strip(_WHITESPACE)]
-    for index,name in enumerate(names):
-        fields[structure_key(name)]=(name,index)
-    return tuple((key,name,index) for key,(name,index) in fields.items())
-
-
-def structure_from_schema(schema,*values):
-    """Construct fresh storage from private compiler data, without key parsing."""
-    result=_DirectStructure()
-    dict.update(result,((key,(name,values[index] if index<len(values) else None))
-                        for key,name,index in schema))
-    result._version=len(schema)
-    return result
-
-
 def structure_get_known(value, key, spelling):
     if not dict.__contains__(value,key):raise ValueError('Свойство структуры не найдено: '+spelling)
     return dict.__getitem__(value,key)[1]

@@ -4,11 +4,11 @@ No persistence endpoint is exposed here. CatalogObject._write retains source
 selection, schema validation, transaction ownership and uncertain-write recovery.
 """
 from decimal import Decimal, localcontext
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
-from yadinassi.execution.codegen.experimental_naked_collections import _Cell
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.codegen.direct_collections import _Cell
 from yadinassi.execution.codegen.direct_emitter import compile_owned
-from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
-from yadinassi.execution.codegen.experimental_naked_errors import convert_error
+from yadinassi.execution.codegen.direct_live_state import _ForwardReference
+from yadinassi.execution.codegen.direct_errors import convert_error
 from .python_direct_catalog_reference_query import ReferenceQuery, ReferenceResult, ReferenceCursor
 from yadinassi.types.values import Reference, HostFunction
 from yadinassi.db.catalog.catalogs import BSLCatalogObject
@@ -238,8 +238,7 @@ class PreparedCatalogValidator:
 
 def _validator_key(manager,source):
     from yadinassi.execution.codegen.native_targets import current_native_target
-    from yadinassi.execution.execution_policy import current_backend
-    return (source,manager._schema,current_native_target(),current_backend(),_VALIDATOR_CONSTRUCTORS,'scalar-bounds-v1')
+    return (source,manager._schema,current_native_target(),_VALIDATOR_CONSTRUCTORS,'scalar-bounds-v1')
 
 
 def prepared_validator(manager,source,*,prepared=None):
@@ -256,7 +255,7 @@ def prepared_validator(manager,source,*,prepared=None):
     names=_ALIASES|{field.name.casefold() for field in manager._schema.fields}|{section.name.casefold() for section in manager._schema.tabular_sections}
     if names & (_SELF|{'отказ'}):raise ValueError('catalog preparation: reserved object member')
     plan=compile_owned(program,retain_generated=False,source_text=source,source_name='<catalog-preparation>',
-                 constructors=_VALIDATOR_CONSTRUCTORS,external_names=tuple(names|_SELF),
+                 external_names=tuple(names|_SELF),
                  exports=True,meter_loops=True,catalog_budget=True,constructor_profile=_VALIDATOR_CONSTRUCTORS,
                  bound_constructors=_VALIDATOR_CONSTRUCTORS)
     result=PreparedCatalogValidator(key,tuple(program),plan)

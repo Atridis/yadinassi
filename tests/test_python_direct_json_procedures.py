@@ -6,7 +6,7 @@ from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.syntax.parser import parse
 from yadinassi.formats.json.json_processing import BSLJSONReader, BSLJSONWriter
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 class DirectJSONProceduresTests(unittest.TestCase):
     def test_routes_reject_without_mutation_or_vm(self):

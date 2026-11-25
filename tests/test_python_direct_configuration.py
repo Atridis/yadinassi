@@ -8,7 +8,7 @@ from yadinassi.execution.invocation import InvocationServer
 from yadinassi.configuration.configuration_main_demo import import_main_demo_configuration, PROFILE
 from yadinassi.ui.main_demo import form_family
 from yadinassi.execution.direct.python_direct_configuration import ConfigurationBoundary, invoke_routine, check_owner
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from test_main_demo_configuration import source
 
 class DirectConfigurationTests(unittest.TestCase):

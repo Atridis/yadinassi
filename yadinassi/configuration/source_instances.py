@@ -74,6 +74,6 @@ class SourceInstances(MutableMapping):
 def instance_keys(app, owner):
     registry = app._instances
     if type(registry) is not SourceInstances:
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         raise BoundaryViolation('source instance registry changed')
     return registry.keys_for_owner(owner)

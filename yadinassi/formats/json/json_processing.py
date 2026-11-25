@@ -6,7 +6,7 @@ import json
 import os
 import stat
 
-from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
+from yadinassi.execution.codegen.direct_structure import _DirectStructure
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 from yadinassi.execution.direct.python_direct_plain_map import (
     PlainMap, PlainFixedMap, _DIRECT_FIXED_MAP_STORAGE,

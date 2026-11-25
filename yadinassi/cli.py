@@ -11,7 +11,7 @@ from .types.errors import BSLError, BSLRuntimeError, IncompleteInput
 from .syntax.parser import parse
 from .syntax.preprocessor import COMPILATION_PROFILES
 from .runtime import Interpreter
-from .execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from .execution.codegen.direct_boundaries import BoundaryViolation
 from .types.values import to_string
 
 
@@ -189,12 +189,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--source-compatibility-target', metavar='VERSION',
                         help='явный экспериментальный AppVersion target, не установленная версия 1С')
     args = parser.parse_args(arguments)
-    from .execution.execution_policy import execution_backend_policy
-    with execution_backend_policy(args.execution_backend):
-        if args.emit_python is not None:
-            from .cli_support.cli_emit_python import run
-            return run(args, parser)
-        return _run_selected(args, parser)
+    if args.emit_python is not None:
+        from .cli_support.cli_emit_python import run
+        return run(args, parser)
+    return _run_selected(args, parser)
 
 
 def _run_selected(args, parser):
@@ -372,8 +370,7 @@ def _run_selected(args, parser):
             interpreter = application.interpreter
         else:
             interpreter = Interpreter(encoding=args.encoding, database_context=database_context,
-                                      compilation_profile=args.preprocessor_profile,
-                                      execution_backend=args.execution_backend)
+                                      compilation_profile=args.preprocessor_profile)
             # This CLI owns the activation; opening SQLite is not equivalent
             # to allowing embedded Python callbacks between BSL instructions.
             interpreter._standalone_script = True

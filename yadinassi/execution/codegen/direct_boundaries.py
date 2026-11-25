@@ -72,7 +72,7 @@ class BoundaryContext:
         raise TypeError("Форма: передача реквизита без Знач пока не поддерживается")
 
     def missing_value(self,name):
-        from .experimental_naked_live_state import missing
+        from .direct_live_state import missing
         return missing(name)
 
     def _validate_host_function(self,value,require_value,allow_references=False):
@@ -114,7 +114,7 @@ class BoundaryContext:
             self._unregistered_service(name)
         function=self._services[key]  # Registered service outranks a variable.
         if key in ('errordescription','описаниеошибки','errorinfo','информацияобошибке') and type(function) is HostFunction:
-            from .experimental_naked_errors import description_service
+            from .direct_errors import description_service
             function=description_service(self,function)
         if type(function) is HostFunction:
             if getattr(self,'_direct_transaction_owner',None) is not None:

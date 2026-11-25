@@ -1,5 +1,5 @@
 """Canonical local text operations with no Python callback on exact strings."""
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.direct.python_direct_services import builtin_binding
 from yadinassi.execution.direct.python_direct_pure_builtins import _ABI
 from yadinassi.types.values import HostFunction

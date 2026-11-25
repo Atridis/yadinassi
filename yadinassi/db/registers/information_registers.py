@@ -168,7 +168,7 @@ class BSLInformationRegisterManager(BSLObject):
             for f,v in zip(self._schema.fields,record.key.dimensions + record.values)}
     def _filter(self, value, *, complete=False):
         if value is None and not complete: return ()
-        from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
+        from yadinassi.execution.codegen.direct_structure import _DirectStructure
         if type(value) is BSLStructure and type(value._items) is dict:
             items = value._items
         elif type(value) is _DirectStructure:

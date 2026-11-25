@@ -1,7 +1,7 @@
 """Information-register movement buffers use the same live ownership fence."""
 import unittest
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 import test_document_posting_runtime as fixture
 
 class DirectRecorderOwnershipTests(unittest.TestCase):

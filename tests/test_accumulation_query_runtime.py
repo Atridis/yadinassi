@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from yadinassi.db.sqlite.sqlite_movement_layout import table_name as movement_table
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.db.query import query_parser as syntax
 from yadinassi.configuration.configuration_accumulation import import_accumulation_configuration, PROFILE
 from yadinassi.db.database_context import SQLiteDBContext

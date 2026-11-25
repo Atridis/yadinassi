@@ -1,7 +1,7 @@
 """Direct statement fragments over live addresses and private temporary names."""
 from yadinassi.types.values import Reference
-from yadinassi.execution.codegen.experimental_naked_collections import _Cell, _UNSET_REF
-from yadinassi.execution.codegen.experimental_naked_live_state import _SlotReference, _ForwardReference, missing
+from yadinassi.execution.codegen.direct_collections import _Cell, _UNSET_REF
+from yadinassi.execution.codegen.direct_live_state import _SlotReference, _ForwardReference, missing
 from .python_direct_fragment_cache import FragmentUnitCache
 
 
@@ -26,7 +26,7 @@ class FragmentScope:
         self.names=self.names-self.bindings.keys()
         self.private={}
     def _check(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         if not self.active:raise BoundaryViolation('direct Execute scope has ended')
         if getattr(self.context,'_verify_dynamic_context',self.context._verify_context):self.context._check()
     def _get(self,ref):
@@ -64,7 +64,7 @@ class FragmentScope:
         if name in self.bindings:return self.bindings[name]
         if name in self.names:
             if type(self.parent) is FragmentScope:return self.parent.reference(name)
-            from yadinassi.execution.codegen.experimental_naked_live_state import host_reference
+            from yadinassi.execution.codegen.direct_live_state import host_reference
             return host_reference(self.parent,name)
         if name not in self.private:missing(name)
         ref=_SlotReference(self.private,name)
@@ -82,7 +82,7 @@ def execute_fragment(text,context,parent,bindings,visible):
 
 def _execute_fragment(text,context,parent,bindings,visible,profile):
     if getattr(context,'_verify_dynamic_context',context._verify_context):context._check()
-    from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+    from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
     vm=getattr(context,'vm',None)
     if vm is None:raise BoundaryViolation('direct Execute requires an interpreter-owned boundary')
     from yadinassi.runtime import EXECUTE_MAX_SOURCE, EXECUTE_MAX_DEPTH
@@ -127,7 +127,7 @@ def _execute_fragment(text,context,parent,bindings,visible,profile):
             # Preparation failure is not a BSL runtime error: an enclosing
             # Try must not turn an unsupported fragment into successful execution.
             from .python_direct import PythonDirectUnsupported
-            from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
+            from yadinassi.execution.codegen.direct_collections import UnsupportedNakedSyntax
             try:
                 source = profile is not None
                 plan=compile_module(None if source else vm,program,tuple(_nodes(program)),text,'<Выполнить>',
@@ -145,7 +145,7 @@ def _execute_fragment(text,context,parent,bindings,visible,profile):
         scope=FragmentScope(parent,bindings,visible,context)
         try:function(scope,constants,[],context)
         except Exception as error:
-            from yadinassi.execution.codegen.experimental_naked_errors import convert_error
+            from yadinassi.execution.codegen.direct_errors import convert_error
             converted=convert_error(error,source_name,source_text)
             if converted is error:raise
             raise converted from None

@@ -1,6 +1,6 @@
 """Exact one-element lists internally; reference adapters only at boundaries."""
-from yadinassi.execution.codegen.experimental_naked_collections import _Reference,_UNSET_REF
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_collections import _Reference,_UNSET_REF
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from .python_direct_numbers import public_number
 
 
@@ -81,8 +81,8 @@ def fragment_binding(cell):
 
 
 def host_reference(getter,setter,name,storage,activation,context):
-    from yadinassi.execution.codegen.experimental_naked_collections import _host_name_reference
-    from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+    from yadinassi.execution.codegen.direct_collections import _host_name_reference
+    from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
     def check():
         context._check()
         if not activation[0]:raise BoundaryViolation('expired routine reference')
@@ -91,7 +91,7 @@ def host_reference(getter,setter,name,storage,activation,context):
     def set(value):
         check();setter(value);check()
     if type(storage) is ReferenceCell and storage.context is context:
-        from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
+        from yadinassi.execution.codegen.direct_live_state import _ForwardReference
         from yadinassi.runtime import Interpreter
         from yadinassi.types.values import Reference
         owner=getattr(context,'vm',None)
@@ -136,7 +136,7 @@ class PublishedModuleCell:
 def module_property_reference(cell, name):
     """Bind a Structure output to the live module slot, not its published copy."""
     from yadinassi.types.values import Reference
-    from yadinassi.execution.codegen.experimental_naked_live_state import UNSET, _ForwardReference, missing
+    from yadinassi.execution.codegen.direct_live_state import UNSET, _ForwardReference, missing
     value=cell[0]
     if value is UNSET:missing(name)
     return _ForwardReference(value) if type(value) is Reference else CellReference(cell)

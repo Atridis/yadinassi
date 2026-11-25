@@ -116,7 +116,7 @@ class ApplicationFamilyTests(unittest.TestCase):
     def test_split_client_checks_stub_readiness_at_bind_and_after_actuals(self):
         from yadinassi.execution.direct.python_direct_configuration import ConfigurationBoundary
         from yadinassi.execution.direct.python_direct_configuration_commands import _Scope
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         from yadinassi.types.values import NULL
 
         files = module_files([('Service', 'Function F(Val X) Export Return X; EndFunction', SERVER)])
@@ -158,7 +158,7 @@ class ApplicationFamilyTests(unittest.TestCase):
         self.assertEqual(packets, [])
 
     def test_split_client_admits_reply_value_before_publishing_messages(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         from yadinassi.execution.invocation import PROTOCOL
         from yadinassi.ui.protocol import decode_line, encode_line
 

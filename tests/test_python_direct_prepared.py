@@ -123,7 +123,7 @@ class PreparedDirectTests(unittest.TestCase):
 
     def test_callback_restriction_not_authorization_cached(self):
         vm=Interpreter(allow_extensions=True);p=vm.prepare('Install();x=1;');vm.register_function('Install',lambda:setattr(vm,'_configuration_runtime',object()))
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         with self.assertRaises(BoundaryViolation):vm.execute_prepared(p)
         self.assertNotIn('x',vm.variables)
 

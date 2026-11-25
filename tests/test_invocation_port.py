@@ -9,7 +9,7 @@ import unittest
 from unittest import mock
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.temporal.dates import BSLDate, TICKS_PER_SECOND
 from yadinassi.execution.invocation import (InvocationBinding, InvocationError,
     InvocationPort, InvocationServer, MAX_CALLS, PROTOCOL)

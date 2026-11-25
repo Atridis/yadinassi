@@ -9,7 +9,7 @@ from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.runtime import _Module, _Namespace
 from yadinassi.syntax.parser import parse
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.direct.python_direct import make_boundary
 
 
@@ -242,7 +242,7 @@ Procedure Inner() Export Try Raise "inner";Except Captured=ErrorDescription();En
             from yadinassi import Interpreter
             from yadinassi.runtime import _Module
             from unittest.mock import patch
-            from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+            from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
             cls,name=((Interpreter,'_load_module') if sys.argv[1]=='loader' else (_Module,'get_member'))
             events=[]
             with patch.object(cls,name,side_effect=lambda *a:events.append('hook')):

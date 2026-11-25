@@ -1,5 +1,8 @@
 # Owned synchronous file imports in the direct backend
 
+> Historical measurements below that name `compiled-strict` describe a retired
+> backend. Current builds use only the direct BSL-to-Python generator.
+
 The direct backend now has a bounded file/directory import bridge. It reuses the
 canonical loader's path resolution, encoding, collision checks, directory staging
 and family-local cache, but never routes imported source or routine bodies through

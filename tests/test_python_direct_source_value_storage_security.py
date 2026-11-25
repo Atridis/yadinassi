@@ -4,11 +4,11 @@ from types import SimpleNamespace
 from decimal import Decimal
 from yadinassi.formats.storage import value_storage as storage
 from yadinassi.execution.direct.source import python_direct_source_value_storage as direct
-from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
-from yadinassi.execution.codegen.experimental_naked_structure import new_structure
+from yadinassi.execution.codegen.direct_collections import _TypedMap
+from yadinassi.execution.codegen.direct_structure import new_structure
 from yadinassi.types.unique_identifiers import BSLUUID
 from yadinassi.types.values import HostFunction
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 
 class SourceValueStorageSecurity(unittest.TestCase):

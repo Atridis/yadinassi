@@ -1,6 +1,5 @@
 """Bounded host-lifetime owned-form results, not a callback wire codec."""
 from dataclasses import dataclass
-from yadinassi.collections.structures import BSLStructure, BSLFixedStructure
 from yadinassi.execution.invocation import _encode_scalar, _decode_scalar
 from yadinassi.ui.protocol import encode_line, decode_line
 
@@ -29,16 +28,12 @@ def freeze_result(value):
     return raw
 
 
-def result_value(raw, *, direct=False):
-    if type(direct) is not bool:raise TypeError('direct result selection requires Boolean')
+def result_value(raw):
     packet = decode_line(raw)
     if packet['kind'] == 'scalar':
         return _decode_scalar(packet['value'])
-    if direct:
-        from yadinassi.execution.codegen.experimental_naked_structure import new_structure
-        result = new_structure()
-    else:
-        result = BSLStructure()
+    from yadinassi.execution.codegen.direct_structure import new_structure
+    result = new_structure()
     for key, value in packet['items']:
         result.insert(key, _decode_scalar(value))
     return result

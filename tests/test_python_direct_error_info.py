@@ -6,7 +6,7 @@ from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.types.error_info import BSLErrorInfo
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 class DirectErrorInfoTests(unittest.TestCase):
     def vm(self, *, allow_extensions=False):
@@ -69,7 +69,7 @@ class DirectErrorInfoTests(unittest.TestCase):
         self.assertEqual(events,[])
 
     def test_observation_is_lazy_and_cached(self):
-        from yadinassi.execution.codegen import experimental_naked_errors as errors
+        from yadinassi.execution.codegen import direct_errors as errors
         with patch.object(errors,'convert_error',wraps=errors.convert_error) as convert:
             vm=self.vm();vm.execute('Try X=1/0;Except A=ErrorInfo();B=ErrorInfo();D=ErrorDescription();EndTry;')
             self.assertEqual(convert.call_count,1);self.assertIs(vm.variables['a'],vm.variables['b'])

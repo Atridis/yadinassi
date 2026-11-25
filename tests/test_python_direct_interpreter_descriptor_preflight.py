@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLError
 from yadinassi.types.values import HostFunction, InterpreterCall
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext, BoundaryViolation
 
 
 class InterpreterDescriptorPreflightTests(unittest.TestCase):

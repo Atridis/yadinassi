@@ -112,7 +112,7 @@ class CompiledHostThreadTests(unittest.TestCase):
         finally:
             server.shutdown();server.server_close();thread.join(3);application.close()
 
-    def test_real_catalog_child_receives_strict_selection_without_environment_policy(self):
+    def test_real_catalog_child_uses_direct_runtime_without_selection(self):
         from pathlib import Path
         import tempfile,sys
         from ui_catalog_fixture import repository
@@ -136,8 +136,7 @@ runpy.run_module(module,run_name='__main__')
 """
             original_start=RuntimeBridge._start
             def start(bridge,command,environment):
-                self.assertIn('--execution-backend',command)
-                self.assertEqual(command[command.index('--execution-backend')+1],'python-direct')
+                self.assertNotIn('--execution-backend',command)
                 self.assertEqual(command[1],'-m')
                 return original_start(bridge,[sys.executable,'-c',script,str(witness),*command[2:]],environment)
             bridge=None

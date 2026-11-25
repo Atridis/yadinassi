@@ -86,7 +86,7 @@ class SourceConstantsRuntimeTests(unittest.TestCase):
                 try:
                     # Direct storage rejects foreign capabilities before invoking
                     # their authorization callbacks; legacy reports a BSL error.
-                    from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+                    from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
                     direct=other._session_owner.execution_backend=='python-direct'
                     with self.assertRaisesRegex(BoundaryViolation if direct else BSLError,
                                                 'foreign source constants' if direct else 'owning synchronous server'):

@@ -10,7 +10,7 @@ import unittest
 from decimal import Decimal
 from yadinassi import Interpreter, BSLError
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.syntax.parser import parse
 
 class DirectASTResearchTests(unittest.TestCase):

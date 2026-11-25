@@ -1,5 +1,8 @@
 # Прямые логические серверные вызовы
 
+> Historical measurements below that name `compiled-strict` describe a retired
+> backend. Current builds use only the direct BSL-to-Python generator.
+
 Прямой движок исполняет синхронные `&AtServer` / `&НаСервере` функции и
 процедуры с `Val` / `Знач` и именованными byref-параметрами (включая defaults) через отдельный
 сгенерированный Python-код. Старые AST dispatch, `block` и `call_routine`

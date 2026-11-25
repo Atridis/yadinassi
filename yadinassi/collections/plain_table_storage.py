@@ -14,7 +14,7 @@ from yadinassi.text.sort_keys import text_sort_key
 from yadinassi.types.values import BSLArray, BSLType, NULL
 from yadinassi.types.unique_identifiers import BSLUUID, _exact_uuid_text
 from yadinassi.execution.direct.python_direct_plain_array import _DIRECT_PLAIN_ARRAY_TYPE
-from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
+from yadinassi.execution.codegen.direct_structure import _DirectStructure
 from .structures import BSLStructure
 
 _SCALAR_TYPES = (type(None), str, bool, int, Decimal, type(NULL))

@@ -4,8 +4,8 @@ from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLError
 from yadinassi.temporal.dates import BSLDate, MAX_TICKS, UnsupportedDateRange
-from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_collections import _TypedMap
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.direct.python_direct_plain_map import PlainMap, PlainFixedMap
 
 

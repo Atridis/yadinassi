@@ -6,7 +6,7 @@ from unittest.mock import patch
 from yadinassi.forms.form_runtime import FormSession, FormLimitError
 from yadinassi.execution.direct.python_direct_forms import FormBoundary
 from yadinassi.execution.direct.python_direct_configuration import check_owner
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution import safe_mode
 from yadinassi.db import source_transactions, database_transactions
 

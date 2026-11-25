@@ -7,26 +7,24 @@ from functools import partial
 from types import FunctionType
 
 from yadinassi.syntax import ast as b
-from .experimental_naked_collections import Program, UnsupportedNakedSyntax, _Cell, _Reference, _bound_ref, _host_omission_error, _host_omission_values, _OMITTED_REF
-from .experimental_naked_scalar_semantics import TextAddend
+from .direct_collections import Program, UnsupportedNakedSyntax, _Cell, _Reference, _bound_ref, _host_omission_error, _host_omission_values, _OMITTED_REF
 from yadinassi.types.array_index import array_offset
 from yadinassi.execution.direct.python_direct_plain_map import PlainMap, plain_map
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 from yadinassi.collections.maps import BSLMap, BSLFixedMap
 from yadinassi.collections.structures import BSLKeyAndValue, BSLStructure, BSLFixedStructure
-from .experimental_naked_errors import handled_error, reraise_handled
-from .experimental_naked_resources import bounded_array, bounded_insert
-from .experimental_naked_array_methods import _ALIASES as ARRAY_ALIASES
-from .experimental_naked_scalar_semantics import typed_find
-from .experimental_naked_structure import _DirectStructure, new_structure
+from .direct_errors import handled_error, reraise_handled
+from .direct_resources import bounded_array, bounded_insert
+from .direct_scalar_semantics import typed_find
+from .direct_structure import _DirectStructure, new_structure
 from yadinassi.execution.direct.python_direct_names import CHARS_ALIASES, NAMES as SYSTEM_NAMES
 from yadinassi.types.errors import BSLRuntimeError
-from .experimental_naked_live_state import UNSET, source_reference, _SlotReference, _ForwardReference
-from .experimental_naked_boundaries import BoundaryViolation, _MISSING as _SERVICE_MISSING
+from .direct_live_state import UNSET, source_reference, _SlotReference, _ForwardReference
+from .direct_boundaries import BoundaryViolation, _MISSING as _SERVICE_MISSING
 from yadinassi.execution.direct.python_direct_eval import bind_eval
 from yadinassi.execution.direct.python_direct_execute import FragmentScope, execute_fragment
 from yadinassi.types.values import BSLArray, BSLFixedArray, BSLObject, HostFunction, Reference
-from .experimental_naked_scalar_semantics import concatenate, presentation, truth
+from .direct_scalar_semantics import concatenate, presentation, truth
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.execution.direct.python_direct_numbers import divide, remainder, sign, public_number
 from yadinassi.execution.direct.python_direct_dynamic_new import construct
@@ -277,7 +275,13 @@ def indexed_actual(context, byref, receiver, owned):
 
 
 def member_actual(context, byref, receiver, key):
-    if byref:return host_reference(field_reference(context,receiver,key))
+    if byref:
+        address=field_reference(context,receiver,key)
+        # A module reference was already bound by its owner. Preserve the exact
+        # reference so a synchronous dual call can lend that one address.
+        if type(address) is _ForwardReference:
+            return address.reference
+        return host_reference(address)
     return get_field(context,receiver,key)
 
 
@@ -307,6 +311,10 @@ _NONCONSTRUCTIBLE = frozenset(('formdatacollection','данныеформыко�
     'collectionindex','индексколлекции','collectionindexes','индексыколлекции'))
 
 
+ARRAY_ALIASES={'количество':'count','вграница':'ubound','добавить':'add','очистить':'clear',
+          'получить':'get','установить':'set','вставить':'insert','удалить':'delete','найти':'find'}
+
+
 def self_read(context,state,key):
     return state[key] if key in state else context.current_module()
 
@@ -325,7 +333,7 @@ def nonconstructible(key, missing=False):
         raise TypeError('Тип не определен: '+key)
     raise TypeError('Тип нельзя создать оператором Новый: '+key)
 _OP = dict(_Truth=truth, _PublicNumber=public_number, _Divide=divide, _Remainder=remainder, _Sign=sign,
-           _GotoTransfer=direct_goto.GotoTransfer,_String=concatenate, _Type=type, _Str=str, _Missing=_MISSING, _OmittedRef=_OMITTED_REF, _ServiceMissing=_SERVICE_MISSING, _Unset=UNSET, _TextAddend=TextAddend, _Map=PlainMap, _NameError=NameError, _Nonconstructible=nonconstructible, _SelfRead=self_read, _SelfWrite=self_write, _SelfRef=self_reference,
+           _GotoTransfer=direct_goto.GotoTransfer,_String=concatenate, _Missing=_MISSING, _OmittedRef=_OMITTED_REF, _ServiceMissing=_SERVICE_MISSING, _Unset=UNSET, _Map=PlainMap, _Nonconstructible=nonconstructible, _SelfRead=self_read, _SelfWrite=self_write, _SelfRef=self_reference,
            _Recoverable=(ArithmeticError,TypeError,ValueError,IndexError,NameError,RecursionError,BSLRuntimeError),
            _Handled=handled_error, _Reraise=reraise_handled, _Raise=raise_error,
            _RaiseArity=raise_arity_error, _Presentation=presentation,
@@ -529,7 +537,7 @@ def member(context, receiver, key, count, want_value, omitted=(), source_dispatc
     return context.resolve_member_call(receiver,key,require_value=want_value,omitted=omitted)
 
 
-_OP.update(_RequiresReference=requires_reference,_OwnedIndex=owned_index,_OwnedSetIndex=owned_set_index,_Metered=metered,_OwnedIterable=owned_iterable,_BSLIterable=bsl_iterable,_Member=member,_GetField=get_field,_SetField=set_field,_FieldRef=field_reference,_LocalFieldRef=local_field_reference,_StructureType=_DirectStructure,_OwnsPropertyOutput=owns_property_output)
+_OP.update(_RequiresReference=requires_reference,_OwnedIndex=owned_index,_OwnedSetIndex=owned_set_index,_Metered=metered,_OwnedIterable=owned_iterable,_BSLIterable=bsl_iterable,_Member=member,_GetField=get_field,_SetField=set_field,_FieldRef=field_reference,_LocalFieldRef=local_field_reference,_OwnsPropertyOutput=owns_property_output)
 _OP.update(_PrepareBracket=prepare_bracket,_ReadBracket=read_bracket)
 
 
@@ -1433,7 +1441,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,fra
 
 
 def compile_owned(program, *, source_text, source_name, module_names=(), external_names=(),
-                  constructors=(), exports=False, retain_generated=True, current_module=False, reference_names=(), meter_loops=False, source_scopes=False, source_dispatch=False, scalar_routines=False, shadowable_externals=(), value_services=(), constructor_profile=None, catalog_budget=False, bound_constructors=(),configuration_dispatch=False):
+                  exports=False, retain_generated=True, current_module=False, reference_names=(), meter_loops=False, source_scopes=False, source_dispatch=False, scalar_routines=False, shadowable_externals=(), value_services=(), constructor_profile=None, catalog_budget=False, bound_constructors=(),configuration_dispatch=False):
     if shadowable_externals and not (source_scopes and source_dispatch):
         raise ValueError('shadowable external names require a source scope')
     return compile_module(None,program,(),source_text,source_name,_exports=exports,owned=True,

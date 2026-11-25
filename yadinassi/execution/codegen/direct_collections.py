@@ -1,7 +1,7 @@
 """Values and execution container shared by the direct BSL generator."""
 from dataclasses import dataclass, field
 from decimal import Decimal
-from .experimental_naked_boundaries import _HostMemberReference, _HostIndexReference, BoundaryViolation
+from .direct_boundaries import _HostMemberReference, _HostIndexReference, BoundaryViolation
 
 from yadinassi.types.array_index import array_offset
 from yadinassi.types.values import Reference as _CanonicalReference, BSLFixedArray as _CanonicalFixedArray
@@ -13,17 +13,11 @@ _MAP_DATE_TYPE, _MAP_DATE_BOUNDARY = _DIRECT_EQUALITY_DATE_STATE
 
 _FIXED_MAP, _FIXED_MAP_STORAGE, _CANONICAL_VALUE_KEY_TYPES, _SINGLETON_KEY_TYPES = _DIRECT_FIXED_MAP_SNAPSHOT
 
-def _canonical_reference(value):
-    reference=_CanonicalReference(value.get,value.set)
-    if type(value) is _CanonicalReference:
-        lend=getattr(value,'_direct_lent_address',None)
-        if lend is not None:reference._direct_lent_address=lend
-    return reference
 
 def _host_name_reference(getter,setter,name,storage=None):
     try:getter()
     except NameError:raise ValueError('Переменная или функция не определена: '+name) from None
-    from .experimental_naked_live_state import _SlotReference, _ForwardReference
+    from .direct_live_state import _SlotReference, _ForwardReference
     result=_CanonicalReference(getter,setter)
     result._direct_name_sink=(storage is None or type(storage) in (_Cell,_SlotReference)
         or (type(storage) is _ForwardReference and type(storage.reference) is _CanonicalReference
@@ -46,14 +40,10 @@ def _native_property_missing(name):
 def _native_property_write_missing(name):
     raise ValueError('Свойство недоступно для записи: '+name)
 
-def _invalid_native_arity(message):
-    raise TypeError(message)
 
 def _argument_count_error(name,expected,actual):
     raise TypeError(f"{name} ожидает {expected} аргументов, получено {actual}")
 
-def _procedure_value_error(name):
-    raise TypeError("Процедура не возвращает значение: "+name)
 
 def _routine_value_error(name):
     raise TypeError("Процедуру или функцию необходимо вызвать: "+name)
@@ -143,34 +133,6 @@ def _checked_array_index(obj,key):
     if key<0 or key>=len(obj):raise IndexError(f'Индекс массива вне границ: {key}')
     return int(key)
 
-def _array_set_checked(obj,key,value):
-    # Ordinary Python argument binding evaluates value before bounds validation.
-    obj[array_offset(obj,key,method=True)]=value
-
-def _array_set_raw(obj,key,value):
-    obj[int(key)]=value
-
-def _array_insert_shape(obj,key,value=None):
-    if type(key) is not Decimal:raise TypeError('Ожидается число')
-    if not key.is_finite() or key!=key.to_integral_value():raise ValueError('Ожидается целое число')
-    if key<0:raise IndexError('Индекс массива вне границ')
-    index=int(key)
-    if index<len(obj):obj.insert(index,value)
-    else:obj.extend([None]*(index-len(obj))+[value])
-
-def _array_constructor_bounds(*sizes):
-    if len(sizes)==1 and type(sizes[0]) is _CanonicalFixedArray:
-        from .experimental_naked_resources import bounded_array
-        return bounded_array(sizes[0])
-    if not sizes:return []
-    for size in sizes:
-        if type(size) is not Decimal:raise TypeError('Ожидается число')
-        if not size.is_finite() or size!=size.to_integral_value():raise ValueError('Ожидается целое число')
-        if size<0:raise ValueError('Размер массива не может быть отрицательным')
-    def build(depth):
-        return ([None]*int(sizes[depth]) if depth==len(sizes)-1 else
-                [build(depth+1) for _ in range(int(sizes[depth]))])
-    return build(0)
 
 class _Reference:
     def get(self):return self.value
@@ -194,24 +156,6 @@ def _bound_ref(value):
         raise NameError('Uninitialized reference')
     return value
 
-class _IndexRef(_Reference):
-    __slots__=('owner','key','checked')
-    def __init__(self,owner,key,checked=False):
-        self.owner,self.key,self.checked=owner,key,checked
-        self.value  # Argument binding validates before callee effects.
-    def index(self):
-        if isinstance(self.owner,list):
-            return _checked_array_index(self.owner,self.key) if self.checked else int(self.key)
-        return self.key
-    @property
-    def value(self):
-        if id(type(self.owner)) in _MAP_TYPE_IDS:return self.owner.get(self.key)
-        if type(self.owner) is dict and self.key not in self.owner:raise ValueError('Свойство структуры не найдено: '+str(self.key))
-        return self.owner[self.index()]
-    @value.setter
-    def value(self,value):
-        if type(self.owner) is dict and self.key not in self.owner:raise ValueError('Свойство структуры не найдено: '+str(self.key))
-        self.owner[self.index()]=value
 
 class _ValueListItemReference(_Reference):
     __slots__=('item','field')
@@ -239,33 +183,9 @@ class _ValueListItemReference(_Reference):
             value = _normalize_check(value)
         self.item[self.field]=value
 
-class _AttributeRef(_Reference):
-    __slots__=('owner','name')
-    def __init__(self,owner,name):
-        self.owner,self.name=owner,name
-        self.value
-    @property
-    def value(self):
-        if id(type(self.owner)) in _MAP_TYPE_IDS:return _native_property_missing(self.name)
-        if isinstance(self.owner,dict):
-            if self.name not in self.owner:raise ValueError('Свойство структуры не найдено: '+self.name)
-            return self.owner[self.name]
-        return getattr(self.owner,self.name.casefold())
-    @value.setter
-    def value(self,value):
-        if id(type(self.owner)) in _MAP_TYPE_IDS:return _native_property_write_missing(self.name)
-        if isinstance(self.owner,dict):
-            if self.name not in self.owner:raise ValueError('Свойство структуры не найдено: '+self.name)
-            self.owner[self.name]=value
-        else:setattr(self.owner,self.name.casefold(),value)
 
-def _as_ref(value):return value if isinstance(value,(_Reference,_HostMemberReference,_HostIndexReference)) else _Cell(value)
 _OMITTED_REF=object()
 
-def _property_output(receiver,key,output):
-    found=key in receiver
-    output.value=receiver[key] if found else None
-    return found
 
 @dataclass
 class Program:
@@ -288,8 +208,8 @@ class Program:
         return '<generated source not retained>' if self._generated_source is None else self._generated_source
 
     def run(self, initial, *, context):
-        from .experimental_naked_live_state import validate_state
-        from .experimental_naked_errors import convert_error
+        from .direct_live_state import validate_state
+        from .direct_errors import convert_error
 
         state = validate_state(initial)
         self.last_state = state

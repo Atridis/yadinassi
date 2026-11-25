@@ -9,11 +9,11 @@ from contextvars import ContextVar
 from decimal import Decimal
 from yadinassi.configuration.source_instances import instance_keys
 from yadinassi.syntax import ast
-from yadinassi.execution.codegen.experimental_naked_collections import _OMITTED_REF, _Cell
-from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
+from yadinassi.execution.codegen.direct_collections import _OMITTED_REF, _Cell
+from yadinassi.execution.codegen.direct_live_state import _ForwardReference
 import xml.etree.ElementTree as ET
 
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.types.values import Reference
 from yadinassi.execution.direct.python_direct_server import transfer, _LateNamedValue
 from yadinassi.execution import safe_mode

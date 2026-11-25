@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 from yadinassi import Interpreter
 from yadinassi.types.values import BSLType, _DIRECT_TYPE_PRESENTATIONS
-from yadinassi.execution.codegen.experimental_naked_scalar_semantics import presentation, concatenate
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.codegen.direct_scalar_semantics import presentation, concatenate
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext, BoundaryViolation
 
 
 class TypePresentationTests(unittest.TestCase):

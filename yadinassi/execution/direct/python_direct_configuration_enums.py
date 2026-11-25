@@ -4,7 +4,7 @@ from uuid import UUID
 
 from yadinassi.configuration.configuration_enumerations import EnumDefinition
 from yadinassi.db.metadata.enum_types import BSLEnumReference, BSLEnumType
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext, BoundaryViolation
 from yadinassi.formats.storage.serialization import value_to_string_internal
 from yadinassi.runtime import Interpreter
 from yadinassi.types.type_values import type_of

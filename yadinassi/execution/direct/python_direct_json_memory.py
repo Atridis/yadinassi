@@ -1,6 +1,6 @@
 """Ordinary string JSON methods; resources and named callbacks stay separate."""
 
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.formats.json.json_processing import (
     BSLJSONReader, BSLJSONWriter, JSON_LINE_BREAKS, BSLJSONLineBreak,
     _DIRECT_JSON_READ, _DIRECT_SOURCE_JSON_CLASSES, _DIRECT_SOURCE_JSON_DICT,

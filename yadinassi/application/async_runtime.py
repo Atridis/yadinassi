@@ -138,9 +138,7 @@ class SchedulerLimitError(RuntimeError):
 
 
 class Scheduler:
-    def __init__(self, native_target: str, *, execution_backend=None):
-        from yadinassi.execution.execution_policy import current_backend
-        self.execution_backend = current_backend() if execution_backend is None else execution_backend
+    def __init__(self, native_target: str):
         self.native_target = validate_native_target(native_target)
         self.active_context = ExecutionContext()
         self._active_task = None

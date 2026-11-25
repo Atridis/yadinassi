@@ -5,7 +5,7 @@ import json
 import unittest
 from yadinassi import Interpreter
 from yadinassi.types.errors import BSLRuntimeError
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.collections.value_tables import BSLValueTable, BSLValueTableRow
 from yadinassi.types.type_descriptions import BSLTypeDescription
 

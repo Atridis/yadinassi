@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter,BSLRuntimeError
 from yadinassi.db.catalog.catalog_backend import BackendError
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.db import database_transactions as tx
 import test_bsl_transactions as fixtures
 from test_catalog_commit_cleanup_recovery import FaultConnection
@@ -125,7 +125,7 @@ class DirectTransactionTests(unittest.TestCase):
         self.assert_clean();self.assertTrue(self.vm.variables['c'].is_new())
 
     def test_pending_or_service_replacement_at_policy_boundary_opens_no_writer(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryContext
         original=BoundaryContext._before
         for action in ('pending','replace'):
             function=self.vm.functions['begintransaction'];implementation=function.function

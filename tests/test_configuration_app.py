@@ -309,6 +309,5 @@ EndFunction
             self.assertEqual(command, [
                 sys.executable, '--configuration-ui-runtime', str((ROOT/'counter').resolve()),
                 '--f', str((ROOT/'existing.sqlite').resolve()),
-                '--execution-backend', 'python-direct',
             ])
             self.assertEqual(env['PYTHONIOENCODING'], 'utf-8')

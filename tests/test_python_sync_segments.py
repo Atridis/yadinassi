@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from yadinassi import Interpreter
 from yadinassi.types.values import HostFunction
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 
 class PythonSyncSegmentTests(unittest.TestCase):

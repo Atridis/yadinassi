@@ -5,8 +5,8 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.execution.codegen.experimental_naked_structure import new_structure, _DirectStructure
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_structure import new_structure, _DirectStructure
 from yadinassi.collections.structures import BSLStructure, BSLFixedStructure
 from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342
 from yadinassi.execution.direct.python_direct_fill import fill
@@ -210,7 +210,7 @@ class DirectFillStructureTests(TestCase):
 
     def test_lifetime_before_and_after_policy_boundary(self):
         from yadinassi.execution.direct.python_direct_fill import resolve_fill
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryContext
         from yadinassi.collections.structures import fill_property_values
         from yadinassi.types.values import HostFunction
         function=HostFunction('FillPropertyValues',fill_property_values,returns_value=False)
@@ -221,7 +221,7 @@ class DirectFillStructureTests(TestCase):
 
     def test_policy_revocation_and_rebinding_precede_writes(self):
         from yadinassi.execution.direct.python_direct_fill import resolve_fill
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryContext
         from yadinassi.collections.structures import fill_property_values
         from yadinassi.types.values import HostFunction
         for mode in ('revoke','rebind','deny'):

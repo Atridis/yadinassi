@@ -4,7 +4,7 @@ from types import MappingProxyType, MethodType
 from decimal import Decimal
 from . import python_direct_source_xdto as shared
 from yadinassi.types.values import HostFunction
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 _OBJECT=shared.values.BSLXDTODataObject
 _TYPE=shared.values.BSLXDTOObjectType

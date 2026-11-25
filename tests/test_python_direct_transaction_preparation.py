@@ -7,7 +7,7 @@ from yadinassi import BSLRuntimeError
 from yadinassi.db import database_transactions as tx
 from yadinassi.db.catalog.catalog_backend import BackendError
 from yadinassi.db.catalog.catalog_object_preparation import CatalogWriteRefused
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 import yadinassi.db.catalog.catalog_object_preparation as prep
 import test_python_direct_catalog_preparation as fixture
 from test_catalog_commit_cleanup_recovery import FaultConnection

@@ -74,7 +74,7 @@ class ClearObserverTests(unittest.TestCase):
         with self.assertRaises(wire.AvailabilityError):wire.require_available(emit())
 
     def test_retired_synthetic_class_hooks_fail_before_action(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         with model('noop'):
             with self.assertRaisesRegex(BoundaryViolation,'ValueTree class hooks changed'):
                 probe()

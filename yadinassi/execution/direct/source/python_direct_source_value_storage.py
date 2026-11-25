@@ -8,7 +8,7 @@ from yadinassi.formats.storage.value_storage import (BSLValueStorage, Snapshot, 
     _DIRECT_VALUE_STORAGE_RECEIVER_BINDINGS, _DIRECT_VALUE_STORAGE_RECEIVER_CLASSES,
     _DIRECT_VALUE_STORAGE_TABLE_FUNCTIONS)
 from yadinassi.types.values import HostFunction
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 CONSTRUCTOR_NAMES=('valuestorage','хранилищезначения')
 _GET=BSLValueStorage.get

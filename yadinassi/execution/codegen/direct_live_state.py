@@ -5,7 +5,7 @@ are native dict operations; these helpers only handle missing names, reserved
 assignment failures, and reference binding. No VM dispatcher or scope lease.
 """
 from yadinassi.types.values import Reference
-from .experimental_naked_collections import _Reference
+from .direct_collections import _Reference
 
 UNSET=object()
 

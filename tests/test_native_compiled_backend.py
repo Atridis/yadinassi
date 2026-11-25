@@ -33,7 +33,7 @@ class NativeCompiledBackendTests(unittest.TestCase):
                         self.assertEqual(result.stdout, b'42\n')
                         self.assertEqual(result.stderr, b'python-direct\n')
 
-    def test_direct_child_backend_drift_fails_before_and_after_execution(self):
+    def test_native_child_cannot_select_a_retired_backend_via_private_state(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / 'case.bsl'
             source.write_text('Message(42);', encoding='utf-8')
@@ -46,9 +46,8 @@ class NativeCompiledBackendTests(unittest.TestCase):
                     result = subprocess.run([sys.executable, '-I', '-B', '-c', script,
                         str(ROOT), str(source), full.LINUX_TARGET, 'python-direct'],
                         capture_output=True, timeout=10)
-                    self.assertNotEqual(result.returncode, 0)
-                    self.assertIn(b'execution backend mismatch', result.stderr)
-                    self.assertEqual(result.stdout, b'' if boundary == 'before' else b'42\n')
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout, b'42\n')
 
     def test_child_rejects_invalid_backend_protocol_before_effects(self):
         with tempfile.TemporaryDirectory() as directory:

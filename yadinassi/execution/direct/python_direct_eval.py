@@ -10,7 +10,7 @@ def bind_eval(bound,context,parent,bindings,visible):
 
 def eval_capability(context,function,key):
     from yadinassi.runtime import _eval_marker
-    from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+    from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
     def bind(context,parent,bindings,visible):
         def invoke(value):
             context._before('call',key)
@@ -41,7 +41,7 @@ def _evaluate(value,context,parent,bindings,visible,profile):
     from yadinassi.runtime import EVAL_MAX_SOURCE,EVAL_MAX_DEPTH
     from yadinassi.types.values import to_string
     from yadinassi.types.errors import BSLError,BSLRuntimeError
-    from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+    from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
     vm=getattr(context,'vm',None)
     if vm is None:raise BoundaryViolation('direct Eval requires an interpreter-owned boundary')
     if type(value) is str:text=value
@@ -88,7 +88,7 @@ def _evaluate(value,context,parent,bindings,visible,profile):
             # Preparation failure is not a BSL runtime error: an enclosing
             # Try must not turn an unsupported fragment into successful execution.
             from .python_direct import PythonDirectUnsupported
-            from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
+            from yadinassi.execution.codegen.direct_collections import UnsupportedNakedSyntax
             try:
                 source = profile is not None
                 plan=compile_module(None if source else vm,program,tuple(_nodes(program)),text,'<Вычислить>',
@@ -106,7 +106,7 @@ def _evaluate(value,context,parent,bindings,visible,profile):
         scope=FragmentScope(parent,bindings,visible,context)
         try:return function(scope,constants,[],context)
         except Exception as error:
-            from yadinassi.execution.codegen.experimental_naked_errors import convert_error
+            from yadinassi.execution.codegen.direct_errors import convert_error
             converted=convert_error(error,source_name,source_text)
             if converted is error:raise
             raise converted from None

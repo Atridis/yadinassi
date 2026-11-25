@@ -6,7 +6,7 @@ from . import python_direct_source_xdto_objects as objects
 from . import python_direct_source_xdto_local as local
 from yadinassi.formats.xml import xml_io as reader_module,xml_writer as writer_module
 from yadinassi.types.values import HostFunction
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 _READER=reader_module.BSLXMLReader;_WRITER=writer_module.BSLXMLWriter
 _READ_SETTINGS=reader_module.BSLXMLReaderSettings;_WRITE_SETTINGS=writer_module.BSLXMLWriterSettings

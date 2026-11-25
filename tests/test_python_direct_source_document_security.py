@@ -8,7 +8,7 @@ import test_source_document_sections as sections
 from yadinassi.execution.direct.source import python_direct_source_storage as storage
 from yadinassi.db.document.source_document_runtime import create_object,SourceDocumentCall
 from yadinassi.db.document.source_document_sections import SourceDocumentSectionCall
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.types.values import HostFunction
 
 

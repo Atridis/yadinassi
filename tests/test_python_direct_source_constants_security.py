@@ -7,7 +7,7 @@ from test_source_constant_store import configuration
 from yadinassi.db.metadata.source_constants_runtime import SourceConstants
 from yadinassi.db.metadata.source_constant_managers import SourceConstantValueManager,_ValueInterpreter,create_manager
 from yadinassi.execution.direct.source.python_direct_source_constants import check_manager,bind_export
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 
 class DirectConstantSecurity(unittest.TestCase):

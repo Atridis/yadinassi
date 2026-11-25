@@ -2,7 +2,7 @@
 from yadinassi.forms.form_model import (BSLFormItems,BSLFormCommands,BSLFormField,BSLFormTable,
                          BSLFormGroup,BSLFormButton,BSLFormCommand,BSLFormAttribute,FORM_FIELD_VIEWS)
 from yadinassi.forms.form_tables import BSLFormDataCollection,BSLFormDataCollectionItem
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.types.values import HostFunction, _DIRECT_COLLECTION_CLASS_ABI
 from yadinassi.types.type_descriptions import BSLTypeDescription
 COLLECTIONS=(BSLFormItems,BSLFormCommands)

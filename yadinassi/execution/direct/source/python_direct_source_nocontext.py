@@ -1,6 +1,6 @@
 """Scalar source-form NoContext execution without form capabilities or VM dispatch."""
 from contextlib import contextmanager
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext, BoundaryViolation
 from yadinassi.execution.direct.python_direct_services import ServicesBoundary, CONSTRUCTORS
 from yadinassi.execution.direct.python_direct_handlers import prepare_handlers
 from yadinassi.execution.direct.python_direct_source import _signature, _signature_matches, _source_text, _external_names, SourceBoundary
@@ -27,7 +27,7 @@ def _check(server, *, preparing=False):
             or vm._family_released or app.interpreter._family_closed
             or vm._family_generation!=app.interpreter._family_generation
             or vm.database_context is not None or vm._configuration_runtime is not None
-            or vm.execution_backend!='python-direct' or app.constant_store is not None):
+            or app.constant_store is not None):
         raise BoundaryViolation('source NoContext owner is inactive')
     for cls,name,expected in _DIRECT_SOURCE_NOCONTEXT_ABI:
         instance=server if cls is _SourceNoContextServer else vm
@@ -88,7 +88,6 @@ def prepare(server, nodes):
     from yadinassi.execution.direct.python_direct_forms import DECLARATION_CONSTRUCTORS, SYSTEM_NAMES
     compiled=prepare_handlers(view,source_text=_source_text(nodes),
         external_names=tuple(dict.fromkeys((*_external_names(vm),*SYSTEM_NAMES))),
-        constructors=tuple(CONSTRUCTORS)+DECLARATION_CONSTRUCTORS,
         _source_routine_scopes=True)
     vm.server_routines={r.name.casefold():r for r in nodes}
     server._direct_nocontext=(compiled,vm.server_routines,tuple((r,_signature(r)) for r in nodes),vm._direct_source_host_bindings)
@@ -131,7 +130,7 @@ class NoContextBoundary(ServicesBoundary,BoundaryContext):
                 or root._family_closed or self.vm._family_released
                 or self.vm._family_generation != root._family_generation
                 or self.vm.database_context is not None or self.vm._configuration_runtime is not None
-                or self.vm.execution_backend != 'python-direct' or self.app.constant_store is not None):
+                or self.app.constant_store is not None):
             raise BoundaryViolation('source NoContext owner is inactive')
         self._check_scope()
         self._charge_step()
@@ -175,7 +174,6 @@ class NoContextBoundary(ServicesBoundary,BoundaryContext):
 def invoke(server,routine,values,*,output=None):
     from yadinassi.execution.invocation import _encode_scalar
     from yadinassi.execution.codegen.native_targets import target_context
-    from yadinassi.execution.execution_policy import execution_backend_policy
     from decimal import localcontext
     prepared=_check(server);vm=server.prototype
     seal=server._direct_nocontext
@@ -188,7 +186,7 @@ def invoke(server,routine,values,*,output=None):
     vm._source_call_budget=[0];server._direct_busy=True
     vm._context_stack.append('server');vm._module_context_stack.append(False)
     try:
-        with source_transactions.execution(server.application),server.application.safe_mode.execution(),database_transactions.admission(False),target_context(vm.native_target),execution_backend_policy('python-direct'),localcontext() as decimal:
+        with source_transactions.execution(server.application),server.application.safe_mode.execution(),database_transactions.admission(False),target_context(vm.native_target),localcontext() as decimal:
             decimal.prec=38
             result=prepared.invoke_export(routine.name,'server',values,is_function=routine.is_function,
                 state={},context_factory=lambda:NoContextBoundary(server))

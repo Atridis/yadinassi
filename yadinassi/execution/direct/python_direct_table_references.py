@@ -2,10 +2,10 @@
 from decimal import Decimal, ROUND_DOWN
 from yadinassi.collections import plain_table_storage as storage, plain_value_table_runtime as model, plain_table_search as search
 from yadinassi.collections.value_tables import _DIRECT_ITERATION_TYPES
-from yadinassi.execution.codegen.experimental_naked_collections import _Reference
+from yadinassi.execution.codegen.direct_collections import _Reference
 from .python_direct_table_iteration import owner
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_live_state import _ForwardReference
 from yadinassi.types.values import BSLType, Reference
 from yadinassi.types import type_descriptions as descriptions, type_qualifiers as qualifiers
 from . import python_direct_plain_tables as tables

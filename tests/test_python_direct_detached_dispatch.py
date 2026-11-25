@@ -5,7 +5,7 @@ from yadinassi.types.values import BSLArray
 from yadinassi.collections.value_tables import BSLValueTableRow, BSLCollectionIndexes
 from yadinassi.collections.value_lists import BSLValueListItem
 from yadinassi.db.query.queries import BSLQuery
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 class DetachedDispatchTests(unittest.TestCase):
     def test_exact_detached_type_still_checks_current_boundary(self):

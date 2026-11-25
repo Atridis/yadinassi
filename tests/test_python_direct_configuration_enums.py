@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from test_configuration_enumerations import enum_files
 from yadinassi.configuration.configuration_runtime import ConfigurationApplication
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.direct.source import python_direct_source_enums
 from yadinassi.types.values import HostFunction
 

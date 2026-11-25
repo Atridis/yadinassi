@@ -9,7 +9,7 @@ from pathlib import Path
 import test_source_session_parameters as session_tests
 from test_configuration_source_runtime import source
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 
 class SourceReuseTests(unittest.TestCase):

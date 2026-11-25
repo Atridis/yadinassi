@@ -6,7 +6,7 @@ Only this reader registry can interpret them; no host getter is delegated.
 from decimal import Decimal
 from yadinassi.configuration.configuration_modules import _DIRECT_COMMON_MODULE_METADATA_ABI
 from yadinassi.configuration.configuration_session_parameters import SessionParameterDefinition
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.types.values import to_string
 
 ROOT_NAMES=('metadata','метаданные')

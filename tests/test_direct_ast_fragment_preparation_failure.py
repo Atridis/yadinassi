@@ -1,7 +1,7 @@
 """Unsupported fragment compilation is fatal, unlike reached BSL errors."""
 import unittest
 from yadinassi import Interpreter
-from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
+from yadinassi.execution.codegen.direct_collections import UnsupportedNakedSyntax
 
 class FragmentPreparationFailureTests(unittest.TestCase):
     def test_execute_and_eval_preparation_failure_never_enters_bsl_handler(self):

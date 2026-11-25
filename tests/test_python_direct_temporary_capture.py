@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 from yadinassi.formats.storage import value_storage as snapshots
 from yadinassi.application import temporary_storage as storage
-from yadinassi.execution.codegen.experimental_naked_structure import new_structure, _DirectStructure
+from yadinassi.execution.codegen.direct_structure import new_structure, _DirectStructure
 from yadinassi.collections.structures import BSLStructure
 from yadinassi.types.values import BSLArray
 from yadinassi.types.unique_identifiers import BSLUUID

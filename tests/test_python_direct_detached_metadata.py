@@ -8,7 +8,7 @@ from yadinassi.configuration.configuration_source_metadata import SourceMetadata
 from yadinassi.configuration.metadata import _DeclaredMetadataCollection
 from yadinassi.runtime import Interpreter
 from yadinassi.execution.execution_policy import execution_backend_policy
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.types.errors import BSLError
 from yadinassi.types.values import HostFunction
 
@@ -175,7 +175,7 @@ class DetachedMetadataTests(unittest.TestCase):
     def test_saved_calls_and_iterators_expire_with_boundary(self):
         from yadinassi.execution.direct.python_direct_detached_metadata import DetachedMetadataBoundary
         from yadinassi.execution.direct.python_direct_database import CatalogBoundary
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryContext
         class Context(DetachedMetadataBoundary,CatalogBoundary,BoundaryContext):pass
         ctx=Context();ctx.vm=self.vm;ctx.enter()
         collection=ctx.get_member(self.root,'Subsystems')

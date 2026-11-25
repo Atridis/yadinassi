@@ -3,7 +3,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.collections.plain_value_list import PlainValueList
 from yadinassi.types.type_descriptions import BSLTypeDescription
 

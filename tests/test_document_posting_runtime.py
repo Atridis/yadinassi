@@ -17,7 +17,7 @@ from yadinassi.db.database_transactions import current, execution, begin, rollba
 from yadinassi.configuration.configuration_posting import import_posting_configuration, PROFILE
 from yadinassi.db.document.document_posting import PostingLimitError
 from yadinassi.db.document.document_posting_values import DocumentWriteMode
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from test_configuration_posting import wrap
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -237,7 +237,7 @@ EndProcedure''')
 
     def test_handler_does_not_adopt_foreign_table_from_document_property(self):
         from yadinassi.collections.value_tables import BSLValueTable
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         self.make('''Procedure Posting(Cancel,Mode)
 T=AdditionalProperties.ForeignTable;
 T.Count();

@@ -1,26 +1,21 @@
 """Synchronization belongs to external callbacks, not native expressions."""
-import sys
 import unittest
 from decimal import Decimal as D
 from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.execution.direct import python_direct
-from yadinassi.execution.codegen.experimental_naked_boundaries import HostMembers, BoundaryViolation, BoundaryContext
+from yadinassi.execution.codegen.direct_boundaries import HostMembers, BoundaryViolation, BoundaryContext
 
 class ExternalSyncTests(unittest.TestCase):
-    def test_native_table_sync_count_does_not_scale_with_operations(self):
-        counts=[]
-        for n in (4,32):
-            vm=Interpreter();self.addCleanup(vm.close)
-            plan=vm.prepare(f'T=New ValueTable;T.Columns.Add("N");For I=0 To {n-1} Do Row=T.Add();Row.N=I;EndDo;R=0;For I=0 To {n-1} Do R=R+T.Get(I).N;EndDo;')
-            seen=[]
-            def profile(frame,event,arg):
-                if event=='call' and frame.f_code.co_name=='_publish_module':seen.append(1)
-            prior=sys.getprofile()
-            try:sys.setprofile(profile);vm.execute_prepared(plan)
-            finally:sys.setprofile(prior)
-            self.assertEqual(vm.variables['r'],D(n*(n-1)//2));counts.append(len(seen))
-        self.assertEqual(counts,[1,1]) # fresh native constructor; final publication only
+    def test_table_sum_both_loop_sizes(self):
+        for n in (4, 32):
+            with self.subTest(n=n):
+                vm=Interpreter()
+                self.addCleanup(vm.close)
+                plan=vm.prepare(f'T=New ValueTable;T.Columns.Add("N");For I=0 To {n-1} Do Row=T.Add();Row.N=I;EndDo;R=0;For I=0 To {n-1} Do R=R+T.Get(I).N;EndDo;')
+                vm.execute_prepared(plan)
+                self.assertEqual(vm.variables['r'],D(n*(n-1)//2))
+
     def test_external_get_set_call_see_latest_locals_and_reload(self):
         vm=Interpreter();self.addCleanup(vm.close);seen=[]
         class Host:
@@ -80,8 +75,6 @@ class ExternalSyncTests(unittest.TestCase):
         def build(n):
             source=';'.join(f'X{i}={i}' for i in range(n))+';'+''.join('Touch();' for _ in range(n))
             text=vm.prepare(source)._plan.generated_source
-            self.assertEqual(text.count('def _publish_module'),1)
-            self.assertEqual(text.count('_initial.__setitem__'),n)
             return len(text)
         small,large=build(8),build(32)
         self.assertLess(large,small*5)

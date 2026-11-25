@@ -795,9 +795,6 @@ class ConfigurationProcess(FormProcess):
             command += ['--document-objects']
         if launch_binding is not None:
             command += ['--launch-binding', launch_binding]
-        from yadinassi.execution.execution_policy import ui_backend
-        self.execution_backend = ui_backend()
-        command += ['--execution-backend', self.execution_backend]
         self._start(command, environment)
 
 
@@ -1656,7 +1653,7 @@ class ConfigurationController:
         self._current_form_sid = owned.owner
         failed = False
         try:
-            value = owned.result if dialog or typed else result_value(owned.result, direct=session.interpreter.execution_backend == 'python-direct')
+            value = owned.result if dialog or typed else result_value(owned.result)
             with self.application.event_messages(session._record_message):
                 session.synchronize_owned()
                 try:

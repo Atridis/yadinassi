@@ -180,7 +180,7 @@ Try New HashFunction; Except Message("no-constructor"); EndTry;''')
         with self.assertRaises(ValueError): serialization.value_to_string_internal(Function.CRC32)
 
     def test_direct_constructor_refuses_replaced_registration(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         for name in ('DataHashing', 'BinaryDataBuffer'):
             with self.subTest(name=name):
                 vm = Interpreter(allow_extensions=True)

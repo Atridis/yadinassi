@@ -2,10 +2,10 @@
 from contextlib import contextmanager
 import unittest
 
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext, BoundaryViolation
 from yadinassi.execution.codegen.direct_emitter import compile_owned
 from yadinassi.syntax.parser import parse
-from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
+from yadinassi.execution.codegen.direct_collections import UnsupportedNakedSyntax
 from yadinassi.types.values import HostFunction
 
 

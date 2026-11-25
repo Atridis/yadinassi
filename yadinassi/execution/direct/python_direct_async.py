@@ -2,8 +2,8 @@
 from threading import get_ident
 
 from yadinassi.application.async_runtime import Promise, Scheduler
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.execution.codegen.experimental_naked_errors import convert_error
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_errors import convert_error
 from yadinassi.syntax import ast
 
 

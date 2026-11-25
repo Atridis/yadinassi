@@ -5,7 +5,7 @@ from unittest.mock import patch
 from yadinassi import BSLError
 from yadinassi.db.catalog.catalog_object_preparation import _ObjectInterpreter,prepare_catalog_object
 from yadinassi.execution.direct.python_direct_catalog_preparation import CatalogPreparationBoundary,prepared_validator
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.codegen.direct_emitter import compile_owned
 from yadinassi.syntax.parser import parse
 import test_catalog_object_preparation as catalog_fixture

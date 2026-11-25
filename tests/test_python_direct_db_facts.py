@@ -5,17 +5,17 @@ from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.execution.codegen.direct_emitter import compile_owned
 from yadinassi.syntax.parser import parse
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext,BoundaryViolation
 from yadinassi.execution.direct.python_direct_database import NAMES
 import test_python_direct_database as dbfixture
 
 KERNEL='a=New Array;For i=0 To 99 Do a.Add(i);EndDo;s=0;For j=0 To 99 Do s=s+a.Get(j);EndDo;'
 class IndependentFactsTests(unittest.TestCase):
     def plan(self,source,**kwargs):
-        return compile_owned(parse(source),source_text=source,source_name='facts.bsl',external_names=('External',),constructors=('Query',),**kwargs)
+        return compile_owned(parse(source),source_text=source,source_name='facts.bsl',external_names=('External',),**kwargs)
     def test_db_namespace_generates_same_pure_code(self):
         plain=compile_owned(parse(KERNEL),source_text=KERNEL,source_name='facts.bsl')
-        db=compile_owned(parse(KERNEL),source_text=KERNEL,source_name='facts.bsl',external_names=tuple(NAMES),constructors=('query','запрос'))
+        db=compile_owned(parse(KERNEL),source_text=KERNEL,source_name='facts.bsl',external_names=tuple(NAMES))
         self.assertEqual(plain.generated_source,db.generated_source)
         numeric=self.plan('s=0;For i=1 To 100 Do s=s+i;EndDo;')
         self.assertEqual(numeric.run({},context=BoundaryContext())['s'],5050)

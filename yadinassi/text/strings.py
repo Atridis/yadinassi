@@ -295,8 +295,8 @@ def join(values: object, separator: object = "") -> str:
     native_list = kind is list or kind is _DIRECT_PLAIN_ARRAY_TYPE
     if not native_list and not isinstance(values, (BSLArray, BSLFixedArray)):
         raise TypeError("СтрСоединить ожидает массив или фиксированный массив")
-    from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
-    from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
+    from yadinassi.execution.codegen.direct_collections import _TypedMap
+    from yadinassi.execution.codegen.direct_structure import _DirectStructure
     from yadinassi.execution.direct.python_direct_plain_map import _DIRECT_PLAIN_MAP_FIND_TYPES
     plain_map = _DIRECT_PLAIN_MAP_FIND_TYPES[0]
     def convert(value):

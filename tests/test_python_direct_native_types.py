@@ -11,7 +11,7 @@ from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.types.values import BSLType, Reference
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext, BoundaryViolation
 from yadinassi.execution.direct.python_direct_services import ServicesBoundary
 from yadinassi.types.type_values import type_of
 

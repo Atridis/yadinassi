@@ -2,8 +2,8 @@
 from types import MethodType
 
 from yadinassi.application.session_parameters import BSLSessionParameters, _DIRECT_SESSION_PARAMETERS_ABI
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
-from yadinassi.execution.codegen.experimental_naked_collections import _Cell
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.codegen.direct_collections import _Cell
 from yadinassi.runtime import Interpreter, _DIRECT_CONFIGURATION_MESSAGE_ABI
 from yadinassi.syntax import ast
 from yadinassi.types.values import BSLArray, HostFunction

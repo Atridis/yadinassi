@@ -3,7 +3,7 @@
 from decimal import Decimal
 from weakref import ref
 
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.http.http_security import (
     BSLInternetProxy as _PROXY,
     BSLOSCertificationAuthorityCertificates as _OS_CA,

@@ -2,7 +2,7 @@
 import unittest
 from yadinassi.configuration.configuration_runtime import ConfigurationApplication
 from yadinassi.execution.direct.python_direct_configuration import ConfigurationBoundary
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.types.unique_identifiers import BSLUUID
 from yadinassi.types.values import HostFunction
 from configuration_runtime_fixture import module_files

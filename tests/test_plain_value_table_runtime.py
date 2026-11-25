@@ -6,7 +6,7 @@ from yadinassi import Interpreter, BSLError
 from yadinassi.collections.value_tables import BSLValueTable
 from yadinassi.collections.plain_value_table_runtime import BSLValueTable as PlainTable
 from yadinassi.execution.direct.python_direct_plain_tables import validate
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 class PlainTableRuntimeTests(unittest.TestCase):
     def table(self):

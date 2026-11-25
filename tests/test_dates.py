@@ -397,7 +397,7 @@ class DateRuntimeTests(unittest.TestCase):
                 self.vm.execute(code)
 
     def test_date_receiver_errors_are_catchable_without_running_later_operands(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryContext
         vm = Interpreter()
         self.addCleanup(vm.close)
         vm.execute('''
@@ -420,7 +420,7 @@ class DateRuntimeTests(unittest.TestCase):
         self.assertEqual(vm.execute('Year(value)'), Decimal(2024))
 
     def test_host_date_subclass_does_not_get_scalar_receiver_diagnostics(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         class ForeignDate(BSLDate):
             pass
         self.vm.variables['foreign'] = ForeignDate(0)

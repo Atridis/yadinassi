@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.types.values import HostFunction
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.direct.python_direct import make_boundary
 from yadinassi.execution.direct.python_direct_error_info import read, snapshot, _ALL
 

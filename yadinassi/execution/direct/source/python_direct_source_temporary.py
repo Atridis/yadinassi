@@ -1,6 +1,6 @@
 """Exact application-owned source temporary markers with early authorization."""
 import weakref
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.types.values import HostFunction
 from yadinassi.application import temporary_storage as temporary
 from yadinassi.types.unique_identifiers import BSLUUID

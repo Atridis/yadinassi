@@ -75,7 +75,7 @@ class InternalSerializationTests(unittest.TestCase):
     def test_exact_native_collections_keep_existing_wire_bytes(self):
         from yadinassi.collections.maps import BSLMap
         from yadinassi.collections.structures import BSLStructure
-        from yadinassi.execution.codegen.experimental_naked_structure import new_structure
+        from yadinassi.execution.codegen.direct_structure import new_structure
         from yadinassi.execution.direct.python_direct_plain_array import PlainArray
         from yadinassi.execution.direct.python_direct_plain_map import PlainMap
         from yadinassi.types.values import BSLArray

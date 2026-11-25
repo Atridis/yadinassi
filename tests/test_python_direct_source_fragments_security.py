@@ -5,7 +5,7 @@ from test_configuration_source_runtime import source
 from test_source_application_exports import configuration
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.types.values import HostFunction
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.direct.python_direct_source import SourceBoundary
 from yadinassi.execution.direct.source.python_direct_source_fragments import execution, _ACTIVE
 
@@ -97,7 +97,7 @@ Procedure WriteShared() Export Execute("Shared=9;");EndProcedure''')
             self.assertNotIn(owners[0],_UNITS)
 
     def test_unsupported_fragment_is_fatal_and_depth_recovers(self):
-        from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
+        from yadinassi.execution.codegen.direct_collections import UnsupportedNakedSyntax
         app,_=self.app(allow_extensions=True);app.start();vm=app.interpreter;effects=[]
         vm.register_function('Effect',lambda:effects.append(1))
         for expression in ('Execute("Effect();New UnsupportedConstructor;")',

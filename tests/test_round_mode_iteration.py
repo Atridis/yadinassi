@@ -3,7 +3,7 @@
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.numeric.round_modes import BSLRoundMode, BSLRoundModes, ROUND_MODES
 from yadinassi.types.values import BSLObject

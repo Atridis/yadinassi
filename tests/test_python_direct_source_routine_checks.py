@@ -68,7 +68,7 @@ class SourceRoutineChecks(unittest.TestCase):
         self.assertEqual(out,['10','denied'])
 
     def test_by_value_host_reference_still_expires(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         from yadinassi.types.values import Reference
 
         config = source(b'', common_module(b'Function Identity(Val X) Export Return X; EndFunction'))
@@ -101,7 +101,7 @@ class SourceRoutineChecks(unittest.TestCase):
         self.assertEqual(out,['8','8','denied'])
 
     def test_same_side_target_removed_by_plain_output_during_arguments(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
         config = source(
             b'Function Touch() Message("arg"); Return 7; EndFunction',
@@ -122,7 +122,7 @@ class SourceRoutineChecks(unittest.TestCase):
         self.assertEqual(out, ['arg'])
 
     def test_qualified_call_sees_new_invalid_alias_and_can_recover(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
         out = []
         config = source(b'', common_module(b'Function Identity(Val X) Export Return X; EndFunction'))

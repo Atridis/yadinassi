@@ -4,7 +4,7 @@ from decimal import Decimal
 from yadinassi import Interpreter, BSLError
 from yadinassi.application.direct_callbacks import CallbackDescription
 from yadinassi.types.values import BSLType
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 class DirectCallbackDescriptionTests(unittest.TestCase):
     def test_constructor_properties_bilingual_and_passive(self):

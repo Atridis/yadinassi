@@ -8,9 +8,9 @@ import weakref
 from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.types.errors import BSLRuntimeError
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.http.http_client import BSLHTTPRequest, _headers
-from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
+from yadinassi.execution.codegen.direct_collections import _TypedMap
 from yadinassi.execution.direct.python_direct_plain_map import PlainMap
 
 class DirectHTTPTests(unittest.TestCase):
@@ -101,7 +101,7 @@ class DirectHTTPTests(unittest.TestCase):
             connect.assert_not_called()
 
     def test_constructor_capability_does_not_require_cyclic_gc(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryContext
         original=BoundaryContext.resolve_callable;references=[]
         def capture(context,*args,**kwargs):
             bound=original(context,*args,**kwargs);references.append(weakref.ref(bound));return bound

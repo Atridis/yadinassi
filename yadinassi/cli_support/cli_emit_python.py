@@ -32,7 +32,7 @@ def emit_file(source, directory, *, encoding='utf-8-sig', profile='standalone'):
     source, directory = Path(source), Path(directory)
     # Read only the explicitly selected input. No import traversal or database.
     text = source.read_text(encoding=encoding)
-    vm = Interpreter(encoding=encoding, execution_backend='python-direct', compilation_profile=profile)
+    vm = Interpreter(encoding=encoding, compilation_profile=profile)
     vm._standalone_script = True
     try:
         compiled = sources(vm.prepare(text, str(source)))

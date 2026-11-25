@@ -150,7 +150,7 @@ class SourceTemporaryStorage(ApplicationTemporaryStorage):
     grant. Only the server family may use these synchronous in-memory operations.
     """
     def _capture(self, value, caller):
-        if caller is not None and caller.execution_backend == 'python-direct':
+        if caller is not None:
             return capture(value, _source_direct=True)
         return capture(value)
 

@@ -1,7 +1,7 @@
 """Finite source target information and explicit synchronous scratch session."""
 from weakref import ReferenceType
 from yadinassi.types.values import HostFunction
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.application.source_system_info import SourceSystemInfo,SourceSystemInfoFactory
 from yadinassi.application.source_host_session import SourceHostSession,SourceSessionCall
 

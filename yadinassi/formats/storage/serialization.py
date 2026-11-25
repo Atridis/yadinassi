@@ -39,10 +39,10 @@ from yadinassi.db.catalog.catalogs import BSLCatalogObject
 from yadinassi.db.document.document_types import BSLDocumentReference, BSLDocumentType
 from yadinassi.db.registers.information_registers import BSLInformationRegisterType
 from yadinassi.db.document.document_lines import BSLDocumentLinesType, BSLDocumentLines, BSLDocumentLine, BSLDocumentSectionType
-from yadinassi.execution.codegen.experimental_naked_collections import (
+from yadinassi.execution.codegen.direct_collections import (
     _TypedMap, _DIRECT_MAP_ENTRY_TYPE, _DIRECT_MAP_ENTRY_STORAGE,
 )
-from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure, structure_key
+from yadinassi.execution.codegen.direct_structure import _DirectStructure, structure_key
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 from yadinassi.execution.direct.python_direct_plain_map import PlainFixedMap, PlainMap, native_map_items, _scalar_map_key
 from yadinassi.types.values import BSLArray, BSLFixedArray, BSLNull, BSLType, NULL, equal

@@ -113,7 +113,7 @@ class PostingRuntime:
         events = self._events[document._key.document_id]
         selected=(events['before'],events['after'],events['posting'] if mode is DocumentWriteMode.POSTING else events['undo'] if mode is DocumentWriteMode.UNDO_POSTING else None)
         prepared=None
-        if parent.execution_backend == 'python-direct' and any(event is not None for event in selected):
+        if any(event is not None for event in selected):
             from yadinassi.execution.direct.python_direct_posting import prepared_posting
             prepared=prepared_posting(self,document,parent)
         vm = _PostingInterpreter(document,parent,self._programs[document._key.document_id])

@@ -60,7 +60,7 @@ class DirectPostingTests(unittest.TestCase):
 
     def test_parent_close_revokes_posting_before_commit(self):
         from test_document_posting_runtime import PostingRuntimeTests
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         f=PostingRuntimeTests();f.setUp();self.addCleanup(f.doCleanups)
         f.make('Procedure Posting(Cancel,Mode) Message("close"); EndProcedure')
         f.vm.output=lambda text:f.vm.close()
@@ -89,7 +89,7 @@ class DirectPostingTests(unittest.TestCase):
 
     def test_stale_generation_and_released_child_reject(self):
         from yadinassi.execution.direct.python_direct_posting import PostingBoundary
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         d=self.document();d._posting_active=object()
         child=_PostingInterpreter(d,self.vm,[]);boundary=PostingBoundary(child);boundary.start()
         self.addCleanup(child.close)

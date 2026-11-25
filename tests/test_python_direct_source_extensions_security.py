@@ -4,7 +4,7 @@ from unittest.mock import patch
 import test_python_direct_source_query as fixtures
 from yadinassi.execution.direct.source import python_direct_source_extensions as bridge
 from yadinassi.configuration.source_extensions import SourceExtensions
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 
 class DirectSourceExtensionSecurity(unittest.TestCase):

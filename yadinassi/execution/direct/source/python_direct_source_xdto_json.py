@@ -8,7 +8,7 @@ from yadinassi.formats.json import json_processing as reader_module
 writer_module=reader_module
 from decimal import Decimal
 from yadinassi.types.values import HostFunction
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 _READER=reader_module.BSLJSONReader;_WRITER=writer_module.BSLJSONWriter
 _WRITE_SETTINGS=writer_module.BSLJSONWriterSettings

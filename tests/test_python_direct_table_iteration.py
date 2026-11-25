@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLError
 from yadinassi.collections.value_tables import BSLValueTable, BSLValueTableRow, BSLValueTableColumnCollection, BSLValueTableColumn
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext, BoundaryViolation
 from yadinassi.execution.direct.python_direct_table_iteration import resolve
 from yadinassi.syntax.parser import parse
 
@@ -137,7 +137,7 @@ Other=T.Add();Other.X=7;T.Delete(R);N=0;For Each Live In R Do N=N+Live.X;EndDo;'
         script=textwrap.dedent('''
             from unittest.mock import patch
             from yadinassi.collections import value_tables as tables
-            from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
+            from yadinassi.execution.codegen.direct_boundaries import BoundaryContext
             root=tables.BSLValueTable();root.columns.add('X');root.add().set_member('X',7)
             class Fake:pass
             with patch.object(tables,'BSLValueTable',Fake),patch.object(tables,'BSLValueTableColumnCollection',Fake),patch.object(tables,'BSLValueTableRow',Fake):

@@ -9,10 +9,10 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from yadinassi.syntax import ast
 from .python_direct import _snapshot
-from yadinassi.execution.codegen.experimental_naked_collections import _Cell
+from yadinassi.execution.codegen.direct_collections import _Cell
 from yadinassi.execution.codegen.direct_emitter import compile_owned
-from yadinassi.execution.codegen.experimental_naked_errors import convert_error
-from yadinassi.execution.codegen.experimental_naked_live_state import validate_state
+from yadinassi.execution.codegen.direct_errors import convert_error
+from yadinassi.execution.codegen.direct_live_state import validate_state
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,7 +77,7 @@ class PreparedHandlers:
                 for slot,by_value in zip(slots,descriptor.by_value)]
 
 
-def prepare_handlers(program,*,source_text,source_name='<direct-form>',module_names=(),external_names=(),constructors=(),_source_routine_scopes=False):
+def prepare_handlers(program,*,source_text,source_name='<direct-form>',module_names=(),external_names=(),_source_routine_scopes=False):
     """Prepare an already-admitted form module; never infer host capabilities.
 
     Only same-side routines share a generated closure family. A cross-side call
@@ -100,6 +100,6 @@ def prepare_handlers(program,*,source_text,source_name='<direct-form>',module_na
         if not any(key[0]==side for key in descriptors):continue
         selected=[node for node in owned if node.execution_context==side]
         plans[side]=compile_owned(selected,retain_generated=False,source_text=source_text,source_name=source_name,
-            module_names=module_names,external_names=external_names,constructors=constructors,
+            module_names=module_names,external_names=external_names,
             exports=True,meter_loops=True,source_scopes=_source_routine_scopes)
     return PreparedHandlers(MappingProxyType(plans),MappingProxyType(descriptors),source_text,source_name)

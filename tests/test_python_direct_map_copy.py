@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
+from yadinassi.execution.codegen.direct_collections import _TypedMap
 from yadinassi.collections.maps import BSLMap, BSLFixedMap
 from yadinassi.execution.direct.python_direct_plain_map import PlainMap
 from yadinassi.syntax.parser import parse
@@ -152,7 +152,7 @@ Args=New Array;Args.Add(F);T=New("Map",Args);T.Insert("K",2);R=F.Get("K");V=T.Ge
             m=maps.BSLMap();m.insert('x',1);source=maps.BSLFixedMap(m)
             class Fake:pass
             with patch.object(maps,'BSLFixedMap',Fake):
-                from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
+                from yadinassi.execution.codegen.direct_collections import _TypedMap
                 if _TypedMap(source).get('x')!=1:raise AssertionError('lost canonical snapshot')
                 try:_TypedMap(Fake())
                 except TypeError:pass

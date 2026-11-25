@@ -9,7 +9,7 @@ from yadinassi.runtime import (Interpreter, _Module, _Namespace,
                       _DIRECT_IMPORT_LOADER_ABI, _DIRECT_IMPORT_RECEIVER_ABI)
 from yadinassi.types.values import Reference
 from yadinassi.types.errors import BSLError
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 _GRANTS=WeakKeyDictionary()
 _SEALS=WeakKeyDictionary()
@@ -111,12 +111,12 @@ def prepare_facts(vm, program):
 
 
 def _contract(vm):
-    if any(type(value) is not str for value in (vm.execution_backend,vm.native_target,vm.compilation_profile)):
+    if any(type(value) is not str for value in (vm.native_target,vm.compilation_profile)):
         raise BoundaryViolation('invalid import execution contract')
     if type(vm._family_generation) is not int:raise BoundaryViolation('invalid import generation')
     if type(vm._module_cache) is not dict or type(vm._loading) is not list:
         raise BoundaryViolation('invalid import cache or loading stack')
-    return (vm.execution_backend,vm.native_target,vm.compilation_profile,id(vm.database_context),
+    return (vm.native_target,vm.compilation_profile,id(vm.database_context),
             id(vm._module_cache),id(vm._loading),vm._family_generation)
 
 
@@ -492,7 +492,7 @@ class ImportBoundary:
         return value
 
     def _import_data_get(self,value,name):
-        from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure,structure_get
+        from yadinassi.execution.codegen.direct_structure import _DirectStructure,structure_get
         from yadinassi.collections.plain_value_list import PlainValueList,PlainValueListItem,_field
         if type(value) is _DirectStructure:return structure_get(value,name)
         if type(value) is PlainValueList:
@@ -531,7 +531,7 @@ class ImportBoundary:
         return self._import_data_receiver(owner,names)
 
     def _import_data_setter(self,value,name):
-        from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure,structure_set_known
+        from yadinassi.execution.codegen.direct_structure import _DirectStructure,structure_set_known
         from yadinassi.collections.plain_value_list import PlainValueListItem,_field,_ITEM_NORMALIZERS
         if type(value) is _DirectStructure:return lambda item:structure_set_known(value,name,name,item)
         if name.startswith('_'):raise ValueError('Поле объекта не обнаружено: '+name)
@@ -612,7 +612,7 @@ class ImportBoundary:
             self._routine_exports[child,id(module)]=exports
         function=exports[name]
         if set(function.__code__.co_freevars)-{'_constants'}:return None
-        from yadinassi.execution.codegen.experimental_naked_errors import convert_error
+        from yadinassi.execution.codegen.direct_errors import convert_error
         def linked(*args):
             try:return function(*args)
             except Exception as error:
@@ -751,7 +751,7 @@ class ImportBoundary:
                 # Local exported defaults use the generated routine marker;
                 # the client/server transfer must not see that private value.
                 raise TypeError('omitted imported server routine argument is unsupported')
-            from yadinassi.execution.codegen.experimental_naked_collections import _OMITTED_REF
+            from yadinassi.execution.codegen.direct_collections import _OMITTED_REF
             return bound,{index:_OMITTED_REF for index in positions}
         invoke.prepare_omissions=omissions
         return invoke

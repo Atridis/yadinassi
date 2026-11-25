@@ -1,5 +1,8 @@
 # Direct native collection constructor omissions
 
+> Historical measurements below that name `compiled-strict` describe a retired
+> backend. Current builds use only the direct BSL-to-Python generator.
+
 Native direct Array/Map/Structure lowering previously converted a syntactic
 comma-hole into Python None, then evaluated other arguments. That both ran side
 effects before a rejection and accidentally accepted `New Structure("X",)`.

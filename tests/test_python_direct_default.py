@@ -34,7 +34,7 @@ class PythonDirectDefaultTests(unittest.TestCase):
   self.assertEqual((vm.variables['x'],vm.variables['r']),(8,1))
  def test_platform_binding_is_canonical_without_enabling_extensions(self):
   from yadinassi.types.values import HostFunction
-  from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+  from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
   vm=Interpreter();self.addCleanup(vm.close)
   with self.assertRaisesRegex(ValueError,'allow_extensions=True'):
    vm.register_function('Custom',lambda:1)
@@ -108,13 +108,13 @@ class PythonDirectDefaultTests(unittest.TestCase):
    vm.execute_program([ast.ExpressionStatement(None,ast.Literal(None,Decimal(1)))])
   self.assertEqual(vm.variables,{})
  def test_host_context_install_stops_before_following_write(self):
-  from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+  from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
   vm=Interpreter(allow_extensions=True);vm.register_function('Install',lambda:setattr(vm,'_configuration_runtime',object()))
   with self.assertRaises(BoundaryViolation):vm.execute('Install();x=7;')
   self.assertNotIn('x',vm.variables)
  def test_host_safe_mode_install_stops_before_following_write(self):
   from yadinassi.execution import safe_mode
-  from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+  from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
   tokens=[];vm=Interpreter(allow_extensions=True);vm.register_function('Install',lambda:tokens.append(safe_mode._CURRENT.set(object())))
   try:
    with self.assertRaises(BoundaryViolation):vm.execute('Install();x=7;')

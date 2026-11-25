@@ -6,7 +6,7 @@ transport, database or legacy execution is provided here.
 from decimal import Decimal, localcontext
 from types import MethodType
 from threading import get_ident
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.codegen.direct_emitter import compile_owned
 from .python_direct import _snapshot, PythonDirectUnsupported
 from .python_direct_configuration import ConfigurationBoundary, _COMMAND_SCOPE, check_owner, parameter_snapshot, parameter_entries

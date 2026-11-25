@@ -33,12 +33,12 @@ WATCHED = {
     'configuration_validate_canonical': ('configuration/configuration_main_demo.py', 'validate_canonical'),
     'configuration_same_recursive': ('configuration/configuration_inventory_enums.py', '_same'),
     'direct_boundary_check': ('execution/direct/python_direct.py', '_check'),
-    'base_boundary_check': ('execution/codegen/experimental_naked_boundaries.py', '_check'),
+    'base_boundary_check': ('execution/codegen/direct_boundaries.py', '_check'),
     'catalog_owner_check': ('execution/direct/python_direct_database.py', '_catalog_owner'),
     'catalog_resolve_member_call': ('execution/direct/python_direct_database.py', 'resolve_member_call'),
     'catalog_resolve_member': ('execution/direct/python_direct_database.py', 'resolve_member'),
     'catalog_invoke': ('execution/direct/python_direct_database.py', 'invoke'),
-    'live_source_reference': ('execution/codegen/experimental_naked_live_state.py', 'source_reference'),
+    'live_source_reference': ('execution/codegen/direct_live_state.py', 'source_reference'),
 }
 
 

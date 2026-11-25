@@ -5,8 +5,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.execution.codegen import experimental_naked_collections as old
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+from yadinassi.execution.codegen import direct_collections as old
 from yadinassi.syntax.parser import parse
 
 class DirectASTDynamicScopesTests(unittest.TestCase):

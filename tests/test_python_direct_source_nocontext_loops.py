@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from tests import test_source_forms as forms
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.direct.source import python_direct_source_nocontext as nocontext
 from yadinassi.forms.form_runtime import FormLimitError
 

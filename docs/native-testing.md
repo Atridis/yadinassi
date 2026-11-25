@@ -1,5 +1,8 @@
 # Native fixture evidence and replay
 
+> Historical measurements below that name `compiled-strict` describe a retired
+> backend. Current builds use only the direct BSL-to-Python generator.
+
 The six environment fields are recorded in
 [integrational_tests/meta.md](../integrational_tests/meta.md). Checkpoint evidence,
 coverage maps and timezone replay details are kept here separately. The dated

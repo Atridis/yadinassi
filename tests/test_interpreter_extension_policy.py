@@ -4,7 +4,7 @@ import tempfile
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.types.values import HostFunction
 

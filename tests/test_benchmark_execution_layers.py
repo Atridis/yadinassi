@@ -156,10 +156,6 @@ class ExecutionLayerBenchmarkTests(unittest.TestCase):
         self.assertIn('bsl_parse_prepare', report['preparation_seconds'])
         self.assertEqual(set(report['summary']), set(bench.LAYERS))
 
-    def test_retired_experimental_route_is_not_reenabled_by_environment(self):
-        for value in ('0','1'):
-            with patch.dict(os.environ, {'YADINASSI_UNSAFE_COLLECTION_ABLATION': value}):
-                with self.assertRaises(ValueError): bench.prepare_bsl('r=1;', 'experimental')
 
     def test_no_results_are_accepted_on_semantic_mismatch(self):
         with patch.object(bench, 'prepare_bsl', return_value=(lambda: Decimal(-99), {})):

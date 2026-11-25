@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 from yadinassi import Interpreter
 from yadinassi.types.values import BSLArray, BSLFixedArray
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
-from yadinassi.execution.codegen.experimental_naked_scalar_semantics import presentation, concatenate, typed_find
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.codegen.direct_scalar_semantics import presentation, concatenate, typed_find
 
 
 class ArrayPresentationSecurityTests(unittest.TestCase):

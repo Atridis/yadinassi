@@ -1,10 +1,10 @@
 """Direct catalog-object bodies within the canonical obj transaction lifecycle."""
 from contextlib import contextmanager
 from decimal import localcontext
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
-from yadinassi.execution.codegen.experimental_naked_collections import _Cell
-from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
-from yadinassi.execution.codegen.experimental_naked_errors import convert_error
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext,BoundaryViolation
+from yadinassi.execution.codegen.direct_collections import _Cell
+from yadinassi.execution.codegen.direct_live_state import _ForwardReference
+from yadinassi.execution.codegen.direct_errors import convert_error
 from yadinassi.execution.direct.python_direct_source import SourceBoundary,_compile,_nodes,_check_plan,_preflight,_signature
 from yadinassi.syntax import ast
 from yadinassi.types.values import HostFunction,Reference
@@ -36,7 +36,7 @@ def _identity(vm,*,sealed=True):
             or vm._scheduler is not root._scheduler or root._family_closed or vm._family_released
             or vm._family_generation!=root._family_generation or vm._scheduler.pending
             or vm._scheduler._active_task is not None or vm._logical_side!='server'
-            or vm.execution_backend!='python-direct' or vm.compilation_profile!=app.compilation_profile
+            or vm.compilation_profile!=app.compilation_profile
             or vm.database_context is not None or vm._configuration_runtime is not None):
         raise BoundaryViolation('catalog object lifecycle changed')
     if any(type(value) is not dict for value in (vm.variables,vm.functions,vm.types)):
@@ -132,12 +132,11 @@ class SourceCatalogBoundary(SourceBoundary):
 
 def _run(vm,plan,callback=None):
     from yadinassi.execution.codegen.native_targets import target_context
-    from yadinassi.execution.execution_policy import execution_backend_policy
     _scope(vm)
     boundary=SourceCatalogBoundary(vm,plan)
     previous=getattr(vm,'_direct_source_active',0);vm._direct_source_active=previous+1
     try:
-        with target_context(vm.native_target),execution_backend_policy('python-direct'),localcontext() as decimal:
+        with target_context(vm.native_target),localcontext() as decimal:
             decimal.prec=38;boundary.enter()
             try:
                 try:
@@ -223,7 +222,7 @@ def _bind(boundary,vm,routine,*,require_value=False,allow_references=False,argum
         validate()
         if count>len(routine.parameters) or any(i>=len(routine.parameters) or routine.parameters[i].default is None for i in positions):
             raise TypeError('Неверное количество аргументов: '+routine.name)
-        from yadinassi.execution.codegen.experimental_naked_collections import _OMITTED_REF
+        from yadinassi.execution.codegen.direct_collections import _OMITTED_REF
         return current,{i:_OMITTED_REF for i in positions}
     bound.prepare_omissions=omissions
     return bound

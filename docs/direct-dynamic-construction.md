@@ -1,5 +1,8 @@
 # Bounded standalone dynamic construction
 
+> Historical measurements below that name `compiled-strict` describe a retired
+> backend. Current builds use only the direct BSL-to-Python generator.
+
 The standalone direct backend supports functional `New(target, parameters)` with
 native Array/Structure/Map constructors, its finite canonical service constructor
 set, and UUID. It uses generated Python and existing bounded helpers, not the

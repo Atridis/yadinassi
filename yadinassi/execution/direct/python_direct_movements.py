@@ -28,7 +28,7 @@ from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from yadinassi.configuration.metadata import BSLMetadata,BSLDocumentMetadataCollection,BSLDocumentMetadata
 from yadinassi.db.document.document_posting import PostingRuntime
 from yadinassi.types.values import HostFunction,_DIRECT_COLLECTION_CLASS_ABI
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 from yadinassi.db.document.documents import _DIRECT_MOVEMENT_PARENT_CLASSES as _ABI_0
 from yadinassi.db.catalog.catalogs import _DIRECT_MOVEMENT_PARENT_CLASSES as _ABI_1

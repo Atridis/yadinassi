@@ -1,7 +1,7 @@
 """Direct FillPropertyValues for structures, detached rows and live database objects."""
 from yadinassi.collections.structures import _DIRECT_FILL_STRUCTURE_ABI
-from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure, structure_key
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_structure import _DirectStructure, structure_key
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.types.values import HostFunction
 
 _FILL, _STRUCTURE, _FIXED, _STATE, _COPY = _DIRECT_FILL_STRUCTURE_ABI
@@ -93,7 +93,7 @@ def resolve_fill(context,function,*,name=None,require_value=False,allow_referenc
         if context._verify_context:context._check()
         if not 2<=count<=4:raise TypeError('ЗаполнитьЗначенияСвойств ожидает от 2 до 4 аргументов')
         if any(index<2 for index in positions):
-            from yadinassi.execution.codegen.experimental_naked_collections import _host_omission_error
+            from yadinassi.execution.codegen.direct_collections import _host_omission_error
             _host_omission_error()
         return bound,{index:None for index in positions}
     invoke.prepare_omissions=prepare_omissions

@@ -5,7 +5,7 @@ from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.types import values
 from yadinassi.types.values import BSLArray
-from yadinassi.execution.codegen import experimental_naked_resources as resources
+from yadinassi.execution.codegen import direct_resources as resources
 
 
 def native_shape(value):

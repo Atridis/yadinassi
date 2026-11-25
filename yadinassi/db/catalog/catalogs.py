@@ -478,11 +478,9 @@ class BSLCatalogObject(BSLObject):
             return ()
         prepared_validator=None
         if preparation is not None or deferred_source:
-            from yadinassi.execution.execution_policy import current_backend
-            if current_backend() == 'python-direct':
-                from yadinassi.execution.direct.python_direct_catalog_preparation import prepared_validator as prepare_validator
-                source = source_candidate if deferred_source else preparation[0]
-                prepared_validator=prepare_validator(m,source)
+            from yadinassi.execution.direct.python_direct_catalog_preparation import prepared_validator as prepare_validator
+            source = source_candidate if deferred_source else preparation[0]
+            prepared_validator=prepare_validator(m,source)
         data_backend = m._runtime_data_backend() if preparation is None and not deferred_source else None
         if data_backend is not None and expected is not None and outcomes:
             from yadinassi.db.sqlite.sqlite_catalog import _single_catalog_scalar_schema

@@ -2,7 +2,7 @@
 from yadinassi.collections.maps import BSLMap, BSLFixedMap, _key as map_key
 from yadinassi.types.values import BSLArray, BSLFixedArray, HostFunction
 from yadinassi.collections.structures import BSLStructure, BSLFixedStructure, BSLKeyAndValue
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 from .python_direct_plain_map import PlainMap, PlainFixedMap
 from .python_direct_plain_array import _DIRECT_PLAIN_ARRAY_TYPE
@@ -12,8 +12,8 @@ FACTORIES=(BSLFixedArray,BSLFixedStructure,BSLFixedMap)
 _MUTABLE_ARRAY_IDS = frozenset(map(id,(list,BSLArray,_DIRECT_PLAIN_ARRAY_TYPE)))
 
 def construct(factory,arguments):
-    from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
-    from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
+    from yadinassi.execution.codegen.direct_structure import _DirectStructure
+    from yadinassi.execution.codegen.direct_collections import _TypedMap
     if factory is BSLFixedMap and len(arguments)==1:
         source=arguments[0]
         if type(source) is PlainMap:return PlainFixedMap(source)

@@ -80,7 +80,7 @@ class SourceScalarContextTests(unittest.TestCase):
 
     def test_argument_evaluation_can_still_install_a_denying_policy(self):
         from unittest.mock import patch
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         from yadinassi.execution.direct.python_direct_source import SourceBoundary
         app = SourceApplication(source(b''))
         self.addCleanup(app.close)

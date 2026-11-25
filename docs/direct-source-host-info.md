@@ -1,5 +1,8 @@
 # Direct source host information
 
+> Historical measurements below that name `compiled-strict` describe a retired
+> backend. Current builds use only the direct BSL-to-Python generator.
+
 Source-owned SystemInfo/СистемнаяИнформация and the explicit foreground
 scratch-host session now use finite direct adapters. This does not detect an
 installed native 1C platform or invent a native login.

@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 from yadinassi import BSLRuntimeError, Interpreter
 from yadinassi.db.database_context import SQLiteDBContext
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from sqlite_test_templates import copy_main_demo
 
 class DirectDatabaseTests(unittest.TestCase):

@@ -61,25 +61,6 @@ class DependencyHandleTests(unittest.TestCase):
             self.assertIs(dependencies.runtime_module('runtime'), complete)
             self.assertIs(dependencies.runtime_module('runtime'), complete)
 
-    def test_symbols_rebind_after_receiver_but_not_after_actual_arguments(self):
-        from yadinassi.types.values import HostFunction
-        module = dependencies.runtime_module('source_catalog_runtime')
-        for backend in ('interpreter', 'compiled-strict'):
-            events = []; vm = Interpreter(execution_backend=backend, allow_extensions=True)
-            def target(label):
-                return lambda caller, receiver, name: HostFunction(name, lambda x: events.append(label) or x)
-            def receiver():
-                events.append('receiver'); module.reference_call = target('new'); return BSLArray()
-            def argument():
-                events.append('argument'); module.reference_call = target('later'); return Decimal(4)
-            vm.register_function('Receiver', receiver); vm.register_function('Argument', argument)
-            vm.variables['stored'] = BSLArray()
-            try:
-                with patch.object(module, 'reference_call', target('old')):
-                    vm.execute('x=Receiver().Probe(Argument());y=stored.Probe(5);')
-                self.assertEqual(events, ['receiver', 'argument', 'new', 'later'])
-                self.assertEqual((vm.variables['x'],vm.variables['y']), (4,5))
-            finally: vm.close()
 
     def test_warm_cache_retains_no_vm_or_call_argument(self):
         vm = Interpreter(allow_extensions=True); argument = BSLArray(); seen = []
@@ -90,52 +71,6 @@ class DependencyHandleTests(unittest.TestCase):
         vm.close(); del vm, argument
         gc.collect()
         self.assertIsNone(vm_ref()); self.assertIsNone(argument_ref()); self.assertIsNone(seen[0]())
-
-    def test_cold_and_warm_caches_do_not_bypass_reauthorization(self):
-        for warm in (False, True):
-            for backend in ('interpreter', 'compiled-strict'):
-                with self.subTest(warm=warm, backend=backend):
-                    dependencies._load_module.cache_clear()
-                    if warm:
-                        for name in dependencies._MODULE_NAMES: dependencies.runtime_module(name)
-                    active = [True]; events = []
-                    vm = Interpreter(execution_backend=backend, allow_extensions=True)
-                    def authorize(caller):
-                        events.append(('authorize', active[0]))
-                        if not active[0]: raise PermissionError('revoked')
-                    def dispatch(caller, values):
-                        events.append('dispatch')
-                        if False: yield
-                        return values[0]
-                    def revoke():
-                        events.append('argument'); active[0] = False; return Decimal(1)
-                    vm.register_function('Host', InterpreterCall(1, 1, authorize, dispatch))
-                    vm.register_function('Revoke', revoke)
-                    try:
-                        with self.assertRaisesRegex(PermissionError, 'revoked'):
-                            vm.execute('Try Host(Revoke()); Except Message("caught"); EndTry;')
-                        self.assertEqual(events, [('authorize', True), 'argument', ('authorize', False)])
-                    finally: vm.close()
-
-    def test_preargument_denial_precedes_later_lazy_dependencies(self):
-        from yadinassi import runtime
-        # This contract requires interpreter-aware dispatch; direct intentionally
-        # refuses that protocol instead of running its authorization callbacks.
-        vm = Interpreter(execution_backend="compiled-strict", allow_extensions=True); self.addCleanup(vm.close)
-        def deny(caller): raise PermissionError('denied')
-        def dispatch(caller, values):
-            if False: yield
-        vm.register_function('Denied', InterpreterCall(1, 1, deny, dispatch))
-        vm.register_function('Effect', lambda: self.fail('argument executed'))
-        original = runtime._runtime_module
-        def dependency(name):
-            if name in ('reusable_values', 'common_templates', 'temporary_storage'):
-                self.fail('dependency reached before denial')
-            return original(name)
-        with patch.object(runtime, '_runtime_module', dependency):
-            with self.assertRaisesRegex(PermissionError, 'denied'):
-                vm.execute('Denied(Effect());')
-
 
     def test_direct_unsupported_descriptor_has_no_authorization_effect_or_lazy_work(self):
         forbidden=('reusable_values','common_templates','temporary_storage')

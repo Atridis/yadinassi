@@ -47,7 +47,7 @@ class DirectConstructorHolesTests(unittest.TestCase):
         self.assertEqual(seen,[])
 
     def test_known_sort_direction_has_a_catchable_zero_argument_constructor_error(self):
-        from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
+        from yadinassi.execution.codegen.direct_collections import UnsupportedNakedSyntax
         for name in ('SortDirection','НаправлениеСортировки'):
             vm=Interpreter();self.addCleanup(vm.close)
             with self.subTest(name=name):

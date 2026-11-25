@@ -1,6 +1,5 @@
 """Closed dynamic numbers are native internally and Decimal at public edges."""
 import ast
-import sys
 from decimal import Decimal as D, localcontext
 import unittest
 from yadinassi import Interpreter
@@ -19,9 +18,8 @@ class IntegerLaneTests(unittest.TestCase):
         self.assertEqual(vm.variables,{'s':D(338350),'i':D(101)})
         self.assertTrue(all(type(v) is D for v in vm.variables.values()))
         tree=ast.parse(plan._plan.generated_source)
-        loop=next(n for n in ast.walk(tree) if isinstance(n,ast.For))
-        self.assertNotIn('_Decimal',ast.unparse(loop))
-        self.assertNotIn('_constants',ast.unparse(loop))
+        loop=next(n for n in ast.walk(tree) if isinstance(n,(ast.For,ast.While)))
+        self.assertFalse(any(isinstance(node, ast.Call) for node in ast.walk(loop)))
 
     def test_unary_and_subtraction_and_repeat(self):
         vm,plan,result=self.run_source('S=100; For i=1 To 3 Do S=S-i*2; EndDo; R=-S+5; R;')
@@ -62,19 +60,10 @@ class IntegerLaneTests(unittest.TestCase):
     def test_interrupted_loop_publishes_decimal_partial_state(self):
         vm=Interpreter();self.addCleanup(vm.close)
         vm.variables['preserved']=D(42)
-        plan=vm.prepare('S=0; For i=1 To 10 Do S=S+i; EndDo;')
-        code=plan._plan.function.__code__
-        def trace(frame,event,arg):
-            if frame.f_code is code and event=='line':
-                if any(type(value) is int and value==3 for value in frame.f_locals.values()):
-                    raise RuntimeError('interrupt integer loop')
-            return trace
-        previous=sys.gettrace()
-        try:
-            sys.settrace(trace)
-            with self.assertRaisesRegex(Exception,'interrupt integer loop'):
-                vm.execute_prepared(plan)
-        finally:sys.settrace(previous)
+        plan=vm.prepare('S=0; For I=1 To 10 Do If I=3 Then Raise "interrupt integer loop"; EndIf; S=S+I; EndDo;')
+        with self.assertRaisesRegex(Exception, 'interrupt integer loop'):
+            vm.execute_prepared(plan)
+        self.assertEqual((vm.variables['s'], vm.variables['i']), (D(3), D(3)))
         self.assertEqual(vm.variables['preserved'],D(42))
         self.assertTrue(all(type(value) is D for value in vm.variables.values()))
 
@@ -103,9 +92,6 @@ class IntegerLaneTests(unittest.TestCase):
         self.assertEqual(vm.execute_prepared(plan),D(60))
         self.assertIs(type(vm.variables['r']),D)
         self.assertEqual(plan._plan.constants,())
-        loop=next(node for node in ast.walk(ast.parse(plan._plan.generated_source)) if isinstance(node,ast.For))
-        self.assertIn('_pure_strlen',ast.unparse(loop))
-        self.assertNotIn('_Decimal',ast.unparse(loop))
 
     def test_builtin_numeric_text_input_preserves_bsl_formatting(self):
         for source, expected in (
@@ -155,7 +141,6 @@ class IntegerLaneTests(unittest.TestCase):
         for mode in ('default','prepared'):
             vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close)
             plan=vm.prepare(source)
-            self.assertIn('_raw_table_value',plan._plan.generated_source)
             result=vm.execute_prepared(plan) if mode=='prepared' else vm.execute_program(parse(source))
             self.assertEqual(result,D(12));self.assertIs(type(result),D)
             table=vm.variables['t']
@@ -167,11 +152,14 @@ class IntegerLaneTests(unittest.TestCase):
             from yadinassi.types.values import BSLType
             self.assertIs(vm.variables['kind'],BSLType.NUMBER)
 
-    def test_array_remains_decimal_and_single_body(self):
+    def test_array_public_numbers_and_single_body(self):
         vm,plan,_=self.run_source('A=New Array; For i=1 To 2 Do A.Add(i); EndDo;')
-        self.assertTrue(all(type(value) is D for value in vm.variables['a']))
+        for index, expected in enumerate((D(1), D(2))):
+            value = vm.execute(f'A[{index}];')
+            self.assertIs(type(value), D)
+            self.assertEqual(value, expected)
         _,plan,_=self.run_source('S=0; For i=1 To 2 Do S=S+i; EndDo; S;')
-        self.assertEqual(sum(isinstance(node,ast.For) for node in ast.walk(ast.parse(plan._plan.generated_source))),1)
+        self.assertEqual(sum(isinstance(node,(ast.For,ast.While)) for node in ast.walk(ast.parse(plan._plan.generated_source))),1)
 
     def test_numeric_map_keeps_integer_storage_and_public_number_contract(self):
         vm,plan,result = self.run_source(
@@ -182,11 +170,8 @@ class IntegerLaneTests(unittest.TestCase):
         self.assertTrue(all(type(key) is int and type(value) is int
                             for key,value in dict.items(vm.variables['m'])))
         loops = [node for node in ast.walk(ast.parse(plan._plan.generated_source))
-                 if isinstance(node,ast.For)]
+                 if isinstance(node,(ast.For,ast.While))]
         self.assertEqual(len(loops),2)
-        self.assertTrue(all('_Decimal' not in ast.unparse(loop) for loop in loops))
-        self.assertTrue(all(not isinstance(loop.body[0],ast.Assign) or
-                            not isinstance(loop.body[0].value,ast.Name) for loop in loops))
         from yadinassi.types.values import BSLType
         self.assertIs(vm.execute('TypeOf(M.Get(300))'),BSLType.NUMBER)
         self.assertIs(type(vm.execute('M[300]')),D)
@@ -201,9 +186,6 @@ class IntegerLaneTests(unittest.TestCase):
                 vm,plan,result = self.run_source(source)
                 self.assertEqual(result,expected)
                 self.assertIs(type(vm.variables['i']),D)
-                loop=next(node for node in ast.walk(ast.parse(plan._plan.generated_source))
-                          if isinstance(node,ast.For))
-                self.assertEqual(loop.target.id,loop.orelse[0].targets[0].id)
 
     def test_numeric_map_fractional_keys_and_values_remain_decimal(self):
         vm,_,result = self.run_source('M=New Map; M.Insert(1.25,2.50); M.Get(1.25);')

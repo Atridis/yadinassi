@@ -7,7 +7,7 @@ from yadinassi import Interpreter, BSLError
 from yadinassi.collections import value_trees as trees
 from yadinassi.types.values import BSLObject
 from yadinassi.syntax.parser import parse
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 class DirectValueTreeTests(unittest.TestCase):
     def vm(self, *, allow_extensions=False):
@@ -643,7 +643,7 @@ class DirectValueTreeTests(unittest.TestCase):
             from yadinassi.collections.value_trees import BSLValueTree
             from yadinassi.types.type_descriptions import BSLTypeDescription
             from yadinassi.temporal.dates import BSLDate
-            from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+            from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
             tree=BSLValueTree();tree.columns.add('D',BSLTypeDescription('Date'))
             vm=Interpreter();vm.variables['t']=tree;events=[]
             if 'yadinassi.execution.direct.python_direct_value_tree' in sys.modules:raise AssertionError('helper imported early')
@@ -688,7 +688,7 @@ class DirectValueTreeTests(unittest.TestCase):
             from yadinassi.collections.value_trees import BSLValueTree
             from yadinassi.types.type_descriptions import BSLTypeDescription
             from yadinassi.types.values import BSLType
-            from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+            from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
             tree=BSLValueTree();tree.columns.add('S',BSLTypeDescription('String'))
             vm=Interpreter();vm.variables['t']=tree;events=[]
             if 'yadinassi.execution.direct.python_direct_value_tree' in sys.modules:raise AssertionError('helper imported early')

@@ -9,7 +9,7 @@ from yadinassi.configuration import configuration_xml, configuration_source
 from yadinassi.types.values import HostFunction
 from yadinassi.types import values as host_values
 _HOST_ABI=host_values._DIRECT_COLLECTION_CLASS_ABI[-1]
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 _MODULES=(source,io,values,xdto_packages,xdto_schema,xml_io,configuration_xml,configuration_source)
 _ABI=tuple((module,module._DIRECT_SOURCE_XDTO_BINDINGS,module._DIRECT_SOURCE_XDTO_CLASSES,module._DIRECT_SOURCE_XDTO_LIMITS) for module in _MODULES)

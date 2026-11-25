@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from yadinassi import Interpreter
 from yadinassi.collections.value_tables import BSLValueTable
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.direct.python_direct import make_boundary
 from yadinassi.execution.direct.python_direct_table_iteration import resolve
 from yadinassi.execution.direct.python_direct_table_references import bind

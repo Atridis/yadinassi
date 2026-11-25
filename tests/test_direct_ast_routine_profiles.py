@@ -52,7 +52,7 @@ R=Server(); C=Both();
     def test_source_callable_byref_accepts_canonical_forwarded_storage(self):
         from test_python_direct_source_scopes import ScopeContext
         from yadinassi.execution.codegen.direct_emitter import compile_owned
-        from yadinassi.execution.codegen.experimental_naked_collections import _Cell
+        from yadinassi.execution.codegen.direct_collections import _Cell
         from yadinassi.syntax.parser import parse
         from yadinassi.types.values import HostFunction
         callback=HostFunction('C',lambda:42)
@@ -81,7 +81,7 @@ R=Server(); C=Both();
 
     def test_owned_handler_declarations_and_casefolded_external_names(self):
         from yadinassi.execution.direct.python_direct_handlers import prepare_handlers
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryContext
         from yadinassi.syntax.parser import parse
         state={};external={'field':4}
         class Context(BoundaryContext):
@@ -96,7 +96,7 @@ R=Server(); C=Both();
 
     def test_unknown_handler_argument_does_not_gain_module_authority(self):
         from yadinassi.execution.direct.python_direct_handlers import prepare_handlers
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryContext
         from yadinassi.syntax.parser import parse
         from yadinassi.types.errors import BSLRuntimeError
         text='Procedure Event() Capture(Field);EndProcedure'

@@ -110,7 +110,7 @@ class LocalFieldsTests(unittest.TestCase):
         self.assertIn('_context.get_member',source)
 
     def test_dynamic_operand_keeps_owner_revocation_boundary(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         vm,plan,_=self.prepare('S=New Structure("N",1);S.N=CloseOwner();After=1;',lambda vm:vm.register_function('CloseOwner',lambda:vm.close() or D(2)))
         with self.assertRaises(BoundaryViolation):vm.execute_prepared(plan)
         self.assertNotIn('after',vm.variables)

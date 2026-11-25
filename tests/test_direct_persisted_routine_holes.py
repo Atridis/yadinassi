@@ -89,7 +89,7 @@ class DirectPersistedRoutineHoleTests(unittest.TestCase):
             self.vm.execute('Server(Tick(),,);')
 
     def test_omission_marker_is_not_a_transport_value(self):
-        from yadinassi.execution.codegen.experimental_naked_collections import _OMITTED_REF
+        from yadinassi.execution.codegen.direct_collections import _OMITTED_REF
         from yadinassi.execution.direct.python_direct_server import transfer
 
         with self.assertRaisesRegex(TypeError,'Межконтекстная передача'):

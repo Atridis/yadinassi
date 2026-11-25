@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from yadinassi import Interpreter, BSLRuntimeError
 from yadinassi.db.catalog.catalog_backend import BackendError
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.configuration.configuration_xml import import_configuration
 from yadinassi.configuration.configuration_source import import_source
 from yadinassi.configuration.configuration_source_runtime import SourceApplication

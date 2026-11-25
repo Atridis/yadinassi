@@ -1,10 +1,10 @@
 """Generated execution of already-admitted detached catalog form events."""
 from decimal import localcontext
 from dataclasses import dataclass
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
-from yadinassi.execution.codegen.experimental_naked_collections import _Cell
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext,BoundaryViolation
+from yadinassi.execution.codegen.direct_collections import _Cell
 from yadinassi.execution.codegen.direct_emitter import compile_owned
-from yadinassi.execution.codegen.experimental_naked_errors import convert_error
+from yadinassi.execution.codegen.direct_errors import convert_error
 from .python_direct import _snapshot,_nodes
 from .python_direct_catalog_preparation import CatalogPreparationBoundary
 from yadinassi.types.values import HostFunction,Reference
@@ -101,10 +101,9 @@ class PreparedEvent:
 
 def _event_plan(vm,program,source,product,owner):
     from yadinassi.execution.codegen.native_targets import current_native_target
-    from yadinassi.execution.execution_policy import current_backend
     schema=(getattr(owner,'_schema',None) if product else getattr(owner,'_binding',None))
     key=(source,product,schema,tuple(sorted(vm.types)),tuple(sorted(vm.variables)),
-         current_native_target(),current_backend())
+         current_native_target())
     cache_owner=getattr(owner,'_direct_cache_owner',None)
     if cache_owner is None:cache_owner=owner
     # Two bounded purposes share a catalog manager, not one evicting slot.
@@ -120,7 +119,7 @@ def _event_plan(vm,program,source,product,owner):
                 node.callee=ast.Name(node.callee.token,'_direct_check_object' if node.callee.name.casefold()=='проверитьданные' else '_direct_prepare_object')
                 node.arguments=[receiver,*node.arguments]
     plan=compile_owned(owned,retain_generated=False,source_text=source,source_name=owned[0].token.source if owned else '<form-event>',
-                 constructors=tuple(vm.types),module_names=tuple(vm.variables),exports=True,
+                 module_names=tuple(vm.variables),exports=True,
                  reference_names=tuple(key for key,value in vm.functions.items()
                      if type(value) is HostFunction and value.reference_parameters)
                      +(('_direct_check_object','_direct_prepare_object') if product else ()))

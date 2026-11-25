@@ -1,5 +1,8 @@
 # Standalone direct ValueTree bridge
 
+> Historical measurements below that name `compiled-strict` describe a retired
+> backend. Current builds use only the direct BSL-to-Python generator.
+
 This slice adds the canonical `ValueTree`/`ДеревоЗначений` constructor and
 exact ValueTree, row, row-collection, column and column-collection receivers to
 standalone direct execution. Source, AST and prepared execution use the same

@@ -3,8 +3,8 @@ from dataclasses import dataclass
 from copy import copy
 
 from yadinassi.types.values import HostFunction, Reference
-from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
-from yadinassi.execution.codegen.experimental_naked_errors import convert_error
+from yadinassi.execution.codegen.direct_live_state import _ForwardReference
+from yadinassi.execution.codegen.direct_errors import convert_error
 
 
 @dataclass(frozen=True)
@@ -54,16 +54,12 @@ def prepare(vm, program, plan, *, retain_generated=True):
     server_plan=None
     if server_names or initializer_body or any(type(n) is ast.Routine and n.is_dual for n in declarations):
         from yadinassi.execution.codegen.direct_emitter import compile_owned as compile_server
-        from .python_direct_services import ORDINARY_CONSTRUCTORS
         from .python_direct_names import NAMES
         from .python_direct_database import METADATA_NAMES
         from yadinassi.db.database_context import SQLiteDBContext
         # The server boundary already provides the same inert metadata root.
         # Its collections request storage only when their data is read.
         external_names=tuple(NAMES)+METADATA_NAMES
-        base_constructors=tuple(ORDINARY_CONSTRUCTORS)+('uuid','уникальныйидентификатор')
-        # Recognize Query even without a database; its factory checks at use.
-        constructor_names=base_constructors+('query','запрос')
         if type(vm.database_context) is SQLiteDBContext:
             # The existing owned catalog namespace supplies query parameters;
             # no other database/server services are added to this profile.
@@ -71,25 +67,25 @@ def prepare(vm, program, plan, *, retain_generated=True):
     reference_names=tuple(key for key,signature in signatures.items() if signature[3])
     if server_names-nocontext_names:
         server_plan=compile_server(server,source_text=plan.source_text,source_name=plan.source_name,
-            module_names=tuple(server_layout),external_names=external_names,constructors=constructor_names,
+            module_names=tuple(server_layout),external_names=external_names,
             exports=True,retain_generated=retain_generated,reference_names=reference_names,current_module=True)
     nocontext_plan=None
     if nocontext:
         nocontext_plan=compile_server(nocontext,source_text=plan.source_text,source_name=plan.source_name,
-            external_names=external_names,constructors=constructor_names,
+            external_names=external_names,
             exports=True,retain_generated=retain_generated,reference_names=reference_names)
     dual=[node for node in declarations if type(node) is ast.Routine and node.is_dual and node.execution_context=='client']
     dual_names=frozenset(node.name.casefold() for node in dual)
     dual_plan=None
     if dual:
         dual_plan=compile_server(dual,source_text=plan.source_text,source_name=plan.source_name,
-            external_names=external_names,constructors=constructor_names,
+            external_names=external_names,
             exports=True,retain_generated=retain_generated,reference_names=reference_names)
     initializer_plan=None;initializer_constructors=initializer_calls=frozenset()
     if initializer_body:
         _,_,initializer_constructors,initializer_calls=_source_facts(initializer_body)
         initializer_plan=compile_server(initializer_body,retain_generated=retain_generated,source_text=plan.source_text,source_name=plan.source_name,
-            module_names=tuple(server_layout),external_names=tuple(NAMES),constructors=base_constructors,current_module=True,reference_names=reference_names)
+            module_names=tuple(server_layout),external_names=tuple(NAMES),current_module=True,reference_names=reference_names)
     local_function_exports=frozenset(node.name.casefold() for node in declarations
         if type(node) is ast.Routine and node.exported and node.is_function
         and not node.is_async and not node.is_dual and node.execution_context=='client'
@@ -133,7 +129,7 @@ def validate_calls(vm, calls, seen=None, *, registry=None, layout=None, initiali
 
 def bind_omissions(bound):
     """Attach the generated BSL routine's positional omission protocol."""
-    from yadinassi.execution.codegen.experimental_naked_collections import _OMITTED_REF
+    from yadinassi.execution.codegen.direct_collections import _OMITTED_REF
 
     def omissions(current, positions, count):
         return current, dict.fromkeys(positions, _OMITTED_REF)
@@ -149,7 +145,7 @@ def resolve(context, name, *, require_value=False, allow_references=False, argum
     validate_calls(vm,(name,))
     returns_value,minimum,maximum,references=module.signatures[name]
     if argument_count is not None and not minimum<=argument_count<=maximum:
-        from yadinassi.execution.codegen.experimental_naked_collections import _argument_count_error
+        from yadinassi.execution.codegen.direct_collections import _argument_count_error
         _argument_count_error(name,maximum,argument_count)
     if name in module.dual_names and not getattr(context,'_server_side',False):
         from .python_direct_server import resolve_dual_client
@@ -179,7 +175,7 @@ def resolve(context, name, *, require_value=False, allow_references=False, argum
         try:
             function=exports[name]
             if local_omissions:
-                from yadinassi.execution.codegen.experimental_naked_collections import _OMITTED_REF
+                from yadinassi.execution.codegen.direct_collections import _OMITTED_REF
                 first=next((i for i,value in enumerate(arguments) if value is _OMITTED_REF),len(arguments))
                 if first<len(arguments):
                     names=function.__code__.co_varnames

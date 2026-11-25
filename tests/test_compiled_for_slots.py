@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from yadinassi import BSLError, Interpreter
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.syntax.parser import parse
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.types.values import Reference

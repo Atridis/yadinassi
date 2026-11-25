@@ -41,7 +41,7 @@ Live=R.K;'''
         self.assertEqual(r.get_member('K'),D(2))
     def test_direct_structure_admits_only_exact_table_rows(self):
         from yadinassi.execution.direct.python_direct_fill import fill
-        from yadinassi.execution.codegen.experimental_naked_structure import new_structure
+        from yadinassi.execution.codegen.direct_structure import new_structure
         t,r=self.table()
         class DerivedRow(type(r)):
             pass

@@ -33,7 +33,7 @@ class OwnedArgumentScalingTests(unittest.TestCase):
 
     def test_native_selected_callable_skips_host_protocol_and_preserves_arity_effects(self):
         from decimal import Decimal
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryContext
         from yadinassi.types.values import HostFunction
         for source_scopes in (False,True):
             effects=[]

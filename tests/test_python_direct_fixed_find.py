@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.execution.codegen.experimental_naked_scalar_semantics import typed_find, UnsupportedScalarSemantics
+from yadinassi.execution.codegen.direct_scalar_semantics import typed_find, UnsupportedScalarSemantics
 from yadinassi.types.values import BSLFixedArray, BSLArray
 from yadinassi.collections.structures import BSLFixedStructure
 from yadinassi.collections.maps import BSLFixedMap, BSLMap
@@ -148,7 +148,7 @@ class DirectFixedFindTests(unittest.TestCase):
             originals=(values.BSLFixedArray(values.BSLArray()),structures.BSLFixedStructure(),maps.BSLFixedMap(maps.BSLMap()))
             class Fake:pass
             with patch.object(values,'BSLFixedArray',Fake),patch.object(structures,'BSLFixedStructure',Fake),patch.object(maps,'BSLFixedMap',Fake):
-                from yadinassi.execution.codegen.experimental_naked_scalar_semantics import typed_find,UnsupportedScalarSemantics
+                from yadinassi.execution.codegen.direct_scalar_semantics import typed_find,UnsupportedScalarSemantics
                 for value in originals:
                     if typed_find([value],value)!=0:raise AssertionError('lost canonical identity')
                 fake=Fake()

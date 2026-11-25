@@ -206,7 +206,7 @@ class FormControllerTests(unittest.TestCase):
         self.assertIsNone(event(self.controller)['error'])
 
     def test_edited_rpc_endpoint_cannot_execute_or_report_success(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         from yadinassi.syntax.parser import parse
 
         state(self.controller)
@@ -335,7 +335,7 @@ class FormProcessTests(unittest.TestCase):
                         event(controller,'close')
 
     def test_owned_package_catalogs_denied_if_selected_database_is_replaced(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         from yadinassi.ui.form_app import create_server
         config = load_configuration_directory(PRODUCT/'configuration')
         with tempfile.TemporaryDirectory() as directory:

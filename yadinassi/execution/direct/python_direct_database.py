@@ -2,7 +2,7 @@
 
 No arbitrary getattr, no backend access and no replacement for writer validation.
 """
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from . import python_direct_movements as movements
 from . import python_direct_zip_reader as zip_reader
 from . import python_direct_http_security as http_security
@@ -301,7 +301,7 @@ class CatalogBoundary:
         # The built-in value is readable, not a writable component of the
         # host namespace. Forwarding through an ordinary BSL routine must not
         # acquire access to a form attribute, database root or module store.
-        from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference, readonly
+        from yadinassi.execution.codegen.direct_live_state import _ForwardReference, readonly
         from yadinassi.types.values import Reference
 
         def read():
@@ -367,7 +367,7 @@ class CatalogBoundary:
             if self._verify_context:self._check()
             raise ValueError('Поле объекта не обнаружено: '+name)
         if kind is PlainValueListItem:
-            from yadinassi.execution.codegen.experimental_naked_collections import _ValueListItemReference
+            from yadinassi.execution.codegen.direct_collections import _ValueListItemReference
             if not self._verify_context:
                 return _ValueListItemReference(value,name)
             self._check()
@@ -378,7 +378,7 @@ class CatalogBoundary:
             def write_plain(new_value):
                 self._check()
                 direct.value = new_value
-            from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
+            from yadinassi.execution.codegen.direct_live_state import _ForwardReference
             from yadinassi.types.values import Reference
             return _ForwardReference(Reference(read_plain,write_plain))
         if (kind is PlainValueList or kind is BSLValueList) and not self._verify_context:
@@ -403,7 +403,7 @@ class CatalogBoundary:
             self._catalog_owner(value)
             try:value.reference_set_member(name,new_value)
             finally:self._check_effect()
-        from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
+        from yadinassi.execution.codegen.direct_live_state import _ForwardReference
         from yadinassi.types.values import Reference
         return _ForwardReference(Reference(read,write))
 
@@ -423,7 +423,7 @@ class CatalogBoundary:
             if indexed:raise ValueError('Элемент фиксированной коллекции недоступен для записи')
             raise ValueError('Свойство недоступно для записи: '+name)
         read()
-        from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
+        from yadinassi.execution.codegen.direct_live_state import _ForwardReference
         from yadinassi.types.values import Reference
         return _ForwardReference(Reference(read,write))
 
@@ -437,7 +437,7 @@ class CatalogBoundary:
                 raise BoundaryViolation('canonical map reference receiver changed')
             return self.resolve_member(value,name)(index,*arguments)
         access('__getitem__')  # Validate once at binding; later reads stay live.
-        from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
+        from yadinassi.execution.codegen.direct_live_state import _ForwardReference
         from yadinassi.types.values import Reference
         return _ForwardReference(Reference(lambda:access('__getitem__'),
                                            lambda new:access('__setitem__',new)))

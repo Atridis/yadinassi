@@ -9,7 +9,7 @@ from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.forms.form_runtime import FormSession
 from yadinassi.execution.direct.python_direct_forms import FormBoundary, check_form_owner
 from yadinassi.execution.direct.python_direct_configuration import check_owner
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution import safe_mode
 from yadinassi.db import source_transactions, database_transactions
 from sqlite_test_templates import copy_main_demo

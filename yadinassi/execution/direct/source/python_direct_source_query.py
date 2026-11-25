@@ -2,7 +2,7 @@
 from decimal import Decimal
 from types import MethodType
 from weakref import ReferenceType
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.db.query.source_constant_queries import SourceConstantQuery, SourceQueryCall
 from yadinassi.db.metadata.source_constants_runtime import SourceConstants
 from yadinassi.db.query.queries import BSLQueryResult, BSLQueryResultSelection

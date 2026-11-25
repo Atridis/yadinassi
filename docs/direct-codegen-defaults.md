@@ -56,7 +56,7 @@ The remaining language adapters have concrete witnesses:
 | Difference from Python | Witness |
 | --- | --- |
 | A numeric counter can be fractional or changed in the loop body | `test_whole_routine_differential` |
-| Native text concatenation can rejoin UTF-16 halves and convert the right operand | `test_experimental_naked_scalar_semantics.test_surrogate_pair_join`, `test_direct_scalar_prefix.test_string_prefix_uses_bsl_concat_with_unknown_or_native_int_rhs` |
+| Native text concatenation can rejoin UTF-16 halves and convert the right operand | `test_direct_scalar_semantics.test_surrogate_pair_join`, `test_direct_scalar_prefix.test_string_prefix_uses_bsl_concat_with_unknown_or_native_int_rhs` |
 | BSL numeric division and remainder must not become binary float or Python's signed integer remainder | `test_direct_integer_lane.test_fraction_mixed_and_division_stay_decimal`, `test_direct_integer_lane.test_remainder_has_dividend_sign_and_decimal_errors` |
 | Owner/alias-aware array indexing has different bracket and method rules | `test_mutable_array_index_semantics` |
 | A live named call can rebind and change which arguments must be references | `DirectBuiltinCallsTests.test_prepared_call_uses_later_bsl_routine_and_its_byref_signature` |

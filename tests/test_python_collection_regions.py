@@ -2,7 +2,7 @@
 from contextlib import closing
 import unittest
 from yadinassi import Interpreter, BSLError
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 
 class PythonCollectionRegionTests(unittest.TestCase):

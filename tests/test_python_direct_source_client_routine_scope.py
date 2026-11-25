@@ -6,7 +6,7 @@ import unittest
 from test_configuration_source_runtime import source
 from test_python_direct_source import common_module
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.direct.python_direct_source import SourceBoundary
 
 

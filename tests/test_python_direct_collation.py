@@ -4,7 +4,6 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.syntax.parser import parse
-from yadinassi.execution.codegen.experimental_naked_scalar_semantics import uca_order
 from yadinassi.text import collation
 
 
@@ -34,16 +33,6 @@ class DirectCollationTests(unittest.TestCase):
                 self.assertEqual(read.call_count,1)
         finally:collation._collator.cache_clear()
 
-    def test_scalar_types_and_hostile_subclasses_do_not_gain_ordering(self):
-        seen=[]
-        class Hostile(str):
-            def __lt__(self,other):seen.append('lt');raise AssertionError
-            def __len__(self):seen.append('len');raise AssertionError
-        for left,right in ((Hostile('a'),'A'),('a',Hostile('A')),(object(),'a')):
-            with self.assertRaises(TypeError):uca_order(left,right,'<')
-        self.assertEqual(seen,[])
-        self.assertTrue(uca_order(False,Decimal(1),'<'));self.assertTrue(uca_order(Decimal(1),True,'<='))
-        with self.assertRaises(TypeError):uca_order('1',Decimal(1),'<')
 
     def test_operand_effects_order_and_registered_kernel_rebinding(self):
         vm=Interpreter(allow_extensions=True);seen=[]

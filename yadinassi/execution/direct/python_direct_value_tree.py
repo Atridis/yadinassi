@@ -1,6 +1,6 @@
 """Exact detached ValueTree protocols, with live provenance and no DB authority."""
 from yadinassi.collections import value_trees as model
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from decimal import Decimal
 from operator import is_
 from weakref import ReferenceType
@@ -811,7 +811,7 @@ class ValueTreeBoundary:
             if self._value_tree_epoch is not epoch:raise BoundaryViolation('ValueTree reference activation expired')
             return self.get_member(value,name)
         from yadinassi.types.values import Reference
-        from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
+        from yadinassi.execution.codegen.direct_live_state import _ForwardReference
         return _ForwardReference(Reference(read,self.resolve_set_member(value,name)))
 
     def reference_index(self,value,index):
@@ -827,7 +827,7 @@ class ValueTreeBoundary:
         # Local native cells adapt the private reference ABI, not the generic
         # host-address object. Keep the original key live through schema edits.
         from yadinassi.types.values import Reference
-        from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
+        from yadinassi.execution.codegen.direct_live_state import _ForwardReference
         return _ForwardReference(Reference(read,write))
 
     def resolve_member(self,value,name):
@@ -936,7 +936,7 @@ class ValueTreeBoundary:
         return invoke
 
     def _tree_arguments(self,key,arguments):
-        from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
+        from yadinassi.execution.codegen.direct_structure import _DirectStructure
         if key in ('loadcolumn','загрузитьколонку') and type(arguments[0]) is list:
             from yadinassi.types.values import _DIRECT_COLLECTION_CLASS_ABI as abi
             source=arguments[0]

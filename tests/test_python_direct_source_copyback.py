@@ -5,7 +5,7 @@ from decimal import Decimal
 import test_source_server_call as existing
 import test_source_application_exports as exports
 from yadinassi.types.errors import BSLError
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 
 class SourceCopybackTests(unittest.TestCase):

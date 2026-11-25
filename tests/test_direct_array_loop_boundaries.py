@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from yadinassi import Interpreter
 from yadinassi.execution.codegen.direct_emitter import compile_owned
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation, HostMembers
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext, BoundaryViolation, HostMembers
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 from yadinassi.syntax.parser import parse
 

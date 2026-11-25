@@ -7,8 +7,8 @@ from yadinassi.syntax.parser import parse
 from yadinassi.collections.maps import BSLMap, BSLFixedMap
 from yadinassi.execution.direct.python_direct_plain_map import PlainFixedMap, PlainMap
 from yadinassi.types.unique_identifiers import BSLUUID
-from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.codegen.direct_collections import _TypedMap
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext, BoundaryViolation
 from yadinassi.execution.direct.python_direct_services import ServicesBoundary
 
 class DirectFixedMapTests(unittest.TestCase):

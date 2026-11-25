@@ -6,7 +6,7 @@ from yadinassi.execution.direct.source import python_direct_source_host_info as 
 from yadinassi.application.source_system_info import SourceSystemInfo
 from yadinassi.application.source_host_session import SourceSessionCall
 from yadinassi.types.values import HostFunction
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 
 class DirectHostInfoSecurity(unittest.TestCase):

@@ -48,7 +48,7 @@ EndFunction
         self.assertEqual(session.messages, ('index',))
 
     def test_index_preparation_and_finished_read_require_current_form_table(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         from yadinassi.execution.direct.python_direct_forms import FormBoundary
 
         session = make()
@@ -86,7 +86,7 @@ EndFunction
         from yadinassi.forms.form_runtime import FormSession
         from yadinassi.forms.form_model import BSLFormAttribute
         from yadinassi.types.type_descriptions import BSLTypeDescription
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         from test_source_forms import files
         application=SourceApplication(import_source(files()))
         try:

@@ -7,7 +7,7 @@ from yadinassi.execution.direct.python_direct_plain_map import PlainMap,PlainFix
 from yadinassi.execution.direct.python_direct_fixed import construct
 from yadinassi.collections.maps import BSLMap,BSLFixedMap
 from yadinassi.temporal.dates import BSLDate, UnsupportedDateRange
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 class PlainFixedMapTests(unittest.TestCase):
     def test_shallow_native_snapshot_and_reverse_copy(self):

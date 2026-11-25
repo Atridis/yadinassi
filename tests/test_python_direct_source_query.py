@@ -13,7 +13,7 @@ from yadinassi.db import source_transactions
 from yadinassi.execution.direct.source import python_direct_source_query as bridge
 from yadinassi.db.query.source_constant_queries import SourceConstantQuery
 from yadinassi.db.metadata.source_constants_runtime import SourceConstants
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 
 class DirectSourceQueryTests(unittest.TestCase):

@@ -35,10 +35,10 @@ from yadinassi.collections.value_lists import BSLValueList
 from yadinassi.types.type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers
 from yadinassi.formats.regex import regex_functions
 from yadinassi.text import strings
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation, _SCALAR_TYPE_IDS
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation, _SCALAR_TYPE_IDS
 
-from yadinassi.execution.codegen.experimental_naked_collections import _DIRECT_MAP_ENTRY_TYPE as _CanonicalMapEntry, _TypedMap as _DirectMapType
-from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure as _DirectStructureType
+from yadinassi.execution.codegen.direct_collections import _DIRECT_MAP_ENTRY_TYPE as _CanonicalMapEntry, _TypedMap as _DirectMapType
+from yadinassi.execution.codegen.direct_structure import _DirectStructure as _DirectStructureType
 from yadinassi.types.type_values import _DIRECT_TYPE_OF_ABI
 from yadinassi.types.value_checks import _DIRECT_VALUE_IS_FILLED_ABI
 from yadinassi.formats.storage.serialization import _DIRECT_VALUE_TO_STRING_ABI, _direct_value_to_string_internal
@@ -371,7 +371,7 @@ class ServicesBoundary:
             required,maximum=_STREAM_CONSTRUCTOR_COUNTS[ORDINARY_CONSTRUCTORS[key[4:]]]
             def prepare_omissions(bound,positions,count):
                 if not required<=count<=maximum or any(not required<=index<count for index in positions):
-                    from yadinassi.execution.codegen.experimental_naked_collections import _host_omission_error
+                    from yadinassi.execution.codegen.direct_collections import _host_omission_error
                     _host_omission_error()
                 return bound,dict.fromkeys(positions,None)
             bound.prepare_omissions=prepare_omissions
@@ -403,7 +403,7 @@ class ServicesBoundary:
             returns_value=implementation is read_json
             required,maximum=(1,9) if returns_value else (2,6)
             def prepare_omissions(bound,positions,count):
-                from yadinassi.execution.codegen.experimental_naked_collections import _host_omission_error
+                from yadinassi.execution.codegen.direct_collections import _host_omission_error
                 if not required<=count<=maximum or any(not required<=i<count for i in positions):
                     _host_omission_error()
                 def invoke(*values):
@@ -428,7 +428,7 @@ class ServicesBoundary:
                     and type(function.reference_parameters) is frozenset and not function.reference_parameters)
 
         def prepare_omissions(bound,positions,count):
-            from yadinassi.execution.codegen.experimental_naked_collections import _host_omission_error
+            from yadinassi.execution.codegen.direct_collections import _host_omission_error
             if self._verify_context:self._check()
             if not canonical() or not 1<=count<=3 or any(not 1<=index<count for index in positions):
                 _host_omission_error()
@@ -611,8 +611,8 @@ class ServicesBoundary:
             def direct_type_of(value):
                 if function.function is not _DIRECT_TYPE_OF_ABI:
                     raise BoundaryViolation('TypeOf implementation changed during argument evaluation')
-                from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
-                from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
+                from yadinassi.execution.codegen.direct_structure import _DirectStructure
+                from yadinassi.execution.codegen.direct_collections import _TypedMap
                 from yadinassi.types.values import BSLType
                 kind=type(value)
                 if kind is int:return BSLType.NUMBER
@@ -726,7 +726,7 @@ class ServicesBoundary:
             if count is not None and not required<=count<=maximum:
                 raise TypeError('Регулярное выражение: неверное количество аргументов')
             def prepare_omissions(bound,positions,count):
-                from yadinassi.execution.codegen.experimental_naked_collections import _host_omission_error
+                from yadinassi.execution.codegen.direct_collections import _host_omission_error
                 if self._verify_context:self._check()
                 implementation=function.function
                 if implementation is not strings._DIRECT_STR_FIND_ABI and id(implementation) not in _REGEX_IDENTITIES:

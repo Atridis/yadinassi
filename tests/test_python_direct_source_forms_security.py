@@ -7,7 +7,7 @@ from yadinassi.configuration.configuration_source import import_source
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.forms.source_forms import SourceFormController
 from yadinassi.execution.direct.source.python_direct_source_forms import SourceFormBoundary,check_source_session
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.db import source_transactions
 
 

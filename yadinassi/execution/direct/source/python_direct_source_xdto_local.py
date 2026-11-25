@@ -6,7 +6,7 @@ from . import python_direct_source_xdto as shared
 from yadinassi.types.values import HostFunction
 from yadinassi.types import values as host_values
 _HOST_ABI=host_values._DIRECT_COLLECTION_CLASS_ABI[-1]
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 CONSTRUCTOR_NAMES=('xdtofactory','фабрикаxdto')
 _FACTORY=shared._FACTORY;_TYPE=shared._TYPE;_VALUE=shared._VALUE

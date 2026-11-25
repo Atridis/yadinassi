@@ -2,7 +2,7 @@
 from weakref import ReferenceType
 from yadinassi.configuration.source_extensions import SourceExtensions,SourceExtensionSources,ExtensionCall,_DIRECT_EXTENSIONS_ABI
 from yadinassi.types.values import HostFunction
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.safe_mode import require_external_access
 
 

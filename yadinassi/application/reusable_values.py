@@ -115,7 +115,7 @@ def argument_key(values, *, _source_client=False):
         return None
     if type(values) is not tuple or len(values)>128:return None
     if _source_client:
-        from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure, structure_key
+        from yadinassi.execution.codegen.direct_structure import _DirectStructure, structure_key
     result=[]
     for value in values:
         part=scalar(value)

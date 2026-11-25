@@ -600,7 +600,7 @@ class BSLValueTable(BSLObject):
 
     def find_rows(self,filters):
         from .structures import BSLStructure
-        from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
+        from yadinassi.execution.codegen.direct_structure import _DirectStructure
         if type(filters) is BSLStructure:
             fields = filters._items.values()
         elif type(filters) is _DirectStructure:

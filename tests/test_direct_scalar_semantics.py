@@ -1,16 +1,16 @@
 import unittest
 from decimal import Decimal
 from yadinassi import Interpreter
-from yadinassi.execution.codegen.experimental_naked_scalar_semantics import truth, typed_find, presentation, concatenate, order, UnsupportedScalarSemantics
-from yadinassi.execution.codegen.experimental_naked_collections import _NakedMap, _TypedMap
-from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
+from yadinassi.execution.codegen.direct_scalar_semantics import truth, typed_find, presentation, concatenate, order, UnsupportedScalarSemantics
+from yadinassi.execution.codegen.direct_collections import _NakedMap, _TypedMap
+from yadinassi.execution.codegen.direct_structure import _DirectStructure
 
 class ScalarSemanticsTests(unittest.TestCase):
 
     def test_truth_exact_numeric_and_boolean(self):
-        for value, expected in [(True, True), (False, False), (Decimal(0), False), (Decimal(-2), True)]:
+        for value, expected in [(True, True), (False, False), (0, False), (1, True), (Decimal(0), False), (Decimal(-2), True)]:
             self.assertIs(truth(value), expected)
-        for value in [0, 1, 1.0, '', [], {}, None]:
+        for value in [1.0, '', [], {}, None]:
             with self.assertRaises(TypeError):
                 truth(value)
 

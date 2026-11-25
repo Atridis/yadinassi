@@ -2,7 +2,7 @@
 from yadinassi.collections.value_tables import _DIRECT_ITERATION_TYPES, _DIRECT_ITERATION_DICT
 from yadinassi.collections.plain_value_table_runtime import public_cell
 from yadinassi.collections.plain_table_storage import _DIRECT_CLASSES
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 _TABLE, _COLUMNS, _ROW, _COLUMN = _DIRECT_ITERATION_TYPES
 _SCHEMA, _, _schema_members = _DIRECT_CLASSES[0]

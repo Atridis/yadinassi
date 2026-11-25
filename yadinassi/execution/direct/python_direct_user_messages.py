@@ -4,7 +4,7 @@ from yadinassi.application.user_messages import BSLUserMessage, UserMessageConte
 from yadinassi.types.values import HostFunction
 from yadinassi.runtime import Interpreter
 from yadinassi import runtime as _runtime
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.db.catalog.catalogs import BSLCatalogObject
 from yadinassi.db.catalog.catalog_types import BSLCatalogReference
 

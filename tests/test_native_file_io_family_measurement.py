@@ -6,7 +6,7 @@ import unittest
 from unittest import mock
 
 from yadinassi import Interpreter
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.syntax.parser import parse
 import native_1c_file_io_family_contract as wire
 import native_1c_tree_profiles as profiles

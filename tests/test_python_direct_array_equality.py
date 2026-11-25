@@ -3,43 +3,12 @@ import unittest
 from decimal import Decimal
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.execution.codegen.experimental_naked_scalar_semantics import array_equal,array_not_equal
 
 
 class DirectArrayEqualityTests(unittest.TestCase):
     def vm(self,backend='python-direct', *, allow_extensions=False):
         vm=Interpreter(allow_extensions=allow_extensions, execution_backend=backend);self.addCleanup(vm.close);return vm
 
-    def test_alias_distinct_empty_equal_nested_and_cyclic(self):
-        for left,right in (([],[]),([1],[1]),([[1]],[[1]])):
-            self.assertIs(array_equal(left,left),True)
-            self.assertIs(array_not_equal(left,left),False)
-            self.assertIs(array_equal(left,right),False)
-            self.assertIs(array_not_equal(left,right),True)
-        left=[];right=[];left.append(left);right.append(right)
-        self.assertIs(array_equal(left,right),False)
-        self.assertIs(array_equal(left,left),True)
-
-    def test_no_element_or_mixed_operand_callbacks(self):
-        events=[]
-        class Hostile:
-            def __eq__(self,other):events.append('eq');raise AssertionError('callback')
-            def __ne__(self,other):events.append('ne');raise AssertionError('callback')
-        first=[Hostile()];second=[Hostile()]
-        for left,right in ((first,second),(first,Hostile()),(Hostile(),first)):
-            self.assertIs(array_equal(left,right),False)
-            self.assertIs(array_not_equal(left,right),True)
-        self.assertEqual(events,[])
-
-    def test_non_array_operators_are_unchanged(self):
-        for left,right in ((True,Decimal(1)),(None,None),('a','a'),(Decimal('1'),Decimal('1.00'))):
-            self.assertEqual(array_equal(left,right),left==right)
-            self.assertEqual(array_not_equal(left,right),left!=right)
-        class Host:
-            def __eq__(self,other):return 'eq'
-            def __ne__(self,other):return 'ne'
-        self.assertEqual(array_equal(Host(),Host()),'eq')
-        self.assertEqual(array_not_equal(Host(),Host()),'ne')
 
     def test_mixed_types_use_identity_contract(self):
         # Native fixed-vs-mutable comparisons and exact
@@ -94,26 +63,6 @@ class DirectArrayEqualityTests(unittest.TestCase):
                                 vm.execute('Saved=7;Caught=False;Try Saved=('+left+operator+right+');Except Caught=True;EndTry;')
                                 self.assertIs(vm.variables['caught'],boundary)
                                 self.assertEqual(vm.variables['saved'],Decimal(7) if boundary else operator=='<>')
-
-    def test_array_date_gate_uses_canonical_slot_not_host_callbacks(self):
-        from unittest.mock import patch
-        from yadinassi.temporal.dates import BSLDate,UnsupportedDateRange
-        events=[];date=BSLDate(0,boundary=True)
-        with patch.object(BSLDate,'require_known',lambda self:events.append('require')):
-            for left,right in (([],date),(date,[])):
-                with self.assertRaises(UnsupportedDateRange):array_equal(left,right)
-                with self.assertRaises(UnsupportedDateRange):array_not_equal(left,right)
-        with patch.object(BSLDate,'boundary',property(lambda self:events.append('descriptor') or False)):
-            with self.assertRaises(UnsupportedDateRange):array_equal([],date)
-        self.assertEqual(events,[])
-
-    def test_null_enum_and_foreign_mixed_kinds_do_not_add_callbacks(self):
-        from yadinassi.types.values import NULL,BSLType
-        from yadinassi.types.type_qualifiers import BSLAllowedSign
-        for other in (NULL,BSLType.ARRAY,BSLAllowedSign.ANY):
-            for left,right in (([],other),(other,[])):
-                self.assertIs(array_equal(left,right),False)
-                self.assertIs(array_not_equal(left,right),True)
 
 
     def test_literal_comparisons_evaluate_dynamic_operand_once(self):

@@ -3,10 +3,10 @@ import unittest
 from decimal import Decimal
 from yadinassi import Interpreter
 from yadinassi.types.values import Reference,HostFunction
-from yadinassi.execution.codegen.experimental_naked_live_state import source_reference,_SlotReference
+from yadinassi.execution.codegen.direct_live_state import source_reference,_SlotReference
 from yadinassi.execution.codegen.direct_emitter import compile_owned
 from yadinassi.syntax.parser import parse
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext
 
 class CachedSourceRefsTests(unittest.TestCase):
     def test_cache_is_address_not_value_or_canonical_binding(self):

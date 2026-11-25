@@ -9,7 +9,7 @@ from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
 from yadinassi.collections import value_trees
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508, target_context
 from yadinassi.collections.plain_value_table_runtime import BSLValueTable
 from yadinassi.execution.direct import python_direct_value_tree as direct_tree

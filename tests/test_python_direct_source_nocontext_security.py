@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import patch
 import test_source_forms as existing
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 
 class SourceNoContextSecurity(unittest.TestCase):

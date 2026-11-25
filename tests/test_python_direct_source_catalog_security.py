@@ -8,7 +8,7 @@ from test_source_catalog_object_modules import source
 from yadinassi.db.metadata.source_references import SourceReferenceManager
 from yadinassi.db.catalog.source_catalog_runtime import SourceCatalogObject,_ObjectInterpreter,create_object
 from yadinassi.execution.direct.source.python_direct_source_catalog import check_object,bind_export
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 
 class DirectCatalogSecurity(unittest.TestCase):

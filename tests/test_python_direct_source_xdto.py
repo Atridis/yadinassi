@@ -5,8 +5,8 @@ import test_source_xdto_packages as existing
 from test_configuration_source_runtime import source
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.types.errors import BSLError
-from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_collections import UnsupportedNakedSyntax
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.formats.xml import xdto_io,xdto_values,xml_io
 
 DENIED=(BSLError,BoundaryViolation,ValueError,TypeError,UnsupportedNakedSyntax)

@@ -7,7 +7,7 @@ from yadinassi.configuration.configuration_source_metadata import SourceMetadata
 from yadinassi.configuration.configuration_session_parameters import SessionParameterDefinition
 from yadinassi.configuration.metadata import _scalar_description
 from yadinassi.types.values import HostFunction
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from .python_direct_source_storage import finish
 from yadinassi.db import source_transactions
 from yadinassi.execution import safe_mode

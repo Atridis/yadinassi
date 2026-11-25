@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.direct.python_direct_plain_map import PlainMap
 from yadinassi.formats.storage.value_storage import BSLValueStorage, SnapshotError, capture, restore
 from yadinassi.streams.data_compression import BSLDeflation

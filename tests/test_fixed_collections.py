@@ -11,7 +11,7 @@ import tempfile
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.execution.codegen.experimental_naked_scalar_semantics import UnsupportedScalarSemantics
+from yadinassi.execution.codegen.direct_scalar_semantics import UnsupportedScalarSemantics
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.collections.maps import BSLFixedMap, BSLMap
 from yadinassi.collections.structures import BSLFixedStructure, BSLStructure

@@ -1,7 +1,7 @@
 """Owned source resource markers, admitted before argument effects."""
 import weakref
 from yadinassi.types.values import HostFunction
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.configuration import common_templates as templates
 from . import python_direct_source_resources as resources
 

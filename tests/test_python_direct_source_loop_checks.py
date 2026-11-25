@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.direct.python_direct_source import SourceBoundary
 from tests.test_configuration_source_runtime import source
 

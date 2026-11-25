@@ -2,7 +2,7 @@
 import unittest
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
+from yadinassi.execution.codegen.direct_collections import UnsupportedNakedSyntax
 
 class SearchConstructorTests(unittest.TestCase):
     def test_routes_aliases_and_rejection_before_argument_effects(self):

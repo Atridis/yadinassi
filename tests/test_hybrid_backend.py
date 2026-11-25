@@ -126,10 +126,6 @@ class DirectCLITests(unittest.TestCase):
         return subprocess.run([sys.executable,'-m','yadinassi',*args],capture_output=True,
                               encoding='utf-8',timeout=15)
 
-    def test_explicit_direct_mode(self):
-        result=self.run_cli('--execution-backend','python-direct','-c',
-            'r=0;For i=1 To 10 Do r=r+i*3-7;EndDo;Message(r);')
-        self.assertEqual((result.returncode,result.stdout.strip(),result.stderr),(0,'95',''))
 
     def test_retired_modes_are_rejected_before_body(self):
         for mode in ('interpreter','hybrid','compiled-strict'):

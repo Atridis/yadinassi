@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
 from yadinassi.collections.value_tables import BSLValueTable, BSLValueTableRow
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.direct import python_direct_table_references as refs
 
 _SETUP = ('Var T; T=New ValueTable; T.Columns.Add("X"); T.Columns.Add("Y");'
@@ -237,7 +237,7 @@ class LocalTableCellTests(unittest.TestCase):
 import sys
 from yadinassi import Interpreter
 from yadinassi.collections.plain_value_table_runtime import BSLValueTableRow
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 bridge = 'yadinassi.execution.direct.python_direct_table_references'
 if bridge in sys.modules:
     raise AssertionError('bridge already imported')

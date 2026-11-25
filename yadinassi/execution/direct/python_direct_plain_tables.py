@@ -1,7 +1,7 @@
 """Exact detached plain-table admission. No database or source scope grant."""
 from decimal import Decimal
 from yadinassi.collections import plain_table_storage as storage, plain_value_table_runtime as runtime, plain_table_search as search
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.types.values import BSLObject, BSLType
 
 _TABLE=runtime.BSLValueTable;_ROW=runtime.BSLValueTableRow

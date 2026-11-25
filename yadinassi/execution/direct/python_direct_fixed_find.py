@@ -1,8 +1,8 @@
 """FixedArray.Find retains identity of direct mutable collection payloads."""
 from types import MethodType
 from yadinassi.types.values import HostFunction, _DIRECT_FIXED_ARRAY_TYPE as _FIXED, _DIRECT_FIXED_FIND_ABI
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.execution.codegen.experimental_naked_scalar_semantics import (
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_scalar_semantics import (
     _DATE_TYPE, _FIND_DIRECT_COLLECTION_IDS, find_by_identity, find_date,
 )
 

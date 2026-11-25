@@ -4,7 +4,7 @@ from unittest.mock import patch
 from yadinassi.configuration import metadata
 from yadinassi.types import type_qualifiers
 from yadinassi.types.values import HostFunction
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 import test_python_direct_live_metadata_ownership as fixture
 
 class LiveMetadataHookTests(unittest.TestCase):

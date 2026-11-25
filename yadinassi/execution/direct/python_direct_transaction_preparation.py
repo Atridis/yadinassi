@@ -3,7 +3,7 @@ from contextvars import ContextVar
 from threading import get_ident
 from yadinassi.db import database_transactions as tx
 from yadinassi.db.catalog.catalog_backend import BackendError
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 _SCOPE=ContextVar('direct_transaction_preparation',default=None)
 
@@ -18,8 +18,6 @@ class _Scope:
         self.lease=lease;self.owner=tx._execution.get();self.thread=get_ident()
         self.token=None;self.active=False
     def owner_check(self):
-        from yadinassi.execution.execution_policy import current_backend
-        if current_backend()!="python-direct":raise BoundaryViolation("catalog preparation execution backend changed")
         from .python_direct_transactions import require_preparation_origin
         if require_preparation_origin(self.backend,expected=self.origin) is not self.origin:
             raise BoundaryViolation("catalog transaction preparation origin changed")
@@ -51,13 +49,12 @@ class _Scope:
 
 
 def stage_selected_source(receiver,preparation,selected_source):
-    from yadinassi.execution.execution_policy import current_backend
     from yadinassi.db.sqlite.sqlite_catalog import _TRANSACTION_PREPARATION_POLICY_ABI
     from yadinassi.configuration.configuration_main_demo import MainDemoConfiguration,PROFILE
     from yadinassi.db.catalog.catalog_object_preparation import _prepare_catalog_object,CatalogWriteRefused
     backend=receiver._manager._backend
     cls,policy=_TRANSACTION_PREPARATION_POLICY_ABI
-    if (current_backend()!='python-direct' or type(backend) is not cls or backend.format_version!=16
+    if (type(backend) is not cls or backend.format_version!=16
             or type(backend.accumulation_configuration) is not MainDemoConfiguration
             or backend.accumulation_configuration.profile!=PROFILE
             or type(selected_source) is not str or not selected_source

@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from yadinassi import Interpreter
 from yadinassi.collections.structures import BSLStructure
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508, target_context
 from yadinassi.types.errors import BSLRuntimeError
 import test_property_transfer as fixture

@@ -10,7 +10,7 @@ from types import MappingProxyType, SimpleNamespace
 from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.execution.codegen.experimental_naked_structure import new_structure
+from yadinassi.execution.codegen.direct_structure import new_structure
 from yadinassi.execution.direct.python_direct_plain_map import PlainMap, PlainFixedMap
 from yadinassi.formats.json.json_processing import (
     BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings, BSLJSONLineBreak,

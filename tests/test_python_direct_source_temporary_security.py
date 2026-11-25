@@ -4,7 +4,7 @@ from unittest.mock import patch
 import test_source_temporary_storage as existing
 from yadinassi.runtime import Interpreter
 from yadinassi.application import temporary_storage as temporary
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.types.errors import BSLError
 
 

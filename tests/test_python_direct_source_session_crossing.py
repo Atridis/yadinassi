@@ -7,7 +7,7 @@ from yadinassi.configuration.configuration_source import import_source
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.application.session_parameters import _UNSET
 from yadinassi.types.errors import BSLError
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 DENIED=(BSLError,BoundaryViolation,ValueError,TypeError)
 

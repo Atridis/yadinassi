@@ -1,7 +1,7 @@
 """Direct DOM wiring retains the existing document-owner and XML boundaries."""
 import unittest
 from yadinassi import Interpreter, BSLError
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 class DirectDOMTests(unittest.TestCase):
     def test_prepared_builder_writer_and_live_node_lists(self):

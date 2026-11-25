@@ -90,9 +90,9 @@ class _Capture:
         self.direct_structure = None
         self.direct_map = None
         if source_direct:
-            from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
+            from yadinassi.execution.codegen.direct_structure import _DirectStructure
             self.direct_structure = _DirectStructure
-            from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
+            from yadinassi.execution.codegen.direct_collections import _TypedMap
             self.direct_map = _TypedMap
         self.nodes = 0
         self.text_units = 0

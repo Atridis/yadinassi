@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from weakref import WeakKeyDictionary
 from ..python_direct_fragment_cache import FragmentUnitCache
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 _ACTIVE=ContextVar('direct_source_fragments',default=())
 _UNITS=WeakKeyDictionary()

@@ -7,9 +7,9 @@ from yadinassi.text import strings
 from yadinassi.formats.storage.serialization import _direct_value_to_string_internal as encode,value_from_string_internal as decode
 from yadinassi.types.values import BSLArray
 from yadinassi.collections.maps import BSLMap
-from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
-from yadinassi.execution.codegen.experimental_naked_structure import new_structure
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_collections import _TypedMap
+from yadinassi.execution.codegen.direct_structure import new_structure
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 class DirectStringsParityTests(unittest.TestCase):
     def test_search_holes_aliases_and_canonical_host_alias(self):

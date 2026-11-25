@@ -13,7 +13,7 @@ from yadinassi.types.values import BSLObject
 class DirectFixedSlotTests(unittest.TestCase):
     def test_execute_fixed_slots_are_readable_and_reject_only_the_write(self):
         from yadinassi.collections.maps import BSLFixedMap, BSLMap
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryContext
 
         source = """
         Var entered, last;
@@ -55,7 +55,7 @@ class DirectFixedSlotTests(unittest.TestCase):
             self.assertEqual((vm.variables['touched'],vm.variables['caught']),(Decimal(0),True))
 
     def test_fixed_subclass_does_not_gain_index_capability(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         from yadinassi.types.values import BSLFixedArray
 
         class Foreign(BSLFixedArray):
@@ -267,7 +267,7 @@ class ReferenceArgumentTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('calls'), Decimal(0))
 
     def test_scalar_reference_rejection_runs_after_receiver_and_is_catchable(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryContext
         with (patch.object(BoundaryContext,'_check',side_effect=AssertionError('Light check')),
               patch.object(BoundaryContext,'_check_lease',side_effect=AssertionError('Light effect check'))):
             self.vm.execute('''

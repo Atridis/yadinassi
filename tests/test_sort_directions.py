@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from tests.native_observations import extract_payload, inverse_stream, read_observation
 from yadinassi import Interpreter
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.formats.storage import serialization
 from yadinassi.types.errors import BSLRuntimeError

@@ -87,7 +87,7 @@ class FormInvocationTests(unittest.TestCase):
 
     def test_remote_alias_rejects_contextful_or_nonempty_stub(self):
         from unittest.mock import patch
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
         session, port, server, requests = self.setup_form()
         session.open()
@@ -101,7 +101,7 @@ class FormInvocationTests(unittest.TestCase):
                 self.assertEqual(requests,[])
 
     def test_bound_remote_alias_rejects_replaced_adapter_before_wire(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         from yadinassi.execution.direct.python_direct_forms import FormBoundary
 
         session, port, server, requests = self.setup_form()
@@ -280,7 +280,7 @@ F = Items.Add''')
         self.assertEqual(dict(self.command(session).attributes)['Result'], Decimal(61))
 
     def test_local_server_cannot_dispatch_remote_alias_or_evaluate_its_arguments(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
         call = 'RemoteTotal(Effect(), 3);'
         effect = '''

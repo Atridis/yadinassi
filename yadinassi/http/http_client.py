@@ -62,7 +62,7 @@ def _validate_header(key, value):
 
 
 def _headers(value):
-    from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
+    from yadinassi.execution.codegen.direct_collections import _TypedMap
     from yadinassi.execution.direct.python_direct_plain_map import PlainMap
     kind = type(value)
     if kind is BSLMap: entries = value._items

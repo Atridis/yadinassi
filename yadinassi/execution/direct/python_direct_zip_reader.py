@@ -3,7 +3,7 @@ from weakref import ref
 from yadinassi.streams import binary_streams, file_io, zip_archives
 from yadinassi.types.values import _DIRECT_COLLECTION_CLASS_ABI, _DIRECT_HOST_FUNCTION_CALL_CODE
 
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.streams.zip_archives import BSLZipFileReader, BSLZipFileEntries, BSLZipFileEntry, BSLZipFileWriter
 from yadinassi.types.values import HostFunction
 

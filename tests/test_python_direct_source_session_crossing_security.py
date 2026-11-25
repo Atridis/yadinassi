@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import patch
 import test_python_direct_source_session_crossing as basic
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 class SourceSessionCrossingSecurity(unittest.TestCase):
     setUp=basic.SourceSessionCrossingTests.setUp

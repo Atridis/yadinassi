@@ -5,7 +5,7 @@ Fractional operations retain Decimal context. Public scalar edges normalize once
 This does not authorize host, routine, or arbitrary collection numeric values.
 """
 from decimal import Decimal
-from yadinassi.execution.codegen.experimental_naked_scalar_semantics import decimal_divide, decimal_sign
+from yadinassi.execution.codegen.direct_scalar_semantics import decimal_divide, decimal_sign
 
 def divide(left,right):
     if type(left) is int:left=Decimal(left)

@@ -1,6 +1,6 @@
 """Exact lexical and own exported addresses lent to a synchronous dual call."""
 from threading import get_ident
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.types.values import Reference
 
 

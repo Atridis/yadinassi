@@ -1,7 +1,7 @@
 """Exact source-form admission over the existing direct form lifecycle."""
 from yadinassi.execution.direct.python_direct_forms import FormBoundary,SYSTEM_NAMES,CALLBACK_CONSTRUCTORS,DECLARATION_CONSTRUCTORS
 from yadinassi.execution.direct.python_direct_source import SourceBoundary,_external_names,_signature_matches
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext,BoundaryViolation
 from yadinassi.execution import safe_mode
 from yadinassi.db import source_transactions, database_transactions
 from .python_direct_source_query import CONSTRUCTOR_NAMES
@@ -35,7 +35,7 @@ def check_source_session(session,routine=None):
             or vm._scheduler.pending or vm._scheduler._active_task is not None):
         raise BoundaryViolation('source form family is inactive')
     if (vm._form_session is not session or vm.database_context is not None or app.constant_store is not None
-            or vm._configuration_runtime is not None or vm.execution_backend!='python-direct'
+            or vm._configuration_runtime is not None
             or vm.compilation_profile!=app.compilation_profile or vm.locals is not None
             or database_transactions._execution.get() is not None
             or safe_mode._CURRENT.get() is not app.safe_mode

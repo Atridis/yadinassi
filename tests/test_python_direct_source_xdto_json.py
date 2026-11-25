@@ -196,7 +196,7 @@ class SourceXDTOJSONTests(unittest.TestCase):
         self.assertEqual(effects,[])
     def test_post_decode_admission_failure_atomic(self):
         from yadinassi.execution.direct.source import python_direct_source_xdto_objects as objects
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         app=self.ready();vm=app.interpreter;vm.execute('P.Label="late";');self.write(vm)
         before=(app.xdto.factory._nodes,app.xdto.factory._units);reader=dict(vm.variables['r'].__dict__);records=objects._RECORDS[app]
         with patch.object(objects,'stage_xml_result',side_effect=BoundaryViolation('admission fault injection')):

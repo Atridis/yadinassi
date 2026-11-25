@@ -487,7 +487,8 @@ class OwnedResultCodecTests(unittest.TestCase):
         source=BSLStructure('A,B',Decimal(1),'b'); fixed=BSLFixedStructure(source)
         raw=freeze_result(fixed); source.set('A',Decimal(2))
         result=result_value(raw)
-        self.assertIs(type(result),BSLStructure); self.assertEqual(result.get('A'),Decimal(1))
+        from yadinassi.execution.codegen.direct_structure import _DirectStructure
+        self.assertIs(type(result), _DirectStructure); self.assertEqual(result.get('A'), Decimal(1))
 
     def test_nested_or_capability_values_refused(self):
         from yadinassi.application.callbacks import BSLCallbackDescription

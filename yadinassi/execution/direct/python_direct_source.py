@@ -6,12 +6,12 @@ transactions and closure. Unsupported crossings/receivers fail before effects.
 from contextlib import contextmanager
 from contextvars import ContextVar
 from decimal import Decimal, localcontext
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation, _MISSING
-from yadinassi.execution.codegen.experimental_naked_collections import _Cell
-from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
-from yadinassi.execution.codegen.experimental_naked_errors import convert_error
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext, BoundaryViolation, _MISSING
+from yadinassi.execution.codegen.direct_collections import _Cell
+from yadinassi.execution.codegen.direct_live_state import _ForwardReference
+from yadinassi.execution.codegen.direct_errors import convert_error
 from .python_direct import _snapshot, _nodes
-from .python_direct_services import ServicesBoundary, CONSTRUCTORS
+from .python_direct_services import ServicesBoundary
 from . import python_direct_fixed as fixed
 from yadinassi.syntax import ast
 from yadinassi.configuration.source_instances import instance_keys
@@ -63,7 +63,7 @@ def check_owner(owner):
     if (source_transactions._current.get() is not app or safe_mode._CURRENT.get() is not app.safe_mode
             or database_transactions._execution.get() is not None or owner.database_context is not None
             or owner._configuration_runtime is not None or not owner._has_module_context
-            or owner.locals is not None or owner.execution_backend!='python-direct'
+            or owner.locals is not None
             or owner.compilation_profile!=app.compilation_profile):
         raise BoundaryViolation('direct source execution scope changed')
     if type(owner.variables) is not dict or type(owner.functions) is not dict or type(owner.types) is not dict:
@@ -171,7 +171,6 @@ def _compile(owner,program,*,exports=False,layout=(),_extra_externals=(),_callab
         reference_names=reference_names,value_services=tuple(owner.functions),
         source_name=program[0].token.source if program else '<source>',
         module_names=tuple(layout),external_names=tuple(dict.fromkeys((*_external_names(owner,names|set(layout)),*_extra_externals))),
-        constructors=(local_xdto.CONSTRUCTOR_NAMES+xdto_xml.CONSTRUCTOR_NAMES+xdto_json.CONSTRUCTOR_NAMES if type(owner) is _SourceInterpreter else ())+tuple(CONSTRUCTORS)+query.CONSTRUCTOR_NAMES+host_info.CONSTRUCTORS+resources.CONSTRUCTOR_NAMES+stored_values.CONSTRUCTOR_NAMES+('uuid','уникальныйидентификатор'),
         exports=exports,source_scopes=True,source_dispatch=True,meter_loops=_meter_loops,shadowable_externals=shadowable,
         scalar_routines=getattr(owner,'_direct_source_scalar_reuse',False))
     native={'array','массив','structure','структура','map','соответствие','uuid','уникальныйидентификатор'}
@@ -282,7 +281,6 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
                 or vm.database_context is not None or vm._configuration_runtime is not None
                 or not vm._has_module_context or vm.locals is not None
                 or database_transactions._execution.get() is not None
-                or vm.execution_backend != 'python-direct'
                 or vm.compilation_profile != app.compilation_profile
                 or vm.variables is not self.storage or vm.functions is not self._services
                 or vm.types is not self.types):
@@ -553,7 +551,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             finally:check()
         if direct:
             if refs and not allow_references:
-                from yadinassi.execution.codegen.experimental_naked_boundaries import UnsupportedHostSignature
+                from yadinassi.execution.codegen.direct_boundaries import UnsupportedHostSignature
                 raise UnsupportedHostSignature('dynamic HostFunction reference parameters require explicit argument lowering')
             if require_value and not routine.is_function:
                 raise TypeError('Процедура не возвращает значение: '+routine.name)
@@ -568,7 +566,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             (self._check_local_dispatch if direct else self._check)();provenance()
             if count>len(routine.parameters) or any(i>=len(routine.parameters) or routine.parameters[i].default is None for i in positions):
                 raise TypeError('Неверное количество аргументов: '+routine.name)
-            from yadinassi.execution.codegen.experimental_naked_collections import _OMITTED_REF
+            from yadinassi.execution.codegen.direct_collections import _OMITTED_REF
             return current,{i:_OMITTED_REF for i in positions}
         bound.prepare_omissions=omissions
         return bound
@@ -686,7 +684,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
     def reference_member(self,value,name):
         if storage.owns(value) or query.supports(value) or sessions.owns(value):
             self.get_member(value,name)
-            from yadinassi.execution.codegen.experimental_naked_boundaries import _HostMemberReference
+            from yadinassi.execution.codegen.direct_boundaries import _HostMemberReference
             return _HostMemberReference(self,value,name)
         return super().reference_member(value,name)
     def resolve_set_member(self,value,name):
@@ -766,7 +764,6 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
 
 def _run(owner,plan,callback=None,*,same_side_admitted=False):
     from yadinassi.execution.codegen.native_targets import target_context
-    from yadinassi.execution.execution_policy import execution_backend_policy
     if not same_side_admitted:
         check_owner(owner)
     context=SourceBoundary(owner,plan)
@@ -779,7 +776,7 @@ def _run(owner,plan,callback=None,*,same_side_admitted=False):
     owner._direct_source_active=previous+1
     try:
         from .source.python_direct_source_requests import request_scope
-        with request_scope(owner),target_context(owner.native_target),execution_backend_policy('python-direct'),localcontext() as decimal:
+        with request_scope(owner),target_context(owner.native_target),localcontext() as decimal:
             decimal.prec=38
             local=context._local_scalars() and (same_side_admitted or not getattr(owner,'_direct_source_server_activation',False))
             if local:

@@ -3,7 +3,7 @@ from decimal import Decimal as D
 from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.collections.plain_value_list import PlainValueList,PlainValueListItem
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 class DirectPlainValueListTests(unittest.TestCase):
     def vm(self, *, allow_extensions=False):

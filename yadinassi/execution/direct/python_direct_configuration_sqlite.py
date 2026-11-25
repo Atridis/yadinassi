@@ -5,7 +5,7 @@ from yadinassi.db.catalog.catalogs import BSLCatalogs, BSLCatalogManager, BSLCat
 from yadinassi.db.catalog.catalog_types import BSLCatalogReference
 from yadinassi.db.query.queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
 from yadinassi.db.query.query_packages import BSLTempTablesManager, TEMP_TABLE_MANAGER_NAMES
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext, BoundaryViolation
 from yadinassi.runtime import _DIRECT_QUERY_FACTORY_ABI, _DIRECT_TEMP_TABLE_FACTORY_ABI, _DIRECT_TYPE_NAME_ABI
 from yadinassi.types.type_values import _DIRECT_TYPE_OF_ABI
 from yadinassi.types.values import HostFunction

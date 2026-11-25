@@ -12,7 +12,7 @@ from yadinassi.configuration.configuration_modules import MODULE_RUNTIME
 from yadinassi.configuration.configuration_runtime import ConfigurationApplication
 from yadinassi.configuration.configuration_xml import import_configuration
 from yadinassi.db.database_context import SQLiteDBContext
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 
 

@@ -5,7 +5,7 @@ from decimal import Decimal
 import test_main_demo_host as fixture
 from yadinassi.ui.configuration_app import PROTOCOL
 from yadinassi.execution.direct.python_direct_forms import FormBoundary
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 class FormInvocationTests(TestCase):
     def setUp(self):

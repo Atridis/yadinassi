@@ -5,7 +5,7 @@ import test_source_application_exports as exports
 from test_configuration_source_runtime import source
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.execution.codegen.direct_emitter import compile_owned
-from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
+from yadinassi.execution.codegen.direct_collections import UnsupportedNakedSyntax
 
 class SourceShadowingTests(unittest.TestCase):
     def run_app(self,config):
@@ -50,14 +50,14 @@ Procedure Change(X) X=9;EndProcedure'''
         with self.assertRaises(ValueError):compile_owned([],source_text='',source_name='shadow.bsl',shadowable_externals=('catalogs',))
 
     def test_late_export_conflict_rejected_before_routine_effects(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         app,out=self.run_app(source(b'Procedure P() Message("bad");Catalogs=7;EndProcedure'))
         app.interpreter.exported_variables.add('catalogs')
         with self.assertRaises(BoundaryViolation):app.interpreter.execute('P();')
         self.assertEqual(out,[])
 
     def test_noncanonical_export_inventory_rejected_without_iteration(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         calls=[]
         class Poison(set):
             def __iter__(self):calls.append('iter');raise AssertionError('callback')

@@ -6,9 +6,8 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.execution.codegen.experimental_naked_structure import new_structure
-from yadinassi.execution.codegen.experimental_naked_scalar_semantics import collection_equal,collection_not_equal
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_structure import new_structure
 from yadinassi.syntax.parser import parse
 
 
@@ -41,36 +40,9 @@ A=New Structure("Value",1);B=New Structure("Value",1);EqualContents=(A=B);'''
                 self.assertIs(vm.variables['r'],True);self.assertIs(vm.variables['n'],True)
                 self.assertIs(vm.variables['t']['Self'],vm.variables['s'])
 
-    def test_exact_structure_comparison_never_traverses_payload_or_host(self):
-        calls=[]
-        class Hostile:
-            def __eq__(self,other):calls.append('eq');raise AssertionError
-            def __ne__(self,other):calls.append('ne');raise AssertionError
-        a=new_structure('Value',Hostile());b=new_structure('Value',Hostile())
-        for left,right in ((a,b),(a,Hostile()),(Hostile(),a)):
-            self.assertIs(collection_equal(left,right),False)
-            self.assertIs(collection_not_equal(left,right),True)
-        self.assertIs(collection_equal(a,a),True);self.assertEqual(calls,[])
 
-    def test_other_kinds_keep_their_existing_operators(self):
-        class Host:
-            def __eq__(self,other):return 'eq'
-            def __ne__(self,other):return 'ne'
-        self.assertEqual(collection_equal(Host(),Host()),'eq')
-        self.assertEqual(collection_not_equal(Host(),Host()),'ne')
-        self.assertIs(collection_equal(True,Decimal(1)),True)
-        self.assertIs(collection_equal({'a':1},{'a':1}),True)
         # This slice deliberately does not reinterpret raw host dictionaries.
 
-
-    def test_date_boundary_is_not_bypassed_for_mixed_comparison(self):
-        from yadinassi.temporal.dates import BSLDate,MAX_TICKS,UnsupportedDateRange
-        a=new_structure();known=BSLDate(MAX_TICKS);boundary=BSLDate(MAX_TICKS,boundary=True)
-        for left,right in ((a,known),(known,a)):
-            self.assertIs(collection_equal(left,right),False)
-        for left,right in ((a,boundary),(boundary,a)):
-            with self.assertRaises(UnsupportedDateRange):collection_equal(left,right)
-            with self.assertRaises(UnsupportedDateRange):collection_not_equal(left,right)
 
     def test_operand_effect_order_is_unchanged(self):
         vm=Interpreter(allow_extensions=True);calls=[]
@@ -94,7 +66,7 @@ class DirectCollectionStringTests(unittest.TestCase):
             self.assertIn('internal.'+kind+'.present: ['+vm.variables[key]+']\n',fixture)
 
     def test_adapter_keeps_captured_exact_class_identity_after_rebinding(self):
-        from yadinassi.execution.codegen import experimental_naked_structure as structures,experimental_naked_collections as collections
+        from yadinassi.execution.codegen import direct_structure as structures,direct_collections as collections
         vm=Interpreter();calls=[]
         class Hostile:
             def __repr__(self):calls.append('repr');raise AssertionError

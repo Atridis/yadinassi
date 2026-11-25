@@ -6,13 +6,13 @@ keys use opaque identity; UUID and scalar TypeDescription keys use value tokens.
 """
 from yadinassi.collections.maps import BSLFixedMap
 from yadinassi.collections.structures import BSLFixedStructure
-from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
+from yadinassi.execution.codegen.direct_structure import _DirectStructure
 from .python_direct_plain_array import PlainArray
 from yadinassi.collections.search_directions import BSLSearchDirection
 from yadinassi.collections.sort_directions import BSLSortDirection
 from yadinassi.numeric.round_modes import BSLRoundMode
 from yadinassi.temporal.dates import BSLDate, MAX_TICKS, _DIRECT_EQUALITY_DATE_STATE
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.types.values import BSLFixedArray, BSLNull, BSLObject, BSLType
 from yadinassi.types.unique_identifiers import BSLUUID, _CANONICAL as _UUID_TEXT_PATTERN
 from yadinassi.types.type_descriptions import BSLTypeDescription, _ORDER, _MAX_NUMBER_DIGITS, _MAX_STRING_UNITS
@@ -20,7 +20,7 @@ from yadinassi.types.type_qualifiers import (
     BSLAllowedLength, BSLAllowedSign, BSLBinaryDataQualifiers, BSLDateFractions,
     BSLDateQualifiers, BSLNumberQualifiers, BSLStringQualifiers,
 )
-from yadinassi.execution.codegen.experimental_naked_collections import _reject_opaque_date_key
+from yadinassi.execution.codegen.direct_collections import _reject_opaque_date_key
 from collections.abc import ItemsView, KeysView
 from decimal import Decimal
 from reprlib import recursive_repr

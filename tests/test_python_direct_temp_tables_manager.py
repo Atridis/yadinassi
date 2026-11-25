@@ -3,7 +3,7 @@ import unittest
 
 from yadinassi import Interpreter
 from yadinassi.db.query.query_packages import BSLTempTablesManager
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 
 class DirectTempTablesManagerTests(unittest.TestCase):

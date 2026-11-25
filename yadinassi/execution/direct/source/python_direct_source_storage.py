@@ -1,6 +1,6 @@
 """Finite synchronous source storage protocol, retaining canonical transactions."""
 from types import GeneratorType
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.types.values import HostFunction, InterpreterCall
 from yadinassi.db.metadata.source_constants_runtime import SourceConstants, SourceConstant, SourceConstantSet, ConstantCall, ConstantSetCall
 from yadinassi.db.metadata.source_constant_managers import SourceConstantValueManager, ValueManagerCall

@@ -168,7 +168,7 @@ class PreparedDirectModule:
 
 
 def _contract(vm):
-    return (vm.execution_backend, vm.native_target, vm.compilation_profile,
+    return (vm.native_target, vm.compilation_profile,
             vm.database_context is not None,
             vm.allow_extensions, vm._family_owner.__dict__.get('_standalone_script') is True)
 
@@ -226,8 +226,6 @@ def prepare_module(vm,program,*,source_text=None,source_name=None):
     admit(vm,program,_async_entry=mode)
     if vm._family_closed:
         _reject('prepared modules require an open interpreter')
-    if vm.execution_backend != 'python-direct':
-        _reject('prepared modules require the python-direct backend')
     from yadinassi.runtime import Interpreter
     Interpreter._require_family(vm)
     # The caller may edit/reuse its AST after this call. Never retain that AST.
@@ -282,11 +280,10 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
             _reject('prepared module-name layout changed; prepare again')
     from yadinassi.runtime import Interpreter
     Interpreter._require_family(vm)
-    from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
+    from yadinassi.execution.codegen.direct_boundaries import BoundaryContext,BoundaryViolation
     from yadinassi.execution import safe_mode
     from yadinassi.db import source_transactions, database_transactions
     from yadinassi.execution.codegen.native_targets import target_context
-    from yadinassi.execution.execution_policy import execution_backend_policy
     plan=_compile(vm,program,nodes,source_text,source_name) if _prepared is None else copy(_prepared._plan)
     if _prepared is None:plan._generated_tree=None
     from .python_direct_routines import prepare as prepare_routines, resolve as resolve_routine
@@ -318,7 +315,7 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
         if database is not None:vm._transaction_activation_allowed=False
         vm._direct_active=True
         try:
-            with target_context(vm.native_target), execution_backend_policy('python-direct'), localcontext() as decimal_context:
+            with target_context(vm.native_target), localcontext() as decimal_context:
                 decimal_context.prec=38
                 from .python_direct_imports import initialize, record_exports
                 incoming=program if _prepared is None else ()
@@ -379,7 +376,7 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=N
     from .python_direct_services import ServicesBoundary
     from .python_direct_value_tree import ValueTreeBoundary
     from .python_direct_imports import ImportBoundary,check_live
-    from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
+    from yadinassi.execution.codegen.direct_boundaries import BoundaryContext,BoundaryViolation
     from yadinassi.execution import safe_mode
     from yadinassi.db import source_transactions, database_transactions
     from .python_direct_routines import bind_omissions, resolve as resolve_routine
@@ -396,13 +393,13 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=N
 
         def character_namespace_reference(self,key):
             if key in vm.variables:
-                from yadinassi.execution.codegen.experimental_naked_live_state import source_reference
+                from yadinassi.execution.codegen.direct_live_state import source_reference
                 return source_reference(vm.variables,key)
             return self.external_reference(key)
 
         def missing_value(self,name):
             if name.casefold() in getattr(vm,'_direct_routine_modules',{}):
-                from yadinassi.execution.codegen.experimental_naked_collections import _routine_value_error
+                from yadinassi.execution.codegen.direct_collections import _routine_value_error
                 return _routine_value_error(name)
             return super().missing_value(name)
 

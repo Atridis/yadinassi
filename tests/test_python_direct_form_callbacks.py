@@ -1,7 +1,7 @@
 import unittest
 from yadinassi.forms.form_runtime import FormSession
 from yadinassi.application.callbacks import BSLCallbackDescription
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 SOURCE='''Var Observed;
 Procedure Make() Capture(New CallbackDescription("Done",ThisObject));EndProcedure

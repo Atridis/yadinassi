@@ -3,7 +3,7 @@ import unittest
 from decimal import Decimal
 from yadinassi import Interpreter, BSLError
 from yadinassi.syntax.parser import parse
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.collections.value_lists import BSLValueListItem
 
 class DirectValueListTests(unittest.TestCase):

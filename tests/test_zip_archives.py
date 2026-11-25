@@ -11,7 +11,7 @@ from unittest import mock
 import zipfile
 
 from yadinassi import Interpreter
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext, BoundaryViolation
 from yadinassi.syntax.parser import parse
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.streams.binary_streams import BSLMemoryStream, BSLPositionInStream, BSLBinaryDataBuffer

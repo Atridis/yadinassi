@@ -11,7 +11,7 @@ from types import MappingProxyType
 from weakref import ReferenceType, ref
 
 from yadinassi.types.values import BSLType, NULL, to_string
-from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
+from yadinassi.execution.codegen.direct_structure import _DirectStructure
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 from yadinassi.temporal.dates import BSLDate, _exact_date_text
 from .plain_table_storage import _sort_value

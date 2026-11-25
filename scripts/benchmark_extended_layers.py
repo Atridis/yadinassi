@@ -24,7 +24,7 @@ ROOT = next(parent for parent in Path(__file__).resolve().parents
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from yadinassi import Interpreter
-from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
+from yadinassi.execution.codegen.direct_collections import UnsupportedNakedSyntax
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.syntax.parser import parse
 from yadinassi.collections.structures import BSLStructure

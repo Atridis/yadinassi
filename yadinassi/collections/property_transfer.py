@@ -16,7 +16,7 @@ from yadinassi.db.document.document_backend import DocumentSchema
 from yadinassi.db.document.document_lines import BSLDocumentLine, BSLDocumentLines
 from yadinassi.db.document.documents import BSLDocumentManager, BSLDocumentObject
 from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508, current_native_target
-from yadinassi.execution.codegen.experimental_naked_structure import (
+from yadinassi.execution.codegen.direct_structure import (
     _DirectStructure, structure_get, structure_set,
 )
 from .structures import BSLFixedStructure, BSLStructure, _key

@@ -5,7 +5,7 @@ from yadinassi.execution.direct.source import python_direct_source_storage as st
 from yadinassi.execution.direct.source import python_direct_source_query as query
 from yadinassi.types.values import HostFunction
 from yadinassi.db.metadata.source_constants_runtime import SourceConstants, ConstantCall
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 
 class SourceBridgeSecurityTests(unittest.TestCase):

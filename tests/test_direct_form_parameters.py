@@ -4,11 +4,11 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from yadinassi.forms.direct_form_parameters import (structure_items,is_parameters,get_parameter,bind_parameter_method,bind_parameter_write)
-from yadinassi.execution.codegen.experimental_naked_structure import new_structure,_DirectStructure
+from yadinassi.execution.codegen.direct_structure import new_structure,_DirectStructure
 from yadinassi.configuration.configuration_forms import bind_parameters
 from yadinassi.forms.form_results import freeze_result,result_value
 from yadinassi.collections.structures import BSLStructure,BSLFixedStructure
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 class DirectFormParametersTests(unittest.TestCase):
     def session(self):
@@ -47,15 +47,15 @@ class DirectFormParametersTests(unittest.TestCase):
     def test_native_result_roundtrip_and_freeze_detaches(self):
         incoming=new_structure('DraftTitle,Amount,Comment','Draft',Decimal('2.5'),'x')
         raw=freeze_result(incoming);incoming['Amount']=Decimal(99)
-        legacy=result_value(raw);direct=result_value(raw,direct=True)
-        self.assertIs(type(legacy),BSLStructure);self.assertIs(type(direct),_DirectStructure)
-        self.assertEqual(legacy.get('Amount'),Decimal('2.5'));self.assertEqual(direct['Amount'],Decimal('2.5'))
+        direct=result_value(raw)
+        self.assertIs(type(direct),_DirectStructure)
+        self.assertEqual(direct['Amount'],Decimal('2.5'))
         direct['Amount']=Decimal(100)
-        self.assertEqual(result_value(raw,direct=True)['Amount'],Decimal('2.5'))
+        self.assertEqual(result_value(raw)['Amount'],Decimal('2.5'))
         with self.assertRaises(Exception):freeze_result(new_structure('Nested',new_structure()))
         with self.assertRaises(Exception):freeze_result({'RawMap':1})
         for value in (None,True,Decimal(4),'text'):
-            self.assertEqual(result_value(freeze_result(value),direct=True),value)
+            self.assertEqual(result_value(freeze_result(value)),value)
 
     def test_ui_parameter_boundary_accepts_native_only_structure(self):
         from yadinassi.ui.configuration_app import _parameters

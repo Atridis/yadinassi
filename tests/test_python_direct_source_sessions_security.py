@@ -5,7 +5,7 @@ import test_python_direct_source_query as fixtures
 from test_source_session_parameters import package
 from yadinassi.configuration.configuration_source_runtime import SourceApplication,_SourceInterpreter
 from yadinassi.execution.direct.source import python_direct_source_sessions as bridge
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.types.errors import BSLError
 
 

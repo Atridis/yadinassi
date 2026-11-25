@@ -6,9 +6,9 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.types.values import BSLArray, BSLType
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.syntax.parser import parse
-from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
+from yadinassi.execution.codegen.direct_structure import _DirectStructure
 from yadinassi.execution.direct.python_direct_plain_map import PlainMap as _TypedMap
 
 
@@ -158,7 +158,7 @@ class DirectDynamicNewTests(unittest.TestCase):
         script=textwrap.dedent('''
             from yadinassi import Interpreter
             from yadinassi.types.values import BSLArray
-            from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+            from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
             from unittest.mock import patch
             vm=Interpreter();vm.variables['args']=BSLArray();effects=[]
             def getter(value):effects.append('getter');return []

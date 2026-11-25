@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from types import MethodType
 from threading import get_ident as _thread_id
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.db.catalog.catalog_backend import BackendError
 from yadinassi.types.values import HostFunction
 from yadinassi.db import database_transactions as tx

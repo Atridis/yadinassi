@@ -4,7 +4,7 @@ from unittest.mock import patch
 from test_source_server_call import configuration
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.types.errors import BSLError
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.runtime import Interpreter
 
 

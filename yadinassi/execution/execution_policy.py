@@ -1,4 +1,4 @@
-"""Scoped backend selection for materialized interpreter families, not authority."""
+"""Compatibility validation for the sole accepted backend name. No runtime selection."""
 from contextlib import contextmanager
 
 BACKENDS = ('python-direct',)
@@ -22,7 +22,7 @@ def ui_backend(backend=None):
 
 
 def backend_entrypoint(function):
-    """Explicit UI/stdio selection, preserving launcher first-argument routing.
+    """Consume the compatibility option, preserving launcher first-argument routing.
 
     This is deliberately an argv protocol, not an environment variable. Options
     after ``--`` remain application data and cannot select an execution mode.
@@ -43,10 +43,9 @@ def backend_entrypoint(function):
                 parser.error('use the exact --execution-backend option')
         selection, remaining = parser.parse_known_args(arguments[:boundary])
         try:
-            mode = ui_backend(selection.execution_backend)
+            ui_backend(selection.execution_backend)
         except ValueError as error:
             parser.error(str(error))
         remaining.extend(arguments[boundary:])
-        with execution_backend_policy(mode):
-            return function(remaining, *args, **kwargs)
+        return function(remaining, *args, **kwargs)
     return selected

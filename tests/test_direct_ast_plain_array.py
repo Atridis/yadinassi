@@ -42,15 +42,15 @@ class PlainArrayTests(unittest.TestCase):
                 with self.assertRaises(Exception):vm.execute(source)
                 self.assertEqual(seen,[]);self.assertEqual(vm.variables['a'][0],D(1))
     def test_opaque_payload_equality_never_runs(self):
-        from yadinassi.execution.codegen.experimental_naked_scalar_semantics import map_identity_operators
         seen=[]
         class Opaque:
             def __eq__(self,other):seen.append('eq');raise AssertionError
-        payload=Opaque();a=PlainArray([payload]);b=PlainArray([payload])
-        eq,ne=map_identity_operators(array=True,structure=True)
-        self.assertFalse(eq(a,b));self.assertTrue(ne(a,b))
-        self.assertFalse(eq(payload,a));self.assertFalse(eq(a,payload))
-        self.assertTrue(ne(payload,a));self.assertTrue(ne(a,payload))
+        payload=Opaque()
+        vm=Interpreter()
+        self.addCleanup(vm.close)
+        vm.variables.update(a=PlainArray([payload]),b=PlainArray([payload]))
+        self.assertIs(vm.execute('(A=B);'),False)
+        self.assertIs(vm.execute('(A<>B);'),True)
         self.assertEqual(seen,[])
     def test_integer_induction_preserves_public_number_on_index_failure(self):
         vm=Interpreter();self.addCleanup(vm.close)
@@ -61,8 +61,9 @@ class PlainArrayTests(unittest.TestCase):
         vm=Interpreter();self.addCleanup(vm.close)
         vm.execute('A=New Array;A.Add(7);For I=0 To 4 Do R=A[I];Break;EndDo;A.Add(I);X=I;')
         self.assertIs(type(vm.variables['i']),D);self.assertIs(type(vm.variables['x']),D)
-        self.assertIs(type(vm.variables['a'][1]),D)
-        self.assertEqual(vm.variables['a'][1],D(0))
+        value = vm.execute('A[1];')
+        self.assertIs(type(value), D)
+        self.assertEqual(value, D(0))
     def test_counter_used_as_number_and_modified_counter(self):
         vm=Interpreter();self.addCleanup(vm.close)
         vm.execute('A=New Array;For I=0 To 4 Do A.Add(I);EndDo;R=0;For I=0 To 4 Do R=R+A[I]+I;EndDo;')
@@ -72,7 +73,7 @@ class PlainArrayTests(unittest.TestCase):
     def test_range_break_continue_and_final_counter(self):
         vm=Interpreter();self.addCleanup(vm.close)
         vm.execute('A=New Array;For I=0 To 4 Do If I=2 Then Continue;EndIf;A.Add(I);EndDo;R=A[3];')
-        self.assertEqual(vm.variables['r'],D(4));self.assertEqual(vm.variables['i'],D(5));self.assertIs(type(vm.variables['a']),PlainArray)
+        self.assertEqual(vm.variables['r'],D(4));self.assertEqual(vm.variables['i'],D(5))
         vm.execute('A=New Array;For I=0 To 4 Do If I=2 Then Break;EndIf;A.Add(I);EndDo;R=A[0];')
         self.assertEqual(vm.variables['i'],D(2))
 

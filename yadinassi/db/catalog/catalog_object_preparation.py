@@ -148,23 +148,10 @@ def _prepare_catalog_object(source, receiver, *, cancel=False, write_view=None, 
         raise BackendError('uncertain_commit')
     if type(source) is not str or len(source.encode('utf-8')) > _MAX_SOURCE:
         raise ValueError('catalog preparation: source limit')
-    from yadinassi.execution.execution_policy import current_backend
     if _transaction_scope is not None:_transaction_scope.check()
-    if current_backend() == 'python-direct':
-        from yadinassi.execution.direct.python_direct_catalog_preparation import prepared_validator
-        prepared=prepared_validator(receiver._manager,source,prepared=prepared)
-        program=prepared._program
-    else:
-        program = parse(source)
-        if not program or any(type(n) is not ast.Routine or n.is_async or n.is_dual
-                              or n.execution_context != 'client' or not n.module_context
-                              for n in program):
-            raise ValueError('catalog preparation: plain routines required')
-        entries = [n for n in program if n.name.casefold() == 'передзаписью']
-        if (len(entries) != 1 or entries[0].is_function
-                or len(entries[0].parameters) != 1 or entries[0].parameters[0].by_value
-                or entries[0].parameters[0].default is not None):
-            raise ValueError('catalog preparation: BeforeWrite reference parameter required')
+    from yadinassi.execution.direct.python_direct_catalog_preparation import prepared_validator
+    prepared=prepared_validator(receiver._manager,source,prepared=prepared)
+    program=prepared._program
     records = []
     def sink(record):
         if len(records) >= 128:

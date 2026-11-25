@@ -6,7 +6,7 @@ from yadinassi.execution.direct.source import python_direct_source_resources as 
 from yadinassi.streams.text_documents import BSLTextDocument
 from yadinassi.streams.file_io import BSLBinaryData
 from yadinassi.types.values import HostFunction
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 
 class SourceResourceSecurity(unittest.TestCase):

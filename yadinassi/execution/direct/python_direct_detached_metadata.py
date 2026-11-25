@@ -4,7 +4,7 @@ from decimal import Decimal
 from uuid import UUID
 from yadinassi.configuration import configuration_source_metadata as source
 from yadinassi.configuration.metadata import _DeclaredMetadataCollection,MetadataObjectCollection
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 _ROOT=source.SourceMetadataRoot;_OBJECT=source.SourceMetadataObject;_COLLECTION=_DeclaredMetadataCollection
 _BINDINGS=source._DIRECT_DETACHED_METADATA_BINDINGS

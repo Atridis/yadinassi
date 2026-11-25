@@ -90,26 +90,6 @@ def _eval_marker(value: object) -> object:
     raise TypeError("Вычислить требует контекст интерпретатора")
 
 
-_CONTROL_FLOW_PLANS = object()
-
-
-class _Goto(Exception):
-    def __init__(self, node: ast.Goto):
-        self.node = node
-        self.name = node.name.casefold()
-
-
-class _Break(Exception):
-    pass
-
-
-class _Continue(Exception):
-    pass
-
-
-class _Return(Exception):
-    def __init__(self, value: object):
-        self.value = value
 
 
 class _VariableReference(_Reference):
@@ -176,11 +156,7 @@ class Interpreter:
                  family_owner: "Interpreter | None" = None,
                  execution_backend: str | None = None,
                  allow_extensions: bool | None = None):
-        from .execution.execution_policy import current_backend, BACKENDS
-        if execution_backend is None:
-            execution_backend = (family_owner.execution_backend if isinstance(family_owner, Interpreter)
-                                 else current_backend())
-        if type(execution_backend) is not str or execution_backend not in BACKENDS:
+        if execution_backend is not None and (type(execution_backend) is not str or execution_backend != 'python-direct'):
             raise ValueError("unsupported execution backend")
         inherited_extensions = family_owner.allow_extensions if isinstance(family_owner, Interpreter) else False
         if allow_extensions is None:
@@ -190,7 +166,6 @@ class Interpreter:
         if isinstance(family_owner, Interpreter) and allow_extensions != inherited_extensions:
             raise ValueError('interpreter family cannot change extension policy')
         self._allow_extensions = allow_extensions
-        self._execution_backend = execution_backend
         self._compilation_profile = validate_compilation_profile(compilation_profile)
         self._native_target = validate_native_target(native_target)
         if database_context is not None:
@@ -214,7 +189,7 @@ class Interpreter:
             self._direct_cancelling = False
             self._schema_scopes = WeakValueDictionary()
         self._bind_schema_scope()
-        self._scheduler = (Scheduler(self._native_target, execution_backend=self.execution_backend) if family_owner is None
+        self._scheduler = (Scheduler(self._native_target) if family_owner is None
                            else family_owner._scheduler)
         self._diagnostic_owner = self
         self.variables: dict[str, object] = {}
@@ -229,7 +204,6 @@ class Interpreter:
         if family_owner is None:
             self._context_stack = ["client"]
             self._module_context_stack = [True]
-        self._client_routine_names: set[str] = set()
         # Family tombstones survive a missing side, including detached servers,
         # so an unavailable variant can never fall through to a host function.
         self._dual_routine_names: set[str] = set()
@@ -722,7 +696,7 @@ class Interpreter:
 
     @property
     def execution_backend(self):
-        return self._execution_backend
+        return 'python-direct'
 
     def prepare(self, text: str, source: str = "<строка>"):
         """Compile a reusable owned module snapshot for python-direct only."""
@@ -752,17 +726,6 @@ class Interpreter:
         from .execution.direct.python_direct import execute, _snapshot
         return execute(self, _snapshot(program))
 
-
-    @staticmethod
-    def _valid_routine_context(function: ast.Routine) -> bool:
-        return (function.execution_context in {"client", "server"}
-                and type(function.module_context) is bool
-                and type(function.is_dual) is bool
-                and type(function.is_async) is bool
-                and (not function.is_dual or
-                     (not function.module_context and not function.is_async))
-                and (function.execution_context != "client" or
-                     function.module_context or function.is_dual))
 
     def _resolve_routine(self, name: str) -> ast.Routine | None:
         key = name.casefold()
@@ -859,33 +822,6 @@ class Interpreter:
         if not self._has_module_context:
             raise ValueError("Хранилище модуля недоступно в подпрограмме без контекста")
 
-    def import_receiver(self, node: ast.Node) -> _Module | _Namespace | None:
-        """Resolve only explicit namespace syntax; ordinary values keep normal dispatch."""
-        node = self.ungroup(node)
-        if isinstance(node, ast.Name):
-            name = node.name.casefold()
-            if self.locals is not None and name in self.locals:
-                return None
-            imported = self.imports.get(name)
-            if imported is not None or self._configuration_runtime is None:
-                return imported
-            return self._configuration_runtime.resolve_module(name, self)
-        if isinstance(node, ast.Attribute):
-            parent = self.import_receiver(node.object)
-            if parent is None:
-                return None
-            if type(parent) is _Module:
-                # A module field is an ordinary value, not another namespace.
-                # Leave its evaluation to the shared explicit receiver route.
-                return None
-            if not isinstance(parent, _Namespace):
-                raise TypeError("Вложенное имя допустимо только для пространства каталога")
-            child = parent.members.get(node.name.casefold())
-            if child is None:
-                raise ValueError(f"Импортированное имя не найдено: {node.name}")
-            return child
-        return None
-
 
     @staticmethod
     def _copy_context_packet(values: list[object]) -> list[object]:
@@ -956,7 +892,6 @@ class Interpreter:
         server.module_names = self.server_module_names.copy() if module_context else set()
         server.variables = dict.fromkeys(server.module_names)
         server.server_initializers = self.server_initializers.copy() if module_context else []
-        server._client_routine_names = set(self.routines)
         server._dual_routine_names = self._dual_routine_names.copy()
         server._inherit_host_bindings(self)
         # Imports and the public module receiver remain unsupported server-side.
@@ -1064,7 +999,7 @@ class Interpreter:
                 text = path.read_text(encoding=self.encoding)
             except (OSError, UnicodeError, LookupError) as error:
                 raise ValueError(f"Не удалось прочитать модуль {path}: {error}") from None
-            child = Interpreter(self.output, execution_backend=self.execution_backend, encoding=self.encoding,
+            child = Interpreter(self.output, encoding=self.encoding,
                                 native_target=self.native_target,
                                 database_context=self.database_context,
                                 compilation_profile=self.compilation_profile,

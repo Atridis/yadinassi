@@ -4,7 +4,7 @@ from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.execution.direct import python_direct
 from yadinassi.syntax.parser import parse
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext,BoundaryViolation
 
 class BoundarySetupTests(unittest.TestCase):
     def test_single_context_and_live_registry_no_throwaway_copy(self):

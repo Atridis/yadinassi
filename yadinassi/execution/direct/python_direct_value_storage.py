@@ -1,6 +1,6 @@
 """Canonical standalone ValueStorage constructor and bounded Get."""
 
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.formats.storage import value_storage as storage
 from yadinassi.types.values import HostFunction
 

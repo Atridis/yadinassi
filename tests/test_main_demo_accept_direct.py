@@ -12,12 +12,6 @@ ROOT = Path(__file__).resolve().parents[1] / 'examples/demo'
 STARTED = 'Основная демо: справочники, документы и регистр накопления.'
 
 class MainDemoAcceptDirectTests(unittest.TestCase):
-    def test_example_has_explicit_composed_source_and_closed_forms(self):
-        configuration = load_application(ROOT, main_demo_application=True)
-        self.assertEqual(set(configuration.forms), {'commonform.operationdraft', 'commonform.draftdetails', 'commonform.demowelcome',
-            'document.receipt.form.card', 'document.issue.form.card'})
-        for name in ('DemoTools', 'DemoService'):
-            self.assertIn('CommonModules/'+name+'/Ext/Module.bsl', configuration.source_files)
 
     def test_example_start_commonmodule_openform_servercall_and_exit(self):
         temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)

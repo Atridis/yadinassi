@@ -8,7 +8,7 @@ from test_source_enumeration_runtime import package
 from yadinassi.configuration.configuration_source_runtime import SourceApplication,_SourceInterpreter
 from yadinassi.execution.direct.source import python_direct_source_enums as bridge
 from yadinassi.db.metadata.enum_types import BSLEnumReference
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 
 class DirectSourceEnumsSecurity(unittest.TestCase):

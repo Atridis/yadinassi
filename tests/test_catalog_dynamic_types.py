@@ -135,7 +135,7 @@ class CatalogDynamicTypesTests(unittest.TestCase):
                     vm.close()
 
     def test_detached_reference_value_ops_do_not_grant_database_members(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
         vm = Interpreter()
         self.addCleanup(vm.close)

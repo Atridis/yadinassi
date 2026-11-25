@@ -210,7 +210,7 @@ class SourceXDTOXMLTests(unittest.TestCase):
         self.assertEqual(effects,[])
     def test_post_native_adoption_refusal_is_atomic(self):
         from yadinassi.execution.direct.source import python_direct_source_xdto_objects as objects
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         app=self.ready();vm=app.interpreter;vm.execute('P.Label="late";');self.write(vm)
         factory=app.xdto.factory;before=(factory._nodes,factory._units);reader=dict(vm.variables['r'].__dict__)
         records=objects._RECORDS[app];identities=tuple(records)

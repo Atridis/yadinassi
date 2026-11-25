@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import patch
 import test_source_common_templates as existing
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.configuration.common_templates import SourceTemplateCall, SourceCommonTemplates
 from yadinassi.runtime import Interpreter
 

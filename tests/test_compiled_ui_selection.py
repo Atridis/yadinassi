@@ -26,15 +26,14 @@ class UIBackendSelectionTests(unittest.TestCase):
         with execution_backend_policy('python-direct'):
             self.assertEqual(entry(['file']), ('python-direct', ['file']))
 
-    def test_child_argv_preserves_direct_backend(self):
+    def test_child_argv_does_not_need_backend_selection(self):
         for cls in (RuntimeBridge, FormProcess, ConfigurationProcess):
             for mode in ('python-direct',):
                 with self.subTest(cls=cls.__name__, mode=mode), execution_backend_policy(mode), \
                         patch.object(cls, '_start') as start:
                     cls('owned-path')
                     command = start.call_args.args[0]
-                    index = command.index('--execution-backend')
-                    self.assertEqual(command[index + 1], mode)
+                    self.assertNotIn('--execution-backend', command)
 
     def test_fresh_stdio_children_select_and_restore_backend(self):
         for module in ('form_app', 'configuration_app', 'editor_stdio'):

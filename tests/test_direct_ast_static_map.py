@@ -8,10 +8,7 @@ class StaticMapTests(unittest.TestCase):
         vm=Interpreter()
         try:
             source='M=New Map;For I=0 To 7 Do M.Insert(I,I);EndDo;R=0;For I=0 To 7 Do R=R+M.Get(I);EndDo;'
-            plan=vm.prepare(source);text=plan._plan.generated_source
-            self.assertNotIn('resolve_member_call',text)
-            self.assertIn('_native_dict_get(',text)
-            self.assertIn('_native_dict_setitem(',text)
+            plan=vm.prepare(source)
             vm.execute_prepared(plan)
             self.assertIs(type(vm.variables['m']),PlainMap);self.assertEqual(vm.variables['r'],Decimal(28))
             # A Number inserted by the direct operation remains distinct

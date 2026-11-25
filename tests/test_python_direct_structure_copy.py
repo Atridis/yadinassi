@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.execution.codegen.experimental_naked_structure import new_structure, structure_items, _DirectStructure
+from yadinassi.execution.codegen.direct_structure import new_structure, structure_items, _DirectStructure
 from yadinassi.collections.structures import BSLFixedStructure
 from yadinassi.syntax.parser import parse
 
@@ -96,7 +96,7 @@ Empty=New Structure(New FixedStructure);E=Empty.Count();'''
             source=structures.BSLFixedStructure('X',1)
             class Fake:pass
             with patch.object(structures,'BSLFixedStructure',Fake):
-                from yadinassi.execution.codegen.experimental_naked_structure import new_structure
+                from yadinassi.execution.codegen.direct_structure import new_structure
                 if new_structure(source)['X']!=1:raise AssertionError('lost canonical copy')
                 try:new_structure(Fake())
                 except TypeError:pass

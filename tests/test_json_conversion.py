@@ -200,7 +200,7 @@ class JSONConversionTests(unittest.TestCase):
         self.assertIsNone(self.vm.locals)
 
     def test_prepared_named_converter_cannot_commit_after_owner_close(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
         effects = []
         def output(message):

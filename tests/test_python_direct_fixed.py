@@ -4,7 +4,7 @@ from decimal import Decimal
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.syntax.parser import parse
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.types.values import BSLFixedArray
 from yadinassi.collections.structures import BSLFixedStructure
 
@@ -71,7 +71,7 @@ class DirectFixedTests(unittest.TestCase):
 
     def test_existing_policy_event_and_post_policy_binding_check(self):
         from yadinassi.execution.direct.python_direct_services import ServicesBoundary
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryContext
         class Boundary(ServicesBoundary,BoundaryContext):pass
         for mode in ('deny','mutate','permission'):
             vm=Interpreter(allow_extensions=True);events=[];factory=vm.types['fixedarray']

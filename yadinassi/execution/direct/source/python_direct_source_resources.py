@@ -3,7 +3,7 @@ from types import MethodType
 from yadinassi.streams import text_documents as text, file_io
 from yadinassi.streams.text_documents import BSLTextDocument, _DIRECT_TEXT_DOCUMENT_ABI, _DIRECT_TEXT_HELPERS
 from yadinassi.streams.file_io import BSLBinaryData, _DIRECT_SOURCE_BINARY_ABI, _DIRECT_SOURCE_BINARY_FROM_BYTES
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.types.values import HostFunction
 from yadinassi.execution.direct.python_direct_numbers import public_number
 

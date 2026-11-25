@@ -518,7 +518,7 @@ EndFunction
             self.assertNotIn('retired write must not evaluate its RHS', output)
 
     def test_foreign_and_unregistered_controls_do_not_become_catchable_removals(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         from yadinassi.execution.direct.python_direct_form_objects import require
         from yadinassi.forms.form_model import BSLFormField
 

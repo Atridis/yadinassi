@@ -3,7 +3,7 @@ from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
 from yadinassi.collections.value_tables import BSLValueTable, BSLCollectionIndexes
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 class DirectTableIndexTests(unittest.TestCase):
     def test_source_ast_prepared_public_protocol(self):

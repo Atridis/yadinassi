@@ -1,7 +1,7 @@
 """Synchronous direct-source request cache lifetime, without scheduler execution."""
 from contextlib import contextmanager
 from contextvars import ContextVar
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 _ACTIVE=ContextVar('direct_source_requests',default=())
 

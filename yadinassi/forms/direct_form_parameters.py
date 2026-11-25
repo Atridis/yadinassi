@@ -1,6 +1,6 @@
 """Exact scalar-structure bridges at form input/result boundaries only."""
 from yadinassi.collections.structures import BSLStructure, BSLFixedStructure
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 
 def structure_items(value):
@@ -8,7 +8,7 @@ def structure_items(value):
     kind=type(value)
     if kind is BSLStructure or kind is BSLFixedStructure:
         return tuple(value._items.values())
-    from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
+    from yadinassi.execution.codegen.direct_structure import _DirectStructure
     if kind is _DirectStructure:
         # Native backing entries retain original spelling and scalar value.
         return tuple(dict.values(value))

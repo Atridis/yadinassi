@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.direct.python_direct import make_boundary
 from yadinassi.runtime import _Module
 from yadinassi.syntax.parser import parse

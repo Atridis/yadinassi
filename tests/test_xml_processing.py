@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext, BoundaryViolation
 from yadinassi.syntax.parser import parse
 from yadinassi.formats.xml import xml_processing
 from yadinassi.formats.storage.serialization import (

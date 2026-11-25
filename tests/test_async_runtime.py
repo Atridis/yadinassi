@@ -128,7 +128,7 @@ class AsyncRuntimeTests(unittest.TestCase):
                 self.assertEqual(vm.pending_promises, ())
 
     def test_suspended_task_never_resumes_against_replaced_module_state(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         signal = self.vm._scheduler.new_pending()
         self.vm.register_function('Signal', lambda: signal)
         self.run_code('Async Procedure P() Await Signal(); Message("must not run"); EndProcedure P();')
@@ -541,7 +541,7 @@ class AsyncRuntimeTests(unittest.TestCase):
             self.assertEqual(self.vm._scheduler._tasks, set())
 
     def test_import_task_cannot_resume_after_owner_publication_is_revoked(self):
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root/'M.bsl').write_text('''

@@ -4,9 +4,9 @@ from math import isfinite
 from weakref import ReferenceType
 from yadinassi.application import reusable_values as reuse
 from yadinassi.application.reusable_values import ApplicationReusableValues, ReusableValueCache, _DIRECT_REUSE_ABI
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation, _MISSING
-from yadinassi.execution.codegen.experimental_naked_collections import _OMITTED_REF
-from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation, _MISSING
+from yadinassi.execution.codegen.direct_collections import _OMITTED_REF
+from yadinassi.execution.codegen.direct_live_state import _ForwardReference
 from yadinassi.syntax import ast
 from yadinassi.types.values import Reference
 from yadinassi.execution.direct.python_direct_numbers import public_number

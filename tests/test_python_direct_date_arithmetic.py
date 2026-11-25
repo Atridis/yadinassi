@@ -3,7 +3,7 @@ from decimal import Decimal, localcontext, Rounded, Inexact
 import unittest
 from unittest.mock import patch
 from yadinassi import BSLRuntimeError, Interpreter
-from yadinassi.execution.codegen.experimental_naked_scalar_semantics import UnsupportedScalarSemantics, uca_order
+from yadinassi.execution.codegen.direct_scalar_semantics import UnsupportedScalarSemantics
 from yadinassi.syntax.parser import parse
 from yadinassi.temporal.dates import BSLDate, MAX_TICKS, UnsupportedDateRange, shift_date, date_difference
 
@@ -94,30 +94,3 @@ class DirectDateArithmeticTests(unittest.TestCase):
             with self.subTest(comparison=comparison):
                 with self.assertRaisesRegex(BSLRuntimeError, 'несовместимы'):
                     vm.execute(comparison)
-
-    def test_date_order_reads_only_exact_canonical_slots(self):
-        def forbidden(*args):
-            raise AssertionError('Date hook was dispatched')
-
-        class ForeignDate(BSLDate):
-            __lt__ = forbidden
-            __gt__ = forbidden
-
-        early, late = BSLDate(1), BSLDate(2)
-        with (patch.object(BSLDate, 'ticks', property(forbidden)),
-              patch.object(BSLDate, 'boundary', property(forbidden)),
-              patch.object(BSLDate, 'require_known', forbidden),
-              patch.object(BSLDate, '__lt__', forbidden)):
-            self.assertIs(uca_order(early, late, '<'), True)
-        foreign = ForeignDate(1)
-        for left, right in ((early, foreign), (foreign, late), (foreign, foreign)):
-            with self.assertRaises(TypeError):
-                uca_order(left, right, '<')
-        for ticks, boundary in ((True, False), (-1, False), (MAX_TICKS + 1, False), (1, 0), (1, True)):
-            bad = BSLDate(1)
-            object.__setattr__(bad, 'ticks', ticks)
-            object.__setattr__(bad, 'boundary', boundary)
-            with self.assertRaises(UnsupportedScalarSemantics):
-                uca_order(early, bad, '<')
-        with self.assertRaises(UnsupportedScalarSemantics):
-            uca_order(object.__new__(BSLDate), late, '<')

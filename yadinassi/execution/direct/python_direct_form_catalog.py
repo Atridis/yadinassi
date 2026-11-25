@@ -3,7 +3,7 @@ from yadinassi.db.catalog.catalogs import BSLCatalogs, BSLCatalogManager, BSLCat
 from yadinassi.db.catalog.catalog_types import BSLCatalogReference
 from yadinassi.db.catalog.catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
 from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.types.values import HostFunction
 from .python_direct_database import CatalogBoundary
 from .python_direct_forms import FormBoundary

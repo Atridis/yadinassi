@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLError
 from yadinassi.types.unique_identifiers import BSLUUID
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.execution.codegen.experimental_naked_scalar_semantics import typed_find, UnsupportedScalarSemantics
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_scalar_semantics import typed_find, UnsupportedScalarSemantics
 from yadinassi.types.values import BSLType, equal
 from yadinassi.types.type_values import type_of
 from yadinassi.types.value_checks import value_is_filled

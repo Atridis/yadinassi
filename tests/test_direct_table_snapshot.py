@@ -56,7 +56,7 @@ class DirectTableSnapshot(unittest.TestCase):
         from unittest.mock import patch
         from yadinassi.formats.storage import value_storage_table as codec
         from yadinassi.execution.direct.source import python_direct_source_value_storage as direct
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         for name in ('Schema','TableStorage','SearchIndexes'):
             cls=getattr(codec,name)
             with patch.object(codec,name,type('Replacement',(),{})):

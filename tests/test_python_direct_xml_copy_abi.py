@@ -6,7 +6,7 @@ from yadinassi.formats.xml import xml_io,xml_writer
 from yadinassi.execution.direct.source import python_direct_source_xdto_xml as xml
 from yadinassi.execution.direct.source import python_direct_source_xdto as shared
 from yadinassi.formats.xml.dom_io import BSLDOMBuilder
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 import test_python_direct_source_xdto as basic
 
 class XMLCopyABITests(unittest.TestCase):

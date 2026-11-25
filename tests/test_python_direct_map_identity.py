@@ -1,11 +1,10 @@
 """Exact direct Map identity, separately evidenced from Array/Structure."""
-from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap, _NakedMap
+from yadinassi.execution.codegen.direct_collections import _TypedMap, _NakedMap
 from pathlib import Path
 import unittest
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.execution.codegen.experimental_naked_scalar_semantics import map_identity_operators
-from yadinassi.execution.codegen.experimental_naked_structure import new_structure
+from yadinassi.execution.codegen.direct_structure import new_structure
 
 
 class DirectMapIdentityTests(unittest.TestCase):
@@ -30,30 +29,6 @@ class DirectMapIdentityTests(unittest.TestCase):
                 else:vm.execute('A=New Map;B=New Map;R=Eval("A=B");N=Eval("A<>B");')
             self.assertIs(vm.variables['r'],False);self.assertIs(vm.variables['n'],True)
 
-    def test_map_payload_and_foreign_comparison_hooks_never_run(self):
-        equal,not_equal=map_identity_operators();seen=[]
-        class Hostile:
-            def __eq__(self,other):seen.append('eq');raise AssertionError
-            def __ne__(self,other):seen.append('ne');raise AssertionError
-        a=_TypedMap();b=_TypedMap();a['X']=Hostile();b['X']=Hostile();a['Self']=a;b['Self']=b
-        for left,right in ((a,b),(a,Hostile()),(Hostile(),a)):
-            self.assertIs(equal(left,right),False);self.assertIs(not_equal(left,right),True)
-        self.assertIs(equal(a,a),True);self.assertEqual(seen,[])
-
-    def test_other_kinds_and_separate_ne_protocol_remain_unchanged(self):
-        equal,not_equal=map_identity_operators()
-        class Host:
-            def __eq__(self,other):return 'eq'
-            def __ne__(self,other):return 'ne'
-        self.assertEqual(equal(Host(),Host()),'eq');self.assertEqual(not_equal(Host(),Host()),'ne')
-        for left,right in (({},{}),(_NakedMap(),_NakedMap()),([],[])):
-            self.assertIs(equal(left,right),True);self.assertIs(not_equal(left,right),False)
-        # The common structure now implements BSL identity natively. The map
-        # helper must still delegate to the receiver's own equality protocol.
-        left,right=new_structure(),new_structure()
-        self.assertIs(equal(left,right),left==right)
-        self.assertIs(not_equal(left,right),left!=right)
-
 
     def test_boolean_key_domain_is_distinct_and_equal_numbers_replace(self):
         vm=Interpreter();self.addCleanup(vm.close)
@@ -64,12 +39,7 @@ class DirectMapIdentityTests(unittest.TestCase):
         self.assertIsNone(vm.execute('M[New Map]'))
         self.assertEqual(vm.execute('M.Count()'),4)
 
-    def test_date_boundary_and_operand_effect_order(self):
-        from yadinassi.temporal.dates import BSLDate,MAX_TICKS,UnsupportedDateRange
-        equal,not_equal=map_identity_operators();m=_TypedMap();boundary=BSLDate(MAX_TICKS,boundary=True)
-        for left,right in ((m,boundary),(boundary,m)):
-            with self.assertRaises(UnsupportedDateRange):equal(left,right)
-            with self.assertRaises(UnsupportedDateRange):not_equal(left,right)
+    def test_operand_effect_order(self):
         vm=Interpreter(allow_extensions=True);seen=[]
         vm.register_function('Left',lambda:seen.append('left') or _TypedMap())
         vm.register_function('Right',lambda:seen.append('right') or _TypedMap())

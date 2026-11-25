@@ -8,7 +8,7 @@ from types import FunctionType, MethodType
 from weakref import ref
 from yadinassi.types.values import _DIRECT_COLLECTION_CLASS_ABI
 HostFunction=_DIRECT_COLLECTION_CLASS_ABI[3][0]
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 _RECORDS={}
 

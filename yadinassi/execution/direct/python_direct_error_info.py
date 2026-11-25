@@ -1,6 +1,6 @@
 """Read-only scalar fields of an exact canonical diagnostic snapshot."""
 from yadinassi.types.error_info import _DIRECT_SNAPSHOT_ABI, _DIRECT_CATEGORY_ABI, _DIRECT_CATEGORY_SETS
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from decimal import Decimal
 from yadinassi.types.values import _DIRECT_COLLECTION_CLASS_ABI
 

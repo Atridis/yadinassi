@@ -3,7 +3,7 @@ from functools import partial
 from decimal import Decimal
 from yadinassi.types.array_index import array_offset
 from yadinassi.collections.plain_value_list import PlainValueList, _DIRECT_PLAIN_METHODS
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 
 _ADD,_INSERT,_GET,_COUNT=_DIRECT_PLAIN_METHODS

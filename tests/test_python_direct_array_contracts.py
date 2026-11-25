@@ -6,8 +6,8 @@ from yadinassi import Interpreter, BSLError
 from yadinassi.types import values
 from yadinassi.syntax.parser import parse
 from yadinassi.types.values import BSLFixedArray
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.execution.codegen.experimental_naked_resources import bounded_array
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_resources import bounded_array
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 
 class DirectArrayContractTests(unittest.TestCase):

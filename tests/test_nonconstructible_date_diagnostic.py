@@ -43,7 +43,7 @@ class NonconstructibleDateDiagnostics(unittest.TestCase):
 
     def test_owned_compilation_keeps_nonconstructible_date_diagnostic(self):
         from yadinassi.execution.codegen.direct_emitter import compile_owned
-        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryContext
         from yadinassi.syntax.parser import parse
         source = 'New Date;'
         plan = compile_owned(parse(source, 'date.bsl'), source_text=source,

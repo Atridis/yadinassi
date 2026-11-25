@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 from decimal import Decimal
 from yadinassi import Interpreter
-from yadinassi.execution.codegen.experimental_naked_structure import structure_items
+from yadinassi.execution.codegen.direct_structure import structure_items
 
 class LiteralStructureSchemaTests(unittest.TestCase):
     def execute(self, source):
@@ -49,7 +49,7 @@ class LiteralStructureSchemaTests(unittest.TestCase):
             ([1,2],[('a',Decimal(2))]))
 
     def test_successful_literal_never_calls_runtime_insert(self):
-        from yadinassi.execution.codegen import experimental_naked_structure as helpers
+        from yadinassi.execution.codegen import direct_structure as helpers
         vm=Interpreter(execution_backend='python-direct')
         with patch.object(helpers,'structure_insert',side_effect=AssertionError('runtime insert')):
             vm.execute('s=New Structure("A,a,B",1,2,3);')

@@ -5,7 +5,7 @@ from decimal import Decimal, localcontext
 from yadinassi import Interpreter
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.syntax.parser import parse
-from yadinassi.execution.codegen.experimental_naked_scalar_semantics import decimal_divide, decimal_sign
+from yadinassi.execution.codegen.direct_scalar_semantics import decimal_divide, decimal_sign
 
 class DirectDecimalDivisionTests(unittest.TestCase):
     def vm(self, *, allow_extensions=False):

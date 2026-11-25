@@ -6,7 +6,7 @@ from yadinassi.formats.json.json_processing import (
     BSLJSONReader, BSLJSONWriter, encode_json_events, read_json_events, read_json,
     _DIRECT_SOURCE_JSON_DICT,
 )
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 _WRITE = BSLJSONWriter._write_encoded
 _ACCESS = ('__getattribute__', '__getattr__', '__setattr__')

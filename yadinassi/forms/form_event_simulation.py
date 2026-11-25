@@ -143,11 +143,9 @@ def simulate_form_event(source, binding, *, catalog_xml, form_xml, definition_xm
     Returns a detached candidate even on cancellation; never adopts or writes it.
     Any failure raises, returning neither candidate nor partial messages. No retry.
     """
-    from yadinassi.execution.execution_policy import current_backend
-    unit=(_scalar_source(source,binding,catalog_xml,form_xml,definition_xml,
+    unit=_scalar_source(source,binding,catalog_xml,form_xml,definition_xml,
                         _source_owner(_prepared_owner) if _prepared_owner is not None else None)
-          if current_backend()=='python-direct' else None)
-    admitted = unit.analysis if unit is not None else _admit(source, binding, catalog_xml, form_xml, definition_xml)
+    admitted=unit.analysis
     if type(event) is not str or event not in ('OnChange', 'BeforeWriteAtServer'):
         raise ValueError('form event: unsupported event')
     if type(cancel) is not bool or type(deletion_mark) is not bool:
@@ -155,8 +153,7 @@ def simulate_form_event(source, binding, *, catalog_xml, form_xml, definition_xm
     if event == 'OnChange' and cancel:
         raise ValueError('form event: cancellation belongs to server event')
     receiver = _receiver(admitted, code, description, deletion_mark)
-    # Direct execution reuses its owned source unit; legacy reparses private bytes.
-    program = list(unit.program) if unit is not None else _parse(source)[0]
+    program = list(unit.program)
     routine = program[0 if event == 'OnChange' else 1]
     messages = []
     def sink(record):
@@ -200,9 +197,7 @@ class FormDraftSession:
                  code, description, deletion_mark=False, _cache_owner=None):
         self._direct_scalar_source=None
         self._direct_cache_owner=_cache_owner
-        from yadinassi.execution.execution_policy import current_backend
-        admitted=(_scalar_source(source,binding,catalog_xml,form_xml,definition_xml,_source_owner(self)).analysis
-                  if current_backend()=='python-direct' else _admit(source,binding,catalog_xml,form_xml,definition_xml))
+        admitted=_scalar_source(source,binding,catalog_xml,form_xml,definition_xml,_source_owner(self)).analysis
         values = _receiver(admitted, code, description, deletion_mark).snapshot().values
         self._source, self._binding = source, binding
         self._catalog_xml, self._form_xml = catalog_xml, form_xml
@@ -485,20 +480,16 @@ def simulate_product_form_event(form_source, object_source, receiver, *, event,
         # Deliberately drop object navigation/data identity from original records.
         records.append(FormEventMessage(record.text, record.field))
 
-    from yadinassi.execution.execution_policy import current_backend
-    if current_backend() == 'python-direct':
-        # Source/schema/target/current-row checks above remain live. Retain only
-        # privately parsed syntax, not receiver state, controls or closures.
-        manager = receiver._manager
-        key = (form_source, '<строка>', 'standalone')
-        previous = getattr(manager, '_direct_product_program', None)
-        if previous is None or previous[0] != key:
-            program = parse(form_source.decode('utf-8-sig'))
-            previous = (key, tuple(program))
-            manager._direct_product_program = previous
-        program = list(previous[1])
-    else:
+    # Source/schema/target/current-row checks above remain live. Retain only
+    # privately parsed syntax, not receiver state, controls or closures.
+    manager = receiver._manager
+    key = (form_source, '<строка>', 'standalone')
+    previous = getattr(manager, '_direct_product_program', None)
+    if previous is None or previous[0] != key:
         program = parse(form_source.decode('utf-8-sig'))
+        previous = (key, tuple(program))
+        manager._direct_product_program = previous
+    program = list(previous[1])
     routine = next(node for node in program if node.name == handlers[event])
     vm = ProductInterpreter(receiver, sink, object_source)
     try:

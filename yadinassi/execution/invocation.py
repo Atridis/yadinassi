@@ -12,7 +12,7 @@ from yadinassi.runtime import Interpreter
 from yadinassi.syntax import ast
 from yadinassi.syntax.lexer import Token
 from .codegen.native_targets import target_context
-from .codegen.experimental_naked_boundaries import BoundaryViolation
+from .codegen.direct_boundaries import BoundaryViolation
 from yadinassi.ui.protocol import (UIError, MAX_COUNTER, bounded_text, decode_line,
                           decode_value, encode_line, encode_value)
 

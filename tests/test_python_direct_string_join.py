@@ -4,7 +4,7 @@ import unittest
 from yadinassi import Interpreter
 from yadinassi.text.strings import join
 from yadinassi.types.values import BSLArray,BSLFixedArray,NULL
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 class DirectStringJoinTests(unittest.TestCase):
     def test_source_ast_prepared_and_bilingual_collections(self):

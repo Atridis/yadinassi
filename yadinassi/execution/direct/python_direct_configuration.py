@@ -32,11 +32,11 @@ _COMMAND_SCOPE = ContextVar("direct_configuration_command", default=None)
 from yadinassi import runtime as _runtime
 from yadinassi.execution import safe_mode
 from yadinassi.db import source_transactions, database_transactions
-from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
-from yadinassi.execution.codegen.experimental_naked_collections import _Cell
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.codegen.direct_collections import _Cell
 from yadinassi.execution.codegen.direct_emitter import compile_owned
 from .python_direct_numbers import public_number
-from yadinassi.execution.codegen.experimental_naked_errors import convert_error
+from yadinassi.execution.codegen.direct_errors import convert_error
 from .python_direct import _snapshot
 from yadinassi.execution.codegen.native_targets import target_context
 from yadinassi.syntax import ast
@@ -410,23 +410,21 @@ def install(app,owner,program,source_text=''):
     if any(type(n) is ast.Routine and (n.is_async or n.is_dual) for n in program):
         raise BoundaryViolation('direct configured async/dual routines are not connected')
     owned=_snapshot(program)
-    sqlite_names=sqlite_constructors=()
+    sqlite_names=()
     session_owner=owner is app._session_owner
     if app._client_sqlite is not None and not session_owner:
-        from .python_direct_configuration_sqlite import NAMES, CONSTRUCTORS
-        sqlite_names,sqlite_constructors=NAMES,CONSTRUCTORS
+        from .python_direct_configuration_sqlite import NAMES as sqlite_names
     if session_owner:
         from .python_direct_configuration_sessions import NAMES
-        external_names,constructors=NAMES,()
+        external_names=NAMES
     else:
         external_names=tuple(app._definitions)+sqlite_names+(enums.NAMES+('metadata','метаданные')
             if app.configuration.enumerations else ())
         if app.configuration.session_parameters and owner.execution_context=='server':
             from .python_direct_configuration_sessions import NAMES
             external_names+=NAMES
-        constructors=('uuid','уникальныйидентификатор')+sqlite_constructors
     plan=compile_owned(owned,retain_generated=False,source_text=source_text,source_name=program[0].token.source if program else '<configuration>',
-        external_names=external_names,constructors=constructors,
+        external_names=external_names,
         exports=True,configuration_dispatch=True,
         meter_loops=app._cli_database is None and (not session_owner or owner.allow_extensions))
     # Capture original declaration bindings when this exact plan is installed.
