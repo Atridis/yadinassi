@@ -145,15 +145,13 @@ def presentation(value):
         if entry[2] is not None:raise ValueError(entry[2])
         return entry[1]
     kind = type(value)
-    if kind is int:
-        return to_string(Decimal(value))
     if kind is list or any(base is _DIRECT_ARRAY_TYPE for base in _TYPE_MRO.__get__(kind)):
         return 'Массив'
     if (kind is _NakedMap or kind is _TypedMap):
         return 'Соответствие'
     if (kind is dict or kind is _DirectStructure):
         return 'Структура'
-    if id(kind) in _SCALAR_TYPE_IDS or value is NULL:
+    if kind is int or id(kind) in _SCALAR_TYPE_IDS or value is NULL:
         return to_string(value)
     raise UnsupportedScalarSemantics('host presentation requires an explicit service boundary')
 

@@ -277,10 +277,15 @@ def _presented_number(value: Decimal) -> Decimal:
 
 
 def to_string(value: object) -> str:
+    kind = type(value)
+    if kind is str:
+        return value
     if value is None or value is NULL:
         return ""
     if isinstance(value, bool):
         return "Да" if value else "Нет"
+    if kind is int:
+        value = Decimal(value)
     if isinstance(value, Decimal):
         if value.is_zero():
             return "0"
@@ -401,7 +406,7 @@ def divide(left: Decimal, right: Decimal) -> Decimal:
 def boolean(value: object) -> bool:
     if isinstance(value, bool):
         return value
-    if isinstance(value, Decimal):
+    if type(value) is int or isinstance(value, Decimal):
         return value != 0
     raise TypeError("Ожидается булево значение или число")
 

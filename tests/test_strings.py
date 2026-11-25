@@ -201,6 +201,21 @@ class StringTests(unittest.TestCase):
             ('Lower(True)', 'да'), ('StrConcat(StrSplit(1203, 0), 9)', '1\u00a0293'),
         ])
 
+    def test_numeric_representation_is_shared_at_text_boundaries(self):
+        plan = self.vm.prepare("""
+            N = -1200 - 34;
+            Message(N);
+            FromString = String(N);
+            FromLeft = Left(N, 6);
+            FromBoolean = Boolean(N);
+        """)
+        self.assertIn(' - 34', plan._plan.generated_source)
+        self.vm.execute_prepared(plan)
+        self.assertEqual(self.output, ['-1\u00a0234'])
+        self.assertEqual(self.vm.variables['fromstring'], self.output[0])
+        self.assertEqual(self.vm.variables['fromleft'], self.output[0])
+        self.assertIs(self.vm.variables['fromboolean'], True)
+
     def test_split_delimiters_are_individual_characters(self):
         result = self.evaluate('StrSplit("red,green;blue|white", ",;|")')
         self.assertIsInstance(result, BSLArray)
