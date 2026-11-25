@@ -24,7 +24,7 @@ from .direct_boundaries import BoundaryViolation, _MISSING as _SERVICE_MISSING
 from yadinassi.execution.direct.python_direct_eval import bind_eval
 from yadinassi.execution.direct.python_direct_execute import FragmentScope, execute_fragment
 from yadinassi.types.values import BSLArray, BSLFixedArray, BSLObject, HostFunction, Reference
-from .direct_scalar_semantics import concatenate, presentation, truth
+from .direct_scalar_semantics import compare_order, concatenate, presentation, truth
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.execution.direct.python_direct_numbers import divide, remainder, sign, public_number
 from yadinassi.execution.direct.python_direct_dynamic_new import construct
@@ -315,7 +315,7 @@ def nonconstructible(key, missing=False):
     if missing:
         raise TypeError('Тип не определен: '+key)
     raise TypeError('Тип нельзя создать оператором Новый: '+key)
-_OP = dict(_Truth=truth, _PublicNumber=public_number, _Divide=divide, _Remainder=remainder, _Sign=sign,
+_OP = dict(_Truth=truth, _PublicNumber=public_number, _Divide=divide, _Remainder=remainder, _Sign=sign, _CompareOrder=compare_order,
            _GotoTransfer=direct_goto.GotoTransfer,_String=concatenate, _Missing=_MISSING, _OmittedRef=_OMITTED_REF, _ServiceMissing=_SERVICE_MISSING, _Unset=UNSET, _Map=PlainMap, _Nonconstructible=nonconstructible, _SelfRead=self_read, _SelfWrite=self_write, _SelfRef=self_reference,
            _Recoverable=(ArithmeticError,TypeError,ValueError,IndexError,NameError,RecursionError,BSLRuntimeError),
            _Handled=handled_error, _Reraise=reraise_handled, _Raise=raise_error,
@@ -727,7 +727,14 @@ class Emit:
                                 or type(l) is p.Call and type(l.func) is p.Name and l.func.id=='_String'):
                     return call('_String',l,r)
                 return p.BinOp(left=l,op=_BINARY[op](),right=r)
-            if op in _COMPARE:return p.Compare(left=l,ops=[_COMPARE[op]()],comparators=[r])
+            if op in _COMPARE:
+                # If a literal excludes a pair of strings, Python already
+                # has the intended ordering. Equality never uses collation.
+                if op not in ('=', '<>') and not any(
+                        type(value) is p.Constant and type(value.value) is not str
+                        for value in (l, r)):
+                    return call('_CompareOrder', l, r, literal(op))
+                return p.Compare(left=l,ops=[_COMPARE[op]()],comparators=[r])
             if op=='/':return call('_Divide',l,r)
             if op=='%':return call('_Remainder',l,r)
         if type(x) is b.Index:

@@ -21,6 +21,19 @@ class DirectCollationTests(unittest.TestCase):
             self.assertEqual(tuple(vm.variables[k] for k in ('r','s','e','n')),(True,True,False,True))
 
 
+    def test_only_ordering_that_can_see_two_strings_uses_collation(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        plan = vm.prepare('A=1; R=A<(2); N=(A<>2); S="a"<"A"; E=("a"="A");')
+        generated = plan._plan.generated_source
+        self.assertIn('r = a < 2', generated)
+        self.assertIn('n = a != 2', generated)
+        self.assertIn("e = 'a' == 'A'", generated)
+        self.assertEqual(generated.count('_CompareOrder('), 1)
+        vm.execute_prepared(plan)
+        self.assertEqual(tuple(vm.variables[k] for k in ('r', 'n', 's', 'e')),
+                         (True, True, True, False))
+
     def test_literal_errors_are_runtime_catchable_and_dead_branches_do_no_io(self):
         collation._collator.cache_clear()
         try:

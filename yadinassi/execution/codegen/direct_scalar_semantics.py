@@ -5,6 +5,8 @@ host callbacks require an explicit boundary rather than accidental str/equality.
 """
 from yadinassi.execution.direct.python_direct_plain_array import _DIRECT_PLAIN_ARRAY_TYPE as _PlainArray
 from decimal import Decimal
+from operator import ge, gt, le, lt
+from yadinassi.text.collation import _DIRECT_STRING_KEY_ABI
 from yadinassi.text.strings import concatenate as _join
 from yadinassi.text.chars import CHARS
 from yadinassi.temporal.dates import _DIRECT_EQUALITY_DATE_STATE, _DIRECT_ORDER_DATE_TICKS, UnsupportedDateRange
@@ -160,6 +162,16 @@ def concatenate(left, right):
     if type(left) is not str:
         raise TypeError('Ожидается строка')
     return _join(left, right if type(right) is str else presentation(right))
+
+
+_ORDER_OPERATORS = {'<': lt, '<=': le, '>': gt, '>=': ge}
+
+
+def compare_order(left, right, operator):
+    # 1C's "a" < "A" is True. Equality still uses the original values.
+    if type(left) is str and type(right) is str:
+        left, right = _DIRECT_STRING_KEY_ABI(left), _DIRECT_STRING_KEY_ABI(right)
+    return _ORDER_OPERATORS[operator](left, right)
 
 
 def order(left, right, operator):
