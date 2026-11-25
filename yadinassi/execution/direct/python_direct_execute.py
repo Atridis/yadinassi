@@ -44,7 +44,8 @@ class FragmentScope:
         if name in self.names:
             value=self.parent[name]
             return self._get(value) if type(value) is Reference else value
-        return self.private[name]
+        try:return self.private[name]
+        except KeyError:missing(name)
     def __setitem__(self,name,value):
         if name in self.bindings:self._set(self.bindings[name],value)
         elif name in self.names:

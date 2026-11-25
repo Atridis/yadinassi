@@ -36,6 +36,13 @@ class ExecuteTests(unittest.TestCase):
             for text in ('fresh', 'Eval("fresh")', 'Execute("saved = fresh;");'):
                 with self.assertRaises(BSLError):
                     self.vm.execute(text)
+            self.vm.execute(
+                'evalCaught = False; executeCaught = False; '
+                'Try saved = Eval("fresh"); Except evalCaught = True; EndTry; '
+                'Try Execute("saved = fresh;"); Except executeCaught = True; EndTry;')
+            self.assertIs(self.vm.variables['evalcaught'], True)
+            self.assertIs(self.vm.variables['executecaught'], True)
+            self.assertEqual(self.vm.execute('saved'), Decimal(37))
             self.assertIsNone(self.vm.locals)
 
     def test_nested_scope_is_live_but_new_names_do_not_escape(self):
