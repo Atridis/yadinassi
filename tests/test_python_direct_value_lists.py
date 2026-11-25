@@ -20,6 +20,19 @@ class DirectValueListTests(unittest.TestCase):
                 vm.execute('SetField(I.Presentation);')
                 self.assertEqual(vm.execute('I.Presentation'),'27')
 
+    def test_native_integer_values_positions_and_bulk_load_share_storage_rules(self):
+        vm=Interpreter();self.addCleanup(vm.close)
+        vm.execute('''
+            L=New ValueList; First=L.Add(7,4,1); L.Insert(0,9);
+            R=L[1].Value; P=First.Presentation; C=First.Check;
+            L.Move(0,1); Last=L.Get(1).Value;
+            A=New Array; A.Add(8); A.Add(3); L.LoadValues(A);
+            L[0].Value=6; L.FillChecks(1); Loaded=L.FindByValue(6).Check;
+        ''')
+        for name,value in dict(r=7,p='4',c=True,last=9,loaded=True).items():
+            self.assertEqual(vm.variables[name],value)
+        self.assertEqual(vm.execute('L[1].Value'),3)
+
     def test_rejection_precedes_all_argument_effects(self):
         vm=Interpreter(allow_extensions=True);seen=[]
         vm.register_function('Effect',lambda:seen.append(1) or Decimal(0))

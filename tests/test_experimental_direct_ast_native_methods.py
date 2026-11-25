@@ -52,21 +52,26 @@ class NativeMethodsTests(DirectSourceAssertions,unittest.TestCase):
         self.assertEqual((vm.variables['x'],vm.variables['y']),(1,2))
 
     def test_nested_invalid_arity_emission_is_linear(self):
+        import ast as python_ast
         from unittest.mock import patch
         from yadinassi import Interpreter
-        from yadinassi.execution.direct import python_direct
-        from yadinassi.execution.codegen import experimental_direct_ast as direct
-        for compiler in (direct.compile_module,direct.compile_module_whole_source):
-            counts=[]
-            for size in (4,8,12):
-                expression='1'
-                for _ in range(size):expression='A.Count('+expression+')'
-                vm=Interpreter()
-                try:
-                    with patch.object(python_direct,'_compile',compiler):
-                        plan=vm.prepare('A=New Array;R='+expression+';')
-                    counts.append(plan._plan._research_lowering_counts)
-                finally:vm.close()
-            # Incremental Python node/BSL visit growth is constant per nested call.
-            for column in (1,2):
-                self.assertEqual(counts[2][column]-counts[1][column],counts[1][column]-counts[0][column])
+        from yadinassi.execution.codegen.direct_emitter import Emit
+        from yadinassi.syntax import ast as bsl_ast
+
+        counts=[]
+        original=Emit.expression
+        for size in (4,8,12):
+            expression='1'
+            for _ in range(size):expression='A.Count('+expression+')'
+            visited=[]
+            def observe(emitter,node,want_value):
+                if type(node) is bsl_ast.Call:visited.append(node)
+                return original(emitter,node,want_value)
+            vm=Interpreter()
+            self.addCleanup(vm.close)
+            with patch.object(Emit,'expression',observe):
+                plan=vm.prepare('A=New Array;R='+expression+';')
+            generated=python_ast.parse(plan._plan.generated_source)
+            counts.append(sum(1 for _ in python_ast.walk(generated)))
+            self.assertEqual(len(visited),size)
+        self.assertEqual(counts[2]-counts[1],counts[1]-counts[0])

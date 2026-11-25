@@ -47,6 +47,7 @@ class BSLDate:
     def __add__(self, other):
         # Direct generated Python uses the same pure tick arithmetic as the
         # reference backend, without routing ordinary numeric operations here.
+        if type(other) is int:other=Decimal(other)
         if type(other) is not Decimal:
             raise TypeError("Арифметика даты: ожидается число секунд")
         return shift_date(self, other)
@@ -60,6 +61,7 @@ class BSLDate:
     def __sub__(self, other):
         if type(other) is BSLDate:
             return date_difference(self, other)
+        if type(other) is int:other=Decimal(other)
         if type(other) is not Decimal:
             raise TypeError("Арифметика даты: ожидается число секунд")
         return shift_date(self, other.copy_negate())
@@ -150,14 +152,18 @@ def date(*args) -> BSLDate:
         raise TypeError("Дата: ожидается строка или 3 либо 6 числовых компонентов")
     parts = []
     for index, value in enumerate(args):
-        if type(value) is not Decimal or not value.is_finite():
+        kind=type(value)
+        if kind is Decimal:
+            if not value.is_finite():
+                raise TypeError("Дата: компоненты должны быть конечными числами")
+            if len(value.as_tuple().digits) > _MAX_DIGITS:
+                raise ValueError("Дата: превышен предел ресурсов Yadinassi (4096 разрядов компонента)")
+        elif kind is not int:
             raise TypeError("Дата: компоненты должны быть конечными числами")
-        if len(value.as_tuple().digits) > _MAX_DIGITS:
-            raise ValueError("Дата: превышен предел ресурсов Yadinassi (4096 разрядов компонента)")
         low, high = ((1, 9999), (1, 12), (1, 31), (0, 23), (0, 59), (0, 60))[index]
         if value < low or (value >= high if index == 5 else value > high):
             raise ValueError("Дата: компонент вне диапазона")
-        if index != 5 and value != value.to_integral_value():
+        if index != 5 and kind is Decimal and value != value.to_integral_value():
             raise ValueError("Дата: дробные компоненты кроме секунды пока не поддерживаются")
         # The native Date(...,56.9) discards fractions; tick arithmetic does not.
         parts.append(int(value))

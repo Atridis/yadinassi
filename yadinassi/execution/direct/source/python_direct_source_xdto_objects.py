@@ -493,6 +493,7 @@ def set_member(boundary,obj,name):
     _,_,items=_check_graph(boundary,obj);prop=_property(items,name)
     if prop._upper!=1:raise ValueError('XDTO: используйте методы списка')
     def assign(value):
+        if type(value) is int:value=Decimal(value)
         owner,factory,current=_check_graph(boundary,obj)
         if _property(current,name) is not prop:raise BoundaryViolation('source XDTO bound property changed')
         old=obj._values.get(name);nodes,units=_input(boundary,obj,prop,value,old,name in obj._values)
@@ -574,6 +575,9 @@ def resolve(boundary,value,name,*,require_value=False,argument_count=None,allow_
             else:
                 if not (type(args[0]) is int or type(args[0]) is Decimal):raise ValueError('source XDTO index requires Number')
                 index=shared.values.index(args[0],len(value._items),end=operation=='insert');incoming=args[1]
+            if type(incoming) is int:
+                incoming=Decimal(incoming)
+                args=(*args[:-1],incoming)
             old=value._items[index] if operation=='set' else None
             if operation!='set':
                 cap=min(shared.values.MAX_LIST,prop._upper if prop._upper>=0 else shared.values.MAX_LIST)

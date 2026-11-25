@@ -49,6 +49,11 @@ from . import python_direct_callback as callbacks
 from .python_direct_names import VALUE_LIST_CONSTRUCTOR_ALIASES
 from yadinassi.application.direct_callbacks import CallbackDescription as _CallbackDescription, construct as _new_callback, read as _callback_read
 
+from yadinassi.numeric.bits import BUILTINS as _BIT_BUILTINS
+from .python_direct_numbers import public_number
+
+_BIT_IMPLEMENTATIONS = {id(function):function for _,function,_ in _BIT_BUILTINS}
+
 _FILE_EFFECTS = frozenset(map(id, (
     find_files, temp_file_name, create_directory, copy_file, move_file, delete_files,
 )))
@@ -454,6 +459,17 @@ class ServicesBoundary:
         from yadinassi.application.temporary_storage import SourceTemporaryCall
         from yadinassi.configuration.common_templates import SourceTemplateCall
         function=self._services.get(key)
+        if type(function) is HostFunction:
+            implementation=function.function
+            if id(implementation) in _BIT_IMPLEMENTATIONS:
+                operation=super().resolve_service(name,*args,**kwargs)
+                def invoke_bits(*actuals):
+                    if function.function is not implementation:
+                        raise BoundaryViolation('bit operation changed during argument evaluation')
+                    return operation(*map(public_number,actuals))
+                if kwargs.get('allow_references',False):
+                    invoke_bits.requires_reference=operation.requires_reference
+                return invoke_bits
         if (function is None and args and type(args[0]) is callbacks.CapturedRunCallback
                 and key not in self._services):
             return callbacks.resolve_captured(self,args[0],argument_count=kwargs.get('argument_count'))
@@ -599,6 +615,7 @@ class ServicesBoundary:
                 from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
                 from yadinassi.types.values import BSLType
                 kind=type(value)
+                if kind is int:return BSLType.NUMBER
                 if kind is list or kind is PlainArray:return BSLType.ARRAY
                 if kind is PlainMap:return BSLType.MAP
                 if kind is PlainValueList:return BSLType.VALUE_LIST
@@ -627,6 +644,8 @@ class ServicesBoundary:
             def filled(*arguments):
                 if len(arguments)!=1:return original(*arguments)
                 value=arguments[0];kind=type(value)
+                if kind is int:
+                    return original(public_number(value))
                 if kind is list or kind is PlainArray:
                     length=list.__len__
                 elif kind is _DirectStructureType or kind is PlainMap or kind is _DirectMapType:
@@ -675,6 +694,21 @@ class ServicesBoundary:
                     if self._verify_context:self._check()
             if kwargs.get('allow_references',False):serialize.requires_reference=lambda index:index in function.reference_parameters
             return serialize
+        if key.startswith('new:') and self.vm.allow_extensions:
+            alias = key[4:]
+            registry = self.vm.types
+            factory = registry.get(alias)
+            if type(factory) is HostFunction and getattr(factory,'_python_extension_factory',False) is True:
+                implementation = factory.function
+                constructor = super().resolve_callable(factory,require_value=True)
+
+                def build(*actuals):
+                    if (self.vm.types is not registry or registry.get(alias) is not factory
+                            or factory.function is not implementation
+                            or getattr(factory,'_python_extension_factory',False) is not True):
+                        raise BoundaryViolation('registered Python constructor changed during argument evaluation')
+                    return constructor(*map(public_number,actuals))
+                return build
         bound=super().resolve_service(name,*args,**kwargs)
         function=self._services.get(key)
         if type(function) is HostFunction and function.function is _eval_marker:
@@ -707,7 +741,8 @@ class ServicesBoundary:
                     if function.function is not implementation:
                         raise BoundaryViolation('regex implementation changed during argument evaluation')
                     return bound(*arguments)
-                guarded.requires_reference=bound.requires_reference
+                if hasattr(bound,'requires_reference'):
+                    guarded.requires_reference=bound.requires_reference
                 return guarded,{index:strings._OMITTED for index in positions}
             bound.prepare_omissions=prepare_omissions
         return bound

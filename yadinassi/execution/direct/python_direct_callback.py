@@ -69,6 +69,18 @@ def _arity():
     raise TypeError('ВыполнитьОбработкуОповещения ожидает от 1 до 2 аргументов')
 
 
+def callback_actuals(bound, *values):
+    """Callback values use fresh temporary slots for declared ByRef parameters."""
+    from yadinassi.execution.codegen.experimental_naked_collections import _Cell
+    actuals = []
+    for index, value in enumerate(values):
+        if type(value) is not Reference and bound.requires_reference(index):
+            cell = _Cell(value)
+            value = Reference(cell.get, cell.set)
+        actuals.append(value)
+    return actuals
+
+
 def bind(context, key, service, *, argument_count):
     from yadinassi.runtime import _Module
 
@@ -99,7 +111,7 @@ def bind(context, key, service, *, argument_count):
             call = context.resolve_public_module_call(target, name, require_value=False, argument_count=2)
         else:
             call = context.resolve_callback_target(target, name, require_value=False, argument_count=2)
-        return call(result, extra)
+        return call(*callback_actuals(call, result, extra))
 
     def omissions(bound, positions, count):
         if count != 2 or positions != (1,):

@@ -27,6 +27,8 @@ def validate_session_value(value):
             units += 64
         elif kind is str:
             units += 4 * len(item)
+        elif kind is int:
+            units += item.__sizeof__()
         elif kind is Decimal:
             if not item.is_finite():
                 raise TypeError('source session value must be finite')

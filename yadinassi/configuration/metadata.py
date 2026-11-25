@@ -78,7 +78,7 @@ class MetadataObjectCollection(_MetadataObject):
 
     def get(self, index):
         items = self._ordered()
-        if type(index) is not Decimal or not index.is_finite() or index != index.to_integral_value():
+        if type(index) is not int and (type(index) is not Decimal or not index.is_finite() or index != index.to_integral_value()):
             raise TypeError('metadata index requires integer Number')
         if index < 0 or index >= len(items):
             raise IndexError('metadata index out of bounds')
@@ -203,7 +203,7 @@ class StandardAttributeDescriptions(_MetadataObject):
             item = self._names.get(index.casefold())
             if item is None: raise ValueError('standard attribute not supported')
             return item
-        if type(index) is not Decimal or not index.is_finite() or index != index.to_integral_value():
+        if type(index) is not int and (type(index) is not Decimal or not index.is_finite() or index != index.to_integral_value()):
             raise TypeError('standard attribute index requires String or integer Number')
         if index < 0 or index >= len(self._items): raise IndexError('standard attribute index out of bounds')
         return self._items[int(index)]

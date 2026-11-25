@@ -1,7 +1,16 @@
 """Source-owned scalar constant managers, without catalog/profile grants."""
 import weakref
+from decimal import Decimal
 from yadinassi.types.values import BSLObject, HostFunction, InterpreterCall
 from yadinassi.execution.safe_mode import require_external_access
+
+
+def constant_runtime_value(value):
+    if type(value) is not int:
+        return value
+    if value.bit_length() > 128:
+        raise ValueError('constant Number does not fit qualifiers')
+    return Decimal(value)
 
 
 class SourceConstants(BSLObject):
@@ -128,6 +137,7 @@ class SourceConstantSet(BSLObject):
         if key not in self.keys:
             raise ValueError('constant is not selected: ' + name)
         from .source_constant_store import _encode
+        value = constant_runtime_value(value)
         _encode(value, store._definition(self.keys[key]))
         self.values[key] = value
 

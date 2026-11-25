@@ -2,6 +2,7 @@
 from weakref import ReferenceType
 from uuid import UUID
 from yadinassi.application.session_parameters import BSLSessionParameters,_DIRECT_SESSION_PARAMETERS_ABI
+from yadinassi.execution.direct.python_direct_numbers import public_number
 from yadinassi.configuration.configuration_source_metadata import SourceMetadataObject, SourceMetadata
 from yadinassi.configuration.configuration_session_parameters import SessionParameterDefinition
 from yadinassi.configuration.metadata import _scalar_description
@@ -90,7 +91,7 @@ def set_member(boundary,value,name):
     check(boundary,value);value._key(name)
     def assign(new_value):
         check(boundary,value)
-        try:return BSLSessionParameters.write(value,boundary.vm,name,new_value)
+        try:return BSLSessionParameters.write(value,boundary.vm,name,public_number(new_value))
         finally:check(boundary,value)
     return assign
 

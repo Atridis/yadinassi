@@ -8,6 +8,7 @@ from . import python_direct_zip_reader as zip_reader
 from . import python_direct_http_security as http_security
 from . import python_direct_live_metadata as live_metadata
 from .python_direct_plain_map import PlainFixedMap
+from .python_direct_numbers import public_number
 from yadinassi.db.registers.accumulation_posting_values import BSLAccumulationRow
 from yadinassi.db.catalog.catalogs import BSLCatalogs, BSLCatalogManager, BSLCatalogObject, BSLCatalogSelection
 from yadinassi.db.catalog.catalog_types import BSLCatalogReference
@@ -63,6 +64,9 @@ from yadinassi.types.type_qualifiers import (BSLNumberQualifiers, BSLStringQuali
 
 DATABASE_ROOT_NAMES=('catalogs','справочники','documents','документы',
                      'informationregisters','регистрысведений')
+_TYPED_DB_WRITERS=frozenset(map(id,(BSLCatalogObject,BSLCatalogSectionRow,BSLDocumentObject,
+    BSLDocumentLine,BSLInformationRegisterRecordManager,BSLInformationRegisterRecord,
+    _RegisterFilterItem,BSLAccumulationRow)))
 METADATA_NAMES=('metadata','метаданные')
 NAMES=(*METADATA_NAMES,*DATABASE_ROOT_NAMES,'enums','перечисления','documentwritemode','режимзаписидокумента','accumulationrecordtype','виддвижениянакопления')
 
@@ -301,10 +305,10 @@ class CatalogBoundary:
         from yadinassi.types.values import Reference
 
         def read():
-            self._check_effect()
+            if self._verify_context:self._check_effect()
             return CHARS
         def write(_):
-            self._check_effect()
+            if self._verify_context:self._check_effect()
             readonly(name)
         read()
         return _ForwardReference(Reference(read,write))
@@ -316,6 +320,9 @@ class CatalogBoundary:
             key = name.casefold()
             if key in _PLAIN_VALUE_LIST_DEFAULT_PROPERTIES:
                 return BSLTypeDescription() if key in _PLAIN_VALUE_LIST_TYPE_PROPERTIES else None
+            raise ValueError('Поле объекта не обнаружено: '+name)
+        if kind is BSLValueList and name.casefold() not in _PLAIN_VALUE_LIST_DEFAULT_PROPERTIES:
+            if self._verify_context:self._check()
             raise ValueError('Поле объекта не обнаружено: '+name)
         receiver_kind=id(kind)
         adapter = _OWNED_STANDALONE_READS.get(receiver_kind)
@@ -334,7 +341,7 @@ class CatalogBoundary:
             if verify:self._check_effect()
 
     def resolve_set_member(self,value,name):
-        if type(value) is PlainValueList:
+        if type(value) is PlainValueList or type(value) is BSLValueList:
             if self._verify_context:self._check()
             if name.casefold() in _PLAIN_VALUE_LIST_DEFAULT_PROPERTIES:
                 raise ValueError('Свойство недоступно для записи: '+name)
@@ -344,9 +351,10 @@ class CatalogBoundary:
             raise ValueError('Свойство недоступно для записи: '+name)
         verify=_verify_collection(self,value)
         self._catalog_owner(value,verify=verify)
+        typed_db_writer=id(type(value)) in _TYPED_DB_WRITERS
         def write(new_value):
             self._catalog_owner(value,verify=verify)
-            try:value.set_member(name,new_value)
+            try:value.set_member(name,public_number(new_value) if typed_db_writer else new_value)
             finally:
                 if verify:self._check_effect()
         return write
@@ -373,7 +381,9 @@ class CatalogBoundary:
             from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
             from yadinassi.types.values import Reference
             return _ForwardReference(Reference(read_plain,write_plain))
-        if kind is PlainValueList and not self._verify_context:
+        if (kind is PlainValueList or kind is BSLValueList) and not self._verify_context:
+            if name.casefold() in _PLAIN_VALUE_LIST_DEFAULT_PROPERTIES:
+                raise ValueError('Свойство недоступно для записи: '+name)
             raise ValueError('Поле объекта не обнаружено: '+name)
         if (kind is BSLQueryResultSelection or kind is BSLFixedStructure
                 or ((kind is BSLDocumentObject or kind is BSLCatalogObject)
@@ -586,7 +596,10 @@ class CatalogBoundary:
             if tables.owns(value):return tables.resolve(self,value)
         verify=_verify_collection(self,value)
         self._catalog_owner(value,verify=verify)
-        if type(value) in (BSLArray, BSLFixedArray) and name.casefold() in ('get','получить'):
+        if type(value) is BSLQuery and name.casefold() in ('setparameter','установитьпараметр'):
+            def function(parameter, argument):
+                return value.set_parameter(parameter,public_number(argument))
+        elif type(value) in (BSLArray, BSLFixedArray) and name.casefold() in ('get','получить'):
             function=value.get
         elif type(value) is BSLArray and name=='__getitem__':
             function=value.get_index
@@ -607,8 +620,12 @@ class CatalogBoundary:
             if type(function) is not HostFunction:
                 raise BoundaryViolation('database method requires canonical HostFunction')
         if verify:self._check_effect()
+        normalize_position = (type(value) is BSLCatalogSection and name.casefold() in
+                              ('get','получить','delete','удалить','__getitem__'))
         def invoke(*args):
             self._catalog_owner(value,verify=verify)
+            if normalize_position and args and type(args[0]) is int:
+                args = public_number(args[0]), *args[1:]
             if type(value) is BSLDOMBuilder or type(value) is BSLDOMWriter:
                 for argument in args:
                     if type(argument) is BSLXMLReader or type(argument) is BSLXMLWriter:_reject_source_xml(argument)

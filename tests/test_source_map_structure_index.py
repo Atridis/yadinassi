@@ -1,4 +1,4 @@
-"""Compare prepared direct AST and explicit whole-source position mapping."""
+"""Direct AST position mapping, diagnostic rendering and compile audit."""
 import ast
 from contextlib import closing
 from pathlib import Path
@@ -7,9 +7,8 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi import runtime
-from yadinassi.execution.codegen import experimental_direct_ast as direct
+from yadinassi.execution.codegen import direct_emitter as direct
 from yadinassi.execution.codegen.experimental_naked_errors import _StructureIndex
-from yadinassi.execution.direct import python_direct
 
 
 def signature(code):
@@ -25,11 +24,7 @@ class SourceMapStructureTests(unittest.TestCase):
         self._check_audit_subprocess("observe")
 
     def test_real_compile_audit_denial_before_effects(self):
-        # See also WholeSourceResearchTests.test_real_source_and_ast_denial_before_effects
-        # for the explicit route's AST denial and mutation controls.
-        for mode in ("default-ast", "explicit-source"):
-            with self.subTest(mode=mode):
-                self._check_audit_subprocess(mode)
+        self._check_audit_subprocess("deny")
 
     def _check_audit_subprocess(self, mode):
         import subprocess
@@ -38,14 +33,11 @@ class SourceMapStructureTests(unittest.TestCase):
         script = """
 import ast
 import sys
-from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.execution.codegen import experimental_direct_ast as direct
-from yadinassi.execution.direct import python_direct
 
 source = 'T=New ValueList;For I=0 To 2 Do T.Add(I);EndDo; R=T.Count();'
+Interpreter().execute(source, 'warm.bsl')
 vm = Interpreter()
-vm.execute(source, 'warm.bsl')
 seen = []
 mode = sys.argv[1]
 
@@ -57,33 +49,22 @@ def hook(event, args):
     if event != 'compile':
         return
     seen.append((type(args[0]).__name__, args[1]))
-    if ((mode == 'default-ast' and type(args[0]) is ast.Module) or
-        (mode == 'explicit-source' and type(args[0]) is bytes and args[1] == 'audit.bsl')):
+    if mode == 'deny' and type(args[0]) is ast.Module:
         raise RuntimeError('compile denied')
 
 sys.addaudithook(hook)
-for explicit in ([False, True] if mode == 'observe' else [mode == 'explicit-source']):
-    seen.clear()
-    vm.variables.clear()
-    try:
-        if explicit:
-            with patch.object(python_direct, '_compile', direct.compile_module_whole_source):
-                plan = vm.prepare(source, 'audit.bsl')
-        else:
-            plan = vm.prepare(source, 'audit.bsl')
-    except RuntimeError as error:
-        check(mode != 'observe' and str(error) == 'compile denied')
-        check(not vm.variables)
-    else:
-        check(mode == 'observe')
-        check(not vm.variables)
-    expected = [('Module', None)]
-    if explicit:
-        expected = [('bytes', 'audit.bsl')] + ([] if mode == 'explicit-source' else expected)
-    check(seen == expected)
-    if mode == 'observe':
-        vm.execute_prepared(plan)
-        check(vm.variables['r'] == 3)
+try:
+    plan = vm.prepare(source, 'audit.bsl')
+except RuntimeError as error:
+    check(mode == 'deny' and str(error) == 'compile denied')
+    check(not vm.variables)
+else:
+    check(mode == 'observe')
+    check(not vm.variables)
+    check(plan._plan.generated_source)
+    vm.execute_prepared(plan)
+    check(vm.variables['r'] == 3)
+check(seen == [('Module', None)])
 """
         flags = ["-" + "O" * sys.flags.optimize] if sys.flags.optimize else []
         result = subprocess.run([sys.executable, *flags, "-c", script, mode],
@@ -91,21 +72,33 @@ for explicit in ([False, True] if mode == 'observe' else [mode == 'explicit-sour
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def _compare(self, source, filename, *, execute=False):
-        with closing(Interpreter()) as default_vm, closing(Interpreter()) as explicit_vm:
-            default = default_vm.prepare(source, filename)
-            with patch.object(python_direct, "_compile", direct.compile_module_whole_source):
-                explicit = explicit_vm.prepare(source, filename)
-            self.assertEqual(default._plan._research_roundtrip_visits, 0)
-            self.assertGreater(explicit._plan._research_roundtrip_visits, 0)
-            self.assertEqual(signature(default._plan.function.__code__),
-                             signature(explicit._plan.function.__code__))
-            if default._exports and default._exports.server_plan:
-                self.assertEqual(signature(default._exports.server_plan.function.__code__),
-                                 signature(explicit._exports.server_plan.function.__code__))
-            if execute:
-                default_vm.execute_prepared(default)
-                explicit_vm.execute_prepared(explicit)
-                return default_vm.variables.copy(), explicit_vm.variables.copy()
+        import builtins
+        results = []
+        states = []
+        for display in (False, True):
+            captured = []
+
+            def capture(tree, *args, **kwargs):
+                code = builtins.compile(tree, *args, **kwargs)
+                captured.append(signature(code))
+                return code
+
+            with closing(Interpreter()) as vm, patch.object(direct, "compile", capture, create=True):
+                plan = vm.prepare(source, filename)
+                self.assertGreaterEqual(len(captured), 1)
+                expected = tuple(captured)
+                if display:
+                    self.assertIn('naked_module', plan._plan.generated_source)
+                    if plan._exports and plan._exports.server_plan:
+                        self.assertIn('naked_module', plan._exports.server_plan.generated_source)
+                self.assertEqual(tuple(captured), expected)
+                results.append(expected)
+                if execute:
+                    vm.execute_prepared(plan)
+                    states.append(vm.variables.copy())
+        self.assertEqual(*results)
+        if execute:
+            return states
 
     def test_structural_identity_matches_dump_identity(self):
         snippets=('x+x','x + y','x[1]','x[True]','x[1.0]','x["1"]','x[b"1"]',
@@ -138,7 +131,7 @@ for explicit in ([False, True] if mode == 'observe' else [mode == 'explicit-sour
             with self.subTest(source=source[:40]):
                 self._compare(source, 'mapping.bsl')
 
-    def test_collection_roundtrip_preserves_exact_code_locations_and_results(self):
+    def test_collection_rendering_preserves_exact_code_locations_and_results(self):
         prefixes=[
             'T=New ValueTable;T.Columns.Add("N");For I=0 To 3 Do Row=T.Add();Row.N=I;EndDo;',
             'T=New ValueList;For I=0 To 3 Do Item=T.Add(I);EndDo;',
@@ -158,7 +151,11 @@ for explicit in ([False, True] if mode == 'observe' else [mode == 'explicit-sour
                         else:
                             expected = (0, 1, 2, 3)
                         self.assertEqual(collection.count(), len(expected))
-                        self.assertEqual(tuple(collection.get(i)[0] for i in range(len(expected))), expected)
+                        if prefix.startswith('T=New ValueList'):
+                            actual = tuple(collection.get(i).value for i in range(len(expected)))
+                        else:
+                            actual = tuple(collection.get(i)[0] for i in range(len(expected)))
+                        self.assertEqual(actual, expected)
                         if suffix.startswith('\nTry'):
                             self.assertTrue(state['text'].startswith('mixed.bsl:3:5: '), state['text'])
                         elif suffix.startswith('\nA='):
@@ -168,7 +165,7 @@ for explicit in ([False, True] if mode == 'observe' else [mode == 'explicit-sour
                     if 'text' in states[0]:
                         self.assertEqual(states[0]['text'], states[1]['text'])
 
-    def test_whole_source_roundtrip_preserves_arithmetic_nesting(self):
+    def test_diagnostic_rendering_preserves_arithmetic_nesting(self):
         for depth in (5,30,60):
             source='T=New ValueList;For I=0 To 1 Do T.Add('+('1+('*depth)+'1'+(')'*depth)+');EndDo;'
             self._compare(source, 'nested.bsl')

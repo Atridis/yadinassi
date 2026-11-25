@@ -625,7 +625,14 @@ class SourceApplication:
                 check_owner(owner)
                 owner._context_stack.append('server');owner._module_context_stack.append(True)
                 try:
-                    invoke(owner,routine,[names][:len(routine.parameters)])
+                    arguments=[]
+                    if routine.parameters:
+                        if routine.parameters[0].by_value:
+                            arguments.append(names)
+                        else:
+                            from yadinassi.execution.codegen.experimental_naked_collections import _Cell
+                            arguments.append(_Cell(names))
+                    invoke(owner,routine,arguments)
                 finally:
                     owner._module_context_stack.pop();owner._context_stack.pop()
             else:

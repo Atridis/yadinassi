@@ -72,7 +72,10 @@ def snapshot_parameters(parameters):
         items = value if type(value) is list else value.items
         if (type(items) is not list and type(items) is not tuple) or len(items) > syntax.MAX_ROWS:
             raise ValueError('Query parameter list limit exceeded')
-        frozen = tuple(items)
+        # Only the native list representation carries unboxed BSL integers.
+        # Normalize the checked immutable snapshot without mutating the input.
+        frozen = (tuple(Decimal(item) if type(item) is int else item for item in items)
+                  if type(value) is list else tuple(items))
         cells += len(frozen)
         for item in frozen:
             if item is not NULL: _parameter_value(item)

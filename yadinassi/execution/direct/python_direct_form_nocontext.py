@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from types import MappingProxyType
 
-from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
+from yadinassi.execution.codegen.direct_emitter import compile_owned
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
 from yadinassi.execution.codegen.experimental_naked_errors import convert_error
 from yadinassi.forms.form_model import scalar
@@ -21,6 +21,10 @@ _DATE_BOUNDARY = vars(BSLDate)['boundary']
 
 
 def _scalar(value):
+    if type(value) is int:
+        if value.bit_length()>426:
+            raise ValueError('Форма: превышен предел числа')
+        value=Decimal(value)
     if value is not None and value is not NULL and id(type(value)) not in _SCALAR_TYPES:
         raise TypeError('Form NoContext helpers accept only scalar values')
     if type(value) is BSLDate:
@@ -57,7 +61,7 @@ def prepare(session, routines, source):
             raise ValueError('form NoContext helpers require synchronous server routines with required Val parameters')
         admitted[name] = routine, signature
     plan = compile_owned(_snapshot(routines), source_text=source, source_name='<form-nocontext>',
-                         exports=True, authority_checks=True, retain_generated=False)
+                         exports=True, meter_loops=True, retain_generated=False)
     return _Prepared(session.interpreter, MappingProxyType(admitted), plan, plan.function, plan.constants)
 
 

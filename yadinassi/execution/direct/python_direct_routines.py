@@ -53,7 +53,7 @@ def prepare(vm, program, plan, *, retain_generated=True):
     server_layout=server_layout.union(*(m.server_layout for m in getattr(vm,'_direct_routine_modules',{}).values()))
     server_plan=None
     if server_names or initializer_body or any(type(n) is ast.Routine and n.is_dual for n in declarations):
-        from yadinassi.execution.codegen.experimental_direct_ast import compile_owned as compile_server
+        from yadinassi.execution.codegen.direct_emitter import compile_owned as compile_server
         from .python_direct import REPAIRS
         from .python_direct_services import ORDINARY_CONSTRUCTORS
         from .python_direct_names import NAMES
@@ -69,27 +69,28 @@ def prepare(vm, program, plan, *, retain_generated=True):
             # The existing owned catalog namespace supplies query parameters;
             # no other database/server services are added to this profile.
             external_names+=('catalogs','справочники')
+    reference_names=tuple(key for key,signature in signatures.items() if signature[3])
     if server_names-nocontext_names:
         server_plan=compile_server(server,source_text=plan.source_text,source_name=plan.source_name,
             module_names=tuple(server_layout),external_names=external_names,constructors=constructor_names,
-            exports=True,retain_generated=retain_generated,current_module=True)
+            exports=True,retain_generated=retain_generated,reference_names=reference_names,current_module=True)
     nocontext_plan=None
     if nocontext:
         nocontext_plan=compile_server(nocontext,source_text=plan.source_text,source_name=plan.source_name,
             external_names=external_names,constructors=constructor_names,
-            exports=True,retain_generated=retain_generated)
+            exports=True,retain_generated=retain_generated,reference_names=reference_names)
     dual=[node for node in declarations if type(node) is ast.Routine and node.is_dual and node.execution_context=='client']
     dual_names=frozenset(node.name.casefold() for node in dual)
     dual_plan=None
     if dual:
         dual_plan=compile_server(dual,source_text=plan.source_text,source_name=plan.source_name,
             external_names=external_names,constructors=constructor_names,
-            exports=True,retain_generated=retain_generated)
+            exports=True,retain_generated=retain_generated,reference_names=reference_names)
     initializer_plan=None;initializer_constructors=initializer_calls=frozenset()
     if initializer_body:
         _,_,initializer_constructors,initializer_calls=_source_facts(initializer_body)
         initializer_plan=compile_server(initializer_body,retain_generated=retain_generated,source_text=plan.source_text,source_name=plan.source_name,
-            module_names=tuple(server_layout),external_names=tuple(NAMES),constructors=base_constructors,current_module=True)
+            module_names=tuple(server_layout),external_names=tuple(NAMES),constructors=base_constructors,current_module=True,reference_names=reference_names)
     local_function_exports=frozenset(node.name.casefold() for node in declarations
         if type(node) is ast.Routine and node.exported and node.is_function
         and not node.is_async and not node.is_dual and node.execution_context=='client'
@@ -142,7 +143,7 @@ def bind_omissions(bound):
     return bound
 
 
-def resolve(context, name, *, require_value=False, allow_references=False, argument_count=None, crossing_omissions=False, non_name_actuals=()):
+def resolve(context, name, *, require_value=False, allow_references=False, argument_count=None, crossing_omissions=False, non_name_actuals=(), local_omissions=False):
     vm=context.vm
     module=getattr(vm,'_direct_routine_modules',{}).get(name)
     if module is None:return None
@@ -176,7 +177,17 @@ def resolve(context, name, *, require_value=False, allow_references=False, argum
             context._routine_exports[id(module)]=exports
         arguments=tuple(_ForwardReference(value) if i in references and type(value) is Reference else value
                         for i,value in enumerate(arguments))
-        try:return exports[name](*arguments)
+        try:
+            function=exports[name]
+            if local_omissions:
+                from yadinassi.execution.codegen.experimental_naked_collections import _OMITTED_REF
+                first=next((i for i,value in enumerate(arguments) if value is _OMITTED_REF),len(arguments))
+                if first<len(arguments):
+                    names=function.__code__.co_varnames
+                    return function(*arguments[:first],**{
+                        names[i]:value for i,value in enumerate(arguments[first:],first)
+                        if value is not _OMITTED_REF})
+            return function(*arguments)
         except Exception as error:
             converted=convert_error(error,module.plan.source_name,module.plan.source_text)
             if converted is error:raise

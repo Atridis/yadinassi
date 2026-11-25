@@ -162,13 +162,18 @@ def _compile(owner,program,*,exports=False,layout=(),_extra_externals=(),_callab
     from yadinassi.configuration.configuration_source_runtime import _SourceInterpreter
     from yadinassi.configuration.source_manager_modules import MANAGER_NAMES
     shadowable=tuple(sorted((set(MANAGER_NAMES)|set(local_xdto.CONSTRUCTOR_NAMES))-set(owner.application.interpreter.exported_variables))) if type(owner) is _SourceInterpreter else ()
-    from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
+    from yadinassi.execution.codegen.direct_emitter import compile_owned
+    routines=owner.server_routines if owner.execution_context=='server' else owner.routines
+    reference_names=tuple(key for key,routine in routines.items() if type(routine) is ast.Routine
+                         and any(not param.by_value for param in routine.parameters))
+    reference_names+=tuple(key for key,value in owner.functions.items()
+                           if type(value) is HostFunction and value.reference_parameters)
     plan=compile_owned(_snapshot(program),retain_generated=False,source_text=_source_text(program),
+        reference_names=reference_names,value_services=tuple(owner.functions),
         source_name=program[0].token.source if program else '<source>',
         module_names=tuple(layout),external_names=tuple(dict.fromkeys((*_external_names(owner,names|set(layout)),*_extra_externals))),
         constructors=(local_xdto.CONSTRUCTOR_NAMES+xdto_xml.CONSTRUCTOR_NAMES+xdto_json.CONSTRUCTOR_NAMES if type(owner) is _SourceInterpreter else ())+tuple(CONSTRUCTORS)+query.CONSTRUCTOR_NAMES+host_info.CONSTRUCTORS+resources.CONSTRUCTOR_NAMES+stored_values.CONSTRUCTOR_NAMES+('uuid','уникальныйидентификатор'),
-        exports=exports,source_scopes=True,authority_checks=_meter_loops,
-        callable_externals=_callable_externals,shadowable_externals=shadowable,
+        exports=exports,source_scopes=True,source_dispatch=True,meter_loops=_meter_loops,shadowable_externals=shadowable,
         scalar_routines=getattr(owner,'_direct_source_scalar_reuse',False))
     native={'array','массив','structure','структура','map','соответствие','uuid','уникальныйидентификатор'}
     plan._source_scalar_reuse=getattr(owner,'_direct_source_scalar_reuse',False)
@@ -344,7 +349,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
     def scalar_values(self,values):
         self._check()
         from yadinassi.execution.invocation import _encode_scalar
-        for value in values:_encode_scalar(value)
+        for value in values:_encode_scalar(Decimal(value) if type(value) is int else value)
         self._check()
     def scalar_result(self,value):
         self.scalar_values((value,))
@@ -536,7 +541,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             try:
                 if scalar_reuse:
                     from yadinassi.execution.invocation import _encode_scalar
-                    for value in values:_encode_scalar(value)
+                    for value in values:_encode_scalar(Decimal(value) if type(value) is int else value)
                 if reuse is None:
                     result=_invoke_plan(owner,routine,values,plan,
                         same_side_admitted=(direct and self._local_scalars() and not owner.allow_extensions))
@@ -544,7 +549,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
                     # Reuse can perform work before a cache miss invokes the
                     # target. Readmit at that point, not just before lookup.
                     result=reuse(values,lambda:invoke(owner,routine,values))
-                if scalar_reuse:_encode_scalar(result)
+                if scalar_reuse:_encode_scalar(Decimal(result) if type(result) is int else result)
                 return result
             finally:check()
         if direct:
@@ -884,13 +889,19 @@ def invoke(owner,routine,values):
 def event(owner,routine,arguments):
     # These are host-built event slots, not arbitrary source AST evaluation.
     values=[];outputs=[]
-    for argument in arguments:
-        if type(argument) is ast.Literal:values.append(argument.value)
+    for index,argument in enumerate(arguments):
+        by_value=routine.parameters[index].by_value
+        if type(argument) is ast.Literal:
+            values.append(argument.value if by_value else _Cell(argument.value))
         elif type(argument) is ast.Attribute and type(argument.object) is ast.Literal:
             obj=argument.object.value
             from yadinassi.collections.structures import BSLStructure
             if type(obj) is not BSLStructure:raise BoundaryViolation('unsupported source event output owner')
-            slot=_Cell(obj.get_member(argument.name));values.append(slot);outputs.append((obj,argument.name,slot))
+            value=obj.get_member(argument.name)
+            if by_value:
+                values.append(value)
+            else:
+                slot=_Cell(value);values.append(slot);outputs.append((obj,argument.name,slot))
         else:raise BoundaryViolation('unsupported source event argument')
     with source_transactions.execution(owner.application),owner.application.safe_mode.execution():
         try:return invoke(owner,routine,values)

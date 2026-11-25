@@ -3,7 +3,7 @@ from decimal import localcontext
 from dataclasses import dataclass
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
 from yadinassi.execution.codegen.experimental_naked_collections import _Cell
-from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
+from yadinassi.execution.codegen.direct_emitter import compile_owned
 from yadinassi.execution.codegen.experimental_naked_errors import convert_error
 from .python_direct import REPAIRS,_snapshot,_nodes
 from .python_direct_catalog_preparation import CatalogPreparationBoundary
@@ -120,7 +120,10 @@ def _event_plan(vm,program,source,product,owner):
                 node.callee=ast.Name(node.callee.token,'_direct_check_object' if node.callee.name.casefold()=='проверитьданные' else '_direct_prepare_object')
                 node.arguments=[receiver,*node.arguments]
     plan=compile_owned(owned,retain_generated=False,source_text=source,source_name=owned[0].token.source if owned else '<form-event>',
-                 constructors=tuple(vm.types),module_names=tuple(vm.variables),exports=True)
+                 constructors=tuple(vm.types),module_names=tuple(vm.variables),exports=True,
+                 reference_names=tuple(key for key,value in vm.functions.items()
+                     if type(value) is HostFunction and value.reference_parameters)
+                     +(('_direct_check_object','_direct_prepare_object') if product else ()))
     if cache_owner is not None:setattr(cache_owner,slot,PreparedEvent(key,plan))
     return plan
 

@@ -1,6 +1,7 @@
 """Synchronous JSON callbacks on the current or an explicitly imported direct module."""
 
 from yadinassi.types.values import BSLObject, Reference
+from .python_direct_callback import callback_actuals
 from yadinassi.formats.json.json_processing import (
     BSLJSONReader, BSLJSONWriter, encode_json_events, read_json_events, read_json,
     _DIRECT_SOURCE_JSON_DICT,
@@ -119,11 +120,12 @@ def bind(context, key, service, original, implementation):
         def callback(request):
             check()
             try:
+                actuals = callback_actuals(routine, request.property, request.value, extra)
                 if is_read:
-                    return routine(request.property, request.value, extra)
+                    return routine(*actuals)
                 cancel = [False]
                 ref = Reference(lambda: cancel[0], lambda value: cancel.__setitem__(0, value)) if cancel_byref else False
-                return routine(request.property, request.value, extra, ref), cancel[0]
+                return routine(*actuals, ref), cancel[0]
             finally:
                 check()
 

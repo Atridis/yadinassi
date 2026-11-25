@@ -8,7 +8,10 @@ from .source_document_section_store import _MAX_ROWS,_MAX_DOCUMENT_BYTES
 _METHODS={'add':'add','добавить':'add','get':'get','получить':'get','count':'count','количество':'count','clear':'clear','очистить':'clear','delete':'delete','удалить':'delete'}
 
 def _index(value,length):
-    if type(value) is not Decimal or not value.is_finite() or value!=value.to_integral_value() or not 0<=value<length:raise ValueError('section index requires bounded integer Number')
+    if type(value) is int:
+        if 0 <= value < length:return value
+        raise ValueError('section index requires bounded integer Number')
+    if type(value) is not Decimal or not value.is_finite() or not 0<=value<length or value!=value.to_integral_value():raise ValueError('section index requires bounded integer Number')
     return int(value)
 
 class SourceDocumentRow(BSLObject):

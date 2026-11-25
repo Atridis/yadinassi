@@ -4,7 +4,7 @@ from decimal import Decimal
 from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.execution.codegen import experimental_direct_ast as direct
+from yadinassi.execution.codegen.direct_emitter import Emit
 from yadinassi.syntax import ast as bsl
 from yadinassi.syntax.parser import parse
 
@@ -71,7 +71,7 @@ class ComplexIndexTests(unittest.TestCase):
                                                      ('del',Decimal(1),None),
                                                      ('after',Decimal(1),Decimal(1))])
     def test_nested_index_emitted_once(self):
-        original=direct.Emitter.expr
+        original=Emit.expr
         for depth in (4,8,16):
             source='Capture(A['+'A['*depth+'Index()'+']'*depth+']);'
             program=parse(source);calls=[]
@@ -79,7 +79,7 @@ class ComplexIndexTests(unittest.TestCase):
                 if type(node) is bsl.Call and type(node.callee) is bsl.Name and node.callee.name=='Index':calls.append(id(node))
                 return original(self,node,*args,**kwargs)
             vm=Interpreter(allow_extensions=True);vm.register_function('Capture',lambda x:None);vm.register_function('Index',lambda:0);vm.variables['a']=[Decimal(0)]
-            with patch.object(direct.Emitter,'expr',counted):vm.prepare_program(program)
+            with patch.object(Emit,'expr',counted):vm.prepare_program(program)
             self.assertEqual(len(calls),1);vm.close()
     def test_complex_operation_error_points_to_index_expression(self):
         for byref in (False,True):

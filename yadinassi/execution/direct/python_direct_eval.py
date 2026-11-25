@@ -45,6 +45,7 @@ def _evaluate(value,context,parent,bindings,visible,profile):
     vm=getattr(context,'vm',None)
     if vm is None:raise BoundaryViolation('direct Eval requires an interpreter-owned boundary')
     if type(value) is str:text=value
+    elif type(value) is int:text=str(value)
     elif type(value) is Decimal and value.is_finite():text=to_string(value)
     else:raise TypeError('Вычислить: ожидается строка или конечное число')
     if len(text)>EVAL_MAX_SOURCE:raise ValueError('Вычислить: превышен предел текста Yadinassi (65536 символов)')
@@ -57,7 +58,7 @@ def _evaluate(value,context,parent,bindings,visible,profile):
         from yadinassi.syntax.parser import parse_expression
         from yadinassi.syntax.ast import ExpressionStatement
         from .python_direct import _source_facts,_admit_bindings,_contract,REPAIRS
-        from yadinassi.execution.codegen.experimental_direct_ast import compile_module, compile_owned
+        from yadinassi.execution.codegen.direct_emitter import compile_module
         from .python_direct_services import ORDINARY_CONSTRUCTORS
         from .python_direct_names import NAMES
         from .python_direct_database import NAMES as DB_NAMES
@@ -90,13 +91,11 @@ def _evaluate(value,context,parent,bindings,visible,profile):
             from .python_direct import PythonDirectUnsupported
             from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
             try:
-                if profile is not None:
-                    plan=compile_owned(program,retain_generated=False,source_text=text,source_name='<Вычислить>',
-                        external_names=external_names,constructors=constructor_names,
-                        source_scopes=True,authority_checks=True,require_last_expression=True)
-                else:
-                    from .python_direct import _extension_source_audit
-                    plan=compile_module(vm,program,tuple(_nodes(program)),text,'<Вычислить>',_require_last_expression=True, _whole_source=_extension_source_audit(vm), _retain_generated=False)
+                source = profile is not None
+                plan=compile_module(None if source else vm,program,tuple(_nodes(program)),text,'<Вычислить>',
+                    fragment=True,require_value=True,owned=source,source_dispatch=source,
+                    external_names=external_names if source else (),meter_loops=source,
+                    constructor_profile=constructor_names if source else None)
             except PythonDirectUnsupported as error:
                 raise UnsupportedNakedSyntax(str(error)) from None
             # Retain compilation only, never AST, mutable Program, bindings or authority.

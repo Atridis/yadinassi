@@ -415,7 +415,7 @@ class ImportBoundary:
             raise ValueError('Не поддерживаются пропущенные аргументы метода объекта модуля')
         return self.resolve_public_module_call(value,name,require_value=require_value,argument_count=None)
 
-    def resolve_public_module_call(self,value,name,*,require_value,argument_count):
+    def resolve_public_module_call(self,value,name,*,require_value,argument_count,local_omissions=False):
         if type(value) is not _Module:
             # A local declaration or an embedding-provided value can shadow
             # the name. Preserve its ordinary member lane, not a module grant.
@@ -428,7 +428,7 @@ class ImportBoundary:
         if not value.ready or key.startswith('_'):
             raise ValueError('Метод объекта не обнаружен: '+name)
         return self._resolve_public_call(value,key,require_value=require_value,
-                                         argument_count=argument_count,path=None)
+                                         argument_count=argument_count,path=None,local_omissions=local_omissions)
 
     def import_callback_module(self,path):
         """Expose an owned module only in a canonical callback target slot."""
@@ -625,7 +625,7 @@ class ImportBoundary:
         owner,prefix,names=self._split_import(path)
         if len(names)==1:
             return self._resolve_public_call(owner,names[0],require_value=require_value,
-                                             argument_count=argument_count,path=prefix)
+                                             argument_count=argument_count,path=prefix,local_omissions=bool(omitted))
         receiver=self._import_data_receiver(owner,names[:-1])
         name=names[-1]
         if name.startswith('_'):raise ValueError('Метод объекта не обнаружен: '+name)
@@ -648,7 +648,7 @@ class ImportBoundary:
         return invoke
 
     def _resolve_public_call(self,owner,name,*,require_value,argument_count,path,
-                             callback_only=False,reusable=False):
+                             callback_only=False,reusable=False,local_omissions=False):
         child=owner.interpreter
         exports=_PUBLIC.get(child)
         public=None if exports is None else exports[0].get(name)
@@ -705,7 +705,7 @@ class ImportBoundary:
             if used and not reusable:raise BoundaryViolation('module call already consumed')
             used=True
             if local:
-                function=resolve(self,name,require_value=require_value,allow_references=True,argument_count=len(args))
+                function=resolve(self,name,require_value=require_value,allow_references=True,argument_count=len(args),local_omissions=local_omissions)
                 try:return function(*args)
                 finally:validate()
             _admit_vm(child,_transaction_owner=getattr(self,'_direct_transaction_owner',None),
@@ -735,7 +735,7 @@ class ImportBoundary:
             try:
                 context.enter()
                 try:
-                    function=resolve(context,name,require_value=require_value,allow_references=True,argument_count=len(args))
+                    function=resolve(context,name,require_value=require_value,allow_references=True,argument_count=len(args),local_omissions=local_omissions)
                     return function(*args)
                 finally:
                     try:validate()

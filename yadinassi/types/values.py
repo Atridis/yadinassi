@@ -573,6 +573,9 @@ class BSLArray(_ArrayBase):
         items = self.items
         list.__setitem__(items, array_offset(items, index), value)
 
+    __getitem__ = get_index
+    __setitem__ = set_index
+
     def add(self, value: object = None) -> None:
         self.items.append(value)
 
@@ -624,6 +627,17 @@ class BSLArray(_ArrayBase):
 
 
 class BSLFixedArray(_ArrayBase, BSLFixedCollection):
+    def checked_index(self, index: object, *, inserting: bool = False) -> int:
+        if type(index) is int:
+            if not 0 <= index < len(self.items) + inserting:
+                raise IndexError(f"Индекс массива вне границ: {index}")
+            return index
+        return super().checked_index(index, inserting=inserting)
+
+    __getitem__ = _ArrayBase.get
+    __setitem__ = _ArrayBase.set
+
+
     def __init__(self, source: object):
         if not isinstance(source, BSLArray):
             raise TypeError("ФиксированныйМассив ожидает массив")

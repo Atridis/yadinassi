@@ -10,7 +10,7 @@ from types import MappingProxyType
 from yadinassi.syntax import ast
 from .python_direct import REPAIRS, _snapshot
 from yadinassi.execution.codegen.experimental_naked_collections import _Cell
-from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
+from yadinassi.execution.codegen.direct_emitter import compile_owned
 from yadinassi.execution.codegen.experimental_naked_errors import convert_error
 from yadinassi.execution.codegen.experimental_naked_live_state import validate_state
 
@@ -101,6 +101,5 @@ def prepare_handlers(program,*,source_text,source_name='<direct-form>',module_na
         selected=[node for node in owned if node.execution_context==side]
         plans[side]=compile_owned(selected,retain_generated=False,source_text=source_text,source_name=source_name,
             module_names=module_names,external_names=external_names,constructors=constructors,
-            exports=True,source_scopes=_source_routine_scopes,
-            authority_checks='authority_checkpoints' in repairs)
+            exports=True,meter_loops='authority_checkpoints' in repairs,source_scopes=_source_routine_scopes)
     return PreparedHandlers(MappingProxyType(plans),MappingProxyType(descriptors),source_text,source_name)

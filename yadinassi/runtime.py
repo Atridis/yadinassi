@@ -614,6 +614,7 @@ class Interpreter:
         if not self.allow_extensions:
             raise ValueError('register_function requires allow_extensions=True')
         Interpreter._register_function(self, name, function, *aliases, returns_value=returns_value)
+        self.functions[name.casefold()]._public_number_arguments = True
 
     def _register_function(self, name, function, *aliases, returns_value=True):
         wrapper = HostFunction(name, function, returns_value=returns_value)
@@ -624,6 +625,7 @@ class Interpreter:
         if not self.allow_extensions:
             raise ValueError('register_type requires allow_extensions=True')
         Interpreter._register_type(self, name, factory, *aliases)
+        self.types[name.casefold()]._python_extension_factory = True
 
     def _register_type(self, name, factory, *aliases):
         wrapper = HostFunction(name, factory)

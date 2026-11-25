@@ -46,6 +46,7 @@ class BSLEnumManager(BSLObject):
     def count(self): return Decimal(len(self._values))
 
     def get(self,index):
+        if type(index) is int:index=Decimal(index)
         if type(index) is not Decimal or not index.is_finite() or index!=index.to_integral_value():
             raise TypeError('enumeration index requires integer Number')
         if index<0 or index>=len(self._values): raise IndexError('enumeration index out of bounds')

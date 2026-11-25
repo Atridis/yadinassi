@@ -230,13 +230,14 @@ def captured(boundary,function,*,require_value=False,argument_count=None,allow_r
             if result is not None:shared._kind(factory,result)
             return result
         kind,value=args
+        if type(value) is int:value=Decimal(value)
         if not registered(kind) or _check(boundary,kind)[0] is not factory or type(kind) is not _TYPE:
             raise BoundaryViolation('local XDTO requires its own scalar type')
         if not any(type(value) is cls for cls in (str,bool,Decimal)):raise TypeError('local XDTO Create requires scalar input')
         _,lexical=shared.values.scalar(kind,value);budget=_budget(boundary.app)
         if budget[1]+1>min(shared.values.MAX_NODES,shared.io.MAX_NODES) or budget[2]+len(lexical)>min(shared.values.MAX_UNITS,shared.io.MAX_UNITS):
             raise ValueError('local XDTO cumulative allocation budget exceeded')
-        result=operation(factory,*args)
+        result=operation(factory,kind,value)
         budget[1]+=1;budget[2]+=len(lexical);seal.nodes=factory._nodes;seal.units=factory._units
         record=_RECORDS[boundary.app][factory]
         _RECORDS[boundary.app][factory]=record[:6]+(factory._nodes,factory._units)

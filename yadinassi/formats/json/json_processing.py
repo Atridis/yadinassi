@@ -362,9 +362,8 @@ def _quote(value):
 
 _SKIP_JSON_PROPERTY = object()
 _JSON_COLLECTIONS = (BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure, BSLMap, BSLFixedMap, _DirectStructure, PlainFixedMap)
-_JSON_SCALARS = (type(None), bool, str, Decimal, BSLDate)
-_JSON_TYPES = frozenset(map(id, (*_JSON_SCALARS, *_JSON_COLLECTIONS)))
-_JSON_HANDLER_TYPES = _JSON_TYPES.union(map(id, (PlainArray, PlainMap, list, int)))
+_JSON_SCALARS = (type(None), bool, str, int, Decimal, BSLDate)
+_JSON_TYPES = frozenset(map(id, (*_JSON_SCALARS, *_JSON_COLLECTIONS, PlainArray, PlainMap, list)))
 
 
 def encode_json_events(value, settings=None, *, has_converter=False):
@@ -379,7 +378,6 @@ def encode_json_events(value, settings=None, *, has_converter=False):
     # Capture scalar options once, independently of handler mutations.
     date_format, date_variant = settings.date_serialization_format, settings.date_writing_variant
     seen, remaining, size = set(), 100_000, 0
-    admitted = _JSON_HANDLER_TYPES if has_converter else _JSON_TYPES
 
     def account(text):
         nonlocal size
@@ -394,7 +392,7 @@ def encode_json_events(value, settings=None, *, has_converter=False):
         if depth > MAX_DEPTH or remaining < 0:
             raise ValueError("JSON: превышен предел глубины или числа значений Yadinassi")
         kind = type(item)
-        if id(kind) not in admitted:
+        if id(kind) not in _JSON_TYPES:
             if not has_converter or not may_convert:
                 raise TypeError("ЗаписатьJSON: тип значения пока не поддерживается")
             item, cancel = yield JSONCallbackRequest(name, item)
@@ -679,13 +677,13 @@ class BSLJSONWriter(BSLObject):
     def write_end_array(self): self._end("array")
 
     def write_value(self, value, use_format_with_exponent=False):
-        if type(value) not in (type(None), bool, str, Decimal):
+        if type(value) not in (type(None), bool, str, int, Decimal):
             raise TypeError("ЗаписатьЗначение: ожидается примитивное значение JSON")
         if type(use_format_with_exponent) is not bool:
             raise TypeError("ЗаписатьЗначение: ожидается Булево")
         encoded = _encode(value)
-        if type(value) is Decimal and use_format_with_exponent:
-            encoded = format(value, "E").replace("E+", "E")
+        if type(value) in (int, Decimal) and use_format_with_exponent:
+            encoded = format(Decimal(value), "E").replace("E+", "E")
         self._write_encoded(encoded)
 
     def _write_encoded(self, value):
@@ -765,7 +763,7 @@ _DIRECT_SOURCE_JSON_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
          _Pairs,BSLMap,BSLArray,_source_json_structures.BSLKeyAndValue)
         for base in receiver.__mro__))
 _DIRECT_SOURCE_JSON_LIMITS=(MAX_TEXT,MAX_DEPTH)
-_DIRECT_SOURCE_JSON_CONSTANTS=(T,_JSON_SCALARS,_JSON_COLLECTIONS,_JSON_TYPES,_JSON_HANDLER_TYPES,
+_DIRECT_SOURCE_JSON_CONSTANTS=(T,_JSON_SCALARS,_JSON_COLLECTIONS,_JSON_TYPES,
                                _SKIP_JSON_PROPERTY,json,os,os.linesep,_DIRECT_FIXED_MAP_STORAGE)
 _DIRECT_SOURCE_JSON_STDLIB=tuple((module,name,value) for module,names in
     ((json,('loads','dumps','JSONDecoder','JSONEncoder','JSONDecodeError','decoder','encoder','scanner')),

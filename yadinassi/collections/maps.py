@@ -99,6 +99,12 @@ class BSLMap(_MapBase):
     def set(self, key: object, value: object) -> None:
         self.insert(key, value)
 
+    def __getitem__(self, key):
+        return self.get(Decimal(key) if type(key) is int else key)
+
+    def __setitem__(self, key, value):
+        self.set(Decimal(key) if type(key) is int else key, value)
+
     def delete(self, key: object) -> None:
         token = _key(key)
         if token in self._items:
@@ -136,6 +142,11 @@ class BSLFixedMap(_MapBase, BSLFixedCollection):
         if item is None:
             raise ValueError("Ключ фиксированного соответствия не найден")
         return item[1]
+
+    def __getitem__(self, key):
+        return self.get_index(Decimal(key) if type(key) is int else key)
+
+    __setitem__ = _MapBase.set
 
     def __str__(self) -> str:
         return "ФиксированноеСоответствие"

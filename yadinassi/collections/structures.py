@@ -58,6 +58,11 @@ class _StructureBase(BSLObject):
     def set(self, name: object, value: object) -> None:
         raise ValueError(f"Свойство фиксированной структуры недоступно для записи: {name}")
 
+    __getitem__ = get
+
+    def __setitem__(self, name, value):
+        self.set(name, value)
+
     def property(self, name: str, output: object = None) -> bool:
         # The native probe accepts surrounding U+0020 spaces for Property.
         # Other whitespace and other key-taking operations have no such evidence.

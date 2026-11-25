@@ -4,7 +4,7 @@ from decimal import Decimal
 from yadinassi import Interpreter
 from yadinassi.types.values import Reference,HostFunction
 from yadinassi.execution.codegen.experimental_naked_live_state import source_reference,_SlotReference
-from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
+from yadinassi.execution.codegen.direct_emitter import compile_owned
 from yadinassi.syntax.parser import parse
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
 
@@ -40,7 +40,7 @@ class CachedSourceRefsTests(unittest.TestCase):
         kept=[]
         h=HostFunction('Keep',lambda x:kept.append(x),reference_parameters=frozenset({0}))
         source='Procedure F(a) Keep(a);EndProcedure x=1;F(x);'
-        p=compile_owned(parse(source),source_text=source,source_name='refs.bsl')
+        p=compile_owned(parse(source),source_text=source,source_name='refs.bsl',reference_names=('keep',))
         a={};b={}
         for state in (a,b):p.run(state,context=BoundaryContext(services={'Keep':h}))
         kept[0].set(Decimal(7));kept[1].set(Decimal(9))

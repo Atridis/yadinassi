@@ -7,7 +7,7 @@ from decimal import localcontext
 from types import MethodType, MappingProxyType
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
 from yadinassi.execution.codegen.experimental_naked_collections import _Cell
-from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
+from yadinassi.execution.codegen.direct_emitter import compile_owned
 from yadinassi.execution.codegen.experimental_naked_errors import convert_error
 from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
 from .python_direct import REPAIRS
@@ -164,7 +164,9 @@ def prepared_posting(runtime,document,parent):
     with target_context(parent.native_target):
         plan=compile_owned(program,retain_generated=False,source_text='',source_name='<document-posting>',
                      external_names=tuple(names),constructors=_POSTING_CONSTRUCTORS,
-                     exports=True,authority_checks=True,host_bindings=True,callable_externals=_POSTING_CALLABLE_FIELDS)
+                     exports=True,meter_loops=True,constructor_profile=_POSTING_CONSTRUCTORS,
+                     reference_names=tuple(key for key,value in parent.functions.items()
+                         if type(value) is HostFunction and value.reference_parameters))
     result=PreparedPosting(key,plan,MappingProxyType({routine.name.casefold():tuple(p.by_value for p in routine.parameters) for routine in program}))
     runtime._direct_plans[identity]=result
     return result

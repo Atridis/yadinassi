@@ -133,6 +133,25 @@ class ReplicatedTableTests(unittest.TestCase):
             for forbidden in (b'&AtServer', b'EndFunction', b'__dict__', b'0x'):
                 self.assertNotIn(forbidden, raw)
 
+    def test_validated_replica_schema_binds_once_and_live_edits_reuse_the_code(self):
+        from yadinassi.execution.direct import python_direct_forms as direct
+
+        client, _, _, _ = self.pair()
+        initial = client._direct_handlers
+        self.assertNotIn('lines', client._direct_form_schema)
+        with patch.object(direct, 'prepare_form', wraps=direct.prepare_form) as prepare:
+            client.open()
+            self.assertIn('lines', client.form._tables)
+            self.cell(client, value=Decimal('4'))
+            ready = client._direct_handlers
+            self.assertIsNot(ready, initial)
+            self.assertEqual(prepare.call_count, 1)
+            self.cell(client, value=Decimal('5'))
+            snapshot = self.command(client)
+            self.assertEqual(dict(snapshot.attributes)['Total'], Decimal(16))
+            self.assertEqual(prepare.call_count, 1)
+            self.assertIs(client._direct_handlers, ready)
+
     def test_cell_edit_is_local_until_barrier_and_return_uses_flushed_value(self):
         client, server, requests, replies = self.pair(); before = client.open()
         edited = self.cell(client)

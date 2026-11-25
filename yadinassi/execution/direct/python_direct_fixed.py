@@ -27,12 +27,12 @@ def construct(factory,arguments):
             return BSLFixedMap(view)
         if type(source) is not BSLMap:raise TypeError("ФиксированноеСоответствие ожидает соответствие")
     if factory is BSLFixedStructure and len(arguments)==1 and type(arguments[0]) is _DirectStructure:
-        # The canonical constructor makes the shallow snapshot. This temporary
-        # view shares storage only until that synchronous constructor returns.
-        source=object.__new__(BSLStructure)
-        source._items=arguments[0]
-        source._version=0
-        return BSLFixedStructure(source)
+        # Copy raw spelling/value entries, not the mapping's public payload
+        # view. Keep the payloads shared just like the canonical constructor.
+        result=object.__new__(BSLFixedStructure)
+        result._items=dict(dict.items(arguments[0]))
+        result._version=0
+        return result
     if factory is BSLFixedArray and len(arguments)==1:
         source = arguments[0]
         if id(type(source)) not in _MUTABLE_ARRAY_IDS:

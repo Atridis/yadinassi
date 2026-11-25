@@ -47,8 +47,13 @@ class DirectMapIdentityTests(unittest.TestCase):
             def __eq__(self,other):return 'eq'
             def __ne__(self,other):return 'ne'
         self.assertEqual(equal(Host(),Host()),'eq');self.assertEqual(not_equal(Host(),Host()),'ne')
-        for left,right in (({},{}),(_NakedMap(),_NakedMap()),([],[]),(new_structure(),new_structure())):
+        for left,right in (({},{}),(_NakedMap(),_NakedMap()),([],[])):
             self.assertIs(equal(left,right),True);self.assertIs(not_equal(left,right),False)
+        # The common structure now implements BSL identity natively. The map
+        # helper must still delegate to the receiver's own equality protocol.
+        left,right=new_structure(),new_structure()
+        self.assertIs(equal(left,right),left==right)
+        self.assertIs(not_equal(left,right),left!=right)
 
 
     def test_boolean_key_domain_is_distinct_and_equal_numbers_replace(self):

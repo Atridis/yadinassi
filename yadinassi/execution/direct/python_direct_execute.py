@@ -99,7 +99,7 @@ def _execute_fragment(text,context,parent,bindings,visible,profile):
         from yadinassi.syntax.parser import parse_fragment
         from yadinassi.types.errors import BSLError, BSLRuntimeError
         from .python_direct import _source_facts,_admit_bindings,_contract,REPAIRS
-        from yadinassi.execution.codegen.experimental_direct_ast import compile_module, compile_owned
+        from yadinassi.execution.codegen.direct_emitter import compile_module
         from .python_direct_services import ORDINARY_CONSTRUCTORS
         from .python_direct_names import NAMES
         from .python_direct_database import NAMES as DB_NAMES
@@ -130,13 +130,11 @@ def _execute_fragment(text,context,parent,bindings,visible,profile):
             from .python_direct import PythonDirectUnsupported
             from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
             try:
-                if profile is not None:
-                    plan=compile_owned(program,retain_generated=False,source_text=text,source_name='<Выполнить>',
-                        external_names=external_names,constructors=constructor_names,
-                        source_scopes=True,authority_checks=True,require_last_expression=False)
-                else:
-                    from .python_direct import _extension_source_audit
-                    plan=compile_module(vm,program,tuple(_nodes(program)),text,'<Выполнить>', _whole_source=_extension_source_audit(vm), _retain_generated=False)
+                source = profile is not None
+                plan=compile_module(None if source else vm,program,tuple(_nodes(program)),text,'<Выполнить>',
+                    fragment=True,require_value=False,owned=source,source_dispatch=source,
+                    external_names=external_names if source else (),meter_loops=source,
+                    constructor_profile=constructor_names if source else None)
             except PythonDirectUnsupported as error:
                 raise UnsupportedNakedSyntax(str(error)) from None
             # No AST, mutable Program, caller scope, references or authorization is retained.

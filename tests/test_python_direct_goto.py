@@ -91,10 +91,14 @@ class DirectGotoTests(unittest.TestCase):
         self.assertNotIn('_context.checkpoint',source)
 
     def test_outward_dispatch_works_in_the_source_audit_lane(self):
-        from yadinassi.execution.codegen.experimental_direct_ast import compile_module_whole_source
-        with patch('yadinassi.execution.direct.python_direct._compile',compile_module_whole_source):
-            result,state,_,_=self.run_code('n=0; ~again: n=n+1; If n<3 Then Goto ~again; EndIf; n;')
-        self.assertEqual((result,state['n']),(3,3))
+        with closing(Interpreter()) as vm:
+            code='n=0; ~again: n=n+1; If n<3 Then Goto ~again; EndIf; n;'
+            # The only source rendering is diagnostic; its output is never
+            # reparsed or executed, even on the outward-jump route.
+            with patch('ast.unparse',return_value='not executable Python'):
+                prepared=vm.prepare(code)
+                self.assertEqual(prepared._plan.generated_source,'not executable Python')
+            self.assertEqual((vm.execute_prepared(prepared),vm.variables['n']),(3,3))
 
     def test_outward_dispatch_only_repeats_the_target_segment(self):
         code=('Function F() prefix=1; n=0; ~again: n=n+1; '
@@ -168,7 +172,7 @@ class DirectGotoTests(unittest.TestCase):
             self.run_code('Function F() ~again: x=F; F=1; Goto ~again; EndFunction')
 
     def test_ordinary_program_has_no_extra_loop(self):
-        with patch('yadinassi.execution.codegen.experimental_direct_ast._goto_lists',side_effect=AssertionError('unexpected Goto preflight')):
+        with patch('yadinassi.execution.codegen.direct_goto.plan',side_effect=AssertionError('unexpected Goto preflight')):
             source=self.run_code('x=1; x=x+2;')[3]
         self.assertFalse(any(isinstance(n,(ast.While,ast.Match)) for n in ast.walk(ast.parse(source))))
         self.assertNotIn('_GotoTransfer',source)

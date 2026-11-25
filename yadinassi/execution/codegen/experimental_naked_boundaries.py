@@ -123,6 +123,14 @@ class BoundaryContext:
             self._validate_host_function(function,require_value,allow_references)
             if type(function.function) is _DIRECT_INTERPRETER_CALL_TYPE:
                 raise ValueError('interpreter-aware call requires an explicit interpreter dispatch')
+        call_function = function
+        if (self._verify_context and type(function) is HostFunction
+                and getattr(function, '_public_number_arguments', False) is True):
+            from yadinassi.execution.direct.python_direct_numbers import public_number
+
+            def call_function(*args):
+                return function(*map(public_number,args))
+
         def invoke(*args):
             self._before('call',key)
             # Standalone BSL scalars do not execute Python hooks. An embedding
@@ -132,7 +140,7 @@ class BoundaryContext:
                 key in ('message','сообщить')
                 or any(id(type(arg)) not in _SCALAR_TYPE_IDS for arg in args))
             if guarded and not self._verify_context:self._check_effect()
-            try:return function(*args)
+            try:return call_function(*args)
             except PermissionError as error:raise BoundaryViolation(str(error)) from error
             finally:
                 if guarded:self._check_effect()

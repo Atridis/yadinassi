@@ -248,6 +248,8 @@ class BSLValueTableColumnCollection(BSLObject):
         indexes._replace_signatures(bindings)
     def get_member(self,name):return self.get_index(name)
     def set_index(self,*args):raise ValueError('columns cannot be replaced')
+    __getitem__=get_index
+    __setitem__=set_index
     def get_method(self,name):
         if self.table._bounded_slice_read and name.casefold() not in (
                 'count','количество','get','получить','find','найти','indexof','индекс'):
@@ -288,7 +290,7 @@ class BSLValueTableRow(RowStorage,BSLObject):
         if self._deleted:raise ValueError("row is deleted")
         position = schema.offset(name)
         description = schema._metadata[position].value_type
-        if description.types:value = _adjust(description,value)
+        if description.types:value = _adjust(description,public_cell(value))
         search=schema._index_search
         if search is not None and type(search) is not SearchIndexes:raise ValueError('noncanonical index declarations')
         _write_cell(self,schema,_SCHEMA_EPOCH,position,value,search)
@@ -304,12 +306,17 @@ class BSLValueTableRow(RowStorage,BSLObject):
         _writable(table)
         position = _index(index,len(schema._keys))
         description = schema._metadata[position].value_type
-        if description.types:value = _adjust(description,value)
+        if description.types:value = _adjust(description,public_cell(value))
         search=schema._index_search
         if search is not None and type(search) is not SearchIndexes:raise ValueError('noncanonical index declarations')
         _write_cell(self,table._storage,_STORAGE_EPOCH,position,value,search)
     def get_index(self,index):return self.get_member(index) if type(index) is str else self.get(index)
     def set_index(self,index,value):return self.set_member(index,value) if type(index) is str else self.set(index,value)
+    def __getitem__(self,index):
+        # Names use the schema. Positional reads leave native numbers
+        # unboxed; Get() is the separate, Python-facing boxed method.
+        return self.get_member(index) if type(index) is str else self._positional_value(index)
+    __setitem__=set_index
     def owner(self):
         if self._deleted:raise ValueError('row is deleted')
         return self.table
@@ -373,6 +380,12 @@ class BSLCollectionIndex(BSLObject):
     def set_index(self, *args):
         raise ValueError('index definition is readonly')
 
+    def __getitem__(self,index):
+        if type(self.table) is not BSLValueTable or self.table._bounded_slice_read:
+            raise ValueError('slice auxiliary collections are not admitted')
+        return self.get_index(index)
+    __setitem__=set_index
+
     def __str__(self):
         if self._cleared:
             raise ValueError('Индекс коллекции очищен')
@@ -395,6 +408,11 @@ class BSLCollectionIndexes(BSLObject):
         if type(handles) is not list:raise ValueError('invalid index handles')
         return self._handle(handles[_index(index,len(handles))])
     def set_index(self,*args):raise ValueError('index collection is readonly')
+    def __getitem__(self,index):
+        if type(self.table) is not BSLValueTable or self.table._bounded_slice_read:
+            raise ValueError('slice auxiliary collections are not admitted')
+        return self.get_index(index)
+    __setitem__=set_index
 
     def _add_positions(self, positions):
         columns = tuple(self.table.columns._items[i] for i in positions)
@@ -528,6 +546,8 @@ class BSLValueTable(BSLObject):
     def get(self,index):return self.rows[_index(index,len(self.rows))]
     get_index=get
     def set_index(self,*args):raise ValueError('rows cannot be replaced')
+    __getitem__=get_index
+    __setitem__=set_index
     def __iter__(self):return iter(self.rows)
     def count(self):return Decimal(len(self.rows))
     def _index_of(self,row):

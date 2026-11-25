@@ -24,7 +24,7 @@ REPORT_LAYERS = ('python', 'bsl')
 # Keys specify exact source file AND function name, not similarly named functions
 # from unrelated subsystems. Counts are entries, including recursive calls.
 WATCHED = {
-    'direct_ast_compile': ('execution/codegen/experimental_direct_ast.py', 'compile_module'),
+    'direct_ast_compile': ('execution/codegen/direct_emitter.py', 'compile_module'),
     'source_map_compile': ('execution/codegen/experimental_naked_errors.py', 'compile'),
     'prepared_ast_snapshot': ('execution/direct/python_direct.py', '_snapshot'),
     'sqlite_catalog_begin': ('db/sqlite/sqlite_catalog.py', '_begin'),

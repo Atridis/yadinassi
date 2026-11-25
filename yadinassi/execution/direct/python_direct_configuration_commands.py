@@ -7,7 +7,7 @@ from decimal import Decimal, localcontext
 from types import MethodType
 from threading import get_ident
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
+from yadinassi.execution.codegen.direct_emitter import compile_owned
 from .python_direct import REPAIRS, _snapshot, PythonDirectUnsupported
 from .python_direct_configuration import ConfigurationBoundary, _COMMAND_SCOPE, check_owner, parameter_snapshot, parameter_entries
 from yadinassi.execution.codegen.native_targets import target_context
@@ -135,7 +135,7 @@ class _Scope:
 
     def values(self,values,owner=None):
         for value in values:
-            if self.literal(value):continue
+            if self.literal(value) or type(value) is int:continue
             if enums.transfer_value(value):
                 self.enums.check_transfer(self.root if owner is None else owner, value)
             else:_deny()
@@ -389,8 +389,7 @@ def _execute_program(app,program,text,source,*,starting=False):
     scope=_Scope(app,starting=starting)
     app.check_program(program);referenced=_validate_command(program,app)
     plan=compile_owned(_snapshot(program),retain_generated=False,source_text=text,source_name=source,
-        external_names=referenced+metadata.ROOT_NAMES,authority_checks=True,configuration_calls=True,
-        lean_configuration=app._cli_database is not None)
+        external_names=referenced+metadata.ROOT_NAMES,configuration_dispatch=True,meter_loops=app._cli_database is None)
     owner=app.interpreter
     previous=getattr(owner,"_transaction_activation_allowed",True)
     with _DIRECT_EXECUTION_SCOPE_ABI(owner):

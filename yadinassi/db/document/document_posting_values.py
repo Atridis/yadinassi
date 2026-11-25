@@ -93,7 +93,9 @@ class BSLRecorderSet(BSLObject):
         self._mutable(); self._rows = []; self._bytes = 0
     def count(self): return Decimal(len(self._rows))
     def get(self, index):
-        if type(index) is not Decimal or index != int(index): raise TypeError('movement index requires integer Number')
+        kind = type(index)
+        if kind is not int and (kind is not Decimal or not index.is_finite() or index != index.to_integral_value()):
+            raise TypeError('movement index requires integer Number')
         if not 0 <= index < len(self._rows): raise ValueError('movement index out of range')
         return self._rows[int(index)]
     def _stored_rows(self):

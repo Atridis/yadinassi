@@ -15,7 +15,7 @@ from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardRe
 from .python_direct_plain_array import _DIRECT_PLAIN_ARRAY_TYPE as _PlainArray
 
 
-def transfer(value, *, standalone_arrays=False):
+def transfer(value, *, standalone_arrays=False, native_numbers=False):
     """Copy the bounded direct Array/Structure envelope, preserving no aliases."""
     # The standalone compiler may publish either representation of an Array.
     # Both carry only detached list contents, with no ownership or host protocol.
@@ -40,6 +40,7 @@ def transfer(value, *, standalone_arrays=False):
         if remaining<0 or depth>64:raise ValueError('Межконтекстная передача: превышен предел размера или глубины')
         kind=type(item)
         if item is None or item is NULL or kind is str or kind is bool or kind is Decimal:return item
+        if (standalone_arrays or native_numbers) and kind is int:return Decimal(item)
         direct_array=kind is list or kind is array_kind
         if not direct_array and kind is not _DirectStructure and kind is not BSLArray and kind is not BSLStructure:
             if kind is _PacketDate:return Interpreter._copy_context_packet([item])[0]

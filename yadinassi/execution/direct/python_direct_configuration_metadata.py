@@ -99,7 +99,7 @@ class Readers:
             if index is None:
                 if missing:return None
                 raise ValueError('metadata name not found')
-        elif type(key) is Decimal and key.is_finite() and key==key.to_integral_value():
+        elif type(key) is int or type(key) is Decimal and key.is_finite() and key==key.to_integral_value():
             if not 0<=key<len(definitions):raise IndexError('metadata index out of bounds')
             index=int(key)
         else:raise TypeError('metadata index requires integer Number')
@@ -151,7 +151,7 @@ class Readers:
             result=self.find(index)
             if result is None:raise ValueError('metadata name not found')
             return result
-        if type(index) is not Decimal or not index.is_finite() or index!=index.to_integral_value():
+        if type(index) is not int and (type(index) is not Decimal or not index.is_finite() or index!=index.to_integral_value()):
             raise TypeError('metadata index requires integer Number')
         if index<0 or index>=len(self.snapshots):raise IndexError('metadata index out of bounds')
         return self.issue('item',int(index))

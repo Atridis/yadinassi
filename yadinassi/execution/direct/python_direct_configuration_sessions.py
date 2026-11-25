@@ -82,7 +82,8 @@ class _SessionAccess:
         value._key(name)
         def write(new):
             self._session_access()
-            return _WRITE(value,self.owner,name,new)
+            from .python_direct_numbers import public_number
+            return _WRITE(value,self.owner,name,public_number(new))
         return write
 
     def resolve_member(self,value,name):

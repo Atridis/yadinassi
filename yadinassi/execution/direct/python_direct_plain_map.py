@@ -202,12 +202,13 @@ class PlainMap(dict):
     are private storage operations here. Converting to a Python dict cannot
     represent both a Boolean and its equal-in-Python number key.
     """
-    __slots__=('_identity_keys',)
+    __slots__=('_identity_keys','_removals')
 
     def __init__(self,*arguments,**keywords):
         dict.__init__(self)
         # Monotonic hint for both wrapper kinds; avoid scanning after Delete/Clear.
         self._identity_keys=False
+        self._removals=0
         if arguments or keywords:self.update(*arguments,**keywords)
 
     def update(self,*arguments,**keywords):
@@ -235,6 +236,22 @@ class PlainMap(dict):
             return dict.__repr__(self)
         return '{' + ', '.join(f'{key!r}: {value!r}' for key,value in native_map_items(self)) + '}'
 
+    def bsl_entries(self):
+        # Python detects size changes. A successful removal must also be
+        # detected when a subsequent insertion restores the original size.
+        removals=self._removals
+        pairs=iter(native_map_items(self))
+        while True:
+            if self._removals!=removals:
+                raise ValueError("Изменение состава соответствия во время обхода пока не поддерживается")
+            try:
+                pair=next(pairs)
+            except StopIteration:
+                return
+            except RuntimeError:
+                raise ValueError("Изменение состава соответствия во время обхода пока не поддерживается") from None
+            yield BSLKeyAndValue(*pair)
+
     def __iter__(self):
         return (native_map_public_key(key) for key in dict.__iter__(self))
 
@@ -255,10 +272,14 @@ class PlainMap(dict):
 
     def pop(self,key,*default):
         if id(type(key)) not in _KEY_TYPE_IDS:key=_admit_extended_key(key)
-        return dict.pop(self,key,*default)
+        size=len(self)
+        value=dict.pop(self,key,*default)
+        if len(self)!=size:self._removals+=1
+        return value
 
     def popitem(self):
         key,value=dict.popitem(self)
+        self._removals+=1
         return native_map_public_key(key),value
 
     def __or__(self,other):
@@ -289,7 +310,14 @@ class PlainMap(dict):
 
     def __delitem__(self,key):
         if id(type(key)) not in _KEY_TYPE_IDS:key=_admit_extended_key(key)
+        size=len(self)
         dict.pop(self,key,None)
+        if len(self)!=size:self._removals+=1
+
+    def clear(self):
+        if self:
+            dict.clear(self)
+            self._removals+=1
 
     def __contains__(self,key):
         if id(type(key)) not in _KEY_TYPE_IDS:key=_admit_extended_key(key)
@@ -348,6 +376,11 @@ class PlainFixedMap:
         if id(type(key)) not in _KEY_TYPE_IDS:key=_admit_extended_key(key)
         try:return public_number(self._items[key])
         except KeyError:raise ValueError('Ключ фиксированного соответствия не найден') from None
+
+    __getitem__=get_index
+
+    def __setitem__(self,key,value):
+        raise ValueError('Элементы фиксированного соответствия недоступны для записи')
 
     def __iter__(self):
         for key,value in native_map_items(self._snapshot, self._identity_keys):yield BSLKeyAndValue(public_number(key),public_number(value))

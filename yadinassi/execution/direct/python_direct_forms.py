@@ -212,12 +212,13 @@ class FormBoundary(ConfigurationBoundary):
                     try:return invoke(list(values))
                     finally:self._check()
                 from .python_direct_server import _LateNamedValue
+                from .python_direct_numbers import public_number
                 unpacked=[]
                 for value in values:
                     if type(value) is _LateNamedValue:
                         try:value=value.reference.get()
                         finally:check()
-                    unpacked.append(value)
+                    unpacked.append(public_number(value))
                 def output(message):
                     check()
                     self.owner.output(message)

@@ -6,7 +6,7 @@ selection, schema validation, transaction ownership and uncertain-write recovery
 from decimal import Decimal, localcontext
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
 from yadinassi.execution.codegen.experimental_naked_collections import _Cell
-from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
+from yadinassi.execution.codegen.direct_emitter import compile_owned
 from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
 from yadinassi.execution.codegen.experimental_naked_errors import convert_error
 from .python_direct import REPAIRS
@@ -44,6 +44,8 @@ class CatalogPreparationBoundary(BoundaryContext):
 
     def preparation_value(self,value):
         self._check()
+        if type(value) is int and not -10**65 < value < 10**65:
+            raise ValueError('catalog preparation: numeric budget')
         if type(value) is Decimal and (not value.is_finite()
                 or value.__sizeof__()>256 or abs(value.adjusted())>64):
             raise ValueError('catalog preparation: numeric budget')
@@ -260,7 +262,8 @@ def prepared_validator(manager,source,*,prepared=None):
     if names & (_SELF|{'отказ'}):raise ValueError('catalog preparation: reserved object member')
     plan=compile_owned(program,retain_generated=False,source_text=source,source_name='<catalog-preparation>',
                  constructors=_VALIDATOR_CONSTRUCTORS,external_names=tuple(names|_SELF),
-                 exports=True,authority_checks=True,catalog_bounds=True)
+                 exports=True,meter_loops=True,catalog_budget=True,constructor_profile=_VALIDATOR_CONSTRUCTORS,
+                 bound_constructors=_VALIDATOR_CONSTRUCTORS)
     result=PreparedCatalogValidator(key,tuple(program),plan)
     manager._direct_validator_plan=result
     return result

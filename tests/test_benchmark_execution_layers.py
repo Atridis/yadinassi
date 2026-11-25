@@ -69,7 +69,7 @@ class ExecutionLayerBenchmarkTests(unittest.TestCase):
             run, _ = bench.prepare_bsl('r=StrLen(s);', route, inputs=(('s', '😀'),))
             bench.validate(run(), Decimal(2))
 
-    def test_ci_integer_workload_emits_a_native_loop_and_fractional_control_does_not(self):
+    def test_ci_arithmetic_uses_a_python_loop_and_decimal_only_for_fractional_control(self):
         vm = bench.Interpreter()
         self.addCleanup(vm.close)
         for name in ('arithmetic.int', 'arithmetic.fractional'):
@@ -77,11 +77,18 @@ class ExecutionLayerBenchmarkTests(unittest.TestCase):
                 job = bench.workload(name, 100000)
                 plan = vm.prepare(job.source)
                 tree = ast.parse(plan._plan.generated_source)
-                loops = [node for node in ast.walk(tree) if isinstance(node, ast.For)]
-                self.assertTrue(loops)
-                names = {node.id for node in ast.walk(loops[0]) if isinstance(node, ast.Name)}
-                self.assertEqual('_constants' not in names and '_Decimal' not in names,
-                                 name == 'arithmetic.int')
+                loop, = [node for node in ast.walk(tree) if isinstance(node, (ast.For, ast.While))]
+                names = {node.id for node in ast.walk(loop) if isinstance(node, ast.Name)}
+                self.assertEqual('_K' in names, name == 'arithmetic.fractional')
+                if name == 'arithmetic.fractional':
+                    self.assertTrue(any(type(value) is Decimal and value != value.to_integral_value()
+                                        for value in plan._plan.constants))
+                else:
+                    self.assertFalse(any(type(value) is Decimal for value in plan._plan.constants))
+                self.assertTrue(any(isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult)
+                                    for node in ast.walk(loop)))
+                self.assertFalse(any(isinstance(node, ast.Attribute) and node.attr == '_check'
+                                     for node in ast.walk(loop)))
 
     def test_default_route_uses_public_constructor_without_override(self):
         with patch.object(bench, 'Interpreter', wraps=bench.Interpreter) as constructor:

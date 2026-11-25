@@ -34,7 +34,8 @@ from yadinassi.execution import safe_mode
 from yadinassi.db import source_transactions, database_transactions
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
 from yadinassi.execution.codegen.experimental_naked_collections import _Cell
-from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
+from yadinassi.execution.codegen.direct_emitter import compile_owned
+from .python_direct_numbers import public_number
 from yadinassi.execution.codegen.experimental_naked_errors import convert_error
 from .python_direct import REPAIRS, _snapshot
 from yadinassi.execution.codegen.native_targets import target_context
@@ -165,7 +166,10 @@ class ConfigurationBoundary(BoundaryContext):
         call=super().resolve_service(name,require_value=require_value,allow_references=allow_references)
         def invoke(*args):
             self._check();self.app.check_host_service(function,self.owner)
-            if scope is not None:scope.service(function,self.owner);scope.literals(args)
+            if scope is not None:
+                scope.service(function,self.owner)
+                args=tuple(map(public_number,args))
+                scope.literals(args)
             result=call(*args)
             if scope is not None:scope.literals((result,))
             return result
@@ -200,7 +204,7 @@ class ConfigurationBoundary(BoundaryContext):
         call=super().resolve_callable(value,require_value=require_value,allow_references=allow_references,_extension_value=_extension_value)
         def invoke(*args):
             self._check();self.app.check_host_service(value,self.owner)
-            scope.service(value,self.owner);scope.literals(args)
+            scope.service(value,self.owner);args=tuple(map(public_number,args));scope.literals(args)
             result=call(*args);scope.literals((result,));return result
         if allow_references:invoke.requires_reference=call.requires_reference
         return invoke
@@ -279,6 +283,7 @@ class ConfigurationBoundary(BoundaryContext):
 
         def invoke(*args):
             check_argument_count(len(args))
+            args=tuple(map(public_number,args))
             scope.values(args)
             output=self.owner.output
             def guarded_output(message):
@@ -320,7 +325,7 @@ class ConfigurationBoundary(BoundaryContext):
         def invoke_arguments(args,omitted=()):
             admit()
             scope=self._command_scope
-            if scope is not None:args=scope.arguments(target,routine,args,omitted)
+            if scope is not None:args=scope.arguments(target,routine,tuple(map(public_number,args)),omitted)
             if len(args)!=len(routine.parameters):raise TypeError('common-module argument count mismatch')
             binding=target._invocation_bindings.get(routine.name.casefold())
             if binding is not None:
@@ -422,8 +427,8 @@ def install(app,owner,program,source_text=''):
         constructors=('uuid','уникальныйидентификатор')+sqlite_constructors
     plan=compile_owned(owned,retain_generated=False,source_text=source_text,source_name=program[0].token.source if program else '<configuration>',
         external_names=external_names,constructors=constructors,
-        exports=True,authority_checks=True,configuration_calls=True,
-        lean_configuration=app._cli_database is not None or (session_owner and not owner.allow_extensions))
+        exports=True,configuration_dispatch=True,
+        meter_loops=app._cli_database is None and (not session_owner or owner.allow_extensions))
     # Capture original declaration bindings when this exact plan is installed.
     # Never infer a default from later host-mutated declaration metadata.
     plan._configuration_parameters=tuple((node,tuple(
@@ -514,7 +519,7 @@ def invoke_routine(app,owner,routine,arguments):
             try:
                 try:
                     exports=plan.function(owner.variables,plan.constants,[],context)
-                    return exports[routine.name.casefold()](*arguments)
+                    return public_number(exports[routine.name.casefold()](*arguments))
                 finally:context._check()
             except Exception as error:
                 converted=convert_error(error,plan.source_name,plan.source_text)

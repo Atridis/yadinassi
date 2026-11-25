@@ -197,7 +197,7 @@ def convert_error(error,filename,source,*,_context=None):
     if (getattr(_context,'_async_scheduler',None) is not None
             and _context._async_scheduler.active_context.host_failure is error):
         return error
-    if isinstance(error,BSLError) or not isinstance(error,(ArithmeticError,ValueError,TypeError,IndexError,RecursionError)):
+    if isinstance(error,BSLError) or not isinstance(error,(ArithmeticError,ValueError,TypeError,IndexError,NameError,RecursionError)):
         return error
     chosen=None;tb=error.__traceback__
     while tb is not None:
@@ -222,6 +222,8 @@ def convert_error(error,filename,source,*,_context=None):
     source_line=lines[line-1] if 0<line<=len(lines) else ''
     message=str(error) or type(error).__name__
     if isinstance(error,(ZeroDivisionError,DivisionByZero)):message='Деление на ноль'
+    elif type(error) is NameError and chosen.tb_next is None and type(error.name) is str:
+        message='Переменная или функция не определена: '+error.name
     elif type(error) is InvalidOperation:
         message=_decimal_remainder_message(chosen,source_line,column) or message
     return BSLRuntimeError(message,filename,line,(column or 0)+1,source_line=source_line)

@@ -78,6 +78,10 @@ def method(context,value,name):
         if type(function) is not HostFunction:raise BoundaryViolation('noncanonical form method')
     def invoke(*args):
         context._check();require(context.session,value)
-        try:return function(*args)
+        try:
+            if type(value) is BSLFormDataCollection:
+                from .python_direct_numbers import public_number
+                return function(*(public_number(arg) for arg in args))
+            return function(*args)
         finally:context._check()
     return invoke

@@ -4,7 +4,7 @@ Only spelling/value and composition version are retained. Static dot access can
 use already-folded keys; dynamic key operations validate only their own key.
 """
 from yadinassi.text.strings import _WHITESPACE
-from yadinassi.collections.structures import _DIRECT_FIXED_STRUCTURE_SNAPSHOT
+from yadinassi.collections.structures import BSLKeyAndValue, _DIRECT_FIXED_STRUCTURE_SNAPSHOT
 
 _FIXED_STRUCTURE, _FIXED_STORAGE = _DIRECT_FIXED_STRUCTURE_SNAPSHOT
 
@@ -21,6 +21,9 @@ class _DirectStructure(dict):
         key=structure_key(name)
         return dict.__getitem__(self,key)[1] if dict.__contains__(self,key) else default
     def items(self):return structure_items(self)
+    def __iter__(self):return (BSLKeyAndValue(*pair) for pair in structure_items(self))
+    def __eq__(self,other):return self is other
+    def __ne__(self,other):return self is not other
     def insert(self,name,value=None):return structure_insert(self,name,value)
     def clear(self):return structure_clear(self)
     def property(self,name,output=None):return structure_property(self,name,output)

@@ -39,6 +39,10 @@ class BSLChars(BSLObject):
         self.get_index(index)
         self.set_member(index, value)
 
+    __getitem__ = get_index
+    __setitem__ = set_index
+    __iter__ = None
+
 
 CHARS = BSLChars()
 

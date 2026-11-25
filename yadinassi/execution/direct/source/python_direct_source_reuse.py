@@ -9,6 +9,7 @@ from yadinassi.execution.codegen.experimental_naked_collections import _OMITTED_
 from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
 from yadinassi.syntax import ast
 from yadinassi.types.values import Reference
+from yadinassi.execution.direct.python_direct_numbers import public_number
 
 _CLOCK=reuse.monotonic
 _ARGUMENT_KEY=reuse.argument_key
@@ -67,7 +68,7 @@ def _measure_client(store,value):
     # A source-native array is measured through the existing immutable
     # ValueStorage capture, but it is the live original that is kept in cache.
     from yadinassi.execution.direct.python_direct_plain_array import PlainArray
-    if type(value) is not list and type(value) is not PlainArray:return store.measure(value)
+    if type(value) is not list and type(value) is not PlainArray:return store.measure(public_number(value))
     from . import python_direct_source_value_storage as storage
     storage.check_factories()
     return reuse._snapshot_cost(storage._snapshot(
@@ -152,7 +153,7 @@ def prepare(boundary,owner,routine,provenance,*,server=False):
         cache,state=authorize()
         if server:
             from yadinassi.execution.invocation import _encode_scalar
-            for value in values:_encode_scalar(value)
+            for value in values:_encode_scalar(public_number(value))
         if client:
             if not minimum<=len(values)<=len(routine.parameters):
                 raise TypeError('Неверное количество аргументов: '+routine.name)
@@ -176,14 +177,14 @@ def prepare(boundary,owner,routine,provenance,*,server=False):
                 for index in omitted:client_default(index)
             key=_ARGUMENT_KEY(tuple(key_values),_source_client=True)
         else:
-            key=_ARGUMENT_KEY(tuple(values))
+            key=_ARGUMENT_KEY(tuple(map(public_number,values)))
         if key is None:raise ValueError('unsupported reusable common-module argument')
         key=(str(entry[2]),routine.name.casefold(),'server' if server else boundary.side,key)
         found,cached=cache.lookup(key)
         if found:
             try:
-                if server:_encode_scalar(cached)
-                cache.revalidate(key,_measure_client(store,cached) if client else store.measure(cached))
+                if server:_encode_scalar(public_number(cached))
+                cache.revalidate(key,_measure_client(store,cached) if client else store.measure(public_number(cached)))
             except (TypeError,ValueError):
                 cache.discard(key);raise
             current,current_state=authorize()
@@ -192,11 +193,11 @@ def prepare(boundary,owner,routine,provenance,*,server=False):
             return cached
         reservation=cache.reserve(key)
         result=invoke()
-        if server:_encode_scalar(result)
+        if server:_encode_scalar(public_number(result))
         current,current_state=authorize()
         if current is not cache or current_state is not state:
             raise BoundaryViolation('source reusable scope changed before publication')
-        units=_measure_client(store,result) if client else store.measure(result)
+        units=_measure_client(store,result) if client else store.measure(public_number(result))
         current,current_state=authorize()
         if current is not cache or current_state is not state:
             raise BoundaryViolation('source reusable scope changed during accounting')

@@ -5,6 +5,7 @@ from yadinassi.streams.text_documents import BSLTextDocument, _DIRECT_TEXT_DOCUM
 from yadinassi.streams.file_io import BSLBinaryData, _DIRECT_SOURCE_BINARY_ABI, _DIRECT_SOURCE_BINARY_FROM_BYTES
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.types.values import HostFunction
+from yadinassi.execution.direct.python_direct_numbers import public_number
 
 CONSTRUCTOR_NAMES=('textdocument','текстовыйдокумент')
 _SPECS=(
@@ -21,6 +22,7 @@ _SPECS=(
     ('write',1,3,False,('write','записать')),
 )
 _METHODS={alias:spec[:4] for spec in _SPECS for alias in spec[4]}
+_LINE_POSITIONS = frozenset(('get_line','insert_line','replace_line','delete_line'))
 _TEXT_IMPL=dict(_DIRECT_TEXT_DOCUMENT_ABI)
 _BINARY_IMPL=dict(_DIRECT_SOURCE_BINARY_ABI)
 _RESOURCE_STORAGE=tuple((cls,cls.__mro__,tuple((base,vars(base).get('__dict__'))
@@ -95,7 +97,10 @@ def _bound(boundary,value,spec,*,require_value=False,argument_count=None,allow_r
     admit(argument_count)
     def call(*values):
         admit(len(values))
-        try:return implementation(value,*values)
+        try:
+            if method in _LINE_POSITIONS:
+                return implementation(value,public_number(values[0]),*values[1:])
+            return implementation(value,*values)
         finally:admit()
     if allow_references:call.requires_reference=lambda index:False
     return call

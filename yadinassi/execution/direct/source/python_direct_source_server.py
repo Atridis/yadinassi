@@ -210,7 +210,7 @@ def _resolve(parent, owner, routine, *, session,require_value=False,
                 parent._check()
             values.append(value)
         caller()
-        packet = transfer(values)
+        packet = transfer(values,native_numbers=True)
         for index,_ in outputs:packet[index]=_Cell(packet[index])
         cells=tuple((index,packet[index]) for index,_ in outputs)
         caller()
@@ -264,7 +264,7 @@ def _resolve(parent, owner, routine, *, session,require_value=False,
                     if any(type(cell) is not _Cell or packet[index] is not cell
                            for index,cell in cells):
                         raise BoundaryViolation('source ServerCall output cells changed')
-                    outgoing = transfer([result]+[cell.value for _,cell in cells])
+                    outgoing = transfer([result]+[cell.value for _,cell in cells],native_numbers=True)
                 return outgoing
             finally:
                 if token is not None:

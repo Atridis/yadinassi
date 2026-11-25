@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import re
 import weakref
 
+from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 from yadinassi.temporal.dates import BSLDate
 from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.types.values import BSLArray, BSLObject, HostFunction, NULL, equal, to_string
@@ -42,6 +43,10 @@ def _budget(message="превышен предел ресурсов"):
 def _integer(value, *, allow_boolean=False):
     """Observed method conversions; no generic host Number/String hooks."""
     kind = type(value)
+    if kind is int:
+        if not -_MAX_INTEGER <= value <= _MAX_INTEGER:
+            _budget()
+        return value
     if kind is bool and allow_boolean:
         return int(value)
     if kind is str:
@@ -74,6 +79,8 @@ def _position(value, count, *, inserting=False):
 def _presentation(value):
     if value is None:
         return ""
+    if type(value) is int:
+        value = Decimal(value)
     if type(value) is Decimal:
         value = to_string(value)
     if type(value) is not str:
@@ -86,6 +93,8 @@ def _presentation(value):
 def _check(value):
     if type(value) is bool:
         return value
+    if type(value) is int and value in (0, 1):
+        return value == 1
     if type(value) is Decimal and value.is_finite() and value in (Decimal(0), Decimal(1)):
         return value == 1
     _unsupported("это преобразование пометки")
@@ -96,6 +105,9 @@ def _value(value):
     # Exact built-in types avoid invoking arbitrary extension equality hooks.
     from yadinassi.types.type_values import (_STATIC_VALUE_TYPES, _VALUE_TYPES,
                               _DIRECT_REGION_VALUE_TYPES)
+    if type(value) is int:
+        # The existing codec and typed value registry expose canonical BSL numbers.
+        value = Decimal(value)
     kind = type(value)
     # Canonical registry membership is invariant across stored values. Reuse
     # its retained identity index instead of rebuilding a linear search on each
@@ -287,13 +299,16 @@ class BSLValueList(BSLObject):
 
     def get_index(self, index):
         # Bracket access was observed with integral numeric indices only.
-        if (type(index) is not Decimal or not index.is_finite()
-                or index != index.to_integral_value()):
+        if type(index) is not int and (type(index) is not Decimal or not index.is_finite()
+                                      or index != index.to_integral_value()):
             _unsupported("это преобразование индекса в квадратных скобках")
         return self.get(index)
 
     def set_index(self, index, value):
         raise ValueError("Элементы списка значений недоступны для замены")
+
+    __getitem__ = get_index
+    __setitem__ = set_index
 
     def _allocation(self, count):
         if self._next_id + count > _MAX_ID:
@@ -355,8 +370,8 @@ class BSLValueList(BSLObject):
             # value or deletion. Do not generalize the fallback to other
             # offsets/target sizes or to an item whose owner was released.
             if (selector._owner_ref() is None or len(self.items) not in (2, 3)
-                    or type(offset) is not Decimal or not offset.is_finite()
-                    or offset != 1):
+                    or type(offset) not in (int, Decimal)
+                    or (type(offset) is Decimal and not offset.is_finite()) or offset != 1):
                 _unsupported("этот сдвиг чужого элемента")
             position, destination = 0, 1
         else:
@@ -390,14 +405,14 @@ class BSLValueList(BSLObject):
         return result
 
     def load_values(self, values):
-        if type(values) is not BSLArray:
+        if type(values) is BSLArray:
+            values = values.items
+        if type(values) is not list and type(values) is not PlainArray:
             raise TypeError("ЗагрузитьЗначения ожидает Массив")
-        self._allocation(len(values.items))
+        self._allocation(list.__len__(values))
         # Validate and allocate the replacement before detaching any live item.
-        for value in values.items:
-            _value(value)
-        items = [BSLValueListItem(self, self._next_id + index, value)
-                 for index, value in enumerate(values.items)]
+        items = [BSLValueListItem(self, self._next_id + index, _value(value))
+                 for index, value in enumerate(list.__iter__(values))]
         by_id = {item._id: item for item in items}
         for item in self.items:
             item._detached = True

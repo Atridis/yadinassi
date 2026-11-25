@@ -8,6 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from yadinassi import Interpreter
 from yadinassi.types.error_info import BSLErrorCategory, BSLErrorInfo
@@ -129,8 +130,19 @@ class NativeAsyncObservationTests(unittest.TestCase):
                                  native_target=LINUX_8_3_27_1508)
                 capture = Capture()
                 capture.install(vm)
-                vm.execute(DECLARATIONS + case['source'] + ROOT)
-                vm.run_until_idle()
+                from yadinassi.execution.codegen import direct_emitter
+                emitted = []
+                compile_module = direct_emitter.compile_module
+                def observe_compile(*args, **kwargs):
+                    plan = compile_module(*args, **kwargs)
+                    emitted.append(plan.generated_source)
+                    return plan
+
+                with patch.object(direct_emitter, 'compile_module', side_effect=observe_compile):
+                    vm.execute(DECLARATIONS + case['source'] + ROOT)
+                    vm.run_until_idle()
+                self.assertTrue(any(code and 'yield _AwaitRequest(' in code
+                                    and '.start_async(' in code for code in emitted))
                 self.assertEqual(capture.trace, case['trace'])
                 self.assertEqual(capture.values, case['values'])
                 self.assertEqual(capture.errors, [expected_error(e) for e in case['errors']])

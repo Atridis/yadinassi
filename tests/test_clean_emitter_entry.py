@@ -24,7 +24,7 @@ class CleanEmitterEntryTests(unittest.TestCase):
         vm=Interpreter()
         self.addCleanup(vm.close)
         with self.assertRaisesRegex(PythonDirectUnsupported,'clean emitter'):
-            vm.execute('Before=1; Execute("Before=2;");')
+            vm.execute('Before=1; GoTo ~Done; ~Done: Before=2;')
         self.assertNotIn('before',vm.variables)
 
     def test_builtins_do_not_become_bsl_variables(self):
@@ -81,3 +81,110 @@ class CleanEmitterEntryTests(unittest.TestCase):
         self.addCleanup(vm.close)
         vm.execute('Try Raise ("test",, "E12"); Except E=ErrorInfo(); R=E.Code; EndTry;')
         self.assertEqual(vm.variables['r'],'E12')
+
+    def test_byref_aliases_borrow_only_the_names_passed_by_reference(self):
+        vm=Interpreter()
+        self.addCleanup(vm.close)
+        source='''Procedure Change(A,B)
+            A=10; B=B+1;
+        EndProcedure
+        Function F(Val X)
+            Local=2; Result=5;
+            Change(Local,Local);
+            Return Local+Result+X;
+        EndFunction
+        R=F(1);
+        T=New Array; T.Add(4); Change(T[0],T[0]); S=T[0];
+        '''
+        plan=vm.prepare(source)
+        vm.execute_prepared(plan)
+        self.assertEqual((vm.variables['r'],vm.variables['s']),(Decimal(17),Decimal(11)))
+        generated=plan._plan.generated_source
+        self.assertEqual(generated.count('nonlocal local'),1)
+        self.assertNotIn('nonlocal result',generated)
+        self.assertNotIn('nonlocal x',generated)
+
+    def test_byref_default_has_fresh_storage_per_call(self):
+        vm=Interpreter()
+        self.addCleanup(vm.close)
+        source='''Function F(X=2)
+            X=X+1; Return X;
+        EndFunction
+        A=F();B=F();C=5;D=F(C);
+        '''
+        vm.execute(source)
+        self.assertEqual([vm.variables[k] for k in ('a','b','c','d')],
+                         list(map(Decimal,(3,3,6,6))))
+
+
+    def test_fragments_share_live_module_and_routine_slots_without_a_second_emitter(self):
+        vm=Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('''Var Total; Total=10;
+            Function Run(A)
+                B=2;
+                Execute("B=B+1; A=A+B; Total=Total+A;");
+                Return Eval("A+B+Total");
+            EndFunction
+            R=1; Out=Run(R);
+            Execute("Total=Total+1;");
+        ''')
+        self.assertEqual([vm.variables[k] for k in ('r','out','total')],
+                         list(map(Decimal,(4,21,15))))
+
+    def test_array_numeric_values_at_public_boundary_keep_identity(self):
+        vm=Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('A=New Array; A.Add(7); A.Add(True);')
+        self.assertIs(type(vm.variables['a'][0]), int)
+        result=vm.execute('A')
+        self.assertIs(result,vm.variables['a'])
+        self.assertEqual(result,[Decimal(7),True])
+        self.assertIs(type(result[0]),Decimal)
+        self.assertIs(result[1],True)
+
+    def test_client_and_server_profiles_execute_on_the_same_emitter(self):
+        vm=Interpreter()
+        self.addCleanup(vm.close)
+        source='''&AtServerNoContext
+        Function Increment(Val Amount)
+            Return Amount+1;
+        EndFunction
+        &AtServer
+        Function Indirect(Val Amount)
+            Return Increment(Amount)+2;
+        EndFunction
+        &AtClientAtServerNoContext
+        Function Encode(Val Amount)
+            Return Amount*2;
+        EndFunction
+        &AtClient
+        Function Run()
+            Return Encode(Indirect(4));
+        EndFunction
+        R=Run();
+        '''
+        vm.execute(source)
+        self.assertEqual(vm.variables['r'],Decimal(14))
+
+    def test_array_operation_family_accepts_native_integer_indices(self):
+        vm=Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('''A=New Array(2);
+            A.Set(0,5); A.Insert(1,"item"); A.Delete(2);
+            A.Add(); Got=A.Get(0); Found=A.Find(5.0); Limit=A.UBound();
+            A.Clear(); Count=A.Count();
+        ''')
+        self.assertEqual([vm.variables[k] for k in ('got','found','limit','count')],
+                         list(map(Decimal,(5,0,2,0))))
+        self.assertEqual(vm.variables['a'],[])
+
+    def test_map_mutations_and_count_use_native_backing_storage(self):
+        vm=Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('''M=New Map; M.Insert("x",1); M.Insert(2,"y");
+            M.Delete("x"); M.Delete("missing");
+            Found=M.Get(2); Before=M.Count(); M.Clear(); After=M.Count();
+        ''')
+        self.assertEqual(vm.variables['found'],'y')
+        self.assertEqual((vm.variables['before'],vm.variables['after']),(Decimal(1),Decimal(0)))

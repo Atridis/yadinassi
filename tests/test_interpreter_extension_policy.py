@@ -74,6 +74,24 @@ class InterpreterExtensionPolicyTests(unittest.TestCase):
         self.assertEqual(vm.execute('// #Import Side.bsl\nSide.Run(7)', str(path/'Main.bsl')), 8)
         self.assertIs(vm.imports['side'].interpreter.allow_extensions, True)
 
+    def test_explicitly_registered_python_factory_and_binding_change(self):
+        from decimal import Decimal
+
+        vm = self.interpreter(allow_extensions=True)
+        captured = []
+        vm.register_type('PythonType', lambda value: captured.append(value) or value, 'Factory')
+        self.assertEqual(vm.execute('New Factory(7)'), Decimal(7))
+        self.assertIs(type(captured[0]), Decimal)
+
+        def replace():
+            vm.register_type('PythonType', lambda value: captured.append('new'))
+            return 8
+
+        vm.register_function('ReplaceFactory', replace)
+        with self.assertRaisesRegex(BoundaryViolation, 'constructor changed'):
+            vm.execute('New PythonType(ReplaceFactory())')
+        self.assertEqual(captured, [Decimal(7)])
+
     def test_prepared_contract_does_not_cross_modes(self):
         plain = self.interpreter()
         extended = self.interpreter(allow_extensions=True)

@@ -125,6 +125,8 @@ class SourceConstantValueManager(BSLObject):
     def value_write(self, caller, value):
         store = self.authorize(caller)
         from .source_constant_store import _encode
+        from .source_constants_runtime import constant_runtime_value
+        value = constant_runtime_value(value)
         _encode(value, store._definition(self.name))
         self.value = value
 

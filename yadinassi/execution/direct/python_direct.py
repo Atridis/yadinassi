@@ -185,7 +185,12 @@ def _contract(vm):
 
 def _compile(vm,program,nodes,source_text,source_name,*,_exports=False):
     from yadinassi.execution.codegen.direct_emitter import compile_module
-    return compile_module(vm,program,nodes,source_text,source_name,_exports=_exports)
+    names=()
+    if vm.database_context is not None:
+        from .python_direct_database import NAMES
+        names=NAMES
+    return compile_module(vm,program,nodes,source_text,source_name,_exports=_exports,
+                          external_names=names)
 
 
 def _extension_source_audit(vm):
@@ -240,10 +245,6 @@ def prepare_module(vm,program,*,source_text=None,source_name=None):
     owned=_snapshot(program)
     nodes,routines,constructors,calls=_source_facts(owned,allow_async=mode)
     plan=_compile(vm,owned,nodes,source_text,source_name)
-    if getattr(plan,'_pure_bindings',None) is not None:
-        from yadinassi.execution.codegen.experimental_direct_ast import compile_module
-        plan._generic_pure_plan=compile_module(vm,owned,nodes,plan.source_text,plan.source_name,
-                                               _retain_generated=False)
     declared=frozenset(name.casefold() for node in owned if type(node) is ast.Var and node.execution_context=='client' for name in node.names)
     from .python_direct_routines import prepare as prepare_routines
     exports=prepare_routines(vm,owned,plan) if routines or any(type(n) is ast.ServerInitializer for n in owned) else None
@@ -350,15 +351,6 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
                         context=make_boundary(vm,_transaction_owner=owner,_async_guard=root_guard(vm))
                     else:
                         context=make_boundary(vm,_transaction_owner=owner)
-                    pure=getattr(plan,'_pure_bindings',None)
-                    if pure is not None and not pure.active(vm,context):
-                        # Select generic lowering before execution, never retry failed code.
-                        if _prepared is not None:
-                            plan=copy(plan._generic_pure_plan)
-                        else:
-                            from yadinassi.execution.codegen.experimental_direct_ast import compile_module
-                            plan=compile_module(vm,program,nodes,plan.source_text,plan.source_name,
-                                                _retain_generated=False)
                     if pump:
                         from .python_direct_async import inline_root
                         result=inline_root(vm,plan,context)
@@ -371,7 +363,13 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
             if pump:
                 error=async_scheduler.take_procedure_error()
                 if error is not None:raise error
-            if returns_expression:return result
+            if returns_expression:
+                if type(result) is list:
+                    # The Python-facing Array keeps its identity. Normalize
+                    # numeric leaves of this returned list only, not VM state.
+                    for index,value in enumerate(result):
+                        if type(value) is int:result[index]=Decimal(value)
+                return result
             return None if result is vm.variables else result
         finally:
             if context is not None:context._routine_exports.clear()
@@ -401,6 +399,19 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=N
         def current_module(self):
             return vm._self_module
 
+        def character_namespace(self,key):
+            if key in vm.variables:return vm.variables[key]
+            if key in self._services or key in getattr(vm,'_direct_routine_modules',{}):
+                return self.missing_value(key)
+            from yadinassi.text.chars import CHARS
+            return CHARS
+
+        def character_namespace_reference(self,key):
+            if key in vm.variables:
+                from yadinassi.execution.codegen.experimental_naked_live_state import source_reference
+                return source_reference(vm.variables,key)
+            return self.external_reference(key)
+
         def missing_value(self,name):
             if name.casefold() in getattr(vm,'_direct_routine_modules',{}):
                 from yadinassi.execution.codegen.experimental_naked_collections import _routine_value_error
@@ -425,6 +436,9 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=N
             return super().resolve_optional_service(name,*args,**kwargs)
 
         def _unregistered_service(self,name):
+            from .python_direct_names import NAMES
+            if name.casefold() in NAMES:
+                raise ValueError('Значение не является функцией: '+name)
             # A missing BSL routine during ordinary Eval is a language error,
             # not a denial of an existing host or transaction capability.
             depth=getattr(self,'_eval_depth',None)
@@ -458,6 +472,12 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=N
                 if type(factory) is not HostFunction or factory.function is not BSLUUID:
                     raise BoundaryViolation('UUID constructor requires canonical registration')
                 return super().resolve_callable(factory)
+            if not args and key not in self._services and not key.startswith('new:'):
+                value=vm.variables.get(key)
+                if type(value) is HostFunction:
+                    return self.resolve_extension_value(
+                        value,require_value=kwargs.get('require_value',False),
+                        allow_references=kwargs.get('allow_references',False))
             return super().resolve_service(name,*args,**kwargs)
 
         def leave(self):

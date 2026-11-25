@@ -1,5 +1,7 @@
 """Closed native data methods reached through imported public module fields."""
 from functools import partial
+from decimal import Decimal
+from yadinassi.types.array_index import array_offset
 from yadinassi.collections.plain_value_list import PlainValueList, _DIRECT_PLAIN_METHODS
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
@@ -32,6 +34,18 @@ def bind_optional_list(value,name,omitted,argument_count=None):
     return invoke
 
 
+def _list_get(receiver,index):
+    return receiver[array_offset(receiver,index)]
+
+
+def _count(receiver):
+    return Decimal(len(receiver))
+
+
+def _ubound(receiver):
+    return Decimal(len(receiver)-1)
+
+
 def bind(value,name,argument_count,omitted,require_value):
     if type(value) is PlainValueList:
         if omitted:return bind_optional_list(value,name,omitted,argument_count)
@@ -48,10 +62,9 @@ def bind(value,name,argument_count,omitted,require_value):
     if type(value) is not list:return None
     # Array methods already use these exact native operations in ordinary
     # codegen. Do not look up arbitrary Python attributes on export values.
-    from yadinassi.execution.codegen.experimental_direct_ast import _list_get,_native_count,_native_ubound
     key=_NAMES.get(name,name)
-    methods={'add':(0,1,list.append),'count':(0,0,_native_count),
-             'get':(1,1,_list_get),'ubound':(0,0,_native_ubound)}
+    methods={'add':(0,1,list.append),'count':(0,0,_count),
+             'get':(1,1,_list_get),'ubound':(0,0,_ubound)}
     entry=methods.get(key)
     if entry is None:raise ValueError('Метод объекта не обнаружен: '+name)
     low,high,method=entry
