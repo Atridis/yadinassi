@@ -51,9 +51,10 @@ class Address(_Reference):
 
 
 def owned_index(context,receiver):
-    if type(receiver) in (list, PlainArray):
+    kind=type(receiver)
+    if kind is list or kind is PlainArray:
         return lambda key: receiver[array_offset(receiver,key)]
-    if type(receiver) in (PlainMap,_DirectStructure):
+    if kind is PlainMap or kind is _DirectStructure:
         return receiver.__getitem__
     return context.resolve_member(receiver,'__getitem__')
 
@@ -99,9 +100,10 @@ def read_bracket(context, receiver, key):
 
 
 def owned_set_index(context,value,receiver,key):
-    if type(receiver) in (list, PlainArray):
+    kind=type(receiver)
+    if kind is list or kind is PlainArray:
         receiver[array_offset(receiver,key)] = value
-    elif type(receiver) in (PlainMap,_DirectStructure):
+    elif kind is PlainMap or kind is _DirectStructure:
         receiver[key] = value
     else:
         context.resolve_member(receiver,'__setitem__')(key,value)
@@ -109,7 +111,7 @@ def owned_set_index(context,value,receiver,key):
 
 def owned_iterable(context, iterable):
     kind=type(iterable)
-    if kind in (list,PlainArray,_DirectStructure):
+    if kind is list or kind is PlainArray or kind is _DirectStructure:
         return iter(iterable)
     if kind is PlainMap:
         return iterable.bsl_entries()
@@ -139,13 +141,14 @@ def metered(context, iterable):
 
 
 def bind_index_reference(context, receiver):
-    if type(receiver) not in (list, PlainArray, PlainMap):
+    kind=type(receiver)
+    if not (kind is list or kind is PlainArray or kind is PlainMap or kind is _DirectStructure):
         return context.bind_reference_index(receiver)
     def bind_index(key):
         def index():
-            return array_offset(receiver,key) if type(receiver) in (list, PlainArray) else key
+            return array_offset(receiver,key) if kind is list or kind is PlainArray else key
         def get():
-            if type(receiver) is PlainMap:
+            if kind is PlainMap:
                 return receiver.get(key)
             return receiver[index()]
         def set_value(value):
@@ -169,9 +172,27 @@ def source_shapes(bound, named):
     return bound
 
 
-def host_reference(address):
-    result=Reference(address.get,address.set)
+def host_reference(address, context=None):
     kind=type(address)
+    read,write=address.get,address.set
+    if kind is _ForwardReference and context is not None and context._verify_context:
+        def guarded_get():
+            context._check_effect()
+            try:
+                return read()
+            finally:
+                context._check_effect()
+
+        def guarded_set(value):
+            context._check_effect()
+            try:
+                write(value)
+            finally:
+                context._check_effect()
+
+        result=Reference(guarded_get,guarded_set)
+    else:
+        result=Reference(read,write)
     result._direct_name_sink=(kind is _SlotReference
         or kind is Address and address.name_sink
         or kind is _ForwardReference and type(address.reference) is Reference
@@ -353,7 +374,8 @@ def requires_reference(bound,index):
 
 def member(context, receiver, key, count, want_value, omitted=(), source_dispatch=False,configuration_dispatch=False):
     folded=key.casefold()
-    if type(receiver) in (list, PlainArray):return array_method(receiver,key,count,want_value,omitted)
+    kind=type(receiver)
+    if kind is list or kind is PlainArray:return array_method(receiver,key,count,want_value,omitted)
     if not omitted and type(receiver) is _DirectStructure:
         if folded in ('property','свойство') and count in (1,2):return receiver.property
         if folded in ('insert','вставить') and count in (1,2):
@@ -633,8 +655,14 @@ class Emit:
                 if self.omissions(x.arguments):return call('_InvalidOmissions')
                 return call('_Structure',*(self.expr(arg) for arg in x.arguments))
             return self.service_call('new:'+key,x.arguments,want_value)
-        if type(x) is b.Call and type(x.callee) in (b.Name,b.Attribute):
+        if type(x) is b.Call:
             c=x.callee
+            while type(c) is b.Group:c=c.expression
+            if type(c) is not b.Name and type(c) is not b.Attribute:
+                omitted=self.omissions(x.arguments)
+                bound=call(attr(name('_C'),'resolve_extension_value'),self.expr(c),
+                           require_value=literal(want_value),allow_references=literal(True))
+                return self.bound_call(bound,x.arguments,omitted,references=True)
             path=self.import_path(c)
             if path is not None:
                 omitted=self.omissions(x.arguments)
@@ -830,7 +858,7 @@ class Emit:
             if not named:
                 return self.actual_address(arg,is_reference) if references else self.expr(arg)
             value=self.expr(arg)
-            reference=call('_HostRef',self.reference(arg))
+            reference=call('_HostRef',self.reference(arg),name('_C'))
             late=self.temp()
             factory=p.NamedExpr(target=name(late,True),
                 value=call('_GetAttr',function,literal('prepare_named_value'),literal(None)))
@@ -844,7 +872,7 @@ class Emit:
         plain=arg
         while type(plain) is b.Group:plain=plain.expression
         if type(plain) is b.Name:
-            return p.IfExp(test=test,body=call('_HostRef',self.reference(arg)),orelse=self.expr(arg))
+            return p.IfExp(test=test,body=call('_HostRef',self.reference(arg),name('_C')),orelse=self.expr(arg))
         if type(plain) is b.Index:
             owned=self.meter_loops or self.source_dispatch or self.configuration_dispatch
             bind=call('_IndexedActual',name('_C'),test,self.expr(plain.object),literal(owned))
@@ -882,8 +910,9 @@ class Emit:
                 default=self.expr(param.default)
                 key=param.name.casefold()
                 if param.by_value:
-                    args.defaults.append(default)
-                    if self.source_dispatch:
+                    deferred = type(param.default) is not b.Literal
+                    args.defaults.append(name('_OmittedRef') if deferred else default)
+                    if deferred or self.source_dispatch:
                         defaults.append(p.If(test=p.Compare(left=name(key),ops=[p.Is()],comparators=[name('_OmittedRef')]),
                             body=[p.Assign(targets=[name(key,True)],value=default)],orelse=[]))
                 else:
@@ -1293,6 +1322,8 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,fra
 
 def compile_owned(program, *, source_text, source_name, module_names=(), external_names=(),
                   constructors=(), exports=False, retain_generated=True, current_module=False, reference_names=(), meter_loops=False, source_scopes=False, source_dispatch=False, scalar_routines=False, shadowable_externals=(), value_services=(), constructor_profile=None, catalog_budget=False, bound_constructors=(),configuration_dispatch=False):
+    if shadowable_externals and not (source_scopes and source_dispatch):
+        raise ValueError('shadowable external names require a source scope')
     return compile_module(None,program,(),source_text,source_name,_exports=exports,owned=True,
                           module_names=module_names,external_names=external_names,
                           current_module=current_module,reference_names=reference_names,

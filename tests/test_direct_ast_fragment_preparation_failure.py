@@ -1,6 +1,5 @@
 """Unsupported fragment compilation is fatal, unlike reached BSL errors."""
 import unittest
-from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
 
@@ -13,8 +12,7 @@ class FragmentPreparationFailureTests(unittest.TestCase):
             source='Try '+expression+';Except Caught=True;EndTry;After=True;'
             plan=vm.prepare(source)
             for _ in range(2):
-                with patch('yadinassi.execution.codegen.experimental_naked_collections.prepare',create=True,side_effect=AssertionError('old compiler')):
-                    with self.assertRaises(UnsupportedNakedSyntax):vm.execute_prepared(plan)
+                with self.assertRaises(UnsupportedNakedSyntax):vm.execute_prepared(plan)
                 self.assertEqual(effects,[])
                 self.assertNotIn('caught',vm.variables);self.assertNotIn('after',vm.variables)
             vm.execute('R=Eval("2+3");');self.assertEqual(vm.variables['r'],5)

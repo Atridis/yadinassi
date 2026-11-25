@@ -1,8 +1,6 @@
 """Source dynamic fragments retain safe mode and live addresses without VM."""
 import unittest
 from unittest.mock import patch
-import test_source_safe_mode as safe
-import test_source_application_exports as exports
 from test_configuration_source_runtime import source
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.runtime import Interpreter
@@ -10,19 +8,9 @@ from yadinassi.runtime import Interpreter
 
 class SourceFragmentsNoVM(unittest.TestCase):
     def setUp(self):
-        old=patch('yadinassi.execution.codegen.experimental_naked_collections.prepare',create=True,side_effect=AssertionError('old compiler'))
-        old.start();self.addCleanup(old.stop)
         for name in ('_execute_program','call_routine','_planned_routine_block'):
             guard=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
             guard.start();self.addCleanup(guard.stop)
-
-    def test_existing_safemode_and_exports(self):
-        for cls,names in ((safe.SourceSafeModeTests,('test_execute_and_eval_inherit_safe_mode',
-                'test_dynamic_fragment_cannot_disable_caller','test_dynamic_fragment_counter_is_local_and_cleaned_on_error')),
-                (exports.SourceApplicationExportsTests,('test_eval_and_execute_share_slot',))):
-            original=cls();self.addCleanup(original.doCleanups)
-            for name in names:
-                with self.subTest(name=name):getattr(original,name)()
 
     def app(self, *, allow_extensions=False):
         app=SourceApplication(source(b''),output=lambda _:None, allow_extensions=allow_extensions)

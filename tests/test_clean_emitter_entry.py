@@ -1,6 +1,7 @@
 import ast
 from decimal import Decimal
 import unittest
+from unittest.mock import patch
 
 from yadinassi import Interpreter
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
@@ -21,11 +22,19 @@ class CleanEmitterEntryTests(unittest.TestCase):
         self.assertIs(type(vm.variables['r']),Decimal)
 
     def test_real_entry_has_one_generator_and_never_retries_unsupported_syntax(self):
-        vm=Interpreter()
-        self.addCleanup(vm.close)
-        with self.assertRaisesRegex(PythonDirectUnsupported,'clean emitter'):
-            vm.execute('Before=1; GoTo ~Done; ~Done: Before=2;')
-        self.assertNotIn('before',vm.variables)
+        from yadinassi.execution.codegen import direct_emitter
+
+        for prepared in (False,True):
+            with self.subTest(prepared=prepared):
+                vm=Interpreter()
+                self.addCleanup(vm.close)
+                execute=vm.prepare if prepared else vm.execute
+                with patch.object(direct_emitter,'compile_module',
+                                  wraps=direct_emitter.compile_module) as emit:
+                    with self.assertRaisesRegex(PythonDirectUnsupported,'UnsupportedExample'):
+                        execute('Before=1; R=New UnsupportedExample;')
+                emit.assert_called_once()
+                self.assertNotIn('before',vm.variables)
 
     def test_builtins_do_not_become_bsl_variables(self):
         vm=Interpreter()

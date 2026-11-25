@@ -3,7 +3,7 @@ from decimal import Decimal
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
+from yadinassi.execution.codegen.direct_emitter import compile_owned
 from yadinassi.syntax.parser import parse
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
 from yadinassi.execution.direct.python_direct_database import NAMES
@@ -28,7 +28,7 @@ class IndependentFactsTests(unittest.TestCase):
                     def external_set(self,name,value):state['a']=object()
                     def resolve_member(self,value,name):calls.append(name);raise BoundaryViolation('explicit host boundary')
                 p=self.plan('a=New Array;'+effect+'a.Add(2);')
-                self.assertIn('id(type(',p.generated_source)
+                self.assertIn("'Add', 1, False",p.generated_source)
                 with self.assertRaisesRegex(BoundaryViolation,'explicit host boundary'):p.run(state,context=Context())
                 self.assertEqual(calls,['Add'])
     def test_external_read_deletion_invalidates_scalar_right_operand(self):
@@ -45,15 +45,9 @@ class IndependentFactsTests(unittest.TestCase):
             def external_get(self,name):return self.counter
             def resolve_member(self,value,name):calls.append(name);raise BoundaryViolation('external counter effect')
         p=self.plan('a=New Array;For External=0 To 1 Do a.Add(External);EndDo;')
-        self.assertIn('id(type(',p.generated_source)
+        self.assertIn("'Add', 1, False",p.generated_source)
         with self.assertRaisesRegex(BoundaryViolation,'external counter effect'):p.run(state,context=Context())
         self.assertEqual(calls,['Add'])
-    def test_custom_array_and_authority_keep_dispatch(self):
-        source='a=New Array;a.Add(1);'
-        p=compile_owned(parse(source),source_text=source,source_name='facts.bsl',constructors=('Array',),external_names=tuple(NAMES))
-        self.assertIn('id(type(',p.generated_source)
-        p=compile_owned(parse(KERNEL),source_text=KERNEL,source_name='facts.bsl',external_names=tuple(NAMES),authority_checks=True)
-        self.assertIn('id(type(',p.generated_source)
     def test_query_constructor_callback_clears_existing_facts(self):
         state={};calls=[]
         class Context(BoundaryContext):

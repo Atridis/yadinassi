@@ -4,7 +4,6 @@ from decimal import Decimal as D
 from yadinassi.collections.plain_value_table_runtime import BSLValueTable
 from yadinassi.collections.structures import BSLStructure
 from yadinassi import Interpreter
-from recovered_bare_fixture import Interpreter as BareInterpreter
 
 def elapsed(fn,repeats=5):
     times=[]
@@ -35,12 +34,15 @@ for n in (512,4096):
     python=elapsed(lambda:[r for r in raw if r[0]==raw_target])
     source='T=New ValueTable;T.Columns.Add("K");For I=0 To '+str(n-1)+' Do R=T.Add();R.K=I%32;EndDo;'
     actual={}
-    for cls in (Interpreter,BareInterpreter):
-      for indexed in (False,True):
-        vm=cls();vm.execute(source+('T.Indexes.Add("K");' if indexed else ''))
-        plan=vm.prepare('Found=T.FindRows(New Structure("K",3));C=Found.Count();')
-        def run():
-            vm.execute_prepared(plan);assert vm.variables['c']==n//32
-        actual[cls.__module__+ ('_indexed' if indexed else '_linear')]=elapsed(run,3)
+    for indexed in (False,True):
+        vm=Interpreter()
+        try:
+            vm.execute(source+('T.Indexes.Add("K");' if indexed else ''))
+            plan=vm.prepare('Found=T.FindRows(New Structure("K",3));C=Found.Count();')
+            def run():
+                vm.execute_prepared(plan);assert vm.variables['c']==n//32
+            actual['indexed' if indexed else 'linear']=elapsed(run,3)
+        finally:
+            vm.close()
     out.append(dict(n=n,python_scan=python,class_linear=linear,class_build=build,class_steady=steady,batch_write_search=batch_time,interleaved8=interleaved_time,prepared_bsl=actual))
 print(json.dumps(out,indent=2))

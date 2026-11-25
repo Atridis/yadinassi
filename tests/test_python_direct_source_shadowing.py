@@ -6,7 +6,7 @@ import test_source_application_exports as exports
 from test_configuration_source_runtime import source
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.runtime import Interpreter
-from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
+from yadinassi.execution.codegen.direct_emitter import compile_owned
 from yadinassi.syntax.parser import parse
 from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
 

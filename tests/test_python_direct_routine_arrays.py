@@ -2,7 +2,7 @@
 from decimal import Decimal
 from unittest import TestCase
 from yadinassi import Interpreter
-from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
+from yadinassi.execution.codegen.direct_emitter import compile_owned
 from yadinassi.syntax.parser import parse
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
 
@@ -17,7 +17,7 @@ class RoutineArrayTests(TestCase):
     def test_explicit_local_and_val_shadow_module_or_external_names(self):
         for declaration,params,actuals in [('Var a;','',''),('','Val a','7')]:
             code='Function F('+params+') '+declaration+BODY+' EndFunction r=F('+actuals+');'
-            for options in ({'module_names':('a',)},{'external_names':('a',),'constructors':('Query',)}):
+            for options in ({'module_names':('a',)},{'external_names':('a',)}):
                 p=self.plan(code,**options)
                 state={'a':Decimal(123)} if 'module_names' in options else {}
                 p.run(state,context=BoundaryContext());self.assertEqual(state['r'],4950)
@@ -25,7 +25,7 @@ class RoutineArrayTests(TestCase):
     def test_byref_parameters_and_globals_remain_opaque(self):
         for code in ('Procedure F(a) a=New Array;a.Add(1);EndProcedure F(x);',
                      'Var a;Procedure F() a=New Array;a.Add(1);EndProcedure F();'):
-            self.assertIn('id(type(',self.plan(code).generated_source)
+            self.assertIn("'Add', 1, False",self.plan(code).generated_source)
         code='Procedure F(a,b) a=New Array;b=42;a.Add(1);EndProcedure x=0;F(x,x);'
         vm=Interpreter()
         try:
@@ -45,9 +45,9 @@ class RoutineArrayTests(TestCase):
         finally:vm.close()
     def test_unknown_val_bounds_and_authority_are_not_assumed_pure(self):
         code='Function F(Val n) a=New Array;For i=0 To n Do a.Add(i);EndDo;Return a.Count();EndFunction r=F(3);'
-        self.assertIn('id(type(',self.plan(code).generated_source)
-        p=self.plan('Function F() '+BODY+' EndFunction r=F();',authority_checks=True)
-        self.assertIn('id(type(',p.generated_source)
+        self.assertIn("'Add', 1, False",self.plan(code).generated_source)
+        p=self.plan('Function F() '+BODY+' EndFunction r=F();',meter_loops=True)
+        self.assertIn('_C.checkpoint()',p.generated_source)
     def test_local_alias_clear_and_error_partial_effects(self):
         code='Function F() a=New Array;a.Add(3);b=a;b.Clear();Observe(a.Count());Return a.Get(0);EndFunction r=F();'
         events=[];vm=Interpreter(allow_extensions=True);vm.register_function('Observe',events.append)

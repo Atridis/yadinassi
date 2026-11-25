@@ -2,7 +2,6 @@ import unittest
 from unittest.mock import patch
 from decimal import Decimal
 from yadinassi import Interpreter
-from tests.recovered_bare_fixture import Interpreter as BareInterpreter
 from yadinassi.collections.plain_value_table_runtime import BSLValueTable
 from yadinassi.collections.structures import BSLStructure
 from yadinassi.types.unique_identifiers import BSLUUID
@@ -18,20 +17,20 @@ SOURCE = '''Т=Новый ТаблицаЗначений;
 Е=Т.НайтиСтроки(Новый Структура).Количество();'''
 
 class LinearFindRows(unittest.TestCase):
-    def test_both_compilers_and_prepared(self):
-        for cls in (Interpreter, BareInterpreter):
-            for prepared in (False, True):
-                with self.subTest(compiler=cls.__module__, prepared=prepared):
-                    vm=cls()
-                    if prepared: vm.execute_prepared(vm.prepare(SOURCE))
-                    else: vm.execute(SOURCE)
-                    self.assertEqual(vm.variables['к'], 2)
-                    self.assertEqual(vm.variables['е'], 0)
-                    self.assertEqual(vm.variables['п'], 'Изменен')
-                    rows=vm.variables['т'].rows
-                    found=vm.variables['н']
-                    actual=found.items if hasattr(found,'items') else list(found)
-                    self.assertIs(actual[0],rows[0]); self.assertIs(actual[1],rows[2])
+    def test_find_rows_by_source_and_prepared(self):
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm=Interpreter()
+                self.addCleanup(vm.close)
+                if prepared: vm.execute_prepared(vm.prepare(SOURCE))
+                else: vm.execute(SOURCE)
+                self.assertEqual(vm.variables['к'], 2)
+                self.assertEqual(vm.variables['е'], 0)
+                self.assertEqual(vm.variables['п'], 'Изменен')
+                rows=vm.variables['т'].rows
+                found=vm.variables['н']
+                actual=found.items if hasattr(found,'items') else list(found)
+                self.assertIs(actual[0],rows[0]); self.assertIs(actual[1],rows[2])
     def test_exact_default_equality_and_errors(self):
         t=BSLValueTable();t.columns.add('K')
         for value in (True,1,Decimal(1)):
@@ -95,9 +94,10 @@ class LinearFindRows(unittest.TestCase):
                     with self.assertRaises(err):t.find(value,'K')
 
     def test_bad_field_compiled(self):
-        for cls in (Interpreter,BareInterpreter):
-            with self.subTest(compiler=cls.__module__):
-                with self.assertRaises(Exception):cls().execute('T=New ValueTable; R=T.FindRows(New Structure("Missing",1));')
+        vm=Interpreter()
+        self.addCleanup(vm.close)
+        with self.assertRaises(Exception):
+            vm.execute('T=New ValueTable; R=T.FindRows(New Structure("Missing",1));')
 
 class LazyFindRows(unittest.TestCase):
     def test_declared_lazy_and_supported_mutations(self):
@@ -118,11 +118,13 @@ class LazyFindRows(unittest.TestCase):
         t.delete(0);self.assertEqual(len(query()),2)
         t.clear();self.assertEqual(query(),[])
         self.assertEqual(len(t._search.cache),1) # unrelated V index stays unbuilt
-    def test_both_compilers_declaration_and_live_mutation(self):
+    def test_prepared_declaration_and_live_mutation(self):
         source=SOURCE.replace('Н=Т.НайтиСтроки','Т.Индексы.Добавить("Склад,Товар");Н=Т.НайтиСтроки')
         source+=' Повтор=Т.НайтиСтроки(Новый Структура("Склад,Товар","А","Х")).Количество();'
-        for cls in (Interpreter,BareInterpreter):
-            vm=cls();vm.execute_prepared(vm.prepare(source));self.assertEqual(vm.variables['повтор'],1)
+        vm=Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute_prepared(vm.prepare(source))
+        self.assertEqual(vm.variables['повтор'],1)
     def test_readonly_indexes_and_opaque_shortcircuit(self):
         t=BSLValueTable();t.columns.add('K');t.columns.add('V');r=t.add()
         r.set_member('K',False);r.set_member('V',object())
@@ -185,17 +187,6 @@ class LazyFindRows(unittest.TestCase):
                 self.assertEqual(len(outputs),1)
                 self.assertEqual(extract_payload(outputs[0],'table.'+name),
                                  extract_payload(archive,'table.'+name))
-    def test_bare_index_numeric_equality_and_epoch(self):
-        from yadinassi.execution.codegen.native_bare_table import BareTable
-        from yadinassi.execution.codegen.native_bare_collections import BareStructure
-        t=BareTable();t.add_column('K')
-        for value in (True,1,Decimal(1)):t.add()[0]=value
-        t.indexes.add('K')
-        self.assertEqual(len(t.find_rows(BareStructure('K',1))),3)
-        self.assertEqual(t.indexes.search.builds,1)
-        t.get(0).set_index(0,2)
-        self.assertEqual(len(t.find_rows(BareStructure('K',1))),2)
-        t.sort('K');self.assertEqual(len(t.find_rows(BareStructure('K',1))),2)
     def test_cached_position_integrity_and_immutable_buckets(self):
         from types import MappingProxyType
         from yadinassi.collections.plain_table_search import _Entry

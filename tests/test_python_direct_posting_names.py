@@ -2,8 +2,6 @@
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter,BSLRuntimeError
-from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
-from yadinassi.syntax.parser import parse
 import test_document_posting_runtime as fixture
 
 class PostingNamesTests(unittest.TestCase):
@@ -42,16 +40,3 @@ class PostingNamesTests(unittest.TestCase):
         self.assertEqual(props.get_member('D'),8)
         self.assertEqual(props.get_member('N'),5)
         self.assertIs(props.get_member('Caught'),True)
-    def test_default_compiler_does_not_admit_callable_field(self):
-        from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
-        source='Number("3");'
-        with self.assertRaises(PythonDirectUnsupported):
-            compile_owned(parse(source),source_text=source,source_name='posting.bsl',external_names=('number',))
-    def test_private_profile_validation(self):
-        for options in ({'host_bindings':1},{'callable_externals':['number']},
-                        {'callable_externals':('number',)}):
-            with self.subTest(options=options),self.assertRaises((TypeError,ValueError)):
-                compile_owned([],source_text='',source_name='posting.bsl',**options)
-        with self.assertRaises(ValueError):
-            compile_owned([],source_text='',source_name='posting.bsl',
-                          external_names=('number',),callable_externals=('number',))

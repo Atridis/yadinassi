@@ -436,7 +436,8 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=N
 
         def _unregistered_service(self,name):
             from .python_direct_names import NAMES
-            if name.casefold() in NAMES:
+            key=name.casefold()
+            if key in NAMES or key in vm.variables:
                 raise ValueError('Значение не является функцией: '+name)
             # A missing BSL routine during ordinary Eval is a language error,
             # not a denial of an existing host or transaction capability.

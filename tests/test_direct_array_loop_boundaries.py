@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
+from yadinassi.execution.codegen.direct_emitter import compile_owned
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation, HostMembers
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 from yadinassi.syntax.parser import parse
@@ -17,7 +17,7 @@ def source(n, body='A.Add(i);'):
 
 def owned(text, *, source_scopes=True):
     return compile_owned(parse(text), source_text=text, source_name='append-loop.bsl',
-                         authority_checks=True, source_scopes=source_scopes)
+                         meter_loops=True, source_scopes=source_scopes)
 
 
 class DirectArrayLoopBoundaryTests(unittest.TestCase):
@@ -50,14 +50,14 @@ class DirectArrayLoopBoundaryTests(unittest.TestCase):
     def test_source_scope_native_arm_has_no_checks(self):
         routine = ('Procedure OnStart() A=New Array;' + source(20, 'A.Добавить(i);')
                    + 'Message(A.Count()); Message(A.Get(19)); EndProcedure')
-        plan = owned(routine + '\nOnStart();')
+        plan = compile_owned(parse(routine + '\nOnStart();'), source_text=routine, source_name='append-loop.bsl', source_scopes=True)
         tree = ast.parse(plan.generated_source)
         native_loops = [
             block for block in ast.walk(tree) if isinstance(block, ast.While)
-            and any(isinstance(item, ast.Name) and item.id == '_list_append' for item in ast.walk(block))
+            and any(isinstance(item, ast.Name) and item.id == '_Member' for item in ast.walk(block))
         ]
         self.assertEqual(len(native_loops), 1)
-        self.assertNotIn('_context.', ast.unparse(native_loops[0]))
+        self.assertNotIn('.checkpoint(', ast.unparse(native_loops[0]))
         seen = []
         from yadinassi.configuration.configuration_source_runtime import SourceApplication
         from test_configuration_source_runtime import source as configuration

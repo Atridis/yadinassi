@@ -41,10 +41,12 @@ class NonconstructibleDateDiagnostics(unittest.TestCase):
                 vm.execute_prepared(vm.prepare(source))
         self.assertEqual(effects, [])
 
-    def test_explicit_owned_constructor_profile_keeps_existing_resolution(self):
-        from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
+    def test_owned_compilation_keeps_nonconstructible_date_diagnostic(self):
+        from yadinassi.execution.codegen.direct_emitter import compile_owned
+        from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext
         from yadinassi.syntax.parser import parse
         source = 'New Date;'
         plan = compile_owned(parse(source, 'date.bsl'), source_text=source,
-                             source_name='date.bsl', constructors=('Date',))
-        self.assertIn('new:date', plan.required_services)
+                             source_name='date.bsl')
+        with self.assertRaisesRegex(BSLRuntimeError, 'Тип не определен: Date'):
+            plan.run({}, context=BoundaryContext())

@@ -68,8 +68,6 @@ class BenchmarkDiagnosticTests(unittest.TestCase):
         self.assertEqual(default['layers']['bsl']['counters']['direct_ast_compile'], 1)
         self.assertEqual(prepared['layers']['bsl']['counters']['direct_ast_compile'], 0)
         self.assertGreater(default['layers']['bsl']['counters']['builtin_compile'], 0)
-        self.assertEqual(default['layers']['bsl']['counters']['source_map_compile'], 0)
-        self.assertEqual(prepared['layers']['bsl']['counters']['source_map_compile'], 0)
         self.assertEqual(prepared['layers']['bsl']['counters']['builtin_compile'], 0)
         self.assertEqual(default['layers']['bsl']['result'], prepared['layers']['bsl']['result'])
         self.assertIsNone(sys.getprofile())
@@ -190,8 +188,7 @@ class BenchmarkDiagnosticTests(unittest.TestCase):
         self.assertIn('Объектный _begin | Порт Query', text)
         table = [line for line in text.splitlines() if line.startswith('|')]
         self.assertGreaterEqual(len(table), 3)
-        self.assertEqual({len(line.split('|')) - 2 for line in table}, {14})
-        self.assertIn('SourceMap.compile', text)
+        self.assertEqual({len(line.split('|')) - 2 for line in table}, {13})
         old_report = deepcopy(report)
         del old_report['cases'][0]['layers']['bsl']['counters']['direct_ast_compile']
         del old_report['cases'][0]['layers']['bsl']['counters']['sqlite_query_language_begin']

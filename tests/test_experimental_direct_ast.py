@@ -3,14 +3,12 @@
 Broad language matrices live in the dedicated public direct-runtime suites.
 These tests retain compile structure, source ownership, diagnostics and boundaries.
 """
+import ast
 import subprocess
 import sys
 import unittest
 from decimal import Decimal
-from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
-from yadinassi.execution.direct import python_direct
-from yadinassi.execution.codegen import experimental_direct_ast as direct
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.syntax.parser import parse
@@ -20,54 +18,27 @@ class DirectASTResearchTests(unittest.TestCase):
         import gc,weakref
         from dataclasses import replace
         nodes=parse('X=1;\nY=1/0;','owned.bsl');ref=weakref.ref(nodes[0])
-        with patch.object(python_direct,'_compile',direct.compile_module):
-            vm=Interpreter(allow_extensions=True);plan=vm.prepare_program(nodes)
+        vm=Interpreter(allow_extensions=True);plan=vm.prepare_program(nodes)
         nodes[0].value.value=Decimal(99)
         nodes[0].token=replace(nodes[0].token,source='changed.bsl',line=70)
         nodes.clear();gc.collect();self.assertIsNone(ref())
         with self.assertRaises(Exception) as caught:vm.execute_prepared(plan)
         self.assertEqual(vm.variables['x'],1)
         self.assertEqual((caught.exception.source,caught.exception.line),('owned.bsl',2))
-        with patch.object(python_direct,'_compile',direct.compile_module):
-            vm=Interpreter(allow_extensions=True);vm.variables['x']=Decimal(1);vm.register_function('Read',lambda:2)
-            plan=vm.prepare('X=X+Read();X;')
+        vm=Interpreter(allow_extensions=True);vm.variables['x']=Decimal(1);vm.register_function('Read',lambda:2)
+        plan=vm.prepare('X=X+Read();X;')
         self.assertEqual(vm.execute_prepared(plan),3)
         vm.register_function('Read',lambda:3)
         self.assertEqual(vm.execute_prepared(plan),6)
 
-    def test_conditional_local_declaration_shadow_rejected_before_effects(self):
-        for flag in ('False','True'):
-            source='Var X;Function F(Val C) If C Then Var X;X=2;Else X=3;EndIf;Return X;EndFunction;X=9;R=F('+flag+');'
-            for compiler in (direct.compile_module,direct.compile_module_whole_source):
-                vm=Interpreter()
-                with patch.object(python_direct,'_compile',compiler):
-                    with self.assertRaisesRegex(PythonDirectUnsupported,'conditional local Var shadowing module storage'):vm.execute(source)
-                self.assertEqual(vm.variables,{})
-
-    def test_one_real_compile_per_call_and_actual_audit_denial(self):
-        self.child(r'''
-import ast,sys
-from unittest.mock import patch
-from yadinassi import Interpreter
-from yadinassi.execution.direct import python_direct
-from yadinassi.execution.codegen.experimental_direct_ast import compile_module
-python_direct._compile=compile_module
-vm=Interpreter();vm.execute('X=1;','audit.bsl');events=[]
-def observe(event,args):
-    if event=='compile':events.append(args)
-sys.addaudithook(observe)
-for _ in range(2):
-    events.clear();vm.execute('X=1;','audit.bsl')
-    if len(events)!=1 or not isinstance(events[0][0],ast.Module):raise AssertionError('not one actual AST compile')
-vm.variables.clear()
-def deny(event,args):
-    if event=='compile' and isinstance(args[0],ast.Module):raise RuntimeError('executable AST denied')
-sys.addaudithook(deny)
-try:vm.execute('X=1;','audit.bsl')
-except RuntimeError as error:
-    if str(error)!='executable AST denied' or vm.variables:raise AssertionError('denial after effects')
-else:raise AssertionError('compiler policy bypassed')
-''')
+    def test_conditional_local_declaration_is_lexical(self):
+        for flag, expected in (('False', 3), ('True', 2)):
+            source=('Var X;Function F(Val C) If C Then Var X;X=2;Else X=3;EndIf;'
+                    'Return X;EndFunction;X=9;R=F('+flag+');')
+            vm=Interpreter()
+            self.addCleanup(vm.close)
+            vm.execute(source)
+            self.assertEqual(vm.variables, {'x': 9, 'r': expected})
 
     def test_default_ast_and_extension_filename_audit(self):
         self.child(r"""
@@ -80,17 +51,16 @@ for vm in (direct,external):
     vm.execute('X=1;','warm.bsl');vm.variables.clear()
 deny_ast=False
 def deny(event,args):
-    if event!='compile':return
-    if args[1]=='blocked.bsl':raise RuntimeError('filename denied')
-    if deny_ast and isinstance(args[0],ast.Module):raise RuntimeError('AST denied')
+    if event=='exec' and args[0].co_filename=='blocked.bsl':
+        raise RuntimeError('filename denied')
+    if event=='compile' and deny_ast and isinstance(args[0],ast.Module):
+        raise RuntimeError('AST denied')
 sys.addaudithook(deny)
-try:external.execute('X=1;','blocked.bsl')
-except RuntimeError as error:
-    if str(error)!='filename denied' or external.variables:raise AssertionError('bad filename denial')
-else:raise AssertionError('explicit extension filename gate absent')
-direct.execute('X=1;','blocked.bsl')
-if direct.variables.get('x')!=1:raise AssertionError('bare compile unnecessarily emits source')
-direct.variables.clear()
+for vm in (direct,external):
+    try:vm.execute('X=1;','blocked.bsl')
+    except RuntimeError as error:
+        if str(error)!='filename denied' or vm.variables:raise AssertionError('bad filename denial')
+    else:raise AssertionError('compiler filename gate absent')
 deny_ast=True
 try:direct.execute('X=1;','direct.bsl')
 except RuntimeError as error:
@@ -99,28 +69,28 @@ else:raise AssertionError('bare AST gate absent')
 """)
 
     def test_lowering_counts_linear_for_wide_and_nested_inputs(self):
-        counters={}
-        with patch.object(python_direct,'_compile',direct.compile_module):
-            for shape in ('nested','wide'):
-                for size in (8,16,32):
-                    source='R='+'-'.join(['1']*size)+';' if shape=='nested' else ';'.join('X%d=%d'%(i,i) for i in range(size))+';'
-                    plan=Interpreter().prepare(source)
-                    counters[shape,size]=plan._plan._research_lowering_counts
-                a=counters[shape,16];b=counters[shape,32]
-                self.assertLessEqual(b[1],2*a[1]+2)
-                self.assertLessEqual(b[2],2*a[2]+2)
-        self.counters=counters
+        for shape in ('nested', 'wide'):
+            counts=[]
+            for size in (8,16,32):
+                source=('R='+'-'.join(['1']*size)+';' if shape=='nested'
+                        else ';'.join('X%d=%d'%(i,i) for i in range(size))+';')
+                vm=Interpreter()
+                self.addCleanup(vm.close)
+                plan=vm.prepare(source)
+                counts.append(sum(1 for _ in ast.walk(ast.parse(plan._plan.generated_source))))
+            self.assertGreater(counts[1],counts[0])
+            self.assertLessEqual(counts[2],2*counts[1]+2)
 
     def test_no_research_caps_and_unsupported_fail_before_effects(self):
-        with patch.object(python_direct,'_compile',direct.compile_module):
-            vm=Interpreter();vm.execute('R='+'-'.join(['1']*100)+';')
-            self.assertEqual(vm.variables['r'],-98)
-            vm=Interpreter();vm.execute('\n'*50000+'X=1;')
-            self.assertEqual(vm.variables['x'],1)
-            self.assertGreater(direct._bounds(parse('X=1;'*3500))[0],10000)
-            vm=Interpreter()
-            with self.assertRaises(PythonDirectUnsupported):vm.execute('X=1;A=New UnsupportedResearchConstructor;')
-            self.assertEqual(vm.variables,{})
+        vm=Interpreter();vm.execute('R='+'-'.join(['1']*100)+';')
+        self.assertEqual(vm.variables['r'],-98)
+        vm=Interpreter();vm.execute('\n'*50000+'X=1;')
+        self.assertEqual(vm.variables['x'],1)
+        vm.execute('X=1;'*3500)
+        self.assertEqual(vm.variables['x'],1)
+        vm=Interpreter()
+        with self.assertRaises(PythonDirectUnsupported):vm.execute('X=1;A=New UnsupportedResearchConstructor;')
+        self.assertEqual(vm.variables,{})
 
     def child(self,code):
         result=subprocess.run([sys.executable,*(['-'+'O'*sys.flags.optimize] if sys.flags.optimize else []),'-c',code],capture_output=True,text=True)
@@ -136,28 +106,24 @@ else:raise AssertionError('bare AST gate absent')
             ('X=?(True,2,1/0);',{'x':2}),
             ('Function F(Val N) If N=0 Then Return 1;Else Return N*F(N-1);EndIf;EndFunction R=F(5);',{'r':120}),
         ]
-        for compiler in (direct.compile_module,direct.compile_module_whole_source):
-            for source,expected in cases:
-                with self.subTest(source=source,compiler=compiler.__name__):
-                    vm=Interpreter();self.addCleanup(vm.close)
-                    with patch.object(python_direct,'_compile',compiler):vm.execute(source)
-                    for name,value in expected.items():self.assertEqual(vm.variables[name],value)
+        for source,expected in cases:
+            with self.subTest(source=source):
+                vm=Interpreter();self.addCleanup(vm.close)
+                vm.execute(source)
+                for name,value in expected.items():self.assertEqual(vm.variables[name],value)
 
     def test_errors_have_independent_source_position_and_partial_state(self):
-        for compiler in (direct.compile_module,direct.compile_module_whole_source):
-            for rhs in ('1/0','Missing'):
-                vm=Interpreter();self.addCleanup(vm.close)
-                with self.subTest(rhs=rhs),patch.object(python_direct,'_compile',compiler):
-                    with self.assertRaises(BSLError) as caught:vm.execute('X=1;\nY='+rhs+';','probe.bsl')
-                self.assertEqual(caught.exception.source,'probe.bsl');self.assertEqual(caught.exception.line,2)
-                self.assertEqual(vm.variables,{'x':Decimal(1)})
+        for rhs in ('1/0','Missing'):
+            vm=Interpreter();self.addCleanup(vm.close)
+            with self.subTest(rhs=rhs):
+                with self.assertRaises(BSLError) as caught:vm.execute('X=1;\nY='+rhs+';','probe.bsl')
+            self.assertEqual(caught.exception.source,'probe.bsl');self.assertEqual(caught.exception.line,2)
+            self.assertEqual(vm.variables,{'x':Decimal(1)})
 
     def test_owner_close_before_following_effect(self):
-        for compiler in (direct.compile_module,direct.compile_module_whole_source):
-            vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);vm.register_function('Stop',vm.close)
-            with patch.object(python_direct,'_compile',compiler):
-                with self.assertRaises(BoundaryViolation):vm.execute('X=1;Stop();Y=2;')
-            self.assertEqual(vm.variables.get('x'),1);self.assertNotIn('y',vm.variables)
+        vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);vm.register_function('Stop',vm.close)
+        with self.assertRaises(BoundaryViolation):vm.execute('X=1;Stop();Y=2;')
+        self.assertEqual(vm.variables.get('x'),1);self.assertNotIn('y',vm.variables)
 
     def test_policy_replacement_before_following_effect(self):
         vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close)
@@ -187,27 +153,32 @@ else:raise AssertionError('bare AST gate absent')
             self.assertEqual(vm.variables,{})
 
     def test_native_exception_trace_has_bsl_line(self):
-        for compiler in (direct.compile_module,direct.compile_module_whole_source):
-            events=[]
-            def trace(frame,event,arg):
-                if event=='exception' and frame.f_code.co_filename=='trace.bsl':events.append(frame.f_lineno)
-                return trace
-            old=sys.gettrace();sys.settrace(trace)
-            try:
-                with patch.object(python_direct,'_compile',compiler):
-                    with self.assertRaises(BSLError):Interpreter().execute('X=1;\nY=1/0;','trace.bsl')
-            finally:sys.settrace(old)
-            self.assertTrue(events);self.assertTrue(all(line==2 for line in events))
+        events=[]
+        def trace(frame,event,arg):
+            if event=='exception' and frame.f_code.co_filename=='trace.bsl':events.append(frame.f_lineno)
+            return trace
+        old=sys.gettrace();sys.settrace(trace)
+        try:
+            with self.assertRaises(BSLError):Interpreter().execute('X=1;\nY=1/0;','trace.bsl')
+        finally:sys.settrace(old)
+        self.assertTrue(events);self.assertTrue(all(line==2 for line in events))
 
     def test_constant_fold_source_visitation(self):
-        from yadinassi.execution.codegen import experimental_naked_scalar_semantics as scalar
-        original=scalar.concatenate
-        for source in ('If True Then X="a"+1;Else X="b"+2;EndIf;', 'While ("a"+1) Do X="b"+2;EndDo;', 'Try X="a"+1;Except X="b"+2;EndTry;'):
-            for compiler in (direct.compile_module,direct.compile_module_whole_source):
-                seen=[]
-                def observe(left,right):seen.append(left);return original(left,right)
-                with patch.object(scalar,'concatenate',observe),patch.object(python_direct,'_compile',compiler):Interpreter().prepare(source)
-                self.assertEqual(seen,['a','b'])
+        class Out:
+            def __init__(self):
+                self.messages=[]
+            def __call__(self, message):
+                self.messages.append(message)
+        output=Out()
+        vm=Interpreter(output=output)
+        self.addCleanup(vm.close)
+        source='If True Then Message("a"+1);Else Message("b"+2);EndIf;'
+        plan=vm.prepare(source)
+        self.assertEqual(output.messages,[])
+        self.assertIn("'a'",plan._plan.generated_source)
+        self.assertIn("'b'",plan._plan.generated_source)
+        vm.execute_prepared(plan)
+        self.assertEqual(output.messages,['a1'])
 
     def test_operator_temporary_finalizer_and_close(self):
         # Exact operand-temporary lifetime was an implementation-only comparison

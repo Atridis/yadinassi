@@ -25,7 +25,6 @@ REPORT_LAYERS = ('python', 'bsl')
 # from unrelated subsystems. Counts are entries, including recursive calls.
 WATCHED = {
     'direct_ast_compile': ('execution/codegen/direct_emitter.py', 'compile_module'),
-    'source_map_compile': ('execution/codegen/experimental_naked_errors.py', 'compile'),
     'prepared_ast_snapshot': ('execution/direct/python_direct.py', '_snapshot'),
     'sqlite_catalog_begin': ('db/sqlite/sqlite_catalog.py', '_begin'),
     'sqlite_query_language_begin': ('db/sqlite/sqlite_catalog.py', '_begin_query_language_read'),
@@ -123,7 +122,7 @@ def diagnose(name, iterations, route, *, catalog_rows=32):
 def render(report):
     if report['schema'] != 'execution-call-diagnostics-v1' or not report['cases']:
         raise ValueError('invalid diagnostic report')
-    columns = ('python_calls', 'builtin_compile', 'direct_ast_compile', 'source_map_compile', 'sqlite_execute',
+    columns = ('python_calls', 'builtin_compile', 'direct_ast_compile', 'sqlite_execute',
                'sqlite_catalog_begin', 'sqlite_query_language_begin',
                'configuration_read_source', 'configuration_validate_ddl',
                'configuration_validate_canonical', 'direct_boundary_check', 'catalog_owner_check')
@@ -133,7 +132,7 @@ def render(report):
              'Подготовка, сброс состояния и проверка результата исключены. Это числа вызовов, не время. '
              'Входы в объектный _begin и порт Query показаны отдельно. Нулевой read_source не означает отсутствие всех проверок полномочий. '
              'В подписи указаны итерации и операции за один запуск; жизненный цикл формы считается одной операцией.', '',
-             '| Сценарий / режим / объём | Слой | Вызовы Python | Встроенный compile | Прямой AST compile_module | SourceMap.compile | API SQLite execute | Объектный _begin | Порт Query | read_source | Проверки DDL | Проверки конфигурации | Прямой _check | Проверки владельца |',
+             '| Сценарий / режим / объём | Слой | Вызовы Python | Встроенный compile | Прямой AST compile_module | API SQLite execute | Объектный _begin | Порт Query | read_source | Проверки DDL | Проверки конфигурации | Прямой _check | Проверки владельца |',
              '|---|---|' + '---:|' * len(columns)]
     for case in report['cases']:
         for layer in REPORT_LAYERS:
@@ -148,7 +147,7 @@ def render(report):
             lines.append('| ' + label + ' | ' + labels.LAYERS.get(layer,layer) + ' | ' + ' | '.join('—' if key in ('direct_ast_compile', 'sqlite_query_language_begin') and key not in data['counters'] else str(data['counters'][key]) for key in columns) + ' |')
     lines += ['', 'Порогов скорости нет; коэффициенты времени и цветовые категории к счётчикам не применяются. '
               'Счётчики SQLite отражают вызовы API Connection/Cursor, а не SQL-операторы, инструкции виртуальной машины, строки или триггеры. '
-              'Встроенный compile включает разбор в AST; compile_module считает входы в текущий прямой AST-компилятор. SourceMap.compile относится к прежнему генератору и штатно равен нулю на новом пути. Эти счётчики не складываются. Тире означает отсутствие счётчика в старом JSON, а не ноль. '
+              'Встроенный compile включает разбор в AST; compile_module считает входы в текущий прямой AST-компилятор. Эти счётчики не складываются. Тире означает отсутствие счётчика в старом JSON, а не ноль. '
               'Вызовы Python учитывают рекурсию; профилировщик добавляет накладные расходы и не подходит для сравнения времени. '
               'Наблюдается только текущий поток. Отсутствующие или несопоставимые слои не подменяются вымышленными данными.', '',
               'JSON сохраняет все именованные счётчики и сведения об исходниках и среде. COUNT выполняет одинаковое число '

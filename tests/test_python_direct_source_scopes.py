@@ -3,7 +3,7 @@ from contextlib import contextmanager
 import unittest
 
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
-from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
+from yadinassi.execution.codegen.direct_emitter import compile_owned
 from yadinassi.syntax.parser import parse
 from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
 from yadinassi.types.values import HostFunction
@@ -32,18 +32,6 @@ class SourceRoutineScopeTests(unittest.TestCase):
     def compile(self,source,**kwargs):
         return compile_owned(parse(source),source_text=source,source_name='scopes.bsl',**kwargs)
 
-    def test_callable_external_requires_trusted_source_scope_opt_in(self):
-        with self.assertRaisesRegex(ValueError,'owning binding profile'):
-            self.compile('A=Depth();',callable_externals=('depth',))
-        with self.assertRaisesRegex(TypeError,'tuples of names'):
-            self.compile('A=Depth();',source_scopes=True,callable_externals='depth')
-        with self.assertRaisesRegex(UnsupportedNakedSyntax,'not callable'):
-            self.compile('A=Depth();',external_names=('depth',),source_scopes=True)
-        plan=self.compile('A=Depth();',external_names=('depth',),
-            source_scopes=True,callable_externals=('depth',))
-        state={};plan.run(state,context=ScopeContext())
-        self.assertEqual(state['a'],0)
-
     def test_same_module_nested_calls_and_early_return_have_distinct_frames(self):
         plan=self.compile('''Function Inner() Return Depth(); EndFunction
 Function Outer() Return Inner()+Depth(); EndFunction
@@ -68,7 +56,7 @@ Try Outer();Except C=Depth();EndTry;''',source_scopes=True)
         context=ScopeContext();context._services['revoke']=HostFunction('Revoke',context.revoke)
         with self.assertRaises(BoundaryViolation):plan.run({},context=context)
         self.assertEqual(context.frames,[])
-        self.assertIn('with _context.routine_scope():',plan.generated_source)
+        self.assertIn('with _C.routine_scope():',plan.generated_source)
 
     def test_default_has_no_frame_hook_or_added_per_routine_guard(self):
         source='Function F() Return 1; EndFunction A=F();'
@@ -96,10 +84,6 @@ Try Outer();Except C=Depth();EndTry;''',source_scopes=True)
         state={};self.compile(source,source_scopes=True).run(state,context=context)
         self.assertTrue(state['a']);self.assertEqual(effects,[]);self.assertEqual(context.frames,[])
 
-    def test_opt_in_requires_exact_boolean_and_trusted_services(self):
-        with self.assertRaises(TypeError):self.compile('',source_scopes=1)
-        with self.assertRaises(ValueError):self.compile('',scalar_routines=True)
-
     def test_exported_closure_frame_is_entered_on_each_invocation(self):
         plan=self.compile('Function F() Return Depth(); EndFunction',
             exports=True,source_scopes=True)
@@ -122,7 +106,10 @@ class MemberScopeContext(ScopeContext):
         def bump(ref):ref.set(ref.get()+1)
         return self.resolve_callable(HostFunction(name,bump,returns_value=self.is_function,reference_parameters=(0,)),
             require_value=require_value,allow_references=allow_references)
-    def resolve_member(self,*args):raise AssertionError('legacy member route')
+    def resolve_member(self,*args):raise AssertionError('ordinary dispatch must not handle an external source member')
+    def external_get(self,name):
+        if name!='host':return super().external_get(name)
+        return self.receiver
 
 
 class SourceQualifiedCallTests(unittest.TestCase):
@@ -133,7 +120,7 @@ class SourceQualifiedCallTests(unittest.TestCase):
         for method in ('Bump','Add'):
             with self.subTest(method=method):
                 obj=object();context=MemberScopeContext(obj);state={'host':obj}
-                plan=self.compile('X=1;Host.'+method+'(X);',source_scopes=True)
+                plan=self.compile('X=1;Host.'+method+'(X);',source_scopes=True,source_dispatch=True,external_names=('host',))
                 plan.run(state,context=context)
                 self.assertEqual(state['x'],2)
                 self.assertEqual(context.calls,[('bind',method,False,1,True)])
@@ -142,8 +129,8 @@ class SourceQualifiedCallTests(unittest.TestCase):
         for source in ('Host.Bump(Effect(),Effect());','X=Host.Bump(Effect());'):
             with self.subTest(source=source):
                 obj=object();context=MemberScopeContext(obj,is_function=False)
-                plan=self.compile(source,source_scopes=True)
-                with self.assertRaises(Exception):plan.run({'host':obj},context=context)
+                plan=self.compile(source,source_scopes=True,source_dispatch=True,external_names=('host',))
+                with self.assertRaisesRegex(Exception, "arity|Процедура"):plan.run({'host':obj},context=context)
                 self.assertNotIn('effect',context.calls)
 
     def test_native_collection_methods_do_not_resolve_source_members(self):

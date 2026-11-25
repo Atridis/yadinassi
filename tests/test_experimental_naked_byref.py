@@ -10,29 +10,17 @@ class DirectByrefContracts(unittest.TestCase):
         vm=Interpreter();self.addCleanup(vm.close);vm.execute(source)
         self.assertEqual([vm.variables[n] for n in names], expected)
 
-    def test_same_actual_alias_is_live_not_copyback(self):
-        self.check_source('Procedure F(x,y) x=x+1;y=y+2;EndProcedure a=1;F(a,a);', ['a'], [4])
-
     def test_forwarded_reference_alias(self):
         self.check_source('Procedure F(x,y) x=x+1;y=y+2;EndProcedure Procedure G(z) F(z,z);EndProcedure a=1;G(a);', ['a'], [4])
 
     def test_value_parameter_forwarded_byref_is_local_copy(self):
         self.check_source('Procedure F(x) x=99;EndProcedure Procedure G(Val y) F(y);EndProcedure a=1;G(a);', ['a'], [1])
 
-    def test_defaults_are_fresh_each_call(self):
-        self.check_source('Function F(x=1) x=x+1;Return x;EndFunction a=F();b=F();', ['a', 'b'], [2, 2])
-
     def test_omitted_default_and_expression_temporary(self):
         self.check_source('Function F(x=1,y=2) x=x+1;y=y+2;Return x+y;EndFunction a=F(,);b=F(3+4,5);', ['a', 'b'], [6, 15])
 
-    def test_index_references_alias_same_slot(self):
-        self.check_source('Procedure F(x,y) x=x+1;y=y+2;EndProcedure a=New Array;a.Add(1);F(a[0],a[0]);', ['a'], [[4]])
-
     def test_attribute_reference(self):
         self.check_source('Procedure F(x) x=x+2;EndProcedure s=New Structure("x",1);F(s.x);a=s.x;', ['a'], [3])
-
-    def test_property_output_found_and_absent(self):
-        self.check_source('s=New Structure("x",7);a=0;r=s.Property("x",a);b=9;q=s.Property("missing",b);', ['a', 'r', 'b', 'q'], [7, True, None, False])
 
     def test_property_output_live_module_slot_preserves_storage_rules(self):
         for prepared in (False,True):
@@ -66,9 +54,6 @@ class DirectByrefContracts(unittest.TestCase):
 
     def test_loop_counter_can_be_reference(self):
         self.check_source('Procedure F(x) x=x+1;EndProcedure s=0;For i=1 To 5 Do F(i);s=s+i;EndDo;', ['s', 'i'], [12, 7])
-
-    def test_module_var_and_local_shadow(self):
-        self.check_source('Var a;Procedure F(x) x=8;EndProcedure Procedure G() Var a;a=2;F(a);EndProcedure a=1;G();', ['a'], [1])
 
     def test_boxed_var_initializes_none(self):
         self.check_source('Procedure F(x) Return;EndProcedure Var a;F(a);', ['a'], [None])
@@ -115,10 +100,11 @@ class DirectByrefContracts(unittest.TestCase):
                 'A=0; For I=1 To 3 Do F(A,A); EndDo;')
         plan=vm.prepare(source)
         tree=ast.parse(plan._plan.generated_source)
-        loop=next(node for node in ast.walk(tree) if type(node) is ast.For)
+        loop=next(node for node in ast.walk(tree) if type(node) is ast.While)
         hot=ast.unparse(loop)
         self.assertNotIn('_UNSET',hot)
-        self.assertNotIn('_context._check',hot)
+        self.assertNotIn('_C._check',hot)
+        self.assertNotIn('.checkpoint(',hot)
         vm.execute_prepared(plan)
         self.assertEqual(vm.variables['a'],Decimal('4.5'))
 

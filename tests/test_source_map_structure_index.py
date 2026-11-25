@@ -8,7 +8,6 @@ from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi import runtime
 from yadinassi.execution.codegen import direct_emitter as direct
-from yadinassi.execution.codegen.experimental_naked_errors import _StructureIndex
 
 
 def signature(code):
@@ -100,26 +99,6 @@ check(seen == [('Module', None)])
         if execute:
             return states
 
-    def test_structural_identity_matches_dump_identity(self):
-        snippets=('x+x','x + y','x[1]','x[True]','x[1.0]','x["1"]','x[b"1"]',
-            'x[-0.0]','x[0.0]','f(x,y=1)','f(x,**y)','[x for x in y if x]',
-            'lambda x:x+1','(x,y)','[x,y]','{x:y}','x.y','x[1:2:3]',
-            'f"{x!r}"','x if y else z','not x','x is None','(x + x)')
-        index=_StructureIndex();by_dump={};by_key={}
-        for snippet in snippets:
-            for node in ast.walk(ast.parse(snippet,mode='eval')):
-                dump=ast.dump(node,include_attributes=False);key=index.key(node)
-                self.assertEqual(by_dump.setdefault(dump,key),key)
-                self.assertEqual(by_key.setdefault(key,dump),dump)
-        node=ast.parse('x+x',mode='eval').body;key=index.key(node)
-        node.lineno=999;node.col_offset=500
-        self.assertEqual(index.key(ast.parse('x+x',mode='eval').body),key)
-    def test_each_ast_node_indexed_once_and_cache_is_local(self):
-        tree=ast.parse('f(x[0]+x[1], y=2)',mode='eval');index=_StructureIndex()
-        first=index.key(tree);count=len(index.nodes)
-        for _ in range(20):self.assertEqual(index.key(tree),first)
-        self.assertEqual(len(index.nodes),count)
-        self.assertEqual(len(_StructureIndex().nodes),0)
     def test_exact_bytecode_and_location_tables_on_real_modules(self):
         root=Path(__file__).resolve().parents[1]
         sources=[(root/path).read_text(encoding='utf-8') for path in (
