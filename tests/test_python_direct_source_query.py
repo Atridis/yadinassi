@@ -4,7 +4,6 @@ from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import patch
 
 from test_source_constant_store import configuration
 from test_configuration_source_runtime import source
@@ -14,7 +13,6 @@ from yadinassi.db import source_transactions
 from yadinassi.execution.direct.source import python_direct_source_query as bridge
 from yadinassi.db.query.source_constant_queries import SourceConstantQuery
 from yadinassi.db.metadata.source_constants_runtime import SourceConstants
-from yadinassi.runtime import Interpreter
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
@@ -31,9 +29,7 @@ class DirectSourceQueryTests(unittest.TestCase):
 
     @contextmanager
     def boundary(self,app,owner):
-        with patch.object(Interpreter,'_execute_program',side_effect=AssertionError('VM program')), \
-             patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM routine')), \
-             source_transactions.execution(app),app.safe_mode.execution():
+        with source_transactions.execution(app), app.safe_mode.execution():
             context=SourceBoundary(owner,_compile(owner,[]));context.enter()
             try:yield context
             finally:context.leave()

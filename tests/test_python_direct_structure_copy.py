@@ -3,7 +3,7 @@ from decimal import Decimal
 import unittest
 from unittest.mock import patch
 
-from yadinassi import Interpreter, BSLError
+from yadinassi import Interpreter
 from yadinassi.execution.codegen.experimental_naked_structure import new_structure, structure_items, _DirectStructure
 from yadinassi.collections.structures import BSLFixedStructure
 from yadinassi.syntax.parser import parse
@@ -21,10 +21,9 @@ R=F.ss;V=U.SS;N=F.Child.Count();M=U.Count();'''
         for route in ('source','ast','prepared'):
             with self.subTest(route=route):
                 vm=self.vm()
-                with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
-                    if route=='source':vm.execute(source)
-                    elif route=='ast':vm.execute_program(parse(source))
-                    else:vm.execute_prepared(vm.prepare(source))
+                if route=='source':vm.execute(source)
+                elif route=='ast':vm.execute_program(parse(source))
+                else:vm.execute_prepared(vm.prepare(source))
                 self.assertEqual(tuple(vm.variables[k] for k in ('r','v','n','m')),(2,2,2,2))
                 self.assertEqual(list(structure_items(vm.variables['t'])),[('SS',Decimal(7)),('Other',Decimal(9))])
                 self.assertIs(vm.variables['u']['Child'],vm.variables['a'])

@@ -14,14 +14,13 @@ class PythonDirectDefaultTests(unittest.TestCase):
    vm=Interpreter();self.assertEqual(vm.execution_backend,'python-direct')
    vm.execute('a=New Array;a.Add(2);r=a[0]+1;')
    self.assertEqual(vm.variables['r'],3);self.assertEqual(vm.variables['a'][0],2)
-   self.assertEqual(vm.execution_backend_stats['python_direct_modules'],1)
  def test_api_existing_source_functions_and_host_output(self):
   output=[];vm=Interpreter(output.append)
   vm.execute('Function F(Val x) Return x+1;EndFunction r=F(2);Message(r);')
   self.assertEqual(output,['3'])
- def test_execute_program_does_not_reparse_or_prepare_legacy_engine(self):
+ def test_execute_program_does_not_reparse(self):
   vm=Interpreter();program=parse('r=2+3;')
-  with patch('yadinassi.execution.codegen.experimental_naked_collections.parse',create=True,side_effect=AssertionError('retired reparsing')),patch('yadinassi.syntax.parser.parse',side_effect=AssertionError('reparsed')),patch.object(vm,'_compiled',side_effect=AssertionError('legacy')):
+  with patch('yadinassi.runtime.parse',side_effect=AssertionError('reparsed')):
    vm.execute_program(program)
   self.assertEqual(vm.variables['r'],5)
  def test_repeated_variables_and_declared_globals(self):
@@ -55,7 +54,7 @@ class PythonDirectDefaultTests(unittest.TestCase):
   for vm in (Restricted(),Interpreter(),Interpreter()):
    if type(vm) is Interpreter:
     if not hasattr(self,'_patched'):
-     vm.compiled_before=lambda node:None;self._patched=True
+     vm.set_variable=lambda name,value:None;self._patched=True
     else:vm._configuration_runtime=object()
    with self.assertRaises(PythonDirectUnsupported):vm.execute('x=1;')
    self.assertNotIn('x',vm.variables)
@@ -108,14 +107,6 @@ class PythonDirectDefaultTests(unittest.TestCase):
   with self.assertRaisesRegex(PythonDirectUnsupported,'source tokens'):
    vm.execute_program([ast.ExpressionStatement(None,ast.Literal(None,Decimal(1)))])
   self.assertEqual(vm.variables,{})
- def test_legacy_generator_entries_reject_before_effects(self):
-  vm=Interpreter(allow_extensions=True);source=parse('x=7;')
-  with self.assertRaises(PythonDirectUnsupported):vm._scheduler.run_inline(vm.block(source))
-  call=parse('Host();')[0].expression;events=[];vm.register_function('Host',lambda:events.append(1))
-  with self.assertRaises(PythonDirectUnsupported):vm._scheduler.run_inline(vm.call(call,require_value=False))
-  routine=parse('Procedure F() x=7;EndProcedure')[0]
-  with self.assertRaises(PythonDirectUnsupported):vm._scheduler.run_inline(vm.call_routine(routine,[],vm,require_value=False))
-  self.assertEqual(vm.variables,{});self.assertEqual(events,[])
  def test_host_context_install_stops_before_following_write(self):
   from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
   vm=Interpreter(allow_extensions=True);vm.register_function('Install',lambda:setattr(vm,'_configuration_runtime',object()))

@@ -3,7 +3,6 @@ from decimal import Decimal
 import hashlib
 import json
 import unittest
-from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
@@ -20,10 +19,9 @@ class QueryTableTests(unittest.TestCase):
         source='T[0].N=5;R=T.Count()+T[0].N;C=T.Columns[0].Name;D=T.Columns[0].ValueType.NumberQualifiers.Digits;'
         for route in ('source','ast','prepared'):
             vm=Interpreter();vm.variables['t']=self.table()
-            with patch.object(Interpreter,'block',side_effect=AssertionError('legacy')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy')):
-                if route=='source':vm.execute(source)
-                elif route=='ast':vm.execute_program(parse(source))
-                else:vm.execute_prepared(vm.prepare(source))
+            if route=='source':vm.execute(source)
+            elif route=='ast':vm.execute_program(parse(source))
+            else:vm.execute_prepared(vm.prepare(source))
             self.assertEqual(vm.variables['r'],6);self.assertEqual(vm.variables['c'],'N')
 
     def test_noncanonical_receivers_and_owners_rejected(self):
@@ -62,8 +60,7 @@ class QueryTableTests(unittest.TestCase):
 
     def test_original_catalog_query_replay_matches_native24(self):
         from catalog_query_behavior.replay import replay
-        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy')):
-            rows=replay()
+        rows=replay()
         self.assertEqual(len(rows),24)
         # Accepted native artifact14334693411, run44098520311; exact compact wire.
         wire=(json.dumps(rows,separators=(',',':'))+'\n').encode()

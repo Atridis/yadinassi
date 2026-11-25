@@ -1,19 +1,11 @@
 """Bounded source ServerCall uses generated code, never VM routine dispatch."""
 import unittest
-from unittest.mock import patch
 import test_source_server_call as existing
-from yadinassi.runtime import Interpreter
 
 
 class DirectSourceServerCallNoVM(unittest.TestCase):
     run_app = existing.SourceServerCallTests.run_app
     with_extra = existing.SourceServerCallTests.with_extra
-
-    def setUp(self):
-        for name in ('_execute_program', 'call_routine', '_planned_routine_block'):
-            poison = patch.object(Interpreter, name, side_effect=AssertionError('legacy ' + name))
-            poison.start()
-            self.addCleanup(poison.stop)
 
     test_client_server_function = existing.SourceServerCallTests.test_client_server_function
     test_server_metadata_retained = existing.SourceServerCallTests.test_server_metadata_retained
@@ -101,7 +93,6 @@ class DirectSourceServerCallTemporaryNoVM(unittest.TestCase):
     test_close_releases_values = _temporary.SourceTemporaryTests.test_close_releases_values
     test_atomic_admission_and_quotas = _temporary.SourceTemporaryTests.test_atomic_admission_and_quotas
     test_start_failure_cleans_store = _temporary.SourceTemporaryTests.test_start_failure_cleans_store
-
 
 
 if __name__ == '__main__':

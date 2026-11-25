@@ -12,11 +12,6 @@ class SourceTemporarySecurity(unittest.TestCase):
     app = existing.SourceTemporaryTests.app
     execute = existing.SourceTemporaryTests.execute
 
-    def setUp(self):
-        for name in ('_execute_program', 'call_routine'):
-            poison=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
-            poison.start(); self.addCleanup(poison.stop)
-
     def test_foreign_standalone_saved_marker_rejected_before_actual(self):
         app=self.app()
         vm=Interpreter(lambda _:None, allow_extensions=True); self.addCleanup(vm.close)

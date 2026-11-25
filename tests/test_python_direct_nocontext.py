@@ -1,4 +1,3 @@
-from decimal import Decimal
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -14,12 +13,11 @@ Function F(X,Val N=2) X=X+N;Return Scope();EndFunction
 X=3;R=F(X);'''
         for route in ('source','ast','prepared'):
             vm=Interpreter(allow_extensions=True);vm.register_function('Scope',lambda:vm.execution_context+':'+str(vm._has_module_context))
-            with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
-                if route=='source':vm.execute(source)
-                elif route=='ast':vm.execute_program(parse(source))
-                else:vm.execute_prepared(vm.prepare(source))
-                self.assertEqual((vm.variables['x'],vm.variables['r']),(5,'server:False'))
-                vm.execute('F(X,3);');self.assertEqual(vm.variables['x'],8)
+            if route=='source':vm.execute(source)
+            elif route=='ast':vm.execute_program(parse(source))
+            else:vm.execute_prepared(vm.prepare(source))
+            self.assertEqual((vm.variables['x'],vm.variables['r']),(5,'server:False'))
+            vm.execute('F(X,3);');self.assertEqual(vm.variables['x'],8)
             self.assertEqual(vm.execution_context,'client');self.assertTrue(vm._has_module_context)
 
     def test_no_server_or_client_globals_and_no_initialization(self):

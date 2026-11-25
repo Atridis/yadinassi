@@ -1,16 +1,12 @@
 """Posting fields and canonical scalar calls have distinct name roles."""
 import unittest
-from unittest.mock import patch
-from yadinassi import Interpreter,BSLRuntimeError
+from yadinassi import BSLRuntimeError
 import test_document_posting_runtime as fixture
 
 class PostingNamesTests(unittest.TestCase):
     def owner(self,module):
         owner=fixture.PostingRuntimeTests();owner.setUp();self.addCleanup(owner.doCleanups)
         owner.make(module)
-        for name in ('_execute_program','call_routine','_planned_routine_block'):
-            guard=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
-            guard.start();self.addCleanup(guard.stop)
         return owner
     def test_number_call_keeps_field_read_and_ignores_parent_override(self):
         owner=self.owner('Procedure Posting(Cancel,Mode) AdditionalProperties.Insert("Read",Number);AdditionalProperties.Insert("Converted",Number(Number)+1);AdditionalProperties.Insert("Date",Date(2024,1,2)); EndProcedure')

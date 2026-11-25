@@ -1,19 +1,13 @@
 """Implicit manager namespace locals are an ordinary-source-only profile."""
 import unittest
-from unittest.mock import patch
 import test_source_manager_modules as managers
 import test_source_application_exports as exports
 from test_configuration_source_runtime import source
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
-from yadinassi.runtime import Interpreter
 from yadinassi.execution.codegen.direct_emitter import compile_owned
-from yadinassi.syntax.parser import parse
 from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
 
 class SourceShadowingTests(unittest.TestCase):
-    def setUp(self):
-        for name in ('_execute_program','call_routine','_planned_routine_block'):
-            guard=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name));guard.start();self.addCleanup(guard.stop)
     def run_app(self,config):
         out=[];app=SourceApplication(config,output=out.append);self.addCleanup(app.close);app.start();return app,out
     def test_read_before_write_and_false_branch(self):

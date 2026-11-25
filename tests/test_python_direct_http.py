@@ -9,7 +9,7 @@ from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.http.http_client import BSLHTTPConnection,BSLHTTPRequest,_headers
+from yadinassi.http.http_client import BSLHTTPRequest, _headers
 from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
 from yadinassi.execution.direct.python_direct_plain_map import PlainMap
 
@@ -47,10 +47,9 @@ class DirectHTTPTests(unittest.TestCase):
         source='C=New HTTPConnection("127.0.0.1",8080,,,,10);R=C.Timeout;Q=New HTTPRequest("/",);'
         for route in ('source','ast','prepared'):
             vm=Interpreter()
-            with patch.object(Interpreter,'block',side_effect=AssertionError('legacy')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy')):
-                if route=='source':vm.execute(source)
-                elif route=='ast':vm.execute_program(parse(source))
-                else:vm.execute_prepared(vm.prepare(source))
+            if route=='source':vm.execute(source)
+            elif route=='ast':vm.execute_program(parse(source))
+            else:vm.execute_prepared(vm.prepare(source))
             self.assertEqual(vm.variables['r'],10)
 
     def test_required_and_unknown_constructor_holes_refuse_before_effects(self):
@@ -120,8 +119,7 @@ class DirectHTTPTests(unittest.TestCase):
         from native_1c_http_fixture import owned_fixture
         root=Path(__file__).resolve().parents[1]
         with TemporaryDirectory() as tmp,owned_fixture() as fixture:
-            with patch.object(Interpreter,'block',side_effect=AssertionError('legacy')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy')):
-                actual=replay((root/SOURCE).read_bytes(),Path(tmp).resolve(),fixture.server_port)
+            actual=replay((root/SOURCE).read_bytes(),Path(tmp).resolve(),fixture.server_port)
         self.assertEqual(actual,(root/'tests/fixtures/http_family/native-initial/output.txt').read_bytes())
 
     def test_constructor_implementation_mutation_cannot_use_bound_capability(self):

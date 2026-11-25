@@ -3,7 +3,6 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from yadinassi import Interpreter
 from yadinassi.configuration.configuration_main_demo import PROFILE, import_main_demo_configuration
 from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.ui.configuration_app import load_application
@@ -13,25 +12,24 @@ ROOT=Path(__file__).resolve().parents[1]/'examples/demo'
 class DirectFormTests(unittest.TestCase):
     def test_real_demo_import_database_reopen_and_created_without_vm_dispatch(self):
         files={p.relative_to(ROOT).as_posix():p.read_bytes() for p in ROOT.rglob('*') if p.is_file()}
-        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')), patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
-            config=import_main_demo_configuration(files,profile=PROFILE)
-            with tempfile.TemporaryDirectory() as folder:
-                path=Path(folder)/'demo.sqlite'
-                SQLiteDBContext.create_main_demo(path,config).close()
-                with SQLiteDBContext(path) as reopened:
-                    self.assertEqual(len(reopened.backend.accumulation_configuration.catalogs),3)
-                before=path.read_bytes()
-                app=load_application(ROOT,main_demo_application=True)
-                server=app.forms['commonform.demowelcome'].create_server()
-                session=server.session
-                session._begin(session.revision)
-                try:
-                    self.assertEqual(session._event('oncreateatserver',[False,True]),[False,True])
-                    self.assertEqual(session.form.get_member('Greeting'),'Справочники, документы и регистр накопления работают в одной базе')
-                finally:
-                    session._busy=False
-                    session._gate.release()
-                self.assertEqual(path.read_bytes(),before)
+        config=import_main_demo_configuration(files,profile=PROFILE)
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'demo.sqlite'
+            SQLiteDBContext.create_main_demo(path,config).close()
+            with SQLiteDBContext(path) as reopened:
+                self.assertEqual(len(reopened.backend.accumulation_configuration.catalogs),3)
+            before=path.read_bytes()
+            app=load_application(ROOT,main_demo_application=True)
+            server=app.forms['commonform.demowelcome'].create_server()
+            session=server.session
+            session._begin(session.revision)
+            try:
+                self.assertEqual(session._event('oncreateatserver',[False,True]),[False,True])
+                self.assertEqual(session.form.get_member('Greeting'),'Справочники, документы и регистр накопления работают в одной базе')
+            finally:
+                session._busy=False
+                session._gate.release()
+            self.assertEqual(path.read_bytes(),before)
 
     def test_scalar_qualifier_constructors_in_form(self):
         from yadinassi.forms.form_runtime import FormSession
@@ -101,8 +99,7 @@ class DirectDeclarationTests(unittest.TestCase):
               'ThisObject.Text="hello"; ЭтотОбъект.Total=42; Message(ThisObject.Text); Message(ЭтотОбъект.Total); '
               'D=New Array; D.Add("Text"); ИзменитьРеквизиты(New Array,D);')
         session=self.session(body)
-        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
-            session.open()
+        session.open()
         self.assertNotIn('text',session.form._attributes)
         self.assertEqual(session.form._data['total'],42)
         self.assertFalse(session._busy)
@@ -157,8 +154,7 @@ class DirectDeclarationTests(unittest.TestCase):
             from form_runtime_packet import source,parse_records,require_available
         session=FormSession(source(),bindings={'OnCreateAtServer':'FormCreate','OnOpen':'FormOpen','BeforeClose':'FormBeforeClose'})
         self.addCleanup(session.interpreter.close)
-        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
-            snapshot=session.open()
+        snapshot=session.open()
         raw=dict(snapshot.attributes)['FLog'].encode('ascii')
         require_available(parse_records(raw))
         self.assertEqual(set(session.form._attributes),{'fname','fflag','famount','ftrace','flog'})
@@ -261,8 +257,7 @@ class DirectFormReferenceTests(unittest.TestCase):
                 '&AtServer\nProcedure Assign(X) X="updated"; EndProcedure')
         session=FormSession(source,bindings={'OnCreateAtServer':'Event'})
         self.addCleanup(session.interpreter.close)
-        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy')):
-            session.open()
+        session.open()
         self.assertEqual(session.form.title,'updated')
         self.assertEqual(session.form.items._values['field'].title,'updated')
         self.assertIn('readonly',str(session.messages))

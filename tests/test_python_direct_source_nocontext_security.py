@@ -2,7 +2,6 @@
 import unittest
 from unittest.mock import patch
 import test_source_forms as existing
-from yadinassi.runtime import Interpreter
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
@@ -10,11 +9,6 @@ class SourceNoContextSecurity(unittest.TestCase):
     app=existing.SourceFormTests.app
     controller=existing.SourceNoContextTests.controller
     run_command=existing.SourceNoContextTests.run_command
-
-    def setUp(self):
-        for name in ('_execute_program','call_routine','_planned_routine_block'):
-            poison=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
-            poison.start();self.addCleanup(poison.stop)
 
     def test_prototype_signature_tampering_does_not_run(self):
         for server in (False,True):

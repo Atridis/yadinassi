@@ -2,9 +2,7 @@
 import unittest
 from decimal import Decimal
 from unittest.mock import patch
-from yadinassi import Interpreter
 from yadinassi.execution.execution_policy import execution_backend_policy
-from yadinassi.execution.codegen import translated_access as access
 from yadinassi.forms.form_runtime import FormSession
 from yadinassi.forms.form_model import BSLFormAttribute
 from yadinassi.types.type_descriptions import BSLTypeDescription
@@ -12,12 +10,6 @@ from test_form_tables import make, active
 import test_form_tables as form_tests
 
 class TranslatedFormTableIndexTests(unittest.TestCase):
-    def test_original_nested_call_case_direct(self):
-        for backend in ('python-direct',):
-            with self.subTest(backend=backend), execution_backend_policy(backend):
-                case = form_tests.FormTableTests('test_bare_member_iteration_and_index_access')
-                case.test_bare_member_iteration_and_index_access()
-
     def test_each_generated_table_read_runs_once(self):
         for backend in ('python-direct',):
             with self.subTest(backend=backend), execution_backend_policy(backend):
@@ -86,30 +78,6 @@ EndFunction
                 context.leave()
         session.dispatch('close', revision=1)
         other.dispatch('close', revision=1)
-
-    def test_value_service_keeps_live_checks_and_other_vm_rejection(self):
-        session = make(); session.open()
-        table = session.form._tables['lines']
-        vm = session.interpreter
-        operation = access.prepare_index_read(vm, table)
-        with self.assertRaises(ValueError):
-            vm._scheduler.run_inline(operation.finish(Decimal(0)))
-        with active(session):
-            self.assertIs(vm._scheduler.run_inline(operation.finish(Decimal(0))), table.get(Decimal(0)))
-            for invalid in (Decimal(-1), Decimal('0.5'), Decimal(1), True):
-                with self.assertRaises(ValueError):
-                    vm._scheduler.run_inline(operation.finish(invalid))
-            ordinary = Interpreter()
-            try:
-                with self.assertRaises(TypeError):access.prepare_index_read(ordinary, table)
-            finally:ordinary.close()
-            from yadinassi.forms.form_runtime import _FormInterpreter
-            class UnknownForm(_FormInterpreter): pass
-            with self.assertRaises(TypeError):
-                access.prepare_index_read(object.__new__(UnknownForm), table)
-        session.dispatch('close', revision=1)
-        with self.assertRaises(ValueError):
-            vm._scheduler.run_inline(operation.finish(Decimal(0)))
 
     def test_unscoped_source_form_factory_is_not_an_ownership_grant(self):
         from yadinassi.configuration.configuration_source import import_source

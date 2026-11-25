@@ -23,8 +23,7 @@ class DirectDatabaseTests(unittest.TestCase):
         return vm
 
     def test_objects_fields_sections_and_no_argument_add(self):
-        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
-            self.vm.execute('A=Catalogs.Номенклатура.CreateItem(); A.Description=" Item "; Row=A.Склады.Add(); N=A.Склады.Count();')
+        self.vm.execute('A=Catalogs.Номенклатура.CreateItem(); A.Description=" Item "; Row=A.Склады.Add(); N=A.Склады.Count();')
         self.assertEqual(self.vm.variables['a'].get_member('Description'),' Item ')
         self.assertEqual(self.vm.variables['n'],1)
 
@@ -65,8 +64,7 @@ Procedure ReplaceRef(R) R=Undefined; EndProcedure''')
         self.assertFalse(self.vm._transaction_activation_allowed)
 
     def test_query_selection_on_real_sqlite_without_vm_dispatch(self):
-        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
-            self.vm.execute('Q=New Query("SELECT COUNT(*) AS N FROM Catalog.Номенклатура"); S=Q.Execute().Select(); Found=S.Next(); N=S.N;')
+        self.vm.execute('Q=New Query("SELECT COUNT(*) AS N FROM Catalog.Номенклатура"); S=Q.Execute().Select(); Found=S.Next(); N=S.N;')
         self.assertTrue(self.vm.variables['found'])
         self.assertEqual(self.vm.variables['n'],0)
         self.vm.execute('Again=S.Next(); Last=S.N;')
@@ -301,17 +299,15 @@ Procedure ReplaceRef(R) R=Undefined; EndProcedure''')
         self.assertEqual(other.variables['a'].get_member('Description'),'current')
 
     def test_catalog_selection_aliases_fields_restart_and_get_object(self):
-        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
-            self.vm.execute('A=Catalogs.Склады.CreateItem(); A.Description="Warehouse"; A.Write(); '
-                            'S=Catalogs.Склады.Select(); Before=S.Description; Missing=S.GetObject(); '
-                            'Found=S.Следующий(); Name=S.Наименование; R=S.Ссылка; O=S.ПолучитьОбъект(); '
-                            'Done=S.Next(); Last=S.Description; Restart=S.Next();')
+        self.vm.execute('A=Catalogs.Склады.CreateItem(); A.Description="Warehouse"; A.Write(); '
+                        'S=Catalogs.Склады.Select(); Before=S.Description; Missing=S.GetObject(); '
+                        'Found=S.Следующий(); Name=S.Наименование; R=S.Ссылка; O=S.ПолучитьОбъект(); '
+                        'Done=S.Next(); Last=S.Description; Restart=S.Next();')
         values=self.vm.variables
         self.assertIsNone(values['before']);self.assertIsNone(values['missing'])
         self.assertTrue(values['found']);self.assertFalse(values['done']);self.assertTrue(values['restart'])
         self.assertEqual(values['name'],'Warehouse');self.assertEqual(values['last'],'Warehouse')
         self.assertEqual(values['o'].get_member('Ref'),values['r'])
-        self.assertEqual(self.vm.execution_backend_stats['fallback'],0)
 
     def test_empty_catalog_selection_and_readonly_private_surface(self):
         self.vm.execute('S=Catalogs.Склады.Select(); Found=S.Next(); Again=S.Следующий();')
@@ -357,19 +353,17 @@ Procedure ReplaceRef(R) R=Undefined; EndProcedure''')
             advance.assert_not_called()
 
     def test_catalog_metadata_aliases_identity_and_public_lookup(self):
-        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
-            self.vm.execute('M=Metadata.Catalogs.Склады; R=Catalogs.Склады.EmptyRef(); '
-                            'Same=M=R.Metadata(); Alias=M=Метаданные.Справочники.Склады; '
-                            'Name=M.Имя; Full=M.FullName(); '
-                            'Found=Metadata.Catalogs.Find("Склады")=M; '
-                            'Indexed=Metadata.Catalogs["Склады"]=M; '
-                            'ByName=Metadata.FindByFullName("Catalog.Склады")=M; '
-                            'ByType=Metadata.FindByType(TypeOf(R))=M;')
+        self.vm.execute('M=Metadata.Catalogs.Склады; R=Catalogs.Склады.EmptyRef(); '
+                        'Same=M=R.Metadata(); Alias=M=Метаданные.Справочники.Склады; '
+                        'Name=M.Имя; Full=M.FullName(); '
+                        'Found=Metadata.Catalogs.Find("Склады")=M; '
+                        'Indexed=Metadata.Catalogs["Склады"]=M; '
+                        'ByName=Metadata.FindByFullName("Catalog.Склады")=M; '
+                        'ByType=Metadata.FindByType(TypeOf(R))=M;')
         for name in ('same','alias','found','indexed','byname','bytype'):
             self.assertTrue(self.vm.variables[name],name)
         self.assertEqual(self.vm.variables['name'],'Склады')
         self.assertEqual(self.vm.variables['full'],'Справочник.Склады')
-        self.assertEqual(self.vm.execution_backend_stats['fallback'],0)
 
     def test_metadata_foreign_roots_collections_and_items_rejected(self):
         self.vm.execute('Root=Metadata; Collection=Metadata.Catalogs; Item=Collection.Склады;')

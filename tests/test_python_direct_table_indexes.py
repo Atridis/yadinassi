@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.collections.value_tables import BSLValueTable,BSLCollectionIndex,BSLCollectionIndexes
+from yadinassi.collections.value_tables import BSLValueTable, BSLCollectionIndexes
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class DirectTableIndexTests(unittest.TestCase):
@@ -10,10 +10,9 @@ class DirectTableIndexTests(unittest.TestCase):
         source='T=New ValueTable;T.Columns.Add("Key");I=T.Indexes.Add("Key");N=T.Indexes.Count();S="";For Each X In T.Indexes Do For Each Name In X Do S=S+Name;EndDo;EndDo;R=T.Indexes[0][0];'
         for route in ('source','ast','prepared'):
             vm=Interpreter()
-            with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
-                if route=='source':vm.execute(source)
-                elif route=='ast':vm.execute_program(parse(source))
-                else:vm.execute_prepared(vm.prepare(source))
+            if route=='source':vm.execute(source)
+            elif route=='ast':vm.execute_program(parse(source))
+            else:vm.execute_prepared(vm.prepare(source))
             self.assertEqual(vm.variables['n'],1);self.assertEqual(vm.variables['s'],'Key');self.assertEqual(vm.variables['r'],'Key')
 
     def test_foreign_deleted_and_readonly_operations(self):

@@ -75,7 +75,7 @@ class DirectFormParametersTests(unittest.TestCase):
             return bind_parameter_method(ctx.session,value,name) if is_parameters(ctx.session,value) else original_method(ctx,value,name)
         # Explicitly install the agreed narrow hooks in this isolated test;
         # the separate callback integration owns FormBoundary's production edits.
-        with patch.object(FormBoundary,'get_member',get),patch.object(FormBoundary,'resolve_member',method),patch.object(Interpreter,'block',side_effect=AssertionError('VM dispatch')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM dispatch')):
+        with patch.object(FormBoundary,'get_member',get), patch.object(FormBoundary,'resolve_member',method):
             app=load_application(root,main_demo_application=True)
             server=app.forms['commonform.draftdetails'].create_server(parameters=new_structure('DraftTitle,Amount,Comment','Actual source',Decimal(7),'memo'))
             session=server.session;session._begin(session.revision)

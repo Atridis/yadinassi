@@ -1,8 +1,6 @@
 import unittest
 from contextlib import contextmanager
 from decimal import Decimal
-from unittest.mock import patch
-from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
 from yadinassi.execution.direct.python_direct_handlers import prepare_handlers
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
@@ -14,9 +12,8 @@ class DirectHandlerTests(unittest.TestCase):
     def test_byref_val_sibling_call_and_persistent_globals_without_dispatch(self):
         source='Var total;Procedure Add(x) x=x+1;EndProcedure Procedure Event(cancel,Val copy) Add(cancel);copy=99;total=total+1;EndProcedure'
         p=self.prepare(source);state={'total':Decimal(0)}
-        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'_visit',side_effect=AssertionError('legacy visit')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy call')):
-            self.assertEqual(p.invoke('Event','client',[Decimal(3),Decimal(7)],state=state,context_factory=BoundaryContext),[4,7])
-            self.assertEqual(p.invoke('Event','client',[Decimal(5),Decimal(8)],state=state,context_factory=BoundaryContext),[6,8])
+        self.assertEqual(p.invoke('Event','client',[Decimal(3),Decimal(7)],state=state,context_factory=BoundaryContext),[4,7])
+        self.assertEqual(p.invoke('Event','client',[Decimal(5),Decimal(8)],state=state,context_factory=BoundaryContext),[6,8])
         self.assertEqual(state['total'],2)
 
     def test_fresh_context_host_bindings_and_no_session_state_capture(self):
@@ -79,7 +76,7 @@ class DirectHandlerTests(unittest.TestCase):
 
     def test_explicit_loop_header_budget_and_cleanup(self):
         source='Procedure Event() While True Do EndDo;EndProcedure'
-        p=prepare_handlers(parse(source),source_text=source,repairs=__import__('yadinassi.execution.direct.python_direct',fromlist=['REPAIRS']).REPAIRS+('authority_checkpoints',))
+        p=prepare_handlers(parse(source),source_text=source)
         ctx=BoundaryContext(loop_budget=2)
         with self.assertRaises(BoundaryViolation):p.invoke('Event','client',[],state={},context_factory=lambda:ctx)
         self.assertEqual(ctx.loop_backedges,2)

@@ -5,7 +5,7 @@ from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryCo
 from yadinassi.execution.codegen.experimental_naked_collections import _Cell
 from yadinassi.execution.codegen.direct_emitter import compile_owned
 from yadinassi.execution.codegen.experimental_naked_errors import convert_error
-from .python_direct import REPAIRS,_snapshot,_nodes
+from .python_direct import _snapshot,_nodes
 from .python_direct_catalog_preparation import CatalogPreparationBoundary
 from yadinassi.types.values import HostFunction,Reference
 from yadinassi.application.user_messages import BSLUserMessage
@@ -104,7 +104,7 @@ def _event_plan(vm,program,source,product,owner):
     from yadinassi.execution.execution_policy import current_backend
     schema=(getattr(owner,'_schema',None) if product else getattr(owner,'_binding',None))
     key=(source,product,schema,tuple(sorted(vm.types)),tuple(sorted(vm.variables)),
-         current_native_target(),current_backend(),tuple(REPAIRS))
+         current_native_target(),current_backend())
     cache_owner=getattr(owner,'_direct_cache_owner',None)
     if cache_owner is None:cache_owner=owner
     # Two bounded purposes share a catalog manager, not one evicting slot.

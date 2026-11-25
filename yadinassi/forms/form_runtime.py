@@ -8,11 +8,8 @@ Native form-context semantics remain provisional until source-bound acquisition.
 from dataclasses import dataclass
 from threading import Lock
 from decimal import localcontext
-from yadinassi.runtime import Interpreter, _Return
+from yadinassi.runtime import Interpreter
 from yadinassi.syntax import ast
-from yadinassi.execution.owned_syntax import syntax_kind
-from yadinassi.syntax.parser import parse
-from yadinassi.types.values import Reference
 from yadinassi.execution.codegen.native_targets import target_context
 from .form_model import (BSLClientApplicationForm, BSLFormAttribute, BSLFormField,
                          BSLFormButton, BSLFormTable, BSLFormGroup, BSLFormCommand, FORM_FIELD_VIEWS,
@@ -111,125 +108,15 @@ class _FormInterpreter(Interpreter):
             enroll(child)
         return child
 
-    def _visit(self, node):
-        from yadinassi.execution.direct.python_direct import _reject
-        _reject("single-node adapter evaluation is retired; use the direct entrypoint")
-
-    def compiled_before(self, node):
-        session = self._form_session
-        session._steps += 1
-        if session._steps > MAX_STEPS: raise FormLimitError('Форма: превышен предел исполнения события')
-        return super().compiled_before(node)
-
-    def semantic_name(self, node):
-        key = node.name.casefold()
-        if self.locals is not None and key in self.locals:
-            return super().semantic_name(node)
-        if key in ('parameters', 'параметры') and hasattr(self._form_session, '_parameters'):
-            self._form_session.form._check()
-            return self._form_session._parameters
-        if key in ('видполяформы','formfieldtype'):
-            return FORM_FIELD_VIEWS
-        form = self._form_session.form
-        if key in ('thisobject','этотобъект','items','элементы','commands','команды') or key in form._static or key in form._tables:
-            form._check()
-            if key in ('thisobject','этотобъект'): return form
-            if key in ('items','элементы'): return form.items
-            if key in ('commands','команды'): return form.commands
-            return form.get_member(node.name)
-        return super().semantic_name(node)
-
 
     # Legacy extension point keeps superclass visitor instrumentation.
-    def visit_Name(self, node):
-        key = node.name.casefold()
-        if self.locals is not None and key in self.locals:
-            return super().visit_Name(node)
-        if key in ('parameters', 'параметры') and hasattr(self._form_session, '_parameters'):
-            self._form_session.form._check()
-            return self._form_session._parameters
-        if key in ('видполяформы','formfieldtype'):
-            return FORM_FIELD_VIEWS
-        form = self._form_session.form
-        if key in ('thisobject','этотобъект','items','элементы','commands','команды') or key in form._static or key in form._tables:
-            form._check()
-            if key in ('thisobject','этотобъект'): return form
-            if key in ('items','элементы'): return form.items
-            if key in ('commands','команды'): return form.commands
-            return form.get_member(node.name)
-        return super().visit_Name(node)
-
-    def semantic_index(self, node):
-        # Evaluate the receiver once. Keep the ordinary collection rules intact.
-        from yadinassi import runtime
-        value = yield from self._visit(node.object)
-        from yadinassi.configuration.source_manager_modules import SourceManagers
-        if type(value) is SourceManagers:
-            value.authorize(self)
-            return value.member(self, (yield from self._visit(node.index)))
-        if type(value) is BSLFormDataCollection:
-            return value.get_index((yield from self._visit(node.index)))
-        if type(value) in (runtime.BSLChars, runtime.BSLCatalogMetadataCollection,
-                           runtime.BSLCatalogs, runtime.BSLDocumentMetadataCollection,
-                           runtime.BSLDocuments):
-            return value.get_index((yield from self._visit(node.index)))
-        if not isinstance(value, runtime._COLLECTIONS):
-            raise TypeError('Индексирование поддерживается только для коллекций')
-        index = yield from self._visit(node.index)
-        if isinstance(value, (runtime.BSLFixedMap, *runtime._TABLE_COLLECTIONS)):
-            return value.get_index(index)
-        return value.get(index)
-
 
     # Legacy extension point keeps superclass visitor instrumentation.
-    def visit_Index(self, node):
-        # Evaluate the receiver once. Keep the ordinary collection rules intact.
-        from yadinassi import runtime
-        value = yield from self._visit(node.object)
-        from yadinassi.configuration.source_manager_modules import SourceManagers
-        if type(value) is SourceManagers:
-            value.authorize(self)
-            return value.member(self, (yield from self._visit(node.index)))
-        if type(value) is BSLFormDataCollection:
-            return value.get_index((yield from self._visit(node.index)))
-        if type(value) in (runtime.BSLChars, runtime.BSLCatalogMetadataCollection,
-                           runtime.BSLCatalogs, runtime.BSLDocumentMetadataCollection,
-                           runtime.BSLDocuments):
-            return value.get_index((yield from self._visit(node.index)))
-        if not isinstance(value, runtime._COLLECTIONS):
-            raise TypeError('Индексирование поддерживается только для коллекций')
-        index = yield from self._visit(node.index)
-        if isinstance(value, (runtime.BSLFixedMap, *runtime._TABLE_COLLECTIONS)):
-            return value.get_index(index)
-        return value.get(index)
-
-    def compiled_iterable(self, collection):
-        from .form_model import BSLFormItems, BSLFormCommands
-        if type(collection) in (BSLFormItems, BSLFormCommands, BSLFormDataCollection):
-            return collection
-        from yadinassi.runtime import _COLLECTIONS, BSLRoundModes, BSLSearchDirections, BSLSortDirections
-        if not isinstance(collection, _COLLECTIONS) and type(collection) not in (BSLRoundModes, BSLSortDirections, BSLSearchDirections):
-            raise TypeError("Для Каждого: неподдерживаемая коллекция формы")
-        return collection
-
     def set_variable(self, variable, value):
         key = variable.casefold(); form = self._form_session.form
         if (key in form._static or key in form._tables) and not (self.locals is not None and key in self.locals):
             form.set_member(variable, value); return
         return super().set_variable(variable, value)
-
-    def argument(self, node, *, _evaluation=None):
-        ungrouped = self.ungroup(node); form = self._form_session.form
-        if syntax_kind(ungrouped) is ast.Name and (ungrouped.name.casefold() in form._static or ungrouped.name.casefold() in form._tables) and not (self.locals is not None and ungrouped.name.casefold() in self.locals):
-            # !todo Native form-attribute non-Val crossing/copyout needs its own proof.
-            raise TypeError("Форма: передача реквизита без Знач пока не поддерживается")
-        if (syntax_kind(ungrouped) is ast.Attribute and syntax_kind(ungrouped.object) is ast.Name
-                and ungrouped.object.name.casefold() in ('thisobject','этотобъект','items','элементы','commands','команды')):
-            receiver = yield from (self.receiver(ungrouped.object) if _evaluation is None else _evaluation.receiver(ungrouped.object))
-            if receiver is form or receiver is form.items or receiver is form.commands:
-                receiver.get_member(ungrouped.name)
-                return Reference(lambda: receiver.get_member(ungrouped.name), lambda v: receiver.set_member(ungrouped.name,v))
-        return (yield from super().argument(node, _evaluation=_evaluation))
 
 
 class FormSession:

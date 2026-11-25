@@ -4,17 +4,12 @@ from unittest.mock import patch
 from decimal import Decimal
 import test_source_server_call as existing
 import test_source_application_exports as exports
-from yadinassi.runtime import Interpreter
 from yadinassi.types.errors import BSLError
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
 class SourceCopybackTests(unittest.TestCase):
     run_app=existing.SourceServerCallTests.run_app
-    def setUp(self):
-        for name in ('_execute_program','call_routine','_planned_routine_block'):
-            guard=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
-            guard.start();self.addCleanup(guard.stop)
     test_scalar=existing.SourceServerCallTests.test_scalar_copyback
     test_collection=existing.SourceServerCallTests.test_collection_copyback
     test_exception_no_copyout=existing.SourceServerCallTests.test_error_has_no_copyback

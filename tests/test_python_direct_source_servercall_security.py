@@ -9,12 +9,6 @@ from yadinassi.runtime import Interpreter
 
 
 class SourceServerCallSecurity(unittest.TestCase):
-    def setUp(self):
-        for name in ('_execute_program', 'call_routine', '_planned_routine_block'):
-            poison = patch.object(Interpreter, name, side_effect=AssertionError('legacy ' + name))
-            poison.start()
-            self.addCleanup(poison.stop)
-
     def app(self, body, output, *, allow_extensions=False):
         app = SourceApplication(configuration('', body), output=output, allow_extensions=allow_extensions)
         self.addCleanup(app.close)

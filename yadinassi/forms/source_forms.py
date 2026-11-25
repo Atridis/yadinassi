@@ -22,17 +22,6 @@ class _SourceNoContextInterpreter(_SourceInterpreter):
             return
         super()._inherit_host_bindings(parent)
 
-    def _visit(self, node):
-        from yadinassi.execution.direct.python_direct import _reject
-        _reject("single-node adapter evaluation is retired; use the direct entrypoint")
-
-    def compiled_before(self, node):
-        self._source_call_budget[0] += 1
-        if self._source_call_budget[0] > 100000:
-            from .form_runtime import FormLimitError
-            raise FormLimitError('Source NoContext execution limit')
-        return super().compiled_before(node)
-
     def _activation_interpreter(self):
         return type(self)(self.application, output=self.output, budget=self._source_call_budget,
                           family_owner=self._family_owner, encoding=self.encoding,
@@ -106,16 +95,6 @@ class _SourceFormInterpreter(_SourceInterpreter, _FormInterpreter):
         if navigation is not None:
             self._register_platform_function('OpenForm', self._open_source_form, 'ОткрытьФорму', returns_value=False)
 
-    def _invocation_argument(self, node, *, _evaluation=None):
-        # Only sealed Val InvocationPort calls use this hook. Source form scalar
-        # attributes are snapshots, never dictionary references/copy-out sinks.
-        from yadinassi.syntax import ast
-        actual = self.ungroup(node)
-        if (isinstance(actual, ast.Name) and actual.name.casefold() in self._form_session.form._static
-                and not (self.locals is not None and actual.name.casefold() in self.locals)):
-            return (yield from (self._visit(node) if _evaluation is None else _evaluation.evaluate(node)))
-        return (yield from (super()._invocation_argument(node) if _evaluation is None else super()._invocation_argument(node, _evaluation=_evaluation)))
-
     def _open_source_form(self, name, parameters=None):
         if (not self._form_session._busy or not self._context_stack
                 or self._context_stack[-1] != 'client'):
@@ -145,9 +124,8 @@ class _SourceFormInterpreter(_SourceInterpreter, _FormInterpreter):
 # Definition-time source-form admission ABI. Legacy evaluator hooks are excluded
 # deliberately so direct tests can poison them without changing admission.
 _DIRECT_SOURCE_FORM_ABI=tuple((name,getattr(_SourceFormInterpreter,name)) for name in (
-    'compiled_before','compiled_after','compiled_exception','semantic_name','semantic_index',
-    'semantic_assign','set_variable','_visit','execute','execute_program',
-    '_activation_interpreter','_invocation_argument','_new_query','_new_type_description',
+    'set_variable','execute','execute_program',
+    '_activation_interpreter','_new_query','_new_type_description',
     '_new_temp_tables_manager','_make_attribute'))
 
 
@@ -160,7 +138,7 @@ _DIRECT_SOURCE_NOCONTEXT_SERVER_CLASS=_SourceNoContextServer
 _DIRECT_SOURCE_NOCONTEXT_CLASS=_SourceNoContextInterpreter
 _DIRECT_SOURCE_NOCONTEXT_ABI=tuple(
     (cls,name,getattr(cls,name)) for cls,names in (
-        (_SourceNoContextInterpreter,('__init__','__new__','compiled_before','_visit','_activation_interpreter','_inherit_host_bindings','register_function','register_type','_bind_schema_scope')),
+        (_SourceNoContextInterpreter,('__init__','__new__','_activation_interpreter','_inherit_host_bindings','register_function','register_type','_bind_schema_scope')),
         (_SourceNoContextServer,('__init__','_message','_scope','_invoke','exchange')),
         (_SourceInterpreter,('__init__','__new__','register_function','register_type','_bind_schema_scope')),
         (Interpreter,('__init__','register_function','register_type','_register_platform_function','_register_platform_type','_bind_schema_scope')),

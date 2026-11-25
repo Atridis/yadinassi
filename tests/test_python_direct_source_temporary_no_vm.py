@@ -1,17 +1,9 @@
 """Source temporary-storage semantics with lifetime VM dispatch poisoned."""
 import unittest
-from unittest.mock import patch
 import test_source_temporary_storage as existing
-from yadinassi.runtime import Interpreter
 
 
 class SourceTemporaryNoVM(existing.SourceTemporaryTests):
-    def setUp(self):
-        for name in ('_execute_program', 'call_routine', '_planned_routine_block'):
-            poison = patch.object(Interpreter, name, side_effect=AssertionError('legacy ' + name))
-            poison.start()
-            self.addCleanup(poison.stop)
-
     def test_same_side_structure_aliases(self):
         app = self.app('''Function Run() Export
             A=New Array; S=New Structure("Items",A);

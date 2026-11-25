@@ -2,7 +2,6 @@ from decimal import Decimal
 import json
 from pathlib import Path
 import unittest
-from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
@@ -18,12 +17,11 @@ class DirectServerInitializerTests(unittest.TestCase):
         source=DECL+'&AtServer\nFunction Nested() N=N+1;Return Read();EndFunction\n'+initialize('N=100;Tick();')+'R=Nested();'
         for route in ('source','ast','prepared'):
             owner=vm(allow_extensions=True);ticks=[];owner.register_function('Tick',lambda:ticks.append(owner.execution_context))
-            with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
-                if route=='source':owner.execute(source)
-                elif route=='ast':owner.execute_program(parse(source,compilation_profile='managed-thick-file'))
-                else:owner.execute_prepared(owner.prepare(source))
-                self.assertEqual(owner.variables['r'],101)
-                owner.execute('R=Read();');self.assertEqual(owner.variables['r'],100)
+            if route=='source':owner.execute(source)
+            elif route=='ast':owner.execute_program(parse(source,compilation_profile='managed-thick-file'))
+            else:owner.execute_prepared(owner.prepare(source))
+            self.assertEqual(owner.variables['r'],101)
+            owner.execute('R=Read();');self.assertEqual(owner.variables['r'],100)
             self.assertEqual(ticks,['server','server']);self.assertNotIn('n',owner.variables)
 
     def test_initializer_calls_routines_without_recursing_initialization(self):

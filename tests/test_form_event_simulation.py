@@ -136,10 +136,10 @@ class FormEventSimulationTests(unittest.TestCase):
         self.assertEqual(vm.routines, {})
         self.assertEqual(vm.imports, {})
         self.assertEqual(vm.pending_promises, ())
-        program, _ = sim._parse(SOURCE)
         for name in ('Metadata', 'ThisObject', 'Catalogs', 'Eval', 'Message'):
-            with self.subTest(name=name), self.assertRaises(ValueError):
-                vm.semantic_name(sim.ast.Name(program[0].token, name))
+            with self.subTest(name=name):
+                self.assertNotIn(name.casefold(), vm.variables)
+                self.assertNotIn(name.casefold(), vm.functions)
 
     def test_sink_rejects_routing_and_overflow_no_retry(self):
         original = sim._EventInterpreter.__init__

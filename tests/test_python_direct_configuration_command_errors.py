@@ -122,7 +122,7 @@ class ConfigurationCommandErrorTests(unittest.TestCase):
         from yadinassi.runtime import Interpreter
         output=[];app=self.app(output.append)
         with ExitStack() as stack:
-            for name in ('execute_program','block','_visit','call_routine'):
+            for name in ('execute_program',):
                 stack.enter_context(patch.object(Interpreter,name,side_effect=AssertionError(name)))
             app.execute('Try Try Tools.Fail();Except Raise;EndTry;Except Message("caught");EndTry;')
         self.assertEqual(output,['caught'])

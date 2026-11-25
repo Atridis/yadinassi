@@ -30,7 +30,7 @@ class DirectConfigurationCommandTests(unittest.TestCase):
         app=self.app([CLIENT,('Other','Function Go(Val X) Export Return Tools.Double(X)+Tools.Double(X);EndFunction',{})],output.append)
         from contextlib import ExitStack
         with ExitStack() as stack:
-            for name in ('execute_program','block','_visit','call_routine'):
+            for name in ('execute_program',):
                 stack.enter_context(patch.object(Interpreter,name,side_effect=AssertionError(name)))
             app.execute('Message(Other.Go(2));Message(Other.Go(3));')
         self.assertEqual(output,['8','12'])

@@ -14,13 +14,12 @@ from threading import Lock
 from .form_model import (BSLClientApplicationForm, BSLFormAttribute, BSLFormField,
     BSLFormButton, BSLFormCommand, BSLFormTable, BSLFormGroup, BSLFormFieldView, MAX_ATTRIBUTES, MAX_ITEMS,
     MAX_COMMANDS, MAX_TOTAL_TEXT, MAX_ALLOCATED, name, scalar, text)
-from .form_runtime import FormSession, MAX_SOURCE, _FormInterpreter
+from .form_runtime import FormSession, _FormInterpreter
 from yadinassi.execution.invocation import (InvocationBinding, InvocationPort, InvocationError,
     MAX_CALLS, MAX_ENDPOINTS, _encode_scalar, _decode_scalar)
 from yadinassi.execution.codegen.native_targets import target_context
 from yadinassi.syntax import ast
 from yadinassi.syntax.lexer import Token
-from yadinassi.syntax.parser import parse
 from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.types.type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
     BSLDateQualifiers, BSLAllowedSign, BSLAllowedLength, BSLDateFractions)
@@ -31,7 +30,7 @@ from .form_table_replication import (pack_tables, unpack_tables, install_tables,
     capture_tables, capture_selections, table_delta, selection_delta,
     admit_table_delta, apply_table_delta, TableImage, require_scalar_and_table_text)
 
-from .form_references import is_reference, adjust, encode, decode, require_scope, reference_batch
+from .form_references import is_reference, encode, decode, require_scope, reference_batch
 
 PROTOCOL = 'yadinassi-form/1'
 TABLE_PROTOCOL = 'yadinassi-form/2'
@@ -39,7 +38,6 @@ _TABLE_GENERATION = re.compile(r'[0-9a-f]{96}')
 _REASONS = frozenset(('invalid_request', 'sequence', 'stale_revision', 'closed',
     'request_limit', 'unknown_endpoint', 'invalid_arguments', 'invalid_delta',
     'server_error', 'result_unavailable', 'busy'))
-
 
 
 def _encode_form_scalar(value):
@@ -614,13 +612,8 @@ class ReplicatedFormServer:
                 elif operation == 'call':
                     arguments = [ast.Literal(routine.token, value) for value in values]
                     with target_context(session.interpreter.native_target), localcontext():
-                        if session.interpreter.execution_backend == 'python-direct':
-                            from yadinassi.execution.direct.python_direct_forms import invoke_export
-                            result = invoke_export(session,routine,values)
-                        else:
-                            result = session.interpreter._scheduler.run_inline(
-                                session.interpreter.call_routine(routine, arguments,
-                                    session.interpreter, require_value=routine.is_function))
+                        from yadinassi.execution.direct.python_direct_forms import invoke_export
+                        result = invoke_export(session,routine,values)
             except Exception:
                 reason = 'server_error'
                 if operation == 'open':

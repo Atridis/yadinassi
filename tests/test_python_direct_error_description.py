@@ -10,10 +10,9 @@ class DirectErrorDescriptionTests(unittest.TestCase):
         source='Before=ErrorDescription();Try Raise "message";Except R=ОписаниеОшибки();EndTry;After=ErrorDescription();'
         for route in ('source','ast','prepared'):
             vm=Interpreter()
-            with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
-                if route=='source':vm.execute(source,'description.bsl')
-                elif route=='ast':vm.execute_program(parse(source,'description.bsl'))
-                else:vm.execute_prepared(vm.prepare(source,'description.bsl'))
+            if route=='source':vm.execute(source,'description.bsl')
+            elif route=='ast':vm.execute_program(parse(source,'description.bsl'))
+            else:vm.execute_prepared(vm.prepare(source,'description.bsl'))
             self.assertEqual(vm.variables['before'],'');self.assertEqual(vm.variables['after'],'')
             self.assertIn('description.bsl:1:',vm.variables['r']);self.assertTrue(vm.variables['r'].endswith('message'))
 

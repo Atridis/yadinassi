@@ -580,7 +580,7 @@ class BSLArray(_ArrayBase):
         self.items.append(value)
 
     def insert(self, index: object, value: object = None) -> None:
-        position = require_number(index)
+        position = Decimal(index) if type(index) is int else require_number(index)
         if not position.is_finite() or position != position.to_integral_value():
             raise ValueError("Ожидается целое число")
         if position < 0:
@@ -601,7 +601,7 @@ class BSLArray(_ArrayBase):
             self.items.extend(tail)
 
     def delete(self, index: object) -> None:
-        position = require_number(index)
+        position = Decimal(index) if type(index) is int else require_number(index)
         if not position.is_finite() or position != position.to_integral_value():
             raise ValueError("Ожидается целое число")
         if position < 0:

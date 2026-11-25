@@ -10,7 +10,7 @@ from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryCo
 from yadinassi.execution.codegen.experimental_naked_collections import _Cell
 from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
 from yadinassi.execution.codegen.experimental_naked_errors import convert_error
-from .python_direct import REPAIRS, _snapshot, _nodes
+from .python_direct import _snapshot, _nodes
 from .python_direct_services import ServicesBoundary, CONSTRUCTORS
 from . import python_direct_fixed as fixed
 from yadinassi.syntax import ast
@@ -102,7 +102,6 @@ def _signature(node):
         raise BoundaryViolation('source routine parameters are not canonical')
     return (node.name,node.execution_context,node.is_function,node.is_async,node.is_dual,
         node.module_context,node.exported,tuple((p.name,p.by_value,p.default is None) for p in node.parameters))
-
 
 
 def _signature_matches(node, saved):

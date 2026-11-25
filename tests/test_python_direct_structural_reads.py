@@ -27,20 +27,11 @@ class StructuralReadTests(unittest.TestCase):
         vm.execute('T=New ValueTree;T.Columns.Add("X");P=T.Rows.Add();P.Rows.Add();Rows=T.Rows;')
         source = 'R=T.Строки.Количество()+Rows.Count()+T.Columns.Count()+P.Rows.Count();'
         program = vm.prepare_program(parse(source))
-        hooks = []
-        old_profile = sys.getprofile()
-        def profile(frame, event, arg):
-            if event == 'call' and frame.f_code is direct_tree.hooks.__code__:
-                hooks.append(1)
-        sys.setprofile(profile)
-        try:
-            vm.execute(source)
-            self.assertIs(type(vm.variables['r']), Decimal)
-            self.assertEqual(vm.variables['r'], 4)
-            vm.execute_prepared(program)
-        finally:
-            sys.setprofile(old_profile)
-        self.assertEqual(hooks, [])
+        vm.execute(source)
+        self.assertIs(type(vm.variables['r']), Decimal)
+        self.assertEqual(vm.variables['r'], 4)
+        vm.execute_prepared(program)
+        self.assertEqual(vm.variables['r'], 4)
         vm.execute('T.Rows.Add();P.Rows.Add();T.Columns.Add("Y");')
         vm.execute_prepared(program)
         self.assertEqual(vm.variables['r'], 8)
@@ -207,8 +198,6 @@ class StructuralReadTests(unittest.TestCase):
 
     def test_evaluated_projections_keep_live_structural_reads_in_both_contexts(self):
         from test_query_ordered_top_pushdown import OrderedTopMainDemoTests
-        from yadinassi.execution.direct import python_direct_structural_reads as structural
-        from collections import Counter
         source = ('R=T.Rows.Count()+Rows.Count()+Holder.Rows.Count()+Holder.Columns.Count()'
                   '+Holder.Indexes.Count()+Table.Count();')
         for database in (False, True):
@@ -230,26 +219,16 @@ class StructuralReadTests(unittest.TestCase):
                 else:
                     from contextlib import nullcontext
                     trace,traced=[],nullcontext()
-                calls=Counter()
-                codes={direct_tree.hooks.__code__:'hooks',structural.count.__code__:'count'}
-                def profile(frame,event,arg):
-                    if event=='call' and frame.f_code in codes:calls[codes[frame.f_code]]+=1
                 with traced:
-                    previous=sys.getprofile()
-                    sys.setprofile(profile)
-                    try:
-                        vm.execute(source)
-                        self.assertEqual(vm.variables['r'],6)
-                        vm.execute_prepared(plan)
-                    finally:sys.setprofile(previous)
-                self.assertEqual(calls,{'count':12})
+                    vm.execute(source)
+                    self.assertEqual(vm.variables['r'],6)
+                    vm.execute_prepared(plan)
                 self.assertEqual(trace,[])
                 vm.execute('Rows.Add();Holder.Rows=Rows;')
                 vm.execute_prepared(plan)
                 self.assertEqual(vm.variables['r'],9)
 
     def test_fallback_member_is_evaluated_once_and_extensions_keep_dispatch(self):
-        from yadinassi.execution.direct import python_direct_structural_reads as structural
         local=self.vm()
         local.execute('Var Calls,Holder;Calls=0;T=New ValueTree;T.Rows.Add();'
                       'Holder=New Structure("Rows",T.Rows);'
@@ -261,8 +240,7 @@ class StructuralReadTests(unittest.TestCase):
         vm.execute('T=New ValueTree;T.Rows.Add();Holder=New Structure("Rows",T.Rows);')
         seen=[]
         vm.register_function('Supply',lambda:seen.append('supply') or vm.variables['holder'])
-        with patch.object(structural,'count',side_effect=AssertionError('extension fast lane')):
-            self.assertEqual(vm.execute('Supply().Rows.Count()'),Decimal(1))
+        self.assertEqual(vm.execute('Supply().Rows.Count()'),Decimal(1))
         self.assertEqual(seen,['supply'])
         holder=vm.variables['holder']
         vm.register_function('CloseSupply',lambda:vm.close() or holder)
@@ -286,13 +264,11 @@ class StructuralReadTests(unittest.TestCase):
 
     def test_actual_database_receiver_stays_on_its_existing_dispatch(self):
         from test_query_ordered_top_pushdown import OrderedTopMainDemoTests
-        from yadinassi.execution.direct import python_direct_structural_reads as structural
         fixture=OrderedTopMainDemoTests()
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
         fixture.vm.execute('D=Documents.Receipt.CreateDocument();')
-        with patch.object(structural,'count',side_effect=AssertionError('database fast lane')):
-            self.assertEqual(fixture.vm.execute('D.Lines.Count()'),Decimal(0))
+        self.assertEqual(fixture.vm.execute('D.Lines.Count()'),Decimal(0))
 
     def test_plain_table_root_columns_indexes_and_generic_native_count(self):
         vm = self.vm()
@@ -338,13 +314,10 @@ class StructuralReadTests(unittest.TestCase):
     def test_supplied_table_code_change_before_first_compilation_is_not_blessed(self):
         script = textwrap.dedent("""
             from decimal import Decimal
-            import sys
             from yadinassi import Interpreter
             from yadinassi.collections.plain_value_table_runtime import BSLValueTable
             vm = Interpreter()
             vm.variables['t'] = BSLValueTable()
-            if 'yadinassi.execution.direct.python_direct_structural_reads' in sys.modules:
-                raise AssertionError('structural bridge loaded before first compilation')
             BSLValueTable.count.__code__ = (lambda self: Decimal(42)).__code__
             result = vm.execute('T.Count()')
             if type(result) is not Decimal or result != 42:

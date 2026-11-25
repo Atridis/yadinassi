@@ -9,7 +9,6 @@ from yadinassi.execution.codegen.experimental_naked_collections import _Cell
 from yadinassi.execution.codegen.direct_emitter import compile_owned
 from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
 from yadinassi.execution.codegen.experimental_naked_errors import convert_error
-from .python_direct import REPAIRS
 from .python_direct_catalog_reference_query import ReferenceQuery, ReferenceResult, ReferenceCursor
 from yadinassi.types.values import Reference, HostFunction
 from yadinassi.db.catalog.catalogs import BSLCatalogObject
@@ -228,7 +227,6 @@ from dataclasses import dataclass
 # This fixed constructor set matches _ObjectInterpreter's closed allowlist.
 # Changing that profile requires changing these compiler options together.
 _VALIDATOR_CONSTRUCTORS=('соответствие','сообщениепользователю','запрос','query')
-_VALIDATOR_EXTRA_REPAIRS=('authority_checkpoints',)
 
 @dataclass(frozen=True,slots=True)
 class PreparedCatalogValidator:
@@ -238,18 +236,15 @@ class PreparedCatalogValidator:
     _plan: object
 
 
-def _validator_key(manager,source,repairs):
+def _validator_key(manager,source):
     from yadinassi.execution.codegen.native_targets import current_native_target
     from yadinassi.execution.execution_policy import current_backend
-    return (source,manager._schema,current_native_target(),current_backend(),repairs,_VALIDATOR_CONSTRUCTORS,'scalar-bounds-v1')
+    return (source,manager._schema,current_native_target(),current_backend(),_VALIDATOR_CONSTRUCTORS,'scalar-bounds-v1')
 
 
 def prepared_validator(manager,source,*,prepared=None):
     """One explicit last-plan slot per schema-bound manager, never authority."""
-    repairs=tuple(REPAIRS)+_VALIDATOR_EXTRA_REPAIRS
-    if 'service_boundaries' not in repairs:
-        raise ValueError('catalog preparation bounds require trusted authority boundaries')
-    key=_validator_key(manager,source,repairs)
+    key=_validator_key(manager,source)
     if prepared is not None:
         if type(prepared) is not PreparedCatalogValidator or prepared._key != key:
             raise ValueError('catalog preparation: prepared source/schema/options changed')

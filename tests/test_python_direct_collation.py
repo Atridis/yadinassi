@@ -13,7 +13,7 @@ class DirectCollationTests(unittest.TestCase):
         source='A="a";B="A";R=A<B;S="a"<"A";E=(A=B);N=(A<>B);'
         for route in ('source','ast','prepared','execute','eval'):
             vm=Interpreter()
-            with self.subTest(route=route),patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
+            with self.subTest(route=route):
                 if route=='source':vm.execute(source)
                 elif route=='ast':vm.execute_program(parse(source))
                 elif route=='prepared':vm.execute_prepared(vm.prepare(source))

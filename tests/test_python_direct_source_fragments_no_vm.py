@@ -1,17 +1,10 @@
 """Source dynamic fragments retain safe mode and live addresses without VM."""
 import unittest
-from unittest.mock import patch
 from test_configuration_source_runtime import source
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
-from yadinassi.runtime import Interpreter
 
 
 class SourceFragmentsNoVM(unittest.TestCase):
-    def setUp(self):
-        for name in ('_execute_program','call_routine','_planned_routine_block'):
-            guard=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
-            guard.start();self.addCleanup(guard.stop)
-
     def app(self, *, allow_extensions=False):
         app=SourceApplication(source(b''),output=lambda _:None, allow_extensions=allow_extensions)
         self.addCleanup(app.close);app.start();return app

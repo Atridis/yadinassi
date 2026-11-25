@@ -222,8 +222,10 @@ def bind(boundary,value,function,name,*,require_value=False,allow_references=Fal
         if function.function is not impl or any(getattr(marker,field) is not old for field,old in zip(fields,state)):
             raise BoundaryViolation('source storage operation changed')
         try:
-            if type(impl) is InterpreterCall:return finish(impl.invoke(boundary.vm,list(values)))
-            if type(impl) in (SourceCatalogCall,SourceDocumentCall):return finish(impl.invoke(boundary.vm,list(values)))
+            if type(impl) is InterpreterCall:
+                impl.prepare(boundary.vm,len(values))
+                return impl.dispatch(boundary.vm,list(values))
+            if type(impl) in (SourceCatalogCall,SourceDocumentCall):return impl.invoke(boundary.vm,list(values))
             if type(impl) in (SourceReferenceCall,SourceDocumentSectionCall):return impl.invoke(boundary.vm,list(values))
             return function(*values)
         finally:check(boundary,value)

@@ -1,9 +1,7 @@
 """Explicit nonposting document objects with bounded modules and real stored data."""
 from yadinassi.execution.runtime_dependencies import runtime_module as _runtime_module
-from yadinassi.execution.owned_syntax import syntax_kind
 from uuid import UUID, uuid4
 from contextvars import ContextVar
-from yadinassi.syntax import ast
 from yadinassi.configuration.configuration_source_runtime import _SourceInterpreter
 
 _constructing=ContextVar("source_document_construction",default=())
@@ -69,12 +67,8 @@ class SourceDocumentObject(BSLObject):
         if not matches:return
         routine=matches[0];vm.variables['__document_cancel']=False
         try:
-            if vm.execution_backend=='python-direct':
-                from yadinassi.execution.direct.source.python_direct_source_document import invoke_event
-                cancel=invoke_event(vm,routine)
-            else:
-                yield from vm.call_routine(routine,[ast.Name(routine.token,'__document_cancel')],vm,require_value=False)
-                cancel=vm.variables['__document_cancel']
+            from yadinassi.execution.direct.source.python_direct_source_document import invoke_event
+            cancel=invoke_event(vm,routine)
             if type(cancel) is not bool:raise TypeError('document Cancel requires Boolean')
             if cancel:raise ValueError('document write cancelled by handler')
         finally:vm.variables.pop('__document_cancel',None)
@@ -137,18 +131,18 @@ class SourceDocumentCall:
         manager=receiver if type(receiver) is SourceReferenceManager else receiver.manager
         app,store=store_for(manager,caller);definition=store.document(manager.name)
         if values:raise TypeError('source document methods accept no arguments; posting unsupported')
-        if self.operation=='create':return (yield from create_object(caller,manager,definition))
+        if self.operation=='create':return (create_object(caller,manager,definition))
         if self.operation=='select':return SourceDocumentSelection(manager,store.read_documents(manager.name))
         if self.operation=='getobject':
-            return (yield from load_object(caller,manager,definition,store,self.identity))
+            return (load_object(caller,manager,definition,store,self.identity))
         if self.operation=='next':
             receiver.index+=1;return receiver.index<len(receiver.rows)
         if self.operation=='object':
             if 'onread' in definition.write_blockers:raise ValueError('document OnRead lifecycle unsupported')
             if not 0<=receiver.index<len(receiver.rows):raise ValueError('source selection is not positioned')
             identity,revision,fields=receiver.rows[receiver.index]
-            if definition.sections:return (yield from load_object(caller,manager,definition,store,identity))
-            return (yield from create_object(caller,manager,definition,identity,revision,fields))
+            if definition.sections:return (load_object(caller,manager,definition,store,identity))
+            return (create_object(caller,manager,definition,identity,revision,fields))
         receiver.authorize(caller)
         if self.operation=='new':return receiver.revision==0
         if self.operation=='metadata':return app.references.definition('Document',manager.name)[2]
@@ -160,7 +154,7 @@ class SourceDocumentCall:
             else:_,revision,fields=store.read_documents(manager.name,receiver.identity)[0]
             receiver.values,receiver.revision=fields,revision;return None
         if self.operation=='write':
-            yield from write_object(caller,receiver)
+            write_object(caller,receiver)
             return None
         raise ValueError('unsupported source document operation')
 
@@ -169,9 +163,9 @@ def load_object(caller,manager,definition,store,identity):
     if 'onread' in definition.write_blockers:raise ValueError('document OnRead lifecycle unsupported')
     if definition.sections:
         rid,revision,fields,sections=store.read_document_bundle(manager.name,identity)
-        return (yield from create_object(caller,manager,definition,rid,revision,fields,sections))
+        return (create_object(caller,manager,definition,rid,revision,fields,sections))
     rid,revision,fields=store.read_documents(manager.name,identity)[0]
-    return (yield from create_object(caller,manager,definition,rid,revision,fields))
+    return (create_object(caller,manager,definition,rid,revision,fields))
 
 
 _NEUTRAL_REF_MEMBERS={'ref','ссылка','isempty','пустая','uuid','уникальныйидентификатор','metadata','метаданные'}
@@ -240,54 +234,16 @@ class _ObjectInterpreter(_SourceInterpreter):
         key=_ALIASES.get(name.casefold(),name.casefold())
         return key in self.object.fields or key in self.object.sections or key=='ref'
 
-    def semantic_name(self,node):
-        if node.name.casefold() in ('thisobject','этотобъект'):return self.object
-        if node.name.casefold() in _OBJECT_METHODS:return self.object.get_member(node.name)
-        if self.field(node.name):return self.object.property_read(self,node.name)
-        return super().semantic_name(node)
-
-    def visit_Name(self,node):
-        if node.name.casefold() in ('thisobject','этотобъект'):return self.object
-        if node.name.casefold() in _OBJECT_METHODS:return self.object.get_member(node.name)
-        if self.field(node.name):return self.object.property_read(self,node.name)
-        return super().visit_Name(node)
-
-    def call(self,node,*,require_value, _evaluation=None):
-        callee=self.ungroup(node.callee)
-        # A field expression remains the value; a builtin call uses its callable.
-        if (syntax_kind(callee) is ast.Name and self.field(callee.name)
-                and callee.name.casefold() in self.functions
-                and self._resolve_routine(callee.name) is None):
-            if _evaluation is not None:
-                _evaluation = _evaluation.with_bound_callee(node.callee, self.functions[callee.name.casefold()])
-            else:
-                node=ast.Call(node.token,ast.Literal(node.token,self.functions[callee.name.casefold()]),node.arguments)
-        return (yield from super().call(node,require_value=require_value, _evaluation=_evaluation))
-
     def set_variable(self,name,value):
         if name.casefold() in ('thisobject','этотобъект'):
             raise ValueError('ThisObject is read-only')
         if self.field(name):return self.object.property_write(self,name,value)
         return super().set_variable(name,value)
 
-    def argument(self,node, *, _evaluation=None):
-        node=self.ungroup(node)
-        from yadinassi.runtime import _Reference
-        if syntax_kind(node) is ast.Name and node.name.casefold()=='__document_cancel':
-            return _Reference(lambda:self.variables['__document_cancel'],
-                              lambda value:self.variables.__setitem__('__document_cancel',value))
-        if syntax_kind(node) is ast.Name and self.field(node.name):
-            self.object.property_read(self,node.name)
-            return _Reference(lambda:self.object.property_read(self,node.name),
-                              lambda value:self.object.property_write(self,node.name,value))
-        return (yield from super().argument(node, _evaluation=_evaluation))
-
-
 
 # Definition-time canonical owner hooks; AST evaluator entry points excluded.
 _DIRECT_DOCUMENT_ABI=tuple((name,getattr(_ObjectInterpreter,name)) for name in (
-    'compiled_before','compiled_after','compiled_exception','semantic_name','semantic_assign',
-    'set_variable','_visit','execute','execute_program','_activation_interpreter','field',
+    'set_variable','execute','execute_program','_activation_interpreter','field',
     '_new_query','_new_type_description','_new_temp_tables_manager'))
 
 
@@ -309,11 +265,8 @@ def create_object(caller,manager,definition,identity=None,revision=0,values=None
             if owned:store.begin_transaction()
             token=_constructing.set((*stack,key));vm._self_module.ready=True
             with admission(False),routine_frame(caller,vm):
-                if vm.execution_backend=='python-direct':
-                    from yadinassi.execution.direct.source.python_direct_source_document import prepare_and_execute
-                    prepare_and_execute(vm,program)
-                else:
-                    yield from vm._execute_program(program)
+                from yadinassi.execution.direct.source.python_direct_source_document import prepare_and_execute
+                prepare_and_execute(vm,program)
             if not store.transaction_active:raise ValueError('document initialization transaction aborted')
             store_for(manager,caller)
             if owned:store.commit_transaction()
@@ -349,7 +302,7 @@ def write_object(caller,obj):
                 sections={name:tuple(dict(row.values) for row in section.rows) for name,section in obj.sections.items()}
                 obj.revision=store.write_document_bundle(obj.manager.name,obj.identity,obj.revision,obj.values,sections,_handled=_HANDLED_DOCUMENT_WRITE)
             else:obj.revision=store.write_document(obj.manager.name,obj.identity,obj.revision,obj.values,_handled=_HANDLED_DOCUMENT_WRITE)
-            yield from obj.event(caller)
+            obj.event(caller)
             if not store.transaction_active:raise ValueError('document write transaction aborted by handler')
             obj.authorize(caller)
         if owned:store.commit_transaction()

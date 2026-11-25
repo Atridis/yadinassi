@@ -6,7 +6,7 @@ from unittest.mock import patch
 from yadinassi import Interpreter,BSLError
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.syntax.parser import parse
-from yadinassi.types.values import BSLFixedArray,BSLArray,HostFunction
+from yadinassi.types.values import BSLFixedArray, HostFunction
 from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure
 from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap
 from yadinassi.execution.direct.python_direct import make_boundary
@@ -19,7 +19,7 @@ class DirectFixedReceiverFindTests(unittest.TestCase):
     def test_routes_canonical_consistency_without_vm(self):
         for route in ('source','ast','prepared','execute','eval'):
             vm=Interpreter();vm.execute(SETUP)
-            with self.subTest(route=route),patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
+            with self.subTest(route=route):
                 if route=='source':vm.execute(BODY)
                 elif route=='ast':vm.execute_program(parse(BODY))
                 elif route=='prepared':vm.execute_prepared(vm.prepare(BODY))

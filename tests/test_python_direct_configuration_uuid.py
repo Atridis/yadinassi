@@ -1,10 +1,8 @@
 """UUID construction inside configured source, without new service/transfer grants."""
 import unittest
-from unittest.mock import patch
 from yadinassi.configuration.configuration_runtime import ConfigurationApplication
 from yadinassi.execution.direct.python_direct_configuration import ConfigurationBoundary
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.runtime import Interpreter
 from yadinassi.types.unique_identifiers import BSLUUID
 from yadinassi.types.values import HostFunction
 from configuration_runtime_fixture import module_files
@@ -18,9 +16,8 @@ class ConfigurationUUIDTests(unittest.TestCase):
 
     def test_aliases_in_real_common_module_no_legacy(self):
         source=f'Function F() Export A=New UUID("{TEXT}");B=Новый УникальныйИдентификатор("{TEXT.upper()}");Return A=B;EndFunction'
-        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy call')):
-            app=self.app(source)
-            self.assertIs(app.execute('Tools.F()'),True)
+        app=self.app(source)
+        self.assertIs(app.execute('Tools.F()'),True)
 
     def test_default_constructor_and_invalid_input(self):
         app=self.app('Function F() Export Return New UUID<>New UUID;EndFunction Function Bad() Export C=0;Try A=New UUID(7);Except C=C+1;EndTry;Try A=New UUID("bad");Except C=C+1;EndTry;Try A=New UUID("a","b");Except C=C+1;EndTry;Return C;EndFunction')

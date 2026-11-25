@@ -1,19 +1,12 @@
 """Source diagnostics retain authored names without changing admission."""
 import unittest
-from unittest.mock import patch
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
-from yadinassi.runtime import Interpreter
 from yadinassi.types.errors import BSLError
 from test_configuration_source_runtime import source
 from test_source_references import package
 
 
 class SourceDiagnosticsTests(unittest.TestCase):
-    def setUp(self):
-        for name in ('_execute_program','call_routine','_planned_routine_block'):
-            guard=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
-            guard.start();self.addCleanup(guard.stop)
-
     def app(self,configuration):
         output=[];app=SourceApplication(configuration,output=output.append)
         self.addCleanup(app.close)

@@ -2,7 +2,6 @@ from decimal import Decimal
 import json
 from pathlib import Path
 import unittest
-from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
@@ -18,10 +17,9 @@ Function F(X,Val Y=2) Add(X);X=X+Y;Return X*2;EndFunction
 X=3;R=F(X);'''
         for route in ('source','ast','prepared'):
             vm=Interpreter()
-            with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
-                if route=='source':vm.execute(source)
-                elif route=='ast':vm.execute_program(parse(source))
-                else:vm.execute_prepared(vm.prepare(source))
+            if route=='source':vm.execute(source)
+            elif route=='ast':vm.execute_program(parse(source))
+            else:vm.execute_prepared(vm.prepare(source))
             self.assertEqual((vm.variables['x'],vm.variables['r']),(6,12))
             vm.execute('R=F(X,3);');self.assertEqual((vm.variables['x'],vm.variables['r']),(10,20))
 

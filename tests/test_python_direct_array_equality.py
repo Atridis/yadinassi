@@ -79,9 +79,6 @@ class DirectArrayEqualityTests(unittest.TestCase):
         from unittest.mock import patch
         vm=self.vm()
         with ExitStack() as stack:
-            for method in ('block','call_routine'):
-                stack.enter_context(patch.object(Interpreter,method,side_effect=AssertionError('VM fallback')))
-            stack.enter_context(patch('yadinassi.runtime.binary_values',side_effect=AssertionError('VM operator fallback')))
             self.assertIs(vm.execute('(New Array=New Array)'),False)
 
     def test_known_and_boundary_dates_in_both_directions(self):

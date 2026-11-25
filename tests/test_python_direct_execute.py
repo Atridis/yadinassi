@@ -11,10 +11,9 @@ class DirectExecuteTests(unittest.TestCase):
         s='Saved=1;Execute("Fresh=7;Saved=Fresh;");'
         for route in ('source','ast','prepared'):
             vm=Interpreter()
-            with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
-                if route=='source':vm.execute(s)
-                elif route=='ast':vm.execute_program(parse(s))
-                else:vm.execute_prepared(vm.prepare(s))
+            if route=='source':vm.execute(s)
+            elif route=='ast':vm.execute_program(parse(s))
+            else:vm.execute_prepared(vm.prepare(s))
             self.assertEqual(vm.variables['saved'],7);self.assertNotIn('fresh',vm.variables)
 
     def test_locals_parameters_module_and_fresh_bindings(self):

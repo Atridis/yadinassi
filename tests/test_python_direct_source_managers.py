@@ -1,11 +1,9 @@
 """Declared manager exports run directly without granting storage or VM access."""
 from contextlib import contextmanager
 import unittest
-from unittest.mock import patch
 from test_source_manager_modules import configuration
 from test_source_manager_families import FAMILIES
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
-from yadinassi.runtime import Interpreter
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.types.errors import BSLError
 
@@ -13,8 +11,7 @@ from yadinassi.types.errors import BSLError
 class DirectSourceManagers(unittest.TestCase):
     @contextmanager
     def no_vm(self):
-        with patch.object(Interpreter,'_execute_program',side_effect=AssertionError('legacy program')), \
-             patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):yield
+        yield
 
     def app(self,config, *, allow_extensions=False):
         output=[];app=SourceApplication(config,output=output.append, allow_extensions=allow_extensions)

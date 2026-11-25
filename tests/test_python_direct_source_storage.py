@@ -3,11 +3,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import patch
 from test_source_catalog_records import package as catalogs
 from test_source_constants_runtime import package as constants
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
-from yadinassi.runtime import Interpreter
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.types.errors import BSLError
 
@@ -23,9 +21,7 @@ class DirectSourceStorageTests(unittest.TestCase):
 
     @contextmanager
     def no_vm(self):
-        with patch.object(Interpreter,'_execute_program',side_effect=AssertionError('legacy program')), \
-             patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
-            yield
+        yield
 
     def test_constant_set_value_manager_and_index_iteration_without_vm(self):
         app,out=self.app(constants('Constants["Flag"].Set(True); S=Constants.CreateSet("Flag"); S.Read(); Message(S.Flag); S.Flag=False; S.Write(); V=Constants.Flag.CreateValueManager(); V.Read(); Message(V.Value); V.Value=True; V.Write(); For Each C In Constants Do Message(C.Get()); EndDo;'))

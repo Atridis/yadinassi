@@ -18,8 +18,6 @@ class DirectErrorInfoTests(unittest.TestCase):
         for route in ('source','ast','prepared'):
             vm=self.vm()
             with ExitStack() as stack:
-                for method in ('block','call_routine'):
-                    stack.enter_context(patch.object(Interpreter,method,side_effect=AssertionError('VM')))
                 if route=='source':vm.execute(source,'info.bsl')
                 elif route=='ast':vm.execute_program(parse(source,'info.bsl'))
                 else:vm.execute_prepared(vm.prepare(source,'info.bsl'))

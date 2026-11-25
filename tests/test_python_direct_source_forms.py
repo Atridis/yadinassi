@@ -8,15 +8,12 @@ from test_source_forms import files,request,CODE
 from yadinassi.configuration.configuration_source import import_source
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.forms.source_forms import SourceFormController
-from yadinassi.runtime import Interpreter
 
 
 class DirectSourceForms(unittest.TestCase):
     @contextmanager
     def no_vm(self):
-        with patch.object(Interpreter,'_execute_program',side_effect=AssertionError('legacy program')), \
-             patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
-            yield
+        yield
 
     def controller(self,code=CODE):
         app=SourceApplication(import_source(files(code)));self.addCleanup(app.close)

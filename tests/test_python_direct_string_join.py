@@ -1,7 +1,6 @@
 from decimal import Decimal
 from pathlib import Path
 import unittest
-from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.text.strings import join
 from yadinassi.types.values import BSLArray,BSLFixedArray,NULL
@@ -13,10 +12,9 @@ class DirectStringJoinTests(unittest.TestCase):
         source='A=New Array;A.Add(12.5);A.Add(True);A.Add(Undefined);A.Add(New Array);A.Add(New Structure);A.Add(New Map);R=СтрСоединить(A,"|");S=StrConcat(A,"|");'
         for route in ('source','ast','prepared'):
             vm=Interpreter()
-            with patch.object(Interpreter,'block',side_effect=AssertionError('legacy')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy')):
-                if route=='source':vm.execute(source)
-                elif route=='ast':vm.execute_program(parse(source))
-                else:vm.execute_prepared(vm.prepare(source))
+            if route=='source':vm.execute(source)
+            elif route=='ast':vm.execute_program(parse(source))
+            else:vm.execute_prepared(vm.prepare(source))
             self.assertEqual(vm.variables['r'],'12,5|Да||Массив|Структура|Соответствие')
             self.assertEqual(vm.variables['s'],vm.variables['r'])
             self.assertEqual(len(vm.variables['a']),6)

@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.execution.direct import python_direct_array_references as refs
+from yadinassi.execution.codegen.direct_emitter import bind_local_index_reference
 from yadinassi.execution.direct.python_direct import make_boundary
 from yadinassi.types.values import BSLArray, BSLFixedArray
 
@@ -72,7 +72,7 @@ class LocalBoxedArrayCellsTests(unittest.TestCase):
         self.addCleanup(context.leave)
         array=BSLArray()
         array.items=[Decimal(2)]
-        address=refs.local_index(context,array,Decimal(0))
+        address=bind_local_index_reference(context,array)(Decimal(0))
         self.assertEqual(address.get(),2)
         original=array.items
         array.items=[Decimal(7)]

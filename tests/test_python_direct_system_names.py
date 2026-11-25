@@ -1,7 +1,6 @@
 """Direct immutable namespaces, without legacy name or routine dispatch."""
 from pathlib import Path
 import unittest
-from unittest.mock import patch
 
 from yadinassi import Interpreter
 from yadinassi.types.errors import BSLRuntimeError
@@ -20,9 +19,8 @@ class DirectSystemNamesTests(unittest.TestCase):
 
     def test_routines_and_prepared_execution_without_legacy_dispatch(self):
         vm = Interpreter()
-        with patch.object(Interpreter, 'block', side_effect=AssertionError('legacy block')), patch.object(Interpreter, 'call_routine', side_effect=AssertionError('legacy call')):
-            plan = vm.prepare('Function Read() Return Chars.LF; EndFunction R=Read(); S=StrFind("aba", "a", SearchDirection.FromEnd); N=Round(1.5,0,RoundMode.Round15as10);')
-            vm.execute_prepared(plan)
+        plan = vm.prepare('Function Read() Return Chars.LF; EndFunction R=Read(); S=StrFind("aba", "a", SearchDirection.FromEnd); N=Round(1.5,0,RoundMode.Round15as10);')
+        vm.execute_prepared(plan)
         self.assertEqual(vm.variables['r'], '\n')
         self.assertEqual(vm.variables['s'], 3)
         self.assertEqual(vm.variables['n'], 1)

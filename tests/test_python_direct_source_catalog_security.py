@@ -7,7 +7,6 @@ import test_python_direct_source_query as query_fixtures
 from test_source_catalog_object_modules import source
 from yadinassi.db.metadata.source_references import SourceReferenceManager
 from yadinassi.db.catalog.source_catalog_runtime import SourceCatalogObject,_ObjectInterpreter,create_object
-from yadinassi.execution.direct.source.python_direct_source_storage import finish
 from yadinassi.execution.direct.source.python_direct_source_catalog import check_object,bind_export
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
@@ -26,7 +25,7 @@ class DirectCatalogSecurity(unittest.TestCase):
     def test_retained_export_rechecks_identity_signature_and_close(self):
         app,caller=self.app(source('Description="initial"; Function Answer() Export Return Description; EndFunction'),catalog=True)
         with self.boundary(app,caller) as boundary:
-            obj=finish(create_object(caller,SourceReferenceManager(app,'Catalog','Items'),app.constant_store.catalog('Items')))
+            obj=create_object(caller,SourceReferenceManager(app,'Catalog','Items'),app.constant_store.catalog('Items'))
             bound=bind_export(boundary,obj,'Answer',require_value=True,argument_count=0)
             self.assertEqual(bound(),'initial')
             identity=obj.identity;obj.identity=uuid4()
@@ -52,7 +51,7 @@ class DirectCatalogSecurity(unittest.TestCase):
         class FakeField:
             def __eq__(self,other):effects.append('equality');return True
         with self.boundary(app,caller):
-            obj=finish(create_object(caller,SourceReferenceManager(app,'Catalog','Items'),app.constant_store.catalog('Items')))
+            obj=create_object(caller,SourceReferenceManager(app,'Catalog','Items'),app.constant_store.catalog('Items'))
             store=app.constant_store;app.constant_store=FakeStore()
             try:
                 with self.assertRaises(BoundaryViolation):check_object(obj,caller)
@@ -67,7 +66,7 @@ class DirectCatalogSecurity(unittest.TestCase):
         package=source('Function Answer() Export Return 1; EndFunction')
         app,caller=self.app(package,catalog=True);other,other_caller=self.app(package,catalog=True)
         with self.boundary(other,other_caller):
-            obj=finish(create_object(other_caller,SourceReferenceManager(other,'Catalog','Items'),other.constant_store.catalog('Items')))
+            obj=create_object(other_caller,SourceReferenceManager(other,'Catalog','Items'),other.constant_store.catalog('Items'))
         with self.boundary(app,caller) as boundary,patch.object(obj,'exported_routine',side_effect=AssertionError('foreign lookup')):
             with self.assertRaises(BoundaryViolation):bind_export(boundary,obj,'Answer')
 

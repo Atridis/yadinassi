@@ -6,7 +6,7 @@ from yadinassi.execution import safe_mode
 from yadinassi.db import source_transactions, database_transactions
 from yadinassi.forms import form_runtime
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
-from .python_direct import REPAIRS, _snapshot
+from .python_direct import _snapshot
 from .python_direct_handlers import prepare_handlers
 from .python_direct_services import TYPE_QUALIFIER_CONSTRUCTORS
 from yadinassi.syntax import ast
@@ -430,7 +430,7 @@ def prepare_form(session, program, source, attributes, tables, *, install_metada
                         if source_mode or helpers else program)
     prepared=prepare_handlers(executable_program, source_text=source if type(source) is str else '',
                             external_names=names, constructors=CALLBACK_CONSTRUCTORS+DECLARATION_CONSTRUCTORS+user_messages.NAMES+(CONSTRUCTORS if source_mode else (*VALUE_LIST_CONSTRUCTOR_ALIASES,*TYPE_QUALIFIER_CONSTRUCTORS)),
-                            repairs=REPAIRS+('authority_checkpoints',),_source_routine_scopes=source_mode)
+                            _source_routine_scopes=source_mode)
     if install_metadata and local_server_calls:
         vm=session.interpreter
         def bind(routine):

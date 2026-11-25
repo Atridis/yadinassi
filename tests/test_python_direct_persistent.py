@@ -13,10 +13,9 @@ from yadinassi.syntax.parser import parse
 class PersistentDirectTests(unittest.TestCase):
     def test_client_state_byref_default_and_recursion_without_vm_dispatch(self):
         vm=Interpreter(compilation_profile='managed-thick-file')
-        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy call')):
-            vm.execute('Var Total;Total=0;Procedure Add(X,Val N=2) X=X+N;Total=Total+X;EndProcedure Function Fact(Val N) If N=0 Then Return 1;EndIf;Return N*Fact(N-1);EndFunction')
-            vm.execute('X=3;Add(X);R=Fact(5);')
-            vm.execute('Add(X,3);')
+        vm.execute('Var Total;Total=0;Procedure Add(X,Val N=2) X=X+N;Total=Total+X;EndProcedure Function Fact(Val N) If N=0 Then Return 1;EndIf;Return N*Fact(N-1);EndFunction')
+        vm.execute('X=3;Add(X);R=Fact(5);')
+        vm.execute('Add(X,3);')
         self.assertEqual((vm.variables['x'],vm.variables['total'],vm.variables['r']),(8,13,120))
 
     def test_one_compile_and_code_only_persistent_plan(self):

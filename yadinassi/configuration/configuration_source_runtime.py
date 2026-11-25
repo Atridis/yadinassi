@@ -104,14 +104,12 @@ class _SourceInterpreter(Interpreter):
     def execute_program(self, program):
         from yadinassi.db.source_transactions import execution
         with execution(self.application), self.application.safe_mode.execution():
-            if self.execution_backend == 'python-direct':
-                from yadinassi.execution.direct.python_direct_source import execute
-                return execute(self, program)
+            from yadinassi.execution.direct.python_direct_source import execute
+            return execute(self, program)
             return super().execute_program(program)
 
     def execute(self, text, source='<строка>'):
-        if self.execution_backend == 'python-direct':
-            return self.execute_program(parse(text, source, compilation_profile=self.compilation_profile))
+        return self.execute_program(parse(text, source, compilation_profile=self.compilation_profile))
         return super().execute(text, source)
 
 
@@ -119,116 +117,8 @@ class _SourceInterpreter(Interpreter):
         from yadinassi.db.query.source_constant_queries import SourceConstantQuery
         return SourceConstantQuery(self, self.application, text)
 
-    def call(self, node, *, require_value, _evaluation=None):
-        callee = self.ungroup(node.callee)
-        if (isinstance(callee, ast.Name)
-                and self._resolve_routine(callee.name) is None
-                and callee.name.casefold() not in self.functions
-                and not (self.locals is not None and callee.name.casefold() in self.locals)
-                and not (self._has_module_context and callee.name.casefold() in self.variables
-                         and (self.locals is None or callee.name.casefold() in self.module_names))
-                and callee.name.casefold() not in self._client_routine_names):
-            resolved = self.application.resolve_global(callee.name, self)
-            if resolved is not None:
-                routine, owner = resolved
-                return (yield from self.call_routine(routine, node.arguments, owner,
-                                                     require_value=require_value, _evaluation=_evaluation))
-        return (yield from super().call(node, require_value=require_value, _evaluation=_evaluation))
-
-    def known_table_receiver(self, node):
-        from .source_extensions import SourceExtensions
-        value = self.known_receiver(node)
-        if type(value) is SourceExtensions:
-            return value
-        node = self.ungroup(node)
-        if (isinstance(node, ast.Name)
-                and node.name.casefold() in ('configurationextensions', 'расширенияконфигурации')
-                and not (self.locals is not None and node.name.casefold() in self.locals)
-                and not (self._has_module_context and node.name.casefold() in self.variables
-                         and (self.locals is None or node.name.casefold() in self.module_names))):
-            return self.application.extensions
-        return super().known_table_receiver(node)
-
-    def semantic_name(self, node):
-        key = node.name.casefold()
-        if ((self.locals is not None and key in self.locals)
-                or (self._has_module_context and key in self.variables
-                    and (self.locals is None or key in self.module_names))):
-            return super().semantic_name(node)
-        if key in ('xdtofactory', 'фабрикаxdto'):
-            self.application.require_open()
-            return self.application.xdto.factory
-        if key in ('metadata', 'метаданные'):
-            self.application.require_open()
-            return self.application.metadata
-        from .source_manager_modules import SourceManagers, MANAGER_NAMES
-        if key in MANAGER_NAMES:
-            self.application.require_open()
-            return SourceManagers(self.application, MANAGER_NAMES[key])
-        if key in ('configurationextensions', 'расширенияконфигурации'):
-            self.application.require_open()
-            return self.application.extensions
-        if key in ('configurationextensionssource', 'источникрасширенийконфигурации'):
-            from .source_extensions import SourceExtensionSources
-            return SourceExtensionSources()
-        if key in ('enums', 'перечисления'):
-            self.application.require_open()
-            return self.application.enumerations
-        if key in ('constants', 'константы'):
-            from yadinassi.db.metadata.source_constants_runtime import SourceConstants
-            return SourceConstants(self.application)
-        if key in ('sessionparameters', 'параметрысеанса'):
-            self.application.session_parameters._authorize(self)
-            return self.application.session_parameters
-        if key in self.application.modules:
-            return self.application.module(key, self)
-        from yadinassi.execution.source_application_exports import variable
-        reference = variable(self, key)
-        if reference is not None:
-            return reference.get()
-        return super().semantic_name(node)
-
 
     # Legacy extension point keeps superclass visitor instrumentation.
-    def visit_Name(self, node):
-        key = node.name.casefold()
-        if ((self.locals is not None and key in self.locals)
-                or (self._has_module_context and key in self.variables
-                    and (self.locals is None or key in self.module_names))):
-            return super().visit_Name(node)
-        if key in ('xdtofactory', 'фабрикаxdto'):
-            self.application.require_open()
-            return self.application.xdto.factory
-        if key in ('metadata', 'метаданные'):
-            self.application.require_open()
-            return self.application.metadata
-        from .source_manager_modules import SourceManagers, MANAGER_NAMES
-        if key in MANAGER_NAMES:
-            self.application.require_open()
-            return SourceManagers(self.application, MANAGER_NAMES[key])
-        if key in ('configurationextensions', 'расширенияконфигурации'):
-            self.application.require_open()
-            return self.application.extensions
-        if key in ('configurationextensionssource', 'источникрасширенийконфигурации'):
-            from .source_extensions import SourceExtensionSources
-            return SourceExtensionSources()
-        if key in ('enums', 'перечисления'):
-            self.application.require_open()
-            return self.application.enumerations
-        if key in ('constants', 'константы'):
-            from yadinassi.db.metadata.source_constants_runtime import SourceConstants
-            return SourceConstants(self.application)
-        if key in ('sessionparameters', 'параметрысеанса'):
-            self.application.session_parameters._authorize(self)
-            return self.application.session_parameters
-        if key in self.application.modules:
-            return self.application.module(key, self)
-        from yadinassi.execution.source_application_exports import variable
-        reference = variable(self, key)
-        if reference is not None:
-            return reference.get()
-        return super().visit_Name(node)
-
     def set_variable(self, name, value):
         from yadinassi.execution.source_application_exports import variable
         reference = variable(self, name)
@@ -251,8 +141,7 @@ class _SourceInterpreter(Interpreter):
 # remain outside direct admission; source scopes are not generic VM authority.
 _DIRECT_SOURCE_ABI = tuple((name, getattr(_SourceInterpreter, name)) for name in (
     '__new__', '__init__',
-    'compiled_before', 'compiled_after', 'compiled_exception', 'semantic_name',
-    'semantic_assign', 'set_variable', '_visit',
+    'set_variable',
     'execute', 'execute_program', '_activation_interpreter',
     '_new_query', '_new_temp_tables_manager', '_new_type_description'))
 
@@ -516,9 +405,8 @@ class SourceApplication:
         arguments = arguments[:len(routine.parameters)]
         if arguments and routine.parameters[0].by_value:
             raise ValueError('Параметр обработчика должен передаваться по ссылке: ' + routine.name)
-        if owner.execution_backend == 'python-direct':
-            from yadinassi.execution.direct.python_direct_source import event
-            return event(owner, routine, arguments)
+        from yadinassi.execution.direct.python_direct_source import event
+        return event(owner, routine, arguments)
         call = ast.Call(routine.token, ast.Name(routine.token, routine.name), list(arguments))
         owner.execute_program([ast.ExpressionStatement(routine.token, call)])
 
@@ -578,20 +466,6 @@ class SourceApplication:
         entry = self._reuse_routines.get(id(routine))
         return entry is not None and entry[0] is routine and entry[4]
 
-    def reusable_call(self, caller, owner, routine, qualified, *, execution_routine=None):
-        execution = routine if execution_routine is None else execution_routine
-        if execution is not routine:
-            from yadinassi.execution.owned_syntax import is_owned, origin_node
-            if not is_owned(execution) or origin_node(execution) is not routine:
-                raise ValueError('reusable execution view origin mismatch')
-        entry = self._reuse_routines.get(id(routine))
-        if not qualified or entry is None or not execution.is_function:
-            return None
-        if entry[0] is not routine or entry[1] is not owner:
-            raise ValueError('source reusable routine owner mismatch')
-        cache = self.reusable_values.cache(caller, entry[3])
-        return cache, (str(entry[2]), execution.name.casefold(), 'server' if entry[4] else caller.execution_context)
-
     def current_run_mode(self):
         """No managed/ordinary client is hosted by this headless source runner.
 
@@ -610,34 +484,31 @@ class SourceApplication:
         self.session_parameters._authorize(caller)
         if self._session_handler is not None:
             routine = self._session_handler
-            if caller.execution_backend=='python-direct':
-                from yadinassi.execution.direct.python_direct_source import invoke,check_owner
-                from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-                owner=self._session_owner
-                if (type(routine) is not ast.Routine or type(owner) is not _SourceInterpreter
-                        or owner.application is not self
-                        or self._instances.get('<session>') is not owner
-                        or owner.server_routines.get(routine.name.casefold()) is not routine
-                        or routine.execution_context!='server' or routine.is_function
-                        or routine.is_async or routine.is_dual or not routine.module_context
-                        or len(routine.parameters)>1):
-                    raise BoundaryViolation('source session initializer binding changed')
-                check_owner(owner)
-                owner._context_stack.append('server');owner._module_context_stack.append(True)
-                try:
-                    arguments=[]
-                    if routine.parameters:
-                        if routine.parameters[0].by_value:
-                            arguments.append(names)
-                        else:
-                            from yadinassi.execution.codegen.experimental_naked_collections import _Cell
-                            arguments.append(_Cell(names))
-                    invoke(owner,routine,arguments)
-                finally:
-                    owner._module_context_stack.pop();owner._context_stack.pop()
-            else:
-                yield from caller.call_routine(routine, [ast.Literal(routine.token, names)][:len(routine.parameters)],
-                                               self._session_owner, require_value=False)
+            from yadinassi.execution.direct.python_direct_source import invoke,check_owner
+            from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
+            owner=self._session_owner
+            if (type(routine) is not ast.Routine or type(owner) is not _SourceInterpreter
+                    or owner.application is not self
+                    or self._instances.get('<session>') is not owner
+                    or owner.server_routines.get(routine.name.casefold()) is not routine
+                    or routine.execution_context!='server' or routine.is_function
+                    or routine.is_async or routine.is_dual or not routine.module_context
+                    or len(routine.parameters)>1):
+                raise BoundaryViolation('source session initializer binding changed')
+            check_owner(owner)
+            owner._context_stack.append('server');owner._module_context_stack.append(True)
+            try:
+                arguments=[]
+                if routine.parameters:
+                    if routine.parameters[0].by_value:
+                        arguments.append(names)
+                    else:
+                        from yadinassi.execution.codegen.experimental_naked_collections import _Cell
+                        arguments.append(_Cell(names))
+                invoke(owner,routine,arguments)
+            finally:
+                owner._module_context_stack.pop();owner._context_stack.pop()
+        return ()
 
     def close(self):
         _COMMON_MODULE_PROPERTIES.pop(self, None)

@@ -1,16 +1,9 @@
 """Source NoContext RPC and same-server paths never dispatch VM routine bodies."""
 import unittest
-from unittest.mock import patch
 import test_source_forms as existing
-from yadinassi.runtime import Interpreter
 
 
 class SourceNoContextNoVM(existing.SourceNoContextTests):
-    def setUp(self):
-        for name in ('_execute_program','call_routine','_planned_routine_block'):
-            poison=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
-            poison.start();self.addCleanup(poison.stop)
-
     def test_same_server_result_stays_scalar(self):
         controller=self.controller('Return New Array;',server_call=True)
         self.assertIsNotNone(self.run_command(controller)['error'])

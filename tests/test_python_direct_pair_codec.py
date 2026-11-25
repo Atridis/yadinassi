@@ -19,7 +19,7 @@ class DirectPairCodecTests(unittest.TestCase):
                 vm=Interpreter(allow_extensions=True);vm.execute('S='+constructor+';S["'+key+'"]=7;For Each P In S Do EndDo;')
                 vm.variables['saved']=vm.functions['valuetostringinternal']
                 code='R=ValueToStringInternal(P);'
-                with self.subTest(kind=kind,route=route),patch.object(Interpreter,'block',side_effect=AssertionError('VM')):
+                with self.subTest(kind=kind,route=route):
                     if route=='source':vm.execute(code)
                     elif route=='ast':vm.execute_program(parse(code))
                     elif route=='prepared':vm.execute_prepared(vm.prepare(code))

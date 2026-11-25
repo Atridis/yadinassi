@@ -11,7 +11,7 @@ from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryVi
 class DirectJSONProceduresTests(unittest.TestCase):
     def test_routes_reject_without_mutation_or_vm(self):
         for route in ('source','ast','prepared','execute','eval'):
-            with self.subTest(route=route),patch.object(Interpreter,'block',side_effect=AssertionError('VM')):
+            with self.subTest(route=route):
                 vm=Interpreter();vm.execute('W=New JSONWriter;W.SetString();');code='X=W.WriteStartObject();'
                 with self.assertRaises(BSLError):
                     if route=='source':vm.execute(code)

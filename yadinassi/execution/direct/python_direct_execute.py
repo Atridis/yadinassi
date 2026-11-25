@@ -98,7 +98,7 @@ def _execute_fragment(text,context,parent,bindings,visible,profile):
     try:
         from yadinassi.syntax.parser import parse_fragment
         from yadinassi.types.errors import BSLError, BSLRuntimeError
-        from .python_direct import _source_facts,_admit_bindings,_contract,REPAIRS
+        from .python_direct import _source_facts,_admit_bindings,_contract
         from yadinassi.execution.codegen.direct_emitter import compile_module
         from .python_direct_services import ORDINARY_CONSTRUCTORS
         from .python_direct_names import NAMES
@@ -109,8 +109,7 @@ def _execute_fragment(text,context,parent,bindings,visible,profile):
         else:
             from .python_direct_value_tree import CONSTRUCTOR_NAMES
             constructor_names+=CONSTRUCTOR_NAMES
-        source_repairs=REPAIRS+('authority_checkpoints',) if profile is not None else REPAIRS
-        key=(text,_contract(vm),source_repairs,constructor_names,external_names,profile is not None,EXECUTE_MAX_SOURCE,EXECUTE_MAX_DEPTH)
+        key=(text,_contract(vm),constructor_names,external_names,profile is not None,EXECUTE_MAX_SOURCE,EXECUTE_MAX_DEPTH)
         if profile is not None:
             from .source.python_direct_source_fragments import prepared_cache
             cache=prepared_cache(context,'execute')

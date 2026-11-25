@@ -4,8 +4,7 @@ from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryCo
 from yadinassi.execution.direct.python_direct_services import ServicesBoundary, CONSTRUCTORS
 from yadinassi.execution.direct.python_direct_handlers import prepare_handlers
 from yadinassi.execution.direct.python_direct_source import _signature, _signature_matches, _source_text, _external_names, SourceBoundary
-from yadinassi.execution.direct.python_direct import _snapshot, REPAIRS
-from yadinassi.syntax import ast
+from yadinassi.execution.direct.python_direct import _snapshot
 from yadinassi.types.values import HostFunction
 from yadinassi.db import source_transactions, database_transactions
 from yadinassi.execution import safe_mode
@@ -90,7 +89,7 @@ def prepare(server, nodes):
     compiled=prepare_handlers(view,source_text=_source_text(nodes),
         external_names=tuple(dict.fromkeys((*_external_names(vm),*SYSTEM_NAMES))),
         constructors=tuple(CONSTRUCTORS)+DECLARATION_CONSTRUCTORS,
-        repairs=REPAIRS+('authority_checkpoints',),_source_routine_scopes=True)
+        _source_routine_scopes=True)
     vm.server_routines={r.name.casefold():r for r in nodes}
     server._direct_nocontext=(compiled,vm.server_routines,tuple((r,_signature(r)) for r in nodes),vm._direct_source_host_bindings)
     _check(server,preparing=True)

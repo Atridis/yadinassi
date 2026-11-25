@@ -83,7 +83,6 @@ class ManagedCLIRuntimeTests(unittest.TestCase):
             self.addCleanup(cli_app.close, force=True)
             cli_plan = cli_app._modules['tools', 'client'].interpreter._direct_configuration_plan
             self.assertTrue({'checkpoint', '_check'}.isdisjoint(operations(cli_plan.function.__code__)))
-            self.assertIn('authority_checkpoints', cli_plan.repairs)
             self.assertIs(cli_app.interpreter.allow_extensions, False)
             with redirect_stdout(StringIO()) as out:
                 self.assertTrue(cli_app.start())

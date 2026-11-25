@@ -1,6 +1,5 @@
 """Native direct collection constructors reject unsupported syntactic holes."""
 import unittest
-from unittest.mock import patch
 from yadinassi import Interpreter,BSLError
 from yadinassi.syntax.parser import parse
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
@@ -20,7 +19,7 @@ class DirectConstructorHolesTests(unittest.TestCase):
         for route in ('source','ast','prepared','execute','eval'):
             vm=Interpreter(allow_extensions=True);seen=[];vm.register_function('Effect',lambda:seen.append('effect') or 1)
             code='New Array(,Effect());'
-            with self.subTest(route=route),patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')),self.assertRaisesRegex(BSLError,'Пропуск аргументов'):
+            with self.subTest(route=route), self.assertRaisesRegex(BSLError,'Пропуск аргументов'):
                 if route=='source':vm.execute(code)
                 elif route=='ast':vm.execute_program(parse(code))
                 elif route=='prepared':vm.execute_prepared(vm.prepare(code))

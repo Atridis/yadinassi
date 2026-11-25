@@ -1,7 +1,6 @@
 """Direct AST imports/Execute/Eval never invoke the old text compiler."""
 from contextlib import ExitStack
 from pathlib import Path
-from decimal import Decimal
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -14,8 +13,6 @@ class DirectASTDynamicScopesTests(unittest.TestCase):
     def no_old(self):
         stack=ExitStack()
         stack.enter_context(patch.object(old,'prepare',create=True,side_effect=AssertionError('old text compiler')))
-        for name in ('block','call_routine','_execute_program'):
-            stack.enter_context(patch.object(Interpreter,name,side_effect=AssertionError('legacy visitor')))
         return stack
     def test_nested_fragments_live_scopes_no_old_compile(self):
         source='''Var M;M=10;

@@ -21,8 +21,6 @@ class DirectValueTreeTests(unittest.TestCase):
         for route in ('source','ast','prepared'):
             vm=self.vm()
             with self.subTest(route=route),ExitStack() as stack:
-                for name in ('block','call_routine','semantic_new'):
-                    stack.enter_context(patch.object(Interpreter,name,side_effect=AssertionError('VM')))
                 if route=='source':vm.execute(source)
                 elif route=='ast':vm.execute_program(parse(source))
                 else:vm.execute_prepared(vm.prepare(source))

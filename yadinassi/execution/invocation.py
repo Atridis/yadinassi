@@ -11,7 +11,6 @@ from threading import Lock
 from yadinassi.runtime import Interpreter
 from yadinassi.syntax import ast
 from yadinassi.syntax.lexer import Token
-from yadinassi.syntax.parser import parse
 from .codegen.native_targets import target_context
 from .codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.ui.protocol import (UIError, MAX_COUNTER, bounded_text, decode_line,
@@ -339,7 +338,6 @@ class InvocationServer:
         from yadinassi.runtime import _DIRECT_EXECUTION_SCOPE_ABI
         from .direct.python_direct import make_boundary
         from .direct.python_direct_server import ServerBoundary
-        from .execution_policy import compiled_ast_policy, execution_backend_policy
 
         activation = self._interpreter._new_server_activation(module_context=False)
         activation._direct_routine_modules = self._direct_modules.copy()
@@ -353,8 +351,6 @@ class InvocationServer:
                 context.enter()
                 try:
                     with (target_context(activation.native_target),
-                          execution_backend_policy(activation.execution_backend),
-                          compiled_ast_policy(activation.compiled_ast_contract),
                           localcontext() as decimal_context):
                         decimal_context.prec = 38
                         call = context.resolve_service(routine.name, require_value=routine.is_function,

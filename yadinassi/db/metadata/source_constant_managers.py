@@ -1,10 +1,8 @@
 """Source-owned synchronous constant value managers, not native parity."""
 from contextvars import ContextVar
-from yadinassi.execution.owned_syntax import syntax_kind
 from yadinassi.types.values import BSLObject, HostFunction, InterpreterCall
 from yadinassi.syntax import ast
 from yadinassi.configuration.configuration_source_runtime import _SourceInterpreter
-from .source_constants_runtime import SourceConstants
 
 _active_write = ContextVar('source_constant_write', default=False)
 _constructing = ContextVar('source_constant_construction', default=())
@@ -20,35 +18,8 @@ class _ValueInterpreter(_SourceInterpreter):
         self.manager = manager
         self._logical_side = 'server'
 
-    def semantic_name(self, node):
-        if node.name.casefold() in ('value', 'значение'):
-            return self.manager.value_read(self)
-        if node.name.casefold() in ('thisobject', 'этотобъект'):
-            return self.manager
-        return super().semantic_name(node)
-
 
     # Legacy extension point keeps superclass visitor instrumentation.
-    def visit_Name(self, node):
-        if node.name.casefold() in ('value', 'значение'):
-            return self.manager.value_read(self)
-        if node.name.casefold() in ('thisobject', 'этотобъект'):
-            return self.manager
-        return super().visit_Name(node)
-
-    def argument(self, node, *, _evaluation=None):
-        node = self.ungroup(node)
-        if syntax_kind(node) is ast.Name and node.name.casefold() == '__constant_cancel':
-            from yadinassi.runtime import _Reference
-            return _Reference(lambda: self.variables['__constant_cancel'],
-                              lambda value: self.variables.__setitem__('__constant_cancel', value))
-        if syntax_kind(node) is ast.Name and node.name.casefold() in ('value', 'значение'):
-            from yadinassi.runtime import _Reference
-            self.manager.value_read(self)
-            return _Reference(lambda: self.manager.value_read(self),
-                              lambda value: self.manager.value_write(self, value))
-        return (yield from super().argument(node, _evaluation=_evaluation))
-
     def set_variable(self, name, value):
         if name.casefold() in ('value', 'значение'):
             self.manager.value_write(self, value)
@@ -61,8 +32,7 @@ class _ValueInterpreter(_SourceInterpreter):
 # Only the generated constant-manager bridge may admit this exact owner. Legacy
 # evaluator hooks are intentionally omitted so tests can poison them.
 _DIRECT_CONSTANT_ABI=tuple((name,getattr(_ValueInterpreter,name)) for name in (
-    'compiled_before','compiled_after','compiled_exception','semantic_name','semantic_assign',
-    'set_variable','_visit','execute','execute_program','_activation_interpreter',
+    'set_variable','execute','execute_program','_activation_interpreter',
     '_new_query','_new_type_description','_new_temp_tables_manager'))
 
 
@@ -145,14 +115,8 @@ class SourceConstantValueManager(BSLObject):
             raise ValueError('unsupported constant event signature')
         # Reserved internal storage remains reachable when Write is called from
         # an exported routine with an active local frame. It never aliases user locals.
-        if vm.execution_backend=='python-direct':
-            from yadinassi.execution.direct.source.python_direct_source_constants import invoke_event
-            cancelled=invoke_event(vm,routine)
-        else:
-            vm.variables['__constant_cancel'] = False
-            argument = ast.Name(routine.token, '__constant_cancel')
-            yield from vm.call_routine(routine, [argument], vm, require_value=False)
-            cancelled = vm.variables.pop('__constant_cancel')
+        from yadinassi.execution.direct.source.python_direct_source_constants import invoke_event
+        cancelled=invoke_event(vm,routine)
         if type(cancelled) is not bool:
             raise TypeError('constant event Cancel requires Boolean')
         if cancelled:
@@ -203,11 +167,8 @@ def create_manager(caller, owner, name):
             # other callers cannot use a manager whose initialization is pending.
             vm._self_module.ready = True
             with admission(False), routine_frame(caller, vm):
-                if vm.execution_backend=='python-direct':
-                    from yadinassi.execution.direct.source.python_direct_source_constants import prepare_and_execute
-                    prepare_and_execute(vm,program)
-                else:
-                    yield from vm._execute_program(program)
+                from yadinassi.execution.direct.source.python_direct_source_constants import prepare_and_execute
+                prepare_and_execute(vm,program)
             if not store.transaction_active:
                 raise ValueError('constant initialization transaction aborted')
             owner._store(caller)
@@ -249,11 +210,11 @@ def write_managers(caller, owner, managers):
                 if blockers:
                     raise ValueError('unsupported constant write: ' + '; '.join(blockers))
                 manager.value_read(caller)
-                yield from manager.event(caller, ('beforewrite', 'передзаписью'))
+                manager.event(caller, ('beforewrite', 'передзаписью'))
                 if not store.transaction_active:
                     raise ValueError('constant write transaction aborted by handler')
                 store._set_after_handlers(manager.name, manager.value_read(caller))
-                yield from manager.event(caller, ('onwrite', 'призаписи'))
+                manager.event(caller, ('onwrite', 'призаписи'))
                 if not store.transaction_active:
                     raise ValueError('constant write transaction aborted by handler')
                 owner._store(caller)  # Recheck if a handler changed safe mode/ownership.
@@ -279,10 +240,10 @@ def write_values(caller, owner, values):
         if owned:
             store.begin_transaction()
         for name, value in values.items():
-            manager = yield from create_manager(caller, owner, name)
+            manager = create_manager(caller, owner, name)
             managers.append(manager)
             manager.value_write(caller, value)
-        yield from write_managers(caller, owner, managers)
+        write_managers(caller, owner, managers)
         if owned:
             store.commit_transaction()
     except BaseException:
@@ -325,11 +286,11 @@ class ValueManagerCall:
         if values:
             raise TypeError('constant value manager method takes no arguments')
         if self.operation == 'create':
-            return (yield from create_manager(caller, owner, receiver._name))
+            return (create_manager(caller, owner, receiver._name))
         receiver.authorize(caller)
         if self.operation == 'read':
             receiver.value = store.get(receiver.name)
             return
         if self.operation == 'metadata':
             return owner._application().metadata.get_member('Constants').get_member(receiver.name)
-        yield from write_managers(caller, owner, [receiver])
+        write_managers(caller, owner, [receiver])

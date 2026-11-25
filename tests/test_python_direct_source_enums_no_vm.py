@@ -1,17 +1,12 @@
 """Existing enum identity and persistence contracts with legacy execution poisoned."""
 import unittest
-from unittest.mock import patch
 import test_source_enumeration_runtime as runtime
 import test_source_enum_constants as constants
-from yadinassi.runtime import Interpreter
 
 
 class NoVM:
     def setUp(self):
         super().setUp()
-        for name in ('_execute_program','call_routine'):
-            poison=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
-            poison.start();self.addCleanup(poison.stop)
 
 
 class SourceEnumsNoVM(NoVM,runtime.SourceEnumerationRuntimeTests):

@@ -128,10 +128,7 @@ class SourceConstantModuleLifecycleTests(unittest.TestCase):
         from yadinassi.db.metadata.source_constants_runtime import SourceConstants
         caller=app._session_owner;caller._context_stack.append('server')
         try:
-            generator=create_manager(caller,SourceConstants(app),'Text')
-            # Construction has no executable module statements and completes inline.
-            try:next(generator)
-            except StopIteration as result:manager=result.value
+            manager=create_manager(caller,SourceConstants(app),'Text')
         finally:caller._context_stack.pop()
         app.interpreter.variables['saved']=manager
         with self.assertRaisesRegex(BSLError,'owning synchronous server'):app.interpreter.execute('X=Saved.Answer();')

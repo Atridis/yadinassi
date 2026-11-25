@@ -8,7 +8,7 @@ from contextlib import nullcontext
 from dataclasses import dataclass
 from types import MappingProxyType
 from yadinassi.syntax import ast
-from .python_direct import REPAIRS, _snapshot
+from .python_direct import _snapshot
 from yadinassi.execution.codegen.experimental_naked_collections import _Cell
 from yadinassi.execution.codegen.direct_emitter import compile_owned
 from yadinassi.execution.codegen.experimental_naked_errors import convert_error
@@ -77,7 +77,7 @@ class PreparedHandlers:
                 for slot,by_value in zip(slots,descriptor.by_value)]
 
 
-def prepare_handlers(program,*,source_text,source_name='<direct-form>',module_names=(),external_names=(),constructors=(),repairs=REPAIRS,_source_routine_scopes=False):
+def prepare_handlers(program,*,source_text,source_name='<direct-form>',module_names=(),external_names=(),constructors=(),_source_routine_scopes=False):
     """Prepare an already-admitted form module; never infer host capabilities.
 
     Only same-side routines share a generated closure family. A cross-side call
@@ -101,5 +101,5 @@ def prepare_handlers(program,*,source_text,source_name='<direct-form>',module_na
         selected=[node for node in owned if node.execution_context==side]
         plans[side]=compile_owned(selected,retain_generated=False,source_text=source_text,source_name=source_name,
             module_names=module_names,external_names=external_names,constructors=constructors,
-            exports=True,meter_loops='authority_checkpoints' in repairs,source_scopes=_source_routine_scopes)
+            exports=True,meter_loops=True,source_scopes=_source_routine_scopes)
     return PreparedHandlers(MappingProxyType(plans),MappingProxyType(descriptors),source_text,source_name)

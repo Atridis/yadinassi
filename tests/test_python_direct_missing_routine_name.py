@@ -1,6 +1,5 @@
 """Undefined lexical names are BSL faults, not generated Python globals."""
 import unittest
-from unittest.mock import patch
 from decimal import Decimal
 
 from yadinassi import Interpreter
@@ -23,9 +22,8 @@ class MissingRoutineNameTests(unittest.TestCase):
                 with self.subTest(route=route, directive=directive):
                     vm = Interpreter()
                     source = directive+'\nFunction ReadHidden()\nReturn Secret;\nEndFunction\nReadHidden();'
-                    with patch.object(Interpreter, 'block', side_effect=AssertionError('legacy')), patch.object(Interpreter, 'call_routine', side_effect=AssertionError('legacy')):
-                        with self.assertRaisesRegex(BSLRuntimeError, 'не определена: Secret') as caught:
-                            self.run_source(vm, source, route)
+                    with self.assertRaisesRegex(BSLRuntimeError, 'не определена: Secret') as caught:
+                        self.run_source(vm, source, route)
                     self.assertIn('scope.bsl:3:', str(caught.exception))
                     self.assertNotIn('v0', str(caught.exception))
                     self.assertEqual(vm.execution_context, 'client')

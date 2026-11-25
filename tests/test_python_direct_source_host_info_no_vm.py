@@ -1,17 +1,12 @@
 """Explicit source host information without legacy execution or native claims."""
 import unittest
-from unittest.mock import patch
 import test_source_system_info as system
 import test_source_host_session as sessions
-from yadinassi.runtime import Interpreter
 
 
 class NoVM:
     def setUp(self):
         super().setUp()
-        for name in ('_execute_program','call_routine'):
-            poison=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
-            poison.start();self.addCleanup(poison.stop)
 
 
 class SourceSystemInfoNoVM(NoVM,system.SourceSystemInfoTests):

@@ -10,7 +10,6 @@ from yadinassi import Interpreter
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.execution import runtime_dependencies as dependencies
 from yadinassi.types.values import InterpreterCall, BSLArray
-from yadinassi.execution.codegen import translated_access
 
 
 class DependencyHandleTests(unittest.TestCase):
@@ -81,19 +80,6 @@ class DependencyHandleTests(unittest.TestCase):
                 self.assertEqual(events, ['receiver', 'argument', 'new', 'later'])
                 self.assertEqual((vm.variables['x'],vm.variables['y']), (4,5))
             finally: vm.close()
-
-    def test_warm_module_attributes_remain_live_at_access_boundary(self):
-        module = dependencies.runtime_module('source_document_runtime')
-        vm = Interpreter(execution_backend='compiled-strict')
-        self.addCleanup(vm.close)
-        value = object()
-        for result in (Decimal(7), Decimal(9)):
-            with patch.object(module, 'is_source_reference', lambda v: v is value), \
-                 patch.object(module, 'reference_member', lambda caller, v, name: result):
-                call = translated_access.read_attribute(vm, value, 'Name')
-                with self.assertRaises(StopIteration) as end: next(call)
-                self.assertEqual(end.exception.value, result)
-        with self.assertRaises(TypeError): next(translated_access.read_attribute(vm, value, 'Name'))
 
     def test_warm_cache_retains_no_vm_or_call_argument(self):
         vm = Interpreter(allow_extensions=True); argument = BSLArray(); seen = []

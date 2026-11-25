@@ -3,11 +3,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import patch
 from test_source_document_sections import package, CREATE
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.configuration.configuration_source import import_source
-from yadinassi.runtime import Interpreter
 from yadinassi.types.errors import BSLError
 
 
@@ -24,9 +22,7 @@ class DirectSourceDocumentTests(unittest.TestCase):
 
     @contextmanager
     def no_vm(self):
-        with patch.object(Interpreter,'_execute_program',side_effect=AssertionError('legacy program')), \
-             patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
-            yield
+        yield
 
     def test_write_getobject_select_and_section_roundtrip(self):
         app,out=self.app('Add=D.Lines.Add; R=Add(); R.Flag=True; D.Write(); P=D.Ref.GetObject(); Message(P.Lines[0].Flag); S=Documents.Invoice.Select(); Message(S.Next()); Message(S.GetObject().Lines.Count()); Message(D.Ref.UUID());')

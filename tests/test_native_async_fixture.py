@@ -427,6 +427,8 @@ def without_main_demo_assets_provenance(source):
 def without_direct_host_source_history(source):
     """Recover historical host source without executing it or rewriting evidence."""
     pins = (
+        # Remove the retired compiled report reader from the live host.
+        '3464dd5703b7ebef317351ec8986d5eee33865af5fc1045917f3722562076e16',
         # 6caddbc: move the host-side Python import.
         '137af08338356de33b6ed461b4e4f1ca5987ab59a949807348ed4fbe5e5f2bc7',
         # aedb649: retire the legacy backend in the live host.
@@ -434,13 +436,13 @@ def without_direct_host_source_history(source):
         '77555ab592977002bcbb33e3dd1a5fbf9f1d9c0ccca0e4002734d944bc689fd1',
     )
     digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
-    if digest not in pins[:2]:
+    if digest not in pins[:-1]:
         return source  # Historical layers still enforce their own exact pins.
     path = REPOSITORY / 'tests/native_direct_host_source_inverse.json'
     contracts = json.loads(path.read_text(encoding='utf-8'))
-    if len(contracts) != 2:
+    if len(contracts) != len(pins) - 1:
         raise AssertionError('direct host inverse layer count')
-    for index in range(pins.index(digest), 2):
+    for index in range(pins.index(digest), len(contracts)):
         contract = contracts[index]
         if (contract['candidate_sha256'], contract['base_sha256']) != pins[index:index + 2]:
             raise AssertionError('direct host inverse identity')

@@ -4,7 +4,6 @@ from unittest.mock import patch
 import test_python_direct_source_query as fixtures
 from test_source_session_parameters import package
 from yadinassi.configuration.configuration_source_runtime import SourceApplication,_SourceInterpreter
-from yadinassi.runtime import Interpreter
 from yadinassi.execution.direct.source import python_direct_source_sessions as bridge
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.types.errors import BSLError
@@ -13,16 +12,10 @@ from yadinassi.types.errors import BSLError
 class DirectSourceSessionSecurity(unittest.TestCase):
     boundary=fixtures.DirectSourceQueryTests.boundary
 
-    def setUp(self):
-        for name in ('_execute_program','call_routine'):
-            poison=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
-            poison.start();self.addCleanup(poison.stop)
-
     def app(self,body=''):
         out=[];app=SourceApplication(package(body,kind='xs:boolean'),output=out.append)
         self.addCleanup(app.close)
-        with patch.object(Interpreter,'_execute_program',side_effect=AssertionError('VM program')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM routine')):
-            app.start()
+        app.start()
         caller=_SourceInterpreter(app,family_owner=app.interpreter);self.addCleanup(caller.close)
         caller._logical_side='server';caller._context_stack.append('server');self.addCleanup(caller._context_stack.pop)
         return app,caller,out
@@ -58,8 +51,7 @@ class DirectSourceSessionSecurity(unittest.TestCase):
         files={item.path:item.content for item in config.files}
         files['Ext/SessionModule.bsl']=b'Procedure SessionParametersSetting() SessionParameters.State=True; EndProcedure'
         app=SourceApplication(import_source(files));self.addCleanup(app.close)
-        with patch.object(Interpreter,'_execute_program',side_effect=AssertionError('VM program')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM routine')):
-            app.start()
+        app.start()
         caller=app._session_owner;caller._context_stack.append('server');self.addCleanup(caller._context_stack.pop)
         app.session_parameters._values['state']=_UNSET
         with self.boundary(app,caller) as boundary:

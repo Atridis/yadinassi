@@ -22,8 +22,6 @@ class DirectDynamicNewTests(unittest.TestCase):
             with self.subTest(route=route):
                 vm=self.vm()
                 with ExitStack() as stack:
-                    for name in ('block','call_routine','semantic_dynamic_new'):
-                        stack.enter_context(patch.object(Interpreter,name,side_effect=AssertionError('VM')))
                     if route=='source':vm.execute(code)
                     elif route=='ast':vm.execute_program(parse(code))
                     else:vm.execute_prepared(vm.prepare(code))

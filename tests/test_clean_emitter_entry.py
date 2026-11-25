@@ -3,7 +3,7 @@ from decimal import Decimal
 import unittest
 from unittest.mock import patch
 
-from yadinassi import Interpreter
+from yadinassi import BSLRuntimeError, Interpreter
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 
 
@@ -39,8 +39,9 @@ class CleanEmitterEntryTests(unittest.TestCase):
     def test_builtins_do_not_become_bsl_variables(self):
         vm=Interpreter()
         self.addCleanup(vm.close)
-        with self.assertRaises(NameError):
+        with self.assertRaisesRegex(BSLRuntimeError, r'не определена: len'):
             vm.execute('UndefinedHostName = len;')
+        self.assertNotIn('undefinedhostname',vm.variables)
         self.assertNotIn('__builtins__',vm.variables)
 
     def test_array_index_is_the_only_adaptation_in_the_neighboring_loop(self):

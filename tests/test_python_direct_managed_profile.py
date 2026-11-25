@@ -26,10 +26,9 @@ class DirectManagedProfileTests(unittest.TestCase):
             for route in ('source','ast','prepared'):
                 with self.subTest(profile=profile,route=route):
                     vm=Interpreter(compilation_profile=profile)
-                    with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
-                        if route=='source':vm.execute(client_mask())
-                        elif route=='ast':vm.execute_program(parse(client_mask(),compilation_profile=profile))
-                        else:vm.execute_prepared(vm.prepare(client_mask()))
+                    if route=='source':vm.execute(client_mask())
+                    elif route=='ast':vm.execute_program(parse(client_mask(),compilation_profile=profile))
+                    else:vm.execute_prepared(vm.prepare(client_mask()))
                     self.assertEqual(vm.variables['r'],expected)
                     self.assertEqual(vm.execution_context,'client')
 

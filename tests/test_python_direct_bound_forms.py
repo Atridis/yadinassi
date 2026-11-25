@@ -26,7 +26,7 @@ class BoundFormTests(unittest.TestCase):
         self.addCleanup(lambda:client.close(force=True));client.start()
         return server,client
     def test_real_welcome_created_and_details_common_calls_no_vm(self):
-        with patch.object(Interpreter,'execute_program',side_effect=AssertionError('VM execute')),patch.object(Interpreter,'block',side_effect=AssertionError('VM block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM call')):
+        with patch.object(Interpreter,'execute_program',side_effect=AssertionError('VM execute')):
             server,client=self.setup_apps()
             definition=load_application(ROOT,main_demo_application=True).forms['commonform.demowelcome']
             remote=definition.create_server(interpreter_factory=server.form_interpreter_factory).session

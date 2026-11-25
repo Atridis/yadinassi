@@ -4,9 +4,7 @@ There is no source evaluator, scheduler, database writer or authority escalation
 here. Metadata selects ordinary compiled module instances and existing calls.
 """
 from contextlib import contextmanager
-from decimal import localcontext
 from threading import get_ident
-from yadinassi.execution.codegen.native_targets import target_context
 
 from .configuration_modules import MODULE_RUNTIME, compile_module, compile_session_module
 from .configuration_xml import ConfigurationImport, import_configuration
@@ -461,19 +459,17 @@ class ConfigurationApplication:
             routine.name.casefold() for routine in self._events.values())
 
     def check_program(self, program):
-        from yadinassi.execution.owned_syntax import syntax_kind, origin_node
         self.require_open()
         for node in program:
-            if syntax_kind(node) is ast.Import:
+            if type(node) is ast.Import:
                 raise BSLError('file imports are unavailable in configured modules',
                                node.token.source, node.token.line, node.token.column)
-            names = node.names if syntax_kind(node) is ast.Var else (
-                (node.name,) if syntax_kind(node) is ast.Routine else ())
+            names = node.names if type(node) is ast.Var else (
+                (node.name,) if type(node) is ast.Routine else ())
             if any(name.casefold() in self._definitions or name.casefold() in self._global_names
                    or any(routine.name.casefold()==name.casefold() for routine in self._events.values())
                    for name in names):
-                original = origin_node(node)
-                if self._declared_routines.get(id(original)) is not original:
+                if self._declared_routines.get(id(node)) is not node:
                     raise BSLError('declaration conflicts with configuration context',
                                    node.token.source, node.token.line, node.token.column)
 
@@ -614,20 +610,15 @@ class ConfigurationApplication:
         entry = self._reuse_routines.get(id(routine))
         return entry is not None and entry[0] is routine and entry[2].server
 
-    def reusable_call(self, caller, owner, routine, qualified, *, execution_routine=None):
-        execution = routine if execution_routine is None else execution_routine
-        if execution is not routine:
-            from yadinassi.execution.owned_syntax import is_owned, origin_node
-            if not is_owned(execution) or origin_node(execution) is not routine:
-                raise ValueError('reusable execution view origin mismatch')
+    def reusable_call(self, caller, owner, routine, qualified):
         entry = self._reuse_routines.get(id(routine))
-        if not qualified or entry is None or not execution.is_function:
+        if not qualified or entry is None or not routine.is_function:
             return None
         if entry[0] is not routine or entry[1] is not owner:
             raise ValueError('reusable routine owner mismatch')
         definition = entry[2]
         cache = self.reusable_values.cache(caller, definition.return_values_reuse)
-        return cache, (str(definition.identity), execution.name.casefold())
+        return cache, (str(definition.identity), routine.name.casefold())
 
     def start(self):
         if self.state != 'prepared':

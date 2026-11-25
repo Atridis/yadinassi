@@ -29,10 +29,9 @@ R=F.Get(1);B=T.Get(True);N=U.Count();C=U.Get(Key).Count();Missing=T.Get("absent"
         for route in ('source','ast','prepared'):
             with self.subTest(route=route):
                 vm=self.vm()
-                with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
-                    if route=='source':vm.execute(source)
-                    elif route=='ast':vm.execute_program(parse(source))
-                    else:vm.execute_prepared(vm.prepare(source))
+                if route=='source':vm.execute(source)
+                elif route=='ast':vm.execute_program(parse(source))
+                else:vm.execute_prepared(vm.prepare(source))
                 self.assertEqual(tuple(vm.variables[k] for k in ('r','b','n','c','missing')),('number','bool',4,1,None))
                 self.assertIs(type(vm.variables['t']),PlainMap)
                 self.assertIs(vm.variables['u'].get(vm.variables['key']),vm.variables['child'])

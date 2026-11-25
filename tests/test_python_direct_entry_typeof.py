@@ -20,8 +20,7 @@ class DirectEntryTypeOfTests(unittest.TestCase):
 For Each P In M Do MT=TypeOf(P);MR=(MT=Type("KeyAndValue"));EndDo;
 For Each P In S Do ST=ТипЗнч(P);SR=(ST=Тип("КлючИЗначение"));EndDo;'''
         vm=self.vm()
-        with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
-            vm.execute(source)
+        vm.execute(source)
         self.assertIs(vm.variables['mt'],BSLType.KEY_AND_VALUE)
         self.assertIs(vm.variables['st'],BSLType.KEY_AND_VALUE)
         self.assertIs(vm.variables['mr'],True);self.assertIs(vm.variables['sr'],True)

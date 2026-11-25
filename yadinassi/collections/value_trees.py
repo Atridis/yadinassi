@@ -258,6 +258,8 @@ def _position(value, count, inserting=False):
 
 def _move_number(value):
     """Method-local bounded Number conversion, not TypeDescription defaulting."""
+    if type(value) is int:
+        value = Decimal(value)
     kind = type(value)
     if kind is not Decimal and kind is not bool and kind is not str:
         raise TypeError("ДеревоЗначений: ожидается число сдвига")

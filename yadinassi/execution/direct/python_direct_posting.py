@@ -10,7 +10,6 @@ from yadinassi.execution.codegen.experimental_naked_collections import _Cell
 from yadinassi.execution.codegen.direct_emitter import compile_owned
 from yadinassi.execution.codegen.experimental_naked_errors import convert_error
 from yadinassi.execution.codegen.experimental_naked_live_state import _ForwardReference
-from .python_direct import REPAIRS
 from yadinassi.execution.codegen.native_targets import target_context
 from yadinassi.types.values import Reference, HostFunction
 from yadinassi.collections.structures import BSLStructure
@@ -139,7 +138,6 @@ from dataclasses import dataclass
 _POSTING_CONSTRUCTORS=('query','запрос',*TEMP_TABLE_MANAGER_NAMES)
 # Core child bindings, never the parent's mutable custom registrations.
 _POSTING_CALLABLE_FIELDS=('number','число','date','дата')
-_POSTING_REPAIRS=tuple(REPAIRS)+('authority_checkpoints',)
 _POSTING_NAMES=frozenset(SELF)|frozenset(SYSTEM)|frozenset({
     'number','date','posted','ref','deletionmark',
     'additionalproperties','дополнительныесвойства','registerrecords','движения',
@@ -156,7 +154,7 @@ class PreparedPosting:
 def prepared_posting(runtime,document,parent):
     identity=document._key.document_id
     schema=document._manager._schema
-    key=(runtime._direct_sources[identity],schema,parent.native_target,_POSTING_REPAIRS,_POSTING_CONSTRUCTORS,_POSTING_CALLABLE_FIELDS)
+    key=(runtime._direct_sources[identity],schema,parent.native_target,_POSTING_CONSTRUCTORS,_POSTING_CALLABLE_FIELDS)
     cached=runtime._direct_plans.get(identity)
     if type(cached) is PreparedPosting and cached._key==key:return cached
     program=runtime._programs[identity]

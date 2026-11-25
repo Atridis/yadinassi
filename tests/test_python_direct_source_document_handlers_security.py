@@ -6,7 +6,6 @@ import test_python_direct_source_document_guards as fixtures
 import test_python_direct_source_query as query_fixtures
 from test_source_document_object_modules import package
 from yadinassi.db.document.source_document_runtime import SourceDocumentObject,_ObjectInterpreter,create_object
-from yadinassi.execution.direct.source.python_direct_source_storage import finish
 from yadinassi.execution.direct.source.python_direct_source_document import check_object,bind_export
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
@@ -24,8 +23,8 @@ class DirectDocumentHandlersSecurity(unittest.TestCase):
     def test_replaced_sections_allowed_foreign_or_malformed_sections_denied(self):
         app,caller,manager=self.app(package('Function Answer() Export Return 1; EndFunction',sections=True),section=True)
         with self.boundary(app,caller) as boundary:
-            obj=finish(create_object(caller,manager,app.constant_store.document('Invoice')))
-            other=finish(create_object(caller,manager,app.constant_store.document('Invoice')))
+            obj=create_object(caller,manager,app.constant_store.document('Invoice'))
+            other=create_object(caller,manager,app.constant_store.document('Invoice'))
             bound=bind_export(boundary,obj,'Answer',require_value=True,argument_count=0)
             old=obj.sections['lines'];obj.replace_sections({'lines':()})
             self.assertFalse(old.live);self.assertEqual(bound(),1)
@@ -45,7 +44,7 @@ class DirectDocumentHandlersSecurity(unittest.TestCase):
     def test_foreign_object_rejected_before_export_callback(self):
         config=package('Function Answer() Export Return 1; EndFunction')
         app,caller,manager=self.app(config);other,other_caller,other_manager=self.app(config)
-        with self.boundary(other,other_caller):obj=finish(create_object(other_caller,other_manager,other.constant_store.document('Invoice')))
+        with self.boundary(other,other_caller):obj=create_object(other_caller,other_manager,other.constant_store.document('Invoice'))
         with self.boundary(app,caller) as boundary,patch.object(obj,'exported_routine',side_effect=AssertionError('foreign callback')):
             with self.assertRaises(BoundaryViolation):bind_export(boundary,obj,'Answer')
 

@@ -1,22 +1,16 @@
 """Scoped backend selection for materialized interpreter families, not authority."""
-from contextvars import ContextVar
 from contextlib import contextmanager
 
 BACKENDS = ('python-direct',)
-_POLICY = ContextVar('yadinassi_execution_backend', default='python-direct')
 
 def current_backend():
-    return _POLICY.get()
+    return BACKENDS[0]
 
 @contextmanager
 def execution_backend_policy(backend):
     if type(backend) is not str or backend not in BACKENDS:
         raise ValueError('unsupported execution backend')
-    token = _POLICY.set(backend)
-    try:
-        yield
-    finally:
-        _POLICY.reset(token)
+    yield
 
 UI_BACKENDS = BACKENDS
 
@@ -56,20 +50,3 @@ def backend_entrypoint(function):
         with execution_backend_policy(mode):
             return function(remaining, *args, **kwargs)
     return selected
-
-
-AST_CONTRACTS = ('snapshot', 'mutable')
-_AST_POLICY = ContextVar('yadinassi_compiled_ast_contract', default='snapshot')
-
-def current_ast_contract():
-    return _AST_POLICY.get()
-
-@contextmanager
-def compiled_ast_policy(contract):
-    if type(contract) is not str or contract not in AST_CONTRACTS:
-        raise ValueError('unsupported compiled AST contract')
-    token = _AST_POLICY.set(contract)
-    try:
-        yield
-    finally:
-        _AST_POLICY.reset(token)

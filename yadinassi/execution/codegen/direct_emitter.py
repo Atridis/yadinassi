@@ -25,9 +25,9 @@ from .experimental_naked_live_state import UNSET, source_reference, _SlotReferen
 from .experimental_naked_boundaries import BoundaryViolation, _MISSING as _SERVICE_MISSING
 from yadinassi.execution.direct.python_direct_eval import bind_eval
 from yadinassi.execution.direct.python_direct_execute import FragmentScope, execute_fragment
-from yadinassi.types.values import BSLObject, HostFunction, Reference
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLObject, HostFunction, Reference
 from .experimental_naked_scalar_semantics import concatenate, presentation, truth
-from yadinassi.execution.direct.python_direct import PythonDirectUnsupported, REPAIRS
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.execution.direct.python_direct_numbers import divide, remainder, sign, public_number
 from yadinassi.execution.direct.python_direct_dynamic_new import construct
 from yadinassi.execution.direct.python_direct_error_info import raise_arity_error, raise_error
@@ -140,6 +140,66 @@ def metered(context, iterable):
         yield value
 
 
+# Only boxed collections arriving through codecs or a host boundary need a
+# stable borrowed backing. Ordinary Python lists/references do not use this.
+_BOX_DICT = vars(BSLObject)['__dict__']
+_BOX_ARRAY_SET = BSLArray.set
+_BOX_STRUCTURE_SET = BSLStructure.set
+
+
+def boxed_storage(context, receiver, attribute, expected_type):
+    context._check_effect()
+    state = _BOX_DICT.__get__(receiver, type(receiver))
+    if any(type(key) is not str for key in state):
+        raise BoundaryViolation('canonical reference storage changed')
+    backing = state.get(attribute)
+    if type(backing) is not expected_type:
+        raise BoundaryViolation('canonical reference storage changed')
+    return backing
+
+
+def boxed_array_reference(context, receiver, key):
+    readonly = type(receiver) is BSLFixedArray
+    storage_type = tuple if readonly else list
+    items = boxed_storage(context, receiver, 'items', storage_type)
+    if type(key) is Decimal:
+        if not key.is_finite() or key != key.to_integral_value():
+            raise ValueError('Ожидается целое число')
+    elif type(key) is not int:
+        raise TypeError('Ожидается число')
+    if not 0 <= key < len(items):
+        raise IndexError(f'Индекс массива вне границ: {key}')
+    offset = int(key)
+
+    def live():
+        if boxed_storage(context, receiver, 'items', storage_type) is not items:
+            raise BoundaryViolation('canonical reference backing changed')
+        if offset >= len(items):
+            raise IndexError(f'Индекс массива вне границ: {offset}')
+
+    def get():
+        live()
+        return items[offset]
+
+    def set_value(value):
+        live()
+        if readonly:
+            raise ValueError('Фиксированный массив недоступен для записи')
+        if vars(BSLArray).get('set') is not _BOX_ARRAY_SET:
+            raise BoundaryViolation('canonical array setter changed')
+        items[offset] = value
+        live()
+
+    return Address(get, set_value)
+
+
+def bind_local_index_reference(context, receiver):
+    kind=type(receiver)
+    if (kind is BSLArray or kind is BSLFixedArray) and context.policy is None:
+        return partial(boxed_array_reference, context, receiver)
+    return bind_index_reference(context, receiver)
+
+
 def bind_index_reference(context, receiver):
     kind=type(receiver)
     if not (kind is list or kind is PlainArray or kind is PlainMap or kind is _DirectStructure):
@@ -175,7 +235,12 @@ def source_shapes(bound, named):
 def host_reference(address, context=None):
     kind=type(address)
     read,write=address.get,address.set
-    if kind is _ForwardReference and context is not None and context._verify_context:
+    forwarded_name=(kind is _ForwardReference and type(address.reference) is Reference
+                    and getattr(address.reference,'_direct_name_sink',False) is True)
+    # BSL name addresses have their own lending checks when an imported or dual
+    # routine uses them. Rechecking the suspended caller would reject the lend.
+    if (kind is _ForwardReference and not forwarded_name
+            and context is not None and context._verify_context):
         def guarded_get():
             context._check_effect()
             try:
@@ -195,8 +260,7 @@ def host_reference(address, context=None):
         result=Reference(read,write)
     result._direct_name_sink=(kind is _SlotReference
         or kind is Address and address.name_sink
-        or kind is _ForwardReference and type(address.reference) is Reference
-           and getattr(address.reference,'_direct_name_sink',False) is True)
+        or forwarded_name)
     return result
 
 
@@ -266,8 +330,47 @@ _OP = dict(_Truth=truth, _PublicNumber=public_number, _Divide=divide, _Remainder
            _Handled=handled_error, _Reraise=reraise_handled, _Raise=raise_error,
            _RaiseArity=raise_arity_error, _Presentation=presentation,
            _LexicalRef=lexical_reference, _FragmentRef=fragment_reference, _Eval=bind_eval, _Execute=execute_fragment, _GetAttr=getattr, _SourceShapes=source_shapes, _VarRef=source_reference, _Cell=_Cell, _BoundRef=_bound_ref,
-           _BindIndexRef=bind_index_reference, _HostRef=host_reference, _IndexedActual=indexed_actual, _MemberActual=member_actual, _CellActual=cell_actual, _Unchanged=unchanged, _ImportedRef=_ForwardReference,
+           _BindIndexRef=bind_index_reference, _BindLocalIndexRef=bind_local_index_reference, _HostRef=host_reference, _IndexedActual=indexed_actual, _MemberActual=member_actual, _CellActual=cell_actual, _Unchanged=unchanged, _ImportedRef=_ForwardReference,
            _Construct=construct, _Array=bounded_array, _Structure=new_structure, _MapFrom=plain_map, _Omissions=_host_omission_values, _InvalidOmissions=_host_omission_error)
+
+
+def boxed_field_reference(context, receiver, name):
+    from yadinassi.collections.structures import _key
+    key = _key(name)
+    items = boxed_storage(context, receiver, '_items', dict)
+
+    def selected():
+        if boxed_storage(context, receiver, '_items', dict) is not items:
+            raise BoundaryViolation('canonical reference backing changed')
+        if any(type(field) is not str for field in items):
+            raise BoundaryViolation('canonical reference storage changed')
+        if key not in items:
+            raise ValueError(f'Свойство структуры не найдено: {name}')
+        entry = items[key]
+        if type(entry) is not tuple or len(entry) != 2 or type(entry[0]) is not str:
+            raise BoundaryViolation('canonical reference storage changed')
+        return entry
+
+    def get():
+        return selected()[1]
+
+    def set_value(value):
+        if type(receiver) is BSLFixedStructure:
+            raise ValueError(f'Свойство фиксированной структуры недоступно для записи: {name}')
+        if vars(BSLStructure).get('set') is not _BOX_STRUCTURE_SET:
+            raise BoundaryViolation('canonical structure setter changed')
+        items[key] = (selected()[0], value)
+        context._check_effect()
+
+    selected()
+    return Address(get, set_value)
+
+
+def local_field_reference(context, receiver, key):
+    kind=type(receiver)
+    if (kind is BSLStructure or kind is BSLFixedStructure) and context.policy is None:
+        return boxed_field_reference(context, receiver, key)
+    return field_reference(context, receiver, key)
 
 
 def field_reference(context, receiver, key):
@@ -279,9 +382,19 @@ def field_reference(context, receiver, key):
 
 
 def get_field(context, receiver, key):
-    if type(receiver) is _DirectStructure:
+    kind = type(receiver)
+    if kind is list or kind is PlainArray:
+        operation = ARRAY_ALIASES.get(key.casefold(), key.casefold())
+        if operation in _ARRAY_ARITY:
+            from yadinassi.execution.direct.python_direct_captured_values import register
+
+            def invoke(*args):
+                return array_method(receiver, key, len(args), False, ())(*args)
+
+            return register(HostFunction(key, invoke, returns_value=operation not in _ARRAY_PROCEDURES))
+    if kind is _DirectStructure:
         return receiver[key]
-    if type(receiver) is BSLKeyAndValue:
+    if kind is BSLKeyAndValue:
         return receiver.get_member(key)
     return context.get_member(receiver,key)
 
@@ -416,9 +529,8 @@ def member(context, receiver, key, count, want_value, omitted=(), source_dispatc
     return context.resolve_member_call(receiver,key,require_value=want_value,omitted=omitted)
 
 
-_OP.update(_RequiresReference=requires_reference,_OwnedIndex=owned_index,_OwnedSetIndex=owned_set_index,_Metered=metered,_OwnedIterable=owned_iterable,_BSLIterable=bsl_iterable,_Member=member,_GetField=get_field,_SetField=set_field,_FieldRef=field_reference,_StructureType=_DirectStructure,_OwnsPropertyOutput=owns_property_output)
+_OP.update(_RequiresReference=requires_reference,_OwnedIndex=owned_index,_OwnedSetIndex=owned_set_index,_Metered=metered,_OwnedIterable=owned_iterable,_BSLIterable=bsl_iterable,_Member=member,_GetField=get_field,_SetField=set_field,_FieldRef=field_reference,_LocalFieldRef=local_field_reference,_StructureType=_DirectStructure,_OwnsPropertyOutput=owns_property_output)
 _OP.update(_PrepareBracket=prepare_bracket,_ReadBracket=read_bracket)
-
 
 
 def _node(n, token):
@@ -728,7 +840,7 @@ class Emit:
         if len(args)>len(params) or any(params[i].default is None for i in omitted):
             return call('_InvalidOmissions')
         def actual(i):
-            return self.expr(args[i]) if params[i].by_value else self.reference(args[i])
+            return self.expr(args[i]) if params[i].by_value else self.reference(args[i],known_local=True)
         if not omitted:
             return call(bound,*(actual(i) for i in range(len(args))))
         # Only a call with a positional hole needs spelling its suffix by name.
@@ -737,7 +849,7 @@ class Emit:
                     **{params[i].name.casefold():actual(i)
                        for i in range(prefix,len(args)) if i not in omitted})
 
-    def reference(self,arg):
+    def reference(self,arg,known_local=False):
         while type(arg) is b.Group:
             arg=arg.expression
         path=self.import_path(arg)
@@ -759,9 +871,9 @@ class Emit:
             getter,setter=self.address(key)
             return call('_LexicalRef',name(getter),name(setter))
         if type(arg) is b.Index:
-            return call(call('_BindIndexRef',name('_C'),self.expr(arg.object)),self.expr(arg.index))
+            return call(call('_BindLocalIndexRef' if known_local else '_BindIndexRef',name('_C'),self.expr(arg.object)),self.expr(arg.index))
         if type(arg) is b.Attribute:
-            return call('_FieldRef',name('_C'),self.expr(arg.object),literal(arg.name))
+            return call('_LocalFieldRef' if known_local else '_FieldRef',name('_C'),self.expr(arg.object),literal(arg.name))
         return call('_Cell',self.expr(arg))
 
     def address(self,key):
@@ -1313,8 +1425,8 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,fra
                 for key in published:
                     value=state.get(key)
                     if type(value) is int:state[key]=Decimal(value)
-    program=Program(None,tuple(compiler.constants),run,{},frozenset(REPAIRS),
-                   source_name=filename,source_text=source_text or '',trusted_entry=True,
+    program=Program(None,tuple(compiler.constants),run,
+                   source_name=filename,source_text=source_text or '',
                    _generated_tree=entry if retain_generated else None)
     program._source_implicit_shadows=frozenset(compiler.implicit_shadows)
     return program

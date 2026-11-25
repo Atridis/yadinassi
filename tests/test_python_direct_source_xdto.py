@@ -4,7 +4,6 @@ from unittest.mock import patch
 import test_source_xdto_packages as existing
 from test_configuration_source_runtime import source
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
-from yadinassi.runtime import Interpreter
 from yadinassi.types.errors import BSLError
 from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
@@ -13,9 +12,6 @@ from yadinassi.formats.xml import xdto_io,xdto_values,xml_io
 DENIED=(BSLError,BoundaryViolation,ValueError,TypeError,UnsupportedNakedSyntax)
 
 class SourceScalarXDTOTests(unittest.TestCase):
-    def setUp(self):
-        for name in ('_execute_program','call_routine','_planned_routine_block'):
-            p=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name));p.start();self.addCleanup(p.stop)
     def app(self,mapping=None, *, allow_extensions=False):
         mapping=existing.SourceXDTOTests().mapping() if mapping is None else mapping
         app=SourceApplication(source(b'',mapping),output=lambda _:None, allow_extensions=allow_extensions);self.addCleanup(app.close);app.start();return app

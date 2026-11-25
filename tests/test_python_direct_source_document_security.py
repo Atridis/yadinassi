@@ -17,7 +17,7 @@ class DirectDocumentSecurity(unittest.TestCase):
     boundary=query_fixtures.DirectSourceQueryTests.boundary
 
     def object(self,app,caller,manager):
-        obj=storage.finish(create_object(caller,manager,app.constant_store.document('Invoice')))
+        obj=create_object(caller,manager,app.constant_store.document('Invoice'))
         row=SourceDocumentSectionCall(obj.sections['lines'],'add').invoke(caller,[])
         row.property_write(caller,'Flag',True)
         return obj,obj.sections['lines'],row

@@ -96,7 +96,7 @@ class ConstantCall:
             from .source_constant_managers import write_values
             if len(values) != 1:
                 raise TypeError('invalid constant method argument count')
-            return (yield from write_values(caller, self.owner, {self.name: values[0]}))
+            return (write_values(caller, self.owner, {self.name: values[0]}))
         return self.invoke(caller, values)
 
     def invoke(self, caller, values):
@@ -176,7 +176,7 @@ class ConstantSetCall:
                 raise TypeError('constant set Read/Write take no arguments')
             if len(receiver.values) != len(receiver.keys):
                 raise ValueError('all selected constant fields must be assigned or read before Write')
-            return (yield from write_values(caller, receiver.owner,
+            return (write_values(caller, receiver.owner,
                 {name: receiver.values[name.casefold()] for name in receiver.names}))
         return self.invoke(caller, values)
 

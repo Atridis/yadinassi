@@ -16,7 +16,7 @@ class DirectTableReferenceTests(unittest.TestCase):
         body='Procedure SetValue(X) X=7;EndProcedure Procedure SetTitle(X) X="seven";EndProcedure Function SetResult(X) X=9;Return X;EndFunction SetValue(R.A);SetTitle(C.Title);SetValue(R[0]);'
         for route in ('source','ast','prepared','execute','eval'):
             vm=Interpreter();vm.execute(SETUP)
-            with self.subTest(route=route),patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
+            with self.subTest(route=route):
                 if route=='source':vm.execute(body)
                 elif route=='ast':vm.execute_program(parse(body))
                 elif route=='prepared':vm.execute_prepared(vm.prepare(body))

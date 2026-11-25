@@ -1,5 +1,4 @@
 import unittest
-from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
@@ -9,10 +8,9 @@ class DirectValueConstructorTests(unittest.TestCase):
         source='D=New TypeDescription("String",,New StringQualifiers(4,AllowedLength.Fixed));R=D.AdjustValue("ab");T=Новый ТаблицаЗначений;T.Колонки.Добавить("A");T.Добавить().A=R;N=T.Count();'
         for route in ('source','ast','prepared'):
             vm=Interpreter()
-            with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
-                if route=='source':vm.execute(source)
-                elif route=='ast':vm.execute_program(parse(source))
-                else:vm.execute_prepared(vm.prepare(source))
+            if route=='source':vm.execute(source)
+            elif route=='ast':vm.execute_program(parse(source))
+            else:vm.execute_prepared(vm.prepare(source))
             self.assertEqual(vm.variables['r'],'ab  ');self.assertEqual(vm.variables['n'],1)
         for en,ru in (('TypeDescription','ОписаниеТипов'),('ValueTable','ТаблицаЗначений'),('NumberQualifiers','КвалификаторыЧисла'),('StringQualifiers','КвалификаторыСтроки'),('DateQualifiers','КвалификаторыДаты'),('BinaryDataQualifiers','КвалификаторыДвоичныхДанных')):
             vm=Interpreter();vm.execute('A=New '+en+';B=Новый '+ru+';R=TypeOf(A)=TypeOf(B);')

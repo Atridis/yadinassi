@@ -8,15 +8,13 @@ from yadinassi.configuration.configuration_source_runtime import SourceApplicati
 from yadinassi.forms.source_forms import SourceFormController
 from yadinassi.execution.direct.source.python_direct_source_forms import SourceFormBoundary,check_source_session
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.runtime import Interpreter
 from yadinassi.db import source_transactions
 
 
 class DirectSourceFormSecurity(unittest.TestCase):
     def controller(self):
         app=SourceApplication(import_source(files()));self.addCleanup(app.close)
-        with patch.object(Interpreter,'_execute_program',side_effect=AssertionError('legacy program')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
-            app.start();controller=SourceFormController(app,'CommonForm.Main')
+        app.start();controller=SourceFormController(app,'CommonForm.Main')
         return app,controller
 
     @contextmanager

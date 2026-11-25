@@ -24,8 +24,7 @@ EndDo;
 N=M.Count();'''
                 with self.subTest(constructor=constructor,name=name):
                     vm=self.vm()
-                    with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
-                        vm.execute(source)
+                    vm.execute(source)
                     # Python3.10 direct tracebacks retain line but not expression columns.
                     error=vm.variables['error'].split(': ',1)[1]
                     self.assertIs(vm.variables['caught'],True)

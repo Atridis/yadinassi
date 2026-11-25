@@ -1,13 +1,11 @@
 """Direct RPC preserves endpoint admission and protocol effects."""
 from decimal import Decimal
 from unittest import TestCase
-from unittest.mock import patch
 from yadinassi.forms.form_replication import ReplicatedFormServer,PROTOCOL
 from yadinassi.forms.form_model import BSLFormAttribute
 from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.ui.protocol import encode_line,decode_line
 from yadinassi.execution.invocation import _encode_scalar,_decode_scalar
-from yadinassi.runtime import Interpreter
 
 SOURCE='''&AtServer
 Function Calculate(Val X)
@@ -38,11 +36,10 @@ class DirectFormRPCTests(TestCase):
             'operation':operation,'revision':self.server.session.revision if revision is None else revision,
             'sequence':self.server._sequence+1,'endpoint':endpoint,'arguments':[_encode_scalar(v) for v in args],'delta':delta})))
     def test_function_result_and_procedure_without_dispatch(self):
-        with patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy call')):
-            result=self.request(endpoint=1,args=(Decimal(4),))
-            self.assertEqual(result['status'],'ok');self.assertEqual(_decode_scalar(result['value']),5)
-            result=self.request(endpoint=2,args=(Decimal(8),))
-            self.assertEqual(result['status'],'ok');self.assertIsNone(_decode_scalar(result['value']))
+        result=self.request(endpoint=1,args=(Decimal(4),))
+        self.assertEqual(result['status'],'ok');self.assertEqual(_decode_scalar(result['value']),5)
+        result=self.request(endpoint=2,args=(Decimal(8),))
+        self.assertEqual(result['status'],'ok');self.assertIsNone(_decode_scalar(result['value']))
         self.assertEqual(self.server.session.form._data['value'],8)
     def test_private_endpoint_wrong_arity_delta_revision_no_effects(self):
         for options,reason in [({'endpoint':4,'args':(Decimal(1),)},'unknown_endpoint'),

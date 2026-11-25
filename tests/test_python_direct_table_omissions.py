@@ -1,8 +1,6 @@
 """Bounded table call-site holes: defaults, eager rejection, owner guards."""
-from decimal import Decimal
 from pathlib import Path
 import unittest
-from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.syntax.parser import parse
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
@@ -14,7 +12,7 @@ class DirectTableOmissionsTests(unittest.TestCase):
         setup='T=New ValueTable;T.Columns.Add("A");T.Add();'
         body='C=T.Columns.Add(,,"Header",);D=T.Columns.Insert(0,"D",,);R=T.Copy(,"A");'
         for route in ('source','ast','prepared','execute','eval'):
-            with self.subTest(route=route),patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
+            with self.subTest(route=route):
                 vm=Interpreter();vm.execute(setup)
                 if route=='source':vm.execute(body)
                 elif route=='ast':vm.execute_program(parse(body))

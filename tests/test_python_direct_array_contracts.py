@@ -18,10 +18,9 @@ F=New FixedArray(A); B=New Array(F); B[0][0]=9; S.N=2;'''
         for route in ('source','ast','prepared'):
             with self.subTest(route=route):
                 vm=Interpreter()
-                with patch.object(Interpreter,'block',side_effect=AssertionError('VM')):
-                    if route=='source':vm.execute(source)
-                    elif route=='ast':vm.execute_program(parse(source))
-                    else:vm.execute_prepared(vm.prepare(source))
+                if route=='source':vm.execute(source)
+                elif route=='ast':vm.execute_program(parse(source))
+                else:vm.execute_prepared(vm.prepare(source))
                 b=vm.variables['b'];a=vm.variables['a'];f=vm.variables['f']
                 self.assertIs(type(b),list);self.assertIs(type(b[0]),list)
                 self.assertIsNot(b[0],b[1]);self.assertEqual(b[0],[9]);self.assertEqual(b[1],[7])

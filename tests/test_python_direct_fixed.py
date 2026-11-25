@@ -5,7 +5,7 @@ from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.syntax.parser import parse
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.types.values import BSLArray, BSLFixedArray
+from yadinassi.types.values import BSLFixedArray
 from yadinassi.collections.structures import BSLFixedStructure
 
 class DirectFixedTests(unittest.TestCase):
@@ -13,10 +13,9 @@ class DirectFixedTests(unittest.TestCase):
         text='A=New Array;A.Add(1);S=New Structure("Child",A);R=New Array;R.Add(A);R.Add(A);R.Add(S);F=New FixedArray(R);G=New FixedStructure(S);A[0]=2;S.Child=3;'
         for route in ('source','ast','prepared'):
             vm=Interpreter()
-            with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
-                if route=='source':vm.execute(text)
-                elif route=='ast':vm.execute_program(parse(text))
-                else:vm.execute_prepared(vm.prepare(text))
+            if route=='source':vm.execute(text)
+            elif route=='ast':vm.execute_program(parse(text))
+            else:vm.execute_prepared(vm.prepare(text))
             f=vm.variables['f'];g=vm.variables['g']
             self.assertIs(type(f),BSLFixedArray);self.assertIs(type(g),BSLFixedStructure)
             self.assertIsNot(f.items[0],f.items[1]);self.assertEqual(f.items[0].items,(Decimal(1),))
@@ -58,8 +57,7 @@ class DirectFixedTests(unittest.TestCase):
         from test_source_session_types import SourceSessionTypesTests
         owner=SourceSessionTypesTests()
         try:
-            with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
-                app=owner.run_source('A=New Array;A.Add(1);F=New FixedArray(A);A[0]=2;S=New FixedStructure("Items",F);SessionParameters.State=S;If S.Items[0]<>1 Then Raise "snapshot";EndIf;Try S.Items[0]=3;Except EndTry;Try S.Items=3;Except EndTry;','<v8:Type>v8:FixedStructure</v8:Type>')
+            app=owner.run_source('A=New Array;A.Add(1);F=New FixedArray(A);A[0]=2;S=New FixedStructure("Items",F);SessionParameters.State=S;If S.Items[0]<>1 Then Raise "snapshot";EndIf;Try S.Items[0]=3;Except EndTry;Try S.Items=3;Except EndTry;','<v8:Type>v8:FixedStructure</v8:Type>')
             result=app.session_parameters._values['state'];self.assertIs(type(result),BSLFixedStructure)
             self.assertEqual(result.get('Items').items,(Decimal(1),))
         finally:owner.doCleanups()

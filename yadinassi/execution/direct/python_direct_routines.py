@@ -54,7 +54,6 @@ def prepare(vm, program, plan, *, retain_generated=True):
     server_plan=None
     if server_names or initializer_body or any(type(n) is ast.Routine and n.is_dual for n in declarations):
         from yadinassi.execution.codegen.direct_emitter import compile_owned as compile_server
-        from .python_direct import REPAIRS
         from .python_direct_services import ORDINARY_CONSTRUCTORS
         from .python_direct_names import NAMES
         from .python_direct_database import METADATA_NAMES

@@ -14,8 +14,7 @@ import test_python_direct_database as database_fixture
 class DirectHostValuesTests(unittest.TestCase):
     def test_builtin_split_array_methods_index_and_iteration(self):
         vm=Interpreter()
-        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')), patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
-            vm.execute('A=StrSplit("a,b",","); B=A; B[0]="changed"; N=A.Count(); S=""; For Each V In A Do S=S+V; EndDo; R=A.Get(0);')
+        vm.execute('A=StrSplit("a,b",","); B=A; B[0]="changed"; N=A.Count(); S=""; For Each V In A Do S=S+V; EndDo; R=A.Get(0);')
         self.assertIs(vm.variables['a'],vm.variables['b'])
         self.assertIs(type(vm.variables['a']),BSLArray)
         self.assertEqual((vm.variables['n'],vm.variables['s'],vm.variables['r']),(2,'changedb','changed'))

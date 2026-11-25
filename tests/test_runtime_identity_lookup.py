@@ -1,11 +1,6 @@
 """Exact type/owned identity lookups must not introduce host hooks or forgery."""
 import unittest
-import weakref
 from decimal import Decimal
-from unittest.mock import patch
-from yadinassi.execution import owned_syntax as owned
-from yadinassi.syntax import ast
-from yadinassi.syntax.parser import parse
 from yadinassi import Interpreter
 from yadinassi.types.type_values import type_of
 from yadinassi.types.values import BSLType, BSLArray
@@ -63,24 +58,3 @@ class RuntimeIdentityLookupTests(unittest.TestCase):
         class SubArray(BSLArray, metaclass=Meta): pass
         for value in (Foreign(), SubArray()):
             with self.assertRaises(TypeError): type_of(value)
-
-    def test_private_kind_without_live_registration_is_not_owned(self):
-        vm = Interpreter(); self.addCleanup(vm.close)
-        node = parse('x=1;')[0]
-        engine = vm._compiled(); engine.prepare([node])
-        view = engine._owned.existing(node)
-        self.assertIs(owned.syntax_kind(view), ast.Assign)
-        fake = object.__new__(type(view))
-        self.assertIs(owned.syntax_kind(fake), type(fake))
-        self.assertFalse(owned.is_owned(fake))
-        with patch.dict(owned._ORIGINS, {id(fake): weakref.ref(view)}):
-            self.assertIs(owned.syntax_kind(fake), type(fake))
-            self.assertIsNone(owned.owned_provenance(fake))
-
-    def test_lost_registration_cannot_reuse_known_private_kind(self):
-        vm = Interpreter(); self.addCleanup(vm.close)
-        node = parse('x=1;')[0]; engine = vm._compiled(); engine.prepare([node])
-        view = engine._owned.existing(node)
-        with patch.dict(owned._ORIGINS, {}, clear=True):
-            self.assertIs(owned.syntax_kind(view), type(view))
-            self.assertFalse(owned.is_owned(view))

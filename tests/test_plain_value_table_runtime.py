@@ -13,8 +13,7 @@ class PlainTableRuntimeTests(unittest.TestCase):
         t=BSLValueTable();t.columns.add('N');return t
     def test_actual_bsl_constructor_without_vm(self):
         vm=Interpreter()
-        with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
-            vm.execute('T=New ValueTable;T.Columns.Add("N");For I=0 To 4 Do R=T.Add();R.N=I;EndDo;S=0;For I=0 To 4 Do S=S+T.Get(I).N;EndDo;')
+        vm.execute('T=New ValueTable;T.Columns.Add("N");For I=0 To 4 Do R=T.Add();R.N=I;EndDo;S=0;For I=0 To 4 Do S=S+T.Get(I).N;EndDo;')
         self.assertIs(type(vm.variables['t']),PlainTable)
         self.assertEqual(vm.variables['s'],Decimal(10))
         self.assertTrue(validate(vm.variables['t']))

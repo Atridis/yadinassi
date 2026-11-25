@@ -6,8 +6,7 @@ import tempfile
 import unittest
 from test_source_constant_store import configuration
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
-from yadinassi.db.metadata.source_constant_store import SourceConstantStore
-from yadinassi.db.metadata.source_constant_managers import SourceConstantValueManager, ValueManagerCall
+from yadinassi.db.metadata.source_constant_managers import SourceConstantValueManager
 from yadinassi.db.metadata.source_constants_runtime import SourceConstants
 from yadinassi.types.errors import BSLError
 
@@ -154,7 +153,7 @@ class SourceConstantHandlerTests(unittest.TestCase):
         try:
             with patch.object(type(caller._scheduler), 'pending', new_callable=PropertyMock, return_value=True):
                 with self.assertRaisesRegex(ValueError,'pending'):
-                    next(create_manager(caller, SourceConstants(app), 'Text'))
+                    create_manager(caller, SourceConstants(app), 'Text')
         finally:caller._context_stack.pop()
         self.assertEqual(self.count(),0)
 
@@ -167,7 +166,7 @@ class SourceConstantHandlerTests(unittest.TestCase):
         try:
             with patch.object(type(caller._scheduler), 'pending', new_callable=PropertyMock, return_value=True):
                 with self.assertRaisesRegex(ValueError,'pending'):
-                    next(write_managers(caller,owner,[manager]))
+                    write_managers(caller,owner,[manager])
         finally:caller._context_stack.pop()
         self.assertEqual(self.count(),0)
 

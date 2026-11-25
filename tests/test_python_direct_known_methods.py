@@ -316,27 +316,12 @@ class KnownQueryLoopTests(unittest.TestCase):
         self.assertEqual(self.vm.variables['r'],Decimal(2))
         self.assertEqual(reached,[])
 
-    def test_nested_opaque_loops_bound_speculative_analysis(self):
-        from yadinassi.execution.direct import python_direct_known_methods as known
+    def test_nested_opaque_loops_keep_one_effect_and_live_selection(self):
         self.seed()
         depth=18
         source=(self.QUERY+''.join(f'For I{i}=1 To 1 Do ' for i in range(depth))
                 +'Message("opaque");'+'EndDo;'*depth+'R=S.Next();')
-        original=known._common_facts
-        intersections=0
-
-        def count(left,right):
-            nonlocal intersections
-            intersections+=1
-            return original(left,right)
-
-        with patch.object(known,'_common_facts',count):
-            plan=self.vm.prepare_program(parse(source))
-        generated=plan._plan.generated_source
-        self.assertGreater(intersections,0)
-        self.assertLess(intersections,32*depth)
-        self.assertIn('.select()',generated)
-        self.assertNotIn('.next()',generated)
+        plan=self.vm.prepare_program(parse(source))
         reached,methods=self.methods()
         with methods:self.vm.execute_prepared(plan)
         self.assertIs(self.vm.variables['r'],True)

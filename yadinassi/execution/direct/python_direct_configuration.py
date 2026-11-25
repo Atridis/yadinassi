@@ -37,7 +37,7 @@ from yadinassi.execution.codegen.experimental_naked_collections import _Cell
 from yadinassi.execution.codegen.direct_emitter import compile_owned
 from .python_direct_numbers import public_number
 from yadinassi.execution.codegen.experimental_naked_errors import convert_error
-from .python_direct import REPAIRS, _snapshot
+from .python_direct import _snapshot
 from yadinassi.execution.codegen.native_targets import target_context
 from yadinassi.syntax import ast
 from yadinassi.types.values import HostFunction

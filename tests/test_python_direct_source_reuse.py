@@ -9,15 +9,12 @@ from pathlib import Path
 import test_source_session_parameters as session_tests
 from test_configuration_source_runtime import source
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
-from yadinassi.runtime import Interpreter
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
 class SourceReuseTests(unittest.TestCase):
     def setUp(self):
         stack=ExitStack();self.addCleanup(stack.close)
-        for name in ('_execute_program','call_routine','_planned_routine_block'):
-            stack.enter_context(patch.object(Interpreter,name,side_effect=AssertionError('VM forbidden')))
 
     def app(self,body='Message(Helpers.Value());',function='Function Value() Export Return 42; EndFunction',mode='DuringSession', *, allow_extensions=False):
         config=session_tests.SourceSessionTests().cached_source(mode,body)

@@ -3,7 +3,6 @@ from decimal import Decimal
 from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.execution.codegen.experimental_naked_collections import UnsupportedNakedSyntax
 
 class DirectEvalTests(unittest.TestCase):
     def test_source_ast_prepared_live_locals_and_module(self):
@@ -11,10 +10,9 @@ class DirectEvalTests(unittest.TestCase):
         source='Var M;M=2;Function F(A) B=4;Return Eval("A+B+M");EndFunction R=F(3);'
         for route in ('source','ast','prepared'):
             vm=Interpreter()
-            with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
-                if route=='source':vm.execute(source)
-                elif route=='ast':vm.execute_program(parse(source))
-                else:vm.execute_prepared(vm.prepare(source))
+            if route=='source':vm.execute(source)
+            elif route=='ast':vm.execute_program(parse(source))
+            else:vm.execute_prepared(vm.prepare(source))
             self.assertEqual(vm.variables['r'],9)
 
     def test_live_byref_and_aliasing(self):

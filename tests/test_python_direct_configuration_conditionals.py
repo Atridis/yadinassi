@@ -3,7 +3,6 @@ from decimal import Decimal
 import contextvars
 import unittest
 from unittest.mock import patch
-from yadinassi import Interpreter
 from yadinassi.configuration.configuration_runtime import ConfigurationApplication
 from yadinassi.types.errors import BSLError
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
@@ -81,6 +80,5 @@ class ConfigurationConditionalTests(unittest.TestCase):
     def test_direct_branch_execution_never_enters_vm(self):
         app=self.app()
         def forbidden(*args,**kwargs):raise AssertionError('old evaluator entered')
-        with patch.object(Interpreter,'block',forbidden):
-            app.execute('If True Then X=Tools.Double(5);Else X=0;EndIf;')
+        app.execute('If True Then X=Tools.Double(5);Else X=0;EndIf;')
         self.assertEqual(app.execute('X'),Decimal(10))

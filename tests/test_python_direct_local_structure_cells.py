@@ -1,5 +1,4 @@
 """Restored mutable Structure properties are exact local ByRef addresses."""
-import sys
 from decimal import Decimal
 import unittest
 from unittest.mock import patch
@@ -7,7 +6,7 @@ from unittest.mock import patch
 from yadinassi import BSLError, Interpreter
 from yadinassi.collections.structures import BSLFixedStructure, BSLStructure
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.execution.direct import python_direct_structure_references as refs
+from yadinassi.execution.codegen.direct_emitter import local_field_reference
 from yadinassi.execution.direct.python_direct import make_boundary
 
 
@@ -62,18 +61,13 @@ class LocalStructureCellsTests(unittest.TestCase):
         vm.execute(SETUP)
         plan=vm.prepare('Procedure Ignore(X) EndProcedure Ignore(Obj.ABC);')
         hits=[]
-        bind=refs._StructureAddress.__init__.__code__
-        read=refs._StructureAddress.value.fget.__code__
-        def observe(frame,event,_arg):
-            if event=='call' and (frame.f_code is bind or frame.f_code is read):
-                hits.append(frame.f_code)
-        old=sys.getprofile()
-        try:
-            sys.setprofile(observe)
+        original=BSLStructure.get_member
+        def observe(receiver, name):
+            hits.append(name)
+            return original(receiver, name)
+        with patch.object(BSLStructure, 'get_member', observe):
             vm.execute_prepared(plan)
-        finally:
-            sys.setprofile(old)
-        self.assertEqual(hits,[bind])
+        self.assertEqual(hits,[])
 
     def test_same_property_alias_writes_through_with_partial_failure(self):
         vm=self.vm()
@@ -89,7 +83,7 @@ class LocalStructureCellsTests(unittest.TestCase):
         context.enter()
         self.addCleanup(context.leave)
         obj=BSLStructure('U',1)
-        address=refs.local_member(context,obj,'u')
+        address=local_field_reference(context,obj,'u')
         backing=obj._items
         seen=[]
         def hostile(*_args):seen.append('hook');raise AssertionError

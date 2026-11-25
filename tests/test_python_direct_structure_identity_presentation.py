@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from yadinassi import Interpreter
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.execution.codegen.experimental_naked_structure import _DirectStructure,new_structure
+from yadinassi.execution.codegen.experimental_naked_structure import new_structure
 from yadinassi.execution.codegen.experimental_naked_scalar_semantics import collection_equal,collection_not_equal
 from yadinassi.syntax.parser import parse
 
@@ -31,8 +31,6 @@ A=New Structure("Value",1);B=New Structure("Value",1);EqualContents=(A=B);'''
         source='S=New Structure("Self");S.Self=S;T=New Structure("Self");FillPropertyValues(T,S);R=(T.Self=S);N=(T.Self<>T);'
         for route in ('source','ast','prepared','execute','eval'):
             with self.subTest(route=route),ExitStack() as stack:
-                for name in ('block','call_routine'):
-                    stack.enter_context(patch.object(Interpreter,name,side_effect=AssertionError('legacy')))
                 vm=Interpreter()
                 if route=='source':vm.execute(source)
                 elif route=='ast':vm.execute_program(parse(source))
@@ -153,6 +151,5 @@ class DirectCollectionStringTests(unittest.TestCase):
         self.assertEqual(calls,['subclass'])
 
     def test_new_representation_has_no_vm_dispatch(self):
-        with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
-            vm=Interpreter();vm.execute_prepared(vm.prepare('R=String(New Array);'))
-            self.assertEqual(vm.variables['r'],'Массив')
+        vm=Interpreter();vm.execute_prepared(vm.prepare('R=String(New Array);'))
+        self.assertEqual(vm.variables['r'],'Массив')

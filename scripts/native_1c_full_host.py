@@ -1556,11 +1556,6 @@ def async_contract(root: Path):
 
 
 def validate_async_comparison(result):
-    if type(result) is dict and 'execution' in result:
-        validate_execution_evidence(result['execution'], 8)
-        plain = {k: v for k, v in result.items() if k != 'execution'}
-        validate_async_comparison(plain)
-        return result
     if (type(result) is not dict or set(result) != {"profile", "status", "cases", "actual_sha256"}
             or result["profile"] != "async-language-8-v1"
             or type(result["status"]) is not str or result["status"] not in {"matched", "mismatched"}
@@ -1647,21 +1642,16 @@ def validate_comparison(comparison: dict, stage3: dict, native_target: str, comp
     validate_comparison_options(native_target, comparison_mode)
     if type(comparison) is not dict or type(comparison.get('schema')) is not int:
         raise FullError('comparison_evidence_invalid')
-    # Fresh callers bind the requested mode; historical schema-2 reports remain readable.
+    # Fresh callers require direct evidence; older base reports remain readable.
     if expected_execution_backend is not None:
-        if expected_execution_backend not in ('python-direct', 'interpreter', 'compiled-strict'):
+        if expected_execution_backend != 'python-direct':
             raise FullError('execution_backend_invalid')
-        expected_schema = 4 if expected_execution_backend == 'python-direct' else 3 if expected_execution_backend == 'compiled-strict' else 2
-        if type(comparison) is not dict or comparison.get('schema') != expected_schema:
+        if type(comparison) is not dict or comparison.get('schema') != 4:
             raise FullError('comparison_evidence_invalid')
     if comparison.get('schema') == 4:
         if comparison.get('execution_backend') != 'python-direct':
             raise FullError('comparison_evidence_invalid')
         comparison = {k: v for k, v in comparison.items() if k != 'execution_backend'}
-        comparison['schema'] = 2
-    if type(comparison) is dict and comparison.get('schema') == 3:
-        validate_execution_evidence(comparison.get('execution'), len(SCENARIOS))
-        comparison = {k: v for k, v in comparison.items() if k != 'execution'}
         comparison['schema'] = 2
     try:
         if (type(comparison) is not dict or set(comparison) != {"schema", "configured_timezone", "configured_locale",
@@ -1735,51 +1725,6 @@ def validate_comparison(comparison: dict, stage3: dict, native_target: str, comp
         raise FullError("comparison_evidence_invalid") from None
 
 
-def validate_execution_evidence(value, count):
-    if (type(value) is not dict or set(value) != {'schema', 'execution_backend', 'cases'}
-            or value['schema'] not in ('compiled-native-execution-v1', 'compiled-native-execution-v2', 'compiled-native-execution-v3')
-            or value['execution_backend'] != 'compiled-strict'
-            or type(value['cases']) is not list or len(value['cases']) != count):
-        raise FullError('compiled_execution_unverified')
-    translated_keys = {'python_translated_blocks', 'python_translated_nodes'} if value['schema'] in ('compiled-native-execution-v2', 'compiled-native-execution-v3') else set()
-    if value['schema'] == 'compiled-native-execution-v3':
-        translated_keys.add('python_sync_routine_calls')
-    for stats in value['cases']:
-        if type(stats) is not dict or set(stats) != translated_keys | ({'plain_adapter_blocks', 'block_executions', 'metadata_block_executions'} if translated_keys else set()) | {'emitted_executions', 'helper_executions', 'rejected_units', 'unsupported_executions', 'interpreter_fallbacks', 'old_backend_executions', 'strict_rejections', 'lowering_variant', 'fast_inline_enabled', 'node_coverage', 'inline_blocks', 'inline_fragments'}:
-            raise FullError('compiled_execution_unverified')
-        if stats.get('lowering_variant') not in (('inline', 'node-scaffold', 'python-translation') if translated_keys else ('inline', 'node-scaffold')) or type(stats.get('fast_inline_enabled')) is not bool:
-            raise FullError('compiled_execution_unverified')
-        if stats.get('node_coverage') not in ('observed', 'unobserved'):
-            raise FullError('compiled_execution_unverified')
-        for key in ('emitted_executions', 'helper_executions', 'rejected_units',
-                    'unsupported_executions', 'interpreter_fallbacks', 'old_backend_executions', 'strict_rejections', 'inline_blocks', 'inline_fragments'):
-            if type(stats.get(key)) is not int or not 0 <= stats[key] <= 10**12:
-                raise FullError('compiled_execution_unverified')
-        for key in translated_keys | ({'plain_adapter_blocks', 'block_executions', 'metadata_block_executions'} if translated_keys else set()):
-            if type(stats[key]) is not int or not 0 <= stats[key] <= 10**12:
-                raise FullError('compiled_execution_unverified')
-        if stats.get('python_sync_routine_calls', 0) and stats['node_coverage'] != 'unobserved':
-            raise FullError('compiled_execution_unverified')
-        if stats['lowering_variant'] == 'python-translation':
-            if not sum(stats[key] for key in translated_keys) or any(stats[key] for key in (
-                    'emitted_executions', 'helper_executions', 'inline_blocks', 'inline_fragments',
-                    'block_executions', 'metadata_block_executions')):
-                raise FullError('compiled_execution_unverified')
-        elif translated_keys and sum(stats[key] for key in translated_keys):
-            raise FullError('compiled_execution_unverified')
-        if (not (sum(stats[key] for key in translated_keys) + stats['emitted_executions'] + stats['helper_executions'] + stats['inline_blocks'] + stats['inline_fragments'])
-                or stats.get('plain_adapter_blocks',0)
-                or any(stats[k] for k in ('rejected_units', 'unsupported_executions', 'interpreter_fallbacks', 'old_backend_executions', 'strict_rejections'))):
-            raise FullError('compiled_execution_unverified')
-    return value
-
-
-def execution_evidence(cases):
-    if type(cases) is not list or any(type(case) is not dict for case in cases):
-        raise FullError('compiled_execution_unverified')
-    schema = 'compiled-native-execution-v3' if any('python_sync_routine_calls' in case for case in cases) else 'compiled-native-execution-v2' if any('python_translated_blocks' in case or 'python_translated_nodes' in case for case in cases) else 'compiled-native-execution-v1'
-    return validate_execution_evidence({'schema': schema,
-        'execution_backend': 'compiled-strict', 'cases': cases}, len(cases))
 
 
 def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict, *, runner=bounded_child,
@@ -2077,16 +2022,12 @@ def output_artifact_files(payloads: dict[str, bytes], report: dict, image: str) 
             metadata["client_async_measurement_completed"] = True
             metadata["client_async_parity_claimed"] = False
             if "async_comparison" in report:
-                if comparison.get('schema') == 3:
-                    validate_execution_evidence(report['async_comparison'].get('execution'), 8)
                 validate_semantic_context(report, image)
                 metadata["async_comparison"] = validate_async_comparison(report["async_comparison"])
                 metadata["client_async_parity_claimed"] = bool(
                     metadata["async_comparison"]["status"] == "matched"
                     and comparison["acceptance_status"] == "accepted")
             metadata["purpose"] = "client-async-language-measurement-v1"
-        if comparison.get('schema') == 3:
-            metadata['execution'] = validate_execution_evidence(comparison.get('execution'), len(SCENARIOS))
         if stage3.get("schema") == 9:
             if (stage3.get("preprocessor_status") != "matched"
                     or stage3.get("compilation_profile") != PREPROCESSOR_COMPILATION_PROFILE

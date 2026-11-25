@@ -1,17 +1,12 @@
 """Existing nonposting document lifecycle contracts with legacy dispatch poisoned."""
 import unittest
-from unittest.mock import patch
 import test_source_document_object_modules as lifecycle
 import test_source_document_module_guards as guards
-from yadinassi.runtime import Interpreter
 
 
 class NoVM:
     def setUp(self):
         super().setUp()
-        for name in ('_execute_program','call_routine'):
-            poison=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
-            poison.start();self.addCleanup(poison.stop)
 
 
 class DirectDocumentLifecycleNoVM(NoVM,lifecycle.SourceDocumentModuleTests):

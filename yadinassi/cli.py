@@ -198,13 +198,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run_selected(args, parser):
-    if args.execution_backend == 'hybrid' and (
-            args.f is not None or args.preprocessor_profile != 'standalone'
-            or any((args.create_db, args.create_demo_db, args.import_xml,
-                    args.module_runtime, args.check_xml, args.configuration_source,
-                    args.save_source, args.run_startup, args.source_scratch_db,
-                    args.open_source_scratch_db, args.update_source_scratch_db))):
-        parser.error('--execution-backend hybrid supports standalone BSL only')
     if args.configuration_source is not None or args.open_source_scratch_db is not None or args.update_source_scratch_db is not None:
         if any((args.f, args.file, args.command, args.create_db, args.create_demo_db,
                 args.import_xml, args.check_xml, args.source_profile, args.module_runtime,

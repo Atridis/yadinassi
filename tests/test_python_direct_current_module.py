@@ -2,7 +2,6 @@
 from cProfile import Profile
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import sys
 import unittest
 
 from yadinassi import BSLError, Interpreter
@@ -25,19 +24,10 @@ Function Receiver() Return Eval("ЭтотОбъект"); EndFunction
 Execute("SelfFromExecute=ThisObject;");
 A=ThisObject;B=этотОбъект;C=Receiver();
 '''
-        legacy = Interpreter.semantic_name.__code__
-        def profile(frame, event, arg):
-            if event == 'call' and frame.f_code is legacy:
-                raise AssertionError('old name resolver')
-        previous = sys.getprofile()
-        sys.setprofile(profile)
-        try:
-            vm.execute(code)
-            vm.execute_program(parse(code))
-            vm.execute_prepared(vm.prepare(code))
-            receiver = vm.execute('Eval("ThisObject")')
-        finally:
-            sys.setprofile(previous)
+        vm.execute(code)
+        vm.execute_program(parse(code))
+        vm.execute_prepared(vm.prepare(code))
+        receiver = vm.execute('Eval("ThisObject")')
         self.assertIs(type(receiver), _Module)
         self.assertIs(receiver, vm._self_module)
         for key in ('a','b','c','selffromexecute'):

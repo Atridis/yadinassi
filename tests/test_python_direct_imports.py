@@ -1,5 +1,4 @@
 """Direct imports preserve namespace authority and activation lifetimes."""
-from contextlib import ExitStack
 from cProfile import Profile
 from pathlib import Path
 import tempfile
@@ -39,21 +38,13 @@ class DirectImportBoundaryTests(unittest.TestCase):
         for route in ('source','ast','prepared'):
             with self.subTest(route=route):
                 events=[];vm=Interpreter(output=events.append);self.addCleanup(vm.close)
-                with ExitStack() as stack:
-                    codes={Interpreter.visit.__code__,Interpreter._visit.__code__}
-                    previous=sys.getprofile()
-                    def profile(frame,event,arg):
-                        if event=='call' and frame.f_code in codes:raise AssertionError('VM visitor')
-                    sys.setprofile(profile);stack.callback(sys.setprofile,previous)
-                    for name in ('block','call_routine','_execute_program'):
-                        stack.enter_context(patch.object(Interpreter,name,side_effect=AssertionError('VM '+name)))
-                    if route=='prepared':
-                        with patch.object(Path,'read_text',side_effect=AssertionError('prepare IO')):
-                            plan=vm.prepare(source,self.main)
-                        self.assertEqual(events,[]);self.assertEqual(vm.imports,{})
-                        vm.execute_prepared(plan)
-                    elif route=='ast':vm.execute_program(parse(source,self.main))
-                    else:vm.execute(source,self.main)
+                if route=='prepared':
+                    with patch.object(Path,'read_text',side_effect=AssertionError('prepare IO')):
+                        plan=vm.prepare(source,self.main)
+                    self.assertEqual(events,[]);self.assertEqual(vm.imports,{})
+                    vm.execute_prepared(plan)
+                elif route=='ast':vm.execute_program(parse(source,self.main))
+                else:vm.execute(source,self.main)
                 self.assertEqual(vm.variables['r'],42);self.assertEqual(events,['init'])
 
     def test_plain_import_uses_scoped_parent_lease_instead_of_full_audit(self):

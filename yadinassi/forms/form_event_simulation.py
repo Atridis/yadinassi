@@ -8,14 +8,12 @@ from dataclasses import dataclass
 from hashlib import sha256
 from uuid import UUID
 
-from yadinassi.execution.owned_syntax import syntax_kind
 from yadinassi.db.catalog.catalog_backend import (BackendError, CatalogFormSource,
                               ConfigurationSourceIdentity, FieldSchema)
 from .form_data import ScalarFormData, ScalarFormField, ScalarFormSnapshot
 from .form_module_analysis import FormModuleBinding, analyze_form_module, _parse
 from yadinassi.db.catalog.catalog_object_preparation import _ObjectInterpreter
 from yadinassi.runtime import Interpreter
-from yadinassi.syntax import ast
 from yadinassi.application.user_messages import UserMessageRecord
 
 
@@ -62,36 +60,8 @@ class _EventInterpreter(Interpreter):
         self.types = {'сообщениепользователю': self.types['сообщениепользователю']}
         self._remaining = 256
 
-    def _visit(self, node):
-        from yadinassi.execution.direct.python_direct import _reject
-        _reject("single-node adapter evaluation is retired; use the direct entrypoint")
-
-    def compiled_before(self, node):
-        self._remaining -= 1
-        if self._remaining < 0 or syntax_kind(node) not in (
-                ast.Literal, ast.Name, ast.Attribute, ast.Call, ast.New,
-                ast.Assign, ast.If, ast.Return, ast.ExpressionStatement, ast.Binary):
-            raise ValueError('form event: execution budget or node')
-        return super().compiled_before(node)
-
-    def semantic_name(self, node):
-        name = node.name.casefold()
-        if not ((self.locals is not None and name in self.locals)
-                or name in self.variables or name in self.functions):
-            raise ValueError('form event: unavailable name')
-        # Never fall through to Interpreter's built-in global namespaces.
-        return super().semantic_name(node)
-
 
     # Legacy extension point keeps superclass visitor instrumentation.
-    def visit_Name(self, node):
-        name = node.name.casefold()
-        if not ((self.locals is not None and name in self.locals)
-                or name in self.variables or name in self.functions):
-            raise ValueError('form event: unavailable name')
-        # Never fall through to Interpreter's built-in global namespaces.
-        return super().visit_Name(node)
-
 
 def _admit(source, binding, catalog_xml, form_xml, definition_xml):
     if type(binding) is not FormModuleBinding:
@@ -430,31 +400,6 @@ class ProductInterpreter(_ObjectInterpreter):
     def _object_name(self, name):
         # Form globals do not implicitly alias the object's unqualified fields.
         return False
-
-    def call(self, node, *, require_value, _evaluation=None):
-        from yadinassi.syntax.parser import parse
-        from yadinassi.types.values import Reference
-        callee = self.ungroup(node.callee)
-        if syntax_kind(callee) is ast.Attribute and callee.name.casefold() == 'подготовитьданныекзаписи':
-            if (require_value or len(node.arguments) != 1
-                    or (yield from (_evaluation.receiver if _evaluation is not None else self.receiver)(callee.object)) is not self._product_receiver):
-                raise ValueError('product form: invalid preparation call')
-            argument = yield from (_evaluation.argument if _evaluation is not None else self.argument)(node.arguments[0])
-            if not isinstance(argument, Reference) or type(argument.get()) is not bool:
-                raise ValueError('product form: cancellation reference required')
-            object_vm = _ObjectInterpreter(self._product_receiver, self._product_sink)
-            try:
-                object_vm.execute_program(parse(self._product_object_source.decode('utf-8-sig')))
-                object_vm.variables['отказ'] = argument.get()
-                object_vm.execute('ПодготовитьДанныеКЗаписи(Отказ);')
-                result = object_vm.variables['отказ']
-                if type(result) is not bool:
-                    raise ValueError('product form: invalid cancellation')
-                argument.set(result)
-            finally:
-                object_vm.close()
-            return None
-        return (yield from super().call(node, require_value=require_value, _evaluation=_evaluation))
 
 
 def simulate_product_form_event(form_source, object_source, receiver, *, event,

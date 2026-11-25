@@ -6,7 +6,6 @@ import test_python_direct_source_query as query_fixtures
 from test_source_constant_store import configuration
 from yadinassi.db.metadata.source_constants_runtime import SourceConstants
 from yadinassi.db.metadata.source_constant_managers import SourceConstantValueManager,_ValueInterpreter,create_manager
-from yadinassi.execution.direct.source.python_direct_source_storage import finish
 from yadinassi.execution.direct.source.python_direct_source_constants import check_manager,bind_export
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
@@ -25,7 +24,7 @@ class DirectConstantSecurity(unittest.TestCase):
         package=configuration({'Constants/Text/Ext/ValueManagerModule.bsl':b'Value="initial"; Function Answer() Export Return Value; EndFunction'})
         app,caller=self.app(package)
         with self.boundary(app,caller) as boundary:
-            manager=finish(create_manager(caller,SourceConstants(app),'Text'))
+            manager=create_manager(caller,SourceConstants(app),'Text')
             bound=bind_export(boundary,manager,'Answer',require_value=True,argument_count=0)
             self.assertEqual(bound(),'initial')
             node=manager.interpreter.server_routines['answer'];old=node.is_function
@@ -39,7 +38,7 @@ class DirectConstantSecurity(unittest.TestCase):
     def test_foreign_manager_refused_before_export_lookup(self):
         package=configuration({'Constants/Text/Ext/ValueManagerModule.bsl':b'Function Answer() Export Return "ok"; EndFunction'})
         app,caller=self.app(package);other,other_caller=self.app(package)
-        with self.boundary(other,other_caller):manager=finish(create_manager(other_caller,SourceConstants(other),'Text'))
+        with self.boundary(other,other_caller):manager=create_manager(other_caller,SourceConstants(other),'Text')
         with self.boundary(app,caller) as boundary,patch.object(manager,'exported_routine',side_effect=AssertionError('foreign lookup')):
             with self.assertRaises(BoundaryViolation):bind_export(boundary,manager,'Answer')
 

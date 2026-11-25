@@ -1,20 +1,13 @@
 """Scalar ServerCall reuse cannot turn warm cache entries into authority."""
 import unittest
-from unittest.mock import patch
 from test_source_server_call import configuration
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
-from yadinassi.runtime import Interpreter
 from yadinassi.application.reusable_values import ReusableValueCache
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.types.errors import BSLError
 
 
 class SourceServerReuseSecurity(unittest.TestCase):
-    def setUp(self):
-        for name in ('_execute_program','call_routine','_planned_routine_block'):
-            poison=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
-            poison.start();self.addCleanup(poison.stop)
-
     def app(self,body='Function Run(Val X) Export Message("body"); Return X; EndFunction', *, allow_extensions=False):
         output=[]
         app=SourceApplication(configuration('',body,reuse='DuringSession'),output=output.append, allow_extensions=allow_extensions)

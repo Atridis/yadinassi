@@ -2,7 +2,6 @@
 import unittest
 from contextlib import ExitStack
 from decimal import Decimal, localcontext
-from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.syntax.parser import parse
@@ -31,9 +30,6 @@ class DirectDecimalDivisionTests(unittest.TestCase):
         vm.register_function('LeftValue',lambda: events.append('left') or Decimal(1))
         vm.register_function('RightValue',lambda: events.append('right') or Decimal(3))
         with ExitStack() as stack:
-            for method in ('block','call_routine'):
-                stack.enter_context(patch.object(Interpreter,method,side_effect=AssertionError('fallback')))
-            stack.enter_context(patch('yadinassi.runtime.binary_values',side_effect=AssertionError('fallback')))
             self.assertEqual(vm.execute('LeftValue()/RightValue()'),Decimal('0.'+'3'*27))
         self.assertEqual(events,['left','right'])
 

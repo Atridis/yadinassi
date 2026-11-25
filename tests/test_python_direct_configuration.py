@@ -18,7 +18,7 @@ class DirectConfigurationTests(unittest.TestCase):
         self.addCleanup(lambda:app.close(force=True))
         return app
     def test_exact_startup_and_one_packet_without_ast_dispatch(self):
-        with patch.object(Interpreter,'execute_program',side_effect=AssertionError('AST module')) ,patch.object(Interpreter,'block',side_effect=AssertionError('AST block')),patch.object(Interpreter,'_visit',side_effect=AssertionError('AST node')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM call')):
+        with patch.object(Interpreter,'execute_program',side_effect=AssertionError('AST module')):
             server=self.family('server');server.start()
             endpoint=InvocationServer.from_handlers(server.server_endpoints,message_scope=server.event_messages)
             packets=[];output=[]

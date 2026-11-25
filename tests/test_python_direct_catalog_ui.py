@@ -13,7 +13,7 @@ import test_main_demo_host as host_tests
 class DirectCatalogUITests(unittest.TestCase):
     def workflow(self,name):
         with ExitStack() as stack:
-            for method in ('execute_program','call_routine','block','_visit'):
+            for method in ('execute_program',):
                 stack.enter_context(patch.object(Interpreter,method,side_effect=AssertionError('legacy '+method)))
             host_tests.MainDemoHostTests(name).debug()
     def test_original_kind_edit_save_navigation_no_vm(self):

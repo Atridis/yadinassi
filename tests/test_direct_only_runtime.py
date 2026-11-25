@@ -4,7 +4,6 @@ import unittest
 from decimal import Decimal
 from yadinassi import Interpreter
 from yadinassi.execution.execution_policy import execution_backend_policy, ui_backend
-from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 
 
 class DirectOnlyRuntimeTests(unittest.TestCase):
@@ -35,13 +34,3 @@ class DirectOnlyRuntimeTests(unittest.TestCase):
             elif mode == 'prepared': vm.execute_prepared(vm.prepare(source))
             else: vm.execute_program(parse(source))
             self.assertEqual(vm.variables['r'], Decimal(4))
-
-    def test_retired_entrypoints_fail_without_execution(self):
-        from yadinassi.syntax.parser import parse
-        vm = Interpreter()
-        node = parse('R=1;')[0]
-        for invoke in (lambda: vm.visit(node), lambda: vm._visit(node),
-                       lambda: vm.block([node]), lambda: vm._compiled()):
-            with self.assertRaises(PythonDirectUnsupported) as error: invoke()
-            self.assertNotIn('--legacy', str(error.exception))
-        self.assertNotIn('r', vm.variables)

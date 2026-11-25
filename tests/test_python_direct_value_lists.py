@@ -1,24 +1,22 @@
 """Direct ValueList call and reference contracts; no VM dispatch."""
 import unittest
 from decimal import Decimal
-from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.syntax.parser import parse
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.collections.value_lists import BSLValueListItem
 
 class DirectValueListTests(unittest.TestCase):
     def test_source_ast_prepared_and_persistent_references(self):
         source='L=New ValueList;I=L.Add(10,"old",True);Procedure SetField(X) X=27;EndProcedure SetField(I.Value);R=L[0].Value;'
         for route in ('source','ast','prepared'):
             vm=Interpreter()
-            with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
-                if route=='source':vm.execute(source)
-                elif route=='ast':vm.execute_program(parse(source))
-                else:vm.execute_prepared(vm.prepare(source))
-                self.assertEqual(vm.variables['r'],27)
-                vm.execute('SetField(I.Presentation);')
-                self.assertEqual(vm.execute('I.Presentation'),'27')
+            if route=='source':vm.execute(source)
+            elif route=='ast':vm.execute_program(parse(source))
+            else:vm.execute_prepared(vm.prepare(source))
+            self.assertEqual(vm.variables['r'],27)
+            vm.execute('SetField(I.Presentation);')
+            self.assertEqual(vm.execute('I.Presentation'),'27')
 
     def test_native_integer_values_positions_and_bulk_load_share_storage_rules(self):
         vm=Interpreter();self.addCleanup(vm.close)

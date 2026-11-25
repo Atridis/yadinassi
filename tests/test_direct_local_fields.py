@@ -131,13 +131,3 @@ class LocalFieldsTests(unittest.TestCase):
         vm,plan,source=self.prepare('Host();A=3;B=4;R=A+B;',lambda vm:vm.register_function('Host',lambda:None))
         vm.execute_prepared(plan);self.assertEqual(vm.variables['r'],D(7))
         self.assertNotIn('_native_add',source)
-
-    def test_fact_map_exposes_receiver_and_numeric_field_types(self):
-        from yadinassi.syntax.parser import parse
-        from yadinassi.execution.direct.python_direct_local_facts import analyze
-        nodes=parse('S=New Structure("N",1);R=S.N+1;')
-        fields,kinds=analyze(nodes)
-        field=nodes[1].value.left
-        self.assertEqual(fields[id(field)],'structure')
-        self.assertEqual(kinds[id(field.object)],'structure')
-        self.assertEqual(kinds[id(field)],'number')

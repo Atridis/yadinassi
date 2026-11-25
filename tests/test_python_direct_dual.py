@@ -20,11 +20,10 @@ class DirectDualTests(unittest.TestCase):
     def test_source_ast_prepared_persistent_select_side_without_vm(self):
         for route in ('source','ast','prepared'):
             vm=Interpreter(allow_extensions=True);vm.register_function('Scope',lambda:vm.execution_context+':'+str(vm._has_module_context))
-            with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
-                if route=='source':vm.execute(DUAL)
-                elif route=='ast':vm.execute_program(parse(DUAL))
-                else:vm.execute_prepared(vm.prepare(DUAL))
-                vm.execute('X=1;R=F(X);T=S();')
+            if route=='source':vm.execute(DUAL)
+            elif route=='ast':vm.execute_program(parse(DUAL))
+            else:vm.execute_prepared(vm.prepare(DUAL))
+            vm.execute('X=1;R=F(X);T=S();')
             self.assertEqual((vm.variables['x'],vm.variables['r'],vm.variables['t']),(3,'client:False','server:False'))
             self.assertEqual(vm._module_context_stack,[True])
 

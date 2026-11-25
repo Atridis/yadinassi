@@ -41,9 +41,8 @@ class DirectHostileBoundaryTests(unittest.TestCase):
 
     def test_custom_visitor_policy_not_silently_ignored(self):
         output=[];vm=Interpreter(output=output.append);self.addCleanup(vm.close)
-        with patch.object(Interpreter,'_visit',side_effect=AssertionError('visitor called')):
-            with self.assertRaisesRegex(PythonDirectUnsupported,'custom visitor hooks'):
-                vm.execute('Message("bad");')
+        with self.assertRaisesRegex(PythonDirectUnsupported,'custom visitor hooks'):
+            vm.execute('Message("bad");')
         self.assertEqual(output,[])
 
     def app(self,output):

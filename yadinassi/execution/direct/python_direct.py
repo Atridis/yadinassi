@@ -17,13 +17,6 @@ class PythonDirectUnsupported(ValueError):
     """A direct-backend contract is unavailable, before source effects."""
 
 
-REPAIRS=('typed_map_keys','array_index_contract','array_insert_shape',
-         'constructor_bounds','byref_routines','error_boundaries',
-         'service_boundaries','bsl_truth','bsl_presentation','native_order','uca_string_order',
-         'typed_find','structure_fields','method_values','dynamic_host_refs',
-         'live_module_state','execute_fragments','array_identity_equality','structure_identity_equality','map_identity_equality','decimal_division','numeric_boolean_equality')
-
-
 def _nodes(value):
     if isinstance(value,ast.Node):
         yield value
@@ -38,14 +31,11 @@ def _reject(message):
 
 
 def _admit_vm(vm,*,_transaction_owner=None,_async_entry=False,_async_guard=None):
-    from yadinassi.runtime import Interpreter, _COMPILED_BASE_ABI_NAMES, _COMPILED_BASE_ABI, _DIRECT_VISITOR_ABI
+    from yadinassi.runtime import Interpreter, _DIRECT_SET_VARIABLE
     if type(vm) is not Interpreter:
         _reject('specialized Interpreter contexts are not integrated')
-    for name,expected in zip(_COMPILED_BASE_ABI_NAMES,_COMPILED_BASE_ABI):
-        if name in vars(vm) or vars(Interpreter).get(name) is not expected:
-            _reject('custom policy/storage hooks are not integrated')
-    if '_visit' in vars(vm) or vars(Interpreter).get('_visit') is not _DIRECT_VISITOR_ABI:
-        _reject('custom visitor hooks are not integrated')
+    if 'set_variable' in vars(vm) or Interpreter.set_variable is not _DIRECT_SET_VARIABLE:
+        _reject('custom storage hooks are not integrated')
     from yadinassi.execution import safe_mode
     from yadinassi.db import source_transactions, database_transactions
     if safe_mode._CURRENT.get() is not None or source_transactions._current.get() is not None:
@@ -179,7 +169,7 @@ class PreparedDirectModule:
 
 def _contract(vm):
     return (vm.execution_backend, vm.native_target, vm.compilation_profile,
-            vm.compiled_ast_contract, vm.database_context is not None,
+            vm.database_context is not None,
             vm.allow_extensions, vm._family_owner.__dict__.get('_standalone_script') is True)
 
 
@@ -358,7 +348,6 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
             if pump:context._check()
             vm._self_module.ready=True
             if pump:vm._pump_async()
-            vm._hybrid_stats['python_direct_modules']=vm._hybrid_stats.get('python_direct_modules',0)+1
             if pump:
                 error=async_scheduler.take_procedure_error()
                 if error is not None:raise error

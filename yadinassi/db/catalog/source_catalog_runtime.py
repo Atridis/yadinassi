@@ -1,9 +1,7 @@
 """Explicit v4 source catalog objects with actual-caller authorization."""
 from yadinassi.execution.runtime_dependencies import runtime_module as _runtime_module
-from yadinassi.execution.owned_syntax import syntax_kind
 from uuid import UUID, uuid4
 from contextvars import ContextVar
-from yadinassi.syntax import ast
 from yadinassi.configuration.configuration_source_runtime import _SourceInterpreter
 
 _constructing = ContextVar("source_catalog_construction", default=())
@@ -88,12 +86,8 @@ class SourceCatalogObject(BSLObject):
         routine=matches[0]
         vm.variables['__catalog_cancel']=False
         try:
-            if vm.execution_backend=='python-direct':
-                from yadinassi.execution.direct.source.python_direct_source_catalog import invoke_event
-                cancelled=invoke_event(vm,routine)
-            else:
-                yield from vm.call_routine(routine,[ast.Name(routine.token,'__catalog_cancel')],vm,require_value=False)
-                cancelled=vm.variables['__catalog_cancel']
+            from yadinassi.execution.direct.source.python_direct_source_catalog import invoke_event
+            cancelled=invoke_event(vm,routine)
             if type(cancelled) is not bool:raise TypeError('catalog event Cancel requires Boolean')
             if cancelled:raise ValueError('catalog write cancelled by handler')
         finally:
@@ -142,18 +136,18 @@ class SourceCatalogCall:
         if self.operation in ('findcode','finddescription','findattribute'):
             return find_reference(caller,manager,definition,self.operation,values)
         if values:raise TypeError('source catalog method supports no arguments in this profile')
-        if self.operation=='create':return (yield from create_object(caller,manager,definition))
+        if self.operation=='create':return (create_object(caller,manager,definition))
         if self.operation=='select':return SourceCatalogSelection(manager,store.read_records(manager.name))
         if self.operation=='getobject':
             identity,revision,fields=store.read_records(manager.name,self.identity)[0]
-            return (yield from create_object(caller,manager,definition,identity,revision,fields))
+            return (create_object(caller,manager,definition,identity,revision,fields))
         if self.operation=='next':
             receiver.index+=1
             return receiver.index<len(receiver.rows)
         if self.operation=='object':
             if not 0<=receiver.index<len(receiver.rows):raise ValueError('source selection is not positioned')
             identity,revision,fields=receiver.rows[receiver.index]
-            return (yield from create_object(caller,manager,definition,identity,revision,fields))
+            return (create_object(caller,manager,definition,identity,revision,fields))
         receiver.authorize(caller)
         if self.operation=='new':return receiver.revision==0
         if self.operation=='metadata':return app.references.definition('Catalog',manager.name)[2]
@@ -162,7 +156,7 @@ class SourceCatalogCall:
             receiver.values,receiver.revision=fields,revision
             return None
         if self.operation=='write':
-            yield from write_object(caller,receiver)
+            write_object(caller,receiver)
             return None
         raise ValueError('unsupported source catalog operation')
 
@@ -261,41 +255,16 @@ class _ObjectInterpreter(_SourceInterpreter):
         key=_ALIASES.get(name.casefold(),name.casefold())
         return key in self.object.fields or key=='ref'
 
-    def semantic_name(self,node):
-        if node.name.casefold() in ('thisobject','этотобъект'):return self.object
-        if node.name.casefold() in _OBJECT_METHODS:return self.object.get_member(node.name)
-        if self.field(node.name):return self.object.property_read(self,node.name)
-        return super().semantic_name(node)
-
-    def visit_Name(self,node):
-        if node.name.casefold() in ('thisobject','этотобъект'):return self.object
-        if node.name.casefold() in _OBJECT_METHODS:return self.object.get_member(node.name)
-        if self.field(node.name):return self.object.property_read(self,node.name)
-        return super().visit_Name(node)
-
     def set_variable(self,name,value):
         if name.casefold() in ('thisobject','этотобъект'):
             raise ValueError('ThisObject is read-only')
         if self.field(name):return self.object.property_write(self,name,value)
         return super().set_variable(name,value)
 
-    def argument(self,node,*,_evaluation=None):
-        node=self.ungroup(node)
-        from yadinassi.runtime import _Reference
-        if syntax_kind(node) is ast.Name and node.name.casefold()=='__catalog_cancel':
-            return _Reference(lambda:self.variables['__catalog_cancel'],
-                              lambda value:self.variables.__setitem__('__catalog_cancel',value))
-        if syntax_kind(node) is ast.Name and self.field(node.name):
-            self.object.property_read(self,node.name)
-            return _Reference(lambda:self.object.property_read(self,node.name),
-                              lambda value:self.object.property_write(self,node.name,value))
-        return (yield from super().argument(node, _evaluation=_evaluation))
-
 
 # Snapshot owner hooks without admitting the AST evaluator entry points.
 _DIRECT_CATALOG_ABI=tuple((name,getattr(_ObjectInterpreter,name)) for name in (
-    'compiled_before','compiled_after','compiled_exception','semantic_name','semantic_assign',
-    'set_variable','_visit','execute','execute_program','_activation_interpreter','field',
+    'set_variable','execute','execute_program','_activation_interpreter','field',
     '_new_query','_new_type_description','_new_temp_tables_manager'))
 
 
@@ -318,11 +287,8 @@ def create_object(caller,manager,definition,identity=None,revision=0,values=None
             token=_constructing.set((*stack,key))
             vm._self_module.ready=True
             with admission(False),routine_frame(caller,vm):
-                if vm.execution_backend=='python-direct':
-                    from yadinassi.execution.direct.source.python_direct_source_catalog import prepare_and_execute
-                    prepare_and_execute(vm,program)
-                else:
-                    yield from vm._execute_program(program)
+                from yadinassi.execution.direct.source.python_direct_source_catalog import prepare_and_execute
+                prepare_and_execute(vm,program)
             if not store.transaction_active:
                 raise ValueError('catalog initialization transaction aborted')
             store_for(manager,caller)
@@ -354,13 +320,13 @@ def write_object(caller,obj):
         if owned:store.begin_transaction()
         token=_active_write.set(True)
         with admission(False):
-            yield from obj.event(caller,('beforewrite','передзаписью'))
+            obj.event(caller,('beforewrite','передзаписью'))
             if not store.transaction_active:
                 raise ValueError('catalog write transaction aborted by handler')
             obj.authorize(caller)
             obj.revision=store.write_record(obj.manager.name,obj.identity,obj.revision,obj.values,
                                             _handled=_HANDLED_CATALOG_WRITE)
-            yield from obj.event(caller,('onwrite','призаписи'))
+            obj.event(caller,('onwrite','призаписи'))
             if not store.transaction_active:
                 raise ValueError('catalog write transaction aborted by handler')
             obj.authorize(caller)

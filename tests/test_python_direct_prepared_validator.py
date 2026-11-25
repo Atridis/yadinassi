@@ -4,7 +4,7 @@ from unittest import TestCase
 from unittest.mock import patch
 import test_python_direct_catalog_preparation as fixture
 SOURCE=fixture.SOURCE
-from yadinassi.db.catalog.catalog_object_preparation import prepare_catalog_object,CatalogWriteRefused
+from yadinassi.db.catalog.catalog_object_preparation import CatalogWriteRefused
 from yadinassi.execution.direct.python_direct_catalog_preparation import prepared_validator
 from yadinassi.execution.codegen.native_targets import target_context,LINUX_8_3_27_1508
 from yadinassi.db.catalog.catalog_backend import BackendError
@@ -84,9 +84,6 @@ class PreparedValidatorTests(TestCase):
         with target_context(LINUX_8_3_27_1508):
             fourth=prepared_validator(self.manager,changed);self.assertIsNot(second,fourth)
         import yadinassi.execution.direct.python_direct_catalog_preparation as direct
-        with patch.object(direct,'REPAIRS',direct.REPAIRS+('authority_checkpoints',)):
-            fifth=prepared_validator(self.manager,changed);self.assertIsNot(second,fifth)
-            with self.assertRaisesRegex(ValueError,'changed'):prepared_validator(self.manager,changed,prepared=second)
     def test_cached_plan_keeps_current_read_view_and_fresh_messages(self):
         self.f.card.write()
         self.f.warehouse.set_member('ПометкаУдаления',True);self.f.warehouse.write()

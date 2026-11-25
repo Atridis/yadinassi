@@ -2,7 +2,6 @@
 from yadinassi.execution.codegen.experimental_naked_collections import _TypedMap, _NakedMap
 from pathlib import Path
 import unittest
-from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
 from yadinassi.execution.codegen.experimental_naked_scalar_semantics import map_identity_operators
@@ -23,7 +22,7 @@ class DirectMapIdentityTests(unittest.TestCase):
         source='A=New Map;B=New Map;R=(A=B);N=(A<>B);'
         for route in ('source','ast','prepared','execute','eval'):
             vm=Interpreter()
-            with self.subTest(route=route),patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
+            with self.subTest(route=route):
                 if route=='source':vm.execute(source)
                 elif route=='ast':vm.execute_program(parse(source))
                 elif route=='prepared':vm.execute_prepared(vm.prepare(source))

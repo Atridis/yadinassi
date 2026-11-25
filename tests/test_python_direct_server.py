@@ -1,7 +1,6 @@
 """Direct logical server execution, intentionally not native parity evidence."""
 from decimal import Decimal
 import unittest
-from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.types.errors import BSLError, BSLRuntimeError
@@ -26,15 +25,14 @@ class DirectServerTests(unittest.TestCase):
         from yadinassi.syntax.parser import parse
         for route in ('source','ast','prepared'):
             vm=Interpreter()
-            with patch.object(Interpreter,'block',side_effect=AssertionError('legacy')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy')):
-                if route=='source':vm.execute(SOURCE)
-                elif route=='ast':vm.execute_program(parse(SOURCE))
-                else:vm.execute_prepared(vm.prepare(SOURCE))
-                self.assertEqual(vm.variables['r'],3)
-                vm.execute('R=F(0);')
-                self.assertEqual(vm.variables['r'],1)
-                self.assertEqual(vm.variables['client'],99)
-                self.assertNotIn('counter',vm.variables)
+            if route=='source':vm.execute(SOURCE)
+            elif route=='ast':vm.execute_program(parse(SOURCE))
+            else:vm.execute_prepared(vm.prepare(SOURCE))
+            self.assertEqual(vm.variables['r'],3)
+            vm.execute('R=F(0);')
+            self.assertEqual(vm.variables['r'],1)
+            self.assertEqual(vm.variables['client'],99)
+            self.assertNotIn('counter',vm.variables)
     def test_side_and_restoration(self):
         vm=Interpreter(allow_extensions=True);vm.register_function('Side',lambda:vm.execution_context)
         vm.execute('&AtServer\nFunction S() Return Side(); EndFunction R=S();')

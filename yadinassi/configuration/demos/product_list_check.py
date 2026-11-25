@@ -6,17 +6,14 @@ There is no object-form buffer and no persistence operation in this profile.
 from hashlib import sha256
 import re
 
-from yadinassi.execution.owned_syntax import syntax_kind
 from yadinassi.db.catalog.catalog_backend import BackendError
 from yadinassi.db.catalog.catalogs import BSLCatalogObject
 from yadinassi.db.catalog.catalog_object_preparation import _ObjectInterpreter
 from yadinassi.forms.form_event_simulation import FormEventMessage
 from yadinassi.configuration.demos.main_demo_source import product_event_source_digest
-from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse
 from yadinassi.types.type_values import type_of
 from yadinassi.application.user_messages import UserMessageRecord
-from yadinassi.types.values import Reference
 
 
 class ListInterpreter(_ObjectInterpreter):
@@ -32,30 +29,6 @@ class ListInterpreter(_ObjectInterpreter):
 
     def _object_name(self, name):
         return False
-
-    def call(self, node, *, require_value, _evaluation=None):
-        callee = self.ungroup(node.callee)
-        if syntax_kind(callee) is ast.Attribute and callee.name.casefold() == 'проверитьданные':
-            obj = yield from (_evaluation.receiver if _evaluation is not None else self.receiver)(callee.object)
-            if (require_value or len(node.arguments) != 1 or type(obj) is not BSLCatalogObject
-                    or obj._manager is not self._list_manager or obj.is_new()
-                    or sum(len(s._rows) for s in obj._sections.values()) > 32):
-                raise ValueError('product list: saved bounded product required')
-            argument = yield from (_evaluation.argument if _evaluation is not None else self.argument)(node.arguments[0])
-            if not isinstance(argument, Reference) or type(argument.get()) is not bool:
-                raise ValueError('product list: Boolean reference required')
-            child = _ObjectInterpreter(obj, self._list_sink, self._list_view)
-            try:
-                child.execute_program(parse(self._list_object_source.decode('utf-8-sig')))
-                child.variables['отказ'] = argument.get()
-                child.execute('ПроверитьДанные(Отказ);')
-                if type(child.variables['отказ']) is not bool:
-                    raise ValueError('product list: Boolean result required')
-                argument.set(child.variables['отказ'])
-            finally:
-                child.close()
-            return None
-        return (yield from super().call(node, require_value=require_value, _evaluation=_evaluation))
 
 
 def check_product_list(manager, reference, view, list_source, object_source):
@@ -87,19 +60,14 @@ def check_product_list(manager, reference, view, list_source, object_source):
     vm = ListInterpreter(receiver, sink, view, manager, message, object_source)
     try:
         program = parse(list_source.decode('utf-8-sig'))
-        if vm.execution_backend!='python-direct':vm.execute_program(program)
         routine = next(n for n in program if n.name == 'ПроверитьКарточкуНаСервере')
         vm._logical_side = 'server'
         vm._context_stack = ['server']
         vm.variables['выбор'] = reference
         vm.module_names.update(vm.variables)
-        if vm.execution_backend=='python-direct':
-            from yadinassi.execution.direct.python_direct_form_events import run_event
-            vm.variables[routine.parameters[0].name.casefold()]=reference
-            run_event(vm,program,routine,list_source.decode('utf-8-sig'),product=True)
-        else:
-            vm._scheduler.run_inline(vm.call_routine(routine,
-                [ast.Name(routine.parameters[0].token, 'выбор')], vm, require_value=False))
+        from yadinassi.execution.direct.python_direct_form_events import run_event
+        vm.variables[routine.parameters[0].name.casefold()]=reference
+        run_event(vm,program,routine,list_source.decode('utf-8-sig'),product=True)
         return tuple(records)
     finally:
         vm.close()

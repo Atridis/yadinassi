@@ -20,8 +20,6 @@ class DirectTextDocumentTests(unittest.TestCase):
 D.AddLine("b"); R=Saved(); N=D.LineCount(); E=New("ТекстовыйДокумент");'''
         for route in ('source','ast','prepared'):
             with self.subTest(route=route), ExitStack() as stack:
-                for method in ('block','call','call_routine','visit'):
-                    stack.enter_context(patch.object(Interpreter,method,side_effect=AssertionError('legacy')))
                 vm=Interpreter()
                 if route=='source':vm.execute(source)
                 elif route=='ast':vm.execute_program(parse(source))

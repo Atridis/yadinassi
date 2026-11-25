@@ -17,8 +17,6 @@ DENIED=(BoundaryViolation, BSLError, ValueError, TypeError)
 class DetachedMetadataTests(unittest.TestCase):
     def setUp(self):
         scope=execution_backend_policy('python-direct');scope.__enter__();self.addCleanup(scope.__exit__,None,None,None)
-        for name in ('_execute_program','call_routine','_planned_routine_block'):
-            guard=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name));guard.start();self.addCleanup(guard.stop)
         self.out=[];self.vm=Interpreter(output=self.out.append, allow_extensions=True);self.addCleanup(self.vm.close)
         self.root=SourceMetadataRoot(import_source(files()));self.vm.variables['md']=self.root
     def run_bsl(self,text):return self.vm.execute(text)

@@ -42,10 +42,9 @@ class DirectFixedFindTests(unittest.TestCase):
                 with self.subTest(kind=kind,route=route):
                     text=f'A={source};B={source};Bag=New Array;Bag.Add(A);Bag.Add(A);Alias=A;R=Bag.Find(Alias);S=Bag.Найти(B);'
                     vm=self.vm()
-                    with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
-                        if route=='source':vm.execute(text)
-                        elif route=='ast':vm.execute_program(parse(text))
-                        else:vm.execute_prepared(vm.prepare(text))
+                    if route=='source':vm.execute(text)
+                    elif route=='ast':vm.execute_program(parse(text))
+                    else:vm.execute_prepared(vm.prepare(text))
                     self.assertEqual('['+str(vm.variables['r'])+']',expected['fixed-'+kind+'.find-alias'])
                     self.assertIsNone(vm.variables['s']);self.assertEqual(expected['fixed-'+kind+'.find-copy'],'[]')
                     self.assertIs(type(vm.variables['r']),Decimal)

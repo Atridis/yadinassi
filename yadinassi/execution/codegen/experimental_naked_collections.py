@@ -1,12 +1,7 @@
-"""Shared direct-AST runtime values and Program container.
-
-No compiler entry point lives here. The historical text generator is isolated
-in the test-only differential oracle; production compilation uses direct AST.
-"""
-import os
+"""Values and execution container shared by the direct BSL generator."""
 from dataclasses import dataclass, field
 from decimal import Decimal
-from .experimental_naked_boundaries import _HostMemberReference, _HostIndexReference, _MISSING, BoundaryViolation
+from .experimental_naked_boundaries import _HostMemberReference, _HostIndexReference, BoundaryViolation
 
 from yadinassi.types.array_index import array_offset
 from yadinassi.types.values import Reference as _CanonicalReference, BSLFixedArray as _CanonicalFixedArray
@@ -43,12 +38,6 @@ def _host_omission_values(function, positions, count):
     if prepare is None:_host_omission_error()
     return prepare(function,positions,count)
 
-ENV='YADINASSI_UNSAFE_COLLECTION_ABLATION'
-
-def _enabled():
-    if os.environ.get(ENV)!='1':
-        raise RuntimeError('unsafe collection ablation requires '+ENV+'=1')
-
 class UnsupportedNakedSyntax(Exception):pass
 
 def _native_property_missing(name):
@@ -84,11 +73,6 @@ _DIRECT_MAP_ENTRY_STORAGE = vars(_MapEntry)["__dict__"]
 _ALIASES={'добавить':'add','вставить':'insert','получить':'get','установить':'set',
           'удалить':'delete','очистить':'clear','количество':'count','найти':'find',
           'вграница':'ubound','свойство':'property'}
-
-# Named, independently selectable repairs. These are experiment variants, NOT a
-# restoration of the production admission/runtime pipeline. Each repair has a
-# specific reproduced failure; incomplete global contracts remain explicit.
-REPAIRS=frozenset(('typed_map_keys','array_index_contract','array_insert_shape','constructor_bounds','byref_routines','error_boundaries','service_boundaries','authority_checkpoints','bsl_truth','bsl_presentation','native_order','uca_string_order','typed_find','structure_fields','method_values','dynamic_host_refs','resource_bounds','live_module_state','execute_fragments','array_identity_equality','structure_identity_equality','map_identity_equality','decimal_division','numeric_boolean_equality'))
 
 class _NakedMap(dict):
     """Map kind only, needed for valid missing-key reference outputs."""
@@ -288,14 +272,10 @@ class Program:
     _generated_source: str | None
     constants: tuple
     function: object
-    symbols: dict
-    repairs: frozenset=frozenset()
     last_state: object=None
     output: object=None
-    source_name: str="<naked-collection-experiment>"
+    source_name: str="<direct>"
     source_text: str=""
-    required_services: tuple=()
-    trusted_entry: bool=False
     _generated_tree: object=field(default=None, repr=False, compare=False)
 
     @property
@@ -307,29 +287,25 @@ class Program:
             self._generated_tree = None
         return '<generated source not retained>' if self._generated_source is None else self._generated_source
 
-    def run(self,initial=None,*,context=None):
-        if not self.trusted_entry:_enabled()
-        if 'live_module_state' in self.repairs:
-            from .experimental_naked_live_state import validate_state
-            state=validate_state(initial)
-        else:state={} if initial is None else {key.casefold():value for key,value in initial.items()}
-        self.last_state=state;self.output=[]
-        bounded=bool(self.repairs & {'service_boundaries','authority_checkpoints'})
-        if bounded:
-            if context is None:raise ValueError('explicit BoundaryContext required')
-            context.enter()
+    def run(self, initial, *, context):
+        from .experimental_naked_live_state import validate_state
+        from .experimental_naked_errors import convert_error
+
+        state = validate_state(initial)
+        self.last_state = state
+        self.output = []
+        context.enter()
         try:
             try:
-                if bounded:return self.function(state,self.constants,self.output,context)
-                return self.function(state,self.constants,self.output)
+                return self.function(state, self.constants, self.output, context)
             finally:
-                if bounded:
-                    try:
-                        if getattr(context,'_verify_context',True):context._check()
-                    finally:context.leave()
+                try:
+                    if getattr(context, '_verify_context', True):
+                        context._check()
+                finally:
+                    context.leave()
         except Exception as error:
-            if 'error_boundaries' not in self.repairs:raise
-            from .experimental_naked_errors import convert_error
-            converted=convert_error(error,self.source_name,self.source_text)
-            if converted is error:raise
+            converted = convert_error(error, self.source_name, self.source_text)
+            if converted is error:
+                raise
             raise converted from None

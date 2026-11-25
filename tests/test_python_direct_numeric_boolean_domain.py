@@ -1,7 +1,6 @@
 """Exact BSL Number/Boolean operator domain does not admit Python numeric hosts."""
 from decimal import Decimal,localcontext,Inexact,Rounded
 import unittest
-from unittest.mock import patch
 from yadinassi import Interpreter,BSLError
 from yadinassi.syntax.parser import parse
 from yadinassi.execution.codegen.experimental_naked_scalar_semantics import numeric_boolean_operators,map_identity_operators
@@ -14,7 +13,7 @@ class DirectNumericBooleanDomainTests(unittest.TestCase):
                 code='A=(Host=B);C=(B=Host);D=(Host<>B);E=(B<>Host);F=(Host=True);G=(False=Host);'
                 for route in ('source','ast','prepared','execute','eval'):
                     vm=Interpreter();vm.variables.update(host=host,b=boolean)
-                    with self.subTest(host=type(host).__name__,boolean=boolean,route=route),patch.object(Interpreter,'block',side_effect=AssertionError('VM')):
+                    with self.subTest(host=type(host).__name__,boolean=boolean,route=route):
                         if route=='source':vm.execute(code)
                         elif route=='ast':vm.execute_program(parse(code))
                         elif route=='prepared':vm.execute_prepared(vm.prepare(code))

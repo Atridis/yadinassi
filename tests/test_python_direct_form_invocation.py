@@ -20,9 +20,8 @@ class FormInvocationTests(TestCase):
         self.assertIsNone(result['error']);return result
     def test_actual_receipt_add_line_uses_direct_endpoint(self):
         vm=self.session.interpreter
-        with patch.object(type(vm),'call_routine',side_effect=AssertionError('legacy VM')):
-            result=self.rpc('form',session=self.sid,request={'jsonrpc':'2.0','id':1,'method':'form.event',
-                'params':{'event':'command','control':'AddLineButton','revision':self.session.revision}})
+        result=self.rpc('form',session=self.sid,request={'jsonrpc':'2.0','id':1,'method':'form.event',
+            'params':{'event':'command','control':'AddLineButton','revision':self.session.revision}})
         self.assertIsNone(result['form']['result']['error'])
         rows=next(iter(self.session.form._tables.values()))
         self.assertEqual(len(rows._rows),1)
@@ -78,8 +77,7 @@ class StandaloneServerCallTests(TestCase):
         from yadinassi import Interpreter
         session=self.session(server='&AtServer\nProcedure Set() Side(); ThisObject.Title="server"; EndProcedure\n&AtServer\nFunction Read() Side(); Return ThisObject.Title; EndFunction',allow_extensions=True);sides=[]
         session.interpreter.register_function('Side',lambda:sides.append(session.interpreter.execution_context))
-        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
-            session.open()
+        session.open()
         self.assertEqual(session.form.title,'server')
         self.assertEqual(sides,['server','server'])
         self.assertEqual(session.interpreter.execution_context,'client')

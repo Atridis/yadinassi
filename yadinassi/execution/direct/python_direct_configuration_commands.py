@@ -8,7 +8,7 @@ from types import MethodType
 from threading import get_ident
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.execution.codegen.direct_emitter import compile_owned
-from .python_direct import REPAIRS, _snapshot, PythonDirectUnsupported
+from .python_direct import _snapshot, PythonDirectUnsupported
 from .python_direct_configuration import ConfigurationBoundary, _COMMAND_SCOPE, check_owner, parameter_snapshot, parameter_entries
 from yadinassi.execution.codegen.native_targets import target_context
 from yadinassi.runtime import Interpreter, _Module, _DIRECT_CONFIGURATION_MESSAGE_ABI, _DIRECT_EXECUTION_SCOPE_ABI

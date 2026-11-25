@@ -1,9 +1,8 @@
 """Scoped preparation budgets cover intermediate work, not only final output."""
-from decimal import Decimal
 from types import CodeType
 import unittest
 from unittest.mock import patch
-from yadinassi import BSLError,Interpreter
+from yadinassi import BSLError
 from yadinassi.db.catalog.catalog_object_preparation import _ObjectInterpreter,prepare_catalog_object
 from yadinassi.execution.direct.python_direct_catalog_preparation import CatalogPreparationBoundary,prepared_validator
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
@@ -29,7 +28,7 @@ class DirectCatalogBoundsTests(unittest.TestCase):
 
     def test_intermediate_expansion_rejects_before_assignment_without_vm(self):
         source=handler('Наименование="changed";x="'+'x'*1024+'";'+'x=x+x;'*8+'Наименование="success";')
-        with patch.object(_ObjectInterpreter,'compiled_before',side_effect=AssertionError('VM')),patch.object(_ObjectInterpreter,'compiled_after',side_effect=AssertionError('VM')),patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(self.context.backend,'begin_write',side_effect=AssertionError('write')):
+        with patch.object(self.context.backend,'begin_write',side_effect=AssertionError('write')):
             with self.assertRaisesRegex(BSLError,'text budget'):prepare_catalog_object(source,self.card)
         # Existing partial candidate mutation is not rollback or committed success.
         self.assertEqual(self.card.get_member('Description'),'changed');self.assertTrue(self.card.is_new())
@@ -80,44 +79,6 @@ class DirectCatalogBoundsTests(unittest.TestCase):
                      'Если Истина Или '+huge+' Тогда x=1;КонецЕсли;',
                      'Возврат;x='+huge+';'):
             with self.subTest(body=body[:30]):self.assertEqual(prepare_catalog_object(handler(body),self.card),(False,()))
-
-    def test_rebound_repairs_invalidate_and_cannot_disable_required_budget_profile(self):
-        import yadinassi.execution.direct.python_direct_catalog_preparation as direct
-        source=handler('x=1;')
-        first=prepared_validator(self.card._manager,source)
-        with patch.object(direct,'REPAIRS',direct.REPAIRS+('authority_checkpoints',)):
-            second=prepared_validator(self.card._manager,source)
-            self.assertIsNot(first,second)
-            with self.assertRaises(ValueError):prepared_validator(self.card._manager,source,prepared=first)
-            names = set(invoked_names(second._plan.function.__code__))
-            self.assertIn('preparation_step',names)
-            self.assertIn('preparation_value',names)
-        for options in ((),('authority_checkpoints',)):
-            with patch.object(direct,'REPAIRS',options),self.assertRaises(ValueError):
-                prepared_validator(self.card._manager,source)
-        self.assertEqual(prepare_catalog_object(source,self.card),(False,()))
-        # Cache identity uses a snapshot, not a mutable options container.
-        mutable=list(direct.REPAIRS)
-        with patch.object(direct,'REPAIRS',mutable):
-            before=prepared_validator(self.card._manager,source)
-            mutable.append('authority_checkpoints')
-            after=prepared_validator(self.card._manager,source)
-            self.assertIsNot(before,after)
-            with self.assertRaises(ValueError):prepared_validator(self.card._manager,source,prepared=before)
-
-    def test_options_snapshot_is_shared_by_cache_key_and_compilation(self):
-        import yadinassi.execution.direct.python_direct_catalog_preparation as direct
-        import yadinassi.db.catalog.catalog_object_preparation as preparation
-        original=preparation._admit_catalog_object_source
-        source=handler('x=2;')
-        def change(*args):
-            direct.REPAIRS=()
-            return original(*args)
-        with patch.object(direct,'REPAIRS',direct.REPAIRS),patch.object(preparation,'_admit_catalog_object_source',change):
-            result=prepared_validator(self.card._manager,source)
-            self.assertIn('service_boundaries',result._plan.repairs)
-            self.assertIn('preparation_value',invoked_names(result._plan.function.__code__))
-            with self.assertRaises(ValueError):prepared_validator(self.card._manager,source,prepared=result)
 
     def test_exact_scalar_guard_never_calls_foreign_hooks_or_traverses(self):
         vm=_ObjectInterpreter(self.card,lambda record:None);self.addCleanup(vm.close)

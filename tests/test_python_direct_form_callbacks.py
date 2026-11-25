@@ -1,6 +1,4 @@
 import unittest
-from unittest.mock import patch
-from yadinassi.runtime import Interpreter
 from yadinassi.forms.form_runtime import FormSession
 from yadinassi.application.callbacks import BSLCallbackDescription
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
@@ -20,10 +18,9 @@ class DirectCallbackTests(unittest.TestCase):
         return descriptions[0]
     def test_capability_capture_and_direct_completion(self):
         session=self.make()
-        with patch.object(Interpreter,'dispatch_callback',side_effect=AssertionError('legacy callback')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')),patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')):
-            callback=self.capture(session)
-            self.assertIs(type(callback),BSLCallbackDescription)
-            session.dispatch_completion(callback,'result',revision=session.revision)
+        callback=self.capture(session)
+        self.assertIs(type(callback),BSLCallbackDescription)
+        session.dispatch_completion(callback,'result',revision=session.revision)
         self.assertEqual(session.interpreter.variables['observed'],'result')
         self.assertFalse(session._busy);self.assertFalse(session._completion_active)
     def test_stale_enrollment_and_closed_owner_deny(self):

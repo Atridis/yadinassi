@@ -2,8 +2,6 @@
 import unittest
 import gc
 import weakref
-from decimal import Decimal
-from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.syntax.parser import parse
 from yadinassi.collections.maps import BSLMap, BSLFixedMap
@@ -18,10 +16,9 @@ class DirectFixedMapTests(unittest.TestCase):
         source='M=New Map;M.Insert(True,"bool");M.Insert(1,"number");M.Insert("1",Undefined);F=New ФиксированноеСоответствие(M);M.Insert(1,"changed");'
         for route in ('source','ast','prepared'):
             vm=Interpreter()
-            with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
-                if route=='source':vm.execute(source)
-                elif route=='ast':vm.execute_program(parse(source))
-                else:vm.execute_prepared(vm.prepare(source))
+            if route=='source':vm.execute(source)
+            elif route=='ast':vm.execute_program(parse(source))
+            else:vm.execute_prepared(vm.prepare(source))
             self.assertIs(type(vm.variables['f']),PlainFixedMap)
             self.assertEqual(vm.execute('F.Count()'),3)
             self.assertEqual(vm.execute('F[True]'),'bool');self.assertEqual(vm.execute('F[1]'),'number')

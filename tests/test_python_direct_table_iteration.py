@@ -26,10 +26,9 @@ Names="";For Each C In T.Columns Do Names=Names+C.Name;EndDo;
 Total=0;For Each Row In T Do For Each Cell In Row Do Total=Total+Cell;EndDo;EndDo;'''
         for route in ('source','ast','prepared'):
             vm=self.vm()
-            with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
-                if route=='source':vm.execute(source)
-                elif route=='ast':vm.execute_program(parse(source))
-                else:vm.execute_prepared(vm.prepare(source))
+            if route=='source':vm.execute(source)
+            elif route=='ast':vm.execute_program(parse(source))
+            else:vm.execute_prepared(vm.prepare(source))
             self.assertEqual(vm.variables['names'],'XY');self.assertEqual(vm.variables['total'],3)
 
     def test_row_cells_snapshot_and_deleted_row_owner_iteration(self):

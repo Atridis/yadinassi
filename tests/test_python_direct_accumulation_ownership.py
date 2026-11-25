@@ -1,6 +1,5 @@
 """Movement receivers retain live document/context provenance in direct execution."""
 import unittest
-from unittest.mock import patch
 from decimal import Decimal
 from yadinassi import Interpreter
 from yadinassi.types.errors import BSLError
@@ -13,8 +12,6 @@ class DirectAccumulationOwnershipTests(unittest.TestCase):
     def setUp(self):
         owner=fixture.AccumulationQueryRuntimeTests();self.addCleanup(owner.doCleanups)
         self.vm,self.context=owner.make(allow_extensions=True)
-        for name in ('_execute_program','call_routine','_planned_routine_block'):
-            p=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name));p.start();self.addCleanup(p.stop)
     def prepared(self):
         self.vm.execute('O=Documents.OwnedAccumulationDoc.CreateDocument();O.Date=Date(2024,1,1);Collection=O.RegisterRecords;Set=Collection.OwnedAccumulationRows;R=Set.Add();')
         return self.vm

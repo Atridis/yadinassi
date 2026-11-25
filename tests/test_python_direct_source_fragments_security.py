@@ -1,11 +1,9 @@
 """Source fragments keep live slots, authority and finite activation lifetimes."""
 import unittest
-from unittest.mock import patch
 from decimal import Decimal
 from test_configuration_source_runtime import source
 from test_source_application_exports import configuration
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
-from yadinassi.runtime import Interpreter
 from yadinassi.types.values import HostFunction
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.execution.direct.python_direct_source import SourceBoundary
@@ -13,11 +11,6 @@ from yadinassi.execution.direct.source.python_direct_source_fragments import exe
 
 
 class SourceFragmentsSecurity(unittest.TestCase):
-    def setUp(self):
-        for name in ('_execute_program','call_routine','_planned_routine_block'):
-            guard=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
-            guard.start();self.addCleanup(guard.stop)
-
     def app(self,code='',helper=None, *, allow_extensions=False):
         output=[]
         package=source(code.encode()) if helper is None else configuration(code,helper)

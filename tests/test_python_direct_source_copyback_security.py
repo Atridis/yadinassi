@@ -1,9 +1,7 @@
 """Copy-out is withheld until the complete server packet is admitted."""
 import unittest
-from unittest.mock import patch
 from decimal import Decimal
 import test_source_server_call as existing
-from yadinassi.runtime import Interpreter
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
 from yadinassi.types.errors import BSLError
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
@@ -12,10 +10,6 @@ DENIED=(BSLError,BoundaryViolation,ValueError,TypeError)
 
 
 class SourceCopybackSecurity(unittest.TestCase):
-    def setUp(self):
-        for name in ('_execute_program','call_routine','_planned_routine_block'):
-            guard=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
-            guard.start();self.addCleanup(guard.stop)
     def app(self,body,output=lambda _:None, *, allow_extensions=False):
         app=SourceApplication(existing.configuration('',body),output=output, allow_extensions=allow_extensions)
         self.addCleanup(app.close);app.start();return app

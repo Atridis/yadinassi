@@ -10,11 +10,6 @@ from yadinassi.runtime import Interpreter
 class SourceTemplateSecurity(unittest.TestCase):
     app=existing.SourceTemplateTests.app
 
-    def setUp(self):
-        for name in ('_execute_program','call_routine'):
-            poison=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
-            poison.start();self.addCleanup(poison.stop)
-
     def test_foreign_source_marker_before_argument(self):
         app,other=self.app(allow_extensions=True),self.app()
         app.interpreter.register_function('Read',SourceTemplateCall(other.common_templates))

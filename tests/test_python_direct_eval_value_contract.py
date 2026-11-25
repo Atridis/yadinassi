@@ -1,7 +1,6 @@
 """Eval always consumes an expression value, even as an outer statement."""
 from pathlib import Path
 import unittest
-from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.syntax.parser import parse
 
@@ -16,7 +15,7 @@ class DirectEvalValueContractTests(unittest.TestCase):
             vm.register_function('Effect',lambda:seen.append('arg') or 'argument')
             vm.register_function('Proc',lambda value:seen.append('proc'),returns_value=False)
             text='Eval("Proc(Effect())");'
-            with self.subTest(route=route),patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
+            with self.subTest(route=route):
                 with self.assertRaisesRegex(BSLError,'не возвращает значение'):
                     if route=='source':vm.execute(text)
                     elif route=='ast':vm.execute_program(parse(text))

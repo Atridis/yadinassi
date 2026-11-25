@@ -22,8 +22,6 @@ Except E=ErrorInfo();EndTry;
 R=E.Code;A=E.AdditionalInformation;S=E.InitialString;'''
         for route in ('source','ast','prepared'):
             with self.subTest(route=route), ExitStack() as stack:
-                for method in ('block','call_routine','semantic_raise'):
-                    stack.enter_context(patch.object(Interpreter,method,side_effect=AssertionError('legacy')))
                 vm=Interpreter()
                 if route=='source':vm.execute(source,'raise.bsl')
                 elif route=='ast':vm.execute_program(parse(source,'raise.bsl'))

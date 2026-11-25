@@ -16,7 +16,7 @@ class DirectTableConstructorRejectionsTests(unittest.TestCase):
             for route in ('source','ast','prepared','eval','execute'):
                 vm=Interpreter(allow_extensions=True);seen=[];vm.register_function('Effect',lambda:seen.append('arg'))
                 source='Before=1;Caught=False;Try New '+name+'(Effect());Except Caught=True;EndTry;After=2;'
-                with self.subTest(name=name,route=route),patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
+                with self.subTest(name=name,route=route):
                     if route=='source':vm.execute(source)
                     elif route=='ast':vm.execute_program(parse(source))
                     elif route=='prepared':vm.execute_prepared(vm.prepare(source))

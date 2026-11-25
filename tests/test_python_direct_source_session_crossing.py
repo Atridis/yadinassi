@@ -5,7 +5,6 @@ import test_source_session_types as existing
 from test_source_session_parameters import package
 from yadinassi.configuration.configuration_source import import_source
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
-from yadinassi.runtime import Interpreter
 from yadinassi.application.session_parameters import _UNSET
 from yadinassi.types.errors import BSLError
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
@@ -13,9 +12,6 @@ from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryVi
 DENIED=(BSLError,BoundaryViolation,ValueError,TypeError)
 
 class SourceSessionCrossingTests(unittest.TestCase):
-    def setUp(self):
-        for name in ('_execute_program','call_routine','_planned_routine_block'):
-            guard=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name));guard.start();self.addCleanup(guard.stop)
     def app(self):
         mapping={f.path:f.content for f in package('',kind='xs:boolean').files}
         mapping['Ext/SessionModule.bsl']=b'Procedure SessionParametersSetting() SessionParameters.State=True;EndProcedure'

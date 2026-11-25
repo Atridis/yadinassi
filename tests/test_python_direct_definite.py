@@ -1,32 +1,23 @@
 import unittest
-from unittest.mock import patch
 from decimal import Decimal
 from yadinassi import Interpreter
-from yadinassi.syntax.parser import parse
-from yadinassi.execution.direct.python_direct_definite import definite_module_reads
 
 
 class DefiniteReadsTests(unittest.TestCase):
     def paired(self, source, install=None):
         results=[]
-        for optimize in (False, True):
+        for prepared in (False,True):
             vm=Interpreter(allow_extensions=install is not None)
-            if install: install(vm)
+            self.addCleanup(vm.close)
+            if install:install(vm)
             error=None
-            with patch('yadinassi.execution.direct.python_direct_definite.definite_module_reads',
-                       definite_module_reads if optimize else lambda _,**kwargs: frozenset()):
-                try: vm.execute(source)
-                except Exception as exc: error=(type(exc).__name__,str(exc))
+            try:
+                if prepared:vm.execute_prepared(vm.prepare(source))
+                else:vm.execute(source)
+            except Exception as exc:error=(type(exc).__name__,str(exc))
             results.append((vm.variables,error))
         self.assertEqual(*results)
-        return results[1]
-
-    def test_prepared_scalar_loop(self):
-        vm=Interpreter()
-        source='s=0;For i=1 To 5 Do s=s+i;EndDo;'
-        prepared=vm.prepare(source)
-        vm.execute_prepared(prepared)
-        self.assertEqual(vm.variables['s'],15)
+        return results[0]
 
     def test_callback_delete_after_assignment(self):
         values,error=self.paired('x=1;Drop();y=x;',lambda vm:vm.register_function('Drop',lambda:vm.variables.pop('x')))
@@ -46,15 +37,21 @@ class DefiniteReadsTests(unittest.TestCase):
 
     def test_loop_callback_deletion(self):
         def install(vm):vm.register_function('Drop',lambda:vm.variables.pop('s',None))
-        self.paired('s=0;For i=1 To 2 Do s=s+1;Drop();EndDo;',install)
+        values,error=self.paired('s=0;For i=1 To 2 Do s=s+1;Drop();EndDo;',install)
+        self.assertIsNotNone(error)
+        self.assertNotIn('s',values)
 
     def test_error_publishes_partial_state(self):
         values,error=self.paired('s=0;For i=1 To 4 Do s=s+i;x=1/(3-i);EndDo;')
         self.assertEqual(values['s'],6);self.assertEqual(values['i'],3);self.assertIsNotNone(error)
 
     def test_branch_intersection_and_missing_branch(self):
-        self.paired('x=1;If x=1 Then y=2;Else y=3;EndIf;r=y;')
-        self.paired('x=0;If x=1 Then y=2;EndIf;r=y;')
+        values,error=self.paired('x=1;If x=1 Then y=2;Else y=3;EndIf;r=y;')
+        self.assertIsNone(error)
+        self.assertEqual(values['r'],2)
+        values,error=self.paired('x=0;If x=1 Then y=2;EndIf;r=y;')
+        self.assertIsNotNone(error)
+        self.assertNotIn('r',values)
 
     def test_byref_invalidates(self):
         values,_=self.paired('Procedure F(x) x=9;EndProcedure x=1;F(x);y=x;')
@@ -65,14 +62,16 @@ class DefiniteReadsTests(unittest.TestCase):
             class Host:
                 def __add__(self,other):vm.variables.pop('x',None);return Decimal(1)
             vm.variables['host']=Host()
-        # Compare effects/errors, not the per-run host object identity.
-        for optimize in (False,True):
-            vm=Interpreter();install(vm)
-            with patch('yadinassi.execution.direct.python_direct_definite.definite_module_reads',definite_module_reads if optimize else lambda _,**kwargs:frozenset()):
-                with self.assertRaisesRegex(Exception,'не определена'):vm.execute('x=1;y=host+1;z=x;')
-            self.assertNotIn('x',vm.variables);self.assertNotIn('z',vm.variables)
+        vm=Interpreter()
+        self.addCleanup(vm.close)
+        install(vm)
+        with self.assertRaisesRegex(Exception,'не определена'):
+            vm.execute('x=1;y=host+1;z=x;')
+        self.assertNotIn('x',vm.variables);self.assertNotIn('z',vm.variables)
 
     def test_zero_iterations_do_not_define_body_names(self):
-        self.paired('For i=2 To 1 Do y=1;EndDo;r=y;')
+        values,error=self.paired('For i=2 To 1 Do y=1;EndDo;r=y;')
+        self.assertIsNotNone(error)
+        self.assertFalse({'y','r'} & values.keys())
 
 if __name__=='__main__':unittest.main()

@@ -1,19 +1,12 @@
 """Direct request lifetime never calls the legacy scheduler executor."""
 import unittest
-from unittest.mock import patch
 from test_source_server_call import configuration
 from yadinassi.configuration.configuration_source_runtime import SourceApplication
-from yadinassi.runtime import Interpreter
 from yadinassi.execution.direct.source.python_direct_source_requests import request_scope
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 
 class DirectSourceRequests(unittest.TestCase):
-    def setUp(self):
-        for name in ('_execute_program','call_routine','_planned_routine_block'):
-            guard=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
-            guard.start();self.addCleanup(guard.stop)
-
     def app(self,output=lambda value:None):
         app=SourceApplication(configuration(''),output=output)
         self.addCleanup(app.close);app.start();return app

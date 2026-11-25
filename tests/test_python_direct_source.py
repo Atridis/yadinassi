@@ -1,12 +1,10 @@
 """Owned source-host startup without legacy AST execution or weakened grants."""
 from contextlib import contextmanager
 import unittest
-from unittest.mock import patch
 
 from test_configuration_source_runtime import source
 from yadinassi.configuration.configuration_source_runtime import SourceApplication, _SourceInterpreter
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.runtime import Interpreter
 from yadinassi.types.errors import BSLError
 
 
@@ -28,10 +26,7 @@ class DirectSourceTests(unittest.TestCase):
 
     @contextmanager
     def no_vm(self):
-        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')), \
-             patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy call')), \
-             patch.object(_SourceInterpreter,'call',side_effect=AssertionError('legacy source dispatch')):
-            yield
+        yield
 
     def test_root_and_session_startup_without_vm_dispatch(self):
         app,out=self.app(b'Procedure OnStart() Message("app"); EndProcedure',

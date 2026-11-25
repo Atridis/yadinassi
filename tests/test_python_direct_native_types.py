@@ -21,10 +21,9 @@ class DirectNativeTypeTests(unittest.TestCase):
         source='A=New Array;S=New Structure;M=New Map;R=TypeOf(A)=Type("Array") And ТипЗнч(S)=Type("Structure") And TypeOf(M)=Type("Map");'
         for route in ('source','ast','prepared'):
             vm=Interpreter()
-            with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
-                if route=='source':vm.execute(source)
-                elif route=='ast':vm.execute_program(parse(source))
-                else:vm.execute_prepared(vm.prepare(source))
+            if route=='source':vm.execute(source)
+            elif route=='ast':vm.execute_program(parse(source))
+            else:vm.execute_prepared(vm.prepare(source))
             self.assertTrue(vm.variables['r'])
 
     def test_canonical_alias_and_custom_overrides(self):

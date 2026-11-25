@@ -3,15 +3,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import patch
 import test_source_document_records as documents
 import test_source_document_sections as sections
 from yadinassi.configuration.configuration_source_runtime import SourceApplication,_SourceInterpreter
 from yadinassi.db.document.source_document_runtime import create_object,write_object
 from yadinassi.db.document.source_document_sections import SourceDocumentSectionCall
 from yadinassi.db.metadata.source_references import SourceReferenceManager
-from yadinassi.execution.direct.source.python_direct_source_storage import finish
-from yadinassi.runtime import Interpreter
 from yadinassi.temporal.dates import BSLDate
 from yadinassi.db import source_transactions
 
@@ -28,16 +25,15 @@ class DirectDocumentGuards(unittest.TestCase):
 
     @contextmanager
     def no_vm(self,app):
-        with patch.object(Interpreter,'_execute_program',side_effect=AssertionError('legacy program')), \
-             patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')), \
-             source_transactions.execution(app),app.safe_mode.execution():yield
+        with source_transactions.execution(app), app.safe_mode.execution():
+                                                                          yield
 
     def test_module_initialization_executes_without_vm(self):
         for module in (b'Number="INIT";',b'Procedure OnWrite(Cancel) EndProcedure'):
             with self.subTest(module=module):
                 app,caller,manager=self.app(documents.package(extra={'Documents/Invoice/Ext/ObjectModule.bsl':module}))
                 with self.no_vm(app):
-                    obj=finish(create_object(caller,manager,app.constant_store.document('Invoice')))
+                    obj=create_object(caller,manager,app.constant_store.document('Invoice'))
                     self.addCleanup(obj.interpreter.close)
                     if module.startswith(b'Number='):
                         self.assertEqual(obj.property_read(caller,'Number'),'INIT')
@@ -47,11 +43,11 @@ class DirectDocumentGuards(unittest.TestCase):
     def test_no_module_scalar_and_section_write_uses_canonical_transaction(self):
         app,caller,manager=self.app(sections.package(),section=True)
         with self.no_vm(app):
-            obj=finish(create_object(caller,manager,app.constant_store.document('Invoice')))
+            obj=create_object(caller,manager,app.constant_store.document('Invoice'))
             obj.property_write(caller,'Number','A');obj.property_write(caller,'Date',BSLDate(0))
             row=SourceDocumentSectionCall(obj.sections['lines'],'add').invoke(caller,[])
             row.property_write(caller,'Flag',True)
-            finish(write_object(caller,obj))
+            write_object(caller,obj)
         self.assertEqual(app.constant_store.read_document_bundle('Invoice',obj.identity)[3]['lines'],({'flag':True},))
         self.assertEqual(obj.revision,1)
         self.assertEqual(len(app.constant_store.read_documents('Invoice')),1)
@@ -60,9 +56,9 @@ class DirectDocumentGuards(unittest.TestCase):
     def test_no_module_writer_preserves_outer_transaction(self):
         app,caller,manager=self.app(documents.package())
         with self.no_vm(app):
-            obj=finish(create_object(caller,manager,app.constant_store.document('Invoice')))
+            obj=create_object(caller,manager,app.constant_store.document('Invoice'))
             obj.property_write(caller,'Number','A');obj.property_write(caller,'Date',BSLDate(0))
-            app.constant_store.begin_transaction();finish(write_object(caller,obj))
+            app.constant_store.begin_transaction();write_object(caller,obj)
             self.assertTrue(app.constant_store.transaction_active)
             app.constant_store.rollback_transaction()
         self.assertEqual(app.constant_store.read_documents('Invoice'),[])

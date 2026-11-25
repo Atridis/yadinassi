@@ -6,16 +6,12 @@ can leave candidate changes. Receipt recovery does not execute preparation;
 only a confirmed absent outcome permits a validated retry. The BSL execution
 profile exposes no backend write operation. The host writer owns persistence.
 """
-from decimal import Decimal
 
-from yadinassi.execution.owned_syntax import syntax_kind
 from .catalogs import BSLCatalogObject
 from .catalog_backend import BackendError
-from .catalog_types import BSLCatalogReference
 from yadinassi.runtime import Interpreter
 from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse
-from yadinassi.types.values import Reference, HostFunction
 
 _MAX_SOURCE = 16384
 _MAX_STEPS = 16384
@@ -63,121 +59,20 @@ class _ObjectInterpreter(Interpreter):
         return (self._has_module_context and name in self.object_names
                 and not (self.locals is not None and name in self.locals))
 
-    def _visit(self, node):
-        from yadinassi.execution.direct.python_direct import _reject
-        _reject("single-node adapter evaluation is retired; use the direct entrypoint")
-
-    def compiled_before(self, node):
-        self.remaining -= 1
-        if self.remaining < 0 or syntax_kind(node) not in (
-                ast.Routine, ast.Literal, ast.Name, ast.Attribute, ast.Call,
-                ast.New, ast.Assign, ast.If, ast.Return, ast.ExpressionStatement,
-                ast.Binary, ast.Unary, ast.ForEach, ast.Continue):
-            raise ValueError('catalog preparation: unsupported node or budget')
-        return super().compiled_before(node)
-
-    def compiled_after(self, node, result):
-        result = super().compiled_after(node, result)
-        if isinstance(result, HostFunction) and not (
-                syntax_kind(node) is ast.Name
-                and self.functions.get(node.name.casefold()) is result):
-            raise ValueError('catalog preparation: captured method forbidden')
-        if type(result) is Decimal and (not result.is_finite()
-                or result.__sizeof__() > 256 or abs(result.adjusted()) > 64):
-            raise ValueError('catalog preparation: numeric budget')
-        if type(result) is str:
-            self.text_budget -= len(result.encode("utf-8"))
-            if len(result) > 65536 or self.text_budget < 0:
-                raise ValueError("catalog preparation: text budget")
-        return result
-
-    def semantic_name(self, node):
-        name = node.name.casefold()
-        if self._object_name(name):
-            return self.receiver_object.get_member(name)
-        if name in _SELF:
-            return self.receiver_object
-        if not ((self.locals is not None and name in self.locals)
-                or name in self.variables or name in self.functions):
-            raise ValueError('catalog preparation: unavailable name')
-        return super().semantic_name(node)
-
 
     # Legacy extension point keeps superclass visitor instrumentation.
-    def visit_Name(self, node):
-        name = node.name.casefold()
-        if self._object_name(name):
-            return self.receiver_object.get_member(name)
-        if name in _SELF:
-            return self.receiver_object
-        if not ((self.locals is not None and name in self.locals)
-                or name in self.variables or name in self.functions):
-            raise ValueError('catalog preparation: unavailable name')
-        return super().visit_Name(node)
-
-    def call(self, node, *, require_value, _evaluation=None):
-        callee = self.ungroup(node.callee)
-        if syntax_kind(callee) is ast.Attribute and callee.name.casefold() not in _METHODS | _REFERENCE_QUERY_METHODS:
-            raise ValueError('catalog preparation: unavailable method')
-        if (self.write_view is not None and syntax_kind(callee) is ast.Attribute
-                and callee.name.casefold() in ('getobject', 'получитьобъект')):
-            if node.arguments:
-                raise TypeError('catalog preparation: GetObject takes no arguments')
-            reference = yield from (_evaluation.receiver if _evaluation is not None else self.receiver)(callee.object)
-            catalogs = self.receiver_object._manager._catalogs
-            if (type(reference) is not BSLCatalogReference
-                    or reference.value_type.snapshot is not catalogs._metadata):
-                raise TypeError('catalog preparation: same snapshot reference required')
-            manager = catalogs._manager_by_metadata_uuid(reference.value_type.metadata_uuid)
-            view = self.write_view
-            if (view.database_id != catalogs._metadata._database_id
-                    or view.configuration_generation != catalogs._metadata._generation
-                    or view.catalog_schema(manager._schema.identity) != manager._schema):
-                raise BackendError('schema_changed')
-            card = view.read_catalog(manager._key(reference.reference_uuid))
-            return None if card is None else BSLCatalogObject(manager, card)
-        return (yield from super().call(node, require_value=require_value, _evaluation=_evaluation))
-
-    def semantic_attribute(self, node):
-        if node.name.casefold() not in self.member_names | _METHODS:
-            raise ValueError('catalog preparation: unavailable member')
-        return (yield from super().semantic_attribute(node))
-
 
     # Legacy extension point keeps superclass visitor instrumentation.
-    def visit_Attribute(self, node):
-        if node.name.casefold() not in self.member_names | _METHODS:
-            raise ValueError('catalog preparation: unavailable member')
-        return (yield from super().visit_Attribute(node))
-
     def set_variable(self, name, value):
         if self._object_name(name.casefold()):
             self.receiver_object.set_member(name, value)
         else:
             super().set_variable(name, value)
 
-    def argument(self, node, *, _evaluation=None):
-        target = self.ungroup(node)
-        if syntax_kind(target) is ast.Name and self._object_name(target.name.casefold()):
-            return Reference(lambda: self.receiver_object.get_member(target.name),
-                             lambda value: self.receiver_object.set_member(target.name, value))
-        return (yield from super().argument(node, _evaluation=_evaluation))
-
-    def semantic_assign(self, node):
-        if syntax_kind(node.target) is ast.Attribute and node.target.name.casefold() not in self.member_names:
-            raise ValueError('catalog preparation: unavailable assignment')
-        return (yield from super().semantic_assign(node))
-
 
     # Legacy extension point keeps superclass visitor instrumentation.
-    def visit_Assign(self, node):
-        if syntax_kind(node.target) is ast.Attribute and node.target.name.casefold() not in self.member_names:
-            raise ValueError('catalog preparation: unavailable assignment')
-        return (yield from super().visit_Assign(node))
-
     def _new_server_activation(self, *args, **kwargs):
         raise ValueError('catalog preparation: context crossing forbidden')
-
 
 
 def validate_catalog_object_source(source, schema):
@@ -280,9 +175,6 @@ def _prepare_catalog_object(source, receiver, *, cancel=False, write_view=None, 
     try:
         if _transaction_scope is not None:
             _transaction_scope.check()
-            if vm.execution_backend != "python-direct":
-                from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-                raise BoundaryViolation("catalog preparation requires direct execution")
         if any(n.name.casefold() in vm.object_names | _SELF | set(vm.functions)
                for n in program):
             raise ValueError('catalog preparation: routine collision')

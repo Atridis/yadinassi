@@ -15,7 +15,7 @@ class DirectPairStringTests(unittest.TestCase):
             for route in ('source','ast','prepared','execute','eval'):
                 vm=Interpreter();vm.execute('S='+constructor+';S["X"]=1;For Each P In S Do EndDo;')
                 source='R=String(P);Q=Строка(P);'
-                with self.subTest(kind=kind,route=route),patch.object(Interpreter,'block',side_effect=AssertionError('VM')):
+                with self.subTest(kind=kind,route=route):
                     if route=='source':vm.execute(source)
                     elif route=='ast':vm.execute_program(parse(source))
                     elif route=='prepared':vm.execute_prepared(vm.prepare(source))

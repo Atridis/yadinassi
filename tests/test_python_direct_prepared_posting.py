@@ -41,7 +41,7 @@ class PreparedPostingTests(TestCase):
                 with self.assertRaises(Exception):d.write(DocumentWriteMode.POSTING)
                 self.assertEqual(d.get_member('AdditionalProperties').get_member('Inside'),1)
                 self.assertEqual(self.f.counts(),before);self.assertIsNone(d._posting_active)
-    def test_target_schema_and_compiler_options_replace_only_slot(self):
+    def test_target_and_schema_replace_only_slot(self):
         import yadinassi.execution.direct.python_direct_posting as direct
         d=self.f.document();runtime=self.vm._documents.posting_runtime()
         a=prepared_posting(runtime,d,self.vm)
@@ -52,8 +52,6 @@ class PreparedPostingTests(TestCase):
         finally:d._manager._schema=old
         with patch.object(self.vm,'_native_target',LINUX_8_3_27_1508):
             c=prepared_posting(runtime,d,self.vm);self.assertIsNot(a,c)
-        with patch.object(direct,'REPAIRS',direct.REPAIRS+('authority_checkpoints',)):
-            e=prepared_posting(runtime,d,self.vm);self.assertIsNot(a,e)
         self.assertEqual(len(runtime._direct_plans),1)
     def test_distinct_admitted_source_is_not_shared(self):
         import test_document_posting_runtime as other

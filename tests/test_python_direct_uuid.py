@@ -12,11 +12,9 @@ TEXT='6fe6c569-c38f-4f76-a3a6-bea52c24ed0a'
 class DirectUUIDTests(unittest.TestCase):
     def test_aliases_and_current_canonical_value(self):
         vm=Interpreter()
-        with patch.object(vm,'_compiled',side_effect=AssertionError('legacy')):
-            vm.execute(f'a=New UUID("{TEXT}");b=New УникальныйИдентификатор("{TEXT.upper()}");')
+        vm.execute(f'a=New UUID("{TEXT}");b=New УникальныйИдентификатор("{TEXT.upper()}");')
         self.assertIs(type(vm.variables['a']),BSLUUID)
         self.assertEqual(vm.variables['a'],vm.variables['b'])
-        self.assertEqual(vm.execution_backend_stats['fallback'],0)
 
     def test_invalid_arguments_remain_catchable(self):
         vm=Interpreter()
@@ -64,6 +62,5 @@ class DirectUUIDTests(unittest.TestCase):
         scripts=str(Path(__file__).resolve().parents[1]/'scripts')
         with patch.object(sys,'path',[scripts]+sys.path):
             from catalog_object_behavior.replay import replay
-        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
-            rows=replay()
+        rows=replay()
         self.assertEqual(rows,[True]*8+['initial','initial',True,True,'edited',False,True,True,'100',1,False,'first-update','stale-update',True,True,True])

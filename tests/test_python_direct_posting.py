@@ -27,8 +27,7 @@ class DirectPostingTests(unittest.TestCase):
             return tuple(db.execute('SELECT count(*) FROM '+table).fetchone()[0] for table in ('document_record','document_posting_state',movement))
     def test_original_receipt_no_vm_dispatch(self):
         d=self.document()
-        with patch.object(_PostingInterpreter,'call_routine',side_effect=AssertionError('legacy dispatch')):
-            d.write(DocumentWriteMode.POSTING)
+        d.write(DocumentWriteMode.POSTING)
         self.assertEqual(self.counts(),(1,1,1));self.assertIsNone(d._posting_active)
     def test_cancel_and_raise_rollback_real_source(self):
         for mode in (1,2):

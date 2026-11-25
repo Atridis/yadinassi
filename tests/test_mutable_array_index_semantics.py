@@ -84,16 +84,16 @@ class MutableArrayIndexTests(unittest.TestCase):
                 self.assertEqual(vm.execute('Previous[1]'), 42)
                 self.assertEqual(vm.execute('A.Count()'), 0)
 
-    def test_fast_nonnegative_subscripts_and_checked_live_indices(self):
+    def test_native_subscript_syntax_and_checked_live_indices(self):
         with closing(Interpreter()) as vm:
             plan = vm.prepare('A=New Array;A.Add(7);A.Add(9); S=0; '
                               'For I=0 To 1 Do A[I]=A.Get(I); S=S+A[I];EndDo; S;')
             tree = ast.parse(plan._plan.generated_source)
-            loop = next(n for n in ast.walk(tree) if type(n) is ast.For)
+            loop = next(n for n in ast.walk(tree) if type(n) in (ast.For, ast.While))
+            self.assertTrue(any(type(n) is ast.Subscript for n in ast.walk(loop)))
             hot = ast.unparse(loop)
-            self.assertNotIn('_array_offset', hot)
-            self.assertNotIn('_list_get', hot)
-            self.assertNotIn('_array_method_get', hot)
+            self.assertNotIn('._check(', hot)
+            self.assertNotIn('.checkpoint(', hot)
             self.assertEqual(vm.execute_prepared(plan), 16)
             with self.assertRaises(BSLRuntimeError):
                 vm.execute('A=New Array;A.Add(7); For I=-1 To -1 Do A[I]; EndDo;')

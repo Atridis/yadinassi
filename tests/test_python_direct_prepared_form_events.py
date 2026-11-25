@@ -52,7 +52,7 @@ class PreparedFormEventsTests(TestCase):
             self.assertTrue(refused.cancel);self.assertTrue(refused.messages)
         self.assertEqual(event_compile.call_count,1);self.assertEqual(object_compile.call_count,1)
         self.assertTrue(f.card.is_new())
-    def test_schema_and_profile_change_do_not_reuse_plan(self):
+    def test_schema_change_does_not_reuse_plan(self):
         f=productfixture.ProductFormEventTests();f.setUp();self.addCleanup(f.doCleanups)
         f.run_event('DescriptionOnChange');manager=f.card._manager;first=manager._direct_event_plan
         old=manager._schema
@@ -61,9 +61,6 @@ class PreparedFormEventsTests(TestCase):
             f.run_event('DescriptionOnChange')
             self.assertIsNot(manager._direct_event_plan,first)
         finally:manager._schema=old
-        with patch.object(direct,'REPAIRS',direct.REPAIRS+('authority_checkpoints',)):
-            f.run_event('DescriptionOnChange')
-            self.assertIsNot(manager._direct_event_plan,first)
 
     def test_failure_after_private_setter_does_not_adopt_or_replay(self):
         f=scalarfixture.VerifiedFormDraftSessionTests();f.setUp();self.addCleanup(f.doCleanups)
