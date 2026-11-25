@@ -185,12 +185,11 @@ def _contract(vm):
 
 def _compile(vm,program,nodes,source_text,source_name,*,_exports=False):
     from yadinassi.execution.codegen.direct_emitter import compile_module
-    names=()
-    if vm.database_context is not None:
-        from .python_direct_database import NAMES
-        names=NAMES
+    from .python_direct_database import METADATA_NAMES, NAMES
+    names=NAMES if vm.database_context is not None else METADATA_NAMES
     return compile_module(vm,program,nodes,source_text,source_name,_exports=_exports,
-                          external_names=names)
+                          external_names=names,
+                          constructor_profile=(vm.types if vm.allow_extensions else vm._builtin_types))
 
 
 def _extension_source_audit(vm):

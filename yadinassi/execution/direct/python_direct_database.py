@@ -596,6 +596,8 @@ class CatalogBoundary:
             if tables.owns(value):return tables.resolve(self,value)
         verify=_verify_collection(self,value)
         self._catalog_owner(value,verify=verify)
+        if type(value) is BSLValueListItem and name in ('__getitem__','__setitem__','__iter__'):
+            raise TypeError('Индексирование и обход элемента списка значений не поддерживаются')
         if type(value) is BSLQuery and name.casefold() in ('setparameter','установитьпараметр'):
             def function(parameter, argument):
                 return value.set_parameter(parameter,public_number(argument))

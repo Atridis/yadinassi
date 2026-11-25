@@ -2,7 +2,6 @@
 import ast
 from decimal import Decimal, localcontext, Inexact, Rounded
 import unittest
-from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
 from yadinassi.syntax.parser import parse
@@ -17,9 +16,7 @@ class DirectScalarSyntaxTests(unittest.TestCase):
             with self.subTest(route=route):
                 vm = Interpreter(output=messages.append)
                 self.addCleanup(vm.close)
-                with patch('yadinassi.execution.codegen.experimental_direct_ast.analyze_static',
-                           side_effect=lambda *args, **kw: {} if kw.get("scalar_prefix") else None):
-                    plan = vm.prepare(source)
+                plan = vm.prepare(source)
                 py = plan._plan.generated_source
                 tree = ast.parse(py)
                 self.assertTrue(any(isinstance(n, ast.IfExp) for n in ast.walk(tree)))

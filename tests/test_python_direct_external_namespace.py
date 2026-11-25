@@ -1,6 +1,6 @@
 import unittest
 from decimal import Decimal
-from yadinassi.execution.codegen.experimental_direct_ast import compile_owned
+from yadinassi.execution.codegen.direct_emitter import compile_owned
 from yadinassi.syntax.parser import parse
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryContext,BoundaryViolation

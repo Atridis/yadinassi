@@ -168,5 +168,12 @@ def xml_value(value_type: object, text: object) -> object:
     raise TypeError("XMLЗначение: пока поддерживаются только Строка, Булево, Число, Дата, Null и Неопределено")
 
 
-BUILTINS = (("XMLСтрока", xml_string, "XMLString"),
+def _xml_string_from_bsl(value: object) -> str:
+    # The direct emitter keeps BSL integers native until this codec boundary.
+    if type(value) is int:
+        value = Decimal(value)
+    return xml_string(value)
+
+
+BUILTINS = (("XMLСтрока", _xml_string_from_bsl, "XMLString"),
             ("XMLЗначение", xml_value, "XMLValue"))

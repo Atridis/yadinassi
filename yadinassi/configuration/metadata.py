@@ -72,6 +72,8 @@ class MetadataObjectCollection(_MetadataObject):
         return Decimal(len(self._snapshot()))
 
     def find(self, name):
+        if type(name) is int:
+            name = Decimal(name)
         if type(name) is not str and type(name) is not Decimal:
             raise TypeError('metadata name requires String or Number')
         return self._snapshot().get(to_string(name).casefold())

@@ -47,6 +47,19 @@ class LiveMetadataOwnershipTests(unittest.TestCase):
         for name,code in (('p','X.Name;'),('c','X.Count();'),('a','X.Name;'),('s','X.Count();'),('f','X.Name;')):
             other.variables['x']=vm.variables[name]
             with self.subTest(name=name),self.assertRaises(DENIED):other.execute(code)
+    def test_subscript_checks_metadata_at_owning_boundary(self):
+        vm = self.prepared()
+        other = Interpreter(database_context=self.context)
+        self.addCleanup(other.close)
+        for key in ('c', 's'):
+            with self.subTest(key=key):
+                own = vm.variables[key]
+                vm.variables['x'] = own
+                other.variables['x'] = own
+                self.assertIs(vm.execute('X[0];'), own.get_index(0))
+                with self.assertRaises(DENIED):
+                    other.execute('X[0];')
+
     def _import_reader(self,vm):
         directory=TemporaryDirectory()
         self.addCleanup(directory.cleanup)

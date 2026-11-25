@@ -1,12 +1,10 @@
-"""Research AST region lowering using the unchanged canonical admission/helpers."""
+"""Production collection lowering does not need a separate region compiler."""
+import ast
+from contextlib import closing
 import subprocess
 import sys
 import unittest
-from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.execution.direct import python_direct
-from yadinassi.execution.codegen import experimental_direct_ast as direct
-import test_python_direct_collection_regions as canonical
 
 class DirectASTRegionTests(unittest.TestCase):
     def test_reference_workloads_have_independent_results(self):
@@ -23,76 +21,45 @@ class DirectASTRegionTests(unittest.TestCase):
         self.assertEqual(len(vm.variables['t'].rows),3)
         self.assertEqual(vm.variables['i'],2)
 
-    def test_import_time_partial_replacement_rejects_before_effects(self):
-        script=r"""
-import functools,importlib,sys
-from unittest.mock import patch
+    def _run_without_binding(self, module_name, name):
+        script = r"""
+import importlib
+import sys
 from yadinassi import Interpreter
-from yadinassi.execution.direct import python_direct
-from yadinassi.execution.codegen import experimental_direct_ast as old
-real=functools.partial
-class Fake:
-    __new__=real.__new__
-Fake.__name__='partial';Fake.__module__='functools'
-if old._native_partial_binding(Fake):raise AssertionError('spoof accepted')
-class Meta(type):
-    def __getattribute__(self,name):raise AssertionError('descriptor callback')
-class Hostile(metaclass=Meta):pass
-if old._native_partial_binding(Hostile):raise AssertionError('metaclass accepted')
-seen=[]
-def callback(*args,**kwargs):
-    seen.append('callback');return real(*args,**kwargs)
-functools.partial=callback
-sys.modules.pop('yadinassi.execution.codegen.experimental_direct_ast')
-research=importlib.import_module('yadinassi.execution.codegen.experimental_direct_ast')
-functools.partial=real
-vm=Interpreter()
-with patch.object(python_direct,'_compile',research.compile_module):
-    try:vm.execute('T=New ValueList;For I=0 To 2 Do T.Add(I);EndDo;')
-    except python_direct.PythonDirectUnsupported as error:
-        if 'noncanonical partial' not in str(error):raise
-    else:raise AssertionError('replaced factory executed')
-if vm.variables or seen:raise AssertionError((vm.variables,seen))
-"""
-        subprocess.run([sys.executable,*(['-'+'O'*sys.flags.optimize] if sys.flags.optimize else []),'-c',script],check=True)
 
-    def test_import_time_operator_replacement_rejects_before_effects(self):
-        script=r"""
-import _operator,importlib,sys
-from unittest.mock import patch
-from yadinassi import Interpreter
-from yadinassi.execution.direct import python_direct
-from yadinassi.execution.codegen import experimental_direct_ast
-spoof=set().add
-spoof.__module__='_operator'
-if experimental_direct_ast._native_operator_binding(spoof,'add'):raise AssertionError('bound method spoof accepted')
-if experimental_direct_ast._native_operator_binding(_operator.getitem,'add'):raise AssertionError('wrong native function accepted')
-if not experimental_direct_ast._native_operator_binding(_operator.add,'add'):raise AssertionError('native add rejected')
-real=_operator.add;seen=[]
-def callback(*args):seen.append('callback');return real(*args)
-_operator.add=callback
-sys.modules.pop('yadinassi.execution.codegen.experimental_direct_ast')
-research=importlib.import_module('yadinassi.execution.codegen.experimental_direct_ast')
-_operator.add=real
-vm=Interpreter()
-with patch.object(python_direct,'_compile',research.compile_module):
-    try:vm.execute('T=New ValueList;For I=0 To 2 Do T.Add(I+1);EndDo;')
-    except python_direct.PythonDirectUnsupported as error:
-        if 'noncanonical operator' not in str(error):raise
-    else:raise AssertionError('replaced operator executed')
-if vm.variables or seen:raise AssertionError((vm.variables,seen))
-"""
-        subprocess.run([sys.executable,*(['-'+'O'*sys.flags.optimize] if sys.flags.optimize else []),'-c',script],check=True)
+def unexpected(*args, **kwargs):
+    raise AssertionError('plain ValueList code called the old binding')
 
-    def test_nested_tracked_get_emits_linear_nodes(self):
-        counts=[]
-        for depth in (4,8,12):
-            expression='0'
-            for _ in range(depth):expression='T.Get('+expression+').N'
-            source='T=New ValueTable;T.Columns.Add("N");For I=0 To 0 Do Row=T.Add();Row.N=0;EndDo;For I=0 To 0 Do R='+expression+';EndDo;'
-            vm=Interpreter()
-            with patch.object(python_direct,'_compile',direct.compile_module):
-                plan=vm.prepare(source);vm.execute_prepared(plan)
-            self.assertEqual(vm.variables['r'],0)
-            counts.append(plan._plan._research_lowering_counts[2]);vm.close()
-        self.assertEqual(counts[2]-counts[1],counts[1]-counts[0])
+module = importlib.import_module(sys.argv[1])
+setattr(module, sys.argv[2], unexpected)
+vm = Interpreter()
+vm.execute('T=New ValueList;For I=0 To 2 Do T.Add(I+1);EndDo;R=T.Get(2).Value;')
+if vm.variables['r'] != 3:
+    raise AssertionError(vm.variables['r'])
+"""
+        result = subprocess.run(
+            [sys.executable, *(['-O'] if sys.flags.optimize else []),
+             '-c', script, module_name, name], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_partial_replacement_is_not_used_by_ordinary_value_list_calls(self):
+        self._run_without_binding('yadinassi.execution.codegen.direct_emitter', 'partial')
+
+    def test_operator_replacement_is_not_used_by_native_addition(self):
+        self._run_without_binding('_operator', 'add')
+
+    def test_nested_get_emits_linear_python_nodes(self):
+        counts = []
+        for depth in (4, 8, 12):
+            expression = '0'
+            for _ in range(depth):
+                expression = 'T.Get(' + expression + ').N'
+            source = ('T=New ValueTable;T.Columns.Add("N");Row=T.Add();Row.N=0;'
+                      'R=' + expression + ';')
+            with closing(Interpreter()) as vm:
+                plan = vm.prepare(source)
+                vm.execute_prepared(plan)
+                self.assertEqual(vm.variables['r'], 0)
+                counts.append(sum(1 for _ in ast.walk(ast.parse(plan._plan.generated_source))))
+        self.assertGreater(counts[1], counts[0])
+        self.assertEqual(counts[2] - counts[1], counts[1] - counts[0])

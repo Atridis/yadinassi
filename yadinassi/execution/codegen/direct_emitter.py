@@ -12,6 +12,7 @@ from .experimental_naked_scalar_semantics import TextAddend
 from yadinassi.types.array_index import array_offset
 from yadinassi.execution.direct.python_direct_plain_map import PlainMap, plain_map
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
+from yadinassi.collections.maps import BSLMap, BSLFixedMap
 from yadinassi.collections.structures import BSLKeyAndValue, BSLStructure, BSLFixedStructure
 from .experimental_naked_errors import handled_error, reraise_handled
 from .experimental_naked_resources import bounded_array, bounded_insert
@@ -24,7 +25,7 @@ from .experimental_naked_live_state import UNSET, source_reference, _SlotReferen
 from .experimental_naked_boundaries import BoundaryViolation, _MISSING as _SERVICE_MISSING
 from yadinassi.execution.direct.python_direct_eval import bind_eval
 from yadinassi.execution.direct.python_direct_execute import FragmentScope, execute_fragment
-from yadinassi.types.values import HostFunction, Reference
+from yadinassi.types.values import BSLObject, HostFunction, Reference
 from .experimental_naked_scalar_semantics import concatenate, presentation, truth
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported, REPAIRS
 from yadinassi.execution.direct.python_direct_numbers import divide, remainder, sign, public_number
@@ -57,6 +58,46 @@ def owned_index(context,receiver):
     return context.resolve_member(receiver,'__getitem__')
 
 
+class _OwnedBracket:
+    __slots__ = ('context', 'receiver')
+
+    def __init__(self, context, receiver):
+        self.context = context
+        self.receiver = receiver
+
+    def __getitem__(self, key):
+        return self.context.resolve_member(self.receiver, '__getitem__')(key)
+
+    def __setitem__(self, key, value):
+        self.context.resolve_member(self.receiver, '__setitem__')(key, value)
+
+
+class _PlainDictRead:
+    __slots__ = ('data',)
+
+    def __init__(self, data):
+        self.data = data
+
+    def __getitem__(self, key):
+        return self.data.get(key)
+
+
+def prepare_bracket(context, receiver, key, writing=False):
+    kind=type(receiver)
+    if kind is list or kind is PlainArray:
+        return receiver,array_offset(receiver,key)
+    if kind is dict and not writing:
+        receiver=_PlainDictRead(receiver)
+    elif kind is not BSLMap and kind is not BSLFixedMap and issubclass(kind,BSLObject):
+        receiver=_OwnedBracket(context,receiver)
+    return receiver,key
+
+
+def read_bracket(context, receiver, key):
+    target,index=prepare_bracket(context,receiver,key)
+    return target[index]
+
+
 def owned_set_index(context,value,receiver,key):
     if type(receiver) in (list, PlainArray):
         receiver[array_offset(receiver,key)] = value
@@ -71,15 +112,18 @@ def owned_iterable(context, iterable):
     if kind in (list,PlainArray,_DirectStructure):
         return iter(iterable)
     if kind is PlainMap:
-        return bsl_iterable(iterable)
+        return iterable.bsl_entries()
     return context.resolve_member(iterable,'__iter__')()
 
 
-def bsl_iterable(iterable):
+def bsl_iterable(context, iterable):
     # PlainMap implements the Python mapping protocol for host callers. Only
     # BSL's loop enumerates its logical pairs instead of its keys.
-    if type(iterable) is PlainMap:
+    kind=type(iterable)
+    if kind is PlainMap:
         return iterable.bsl_entries()
+    if issubclass(kind,BSLObject):
+        return context.resolve_member(iterable,'__iter__')()
     return iterable
 
 
@@ -141,7 +185,10 @@ def indexed_actual(context, byref, receiver, owned):
         return lambda key: host_reference(address(key))
     if owned:
         return owned_index(context,receiver)
-    return lambda key: receiver[array_offset(receiver,key) if type(receiver) in (list, PlainArray) else key]
+    def read(key):
+        target,index=prepare_bracket(context,receiver,key)
+        return target[index]
+    return read
 
 
 def member_actual(context, byref, receiver, key):
@@ -171,7 +218,8 @@ _VALUE_TYPE_NAMES = frozenset(('date','дата','sortdirection','направл
 _CALLBACK_MODULE_SLOTS = {'readjson':5,'прочитатьjson':5,'writejson':4,'записатьjson':4,
                           'new:callbackdescription':1,'new:описаниеоповещения':1}
 _NONCONSTRUCTIBLE = frozenset(('formdatacollection','данныеформыколлекция',
-    'formdatacollectionitem','данныеформыэлементколлекции','formtable','таблицаформы'))
+    'formdatacollectionitem','данныеформыэлементколлекции','formtable','таблицаформы',
+    'collectionindex','индексколлекции','collectionindexes','индексыколлекции'))
 
 
 def self_read(context,state,key):
@@ -187,7 +235,9 @@ def self_reference(context,state,key):
     return source_reference(state,key) if key in state else _Cell(context.current_module())
 
 
-def nonconstructible(key):
+def nonconstructible(key, missing=False):
+    if missing:
+        raise TypeError('Тип не определен: '+key)
     raise TypeError('Тип нельзя создать оператором Новый: '+key)
 _OP = dict(_Truth=truth, _PublicNumber=public_number, _Divide=divide, _Remainder=remainder, _Sign=sign,
            _GotoTransfer=direct_goto.GotoTransfer,_String=concatenate, _Type=type, _Str=str, _Missing=_MISSING, _OmittedRef=_OMITTED_REF, _ServiceMissing=_SERVICE_MISSING, _Unset=UNSET, _TextAddend=TextAddend, _Map=PlainMap, _NameError=NameError, _Nonconstructible=nonconstructible, _SelfRead=self_read, _SelfWrite=self_write, _SelfRef=self_reference,
@@ -345,7 +395,7 @@ def member(context, receiver, key, count, want_value, omitted=(), source_dispatc
 
 
 _OP.update(_RequiresReference=requires_reference,_OwnedIndex=owned_index,_OwnedSetIndex=owned_set_index,_Metered=metered,_OwnedIterable=owned_iterable,_BSLIterable=bsl_iterable,_Member=member,_GetField=get_field,_SetField=set_field,_FieldRef=field_reference,_StructureType=_DirectStructure,_OwnsPropertyOutput=owns_property_output)
-_OP['_Index']=lambda receiver, index: array_offset(receiver,index) if type(receiver) in (list, PlainArray) else index
+_OP.update(_PrepareBracket=prepare_bracket,_ReadBracket=read_bracket)
 
 
 
@@ -433,6 +483,9 @@ class Emit:
         self.implicit_shadows=set()
         self.shadows=frozenset()
         self.constructor_profile=None
+        self.ordinary_constructors=()
+        self.tree_constructors=()
+        self.host_extensions=False
         self.catalog_budget=False
         self.bound_constructors=frozenset()
         self.configuration_dispatch=False
@@ -477,6 +530,14 @@ class Emit:
     def external(self,key):
         return key in self.externals and key not in self.locals and key not in self.module_declarations
 
+    def read_external(self,key):
+        return call(attr(name('_C'),'external_get'),literal(key))
+
+    def write_external(self,key,value):
+        if self.meter_loops:
+            value=call('_PublicNumber',value)
+        return p.Expr(value=call(attr(name('_C'),'external_set'),literal(key),value))
+
     def import_path(self,expr):
         attributes=[]
         while True:
@@ -509,7 +570,7 @@ class Emit:
                 if self.current_module and key in _SELF_NAMES:
                     return call('_SelfRead',name('_C'),name('_S'),literal(key))
                 if key in self.externals:
-                    return call(attr(name('_C'),'external_get'),literal(key))
+                    return self.read_external(key)
                 if key in SYSTEM_NAMES and not self.owned:
                     if key in CHARS_ALIASES:
                         return call(attr(name('_C'),'character_namespace'),literal(key))
@@ -544,7 +605,7 @@ class Emit:
             if op=='/':return call('_Divide',l,r)
             if op=='%':return call('_Remainder',l,r)
         if type(x) is b.Index:
-            return self.index(x,p.Load())
+            return self.index(x)
         if type(x) is b.Attribute:
             return call('_GetField',name('_C'),self.expr(x.object),literal(x.name))
         if type(x) is b.DynamicNew:
@@ -552,9 +613,13 @@ class Emit:
             return call('_Construct',name('_C'),self.expr(x.type_expression),params)
         if type(x) is b.New:
             key=x.name.casefold()
+            if key in ('date','дата') and not x.arguments:
+                return call('_Nonconstructible',literal(x.name),literal(True))
             if key in _NONCONSTRUCTIBLE or key in _VALUE_TYPE_NAMES and not x.arguments:
                 return call('_Nonconstructible',literal(x.name))
-            if self.constructor_profile is not None and key not in self.constructor_profile:
+            if (self.constructor_profile is not None and key not in _NATIVE_CONSTRUCTORS
+                    and key not in self.constructor_profile and key not in self.ordinary_constructors
+                    and key not in self.tree_constructors):
                 raise PythonDirectUnsupported(f'constructor {x.name}; unavailable in this execution profile')
             if key in self.bound_constructors:return self.service_call('new:'+key,x.arguments,want_value)
             if key in ('array','массив','map','соответствие'):
@@ -790,13 +855,21 @@ class Emit:
         return call(convert,self.expr(arg))
 
 
-    def index(self,x,mode):
-        if (self.meter_loops or self.source_dispatch or self.configuration_dispatch) and type(mode) is p.Load:
+    def index(self,x):
+        if self.host_extensions and not (self.meter_loops or self.source_dispatch or self.configuration_dispatch):
+            return _node(call('_ReadBracket',name('_C'),self.expr(x.object),self.expr(x.index)),x.token)
+        if self.meter_loops or self.source_dispatch or self.configuration_dispatch:
             return _node(call(call('_OwnedIndex',name('_C'),self.expr(x.object)),self.expr(x.index)),x.token)
+        return self.native_bracket(self.expr(x.object),self.expr(x.index),x.token)
+
+    def native_bracket(self,receiver,key,token,writing=False):
         slot=self.temp()
-        receiver=p.NamedExpr(target=name(slot,True),value=self.expr(x.object))
-        index=call('_Index',name(slot),self.expr(x.index))
-        return _node(p.Subscript(value=receiver,slice=index,ctx=mode),x.token)
+        extras=(literal(True),) if writing else ()
+        prepared=p.NamedExpr(target=name(slot,True),
+                             value=call('_PrepareBracket',name('_C'),receiver,key,*extras))
+        target=p.Subscript(value=prepared,slice=literal(0),ctx=p.Load())
+        index=p.Subscript(value=name(slot),slice=literal(1),ctx=p.Load())
+        return _node(p.Subscript(value=target,slice=index,ctx=p.Store() if writing else p.Load()),token)
 
     def routine(self,routine):
         from dataclasses import fields
@@ -825,6 +898,8 @@ class Emit:
         local={param.name.casefold() for param in routine.parameters}
         declared=set()
         writes=set()
+        direct_vars=({id(statement) for statement in routine.body if type(statement) is b.Var}
+                     if self.externals else ())
         queue=[routine.body]
         has_fragments=False
         has_await=False
@@ -834,7 +909,11 @@ class Emit:
             if type(item) is b.Execute or (type(item) is b.Call and type(item.callee) is b.Name
                     and item.callee.name.casefold() in ('eval','вычислить')):
                 has_fragments=True
-            if isinstance(item,b.Var):declared.update(key.casefold() for key in item.names)
+            if isinstance(item,b.Var):
+                keys={key.casefold() for key in item.names}
+                if keys & self.externals and id(item) not in direct_vars:
+                    raise PythonDirectUnsupported('conditional local Var shadowing external storage')
+                declared.update(keys)
             elif isinstance(item,b.Assign) and type(item.target) is b.Name:writes.add(item.target.name.casefold())
             elif isinstance(item,(b.For,b.ForEach)):writes.add(item.name.casefold())
             if isinstance(item,b.Node) and not isinstance(item,b.Literal):
@@ -907,13 +986,15 @@ class Emit:
         return p.Raise(exc=call('_GotoTransfer',literal(target)),cause=literal(None))
 
     def loop_control(self,continuing):
+        if not self.loop:
+            raise PythonDirectUnsupported(('Continue' if continuing else 'Break')+' outside a loop')
         if self.dispatch and self.dispatch[-1][0]==len(self.loop):
             target=-2 if continuing else -3
             self.dispatch[-1][1].add(target)
             return [self.jump(target)]
         if continuing:
             from copy import deepcopy
-            prefix=[] if not self.loop or self.loop[-1] is None else [deepcopy(self.loop[-1])]
+            prefix=[] if self.loop[-1] is None else [deepcopy(self.loop[-1])]
             return [*prefix,p.Continue()]
         return [p.Break()]
 
@@ -969,7 +1050,7 @@ class Emit:
             if type(t) is b.Name:
                 key=t.name.casefold()
                 if self.external(key):
-                    return [p.Expr(value=call(attr(name('_C'),'external_set'),literal(key),call('_PublicNumber',value) if self.meter_loops else value))]
+                    return [self.write_external(key,value)]
                 if self.current_module and key in _SELF_NAMES and key not in self.locals and key not in self.module_declarations:
                     return [p.Expr(value=call('_SelfWrite',name('_S'),literal(key),value))]
                 target=self.var(t.name,True)
@@ -977,7 +1058,11 @@ class Emit:
                 if self.meter_loops or self.source_dispatch or self.configuration_dispatch:
                     return [p.Expr(value=call('_OwnedSetIndex',name('_C'),value,
                                               self.expr(t.object),self.expr(t.index)))]
-                target=self.index(t,p.Store())
+                receiver,key=self.temp(),self.temp()
+                prefix=[p.Assign(targets=[name(receiver,True)],value=self.expr(t.object)),
+                        p.Assign(targets=[name(key,True)],value=self.expr(t.index))]
+                target=self.native_bracket(name(receiver),name(key),t.token,writing=True)
+                return [*prefix,p.Assign(targets=[target],value=value)]
             elif type(t) is b.Attribute:
                 write=call('_SetField',name('_C'),self.expr(t.object),literal(t.name))
                 if self.meter_loops:value=call('_PublicNumber',value)
@@ -1005,10 +1090,17 @@ class Emit:
             if kind is b.For:
                 first,last=self.temp(),self.temp()
                 prefix=[p.Assign(targets=[name(first,True)],value=self.expr(n.start)),
-                        p.Assign(targets=[name(last,True)],value=self.expr(n.end)),
-                        p.Assign(targets=[self.var(n.name,True)],value=name(first))]
-                advance=p.AugAssign(target=self.var(n.name,True),op=p.Add(),value=literal(1))
-                test=p.Compare(left=self.var(n.name),ops=[p.LtE()],comparators=[name(last)])
+                        p.Assign(targets=[name(last,True)],value=self.expr(n.end))]
+                key=n.name.casefold()
+                if self.external(key):
+                    prefix.append(self.write_external(key,name(first)))
+                    advance=self.write_external(key,p.BinOp(left=self.read_external(key),op=p.Add(),right=literal(1)))
+                    counter=self.read_external(key)
+                else:
+                    prefix.append(p.Assign(targets=[self.var(key,True)],value=name(first)))
+                    advance=p.AugAssign(target=self.var(key,True),op=p.Add(),value=literal(1))
+                    counter=self.var(key)
+                test=p.Compare(left=counter,ops=[p.LtE()],comparators=[name(last)])
             elif kind is b.While:
                 test=self.condition(n.condition)
             self.loop.append(advance)
@@ -1020,8 +1112,15 @@ class Emit:
                 iterable=self.expr(n.collection)
                 if self.meter_loops:iterable=call('_Metered',name('_C'),iterable)
                 elif self.source_dispatch:iterable=call('_OwnedIterable',name('_C'),iterable)
-                else:iterable=call('_BSLIterable',iterable)
-                return [p.For(target=self.var(n.name,True),iter=iterable,body=body,orelse=[])]
+                else:iterable=call('_BSLIterable',name('_C'),iterable)
+                key=n.name.casefold()
+                if self.external(key):
+                    item=self.temp()
+                    target=name(item,True)
+                    body.insert(0,self.write_external(key,name(item)))
+                else:
+                    target=self.var(key,True)
+                return [p.For(target=target,iter=iterable,body=body,orelse=[])]
             return prefix+[p.While(test=self.loop_condition(test),body=body,orelse=[])]
         if kind is b.Execute:
             return [p.Expr(value=call('_Execute',self.expr(n.expression),*self.fragment_arguments()))]
@@ -1065,7 +1164,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,fra
         compiler.goto_labels,compiler.goto_transfers=direct_goto.plan(program,PythonDirectUnsupported)
     compiler.fragment=fragment
     compiler.owned=owned
-    compiler.externals=frozenset(external_names)
+    compiler.externals=frozenset(key.casefold() for key in external_names)
     compiler.current_module=current_module or not owned
     compiler.meter_loops=meter_loops
     compiler.source_scopes=source_scopes
@@ -1077,10 +1176,18 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,fra
     compiler.shadowable=frozenset(shadowable_externals)
     compiler.value_services=frozenset(value_services)
     if constructor_profile is not None:
-        compiler.constructor_profile=frozenset(constructor_profile)|_NATIVE_CONSTRUCTORS
+        compiler.constructor_profile=(constructor_profile if type(constructor_profile) is dict
+                                      else frozenset(constructor_profile))
     if vm is not None:
         from yadinassi.execution.direct.python_direct_imports import import_names
         compiler.import_roots=frozenset(import_names(vm,program))
+        compiler.host_extensions=vm.allow_extensions
+        # Runtime-recognized types include read-only types and bindings with
+        # explicit diagnostics even when no callable constructor is registered.
+        from yadinassi.execution.direct.python_direct_services import ORDINARY_CONSTRUCTORS
+        from yadinassi.execution.direct.python_direct_value_tree import CONSTRUCTOR_NAMES
+        compiler.ordinary_constructors=ORDINARY_CONSTRUCTORS
+        compiler.tree_constructors=CONSTRUCTOR_NAMES
 
     compiler.reference_services={key for key,module in getattr(vm,'_direct_routine_modules',{}).items()
                                  if module.signatures[key][3]}
@@ -1096,8 +1203,12 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,fra
     routines=declarations if owned else [node for node in declarations if node.execution_context=='client' and not node.is_dual]
     compiler.reference_services.update(node.name.casefold() for node in declarations
                                        if node not in routines and any(not param.by_value for param in node.parameters))
-    compiler.module_declarations=set(module_names)|set(getattr(vm,'module_names',()))|{
-        key.casefold() for node in program if type(node) is b.Var and (owned or node.execution_context=='client') for key in node.names}
+    declarations_in_source={
+        key.casefold() for node in program if type(node) is b.Var and (owned or node.execution_context=='client')
+        for key in node.names}
+    if declarations_in_source & compiler.externals:
+        raise PythonDirectUnsupported('external names collide with module declarations')
+    compiler.module_declarations={key.casefold() for key in module_names}|set(getattr(vm,'module_names',()))|declarations_in_source
     compiler.routines={node.name.casefold():compiler.temp() for node in routines}
     # Async parameters are values, including those written without Val.
     routines=[replace(node,parameters=[replace(param,by_value=True) for param in node.parameters])
