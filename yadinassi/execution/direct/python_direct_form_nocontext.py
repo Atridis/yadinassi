@@ -122,7 +122,7 @@ class FormWithNoContext(FormBoundary):
             detached._handled_errors = self._handled_errors
             detached.enter()
             try:
-                exports = prepared.function({}, prepared.constants, [], detached)
+                exports = prepared.function({}, prepared.constants, detached)
                 return _scalar(exports[key](*actuals))
             except Exception as error:
                 converted = convert_error(error, prepared.plan.source_name, prepared.plan.source_text)

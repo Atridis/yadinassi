@@ -168,7 +168,7 @@ def resolve(context, name, *, require_value=False, allow_references=False, argum
         # activation or re-run module statements. Declared variables already exist.
         exports=context._routine_exports.get(id(module))
         if exports is None:
-            exports=module.plan.function(vm.variables,module.plan.constants,[],context,True)
+            exports=module.plan.function(vm.variables,module.plan.constants,context,True)
             context._routine_exports[id(module)]=exports
         arguments=tuple(_ForwardReference(value) if i in references and type(value) is Reference else value
                         for i,value in enumerate(arguments))

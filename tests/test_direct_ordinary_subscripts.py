@@ -3,7 +3,6 @@ import ast
 from contextlib import closing
 from decimal import Decimal
 import unittest
-from unittest.mock import patch
 
 from yadinassi import Interpreter
 from yadinassi.types.errors import BSLRuntimeError
@@ -14,25 +13,24 @@ class OrdinarySubscriptTests(unittest.TestCase):
         with closing(Interpreter()) as vm:
             plan = vm.prepare('A[K]=Value; A[K];')
             tree = ast.parse(plan._plan.generated_source)
-            self.assertTrue(any(type(node) is ast.Subscript and type(node.ctx) is ast.Store
-                                for node in ast.walk(tree)))
-            with patch.dict(plan._plan.function.__globals__, {
-                    '_ordinary_bracket_reader': lambda *args: self.fail('non-native index adapter')}):
-                for setup in (
-                        'A=New Array(2); K=0.5;',
-                        'A=New Map; K=True; A[1]=99;',
-                        'A=New Structure("Original",0); K="ORIGINAL";'):
-                    with self.subTest(setup=setup):
-                        vm.execute(setup)
-                        vm.variables['value'] = 17
-                        self.assertEqual(vm.execute_prepared(plan), 17)
-                        if 'Map' in setup:
-                            self.assertEqual(vm.execute('A[1];'), 99)
-                            self.assertIsNone(vm.execute('A["missing"];'))
-                        elif 'Structure' in setup:
-                            self.assertEqual(vm.execute('A["original"];'), 17)
-                            with self.assertRaises(BSLRuntimeError):
-                                vm.execute('A["missing"]=14;')
+            calls = [node.func.id for node in ast.walk(tree) if isinstance(node, ast.Call)
+                     and isinstance(node.func, ast.Name)]
+            self.assertEqual(calls, ['_WriteBracket', '_ReadBracket'])
+            for setup in (
+                    'A=New Array(2); K=0.5;',
+                    'A=New Map; K=True; A[1]=99;',
+                    'A=New Structure("Original",0); K="ORIGINAL";'):
+                with self.subTest(setup=setup):
+                    vm.execute(setup)
+                    vm.variables['value'] = 17
+                    self.assertEqual(vm.execute_prepared(plan), 17)
+                    if 'Map' in setup:
+                        self.assertEqual(vm.execute('A[1];'), 99)
+                        self.assertIsNone(vm.execute('A["missing"];'))
+                    elif 'Structure' in setup:
+                        self.assertEqual(vm.execute('A["original"];'), 17)
+                        with self.assertRaises(BSLRuntimeError):
+                            vm.execute('A["missing"]=14;')
 
     def test_noncanonical_host_mapping_preserves_missing_and_fixed_bounds(self):
         with closing(Interpreter()) as vm:

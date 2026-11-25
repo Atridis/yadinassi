@@ -97,7 +97,7 @@ def bind_context(context, vm):
             boundary._async_task = True
             boundary.enter()
             try:
-                body = factory(state, constants, [], boundary, True)[body_key](*actuals)
+                body = factory(state, constants, boundary, True)[body_key](*actuals)
                 try:
                     value, error = None, None
                     while True:

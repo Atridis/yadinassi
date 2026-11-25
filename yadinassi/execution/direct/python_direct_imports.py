@@ -608,7 +608,7 @@ class ImportBoundary:
         # the complete import protocol. Constants alone are parser-owned values.
         exports=self._routine_exports.get((child,id(module)))
         if exports is None:
-            exports=module.plan.function(child.variables,module.plan.constants,[],None,True)
+            exports=module.plan.function(child.variables,module.plan.constants,None,True)
             self._routine_exports[child,id(module)]=exports
         function=exports[name]
         if set(function.__code__.co_freevars)-{'_constants'}:return None

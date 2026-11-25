@@ -65,7 +65,7 @@ class PreparedHandlers:
                 try:
                     # Do not use Program.run: it would leave the boundary before
                     # the returned generated function has actually executed.
-                    exports=plan.function(state,plan.constants,[],context)
+                    exports=plan.function(state,plan.constants,context)
                     result=exports[descriptor.name](*slots)
                 finally:context._check()
             except Exception as error:

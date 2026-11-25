@@ -184,7 +184,7 @@ def invoke_posting(vm,routine,values):
         decimal_context.prec=38
         context.enter()
         try:
-            exports=plan.function({},plan.constants,[],context)
+            exports=plan.function({},plan.constants,context)
             exports[routine.name.casefold()](*slots)
             for name,byval,slot in zip(names,by_value,slots):
                 if not byval:values.set_member(name,slot.value)

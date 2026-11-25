@@ -57,44 +57,25 @@ def owned_index(context,receiver):
     return context.resolve_member(receiver,'__getitem__')
 
 
-class _OwnedBracket:
-    __slots__ = ('context', 'receiver')
-
-    def __init__(self, context, receiver):
-        self.context = context
-        self.receiver = receiver
-
-    def __getitem__(self, key):
-        return self.context.resolve_member(self.receiver, '__getitem__')(key)
-
-    def __setitem__(self, key, value):
-        self.context.resolve_member(self.receiver, '__setitem__')(key, value)
-
-
-class _PlainDictRead:
-    __slots__ = ('data',)
-
-    def __init__(self, data):
-        self.data = data
-
-    def __getitem__(self, key):
-        return self.data.get(key)
-
-
-def prepare_bracket(context, receiver, key, writing=False):
+def read_bracket(context, receiver, key):
     kind=type(receiver)
     if kind is list or kind is PlainArray:
-        return receiver,array_offset(receiver,key)
-    if kind is dict and not writing:
-        receiver=_PlainDictRead(receiver)
+        return receiver[array_offset(receiver,key)]
+    if kind is dict:
+        return receiver.get(key)
+    if kind is not BSLMap and kind is not BSLFixedMap and issubclass(kind,BSLObject):
+        return context.resolve_member(receiver,'__getitem__')(key)
+    return receiver[key]
+
+
+def write_bracket(context, receiver, key, value):
+    kind=type(receiver)
+    if kind is list or kind is PlainArray:
+        key=array_offset(receiver,key)
     elif kind is not BSLMap and kind is not BSLFixedMap and issubclass(kind,BSLObject):
-        receiver=_OwnedBracket(context,receiver)
-    return receiver,key
-
-
-def read_bracket(context, receiver, key):
-    target,index=prepare_bracket(context,receiver,key)
-    return target[index]
+        context.resolve_member(receiver,'__setitem__')(key,value)
+        return
+    receiver[key]=value
 
 
 def owned_set_index(context,value,receiver,key):
@@ -125,6 +106,11 @@ def bsl_iterable(context, iterable):
     if issubclass(kind,BSLObject):
         return context.resolve_member(iterable,'__iter__')()
     return iterable
+
+
+def native_array_expression(value):
+    return isinstance(value,p.List) or (
+        isinstance(value,p.Call) and isinstance(value.func,p.Name) and value.func.id=='_Array')
 
 
 def metered(context, iterable):
@@ -268,10 +254,7 @@ def indexed_actual(context, byref, receiver, owned):
         return lambda key: host_reference(address(key))
     if owned:
         return owned_index(context,receiver)
-    def read(key):
-        target,index=prepare_bracket(context,receiver,key)
-        return target[index]
-    return read
+    return partial(read_bracket,context,receiver)
 
 
 def member_actual(context, byref, receiver, key):
@@ -472,7 +455,8 @@ def reject_runtime_arity(key,count,arity):
 
 
 def array_method(receiver,key,count,want_value,omitted):
-    operation=ARRAY_ALIASES.get(key.casefold(),key.casefold())
+    folded=key.casefold()
+    operation=ARRAY_ALIASES.get(folded,folded)
     arity=_ARRAY_ARITY.get(operation)
     if arity is None:
         raise ValueError('Метод или свойство не найдено: '+key)
@@ -494,9 +478,9 @@ def requires_reference(bound,index):
 
 
 def member(context, receiver, key, count, want_value, omitted=(), source_dispatch=False,configuration_dispatch=False):
-    folded=key.casefold()
     kind=type(receiver)
     if kind is list or kind is PlainArray:return array_method(receiver,key,count,want_value,omitted)
+    folded=key.casefold()
     if not omitted and type(receiver) is _DirectStructure:
         if folded in ('property','свойство') and count in (1,2):return receiver.property
         if folded in ('insert','вставить') and count in (1,2):
@@ -538,7 +522,7 @@ def member(context, receiver, key, count, want_value, omitted=(), source_dispatc
 
 
 _OP.update(_RequiresReference=requires_reference,_OwnedIndex=owned_index,_OwnedSetIndex=owned_set_index,_Metered=metered,_OwnedIterable=owned_iterable,_BSLIterable=bsl_iterable,_Member=member,_GetField=get_field,_SetField=set_field,_FieldRef=field_reference,_LocalFieldRef=local_field_reference,_OwnsPropertyOutput=owns_property_output)
-_OP.update(_PrepareBracket=prepare_bracket,_ReadBracket=read_bracket)
+_OP.update(_WriteBracket=write_bracket,_ReadBracket=read_bracket)
 
 
 def _node(n, token):
@@ -1004,20 +988,10 @@ class Emit:
 
 
     def index(self,x):
-        if self.host_extensions and not (self.meter_loops or self.source_dispatch or self.configuration_dispatch):
-            return _node(call('_ReadBracket',name('_C'),self.expr(x.object),self.expr(x.index)),x.token)
+        receiver,key=self.expr(x.object),self.expr(x.index)
         if self.meter_loops or self.source_dispatch or self.configuration_dispatch:
-            return _node(call(call('_OwnedIndex',name('_C'),self.expr(x.object)),self.expr(x.index)),x.token)
-        return self.native_bracket(self.expr(x.object),self.expr(x.index),x.token)
-
-    def native_bracket(self,receiver,key,token,writing=False):
-        slot=self.temp()
-        extras=(literal(True),) if writing else ()
-        prepared=p.NamedExpr(target=name(slot,True),
-                             value=call('_PrepareBracket',name('_C'),receiver,key,*extras))
-        target=p.Subscript(value=prepared,slice=literal(0),ctx=p.Load())
-        index=p.Subscript(value=name(slot),slice=literal(1),ctx=p.Load())
-        return _node(p.Subscript(value=target,slice=index,ctx=p.Store() if writing else p.Load()),token)
+            return _node(call(call('_OwnedIndex',name('_C'),receiver),key),x.token)
+        return _node(call('_ReadBracket',name('_C'),receiver,key),x.token)
 
     def routine(self,routine):
         from dataclasses import fields
@@ -1094,6 +1068,7 @@ class Emit:
                 body.append(_node(p.If(test=literal(False),
                     body=[p.Expr(value=p.Yield(value=None))],orelse=[]),routine.token))
         finally:self.locals,self.globals,self.references,self.addresses,self.in_routine,self.shadows,self.in_async=old
+        body=body or [p.Pass()]
         if self.source_scopes:
             manager=call(attr(name('_C'),'routine_scope'))
             body=[p.With(items=[p.withitem(context_expr=manager,optional_vars=None)],body=body)]
@@ -1122,8 +1097,8 @@ class Emit:
                              body=[stmt for n in cycle for stmt in self.stmt(n)] or [p.Pass()],
                              orelse=[])
                 result.append(_node(loop,nodes[0].token))
-            return result or [p.Pass()]
-        return [stmt for n in nodes for stmt in self.stmt(n)] or [p.Pass()]
+            return result
+        return [stmt for n in nodes for stmt in self.stmt(n)]
 
     def loop_condition(self,test):
         if self.meter_loops:
@@ -1207,11 +1182,9 @@ class Emit:
                 if self.meter_loops or self.source_dispatch or self.configuration_dispatch:
                     return [p.Expr(value=call('_OwnedSetIndex',name('_C'),value,
                                               self.expr(t.object),self.expr(t.index)))]
-                receiver,key=self.temp(),self.temp()
-                prefix=[p.Assign(targets=[name(receiver,True)],value=self.expr(t.object)),
-                        p.Assign(targets=[name(key,True)],value=self.expr(t.index))]
-                target=self.native_bracket(name(receiver),name(key),t.token,writing=True)
-                return [*prefix,p.Assign(targets=[target],value=value)]
+                # Evaluate receiver, key and RHS before validating the target.
+                return [p.Expr(value=call('_WriteBracket',name('_C'),
+                                          self.expr(t.object),self.expr(t.index),value))]
             elif type(t) is b.Attribute:
                 write=call('_SetField',name('_C'),self.expr(t.object),literal(t.name))
                 if self.meter_loops:value=call('_PublicNumber',value)
@@ -1231,25 +1204,31 @@ class Emit:
         if kind is b.If:
             tail=self.block(n.otherwise)
             for condition,body in reversed(n.branches):
-                tail=[p.If(test=self.condition(condition),body=self.block(body),orelse=tail)]
+                tail=[p.If(test=self.condition(condition),body=self.block(body) or [p.Pass()],orelse=tail)]
             return tail
         if kind in (b.While,b.ForEach,b.For):
             prefix=[]
             advance=None
             if kind is b.For:
-                first,last=self.temp(),self.temp()
-                prefix=[p.Assign(targets=[name(first,True)],value=self.expr(n.start)),
-                        p.Assign(targets=[name(last,True)],value=self.expr(n.end))]
+                first,last=self.expr(n.start),self.expr(n.end)
+                if not isinstance(last,p.Constant):
+                    if not isinstance(first,p.Constant):
+                        slot=self.temp()
+                        prefix.append(p.Assign(targets=[name(slot,True)],value=first))
+                        first=name(slot)
+                    slot=self.temp()
+                    prefix.append(p.Assign(targets=[name(slot,True)],value=last))
+                    last=name(slot)
                 key=n.name.casefold()
                 if self.external(key):
-                    prefix.append(self.write_external(key,name(first)))
+                    prefix.append(self.write_external(key,first))
                     advance=self.write_external(key,p.BinOp(left=self.read_external(key),op=p.Add(),right=literal(1)))
                     counter=self.read_external(key)
                 else:
-                    prefix.append(p.Assign(targets=[self.var(key,True)],value=name(first)))
+                    prefix.append(p.Assign(targets=[self.var(key,True)],value=first))
                     advance=p.AugAssign(target=self.var(key,True),op=p.Add(),value=literal(1))
                     counter=self.var(key)
-                test=p.Compare(left=counter,ops=[p.LtE()],comparators=[name(last)])
+                test=p.Compare(left=counter,ops=[p.LtE()],comparators=[last])
             elif kind is b.While:
                 test=self.condition(n.condition)
             self.loop.append(advance)
@@ -1260,8 +1239,8 @@ class Emit:
             if kind is b.ForEach:
                 iterable=self.expr(n.collection)
                 if self.meter_loops:iterable=call('_Metered',name('_C'),iterable)
-                elif self.source_dispatch:iterable=call('_OwnedIterable',name('_C'),iterable)
-                else:iterable=call('_BSLIterable',name('_C'),iterable)
+                elif not native_array_expression(iterable):
+                    iterable=call('_OwnedIterable' if self.source_dispatch else '_BSLIterable',name('_C'),iterable)
                 key=n.name.casefold()
                 if self.external(key):
                     item=self.temp()
@@ -1269,8 +1248,8 @@ class Emit:
                     body.insert(0,self.write_external(key,name(item)))
                 else:
                     target=self.var(key,True)
-                return [p.For(target=target,iter=iterable,body=body,orelse=[])]
-            return prefix+[p.While(test=self.loop_condition(test),body=body,orelse=[])]
+                return [p.For(target=target,iter=iterable,body=body or [p.Pass()],orelse=[])]
+            return prefix+[p.While(test=self.loop_condition(test),body=body or [p.Pass()],orelse=[])]
         if kind is b.Execute:
             return [p.Expr(value=call('_Execute',self.expr(n.expression),*self.fragment_arguments()))]
         if kind in (b.Break,b.Continue):
@@ -1278,8 +1257,8 @@ class Emit:
         if kind is b.Try:
             caught=self.temp()
             note=call('_Handled',name('_C'),name(caught),literal(self.filename),name('_Source'))
-            handler=p.With(items=[p.withitem(context_expr=note,optional_vars=None)],body=self.block(n.handler))
-            return [p.Try(body=self.block(n.body),handlers=[p.ExceptHandler(type=name('_Recoverable'),name=caught,
+            handler=p.With(items=[p.withitem(context_expr=note,optional_vars=None)],body=self.block(n.handler) or [p.Pass()])
+            return [p.Try(body=self.block(n.body) or [p.Pass()],handlers=[p.ExceptHandler(type=name('_Recoverable'),name=caught,
                 body=[handler])],orelse=[],finalbody=[])]
         if kind is b.Raise:
             if n.value is None:
@@ -1402,7 +1381,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,fra
             initialize=[p.Expr(value=call(attr(name('_S'),'setdefault'),literal(key),literal(None)))
                         for key in sorted(compiler.module_declarations)]
         body[:0]=[*initialize,*defs,p.If(test=name('_Bind'),body=[p.Return(value=exports)],orelse=[])]
-    entry=p.FunctionDef(name='naked_module',args=arguments(('_S','_K','_O','_C','_Bind')),
+    entry=p.FunctionDef(name='naked_module',args=arguments(('_S','_K','_C','_Bind')),
                         body=body,decorator_list=[])
     helpers={**_OP,'_Source':source_text or ''}
     if async_bodies:
@@ -1416,7 +1395,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,fra
     exec(compile(tree,filename,'exec'),ns)
     template=ns['_factory'](*helpers.values())
     published=tuple(compiler.written)
-    def run(state,constants,output,context,bind_only=False):
+    def run(state,constants,context,bind_only=False):
         # Only the public observation uses Decimal. No conversion or
         # publication runs in the body of the generated loop.
         try:
@@ -1426,7 +1405,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,fra
                 execute=template
             else:
                 execute=bind(template,state)
-            result=execute(state,constants,output,context,bind_only or _exports)
+            result=execute(state,constants,context,bind_only or _exports)
             return Decimal(result) if type(result) is int else result
         finally:
             if not bind_only and not fragment and not _exports:

@@ -273,7 +273,7 @@ def run_catalog_preparation(source,program,vm,cancel,*,prepared=None):
     try:
         with localcontext() as decimal_context:
             decimal_context.prec=38
-            exports=plan.function({},plan.constants,[],context)
+            exports=plan.function({},plan.constants,context)
             exports['передзаписью'](argument)
         return argument.value
     except Exception as error:

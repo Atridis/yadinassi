@@ -59,7 +59,7 @@ class DirectConfigurationTests(unittest.TestCase):
         owner=app._modules['demoservice','server'].interpreter
         routine=owner.server_routines['applicationtitle']
         original=owner._direct_configuration_plan.function
-        def factory(state,constants,output,ctx):
+        def factory(state,constants,ctx):
             return {'applicationtitle':lambda:ctx.resolve_service('BeginTransaction')()}
         owner._direct_configuration_plan.function=factory
         with patch('yadinassi.db.database_transactions.begin') as begin:

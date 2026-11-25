@@ -57,3 +57,75 @@ Run()
         with closing(Interpreter()) as vm:
             self.assertEqual(vm.execute('M=New Map; M.Insert("A",2); R=0; '
                                        'For Each Pair In M Do R=R+Pair.Value; EndDo; R'), Decimal(2))
+
+    def test_empty_suites_only_emit_pass_when_python_requires_it(self):
+        with closing(Interpreter()) as vm:
+            source = 'If True Then X=1; EndIf; If False Then EndIf;'
+            plan = vm.prepare(source)
+            vm.execute_prepared(plan)
+            self.assertEqual(vm.variables['x'], Decimal(1))
+            tree = ast.parse(plan._plan.generated_source)
+            branches = [node for node in ast.walk(tree) if isinstance(node, ast.If)]
+            self.assertTrue(all(not branch.orelse for branch in branches))
+            self.assertEqual(sum(isinstance(node, ast.Pass) for node in ast.walk(tree)), 1)
+            empty = ast.parse(vm.prepare('')._plan.generated_source).body[0]
+            self.assertEqual([arg.arg for arg in empty.args.args], ['_S', '_K', '_C', '_Bind'])
+            self.assertEqual([type(node) for node in empty.body], [ast.Return])
+
+    def test_for_literals_are_direct_and_dynamic_bounds_are_evaluated_once(self):
+        with closing(Interpreter()) as vm:
+            generated = vm.prepare('For I=1 To 3 Do EndDo;')._plan.generated_source
+            self.assertIn('i = 1\n    while i <= 3:', generated)
+            self.assertNotIn('pass', generated)
+            source = '''Var I, Trace;
+Function First()
+    Trace=Trace+"F"; Return 1;
+EndFunction
+Function Last()
+    Trace=Trace+String(I); Return 3;
+EndFunction
+Trace=""; I=9; Sum=0;
+For I=First() To Last() Do Sum=Sum+I; EndDo;
+'''
+            vm.execute(source)
+            self.assertEqual(vm.variables['trace'], 'F9')
+            self.assertEqual(vm.variables['sum'], Decimal(6))
+            self.assertEqual(vm.variables['i'], Decimal(4))
+
+    def test_constructor_result_uses_python_iteration_without_general_dispatch(self):
+        with closing(Interpreter()) as vm:
+            source = 'R=0; For Each X In New Array(3) Do R=R+1; EndDo; R'
+            plan = vm.prepare(source)
+            self.assertEqual(vm.execute_prepared(plan), Decimal(3))
+            self.assertIn('for x in _Array(3):', plan._plan.generated_source)
+            self.assertNotIn('_BSLIterable', plan._plan.generated_source)
+
+    def test_member_dispatch_tracks_rebinding_without_type_proof(self):
+        with closing(Interpreter()) as vm:
+            source = """Function Result(Val A)
+    Return A.Count();
+EndFunction
+A=New Array(3); First=Result(A);
+A=New Map; A.Insert("k",42); Second=Result(A);
+"""
+            vm.execute(source)
+            self.assertEqual(vm.variables['first'], Decimal(3))
+            self.assertEqual(vm.variables['second'], Decimal(1))
+            with self.assertRaises(BSLError):
+                vm.execute('A=New Array; Result=A.Add(1);')
+
+    def test_builtin_name_can_be_resolved_to_a_bsl_routine(self):
+        with closing(Interpreter()) as vm:
+            self.assertEqual(vm.execute('''
+Function StrLen(Val Text)
+    Return 17;
+EndFunction
+StrLen("foo")
+'''), Decimal(17))
+
+    def test_prepared_builtin_call_observes_extension_rebinding(self):
+        with closing(Interpreter(allow_extensions=True)) as vm:
+            plan = vm.prepare('StrLen("foo")')
+            self.assertEqual(vm.execute_prepared(plan), Decimal(3))
+            vm.register_function('StrLen', lambda _: Decimal(17))
+            self.assertEqual(vm.execute_prepared(plan), Decimal(17))

@@ -211,7 +211,7 @@ def resolve_server(parent,module,name,*,require_value,allow_references,allow_omi
         if exports is None:
             if module_context:
                 for key in module.server_layout:context.state.setdefault(key,None)
-            exports=server_plan.function(context.state,server_plan.constants,[],context)
+            exports=server_plan.function(context.state,server_plan.constants,context)
             context._routine_exports[id(module)]=exports
         try:return exports[name](*arguments)
         except Exception as error:
@@ -274,7 +274,7 @@ def resolve_server(parent,module,name,*,require_value,allow_references,allow_omi
                     for initializer in (getattr(vm,'_direct_server_initializers',()) if module_context else ()):
                         for key in initializer.server_layout:context.state.setdefault(key,None)
                         plan=initializer.initializer_plan
-                        try:plan.function(context.state,plan.constants,[],context)
+                        try:plan.function(context.state,plan.constants,context)
                         except Exception as error:
                             from yadinassi.execution.codegen.direct_errors import convert_error
                             converted=convert_error(error,plan.source_name,plan.source_text)
@@ -331,7 +331,7 @@ def resolve_dual_client(parent,module,name,*,require_value,allow_references):
             context.enter()
             try:
                 if not context._verify_context:context._check_role()
-                exports=module.dual_plan.function({},module.dual_plan.constants,[],context)
+                exports=module.dual_plan.function({},module.dual_plan.constants,context)
                 bound=tuple(_ForwardReference(value if lend is None else lend.wrap(value))
                             if i in references and type(value) is Reference else value
                             for i,value in enumerate(arguments))

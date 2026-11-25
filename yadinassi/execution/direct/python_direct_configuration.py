@@ -516,7 +516,7 @@ def invoke_routine(app,owner,routine,arguments):
             context.enter()
             try:
                 try:
-                    exports=plan.function(owner.variables,plan.constants,[],context)
+                    exports=plan.function(owner.variables,plan.constants,context)
                     return public_number(exports[routine.name.casefold()](*arguments))
                 finally:context._check()
             except Exception as error:

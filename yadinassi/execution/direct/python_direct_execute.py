@@ -143,7 +143,7 @@ def _execute_fragment(text,context,parent,bindings,visible,profile):
             _admit_bindings(vm,*unit[:3])
         function,constants,source_name,source_text=unit[3:]
         scope=FragmentScope(parent,bindings,visible,context)
-        try:function(scope,constants,[],context)
+        try:function(scope,constants,context)
         except Exception as error:
             from yadinassi.execution.codegen.direct_errors import convert_error
             converted=convert_error(error,source_name,source_text)

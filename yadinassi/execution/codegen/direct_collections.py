@@ -193,7 +193,6 @@ class Program:
     constants: tuple
     function: object
     last_state: object=None
-    output: object=None
     source_name: str="<direct>"
     source_text: str=""
     _generated_tree: object=field(default=None, repr=False, compare=False)
@@ -213,11 +212,10 @@ class Program:
 
         state = validate_state(initial)
         self.last_state = state
-        self.output = []
         context.enter()
         try:
             try:
-                return self.function(state, self.constants, self.output, context)
+                return self.function(state, self.constants, context)
             finally:
                 try:
                     if getattr(context, '_verify_context', True):

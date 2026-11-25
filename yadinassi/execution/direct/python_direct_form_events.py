@@ -81,7 +81,7 @@ class ProductEventBoundary(CatalogPreparationBoundary):
                 plan=prepared._plan
                 context=CatalogPreparationBoundary(child);context.enter();slot=_Cell(cancel.get())
                 try:
-                    plan.function({},plan.constants,[],context)['проверитьданные' if checking else 'подготовитьданныекзаписи'](slot)
+                    plan.function({},plan.constants,context)['проверитьданные' if checking else 'подготовитьданныекзаписи'](slot)
                     if type(slot.value) is not bool:raise TypeError('product form cancellation requires Boolean')
                     cancel.set(slot.value)
                 finally:
@@ -137,7 +137,7 @@ def run_event(vm,program,routine,source,*,product=False,controls=(),prepared_own
     with admission(False),localcontext() as decimal_context:
         decimal_context.prec=38;context.enter()
         try:
-            plan.function(vm.variables,plan.constants,[],context)[routine.name.casefold()](*slots)
+            plan.function(vm.variables,plan.constants,context)[routine.name.casefold()](*slots)
             for parameter,slot in zip(routine.parameters,slots):
                 if not parameter.by_value:vm.variables[parameter.name.casefold()]=slot.value
         except Exception as error:

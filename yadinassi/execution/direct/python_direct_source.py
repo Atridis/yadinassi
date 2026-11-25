@@ -790,7 +790,7 @@ def _run(owner,plan,callback=None,*,same_side_admitted=False):
                 context.enter()
             try:
                 try:
-                    result=plan.function(owner.variables,plan.constants,[],context)
+                    result=plan.function(owner.variables,plan.constants,context)
                     return result if callback is None else callback(result)
                 finally:
                     if local:

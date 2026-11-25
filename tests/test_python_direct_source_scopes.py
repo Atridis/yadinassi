@@ -88,7 +88,7 @@ Try Outer();Except C=Depth();EndTry;''',source_scopes=True)
         plan=self.compile('Function F() Return Depth(); EndFunction',
             exports=True,source_scopes=True)
         context=ScopeContext();context.enter()
-        exports=plan.function({},plan.constants,[],context)
+        exports=plan.function({},plan.constants,context)
         self.assertEqual(context.events,[])
         self.assertEqual(exports['f'](),1);self.assertEqual(exports['f'](),1)
         self.assertEqual(context.events,[('enter',1),('leave',1),('enter',1),('leave',1)])

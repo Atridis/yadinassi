@@ -167,7 +167,7 @@ def _run(vm,plan,callback=None):
             decimal.prec=38;boundary.enter()
             try:
                 try:
-                    result=plan.function(vm.variables,plan.constants,[],boundary)
+                    result=plan.function(vm.variables,plan.constants,boundary)
                     return result if callback is None else callback(result)
                 finally:boundary._check()
             except Exception as error:

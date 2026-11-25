@@ -90,7 +90,9 @@ class MutableArrayIndexTests(unittest.TestCase):
                               'For I=0 To 1 Do A[I]=A.Get(I); S=S+A[I];EndDo; S;')
             tree = ast.parse(plan._plan.generated_source)
             loop = next(n for n in ast.walk(tree) if type(n) in (ast.For, ast.While))
-            self.assertTrue(any(type(n) is ast.Subscript for n in ast.walk(loop)))
+            self.assertEqual(sum(type(n) is ast.Call and type(n.func) is ast.Name
+                                 and n.func.id in ("_WriteBracket", "_ReadBracket")
+                                 for n in ast.walk(loop)), 2)
             hot = ast.unparse(loop)
             self.assertNotIn('._check(', hot)
             self.assertNotIn('.checkpoint(', hot)

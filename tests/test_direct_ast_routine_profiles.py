@@ -64,7 +64,7 @@ R=Server(); C=Both();
         text='Function Invoke(F) Return F(); EndFunction'
         plan=compile_owned(parse(text),source_text=text,source_name='<call>',source_scopes=True,source_dispatch=True,exports=True)
         context=ScopeContext();context.enter()
-        try:self.assertEqual(plan.function({},plan.constants,[],context)['invoke'](_Cell(callback)),42)
+        try:self.assertEqual(plan.function({},plan.constants,context)['invoke'](_Cell(callback)),42)
         finally:context.leave()
 
     def test_source_constructor_arity_is_checked_before_argument_effects(self):
