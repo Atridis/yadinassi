@@ -5,7 +5,7 @@ requests contain values, never BSL, procedure names, paths or Python handles.
 This is not form-state synchronization, native RPC or a network server.
 """
 from dataclasses import dataclass
-from decimal import localcontext
+from decimal import Decimal, localcontext
 from threading import Lock
 
 from yadinassi.runtime import Interpreter
@@ -58,6 +58,8 @@ class InvocationBinding:
 def _encode_scalar(value):
     # Reuse the measured context-value admission, then the bounded exact scalar
     # codec. Collections and CatalogRef remain outside this first wire profile.
+    if type(value) is int:
+        value = Decimal(value)
     Interpreter._copy_context_packet([value])
     return encode_value(value)
 

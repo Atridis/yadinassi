@@ -7,6 +7,7 @@ contract. A failed transport locks the entire application without replay.
 import argparse
 from collections import deque
 from contextlib import nullcontext
+from decimal import Decimal
 import os
 from pathlib import Path
 import sys
@@ -992,6 +993,10 @@ class ConfigurationController:
             raise TypeError('ShowInputValue requires two to four arguments')
         callback, initial = arguments[:2]
         sid, session = self._input_owner(callback)
+        # The direct emitter represents whole BSL numbers as Python ints.
+        # The scalar input protocol uses the canonical Decimal representation.
+        if type(initial) is int:
+            initial = Decimal(initial)
         prompt = arguments[2] if len(arguments) > 2 else None
         descriptor = arguments[3] if len(arguments) > 3 else None
         prompt = dialog_text('' if prompt is None else prompt, MAX_DIALOG_TEXT)
