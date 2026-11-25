@@ -350,4 +350,13 @@ def format_value(value, specification=""):
     return result
 
 
-BUILTINS = (("Формат", format_value, "Format"),)
+def _bsl_format(value, specification=""):
+    # Integer-lane numbers enter the same exact formatter as fractional values.
+    if type(value) is int:
+        value = Decimal(value)
+    if type(specification) is int:
+        specification = Decimal(specification)
+    return format_value(value, specification)
+
+
+BUILTINS = (("Формат", _bsl_format, "Format"),)
