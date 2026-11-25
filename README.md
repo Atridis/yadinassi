@@ -1,10 +1,7 @@
 # yadinassi
 
-> **Breaking change:** `python-direct` is the only execution backend.
-> The old interpreter, hybrid and compiled backends have been removed.
-> Unsupported BSL features fail explicitly, including configuration, UI and
-> async cases that have not been migrated. See [the execution contract and gaps](docs/python-direct-default.md).
-
+> BSL исполняется через единый Python-генератор, без переключения на старый движок.
+> [Режимы исполнения и ограничения](docs/python-direct-default.md).
 
 ![yadinassi logo](.github/large.png)
 

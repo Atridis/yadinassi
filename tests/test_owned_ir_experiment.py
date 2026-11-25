@@ -3,7 +3,6 @@
 The deleted Engine FULL/OFF matrix is not a supported execution mode. These
 probes assert behavior through the direct API; failures are not skipped. Child
 probe assertions remain enabled even when imported runtime modules use -O.
-See docs/retired-owned-ir-test-migration.md for the coverage disposition.
 """
 import os
 from pathlib import Path
