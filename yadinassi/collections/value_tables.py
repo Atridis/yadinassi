@@ -25,9 +25,10 @@ _MAX_INDEX_WORK = 8_000_000
 
 def _integer(value):
     # Native table indices truncate, unlike Array indices.
-    if type(value) is not Decimal or not value.is_finite():
+    kind = type(value)
+    if kind is not int and (kind is not Decimal or not value.is_finite()):
         raise TypeError("ТаблицаЗначений: ожидается конечное число")
-    if value.copy_abs() > 2 ** 32:
+    if not -(2 ** 32) <= value <= 2 ** 32:
         raise ValueError("ТаблицаЗначений: число вне поддерживаемых границ")
     return int(value)
 

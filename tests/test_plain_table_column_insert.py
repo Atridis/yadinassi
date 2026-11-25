@@ -39,6 +39,15 @@ class PlainTableColumnInsertTests(unittest.TestCase):
         self.assertEqual(table.columns.get(0).title, 'Header')
         self.assertEqual(table.columns.get(0).width, Decimal(8))
 
+    def test_generated_integer_width_works_on_add_insert_and_assignment(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('T=New ValueTable; A=T.Columns.Add("A", , "Title", 12); '
+                   'B=T.Columns.Insert(0, "B", , "Another", 9); '
+                   'Added=A.Width; Inserted=B.Width; B.Width=7; Updated=B.Width;')
+        self.assertEqual(tuple(vm.variables[k] for k in ('added', 'inserted', 'updated')),
+                         (Decimal(12), Decimal(9), Decimal(7)))
+
     def test_invalid_indices_duplicate_name_and_readonly_refuse_before_changes(self):
         table = BSLValueTable()
         column = table.columns.add('A')
