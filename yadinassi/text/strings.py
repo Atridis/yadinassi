@@ -481,8 +481,15 @@ def nstr(value: object, language: object = _OMITTED) -> str:
     return "" if selected is None else _text(selected)
 
 
+def _bsl_nstr(value: object, language: object = _OMITTED) -> str:
+    # The direct emitter represents integers as int. Keep the Python-facing
+    # nstr contract, and pass BSL Number through the existing bounded renderer.
+    return nstr(Decimal(value) if type(value) is int else value,
+                Decimal(language) if type(language) is int else language)
+
+
 BUILTINS = (
-    ("НСтр", nstr, "NStr"),
+    ("НСтр", _bsl_nstr, "NStr"),
     ("СтрСравнить", compare, "StrCompare"),
     ("СтрЧислоВхождений", occurrence_count, "StrOccurrenceCount"),
     ("СтрЧислоСтрок", line_count, "StrLineCount"),
