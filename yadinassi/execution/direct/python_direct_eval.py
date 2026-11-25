@@ -103,7 +103,7 @@ def _evaluate(value,context,parent,bindings,visible,profile):
         else:
             _admit_bindings(vm,*unit[:3])
         function,constants,source_name,source_text=unit[3:]
-        scope=FragmentScope(parent,bindings,visible,context)
+        scope=FragmentScope(parent,bindings,visible,context,profile is None)
         try:return function(scope,constants,context)
         except Exception as error:
             from yadinassi.execution.codegen.direct_errors import convert_error

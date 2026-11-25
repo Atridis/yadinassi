@@ -19,12 +19,13 @@ def local_binding(getter,setter,exists,storage=None):
 
 
 class FragmentScope:
-    def __init__(self,parent,bindings,visible,context):
+    def __init__(self,parent,bindings,visible,context,ordinary=False):
         self.parent=parent;self.context=context;self.active=True
         self.names=frozenset(parent) if visible is None else frozenset(visible).intersection(parent)
         self.bindings={name:ref for name,ref in bindings.items() if ref is not None}
         self.names=self.names-self.bindings.keys()
         self.private={}
+        self.ordinary=ordinary
     def _check(self):
         from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         if not self.active:raise BoundaryViolation('direct Execute scope has ended')
@@ -45,7 +46,14 @@ class FragmentScope:
             value=self.parent[name]
             return self._get(value) if type(value) is Reference else value
         try:return self.private[name]
-        except KeyError:missing(name)
+        except KeyError:pass
+        if self.ordinary:
+            from .python_direct_database import DATABASE_ROOT_NAMES, METADATA_NAMES, NAMES
+            vm=self.context.vm
+            if (name in METADATA_NAMES or name in DATABASE_ROOT_NAMES
+                    or (vm.database_context is not None and name in NAMES)):
+                return self.context.external_get(name)
+        missing(name)
     def __setitem__(self,name,value):
         if name in self.bindings:self._set(self.bindings[name],value)
         elif name in self.names:
@@ -143,7 +151,7 @@ def _execute_fragment(text,context,parent,bindings,visible,profile):
         else:
             _admit_bindings(vm,*unit[:3])
         function,constants,source_name,source_text=unit[3:]
-        scope=FragmentScope(parent,bindings,visible,context)
+        scope=FragmentScope(parent,bindings,visible,context,profile is None)
         try:function(scope,constants,context)
         except Exception as error:
             from yadinassi.execution.codegen.direct_errors import convert_error

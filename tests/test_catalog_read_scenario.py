@@ -68,6 +68,23 @@ Message(M.FindByDescription("Second",True)=M.FindByCode("20"));Message(M.FindByC
                 vm.execute(name+';')
             self.assertNotIn('db required',str(raised.exception))
 
+    def test_fragments_resolve_only_unbound_database_namespace_reads(self):
+        for (expr, expected) in (
+            ('Eval("Metadata.Catalogs.Count()");', 2),
+            ('R=0; Execute("R=Метаданные.Справочники.Количество();"); R;', 2),
+            ('Eval("TypeOf(Catalogs.Products.EmptyRef())=Type(""CatalogRef.Products"")");', True),
+            ('Function Read(Val Metadata) Return Eval("Metadata"); EndFunction Read(17);', 17),
+            ('Function Update(Val Metadata) Execute("Metadata=23;"); Return Metadata; EndFunction Update(17);', 23),
+        ):
+            with self.subTest(expr=expr):
+                self.assertEqual(self.vm.execute(expr), expected)
+
+        standalone=Interpreter()
+        self.addCleanup(standalone.close)
+        standalone.execute('Execute("If False Then X=Documents.Unknown; EndIf;");')
+        with self.assertRaisesRegex(BSLRuntimeError,'db required'):
+            standalone.execute('Eval("Documents.Unknown");')
+
     def test_foreign_database_reference_rejected(self):
         other=SQLiteDBContext.create(Path(self.temp.name)/'other.sqlite',import_configuration(configuration_files()))
         self.addCleanup(other.close)
