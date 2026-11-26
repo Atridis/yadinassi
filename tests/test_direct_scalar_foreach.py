@@ -6,6 +6,9 @@ from yadinassi import Interpreter
 from yadinassi.types.errors import BSLRuntimeError
 
 
+_NOT_ITERABLE = r"(?:ожидает массив или коллекцию|'(?:int|bool|decimal\.Decimal)' object is not iterable)"
+
+
 class ScalarForEachTests(unittest.TestCase):
     def test_numeric_boolean_receivers_are_catchable_without_entering_the_body(self):
         source = '''
@@ -33,11 +36,11 @@ After = 17;
                     self.assertNotIn('item', vm.variables)
                     self.assertEqual(vm.variables['after'], 17)
                     self.assertRegex(vm.variables['diagnostic'],
-                                     r'^scalar-loop\.bsl:3:\d+: .*ожидает массив или коллекцию')
+                                     r'^scalar-loop\.bsl:3:5: .*' + _NOT_ITERABLE + r'$')
 
     def test_literal_rejection_keeps_source_location(self):
         vm = Interpreter()
         self.addCleanup(vm.close)
-        with self.assertRaisesRegex(BSLRuntimeError, 'ожидает массив или коллекцию') as caught:
+        with self.assertRaisesRegex(BSLRuntimeError, _NOT_ITERABLE + r'$') as caught:
             vm.execute('\nFor Each Item In 1 Do EndDo;', 'scalar-literal.bsl')
         self.assertEqual((caught.exception.source, caught.exception.line), ('scalar-literal.bsl', 2))

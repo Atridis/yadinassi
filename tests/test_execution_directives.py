@@ -1,6 +1,7 @@
 """Bounded logical client/server calls; predictions are not native captures."""
 from decimal import Decimal
 from pathlib import Path
+import re
 import tempfile
 import unittest
 
@@ -67,7 +68,7 @@ Message(S());
         self.assertEqual(self.messages, ['42'])
         for name in ('Invisible', 'AlsoInvisible'):
             with self.subTest(name=name), self.assertRaisesRegex(
-                    BoundaryViolation, 'unregistered host service: ' + name.casefold()):
+                    BoundaryViolation, r'unregistered host service: (?i:' + re.escape(name) + r')$'):
                 self.vm.execute(f'Message({name}());')
         self.assertEqual(self.messages, ['42'])
 
@@ -134,7 +135,7 @@ Message(Outer(40));
 EndProcedure
 #EndIf
 """)
-                with self.assertRaisesRegex(BoundaryViolation, 'unregistered host service: s'):
+                with self.assertRaisesRegex(BoundaryViolation, r'unregistered host service: (?i:s)$'):
                     self.vm.execute('S();')
                 self.assertEqual(self.vm.execution_context, 'client')
                 self.assertEqual(self.messages, [])
