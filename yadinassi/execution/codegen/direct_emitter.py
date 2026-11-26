@@ -332,7 +332,7 @@ class Emit:
                     if exceptional is not None:return exceptional
                     actuals=(literal(None) if type(arg) is b.OmittedArgument else self.expr(arg)
                              for arg in x.arguments)
-                    return call(self.plain_target(key),*actuals)
+                    return direct_scalar_lowering.builtin_result(key, call(self.plain_target(key),*actuals))
                 return self.service_call(c.name,x.arguments,want_value)
             return direct_object_lowering.member_call(self, x, c, want_value)
         raise PythonDirectUnsupported(f'clean emitter: {type(x).__name__}')

@@ -6,6 +6,18 @@ from ..direct_python_ast import call, literal
 
 _COMPARISONS = ('=', '<>', '<', '<=', '>', '>=')
 
+# These native calls can return a lone UTF-16 surrogate. Tag only calls already
+# bound to the builtin implementation, never a user or runtime-dispatched call.
+_UTF16_UNIT_PRODUCERS = frozenset((
+    'char', 'символ', 'left', 'лев', 'right', 'прав', 'mid', 'сред',
+))
+
+
+def builtin_result(key, invocation):
+    if key in _UTF16_UNIT_PRODUCERS:
+        invocation.bsl_utf16_units = True
+    return invocation
+
 
 def condition(self,x):
     root=x
@@ -31,7 +43,9 @@ def unary(emit, node):
 def binary(operator, left, right):
     if operator == '+' and (
             type(left) is p.Constant and type(left.value) is str
-            or type(left) is p.Call and type(left.func) is p.Name and left.func.id == '_String'):
+            or type(left) is p.Call and (
+                getattr(left, 'bsl_utf16_units', False)
+                or type(left.func) is p.Name and left.func.id == '_String')):
         return call('_String', left, right)
     if operator in ('<', '<=', '>', '>=') and not any(
             type(value) is p.Constant and type(value.value) is not str

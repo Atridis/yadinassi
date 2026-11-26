@@ -69,6 +69,7 @@ class CharacterTests(unittest.TestCase):
             for expression in (
                 'Char(55357) + Char(56832)',
                 'Left("😀", 1) + Right("😀", 1)',
+                'Mid("A😀B", 2, 1) + Сред("A😀B", 3, 1)',
                 'A + B',
             ):
                 with self.subTest(prepared=prepared, expression=expression):
@@ -82,6 +83,27 @@ class CharacterTests(unittest.TestCase):
                         vm.execute(source)
                     self.assertEqual(vm.variables['result'], '😀')
                     self.assertEqual(vm.execute('Char(56832) + Char(55357)'), '\ude00\ud83d')
+
+    def test_builtin_utf16_join_does_not_wrap_numeric_addition_or_shadowed_names(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        plan = vm.prepare(
+            'Text = ЛеВ("😀", 1) + ПраВ("😀", 1); '
+            'N = 19 + 23; '
+            'Function Char(Val Code) Return Code; EndFunction '
+            'Shadowed = Char(2) + 3;'
+        )
+        vm.execute_prepared(plan)
+        self.assertEqual(vm.variables['text'], '😀')
+        self.assertEqual(vm.variables['n'], Decimal(42))
+        self.assertEqual(vm.variables['shadowed'], Decimal(5))
+        tree = ast.parse(plan._plan.generated_source)
+        sums = [node for node in ast.walk(tree)
+                if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add)]
+        self.assertEqual(len(sums), 2)
+        self.assertTrue(any(isinstance(node.left, ast.Call) for node in sums))
+        self.assertEqual(sum(isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                             and node.func.id == '_String' for node in ast.walk(tree)), 1)
 
     def test_dynamic_add_evaluates_operands_once_in_order(self):
         for prepared in (False, True):
