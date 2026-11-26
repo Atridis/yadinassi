@@ -176,9 +176,10 @@ def _contract(vm):
 def _compile(vm,program,nodes,source_text,source_name,*,_exports=False):
     from yadinassi.execution.codegen.direct_emitter import compile_module
     from .python_direct_database import METADATA_NAMES, NAMES
-    names=NAMES if vm.database_context is not None else METADATA_NAMES
+    attached = vm.database_context is not None
     return compile_module(vm,program,nodes,source_text,source_name,_exports=_exports,
-                          external_names=names,
+                          external_names=NAMES if attached else (),
+                          standalone_metadata=() if attached else METADATA_NAMES,
                           constructor_profile=(vm.types if vm.allow_extensions else vm._builtin_types))
 
 
@@ -364,7 +365,7 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
 
 
 def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=None):
-    from .python_direct_database import CatalogBoundary
+    from .python_direct_database import DATABASE_ROOT_NAMES, CatalogBoundary
     from .python_direct_live_metadata import LiveMetadataBoundary
     from .python_direct_detached_metadata import DetachedMetadataBoundary
     database = vm.database_context
@@ -410,9 +411,13 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=N
             return self.external_reference(key)
 
         def missing_value(self,name):
-            if name.casefold() in getattr(vm,'_direct_routine_modules',{}):
+            key = name.casefold()
+            if key in getattr(vm,'_direct_routine_modules',{}):
                 from yadinassi.execution.codegen.direct_collections import _routine_value_error
                 return _routine_value_error(name)
+            if database is None and key in DATABASE_ROOT_NAMES:
+                from yadinassi.db.database_context import require_database_context
+                require_database_context()
             return super().missing_value(name)
 
         def resolve_optional_service(self,name,*args,_non_name_actuals=(),**kwargs):

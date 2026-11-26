@@ -155,6 +155,7 @@ class Emit:
         self.in_routine=False
         self.owned=False
         self.externals=frozenset()
+        self.standalone_metadata=()
         self.current_module=False
         self.meter_loops=False
         self.source_scopes=False
@@ -272,6 +273,8 @@ class Emit:
             if key not in self.locals and key not in self.module_declarations:
                 if self.current_module and key in SELF_NAMES:
                     return call('_SelfRead',name('_C'),name('_S'),literal(key))
+                if key in self.standalone_metadata:
+                    return direct_object_lowering.standalone_metadata_read(self, key)
                 if key in self.externals:
                     return self.read_external(key)
                 if key in SYSTEM_NAMES and not self.owned:
@@ -468,7 +471,7 @@ class Emit:
 
 
 def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,fragment=False,require_value=False,
-                   owned=False,module_names=(),external_names=(),current_module=False,reference_names=(),meter_loops=False,retain_generated=True,source_scopes=False,source_dispatch=False,scalar_routines=False,shadowable_externals=(),value_services=(),constructor_profile=None,catalog_budget=False,bound_constructors=(),configuration_dispatch=False):
+                   owned=False,module_names=(),external_names=(),current_module=False,reference_names=(),meter_loops=False,retain_generated=True,source_scopes=False,source_dispatch=False,scalar_routines=False,shadowable_externals=(),value_services=(),constructor_profile=None,catalog_budget=False,bound_constructors=(),configuration_dispatch=False,standalone_metadata=()):
     filename=source_name or (program[0].token.source if program else '<строка>')
     compiler=Emit(filename)
     compiler.has_jumps=any(type(n) is b.Goto for n in nodes) if nodes else direct_goto.has_goto(program)
@@ -477,6 +480,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,fra
     compiler.fragment=fragment
     compiler.owned=owned
     compiler.externals=frozenset(key.casefold() for key in external_names)
+    compiler.standalone_metadata=standalone_metadata
     compiler.current_module=current_module or not owned
     compiler.meter_loops=meter_loops
     compiler.source_scopes=source_scopes

@@ -1,9 +1,16 @@
-"""Index behavior outside the ordinary Python value lane."""
+"""Object and namespace behavior outside the ordinary Python value lane."""
 from yadinassi.syntax import ast as b
 from yadinassi.types.values import NULL
 from ..direct_python_ast import _node, attr, call, literal, name
 from .direct_reference_lowering import SELF_NAMES
 import ast as p
+
+
+def standalone_metadata_read(emit, key):
+    # Without a DB, only a *read* of an unbound Metadata alias gets the
+    # detached namespace. Ordinary assignments and local declarations win.
+    bound = p.Compare(left=literal(key), ops=[p.In()], comparators=[name('_S')])
+    return p.IfExp(test=bound, body=emit.var(key), orelse=emit.read_external(key))
 
 
 def index(self,x):

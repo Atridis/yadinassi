@@ -68,6 +68,35 @@ Message(M.FindByDescription("Second",True)=M.FindByCode("20"));Message(M.FindByC
                 vm.execute(name+';')
             self.assertNotIn('db required',str(raised.exception))
 
+    def test_standalone_database_roots_use_normal_python_lookup(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('If False Then R=Catalogs.Products; EndIf;')
+        plan = vm.prepare('R=Справочники.Products;')
+        source = plan._plan.generated_source
+        self.assertIn("справочники, 'Products'", source)
+        self.assertNotIn('external_get', source)
+        with self.assertRaisesRegex(BSLRuntimeError, 'db required'):
+            vm.execute_prepared(plan)
+        vm.execute('Справочники=New Structure("Products", 23);')
+        vm.execute_prepared(plan)
+        self.assertEqual(vm.variables['r'], 23)
+        with self.assertRaisesRegex(BSLRuntimeError, 'UnknownName'):
+            vm.execute('UnknownName.Products;')
+
+    def test_standalone_metadata_shadow_is_live_on_prepared_reads(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        read = vm.prepare('R=Metadata;')
+        vm.execute_prepared(read)
+        original = vm.variables['r']
+        self.assertIs(original, vm.execute('Метаданные;'))
+        vm.execute_prepared(vm.prepare('Metadata=23;'))
+        vm.execute_prepared(read)
+        self.assertEqual(vm.variables['r'], 23)
+        self.assertEqual(vm.execute('Вычислить("Metadata");'), 23)
+        self.assertIs(original, vm.execute('Метаданные;'))
+
     def test_fragments_resolve_only_unbound_database_namespace_reads(self):
         for (expr, expected) in (
             ('Eval("Metadata.Catalogs.Count()");', 2),
