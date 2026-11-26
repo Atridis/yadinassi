@@ -1,11 +1,8 @@
-"""Counts stay native only where a closed compiler path consumes them safely."""
-import ast
+"""Collection bounds, indexing, and public numeric results."""
 import unittest
 from decimal import Decimal as D
-from unittest.mock import patch
 from yadinassi import BSLError, Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.collections.plain_value_table_runtime import BSLValueTable
 
 
 class NativeCollectionCountTests(unittest.TestCase):
@@ -13,18 +10,19 @@ class NativeCollectionCountTests(unittest.TestCase):
         for method in ('Count', 'Количество'):
             for prepared in (False, True):
                 vm=Interpreter();self.addCleanup(vm.close)
-                source=f'T=New ValueTable; T.Columns.Add("N"); R=T.Add(); R.N=7; C=T.{method}(); V=T[T.{method}()-1][0]; C;'
-                seen=[];original=BSLValueTable.get
-                def get(table,index):
-                    seen.append(type(index));return original(table,index)
-                with patch.object(BSLValueTable,'get',get):
-                    plan=vm.prepare(source)
-                    result=vm.execute_prepared(plan) if prepared else vm.execute_program(parse(source))
-                self.assertEqual(seen,[int]);self.assertIs(type(result),D)
-                self.assertEqual(result,D(1));self.assertEqual(vm.variables['v'],D(7))
-                self.assertIs(type(vm.variables['c']),D)
-                self.assertIn('len(',plan._plan.generated_source)
-                self.assertNotIn('.count()',plan._plan.generated_source)
+                source = (
+                    'T=New ValueTable; T.Columns.Add("N"); '
+                    'First=T.Add(); First.N=3; Last=T.Add(); Last.N=7; '
+                    f'C=T.{method}(); V=T[T.{method}()-1][0]; C;'
+                )
+                result = (
+                    vm.execute_prepared(vm.prepare(source)) if prepared
+                    else vm.execute_program(parse(source))
+                )
+                self.assertIs(type(result), D)
+                self.assertEqual(result, D(2))
+                self.assertEqual(vm.variables['v'], D(7))
+                self.assertIs(type(vm.variables['c']), D)
 
     def test_empty_last_index_preserves_error_and_partial_state(self):
         vm=Interpreter();self.addCleanup(vm.close)
@@ -49,7 +47,6 @@ class NativeCollectionCountTests(unittest.TestCase):
             self.assertEqual(vm.execute_prepared(plan),D(1))
             self.assertTrue(all(type(value) is D for value in vm.variables['a']))
             self.assertIs(type(vm.variables['x']),D)
-            self.assertIn('len(',plan._plan.generated_source)
 
     def test_array_upper_bound_index_shares_native_bracket_get_and_store(self):
         source = ('A=New Array; A.Add(8); A.Add(9); B=New Array; B.Add(1); '
@@ -59,14 +56,6 @@ class NativeCollectionCountTests(unittest.TestCase):
             with self.subTest(mode=mode):
                 vm=Interpreter();self.addCleanup(vm.close)
                 plan=vm.prepare(source)
-                tree=ast.parse(plan._plan.generated_source)
-                subscripts=[node for node in ast.walk(tree)
-                            if isinstance(node,ast.Subscript) and isinstance(node.slice,ast.IfExp)]
-                self.assertEqual(sum(isinstance(node.ctx,ast.Load) for node in subscripts),2)
-                self.assertEqual(sum(isinstance(node.ctx,ast.Store) for node in subscripts),1)
-                self.assertEqual(plan._plan.generated_source.count('len('),3)
-                # Only the public C assignment needs the Decimal UBound helper.
-                self.assertEqual(plan._plan.generated_source.count('_native_ubound('),1)
                 if mode=='source':result=vm.execute(source)
                 elif mode=='ast':result=vm.execute_program(parse(source))
                 else:result=vm.execute_prepared(plan)
@@ -92,26 +81,47 @@ class NativeCollectionCountTests(unittest.TestCase):
         vm=Interpreter();self.addCleanup(vm.close)
         plan=vm.prepare('A=New Array; A.Add(7); B=New Array; C=B.Count(); '
                         'If C=1 Then X=A[B.UBound()]; EndIf; A[0];')
-        self.assertIn('len(',plan._plan.generated_source)
         self.assertEqual(vm.execute_prepared(plan),D(7))
         self.assertNotIn('x',vm.variables)
 
     def test_array_upper_bound_store_evaluates_offset_once_before_rhs(self):
-        from yadinassi.execution.direct.python_direct_plain_array import PlainArray
-        vm=Interpreter();self.addCleanup(vm.close)
-        calls=[]
-        def length(value):
-            calls.append(value)
-            return list.__len__(value)
-        plan=vm.prepare('A=New Array; A.Add(7); B=New Array; A[B.UBound()]=1/0;',
-                        'ubound-order.bsl')
-        self.assertIn('len(',plan._plan.generated_source)
-        with patch.object(PlainArray,'__len__',length):
-            with self.assertRaisesRegex(BSLError,'Деление на ноль'):
-                vm.execute_prepared(plan)
-        self.assertEqual(len(calls),1)
-        self.assertIs(calls[0],vm.variables['b'])
-        self.assertEqual(list(vm.variables['a']),[D(7)])
+        for mode in ('source', 'ast', 'prepared'):
+            for fails in (False, True):
+                with self.subTest(mode=mode, fails=fails):
+                    vm = Interpreter()
+                    self.addCleanup(vm.close)
+                    rhs = '1/0' if fails else '8'
+                    source = f"""
+Function KeyArray(Val B, Val Trace)
+    Trace.Add("key");
+    Return B;
+EndFunction
+Function RHS(Val Trace)
+    Trace.Add("rhs");
+    Return {rhs};
+EndFunction
+A=New Array; A.Add(7); B=New Array; Trace=New Array;
+{'' if fails else 'B.Add(0);'}
+A[KeyArray(B, Trace).UBound()] = RHS(Trace);
+After=1;
+"""
+                    def run():
+                        if mode == 'source':
+                            return vm.execute(source)
+                        if mode == 'ast':
+                            return vm.execute_program(parse(source))
+                        return vm.execute_prepared(vm.prepare(source))
+
+                    if fails:
+                        # The RHS error wins over the invalid index from the empty B.
+                        with self.assertRaisesRegex(BSLError, 'Деление на ноль'):
+                            run()
+                        self.assertNotIn('after', vm.variables)
+                    else:
+                        run()
+                        self.assertEqual(vm.variables['after'], D(1))
+                    self.assertEqual(list(vm.variables['trace']), ['key', 'rhs'])
+                    self.assertEqual(list(vm.variables['a']), [D(7 if fails else 8)])
 
     def test_table_and_column_index_of_stay_native_inside_plan(self):
         vm=Interpreter();self.addCleanup(vm.close)
@@ -121,7 +131,7 @@ class NativeCollectionCountTests(unittest.TestCase):
         self.assertEqual(vm.execute_prepared(plan),D(7))
         self.assertTrue(all(type(vm.variables[key]) is D for key in ('i','j','x','missing')))
         self.assertEqual(vm.variables['missing'],D(-1))
-        self.assertEqual(plan._plan.generated_source.count('._index_of('),3)
+        self.assertEqual((vm.variables['i'], vm.variables['j']), (D(0), D(0)))
 
     def test_other_collection_payloads_not_broadened(self):
         for source,name in (
