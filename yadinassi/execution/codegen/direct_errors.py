@@ -163,3 +163,12 @@ def description_service(context,function):
         errors=context._handled_errors
         return str(errors[-1].resolve(context)) if errors and errors[-1] is not None else ''
     return HostFunction(function.name,description,reference_parameters=function.reference_parameters,returns_value=function.returns_value)
+
+
+
+def plain_diagnostic_implementation(context, key, entry):
+    # test_extended_exceptions: the handler snapshot belongs to the generated
+    # activation, not to the interpreter's legacy handler stack.
+    if key in ('errordescription', 'описаниеошибки', 'errorinfo', 'информацияобошибке'):
+        return description_service(context, entry[0]).function
+    return entry[1]
