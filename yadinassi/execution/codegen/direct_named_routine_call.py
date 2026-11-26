@@ -1,6 +1,5 @@
 """Names owned by a compiled BSL routine module, not the builtin resolver."""
 from yadinassi.execution.direct.python_direct_routines import bind_omissions, resolve
-from yadinassi.execution.invocation import resolve_direct_invocation
 from yadinassi.syntax import ast as b
 from .direct_python_ast import call, literal, name
 
@@ -21,6 +20,10 @@ def _bind(context, key, want_value, count, omissions, non_names, references):
 
 
 def _bind_invocation(context, key, want_value, count):
+    # The transport owns UI protocol types. A plain CLI must not import them
+    # without an actual invocation (test_plain_cli_does_not_import_ui_families).
+    from yadinassi.execution.invocation import resolve_direct_invocation
+
     # test_invocation_port: call arity is rejected before effects, and the
     # transport must own the late reads and reply checks.
     entry = context.vm._direct_invocation_ports.get(key)
