@@ -154,12 +154,17 @@ class TrailingOmittedArgumentTests(unittest.TestCase):
                            'items.Add(Tick(),)', 'Receiver().Add(Tick(),)',
                            'New Array(Tick(),)', 'New HostType(Tick(),)'):
             with self.subTest(expression=expression):
-                with self.assertRaisesRegex(BSLRuntimeError, 'Пропуск аргументов'):
+                with self.assertRaises(BSLRuntimeError) as raised:
                     self.vm.execute(expression)
                 self.assertEqual(self.vm.execute('argumentsCalled'), Decimal(0))
                 self.assertEqual(self.vm.execute('items.Count()'), Decimal(0))
                 self.assertEqual(host_calls, [])
                 self.assertEqual(self.output, [])
+                # A known Array.Add can reject this syntax as an arity error.
+                diagnostic = (r'Пропуск аргументов|[Кк]оличество аргументов'
+                              if expression.startswith('items.Add(')
+                              else 'Пропуск аргументов')
+                self.assertRegex(str(raised.exception), diagnostic)
 
 
 if __name__ == '__main__':

@@ -20,15 +20,18 @@ class DirectArrayElementAddressTests(unittest.TestCase):
                 'T=New Array; T.Add(2); For I=1 To 3 Do Rewrite(T[0],2,T[0]); EndDo;')
         plan=vm.prepare(source)
         tree=ast.parse(plan._plan.generated_source)
-        loop=next(node for node in ast.walk(tree) if type(node) is ast.For)
+        loop=next(node for node in ast.walk(tree) if isinstance(node, (ast.For, ast.While)))
         calls=[node.func.id for node in ast.walk(loop)
                if type(node) is ast.Call and type(node.func) is ast.Name]
-        self.assertEqual(calls.count('_checked_literal_array_index'),2)
+        self.assertEqual(calls.count('_BindLocalIndexRef'),2)
         self.assertNotIn('_adapt_native_cell',calls)
-        self.assertNotIn('_IndexRef',calls)
+        self.assertNotIn('_BindIndexRef',calls)
+        self.assertNotIn('_Member',calls)
+        self.assertNotIn('_ReadBracket',calls)
         vm.execute_prepared(plan)
         self.assertEqual(vm.variables['t'],[D(23)])
-        self.assertIs(type(vm.variables['t'][0]),D)
+        self.assertIs(type(vm.variables['t'][0]),int)
+        self.assertEqual(vm.execute('T[0]'),D(23))
         vm.execute('X=2; Y=3; Rewrite(X, 5, Y);')
         self.assertEqual((vm.variables['x'],vm.variables['y']),(D(10),D(4)))
 
@@ -39,11 +42,13 @@ class DirectArrayElementAddressTests(unittest.TestCase):
                 'For I=1 To 3 Do SetOrAdd(T[0],2); EndDo;')
         plan=vm.prepare(source)
         tree=ast.parse(plan._plan.generated_source)
-        loop=next(node for node in ast.walk(tree) if type(node) is ast.For)
+        loop=next(node for node in ast.walk(tree) if isinstance(node, (ast.For, ast.While)))
         hot=ast.unparse(loop)
-        self.assertIn('_checked_literal_array_index',hot)
+        self.assertIn('_BindLocalIndexRef',hot)
+        self.assertNotIn('_BindIndexRef',hot)
         self.assertNotIn('_adapt_native_cell',hot)
-        self.assertNotIn('_context._check()',hot)
+        self.assertFalse(any(isinstance(node, ast.Attribute) and node.attr == '_check'
+                             for node in ast.walk(loop)))
         vm.execute_prepared(plan)
         self.assertEqual(vm.variables['t'],[D(8)])
 
@@ -110,7 +115,7 @@ class DirectArrayElementAddressTests(unittest.TestCase):
             return D(0)
         vm.register_function('Swap',swap)
         source='Procedure Change(A, Val Ignored) A=9; EndProcedure\nChange(Values[0],Swap());'
-        with self.assertRaisesRegex(BoundaryViolation,'canonical array address storage or hooks changed'):
+        with self.assertRaisesRegex(BoundaryViolation,'canonical (?:array address storage or hooks|reference backing) changed'):
             vm.execute(source)
         self.assertEqual(original,[None])
         self.assertEqual(values.items,[D(42)])
