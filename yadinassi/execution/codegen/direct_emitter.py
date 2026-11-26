@@ -177,6 +177,7 @@ class Emit:
         self.named_services=frozenset()
         self.plain_calls=False
         self.call_slots={}
+        self.invocation_services=frozenset()
         self.catalog_budget=False
         self.bound_constructors=frozenset()
         self.configuration_dispatch=False
@@ -503,6 +504,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,fra
         compiler.import_roots=frozenset(import_names(vm,program))
         compiler.host_extensions=vm.allow_extensions
         compiler.plain_calls=not fragment and not vm.allow_extensions and vm.database_context is None
+        compiler.invocation_services=frozenset(getattr(vm,'_direct_invocation_ports',()))
         if compiler.host_extensions:
             compiler.named_services=frozenset(vm.functions) | frozenset(getattr(vm,'_direct_routine_modules',()))
         # Runtime-recognized types include read-only types and bindings with

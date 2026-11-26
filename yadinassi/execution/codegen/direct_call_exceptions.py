@@ -14,8 +14,20 @@ def _call(name, args=(), keywords=()):
     return py.Call(func=py.Name(id=name, ctx=py.Load()), args=list(args), keywords=list(keywords))
 
 
+# The tests below distinguish a required hole from an explicitly supplied
+# Undefined: reject the hole before evaluating the other actuals.
+_REQUIRED_POSITIONS = {
+    'strfind': 2, 'стрнайти': 2,               # test_str_find_extended
+    'readjson': 1, 'прочитатьjson': 1,         # test_json_conversion
+    'writejson': 2, 'записатьjson': 2,         # test_json_conversion
+}
+
+
 def lower(emit, key, arguments):
     """Return an explicit operation, or None for an ordinary Python call."""
+    required = _REQUIRED_POSITIONS.get(key)
+    if required is not None and any(type(arg) is bsl.OmittedArgument for arg in arguments[:required]):
+        return _call('_InvalidOmissions')
     if key in ('eval', 'вычислить'):
         # test_eval: caller locals must stay live, and wrong arity must not
         # evaluate any argument.

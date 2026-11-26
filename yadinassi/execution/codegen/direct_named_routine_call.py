@@ -1,5 +1,6 @@
 """Names owned by a compiled BSL routine module, not the builtin resolver."""
 from yadinassi.execution.direct.python_direct_routines import bind_omissions, resolve
+from yadinassi.execution.invocation import resolve_direct_invocation
 from yadinassi.syntax import ast as b
 from .direct_python_ast import call, literal, name
 
@@ -19,7 +20,18 @@ def _bind(context, key, want_value, count, omissions, non_names, references):
     return bind_omissions(bound) if local_omissions else bound
 
 
+def _bind_invocation(context, key, want_value, count):
+    # test_invocation_port: call arity is rejected before effects, and the
+    # transport must own the late reads and reply checks.
+    entry = context.vm._direct_invocation_ports.get(key)
+    return resolve_direct_invocation(context, key, entry, require_value=want_value, argument_count=count)
+
+
 def lower(emit, key, actuals, want_value):
+    if key in emit.invocation_services:
+        target = call('_BindInvocationPort', name('_C'), literal(key), literal(want_value), literal(len(actuals)))
+        return emit.bound_call(target, actuals, emit.omissions(actuals), crossing=True)
+
     # Existing procedures installed into the interpreter, and a known actual
     # server declaration, are evidenced call shapes. No builtin retry.
     if key not in emit.persistent_services and key not in emit.server_services:
@@ -38,4 +50,4 @@ def lower(emit, key, actuals, want_value):
     return emit.bound_call(target, actuals, omitted, references=references, crossing=crossing)
 
 
-HELPERS = {'_BindNamedRoutine': _bind}
+HELPERS = {'_BindNamedRoutine': _bind, '_BindInvocationPort': _bind_invocation}
