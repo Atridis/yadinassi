@@ -1,5 +1,6 @@
 """Native PR30 character regressions plus explicitly broader robustness tests."""
 
+import ast
 from decimal import Decimal, Inexact, Rounded, ROUND_UP, localcontext
 import unittest
 
@@ -111,11 +112,19 @@ class CharacterTests(unittest.TestCase):
             'R = 0; For I = 1 To 4 Do R = R + Inc(I); EndDo;'
         )
         plan = vm.prepare(source)
-        generated = plan._plan.generated_source
-        self.assertRegex(generated, r'return _temporary_\d+ \+ 1')
-        self.assertNotIn('_concatenate', generated.split('def _publish_module', 1)[1])
         vm.execute_prepared(plan)
         self.assertEqual(vm.variables['r'], Decimal(14))
+        tree = ast.parse(plan._plan.generated_source)
+        routine_adds = [node.value for node in ast.walk(tree) if isinstance(node, ast.Return)
+                        and isinstance(node.value, ast.BinOp) and isinstance(node.value.op, ast.Add)]
+        self.assertTrue(any(isinstance(add.left, ast.Name) and isinstance(add.right, ast.Constant)
+                            and add.right.value == 1 for add in routine_adds))
+        loop = next(node for node in ast.walk(tree) if isinstance(node, ast.While))
+        self.assertTrue(any(isinstance(node, ast.Assign) and isinstance(node.value, ast.BinOp)
+                            and isinstance(node.value.op, ast.Add)
+                            and isinstance(node.value.right, ast.Call) for node in loop.body))
+        self.assertFalse(any(isinstance(node, ast.Name) and node.id in ('_String', '_concatenate')
+                             for node in ast.walk(loop)))
 
     def test_concat_keeps_existing_reassembly_inside_an_operand(self):
         vm = Interpreter()

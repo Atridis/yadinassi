@@ -19,6 +19,20 @@ class _ErrorLocations:
         return self.lines
 
 
+def parsed_source_lines(nodes, filename):
+    """AST-only execution has token lines, not the original source buffer."""
+    from yadinassi.syntax.lexer import Token
+
+    lines = {}
+    for node in nodes:
+        token = node.token
+        if (type(token) is Token and type(token.line) is int
+                and type(token.source) is str and token.source == filename
+                and type(token.source_line) is str and token.source_line):
+            lines.setdefault(token.line, token.source_line)
+    return lines
+
+
 def _remainder_site(trace,source_line,column):
     if column is not None and source_line:
         return source_line[column:column+1]=='%'
@@ -89,8 +103,11 @@ def convert_error(error,filename,source,*,_context=None):
         index=chosen.tb_lasti//2
         if index<len(positions):line,_,column,_=positions[index]
     line=line or chosen.tb_lineno
-    lines=source.splitlines() if locations is None else locations.for_source(source)
-    source_line=lines[line-1] if 0<line<=len(lines) else ''
+    if type(source) is dict:
+        source_line=source.get(line,'')
+    else:
+        lines=source.splitlines() if locations is None else locations.for_source(source)
+        source_line=lines[line-1] if 0<line<=len(lines) else ''
     message=str(error) or type(error).__name__
     if isinstance(error,(ZeroDivisionError,DivisionByZero)):message='Деление на ноль'
     elif type(error) is NameError and chosen.tb_next is None and type(error.name) is str:

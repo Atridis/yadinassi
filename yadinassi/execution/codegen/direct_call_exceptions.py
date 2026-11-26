@@ -25,7 +25,9 @@ _REQUIRED_POSITIONS = {
 
 def lower(emit, key, arguments):
     """Return an explicit operation, or None for an ordinary Python call."""
-    required = _REQUIRED_POSITIONS.get(key)
+    # The native Dates fixture `date.construct.omitted` rejects an empty
+    # component in a full call rather than supplying a default second/minute.
+    required = len(arguments) if key in ('date', 'дата') else _REQUIRED_POSITIONS.get(key)
     if required is not None and any(type(arg) is bsl.OmittedArgument for arg in arguments[:required]):
         return _call('_InvalidOmissions')
     if key in ('eval', 'вычислить'):

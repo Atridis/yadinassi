@@ -176,7 +176,7 @@ class Program:
     function: object
     last_state: object=None
     source_name: str="<direct>"
-    source_text: str=""
+    source_text: str | dict[int, str]=""
     _generated_tree: object=field(default=None, repr=False, compare=False)
 
     @property

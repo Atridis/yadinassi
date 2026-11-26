@@ -17,7 +17,7 @@ from yadinassi.syntax import ast as b
 from .direct_collections import Program, _argument_count_error, _Cell, _bound_ref, _host_omission_error, _host_omission_values, _OMITTED_REF
 from yadinassi.execution.direct.python_direct_plain_map import PlainMap, plain_map
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
-from .direct_errors import handled_error, reraise_handled
+from .direct_errors import handled_error, parsed_source_lines, reraise_handled
 from .direct_resources import bounded_array
 from .direct_structure import _DirectStructure, new_structure
 from yadinassi.execution.direct.python_direct_names import CHARS_ALIASES, NAMES as SYSTEM_NAMES
@@ -590,7 +590,9 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,fra
             attr(name('_C'),'plain_callables'),literal(tuple(compiler.call_slots)))))
     entry=p.FunctionDef(name='naked_module',args=arguments(('_S','_K','_C','_Bind')),
                         body=body,decorator_list=[])
-    helpers={**_OP,'_Source':source_text or ''}
+    diagnostic_source=parsed_source_lines(nodes,filename) if source_text is None and nodes else source_text
+    diagnostic_source=diagnostic_source or ''
+    helpers={**_OP,'_Source':diagnostic_source}
     if async_bodies:
         from yadinassi.application.async_runtime import AwaitRequest
         helpers.update(_AwaitRequest=AwaitRequest,_BindAsync=bind)
@@ -620,7 +622,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,fra
                     value=state.get(key)
                     if type(value) is int:state[key]=Decimal(value)
     program=Program(None,tuple(compiler.constants),run,
-                   source_name=filename,source_text=source_text or '',
+                   source_name=filename,source_text=diagnostic_source,
                    _generated_tree=entry if retain_generated else None)
     program._source_implicit_shadows=frozenset(compiler.implicit_shadows)
     return program

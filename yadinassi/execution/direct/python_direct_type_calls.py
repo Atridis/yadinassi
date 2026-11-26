@@ -4,10 +4,11 @@ from yadinassi.collections.plain_value_list import PlainValueList, PlainValueLis
 from yadinassi.execution.codegen.direct_collections import _DIRECT_MAP_ENTRY_TYPE, _TypedMap
 from yadinassi.execution.codegen.direct_structure import _DirectStructure
 from yadinassi.types.type_values import _DIRECT_TYPE_OF_ABI
+from yadinassi.types.value_checks import _DIRECT_VALUE_IS_FILLED_ABI
 from yadinassi.types.values import BSLType
 from .python_direct_fixed import PlainFixedMap
 from .python_direct_plain_array import PlainArray
-from .python_direct_plain_map import PlainMap
+from .python_direct_plain_map import PlainMap, _DIRECT_FIXED_MAP_STORAGE
 
 
 def type_of(value):
@@ -35,5 +36,25 @@ def type_of(value):
     return _DIRECT_TYPE_OF_ABI(value)
 
 
+def value_is_filled(value):
+    # Probe only the emitted representations, without truthiness or length
+    # hooks on arbitrary host values. Boxed values retain the ordinary ABI.
+    kind = type(value)
+    if kind is int:
+        return value != 0
+    if kind is list or kind is PlainArray:
+        return list.__len__(value) != 0
+    if kind is _DirectStructure or kind is PlainMap or kind is _TypedMap:
+        return dict.__len__(value) != 0
+    if kind is PlainFixedMap:
+        storage = _DIRECT_FIXED_MAP_STORAGE.__get__(value, PlainFixedMap)
+        return dict.__len__(storage) != 0
+    return _DIRECT_VALUE_IS_FILLED_ABI(value)
+
+
 def implementation(function):
-    return type_of if function is _DIRECT_TYPE_OF_ABI else function
+    if function is _DIRECT_TYPE_OF_ABI:
+        return type_of
+    if function is _DIRECT_VALUE_IS_FILLED_ABI:
+        return value_is_filled
+    return function
