@@ -384,9 +384,11 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=N
         def plain_callables(self,names):
             from .python_direct_type_calls import implementation
             from .python_direct_numeric_calls import bit_implementation
+            from .python_direct_codec_calls import implementation as codec_implementation
             entries=vm._builtin_functions
             missing=(None,None)
-            return tuple(bit_implementation(implementation(entries.get(key,missing)[1])) for key in names)
+            return tuple(codec_implementation(bit_implementation(implementation(entries.get(key,missing)[1])))
+                         for key in names)
 
         def current_module(self):
             return vm._self_module
