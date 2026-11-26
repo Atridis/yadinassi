@@ -31,7 +31,10 @@ def routine(self,routine):
                 defaults.append(p.If(test=probe,
                     body=[p.Assign(targets=[name(key,True)],value=call('_Cell',default))],orelse=[]))
         elif optional:
-            raise PythonDirectUnsupported('clean emitter: parameter after default')
+            # Python requires a default for every later positional slot.
+            # Both local and published BSL binders reject a missing required
+            # position before evaluating actuals (test_defaults).
+            args.defaults.append(name('_OmittedRef'))
     local={param.name.casefold() for param in routine.parameters}
     declared=set()
     writes=set()

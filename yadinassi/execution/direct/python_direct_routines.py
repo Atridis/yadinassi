@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from copy import copy
 
 from yadinassi.types.values import HostFunction, Reference
+from yadinassi.execution.codegen.direct_collections import _Cell, _OMITTED_REF
 from yadinassi.execution.codegen.direct_live_state import _ForwardReference
 from yadinassi.execution.codegen.direct_errors import convert_error
 
@@ -27,6 +28,7 @@ class RoutineModule:
     dual_names: frozenset = frozenset()
     local_function_exports: frozenset = frozenset()
     async_names: frozenset = frozenset()
+    optional_before_required: dict | None = None
 
 
 def prepare(vm, program, plan, *, retain_generated=True):
@@ -43,6 +45,13 @@ def prepare(vm, program, plan, *, retain_generated=True):
         max((i+1 for i,p in enumerate(node.parameters) if p.default is None),default=0),
         len(node.parameters),frozenset(i for i,p in enumerate(node.parameters) if not (node.is_async or p.by_value)))
         for node in declarations if type(node) is ast.Routine}
+    optional_before_required = {
+        key: positions
+        for node in declarations if type(node) is ast.Routine
+        for key in (node.name.casefold(),)
+        if (positions := frozenset(i for i, p in enumerate(node.parameters[:signatures[key][1]])
+                                   if p.default is not None))
+    }
     declared={name.casefold() for node in declarations if type(node) is ast.Var and node.execution_context=='client' for name in node.names}
     server=[node for node in declarations if type(node) is not ast.ServerInitializer and node.execution_context=='server']
     server_names=frozenset(node.name.casefold() for node in server if type(node) is ast.Routine)
@@ -64,7 +73,13 @@ def prepare(vm, program, plan, *, retain_generated=True):
             # The existing owned catalog namespace supplies query parameters;
             # no other database/server services are added to this profile.
             external_names+=('catalogs','справочники')
-    reference_names=tuple(key for key,signature in signatures.items() if signature[3])
+    reference_names = {key for key, signature in signatures.items() if signature[3]}
+    if server_names or initializer_body or any(type(n) is ast.Routine and n.is_dual for n in declarations):
+        # A previously compiled server routine may own a by-reference
+        # parameter. Lower its actuals using its declaration, not as values.
+        reference_names.update(key for key, module in getattr(vm, '_direct_routine_modules', {}).items()
+                               if key in calls and key not in signatures and key in module.server_names
+                               and module.signatures[key][3])
     if server_names-nocontext_names:
         server_plan=compile_server(server,source_text=plan.source_text,source_name=plan.source_name,
             module_names=tuple(server_layout),external_names=external_names,
@@ -92,7 +107,7 @@ def prepare(vm, program, plan, *, retain_generated=True):
         and node.module_context)
     return RoutineModule(exports,signatures,_contract(vm),frozenset(vm.module_names)|declared,
                          constructors,calls-names,server_plan,server_names,server_layout,
-                         initializer_plan,initializer_constructors,initializer_calls,nocontext_plan,nocontext_names,dual_plan,dual_names,local_function_exports,async_names)
+                         initializer_plan,initializer_constructors,initializer_calls,nocontext_plan,nocontext_names,dual_plan,dual_names,local_function_exports,async_names,optional_before_required)
 
 
 def validate_calls(vm, calls, seen=None, *, registry=None, layout=None, initializers=None):
@@ -138,6 +153,23 @@ def bind_omissions(bound):
     return bound
 
 
+def invoke_with_omissions(module, name, function, arguments):
+    """Bind explicit BSL holes without calling any defaults at the caller."""
+    _, minimum, _, references = module.signatures[name]
+    optional_before_required = (module.optional_before_required or {}).get(name, ())
+    bound = tuple((_Cell(None) if i in references else None)
+                  if value is _OMITTED_REF and i < minimum and i not in optional_before_required
+                  else value for i, value in enumerate(arguments))
+    first = next((i for i, value in enumerate(bound) if value is _OMITTED_REF), len(bound))
+    if first == len(bound):
+        return function(*bound)
+    names = function.__code__.co_varnames
+    return function(*bound[:first], **{
+        names[i]: value for i, value in enumerate(bound[first:], first)
+        if value is not _OMITTED_REF
+    })
+
+
 def resolve(context, name, *, require_value=False, allow_references=False, argument_count=None, crossing_omissions=False, non_name_actuals=(), local_omissions=False):
     vm=context.vm
     module=getattr(vm,'_direct_routine_modules',{}).get(name)
@@ -175,16 +207,7 @@ def resolve(context, name, *, require_value=False, allow_references=False, argum
         try:
             function=exports[name]
             if local_omissions:
-                from yadinassi.execution.codegen.direct_collections import _Cell, _OMITTED_REF
-                arguments=tuple((_Cell(None) if i in references else None)
-                                if i<minimum and value is _OMITTED_REF else value
-                                for i,value in enumerate(arguments))
-                first=next((i for i,value in enumerate(arguments) if value is _OMITTED_REF),len(arguments))
-                if first<len(arguments):
-                    names=function.__code__.co_varnames
-                    return function(*arguments[:first],**{
-                        names[i]:value for i,value in enumerate(arguments[first:],first)
-                        if value is not _OMITTED_REF})
+                return invoke_with_omissions(module, name, function, arguments)
             return function(*arguments)
         except Exception as error:
             converted=convert_error(error,module.plan.source_name,module.plan.source_text)

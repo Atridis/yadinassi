@@ -79,6 +79,24 @@ class DirectPersistedRoutineHoleTests(unittest.TestCase):
         self.vm.execute('X=1; R=Server(X,,Change(X),X);')
         self.assertEqual((self.vm.variables['x'],self.vm.variables['r']),(9,9))
 
+    def test_optional_before_required_preserves_explicit_holes_at_server(self):
+        self.vm.execute("""
+            &AtServer
+            Function Server(Val Amount=2, ByRefArg, Val Tail=7)
+                ByRefArg = ?(ByRefArg = Undefined, 0, ByRefArg) + Amount;
+                Return ByRefArg + Tail;
+            EndFunction
+        """)
+        for prepare in (False, True):
+            with self.subTest(prepare=prepare):
+                script = 'X=4; R=Server(,X,3); S=Server(,,3);'
+                if prepare:
+                    self.vm.execute_prepared(self.vm.prepare(script))
+                else:
+                    self.vm.execute(script)
+                self.assertEqual((self.vm.variables['x'], self.vm.variables['r'],
+                                  self.vm.variables['s']), (6, 9, 5))
+
     def test_client_server_hole_over_arity_rejects_before_actual_effects(self):
         self.vm.execute("""
             Function Tick() Raise "unexpected argument effect"; Return 1; EndFunction

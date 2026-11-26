@@ -4,7 +4,7 @@ import unittest
 
 from yadinassi import BSLError, Interpreter
 from yadinassi.syntax import ast
-from yadinassi.types.errors import IncompleteInput
+from yadinassi.types.errors import BSLRuntimeError, IncompleteInput
 from yadinassi.syntax.parser import parse
 
 
@@ -118,12 +118,21 @@ class DefaultParameterTests(unittest.TestCase):
         self.assertEqual(self.output, [])
 
     def test_host_omissions_rejected_without_argument_effects(self):
-        for code in ['Message(,1)', 'Message(Message("bad"),,1)',
-                     'New Array(,1)', 'a.Add(,1)']:
-            self.vm.execute('a = New Array')
-            with self.subTest(code=code), self.assertRaisesRegex(BSLError, 'Пропуск аргументов'):
-                self.vm.execute(code)
-        self.assertEqual(self.output, [])
+        self.vm.execute('Function Tick() Message("bad"); Return 1; EndFunction')
+        for prepared in (False, True):
+            for code in ('Message(,1)', 'Message(Message("bad"),,1)',
+                         'New Array(,1)', 'a.Add(,1)', 'a.Add(,Tick())'):
+                with self.subTest(code=code, prepared=prepared):
+                    self.vm.execute('a = New Array')
+                    with self.assertRaises(BSLRuntimeError) as caught:
+                        if prepared:
+                            self.vm.execute_prepared(self.vm.prepare(code))
+                        else:
+                            self.vm.execute(code)
+                    self.assertRegex(str(caught.exception),
+                                     r'(?i)пропуск аргументов|количество аргументов')
+                    self.assertEqual(self.vm.execute('a.Count()'), 0)
+                    self.assertEqual(self.output, [])
 
     def test_message_holes_fail_before_actuals_in_both_routes(self):
         for prepared in (False, True):

@@ -134,11 +134,7 @@ class ServerBoundary(ServicesBoundary,CatalogBoundary,BoundaryContext):
         key=name.casefold()
         module=getattr(self.vm,'_direct_routine_modules',{}).get(key)
         if self._server_side and module is not None and key in module.server_names:
-            from .python_direct_routines import bind_omissions
-            bound=self.resolve_service(name,*args,**kwargs)
-            if getattr(self.vm,'_direct_routine_modules',{}).get(key) is module:
-                return bind_omissions(bound)
-            return bound
+            return self.resolve_service(name,*args,_routine_omissions=True,**kwargs)
         return super().resolve_optional_service(name,*args,**kwargs)
 
     def _resolve_query(self,key):
@@ -177,7 +173,7 @@ class ServerBoundary(ServicesBoundary,CatalogBoundary,BoundaryContext):
             return method(*args)
         return construct
 
-    def resolve_service(self,name,*args,**kwargs):
+    def resolve_service(self,name,*args,_routine_omissions=False,**kwargs):
         key=name.casefold()
         if key in ('new:query','new:запрос'):
             return self._resolve_query(key[4:])
@@ -187,7 +183,8 @@ class ServerBoundary(ServicesBoundary,CatalogBoundary,BoundaryContext):
             raise ValueError('Удалённый вызов доступен только из логического клиента')
         from .python_direct_routines import resolve
         routine=resolve(self,key,require_value=kwargs.get('require_value',False),
-            allow_references=kwargs.get('allow_references',False),argument_count=kwargs.get('argument_count'))
+            allow_references=kwargs.get('allow_references',False),argument_count=kwargs.get('argument_count'),
+            crossing_omissions=_routine_omissions)
         if routine is not None:return routine
         return super().resolve_service(name,*args,**kwargs)
 
@@ -213,7 +210,12 @@ def resolve_server(parent,module,name,*,require_value,allow_references,allow_omi
                 for key in module.server_layout:context.state.setdefault(key,None)
             exports=server_plan.function(context.state,server_plan.constants,context)
             context._routine_exports[id(module)]=exports
-        try:return exports[name](*arguments)
+        try:
+            function = exports[name]
+            if omitted:
+                from .python_direct_routines import invoke_with_omissions
+                return invoke_with_omissions(module, name, function, arguments)
+            return function(*arguments)
         except Exception as error:
             from yadinassi.execution.codegen.direct_errors import convert_error
             converted=convert_error(error,server_plan.source_name,server_plan.source_text)
@@ -306,13 +308,13 @@ def resolve_server(parent,module,name,*,require_value,allow_references,allow_omi
             if type(reference) is not Reference:raise TypeError('named server value requires a source reference')
             return _LateNamedValue(reference)
         bound.prepare_named_value=prepare_named_value
-        if allow_omissions:
-            def prepare_omissions(current,positions,count):
-                nonlocal omitted,copyout_references
-                omitted=positions
-                copyout_references=references.difference(positions)
-                return current,dict.fromkeys(positions,None)
-            bound.prepare_omissions=prepare_omissions
+    if allow_omissions:
+        def prepare_omissions(current,positions,count):
+            nonlocal omitted,copyout_references
+            omitted=positions
+            copyout_references=references.difference(positions)
+            return current,dict.fromkeys(positions,None if crossing else _OMITTED_REF)
+        bound.prepare_omissions=prepare_omissions
     return bound
 
 
