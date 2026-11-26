@@ -124,8 +124,49 @@ class LocalFieldsTests(unittest.TestCase):
     def test_known_string_number_uses_concat_not_native_add(self):
         vm,plan,source=self.prepare('S=New Structure("Text,N","x",2);R=S.Text+S.N;')
         vm.execute_prepared(plan);self.assertEqual(vm.variables['r'],'x2')
-        self.assertIn('_concatenate',source)
+        self.assertIn("_String(_GetField(_C, s, 'Text'), _GetField(_C, s, 'N'))", source)
         self.assertNotIn('_native_add',source)
+
+    def test_text_field_addition_does_not_change_numeric_or_mutable_field_paths(self):
+        vm, plan, generated = self.prepare(
+            'S=New Structure(" N, Text, tEXT ", 2, 0, "x"); '
+            'Alias=S; Text=Alias.Text+S.N; '
+            'Num=S.N+3; Alias.Text=5; After=S.Text+2;'
+        )
+        vm.execute_prepared(plan)
+        self.assertEqual(vm.variables['text'], 'x2')
+        self.assertEqual(vm.variables['num'], D(5))
+        self.assertEqual(vm.variables['after'], D(7))
+        self.assertEqual(generated.count('_String('), 1)
+
+    def test_text_field_knowledge_does_not_survive_a_call_or_loop(self):
+        def configure(vm):
+            vm.register_function('Mutate', lambda: vm.variables['s'].__setitem__('N', 3))
+
+        vm, plan, generated = self.prepare(
+            'S=New Structure("N","x"); Mutate(); After=S.N+2; '
+            'T=New Structure("N","x"); '
+            'For I=1 To 2 Do T.N=I; Tally=T.N+2; EndDo;', configure
+        )
+        vm.execute_prepared(plan)
+        self.assertEqual(vm.variables['after'], D(5))
+        self.assertEqual(vm.variables['tally'], D(4))
+        self.assertNotIn('_String(', generated)
+
+        def configure_rhs(vm):
+            def mutate():
+                vm.variables['s']['N'] = 3
+                return D(2)
+            vm.register_function('Mutate', mutate)
+
+        vm, plan, generated = self.prepare(
+            'S=New Structure("N","x"); Before=S.N+Mutate(); After=S.N+2;',
+            configure_rhs,
+        )
+        vm.execute_prepared(plan)
+        self.assertEqual(vm.variables['before'], 'x2')
+        self.assertEqual(vm.variables['after'], D(5))
+        self.assertEqual(generated.count('_String('), 1)
 
     def test_scalar_facts_recover_after_opaque_call(self):
         vm,plan,source=self.prepare('Host();A=3;B=4;R=A+B;',lambda vm:vm.register_function('Host',lambda:None))

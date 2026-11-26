@@ -20,7 +20,7 @@ def block(self,nodes):
             result.append(_node(loop,nodes[0].token))
         return result
     result = []
-    strings = set()
+    strings = {}
     for n in nodes:
         emitted = self.stmt(n)
         if type(n) is b.Assign:

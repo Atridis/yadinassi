@@ -77,6 +77,27 @@ def _missing_message(context, key, source_line, column):
     return 'Переменная или функция не определена: '+spelling
 
 
+def _source_frame(error, filename):
+    trace, chosen = error.__traceback__, None
+    while trace is not None:
+        if trace.tb_frame.f_code.co_filename == filename:
+            chosen = trace
+        trace = trace.tb_next
+    return chosen
+
+
+def _unbound_local_name(trace):
+    if trace is None or trace.tb_next is not None:
+        return None
+    from dis import get_instructions
+    for instruction in get_instructions(trace.tb_frame.f_code):
+        if instruction.offset == trace.tb_lasti:
+            if instruction.opname.startswith(('LOAD_FAST', 'LOAD_DEREF')):
+                return instruction.argval
+            return None
+    return None
+
+
 def convert_error(error,filename,source,*,_context=None):
     """Convert only recoverable runtime errors, preserving nonrecoverable boundaries."""
     if (getattr(_context,'_async_scheduler',None) is not None
@@ -84,11 +105,14 @@ def convert_error(error,filename,source,*,_context=None):
         return error
     if isinstance(error,BSLError) or not isinstance(error,(ArithmeticError,ValueError,TypeError,IndexError,NameError,RecursionError)):
         return error
-    chosen=None;tb=error.__traceback__
-    while tb is not None:
-        if tb.tb_frame.f_code.co_filename==filename:chosen=tb
-        tb=tb.tb_next
+    chosen=_source_frame(error,filename)
     if chosen is None:return error
+    # An uninitialized BSL local fails in the generated instruction itself.
+    # Do not relabel an exception originating inside the embedding Python call.
+    if isinstance(error,UnboundLocalError):
+        local_name = _unbound_local_name(chosen)
+        if type(local_name) is not str:
+            return error
     locations=None
     if _context is not None:
         locations=getattr(_context,'_error_locations',None)
@@ -112,6 +136,8 @@ def convert_error(error,filename,source,*,_context=None):
     if isinstance(error,(ZeroDivisionError,DivisionByZero)):message='Деление на ноль'
     elif type(error) is NameError and chosen.tb_next is None and type(error.name) is str:
         message=_missing_message(_context,error.name,source_line,column)
+    elif isinstance(error,UnboundLocalError):
+        message=_missing_message(None,local_name,source_line,column)
     elif type(error) is InvalidOperation:
         message=_decimal_remainder_message(chosen,source_line,column) or message
     return BSLRuntimeError(message,filename,line,(column or 0)+1,source_line=source_line)
@@ -133,6 +159,9 @@ def handled_error(context,error,filename,source):
     """Activation-local diagnostics; nested handlers discard stale outer details."""
     scheduler=getattr(context,'_async_scheduler',None)
     if scheduler is not None and scheduler.active_context.host_failure is error:raise error
+    if (isinstance(error,UnboundLocalError)
+            and _unbound_local_name(_source_frame(error,filename)) is None):
+        raise error
     errors=context._handled_errors
     for index in range(len(errors)):errors[index]=None
     errors.append(_HandledError(error,filename,source))

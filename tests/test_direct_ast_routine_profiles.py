@@ -25,7 +25,9 @@ R=Server(); C=Both();
         vm=Interpreter();self.addCleanup(vm.close)
         prepared=vm.prepare('Function F() X=X+1; Return X; EndFunction; R=F();')
         from yadinassi.types.errors import BSLRuntimeError
-        with self.assertRaisesRegex(BSLRuntimeError, 'local variable'):vm.execute_prepared(prepared)
+        with self.assertRaisesRegex(BSLRuntimeError, r"(?:local variable .*x|не определена: X)"):
+            vm.execute_prepared(prepared)
+        self.assertNotIn('r', vm.variables)
 
     def test_source_startup_and_safe_mode_without_retired_compiler(self):
         from test_configuration_source_runtime import source
