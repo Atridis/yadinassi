@@ -11,6 +11,7 @@ import unittest
 from unittest import mock
 
 from yadinassi import BSLError, Interpreter
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse
 
@@ -242,10 +243,16 @@ State=40;
         self.assertEqual(set(self.vm.server_routines), {'f'})
 
     def test_all_incoming_groups_validate_before_any_replacement_or_effect(self):
-        self.vm.execute(DUAL + 'Function F() Return 1; EndFunction')
-        old_client = self.vm.routines.copy()
-        old_server = self.vm.server_routines.copy()
-        old_markers = self.vm._dual_routine_names.copy()
+        self.vm.execute(DUAL + """Function F()
+#If Server Then
+Return 11;
+#Else
+Return 1;
+#EndIf
+EndFunction
+&AtServer
+Function ServerF() Return F(); EndFunction
+""")
         replacement = parse(DUAL + 'Function F() Return 2; EndFunction', 'replacement.bsl')
         pair = [n for n in parse(DUAL + 'Function G() Return 3; EndFunction') if isinstance(n, ast.Routine)]
         ordinary = next(n for n in parse('Function G() Return 4; EndFunction') if isinstance(n, ast.Routine))
@@ -255,30 +262,43 @@ State=40;
                       [pair[0], replace(pair[1], token=replace(pair[1].token, column=99))],
                       [pair[0], replace(pair[1], token=replace(pair[1].token, kind='PROCEDURE'))],
                       [pair[0], pair[1], pair[0]], [pair[0], ordinary], [ordinary, ordinary])
-        for group in bad_groups:
+        prefix = replacement + parse('Message("must not run"); Var NewStorage;')
+        for index, group in enumerate(bad_groups):
+            expected = ('duplicate routine declarations' if index == len(bad_groups) - 1
+                        else 'dual routines require one client and one server declaration')
             with self.subTest(group=group):
-                with self.assertRaises(BSLError):
-                    self.vm.execute_program(replacement + parse('Message("must not run"); Var NewStorage;') + group)
-                self.assertEqual(self.vm.routines, old_client)
-                self.assertEqual(self.vm.server_routines, old_server)
-                self.assertEqual(self.vm._dual_routine_names, old_markers)
+                with self.assertRaisesRegex(PythonDirectUnsupported, expected):
+                    self.vm.execute_program(prefix + group)
                 self.assertNotIn('newstorage', self.vm.variables)
-        self.assertEqual(self.output, [])
-        self.assertEqual(self.vm.execute('F()'), Decimal(1))
+                self.assertEqual(self.output, [])
+                self.assertEqual(self.vm.execute('F()'), Decimal(1))
+                self.assertEqual(self.vm.execute('ServerF()'), Decimal(11))
+                self.assert_restored()
 
     def test_forged_ast_context_flags_and_async_dual_are_rejected_before_effects(self):
+        self.vm.execute('Function Anchor() Return 19; EndFunction')
         dual = next(n for n in parse(DUAL + 'Function F() Return 1; EndFunction') if isinstance(n, ast.Routine))
-        for changes in ({'is_dual': 1}, {'is_dual': 'yes'}, {'module_context': 0},
-                        {'module_context': True}, {'execution_context': 'dual'},
-                        {'is_async': True}, {'is_async': 1},
-                        {'is_dual': False, 'module_context': False, 'execution_context': 'client'}):
-            with self.subTest(changes=changes), self.assertRaises(BSLError):
-                self.vm.execute_program(parse('Message("must not run");') + [replace(dual, **changes)])
-        self.assertEqual(self.output, [])
-        self.assertFalse(self.vm.routines)
-        self.assertFalse(self.vm.server_routines)
-        self.assertFalse(self.vm._dual_routine_names)
-        self.assert_restored()
+        cases = (
+            ({'is_dual': 1}, PythonDirectUnsupported, 'dual routines require'),
+            ({'is_dual': 'yes'}, PythonDirectUnsupported, 'dual routines require'),
+            ({'module_context': 0}, PythonDirectUnsupported, 'dual routines require'),
+            ({'module_context': True}, PythonDirectUnsupported, 'dual routines require'),
+            ({'execution_context': 'dual'}, PythonDirectUnsupported, 'not integrated'),
+            ({'is_async': True}, BSLError, 'Асинх для двойной подпрограммы'),
+            ({'is_async': 1}, BSLError, 'Признак асинхронной подпрограммы'),
+            ({'is_dual': False, 'module_context': False, 'execution_context': 'client'},
+             PythonDirectUnsupported, 'not integrated'),
+        )
+        for changes, error, match in cases:
+            with self.subTest(changes=changes):
+                with self.assertRaisesRegex(error, match):
+                    self.vm.execute_program(parse('Message("must not run"); Var NewStorage;') +
+                                            [replace(dual, **changes)])
+                self.assertNotIn('newstorage', self.vm.variables)
+                self.assertEqual(set(self.vm._direct_routine_modules), {'anchor'})
+                self.assertEqual(self.vm.execute('Anchor()'), Decimal(19))
+                self.assertEqual(self.output, [])
+                self.assert_restored()
 
     def test_module_storage_and_context_calls_hidden_direct_eval_execute(self):
         bodies = ('Return Secret;', 'Return Eval("Secret");',
