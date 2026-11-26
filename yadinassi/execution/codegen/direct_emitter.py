@@ -19,7 +19,7 @@ from .direct_scalar_semantics import typed_find
 from .direct_structure import _DirectStructure, new_structure
 from yadinassi.execution.direct.python_direct_names import CHARS_ALIASES, NAMES as SYSTEM_NAMES
 from yadinassi.types.errors import BSLRuntimeError
-from .direct_live_state import UNSET, source_reference, _SlotReference, _ForwardReference
+from .direct_live_state import UNSET, source_reference, host_reference as live_host_reference, _SlotReference, _ForwardReference
 from .direct_boundaries import BoundaryViolation, _MISSING as _SERVICE_MISSING
 from yadinassi.execution.direct.python_direct_eval import bind_eval
 from yadinassi.execution.direct.python_direct_execute import FragmentScope, execute_fragment
@@ -320,7 +320,7 @@ _OP = dict(_Truth=truth, _PublicNumber=public_number, _Divide=divide, _Remainder
            _Recoverable=(ArithmeticError,TypeError,ValueError,IndexError,NameError,RecursionError,BSLRuntimeError),
            _Handled=handled_error, _Reraise=reraise_handled, _Raise=raise_error,
            _RaiseArity=raise_arity_error, _Presentation=presentation,
-           _LexicalRef=lexical_reference, _FragmentRef=fragment_reference, _Eval=bind_eval, _Execute=execute_fragment, _GetAttr=getattr, _SourceShapes=source_shapes, _VarRef=source_reference, _Cell=_Cell, _BoundRef=_bound_ref,
+           _LexicalRef=lexical_reference, _FragmentRef=fragment_reference, _Eval=bind_eval, _Execute=execute_fragment, _GetAttr=getattr, _SourceShapes=source_shapes, _VarRef=source_reference, _LiveHostRef=live_host_reference, _Cell=_Cell, _BoundRef=_bound_ref,
            _BindIndexRef=bind_index_reference, _BindLocalIndexRef=bind_local_index_reference, _HostRef=host_reference, _IndexedActual=indexed_actual, _MemberActual=member_actual, _CellActual=cell_actual, _Unchanged=unchanged, _ImportedRef=_ForwardReference,
            _Construct=construct, _Array=bounded_array, _Structure=new_structure, _MapFrom=plain_map, _Omissions=_host_omission_values, _InvalidOmissions=_host_omission_error)
 
@@ -612,6 +612,7 @@ class Emit:
         self.ordinary_constructors=()
         self.tree_constructors=()
         self.host_extensions=False
+        self.named_services=frozenset()
         self.catalog_budget=False
         self.bound_constructors=frozenset()
         self.configuration_dispatch=False
@@ -909,9 +910,18 @@ class Emit:
         omitted=self.omissions(args)
         resolver='resolve_optional_service' if omitted else 'resolve_service'
         folded=key.casefold()
-        references=(folded in self.reference_services or
-                    self.source_dispatch and not folded.startswith('new:') and folded not in self.value_services)
+        host_capture=self.host_extensions and not self.owned and not self.source_dispatch
+        if host_capture and folded in self.locals:
+            bound=call(attr(name('_C'),'resolve_extension_value'),self.var(folded),
+                       require_value=literal(want_value),allow_references=literal(True))
+            return self.bound_call(bound,args,omitted,references=True,captured_host=True)
         crossing=folded in self.server_services
+        dynamic_host_call=(host_capture
+                           and not folded.startswith('new:') and not self.external(folded)
+                           and folded not in self.named_services and folded not in self.reference_services
+                           and not crossing)
+        references=(folded in self.reference_services or dynamic_host_call or
+                    self.source_dispatch and not folded.startswith('new:') and folded not in self.value_services)
         target=[literal(key)]
         if self.source_dispatch and not folded.startswith('new:') and not self.external(folded):
             if folded in self.locals:
@@ -936,9 +946,10 @@ class Emit:
         callback = self.import_path(args[callback_slot]) if (callback_slot is not None
                                                              and callback_slot < len(args)) else None
         return self.bound_call(bound,args,omitted,references=references,crossing=crossing,
-                               callback=(callback_slot,callback) if callback is not None else None)
+                               callback=(callback_slot,callback) if callback is not None else None,
+                               captured_host=dynamic_host_call)
 
-    def bound_call(self,bound,args,omitted,*,references=False,crossing=False,shapes=False,callback=None):
+    def bound_call(self,bound,args,omitted,*,references=False,crossing=False,shapes=False,callback=None,captured_host=False):
         if shapes:
             named=[]
             for arg in args:
@@ -970,7 +981,7 @@ class Emit:
             named=crossing and type(plain) is b.Name
             is_reference=call('_RequiresReference',function,literal(i))
             if not named:
-                return self.actual_address(arg,is_reference) if references else self.expr(arg)
+                return self.actual_address(arg,is_reference,captured_host=captured_host) if references else self.expr(arg)
             value=self.expr(arg)
             reference=call('_HostRef',self.reference(arg),name('_C'))
             late=self.temp()
@@ -982,17 +993,27 @@ class Emit:
             return p.IfExp(test=is_reference,body=reference,orelse=value)
         return call(bound,*(actual(i,arg) for i,arg in enumerate(args)))
 
-    def actual_address(self,arg,test):
+    def actual_address(self,arg,test,*,captured_host=False):
         plain=arg
         while type(plain) is b.Group:plain=plain.expression
         if type(plain) is b.Name:
-            return p.IfExp(test=test,body=call('_HostRef',self.reference(arg),name('_C')),orelse=self.expr(arg))
+            key=plain.name.casefold()
+            if (captured_host and not self.fragment and key not in self.locals and key not in self.references
+                    and not self.external(key) and self.import_path(plain) is None
+                    and not (self.current_module and key in _SELF_NAMES)
+                    and not (key in CHARS_ALIASES and key not in self.module_declarations)):
+                # A Python caller can supply an existing Reference in its module slot.
+                address=call('_LiveHostRef',name('_S'),literal(key))
+            else:
+                address=call('_HostRef',self.reference(arg),name('_C'))
+            return p.IfExp(test=test,body=address,orelse=self.expr(arg))
         if type(plain) is b.Index:
             owned=self.meter_loops or self.source_dispatch or self.configuration_dispatch
             bind=call('_IndexedActual',name('_C'),test,self.expr(plain.object),literal(owned))
             return call(bind,self.expr(plain.index))
         if type(plain) is b.Attribute:
             return call('_MemberActual',name('_C'),test,self.expr(plain.object),literal(plain.name))
+        if captured_host:return self.expr(arg)
         convert=p.IfExp(test=test,body=name('_CellActual'),orelse=name('_Unchanged'))
         return call(convert,self.expr(arg))
 
@@ -1320,6 +1341,8 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,fra
         from yadinassi.execution.direct.python_direct_imports import import_names
         compiler.import_roots=frozenset(import_names(vm,program))
         compiler.host_extensions=vm.allow_extensions
+        if compiler.host_extensions:
+            compiler.named_services=frozenset(vm.functions) | frozenset(getattr(vm,'_direct_routine_modules',()))
         # Runtime-recognized types include read-only types and bindings with
         # explicit diagnostics even when no callable constructor is registered.
         from yadinassi.execution.direct.python_direct_services import ORDINARY_CONSTRUCTORS

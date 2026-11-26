@@ -5,7 +5,7 @@ from yadinassi.types.values import HostFunction,Reference
 from yadinassi.types.errors import BSLRuntimeError
 
 class DynamicRefsTests(unittest.TestCase):
-    def execute_case(self, source, expected, signature=(0,), reference_flags=None):
+    def execute_case(self, source, expected, signature=(0,), reference_flags=None, *, prepared=False):
         vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);events=[]
         def host(*args):
             events.append(tuple(isinstance(x,Reference) for x in args))
@@ -14,7 +14,10 @@ class DynamicRefsTests(unittest.TestCase):
         wrapper=HostFunction('h',host,reference_parameters=frozenset(signature))
         def change():wrapper.reference_parameters=frozenset({1});return Decimal(0)
         vm.register_function('Get',lambda:wrapper);vm.register_function('Change',change)
-        vm.execute(source,'ref.bsl')
+        if prepared:
+            vm.execute_prepared(vm.prepare(source,'ref.bsl'))
+        else:
+            vm.execute(source,'ref.bsl')
         self.assertEqual(vm.variables.get('r'),expected)
         if reference_flags is not None:self.assertEqual(events,reference_flags)
 
@@ -23,7 +26,10 @@ class DynamicRefsTests(unittest.TestCase):
             with self.subTest(source=source):self.execute_case(source,7,reference_flags=[(True,)])
 
     def test_expression_not_reference(self):
-        self.execute_case('f=Get();f(1+2);',None,reference_flags=[(False,)])
+        for prepared in (False, True):
+            for source in ('f=Get();f(1+2);', 'Procedure G() f=Get();f(1+2);EndProcedure G();'):
+                with self.subTest(prepared=prepared, source=source):
+                    self.execute_case(source,None,reference_flags=[(False,)],prepared=prepared)
 
     def test_same_actual_alias(self):
         self.execute_case('x=1;f=Get();f(x,x);r=x;',4,signature=(0,1),reference_flags=[(True,True)])
