@@ -5,6 +5,11 @@ from yadinassi import Interpreter
 from yadinassi.collections.plain_value_list import PlainValueList,PlainValueListItem
 from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
+def entries(vm, name='L'):
+    return tuple(vm.execute(f'{name}.Get({i})')
+                 for i in range(int(vm.execute(f'{name}.Count()'))))
+
+
 class DirectPlainValueListTests(unittest.TestCase):
     def vm(self, *, allow_extensions=False):
         vm=Interpreter(allow_extensions=allow_extensions);self.addCleanup(vm.close);return vm
@@ -54,8 +59,8 @@ class DirectPlainValueListTests(unittest.TestCase):
         with patch.object(PlainValueList,'__iter__',side_effect=AssertionError('non-native iterator'),create=True):
             vm.execute_prepared(plan)
         self.assertEqual(vm.variables['seen'],[D(10),D(2),D(3)])
-        self.assertEqual(len(vm.variables['l']),0)
-        original=vm.variables['alias']
+        self.assertEqual(vm.execute('L.Count()'),0)
+        original=entries(vm, 'Alias')
         self.assertIs(vm.variables['first'],original[0])
         self.assertIs(vm.variables['item'],original[2])
 
@@ -76,9 +81,9 @@ class DirectPlainValueListTests(unittest.TestCase):
                    'Try L[0]=New ValueList; Except Caught=Caught+1; EndTry;')
         self.assertEqual(vm.variables['calls'],['index','value'])
         self.assertEqual(vm.variables['caught'],D(3))
-        self.assertEqual(len(vm.variables['l']),1)
-        self.assertIs(vm.variables['l'][0],vm.variables['first'])
-        self.assertEqual(vm.variables['first'][0],D(4))
+        self.assertEqual(vm.execute('L.Count()'),1)
+        self.assertIs(vm.execute('L.Get(0)'),vm.variables['first'])
+        self.assertEqual(vm.execute('First.Value'),D(4))
 
     def test_value_list_sort_directions_keep_equal_items_stable_and_live(self):
         from yadinassi.syntax.parser import parse
@@ -101,23 +106,22 @@ class DirectPlainValueListTests(unittest.TestCase):
                     plan=vm.prepare_program(parse(call))
                     vm.execute_prepared(plan)
                     self.assertIs(vm.variables['l'],owner)
-                    self.assertEqual(len(owner),3)
+                    self.assertEqual(vm.execute('L.Count()'),3)
                     for index,original in enumerate(order):
-                        self.assertIs(owner[index],identities[original])
+                        self.assertIs(vm.execute(f'L.Get({index})'),identities[original])
                     self.assertEqual(tuple(item.get_id() for item in identities),ids)
 
     def test_value_list_rejects_nondirections_without_reordering(self):
         vm=self.vm()
         vm.execute('L=New ValueList; A=L.Add(2,"b"); B=L.Add(1,"a");')
-        owner=vm.variables['l']
         for name in ('SortByValue','SortByPresentation'):
             for direction in ('True','False','0','"Asc"','Null','SearchDirection.FromBegin'):
                 with self.subTest(name=name,direction=direction):
                     vm.execute(f'Try L.{name}({direction}); Caught=False; Except Caught=True; EndTry;')
                     self.assertIs(vm.variables['caught'],True)
-                    self.assertEqual(len(owner),2)
-                    self.assertIs(owner[0],vm.variables['a'])
-                    self.assertIs(owner[1],vm.variables['b'])
+                    self.assertEqual(vm.execute('L.Count()'),2)
+                    self.assertIs(vm.execute('L.Get(0)'),vm.variables['a'])
+                    self.assertIs(vm.execute('L.Get(1)'),vm.variables['b'])
 
     def test_value_list_sorts_exact_dates_by_ticks_and_retains_equal_item_order(self):
         vm=self.vm()
@@ -131,7 +135,7 @@ class DirectPlainValueListTests(unittest.TestCase):
             vm.execute(code)
             self.assertIs(vm.variables['l'],owner)
             for i,j in enumerate(order):
-                self.assertIs(owner[i],items[j])
+                self.assertIs(vm.execute(f'L.Get({i})'),items[j])
             self.assertEqual(tuple(item.get_id() for item in items),identifiers)
 
     def test_value_list_mixed_scalar_order_and_empty_ties(self):
@@ -145,12 +149,11 @@ class DirectPlainValueListTests(unittest.TestCase):
             with self.subTest(values=values):
                 vm=self.vm()
                 vm.execute('L=New ValueList;' + ''.join(f'L.Add({value});' for value in values))
-                owner=vm.variables['l']
-                original=tuple(owner)
+                original=entries(vm)
                 for suffix,order in (('()',asc),('(SortDirection.Desc)',desc)):
                     vm.execute('L.SortByValue'+suffix+';')
-                    self.assertEqual(tuple(item.get_id() for item in owner),order)
-                    for item, index in zip(owner,order):
+                    self.assertEqual(tuple(item.get_id() for item in entries(vm)),order)
+                    for item, index in zip(entries(vm),order):
                         self.assertIs(item,original[index])
 
     def test_value_list_procedure_in_value_position_binds_receiver_but_not_arguments(self):
@@ -158,7 +161,6 @@ class DirectPlainValueListTests(unittest.TestCase):
         vm.execute('Var L, Seen; L=New ValueList; First=L.Add(2,"b"); L.Add(1,"a"); Seen=New Array; '
                    'Function Receiver() Seen.Add("receiver"); Return L; EndFunction; '
                    'Function Argument() Seen.Add("argument"); Return 0; EndFunction;')
-        owner=vm.variables['l']
         for call in ('Delete(Argument())','Очистить()','Сдвинуть(Argument(),Argument())',
                      'FillChecks(Argument())','ЗагрузитьЗначения(Argument())',
                      'SortByValue(Argument())','СортироватьПоПредставлению()'):
@@ -166,13 +168,13 @@ class DirectPlainValueListTests(unittest.TestCase):
                 vm.execute(f'Try Out=Receiver().{call}; Caught=False; Except Caught=True; EndTry;')
                 self.assertIs(vm.variables['caught'],True)
                 self.assertNotIn('out',vm.variables)
-                self.assertEqual(len(owner),2)
-                self.assertIs(owner[0],vm.variables['first'])
-                self.assertEqual(owner[0][2],False)
+                self.assertEqual(vm.execute('L.Count()'),2)
+                self.assertIs(vm.execute('L.Get(0)'),vm.variables['first'])
+                self.assertEqual(vm.execute('L.Get(0).Check'),False)
         self.assertEqual(vm.variables['seen'],['receiver']*7)
         vm.execute('Receiver().SortByValue(); Added=Receiver().Add(3);')
-        self.assertEqual(owner[0][0],D(1))
-        self.assertIs(owner[2],vm.variables['added'])
+        self.assertEqual(vm.execute('L.Get(0).Value'),D(1))
+        self.assertIs(vm.execute('L.Get(2)'),vm.variables['added'])
         self.assertEqual(vm.variables['seen'],['receiver']*9)
 
     def test_hostile_index_and_equality_do_not_gain_callbacks(self):
