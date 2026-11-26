@@ -229,7 +229,7 @@ class Program:
                 finally:
                     context.leave()
         except Exception as error:
-            converted = convert_error(error, self.source_name, self.source_text)
+            converted = convert_error(error, self.source_name, self.source_text, _context=context)
             if converted is error:
                 raise
             raise converted from None

@@ -48,6 +48,21 @@ def _decimal_remainder_message(trace,source_line,column):
     return invalid
 
 
+def _missing_message(context, key, source_line, column):
+    # Python symbols are casefolded; retain the source spelling only on error.
+    from re import finditer
+    names = [match for match in finditer(r"[^\W\d]\w*", source_line)
+             if match[0].casefold() == key]
+    at_column = next((match[0] for match in names if match.start() == column), None)
+    spelling = at_column if at_column is not None else (names[-1][0] if names else key)
+    if context is not None:
+        try:
+            context.missing_value(spelling)
+        except (TypeError, ValueError) as diagnostic:
+            return str(diagnostic)
+    return 'Переменная или функция не определена: '+spelling
+
+
 def convert_error(error,filename,source,*,_context=None):
     """Convert only recoverable runtime errors, preserving nonrecoverable boundaries."""
     if (getattr(_context,'_async_scheduler',None) is not None
@@ -79,7 +94,7 @@ def convert_error(error,filename,source,*,_context=None):
     message=str(error) or type(error).__name__
     if isinstance(error,(ZeroDivisionError,DivisionByZero)):message='Деление на ноль'
     elif type(error) is NameError and chosen.tb_next is None and type(error.name) is str:
-        message='Переменная или функция не определена: '+error.name
+        message=_missing_message(_context,error.name,source_line,column)
     elif type(error) is InvalidOperation:
         message=_decimal_remainder_message(chosen,source_line,column) or message
     return BSLRuntimeError(message,filename,line,(column or 0)+1,source_line=source_line)

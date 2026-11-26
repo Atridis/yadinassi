@@ -7,7 +7,7 @@ from functools import partial
 from types import FunctionType
 
 from yadinassi.syntax import ast as b
-from .direct_collections import Program, UnsupportedNakedSyntax, _Cell, _Reference, _bound_ref, _host_omission_error, _host_omission_values, _OMITTED_REF
+from .direct_collections import Program, UnsupportedNakedSyntax, _argument_count_error, _Cell, _Reference, _bound_ref, _host_omission_error, _host_omission_values, _OMITTED_REF
 from yadinassi.types.array_index import array_offset
 from yadinassi.execution.direct.python_direct_plain_map import PlainMap, plain_map
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
@@ -311,6 +311,10 @@ def self_reference(context,state,key):
     return source_reference(state,key) if key in state else _Cell(context.current_module())
 
 
+def procedure_value_error(key):
+    raise TypeError('Процедура не возвращает значение: '+key)
+
+
 def nonconstructible(key, missing=False):
     if missing:
         raise TypeError('Тип не определен: '+key)
@@ -319,7 +323,8 @@ _OP = dict(_Truth=truth, _PublicNumber=public_number, _Divide=divide, _Remainder
            _GotoTransfer=direct_goto.GotoTransfer,_String=concatenate, _Missing=_MISSING, _OmittedRef=_OMITTED_REF, _ServiceMissing=_SERVICE_MISSING, _Unset=UNSET, _Map=PlainMap, _Nonconstructible=nonconstructible, _SelfRead=self_read, _SelfWrite=self_write, _SelfRef=self_reference,
            _Recoverable=(ArithmeticError,TypeError,ValueError,IndexError,NameError,RecursionError,BSLRuntimeError),
            _Handled=handled_error, _Reraise=reraise_handled, _Raise=raise_error,
-           _RaiseArity=raise_arity_error, _Presentation=presentation,
+           _RaiseArity=raise_arity_error, _InvalidCallArity=_argument_count_error,
+           _ProcedureValue=procedure_value_error, _Presentation=presentation,
            _LexicalRef=lexical_reference, _FragmentRef=fragment_reference, _Eval=bind_eval, _Execute=execute_fragment, _GetAttr=getattr, _SourceShapes=source_shapes, _VarRef=source_reference, _LiveHostRef=live_host_reference, _Cell=_Cell, _BoundRef=_bound_ref,
            _BindIndexRef=bind_index_reference, _BindLocalIndexRef=bind_local_index_reference, _HostRef=host_reference, _IndexedActual=indexed_actual, _MemberActual=member_actual, _CellActual=cell_actual, _Unchanged=unchanged, _ImportedRef=_ForwardReference,
            _Construct=construct, _Array=bounded_array, _Structure=new_structure, _MapFrom=plain_map, _Omissions=_host_omission_values, _InvalidOmissions=_host_omission_error)
@@ -597,6 +602,7 @@ class Emit:
         self.module_declarations=set()
         self.routines={}
         self.parameters={}
+        self.procedures=frozenset()
         self.in_async=False
         self.references=set()
         self.addresses={}
@@ -801,7 +807,7 @@ class Emit:
             if type(c) is b.Name:
                 key=c.name.casefold()
                 if key in self.routines:
-                    return self.local_call(key,x.arguments)
+                    return self.local_call(key,x.arguments,want_value,x.token)
                 return self.service_call(c.name,x.arguments,want_value)
             omitted=self.omissions(x.arguments)
             root=c.object
@@ -849,12 +855,15 @@ class Emit:
     def omissions(args):
         return tuple(i for i,arg in enumerate(args) if type(arg) is b.OmittedArgument)
 
-    def local_call(self,key,args):
+    def local_call(self,key,args,want_value,token):
         bound=self.routines[key]
         params=self.parameters[key]
+        minimum=max((i+1 for i,param in enumerate(params) if param.default is None),default=0)
+        if not minimum<=len(args)<=len(params):
+            return _node(call('_InvalidCallArity',literal(key),literal(len(params)),literal(len(args))),token)
+        if want_value and key in self.procedures:
+            return _node(call('_ProcedureValue',literal(key)),token)
         omitted=self.omissions(args)
-        if len(args)>len(params):
-            return call('_InvalidOmissions')
         def actual(i):
             if i in omitted:
                 return literal(None) if params[i].by_value else call('_Cell',literal(None))
@@ -1404,6 +1413,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,fra
     routines=[replace(node,parameters=[replace(param,by_value=True) for param in node.parameters])
               if node.is_async else node for node in routines]
     compiler.parameters={node.name.casefold():node.parameters for node in routines}
+    compiler.procedures=frozenset(node.name.casefold() for node in routines if not node.is_function)
     defs=[]
     async_bodies={}
     for node in routines:

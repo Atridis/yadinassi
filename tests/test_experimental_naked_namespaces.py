@@ -48,12 +48,35 @@ class NamespaceTests(unittest.TestCase):
             vm.execute('Function F() Return 1;EndFunction r=F;')
 
     def test_procedure_value_and_invalid_arity_precede_effects(self):
-        for source in ('Procedure F(x) EndProcedure r=F(Host());', 'Procedure F() EndProcedure F(Host());', 'Procedure F(x,y) EndProcedure F(Host());'):
-            with self.subTest(source=source):
-                vm=Interpreter(allow_extensions=True);self.addCleanup(vm.close);events=[]
-                vm.register_function('Host', lambda: events.append('arg'))
-                with self.assertRaises(BSLRuntimeError): vm.execute(source)
-                self.assertEqual(events, [])
+        cases = (
+            ('x', 'r=F(Host())', 'не возвращает значение'),
+            ('', 'F(Host())', '0 аргументов, получено 1'),
+            ('x,y', 'F(Host())', '2 аргументов, получено 1'),
+        )
+        for parameters, invocation, diagnostic in cases:
+            for prepared in (False, True):
+                with self.subTest(invocation=invocation, parameters=parameters, prepared=prepared):
+                    events = []
+                    vm = Interpreter(allow_extensions=True, output=events.append)
+                    self.addCleanup(vm.close)
+                    vm.register_function('Host', lambda: events.append('arg'))
+                    source = f'Procedure F({parameters}) Message("body"); EndProcedure {invocation};'
+                    with self.assertRaisesRegex(BSLRuntimeError, diagnostic):
+                        if prepared:
+                            vm.execute_prepared(vm.prepare(source))
+                        else:
+                            vm.execute(source)
+                    self.assertEqual(events, [])
+
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        plan = vm.prepare('Function F(Val X) Return X+1; EndFunction R=F(3);')
+        code = plan._plan.function.__code__
+        self.assertNotIn('_InvalidCallArity', code.co_names)
+        self.assertNotIn('_ProcedureValue', code.co_names)
+        self.assertNotIn('resolve_service', code.co_names)
+        vm.execute_prepared(plan)
+        self.assertEqual(vm.variables['r'], 4)
 
     def test_grouped_routine_preserves_reference(self):
         self.run_case('Procedure F(x) x=7;EndProcedure r=0;((F))(r);',7)
