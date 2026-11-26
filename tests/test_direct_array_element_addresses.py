@@ -23,7 +23,8 @@ class DirectArrayElementAddressTests(unittest.TestCase):
         loop=next(node for node in ast.walk(tree) if isinstance(node, (ast.For, ast.While)))
         calls=[node.func.id for node in ast.walk(loop)
                if type(node) is ast.Call and type(node.func) is ast.Name]
-        self.assertEqual(calls.count('_BindLocalIndexRef'),2)
+        self.assertEqual(calls.count('_IndexPair'),2)
+        self.assertNotIn('_BindLocalIndexRef',calls)
         self.assertNotIn('_adapt_native_cell',calls)
         self.assertNotIn('_BindIndexRef',calls)
         self.assertNotIn('_Member',calls)
@@ -44,7 +45,8 @@ class DirectArrayElementAddressTests(unittest.TestCase):
         tree=ast.parse(plan._plan.generated_source)
         loop=next(node for node in ast.walk(tree) if isinstance(node, (ast.For, ast.While)))
         hot=ast.unparse(loop)
-        self.assertIn('_BindLocalIndexRef',hot)
+        self.assertIn('_IndexPair',hot)
+        self.assertNotIn('_BindLocalIndexRef',hot)
         self.assertNotIn('_BindIndexRef',hot)
         self.assertNotIn('_adapt_native_cell',hot)
         self.assertFalse(any(isinstance(node, ast.Attribute) and node.attr == '_check'

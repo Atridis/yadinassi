@@ -91,7 +91,8 @@ class CachedSourceRefsTests(unittest.TestCase):
                         finally:
                             sys.setprofile(previous)
 
-                        self.assertEqual(allocations, len(names))
+                        # Container/key lowering makes even one wrapper unnecessary.
+                        self.assertEqual(allocations, 0)
                         self.assertEqual([vm.variables[name] for name in names],
                                          [2 * iterations] * len(names))
 

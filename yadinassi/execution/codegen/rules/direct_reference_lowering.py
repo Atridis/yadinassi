@@ -17,7 +17,7 @@ def reference(self,arg,known_local=False):
     if type(arg) is b.Name:
         key=arg.name.casefold()
         if key in self.references:
-            return call('_BoundRef',name(key))
+            return call('_SlotReference',name(key),name(self.slot_keys[key]))
         if self.external(key):
             return call(attr(name('_C'),'external_reference'),literal(key))
         if self.implicit_self(key):
@@ -36,6 +36,46 @@ def reference(self,arg,known_local=False):
     return call('_Cell',self.expr(arg))
 
 
+def slot_actual(self, arg):
+    """Lower a local BSL ByRef actual to its storage and key."""
+    while type(arg) is b.Group:
+        arg=arg.expression
+    if self.import_path(arg) is not None:
+        return call('_ReferencePair',self.reference(arg,known_local=True))
+    if type(arg) is b.Name:
+        key=arg.name.casefold()
+        if key in self.slot_keys:
+            return name(key),name(self.slot_keys[key])
+        if key in self.boxed_locals:
+            storage=name(self.boxed_locals[key])
+            return storage,_checked_slot(storage,literal(0),key)
+        if (not self.fragment and key not in self.locals
+                and not self.external(key) and not self.implicit_self(key)
+                and not (not self.owned and key in CHARS_ALIASES
+                         and key not in self.module_declarations)):
+            # Reading the actual slot rejects an undefined name before evaluating
+            # later arguments. Only a host-supplied Reference needs a view.
+            found=self.temp()
+            value=p.NamedExpr(target=name(found,True),value=self.var(key))
+            host=p.Compare(left=call('_SlotType',value),ops=[p.Is()],
+                           comparators=[name('_HostReferenceType')])
+            return p.IfExp(test=host,body=call('_HostStorage',name(found)),
+                           orelse=name('_S')),literal(key)
+        return call('_ReferencePair',self.reference(arg,known_local=True))
+    if type(arg) is b.Index:
+        return call('_IndexPair',name('_C'),self.expr(arg.object),self.expr(arg.index))
+    if type(arg) is b.Attribute:
+        return call('_FieldPair',name('_C'),self.expr(arg.object),literal(arg.name))
+    return p.List(elts=[self.expr(arg)],ctx=p.Load()),literal(0)
+
+
+def _checked_slot(storage, slot, spelling):
+    # Missing variables fail before later operands or body effects. This only
+    # selects the key: defined values (including Undefined) need no wrapper.
+    return p.IfExp(test=p.Compare(left=slot,ops=[p.In()],comparators=[storage]),
+                   body=slot,orelse=call('_MissingSlot',literal(spelling)))
+
+
 def address(self,key):
     if key not in self.addresses:
         self.addresses[key]=self.temp(),self.temp()
@@ -47,7 +87,7 @@ def fragment_arguments(self):
     if self.in_routine:
         for key in sorted(self.locals):
             if key in self.references:
-                value=call('_HostRef',name(key))
+                value=call('_HostRef',call('_SlotReference',name(key),name(self.slot_keys[key])))
             else:
                 getter,setter=self.address(key)
                 value=call('_FragmentRef',name(getter),name(setter))
@@ -60,7 +100,7 @@ def fragment_arguments(self):
 def address_definitions(self):
     for key,(getter,setter) in self.addresses.items():
         yield p.FunctionDef(name=getter,args=arguments(()),
-                            body=[p.Return(value=name(key))],decorator_list=[])
+                            body=[p.Return(value=self.var(key))],decorator_list=[])
         yield p.FunctionDef(name=setter,args=arguments(('_Value',)),
-                            body=[p.Nonlocal(names=[key]),p.Assign(targets=[name(key,True)],
+                            body=[*([p.Nonlocal(names=[key])] if key not in self.boxed_locals else []),p.Assign(targets=[self.var(key,True)],
                                   value=name('_Value'))],decorator_list=[])

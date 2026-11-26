@@ -15,19 +15,20 @@ from decimal import Decimal
 from types import FunctionType
 
 from yadinassi.syntax import ast as b
-from .direct_collections import Program, _argument_count_error, _Cell, _bound_ref, _host_omission_error, _host_omission_values, _OMITTED_REF
+from .direct_collections import Program, _argument_count_error, _Cell, _host_omission_error, _host_omission_values, _OMITTED_REF
 from yadinassi.execution.direct.python_direct_plain_map import PlainMap, plain_map
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 from .direct_errors import handled_error, parsed_source_lines, reraise_handled
 from .direct_resources import bounded_array
 from .direct_structure import _DirectStructure, new_structure
+from . import direct_slot_adapters as slots
 from yadinassi.execution.direct.python_direct_names import CHARS_ALIASES, NAMES as SYSTEM_NAMES
 from yadinassi.types.errors import BSLRuntimeError
-from .direct_live_state import UNSET, source_reference, host_reference as live_host_reference, _ForwardReference
+from .direct_live_state import UNSET, missing, source_reference, host_reference as live_host_reference, _ForwardReference
 from .direct_boundaries import BoundaryViolation, _MISSING as _SERVICE_MISSING
 from yadinassi.execution.direct.python_direct_eval import bind_eval
 from yadinassi.execution.direct.python_direct_execute import FragmentScope, execute_fragment
-from yadinassi.types.values import HostFunction
+from yadinassi.types.values import HostFunction, Reference
 from .direct_scalar_semantics import compare_order, concatenate, presentation, truth
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.execution.direct.python_direct_numbers import divide, remainder, sign, public_number
@@ -77,10 +78,15 @@ _OP = dict(_Truth=truth, _PublicNumber=public_number, _Divide=divide, _Remainder
            _Handled=handled_error, _Reraise=reraise_handled, _Raise=raise_error,
            _RaiseArity=raise_arity_error, _InvalidCallArity=_argument_count_error,
            _ProcedureValue=procedure_value_error, _Presentation=presentation,
-           _LexicalRef=lexical_reference, _FragmentRef=fragment_reference, _Eval=bind_eval, _Execute=execute_fragment, _GetAttr=getattr, _SourceShapes=source_shapes, _VarRef=source_reference, _LiveHostRef=live_host_reference, _Cell=_Cell, _BoundRef=_bound_ref,
+           _LexicalRef=lexical_reference, _FragmentRef=fragment_reference, _Eval=bind_eval, _Execute=execute_fragment, _GetAttr=getattr, _SourceShapes=source_shapes, _VarRef=source_reference, _LiveHostRef=live_host_reference, _Cell=_Cell,
            _BindIndexRef=bind_index_reference, _BindLocalIndexRef=bind_local_index_reference, _HostRef=host_reference, _IndexedActual=indexed_actual, _MemberActual=member_actual, _CellActual=cell_actual, _Unchanged=unchanged, _ImportedRef=_ForwardReference,
            _Construct=construct, _Array=bounded_array, _Structure=new_structure, _MapFrom=plain_map, _Omissions=_host_omission_values, _InvalidOmissions=_host_omission_error)
 _OP.update(direct_call_rules.HELPERS)
+_OP.update(_ReferencePair=slots.reference_pair, _SlotReference=slots.slot_reference,
+           _IndexPair=slots.index_pair, _FieldPair=slots.field_pair,
+           _KeywordPair=slots.keyword_pair, _ExportSlotRoutine=slots.export_slot_routine,
+           _MissingSlot=missing, _LocalStorage=slots.LocalStorage,
+           _SlotType=type, _HostReferenceType=Reference, _HostStorage=slots.host_storage)
 
 
 def requires_reference(bound,index):
@@ -148,6 +154,9 @@ class Emit:
         self.procedures=frozenset()
         self.in_async=False
         self.references=set()
+        self.slot_keys={}
+        self.boxed_locals={}
+        self.routine_slot_keys={}
         self.addresses={}
         self.reference_services=set()
         self.value_services=frozenset()
@@ -192,7 +201,11 @@ class Emit:
     def var(self,key,store=False):
         key=key.casefold()
         if key in self.references:
-            return p.Attribute(value=name(key),attr='value',ctx=p.Store() if store else p.Load())
+            return p.Subscript(value=name(key),slice=name(self.slot_keys[key]),
+                               ctx=p.Store() if store else p.Load())
+        if key in self.boxed_locals:
+            return p.Subscript(value=name(self.boxed_locals[key]),slice=literal(0),
+                               ctx=p.Store() if store else p.Load())
         if key not in self.locals:
             self.globals.add(key)
             if store:self.written.add(key)
@@ -535,6 +548,10 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,fra
     routines=[replace(node,parameters=[replace(param,by_value=True) for param in node.parameters])
               if node.is_async else node for node in routines]
     compiler.parameters={node.name.casefold():node.parameters for node in routines}
+    compiler.routine_slot_keys={
+        key:{param.name.casefold():compiler.temp() for param in params if not param.by_value}
+        for key,params in compiler.parameters.items()
+    }
     compiler.routine_bodies={node.name.casefold():node.body for node in routines}
     compiler.procedures=frozenset(node.name.casefold() for node in routines if not node.is_function)
     defs=[]
@@ -570,7 +587,12 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,fra
     if routines:
         bindings={**compiler.routines,**async_bodies}
         exports=p.Dict(keys=[literal(k) for k in bindings],
-                       values=[name(v) for v in bindings.values()])
+                       values=[call('_ExportSlotRoutine',name(v),
+                                    literal(tuple(compiler.routine_slot_keys[k].get(p.name.casefold())
+                                                  for p in compiler.parameters[k])),
+                                    literal(tuple(p.name.casefold() for p in compiler.parameters[k])))
+                               if compiler.routine_slot_keys.get(k) else name(v)
+                               for k,v in bindings.items()])
         initialize=[]
         if _exports:
             initialize=[p.Expr(value=call(attr(name('_S'),'setdefault'),literal(key),literal(None)))

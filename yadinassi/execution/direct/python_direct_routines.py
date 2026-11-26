@@ -163,7 +163,7 @@ def invoke_with_omissions(module, name, function, arguments):
     first = next((i for i, value in enumerate(bound) if value is _OMITTED_REF), len(bound))
     if first == len(bound):
         return function(*bound)
-    names = function.__code__.co_varnames
+    names = getattr(function, "_bsl_formal_names", function.__code__.co_varnames)
     return function(*bound[:first], **{
         names[i]: value for i, value in enumerate(bound[first:], first)
         if value is not _OMITTED_REF

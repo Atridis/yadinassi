@@ -110,9 +110,10 @@ class CleanEmitterEntryTests(unittest.TestCase):
         vm.execute_prepared(plan)
         self.assertEqual((vm.variables['r'],vm.variables['s']),(Decimal(17),Decimal(11)))
         generated=plan._plan.generated_source
-        self.assertEqual(generated.count('nonlocal local'),1)
-        self.assertNotIn('nonlocal result',generated)
-        self.assertNotIn('nonlocal x',generated)
+        self.assertEqual(generated.count("_LocalStorage('local')"),1)
+        self.assertNotIn("_LocalStorage('result')",generated)
+        self.assertNotIn("_LocalStorage('x')",generated)
+        self.assertNotIn('nonlocal ',generated)
 
     def test_byref_default_has_fresh_storage_per_call(self):
         vm=Interpreter()

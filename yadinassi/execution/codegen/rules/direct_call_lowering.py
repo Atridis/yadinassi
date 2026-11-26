@@ -2,7 +2,7 @@
 import ast as p
 from yadinassi.execution.direct.python_direct_names import CHARS_ALIASES
 from yadinassi.syntax import ast as b
-from .direct_reference_lowering import SELF_NAMES
+from .direct_reference_lowering import SELF_NAMES, slot_actual
 from ..direct_python_ast import _node, attr, call, literal, name
 
 _CALLBACK_MODULE_SLOTS = {'readjson':5,'прочитатьjson':5,'writejson':4,'записатьjson':4,
@@ -14,6 +14,7 @@ def omissions(args):
 
 
 def local_call(self,key,args,want_value,token):
+    key_for_call=key
     bound=self.routines[key]
     params=self.parameters[key]
     minimum=max((i+1 for i,param in enumerate(params) if param.default is None),default=0)
@@ -23,17 +24,38 @@ def local_call(self,key,args,want_value,token):
         return _node(call('_ProcedureValue',literal(key)),token)
     omitted=self.omissions(args)
     def actual(i):
+        if params[i].by_value:
+            return literal(None) if i in omitted else self.expr(args[i])
         if i in omitted:
-            return literal(None) if params[i].by_value else call('_Cell',literal(None))
-        return self.expr(args[i]) if params[i].by_value else self.reference(args[i],known_local=True)
+            return p.List(elts=[literal(None)],ctx=p.Load()),literal(0)
+        return slot_actual(self,args[i])
+
     defaults=tuple(i for i in omitted if params[i].default is not None)
-    if not defaults:
-        return call(bound,*(actual(i) for i in range(len(args))))
-    # Skip a defaulted hole; an explicitly skipped required slot is Undefined.
-    prefix=defaults[0]
-    return call(bound,*(actual(i) for i in range(prefix)),
-                **{params[i].name.casefold():actual(i)
-                   for i in range(prefix,len(args)) if i not in defaults})
+    prefix=defaults[0] if defaults else len(args)
+    lowered=call(bound)
+    for i in range(prefix):
+        argument=actual(i)
+        if params[i].by_value:
+            lowered.args.append(argument)
+        elif type(argument) is tuple:
+            lowered.args.extend(argument)
+        else:
+            lowered.args.append(p.Starred(value=argument,ctx=p.Load()))
+    for i in range(prefix,len(args)):
+        if i in defaults:
+            continue
+        formal=params[i].name.casefold()
+        argument=actual(i)
+        if params[i].by_value:
+            lowered.keywords.append(p.keyword(arg=formal,value=argument))
+        else:
+            key=self.routine_slot_keys[key_for_call][formal]
+            if type(argument) is tuple:
+                lowered.keywords.extend(p.keyword(arg=n,value=v) for n,v in zip((formal,key),argument))
+            else:
+                lowered.keywords.append(p.keyword(arg=None,value=call(
+                    '_KeywordPair',literal(formal),literal(key),argument)))
+    return lowered
 
 
 def service_call(self,key,args,want_value):
