@@ -27,6 +27,21 @@ class DirectCollectionContracts(unittest.TestCase):
         vm = self.run_source('m=New Map;m.Insert(True,1);m.Insert(1,2);n=m.Count();a=m.Get(True);b=m.Get(1);')
         self.assertEqual(tuple(vm.variables[n] for n in ('n','a','b')), (2,1,2))
 
+    def test_canonical_map_uses_one_numeric_key_without_merging_boolean(self):
+        from yadinassi.collections.maps import BSLFixedMap, BSLMap
+
+        mapping = BSLMap()
+        mapping.insert(True, 'boolean')
+        mapping.insert(Decimal('1.00'), 'first')
+        mapping.insert(1, 'updated')
+        frozen = BSLFixedMap(mapping)
+        self.assertEqual((frozen.get(True), frozen.get(1), frozen.get(Decimal('1.0'))),
+                         ('boolean', 'updated', 'updated'))
+        self.assertIsNone(frozen.get(Decimal('1.01')))
+        mapping.delete(1)
+        self.assertEqual((mapping.get(True), mapping.get(Decimal('1.0'))), ('boolean', None))
+        self.assertEqual(frozen.get(1), 'updated')
+
     def test_collection_map_key_is_identity(self):
         vm = self.run_source('a=New Array;b=New Array;m=New Map;m.Insert(a,7);n=m.Get(a);other=m.Get(b);')
         self.assertEqual(vm.variables['n'], Decimal(7))

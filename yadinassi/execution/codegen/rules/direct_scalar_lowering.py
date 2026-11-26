@@ -2,9 +2,10 @@
 import ast as p
 from decimal import Decimal
 from yadinassi.syntax import ast as b
-from ..direct_python_ast import call, literal
+from ..direct_python_ast import call, literal, name
 
 _COMPARISONS = ('=', '<>', '<', '<=', '>', '>=')
+_ORDER = {'<': '_Less', '<=': '_LessEqual', '>': '_Greater', '>=': '_GreaterEqual'}
 
 # These native calls can return a lone UTF-16 surrogate. Tag only calls already
 # bound to the builtin implementation, never a user or runtime-dispatched call.
@@ -37,7 +38,18 @@ def unary(emit, node):
     if type(node.operand) is b.Literal and type(node.operand.value) is Decimal:
         value = node.operand.value
         return emit.literal(value.copy_negate() if node.operator == '-' else value)
-    return call('_Sign', emit.expr(node.operand), literal(node.operator))
+    operand = emit.temp()
+    capture = p.NamedExpr(target=name(operand, True), value=emit.expr(node.operand))
+    integer = p.Compare(left=call('_ValueType', capture), ops=[p.Is()], comparators=[name('_IntegerType')])
+    negative = node.operator == '-'
+    direct = p.UnaryOp(op=p.USub() if negative else p.UAdd(), operand=name(operand))
+    if negative:
+        # Unary minus on the whole number zero must retain its reported sign.
+        direct = p.IfExp(test=name(operand), body=direct, orelse=name('_NegativeZero'))
+    # test_context_independent_sign_and_division: Decimal unary operators
+    # round in Python's active context. Its exact sign change must not.
+    return p.IfExp(test=integer, body=direct,
+                   orelse=call('_DecimalSign', name(operand), literal(node.operator)))
 
 
 def binary(operator, left, right):
@@ -47,11 +59,12 @@ def binary(operator, left, right):
                 getattr(left, 'bsl_utf16_units', False)
                 or type(left.func) is p.Name and left.func.id == '_String')):
         return call('_String', left, right)
-    if operator in ('<', '<=', '>', '>=') and not any(
+    if operator in _ORDER and not any(
             type(value) is p.Constant and type(value.value) is not str
             for value in (left, right)):
-        # Ordering for two possible strings uses BSL collation; equality never does.
-        return call('_CompareOrder', left, right, literal(operator))
+        # A prepared comparison may see a pair of strings on a later run.
+        # Keep one small operator-specific call, never an operator lookup in a loop.
+        return call(_ORDER[operator], left, right)
     if operator == '/':
         return call('_Divide', left, right)
     if operator == '%':

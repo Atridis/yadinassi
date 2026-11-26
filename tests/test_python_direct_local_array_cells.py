@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
 from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
-from yadinassi.execution.codegen.direct_emitter import bind_local_index_reference
+from yadinassi.execution.codegen.direct_reference_runtime import bind_local_index_reference
 from yadinassi.execution.direct.python_direct import make_boundary
 from yadinassi.types.values import BSLArray, BSLFixedArray
 

@@ -2,6 +2,7 @@
 from yadinassi.execution.direct.python_direct_routines import bind_omissions, resolve
 from yadinassi.syntax import ast as b
 from ..direct_python_ast import call, literal, name
+from .direct_call_lowering import ungroup
 
 
 def _bind(context, key, want_value, count, omissions, non_names, references):
@@ -42,14 +43,10 @@ def lower(emit, key, actuals, want_value):
     omitted = emit.omissions(actuals)
     crossing = key in emit.server_services
     references = key in emit.reference_services
-    non_names = []
-    for i, actual in enumerate(actuals):
-        while type(actual) is b.Group:
-            actual = actual.expression
-        if type(actual) not in (b.Name, b.OmittedArgument):
-            non_names.append(i)
+    non_names = tuple(i for i, actual in enumerate(actuals)
+                      if type(ungroup(actual)) not in (b.Name, b.OmittedArgument))
     target = call('_BindNamedRoutine', name('_C'), literal(key), literal(want_value),
-                  literal(len(actuals)), literal(omitted), literal(tuple(non_names)), literal(references))
+                  literal(len(actuals)), literal(omitted), literal(non_names), literal(references))
     return emit.bound_call(target, actuals, omitted, references=references, crossing=crossing)
 
 

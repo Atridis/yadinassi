@@ -8,9 +8,9 @@ from .direct_python_ast import _node, arguments, attr, call, literal, name
 from .rules.direct_reference_lowering import SELF_NAMES
 from .direct_access_runtime import (bsl_iterable, get_field, member, metered, owned_index, owned_iterable,
                                     owned_set_index, owns_property_output, read_bracket, set_field, write_bracket)
-from .direct_reference_runtime import (bind_index_reference, bind_local_index_reference, cell_actual,
+from .direct_reference_runtime import (bind_index_reference, cell_actual,
                                        field_reference, fragment_reference, host_reference, indexed_actual,
-                                       lexical_reference, local_field_reference, member_actual)
+                                       lexical_reference, member_actual)
 from decimal import Decimal
 from types import FunctionType
 
@@ -29,9 +29,10 @@ from .direct_boundaries import BoundaryViolation, _MISSING as _SERVICE_MISSING
 from yadinassi.execution.direct.python_direct_eval import bind_eval
 from yadinassi.execution.direct.python_direct_execute import FragmentScope, execute_fragment
 from yadinassi.types.values import HostFunction, Reference
-from .direct_scalar_semantics import compare_order, concatenate, presentation, truth
+from .direct_scalar_semantics import (concatenate, decimal_sign, greater, greater_equal,
+                                      less, less_equal, presentation, truth)
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
-from yadinassi.execution.direct.python_direct_numbers import divide, remainder, sign, public_number
+from yadinassi.execution.direct.python_direct_numbers import _NEGATIVE_ZERO, divide, remainder, public_number
 from yadinassi.execution.direct.python_direct_dynamic_new import construct
 from yadinassi.execution.direct.python_direct_error_info import raise_arity_error, raise_error
 
@@ -72,14 +73,16 @@ def nonconstructible(key, missing=False):
     if missing:
         raise TypeError('Тип не определен: '+key)
     raise TypeError('Тип нельзя создать оператором Новый: '+key)
-_OP = dict(_Truth=truth, _PublicNumber=public_number, _Divide=divide, _Remainder=remainder, _Sign=sign, _CompareOrder=compare_order,
+_OP = dict(_Truth=truth, _PublicNumber=public_number, _Divide=divide, _Remainder=remainder, _DecimalSign=decimal_sign,
+           _IntegerType=int, _NegativeZero=_NEGATIVE_ZERO,
+           _Less=less, _LessEqual=less_equal, _Greater=greater, _GreaterEqual=greater_equal, _ValueType=type,
            _AdvanceFor=direct_flow_lowering.advance_for_counter, _GotoTransfer=direct_goto.GotoTransfer,_String=concatenate, _Missing=_MISSING, _OmittedRef=_OMITTED_REF, _ServiceMissing=_SERVICE_MISSING, _Unset=UNSET, _Map=PlainMap, _Nonconstructible=nonconstructible, _SelfRead=self_read, _SelfWrite=self_write, _SelfRef=self_reference,
            _Recoverable=(ArithmeticError,TypeError,ValueError,IndexError,NameError,RecursionError,BSLRuntimeError),
            _Handled=handled_error, _Reraise=reraise_handled, _Raise=raise_error,
            _RaiseArity=raise_arity_error, _InvalidCallArity=_argument_count_error,
            _ProcedureValue=procedure_value_error, _Presentation=presentation,
            _LexicalRef=lexical_reference, _FragmentRef=fragment_reference, _Eval=bind_eval, _Execute=execute_fragment, _GetAttr=getattr, _SourceShapes=source_shapes, _VarRef=source_reference, _LiveHostRef=live_host_reference, _Cell=_Cell,
-           _BindIndexRef=bind_index_reference, _BindLocalIndexRef=bind_local_index_reference, _HostRef=host_reference, _IndexedActual=indexed_actual, _MemberActual=member_actual, _CellActual=cell_actual, _Unchanged=unchanged, _ImportedRef=_ForwardReference,
+           _BindIndexRef=bind_index_reference, _HostRef=host_reference, _IndexedActual=indexed_actual, _MemberActual=member_actual, _CellActual=cell_actual, _Unchanged=unchanged, _ImportedRef=_ForwardReference,
            _Construct=construct, _Array=bounded_array, _Structure=new_structure, _MapFrom=plain_map, _Omissions=_host_omission_values, _InvalidOmissions=_host_omission_error)
 _OP.update(direct_call_rules.HELPERS)
 _OP.update(_ReferencePair=slots.reference_pair, _SlotReference=slots.slot_reference,
@@ -94,7 +97,7 @@ def requires_reference(bound,index):
     return test is not None and test(index)
 
 
-_OP.update(_RequiresReference=requires_reference,_OwnedIndex=owned_index,_OwnedSetIndex=owned_set_index,_Metered=metered,_OwnedIterable=owned_iterable,_BSLIterable=bsl_iterable,_Member=member,_GetField=get_field,_SetField=set_field,_FieldRef=field_reference,_LocalFieldRef=local_field_reference,_OwnsPropertyOutput=owns_property_output)
+_OP.update(_RequiresReference=requires_reference,_OwnedIndex=owned_index,_OwnedSetIndex=owned_set_index,_Metered=metered,_OwnedIterable=owned_iterable,_BSLIterable=bsl_iterable,_Member=member,_GetField=get_field,_SetField=set_field,_FieldRef=field_reference,_OwnsPropertyOutput=owns_property_output)
 _OP.update(_WriteBracket=write_bracket,_ReadBracket=read_bracket)
 
 

@@ -6,7 +6,7 @@ from unittest.mock import patch
 from yadinassi import BSLError, Interpreter
 from yadinassi.collections.structures import BSLFixedStructure, BSLStructure
 from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
-from yadinassi.execution.codegen.direct_emitter import local_field_reference
+from yadinassi.execution.codegen.direct_reference_runtime import local_field_reference
 from yadinassi.execution.direct.python_direct import make_boundary
 
 

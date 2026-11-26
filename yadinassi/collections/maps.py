@@ -17,6 +17,10 @@ def _key(value: object) -> tuple[type, object]:
     # semantics. Each entry retains the original object, so its id cannot be
     # reused while the entry exists.
     kind = type(value)
+    if kind is int:
+        # Direct BSL stores whole numbers as int. Int and Decimal share
+        # equality and hashing for equal values, but Boolean is a different key.
+        return Decimal, value
     if kind is BSLCatalogReference:
         # Equal immutable references can be separately materialized by a read
         # or detached form clone. Preserve catalog/snapshot/record value identity.

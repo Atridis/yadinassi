@@ -29,10 +29,25 @@ class DirectCollationTests(unittest.TestCase):
         self.assertIn('r = a < 2', generated)
         self.assertIn('n = a != 2', generated)
         self.assertIn("e = 'a' == 'A'", generated)
-        self.assertEqual(generated.count('_CompareOrder('), 1)
+        self.assertNotIn('_CompareOrder', generated)
+        self.assertIn("s = _Less('a', 'A')", generated)
         vm.execute_prepared(plan)
         self.assertEqual(tuple(vm.variables[k] for k in ('r', 'n', 's', 'e')),
                          (True, True, True, False))
+
+    def test_one_order_site_accepts_numeric_and_collated_string_inputs(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        plan = vm.prepare('R=A<B;')
+        generated = plan._plan.generated_source
+        self.assertIn('r = _Less(a, b)', generated)
+        self.assertNotIn('_ValueType', generated)
+        self.assertNotIn('_CompareOrder', generated)
+        for a, b, expected in ((2, 3, True), (3, Decimal('2'), False), ('a', 'A', True)):
+            with self.subTest(a=a,b=b):
+                vm.variables.update(a=a,b=b)
+                vm.execute_prepared(plan)
+                self.assertIs(vm.variables['r'],expected)
 
     def test_literal_errors_are_runtime_catchable_and_dead_branches_do_no_io(self):
         collation._collator.cache_clear()

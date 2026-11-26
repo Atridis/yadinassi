@@ -3,10 +3,17 @@
 from yadinassi.types.values import BSLObject, Reference
 from .python_direct_callback import callback_actuals
 from yadinassi.formats.json.json_processing import (
-    BSLJSONReader, BSLJSONWriter, encode_json_events, read_json_events, read_json,
+    BSLJSONReader, BSLJSONWriter, encode_json_events, read_json_events, read_json, write_json,
     _DIRECT_SOURCE_JSON_DICT,
 )
 from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+
+# The module-owner index is also the first arity with a converter name.
+_READ_CALLBACK = (read_json, 5, 9)
+_WRITE_CALLBACK = (write_json, 4, 6)
+JSON_CALLBACKS = dict.fromkeys(('readjson','прочитатьjson'), _READ_CALLBACK)
+JSON_CALLBACKS.update(dict.fromkeys(('writejson','записатьjson'), _WRITE_CALLBACK))
+JSON_CALLBACK_ARGUMENTS = {read_json: _READ_CALLBACK[1:], write_json: _WRITE_CALLBACK[1:]}
 
 _WRITE = BSLJSONWriter._write_encoded
 _ACCESS = ('__getattribute__', '__getattr__', '__setattr__')

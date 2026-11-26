@@ -8,7 +8,7 @@ from ..direct_python_ast import arguments, attr, call, literal, name
 SELF_NAMES = frozenset(('thisobject', 'этотобъект'))
 
 
-def reference(self,arg,known_local=False):
+def reference(self,arg):
     while type(arg) is b.Group:
         arg=arg.expression
     path=self.import_path(arg)
@@ -30,9 +30,9 @@ def reference(self,arg,known_local=False):
         getter,setter=self.address(key)
         return call('_LexicalRef',name(getter),name(setter))
     if type(arg) is b.Index:
-        return call(call('_BindLocalIndexRef' if known_local else '_BindIndexRef',name('_C'),self.expr(arg.object)),self.expr(arg.index))
+        return call(call('_BindIndexRef',name('_C'),self.expr(arg.object)),self.expr(arg.index))
     if type(arg) is b.Attribute:
-        return call('_LocalFieldRef' if known_local else '_FieldRef',name('_C'),self.expr(arg.object),literal(arg.name))
+        return call('_FieldRef',name('_C'),self.expr(arg.object),literal(arg.name))
     return call('_Cell',self.expr(arg))
 
 
@@ -41,7 +41,7 @@ def slot_actual(self, arg):
     while type(arg) is b.Group:
         arg=arg.expression
     if self.import_path(arg) is not None:
-        return call('_ReferencePair',self.reference(arg,known_local=True))
+        return call('_ReferencePair',self.reference(arg))
     if type(arg) is b.Name:
         key=arg.name.casefold()
         if key in self.slot_keys:
@@ -61,7 +61,7 @@ def slot_actual(self, arg):
                            comparators=[name('_HostReferenceType')])
             return p.IfExp(test=host,body=call('_HostStorage',name(found)),
                            orelse=name('_S')),literal(key)
-        return call('_ReferencePair',self.reference(arg,known_local=True))
+        return call('_ReferencePair',self.reference(arg))
     if type(arg) is b.Index:
         return call('_IndexPair',name('_C'),self.expr(arg.object),self.expr(arg.index))
     if type(arg) is b.Attribute:

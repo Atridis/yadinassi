@@ -1,23 +1,16 @@
 """Non-Python call shapes for StrFind defaults and named JSON converters."""
 from yadinassi.execution.direct import python_direct_json_handlers as handlers
 from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
-from yadinassi.formats.json.json_processing import read_json, write_json
 from yadinassi.syntax import ast as b
 from yadinassi.types.values import HostFunction
 from ..direct_python_ast import attr, call, literal, name
 
 
-_JSON_CALLBACKS = {
-    'readjson': (read_json, 5, 9),
-    'прочитатьjson': (read_json, 5, 9),
-    'writejson': (write_json, 4, 6),
-    'записатьjson': (write_json, 4, 6),
-}
 _SEARCH_PARAMETERS = ('value', 'needle', 'direction', 'start', 'occurrence')
 
 
 def _bind_json(context, key):
-    implementation, _, _ = _JSON_CALLBACKS[key]
+    implementation, _, _ = handlers.JSON_CALLBACKS[key]
     service = context._services.get(key)
     if type(service) is not HostFunction or service.function is not implementation:
         raise BoundaryViolation('canonical JSON handler binding changed')
@@ -36,7 +29,7 @@ def lower(emit, key, arguments):
         return call(node, *(emit.expr(arg) for arg in arguments[:prefix]),
                     **{_SEARCH_PARAMETERS[i]: emit.expr(arguments[i])
                        for i in range(prefix, len(arguments)) if i not in omitted})
-    match = _JSON_CALLBACKS.get(key)
+    match = handlers.JSON_CALLBACKS.get(key)
     if match is None:
         return None
     _, owner_slot, maximum = match

@@ -65,6 +65,18 @@ class InvocationPortTests(unittest.TestCase):
         self.assertNotIn('total', getattr(client,'_direct_routine_modules',{}))
         self.assertIn('total', server._interpreter._direct_routine_modules)
 
+    def test_computed_actual_needs_no_generated_target_temporary(self):
+        client, server, port, seen, messages = self.setup_port()
+        self.addCleanup(client.close)
+        self.addCleanup(server._interpreter.close)
+        plan = client.prepare('R=Echo(1+2);')
+        code = plan._plan.generated_source
+        self.assertIn("r = _BindInvocationPort(_C, 'echo', True, 1)(1 + 2)", code)
+        self.assertNotIn(':=', code)
+        client.execute_prepared(plan)
+        self.assertEqual(client.variables['r'], Decimal(3))
+        self.assertEqual(len(seen), 1)
+
     def test_physical_endpoint_does_not_borrow_logical_metadata_protocol(self):
         from tempfile import TemporaryDirectory
         from sqlite_catalog_fixture import configuration_files

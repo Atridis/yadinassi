@@ -1,12 +1,18 @@
 """Call lowering: declarations, omissions, and explicit runtime boundaries."""
 import ast as p
 from yadinassi.execution.direct.python_direct_names import CHARS_ALIASES
+from yadinassi.execution.direct.python_direct_json_handlers import JSON_CALLBACKS
 from yadinassi.syntax import ast as b
 from .direct_reference_lowering import SELF_NAMES, slot_actual
 from ..direct_python_ast import _node, attr, call, literal, name
 
-_CALLBACK_MODULE_SLOTS = {'readjson':5,'прочитатьjson':5,'writejson':4,'записатьjson':4,
-                          'new:callbackdescription':1,'new:описаниеоповещения':1}
+_CALLBACK_CONSTRUCTORS = ('new:callbackdescription','new:описаниеоповещения')
+
+
+def ungroup(arg):
+    while type(arg) is b.Group:
+        arg = arg.expression
+    return arg
 
 
 def omissions(args):
@@ -87,17 +93,20 @@ def service_call(self,key,args,want_value):
     # client to server. Pass only static shape metadata; the resolver
     # rejects it at the actual crossing, before evaluating arguments.
     if (crossing and references) or folded in self.persistent_services:
-        non_names=[]
-        for i,arg in enumerate(args):
-            while type(arg) is b.Group:arg=arg.expression
-            if type(arg) not in (b.Name,b.OmittedArgument):
-                non_names.append(i)
+        non_names=tuple(i for i,arg in enumerate(args)
+                        if type(ungroup(arg)) not in (b.Name,b.OmittedArgument))
         if non_names:
-            contract['_non_name_actuals']=literal(tuple(non_names))
+            contract['_non_name_actuals']=literal(non_names)
     bound=call(attr(name('_C'),resolver),*target,**contract)
     if key.casefold() in ('eval','вычислить'):
         bound=call('_Eval',bound,*self.fragment_arguments())
-    callback_slot=_CALLBACK_MODULE_SLOTS.get(folded) if self.import_roots else None
+    callback_slot=None
+    if self.import_roots:
+        entry=JSON_CALLBACKS.get(folded)
+        if entry is not None:
+            callback_slot=entry[1]
+        elif folded in _CALLBACK_CONSTRUCTORS:
+            callback_slot=1
     callback = self.import_path(args[callback_slot]) if (callback_slot is not None
                                                          and callback_slot < len(args)) else None
     return self.bound_call(bound,args,omitted,references=references,crossing=crossing,
@@ -107,12 +116,14 @@ def service_call(self,key,args,want_value):
 
 def bound_call(self,bound,args,omitted,*,references=False,crossing=False,shapes=False,callback=None,captured_host=False):
     if shapes:
-        named=[]
-        for arg in args:
-            while type(arg) is b.Group:arg=arg.expression
-            named.append(type(arg) in (b.Name,b.OmittedArgument))
-        bound=call('_SourceShapes',bound,literal(tuple(named)))
-    if not omitted and not references and not crossing and callback is None:
+        named=tuple(type(ungroup(arg)) in (b.Name,b.OmittedArgument) for arg in args)
+        bound=call('_SourceShapes',bound,literal(named))
+    # The boundary still binds the target before any actual. A temporary is
+    # only needed if an actual will consult the target (holes, ByRef,
+    # an imported conversion hook, or a named client/server argument).
+    consults_bound=(omitted or (references and args) or callback is not None
+                    or (crossing and any(type(ungroup(arg)) is b.Name for arg in args)))
+    if not consults_bound:
         return call(bound,*(self.expr(arg) for arg in args))
     slot=self.temp()
     prepared=p.NamedExpr(target=name(slot,True),value=bound)
@@ -132,8 +143,7 @@ def bound_call(self,bound,args,omitted,*,references=False,crossing=False,shapes=
             return p.IfExp(test=p.Compare(left=allowed,ops=[p.Is()],comparators=[literal(True)]),
                 body=call(attr(name('_C'),'import_callback_module'),literal(callback[1])),
                 orelse=self.expr(arg))
-        plain=arg
-        while type(plain) is b.Group:plain=plain.expression
+        plain=ungroup(arg)
         named=crossing and type(plain) is b.Name
         is_reference=call('_RequiresReference',function,literal(i))
         if not named:
@@ -151,8 +161,7 @@ def bound_call(self,bound,args,omitted,*,references=False,crossing=False,shapes=
 
 
 def actual_address(self,arg,test,*,captured_host=False):
-    plain=arg
-    while type(plain) is b.Group:plain=plain.expression
+    plain=ungroup(arg)
     if type(plain) is b.Name:
         key=plain.name.casefold()
         if (captured_host and not self.fragment and key not in self.locals and key not in self.references

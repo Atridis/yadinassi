@@ -5,8 +5,7 @@ host callbacks require an explicit boundary rather than accidental str/equality.
 """
 from yadinassi.execution.direct.python_direct_plain_array import _DIRECT_PLAIN_ARRAY_TYPE as _PlainArray
 from decimal import Decimal
-from operator import ge, gt, le, lt
-from yadinassi.text.collation import _DIRECT_STRING_KEY_ABI
+from yadinassi.text.collation import _DIRECT_STRING_KEY_ABI as _text_key
 from yadinassi.text.strings import concatenate as _join
 from yadinassi.text.chars import CHARS
 from yadinassi.temporal.dates import _DIRECT_EQUALITY_DATE_STATE, _DIRECT_ORDER_DATE_TICKS, UnsupportedDateRange
@@ -151,14 +150,30 @@ def concatenate(left, right):
     return _join(left, right if type(right) is str else presentation(right))
 
 
-_ORDER_OPERATORS = {'<': lt, '<=': le, '>': gt, '>=': ge}
 
-
-def compare_order(left, right, operator):
-    # 1C's "a" < "A" is True. Equality still uses the original values.
+# Only the exact string pair changes how Python orders the operands.
+def less(left, right):
     if type(left) is str and type(right) is str:
-        left, right = _DIRECT_STRING_KEY_ABI(left), _DIRECT_STRING_KEY_ABI(right)
-    return _ORDER_OPERATORS[operator](left, right)
+        return _text_key(left) < _text_key(right)
+    return left < right
+
+
+def less_equal(left, right):
+    if type(left) is str and type(right) is str:
+        return _text_key(left) <= _text_key(right)
+    return left <= right
+
+
+def greater(left, right):
+    if type(left) is str and type(right) is str:
+        return _text_key(left) > _text_key(right)
+    return left > right
+
+
+def greater_equal(left, right):
+    if type(left) is str and type(right) is str:
+        return _text_key(left) >= _text_key(right)
+    return left >= right
 
 
 _DATE_TYPE, _DATE_BOUNDARY_SLOT = _DIRECT_EQUALITY_DATE_STATE

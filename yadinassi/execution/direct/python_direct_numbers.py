@@ -5,18 +5,12 @@ Fractional operations retain Decimal context. Public scalar edges normalize once
 This does not authorize host, routine, or arbitrary collection numeric values.
 """
 from decimal import Decimal
-from yadinassi.execution.codegen.direct_scalar_semantics import decimal_divide, decimal_sign
+from yadinassi.execution.codegen.direct_scalar_semantics import decimal_divide
 
 def divide(left,right):
     if type(left) is int:left=Decimal(left)
     if type(right) is int:right=Decimal(right)
     return decimal_divide(left,right)
-
-def sign(value,operator):
-    if type(value) is int:
-        if operator=='-' and value==0:return Decimal('-0')
-        return -value if operator=='-' else value
-    return decimal_sign(value,operator)
 
 def public_number(value):
     return Decimal(value) if type(value) is int else value

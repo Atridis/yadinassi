@@ -59,6 +59,20 @@ class DirectDecimalDivisionTests(unittest.TestCase):
             self.assertIs(vm.execute('+a'),value)
             self.assertEqual(ctx.flags,before.flags)
 
+    def test_integer_sign_is_direct_and_preserves_negative_zero(self):
+        vm = self.vm()
+        plan = vm.prepare('R=-A; P=+A;')
+        self.assertIn('-_T1', plan._plan.generated_source)
+        self.assertIn('+_T2', plan._plan.generated_source)
+        for value in (7, 0):
+            vm.variables['a'] = value
+            vm.execute_prepared(plan)
+            self.assertEqual(vm.variables['r'].as_tuple(), Decimal(f'-{value}').as_tuple())
+            self.assertEqual(vm.variables['p'], Decimal(value))
+        vm.variables['a'] = True
+        with self.assertRaises(BSLRuntimeError):
+            vm.execute_prepared(plan)
+
     def test_resource_error_catchable_and_assignment_atomic(self):
         vm=self.vm();vm.variables['a']=Decimal('1e5000')
         vm.execute('Saved=17;Try Saved=A/1;Except Caught=True;EndTry;')
