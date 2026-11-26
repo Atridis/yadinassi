@@ -49,10 +49,8 @@ from . import python_direct_callback as callbacks
 from .python_direct_names import VALUE_LIST_CONSTRUCTOR_ALIASES
 from yadinassi.application.direct_callbacks import CallbackDescription as _CallbackDescription, construct as _new_callback, read as _callback_read
 
-from yadinassi.numeric.bits import BUILTINS as _BIT_BUILTINS
+from .python_direct_numeric_calls import BIT_IMPLEMENTATIONS as _BIT_IMPLEMENTATIONS
 from .python_direct_numbers import public_number
-
-_BIT_IMPLEMENTATIONS = {id(function):function for _,function,_ in _BIT_BUILTINS}
 
 _FILE_EFFECTS = frozenset(map(id, (
     find_files, temp_file_name, create_directory, copy_file, move_file, delete_files,

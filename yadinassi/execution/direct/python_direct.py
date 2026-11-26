@@ -383,9 +383,10 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=N
     class DirectBoundary(ImportBoundary,ValueTreeBoundary,ServicesBoundary, LiveMetadataBoundary, DetachedMetadataBoundary, CatalogBoundary, BoundaryContext):
         def plain_callables(self,names):
             from .python_direct_type_calls import implementation
+            from .python_direct_numeric_calls import bit_implementation
             entries=vm._builtin_functions
             missing=(None,None)
-            return tuple(implementation(entries.get(key,missing)[1]) for key in names)
+            return tuple(bit_implementation(implementation(entries.get(key,missing)[1])) for key in names)
 
         def current_module(self):
             return vm._self_module
