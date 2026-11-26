@@ -76,7 +76,7 @@ def nonconstructible(key, missing=False):
         raise TypeError('Тип не определен: '+key)
     raise TypeError('Тип нельзя создать оператором Новый: '+key)
 _OP = dict(_Truth=truth, _PublicNumber=public_number, _Divide=divide, _Remainder=remainder, _Sign=sign, _CompareOrder=compare_order,
-           _GotoTransfer=direct_goto.GotoTransfer,_String=concatenate, _Missing=_MISSING, _OmittedRef=_OMITTED_REF, _ServiceMissing=_SERVICE_MISSING, _Unset=UNSET, _Map=PlainMap, _Nonconstructible=nonconstructible, _SelfRead=self_read, _SelfWrite=self_write, _SelfRef=self_reference,
+           _AdvanceFor=direct_flow_lowering.advance_for_counter, _GotoTransfer=direct_goto.GotoTransfer,_String=concatenate, _Missing=_MISSING, _OmittedRef=_OMITTED_REF, _ServiceMissing=_SERVICE_MISSING, _Unset=UNSET, _Map=PlainMap, _Nonconstructible=nonconstructible, _SelfRead=self_read, _SelfWrite=self_write, _SelfRef=self_reference,
            _Recoverable=(ArithmeticError,TypeError,ValueError,IndexError,NameError,RecursionError,BSLRuntimeError),
            _Handled=handled_error, _Reraise=reraise_handled, _Raise=raise_error,
            _RaiseArity=raise_arity_error, _InvalidCallArity=_argument_count_error,
@@ -409,16 +409,20 @@ class Emit:
                 key=n.name.casefold()
                 if self.external(key):
                     prefix.append(self.write_external(key,first))
-                    advance=self.write_external(key,p.BinOp(left=self.read_external(key),op=p.Add(),right=literal(1)))
                     counter=self.read_external(key)
+                    advance=direct_flow_lowering.for_counter(
+                        n,key,read=counter,assign=lambda value:self.write_external(key,value))
                 elif self.implicit_self(key):
                     prefix.append(self.write_self(key,first))
                     counter=call('_SelfRead',name('_C'),name('_S'),literal(key))
-                    advance=self.write_self(key,p.BinOp(left=counter,op=p.Add(),right=literal(1)))
+                    advance=direct_flow_lowering.for_counter(
+                        n,key,read=counter,assign=lambda value:self.write_self(key,value))
                 else:
                     prefix.append(p.Assign(targets=[self.var(key,True)],value=first))
-                    advance=p.AugAssign(target=self.var(key,True),op=p.Add(),value=literal(1))
                     counter=self.var(key)
+                    advance=direct_flow_lowering.for_counter(
+                        n,key,read=counter,target=self.var(key,True),
+                        assign=lambda value:p.Assign(targets=[self.var(key,True)],value=value))
                 test=p.Compare(left=counter,ops=[p.LtE()],comparators=[last])
             elif kind is b.While:
                 test=self.condition(n.condition)

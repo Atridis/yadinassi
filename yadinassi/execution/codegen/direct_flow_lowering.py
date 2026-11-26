@@ -1,8 +1,8 @@
 """Non-native BSL control-flow rules: named transfers and controlled loops."""
 import ast as p
-from . import direct_goto
+from . import direct_goto, direct_text_addition
 from .direct_python_ast import _node, attr, call, literal, name
-from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported, _nodes
 from yadinassi.syntax import ast as b
 
 
@@ -19,7 +19,16 @@ def block(self,nodes):
                          orelse=[])
             result.append(_node(loop,nodes[0].token))
         return result
-    return [stmt for n in nodes for stmt in self.stmt(n)]
+    result = []
+    strings = set()
+    for n in nodes:
+        emitted = self.stmt(n)
+        if type(n) is b.Assign:
+            direct_text_addition.apply(emitted, strings)
+        else:
+            strings.clear()
+        result.extend(emitted)
+    return result
 
 
 def loop_condition(self,test):
@@ -80,3 +89,35 @@ def goto_block(self,nodes):
     for target in sorted(controls):
         result.append(p.If(test=is_at(target),body=self.loop_control(target==-2),orelse=[]))
     return [_node(stmt,nodes[0].token) for stmt in result]
+
+def advance_for_counter(value):
+    # Python bool is an int subclass; a BSL For step requires a number.
+    if type(value) is bool:
+        raise TypeError('Ожидается число')
+    return value + 1
+
+
+def _counter_value_can_be_boolean(value):
+    while type(value) is b.Group:
+        value = value.expression
+    if type(value) is b.Literal:
+        return type(value.value) is bool
+    if type(value) is b.Unary:
+        return value.operator == 'NOT'
+    if type(value) is b.Binary:
+        return value.operator not in ('+', '-', '*', '/', '%')
+    return True
+
+
+def for_counter(loop, key, *, read, assign, target=None):
+    # Normal induction does not need an adapter. Only an explicit assignment
+    # in this loop can trigger this rule; handling ByRef/host mutation belongs
+    # to those separate operations, not to every loop's increment.
+    for item in _nodes(loop.body):
+        if (type(item) is b.Assign and type(item.target) is b.Name
+                and item.target.name.casefold() == key
+                and _counter_value_can_be_boolean(item.value)):
+            return assign(call('_AdvanceFor', read))
+    if target is not None:
+        return p.AugAssign(target=target, op=p.Add(), value=literal(1))
+    return assign(p.BinOp(left=read, op=p.Add(), right=literal(1)))

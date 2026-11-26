@@ -204,7 +204,8 @@ class WholeRoutineBehaviorTests(unittest.TestCase):
     def test_boolean_counter_mutation_reports_error(self):
         # A one-iteration bound avoids a runaway loop if bool is mistakenly
         # treated as native int: that regression is a normal assertion failure.
-        for body in ('i=True;', 'i=True; Continue;'):
+        for body in ('i=True;', 'i=(1=1); Continue;', 'Flag=True; i=Flag;',
+                     'If True Then i=True; EndIf; Continue;'):
             for prepared in (False,True):
                 with self.subTest(body=body,prepared=prepared):
                     messages=[]
@@ -218,6 +219,18 @@ class WholeRoutineBehaviorTests(unittest.TestCase):
                     self.assertEqual(messages,['body'])
         # Break does not advance a counter, so its value can remain Boolean.
         self.execute('Function F() For i=1 To 1 Do i=True;Break;EndDo;Return i;EndFunction r=F();kind=TypeOf(r)=Type("Boolean");',{'r':True,'kind':True})
+
+    def test_ordinary_for_counter_stays_python_arithmetic(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        for body, expected in (('', 18), ('I=I+1;', 12)):
+            with self.subTest(body=body):
+                plan = vm.prepare('R=0; For I=1 To 3 Do R=R+I*3; '+body+' EndDo;')
+                self.assertIn('while i <= 3:', plan._plan.generated_source)
+                self.assertIn('i += 1', plan._plan.generated_source)
+                self.assertNotIn('_AdvanceFor', plan._plan.generated_source)
+                vm.execute_prepared(plan)
+                self.assertEqual(vm.variables['r'], expected)
 
     def test_live_opaque_counter_releases_before_following_statement(self):
         for prepared in (False,True):
