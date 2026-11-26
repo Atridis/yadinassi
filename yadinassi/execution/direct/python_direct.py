@@ -382,9 +382,10 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=N
     from .python_direct_routines import bind_omissions, resolve as resolve_routine
     class DirectBoundary(ImportBoundary,ValueTreeBoundary,ServicesBoundary, LiveMetadataBoundary, DetachedMetadataBoundary, CatalogBoundary, BoundaryContext):
         def plain_callables(self,names):
+            from .python_direct_type_calls import implementation
             entries=vm._builtin_functions
             missing=(None,None)
-            return tuple(entries.get(key,missing)[1] for key in names)
+            return tuple(implementation(entries.get(key,missing)[1]) for key in names)
 
         def current_module(self):
             return vm._self_module

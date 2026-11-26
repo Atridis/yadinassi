@@ -72,6 +72,15 @@ def fill(target,source,properties=None,exclude=None,*,_context=None):
         target_fixed=type(target) is _FIXED,source_mutable=type(source) is not _FIXED)
 
 
+def fill_plain(*args, _context):
+    # The actual property transfer may still invoke an admitted host endpoint.
+    # test_preserved_host_lane_permission_error_remains_fail_closed.
+    try:
+        return fill(*args, _context=_context)
+    except PermissionError as error:
+        raise BoundaryViolation(str(error)) from error
+
+
 def resolve_fill(context,function,*,name=None,require_value=False,allow_references=False,argument_count=None):
     if type(function) is not HostFunction or function.function is not _FILL:return None
     if context._verify_context:context._check()

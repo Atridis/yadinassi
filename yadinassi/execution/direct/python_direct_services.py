@@ -608,24 +608,11 @@ class ServicesBoundary:
             return bound
         function=self._services.get(key)
         if type(function) is HostFunction and function.function is _DIRECT_TYPE_OF_ABI:
+            from .python_direct_type_calls import type_of
             def direct_type_of(value):
                 if function.function is not _DIRECT_TYPE_OF_ABI:
                     raise BoundaryViolation('TypeOf implementation changed during argument evaluation')
-                from yadinassi.execution.codegen.direct_structure import _DirectStructure
-                from yadinassi.execution.codegen.direct_collections import _TypedMap
-                from yadinassi.types.values import BSLType
-                kind=type(value)
-                if kind is int:return BSLType.NUMBER
-                if kind is list or kind is PlainArray:return BSLType.ARRAY
-                if kind is PlainMap:return BSLType.MAP
-                if kind is PlainValueList:return BSLType.VALUE_LIST
-                if kind is PlainValueListItem:return BSLType.VALUE_LIST_ITEM
-                if kind is fixed.PlainFixedMap:return BSLType.FIXED_MAP
-                if kind is _CallbackDescription:return BSLType.CALLBACK_DESCRIPTION
-                if kind is _DirectStructure:return BSLType.STRUCTURE
-                if kind is _TypedMap:return BSLType.MAP
-                if kind is _CanonicalMapEntry:return BSLType.KEY_AND_VALUE
-                return _DIRECT_TYPE_OF_ABI(value)
+                return type_of(value)
             if self._verify_context:self._check()
             self._validate_host_function(function,kwargs.get('require_value',False),kwargs.get('allow_references',False))
             def invoke(*arguments):
