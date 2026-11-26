@@ -243,15 +243,16 @@ class ServicesBoundary:
         if type(value) is BSLJSONReader or type(value) is BSLJSONWriter:
             bound=json_memory.resolve(self,value,name,require_value=require_value,omitted=omitted,call_syntax=True)
             if bound is not None:return bound
-        if omitted and type(value) is PlainValueList:
-            from .python_direct_import_collections import bind_optional_list
-            if not self._verify_context:return bind_optional_list(value,name.casefold(),omitted)
-            self._check_effect()
-            function=bind_optional_list(value,name.casefold(),omitted)
+        if type(value) is PlainValueList:
+            from .python_direct_import_collections import bind_plain_list
+            verify=self._verify_context
+            if verify:self._check_effect()
+            function=bind_plain_list(value,name.casefold(),omitted)
             def invoke(*arguments):
                 self._check_effect()
                 try:return function(*arguments)
-                finally:self._check_effect()
+                finally:
+                    if verify:self._check_effect()
             return invoke
         if type(value) is BSLValueStorage:
             from yadinassi.runtime import Interpreter

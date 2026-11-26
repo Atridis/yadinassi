@@ -632,8 +632,9 @@ class ImportBoundary:
         from .python_direct_import_collections import bind
         function=bind(receiver,name,argument_count,omitted,require_value)
         if function is None:
+            from yadinassi.collections.value_lists import BSLValueList
             from .python_direct_database import _CALL_TABLE,_CALL_COLUMNS,_CALL_ROW
-            if not any(type(receiver) is cls for cls in (_CALL_TABLE,_CALL_COLUMNS,_CALL_ROW)):
+            if not any(type(receiver) is cls for cls in (_CALL_TABLE,_CALL_COLUMNS,_CALL_ROW,BSLValueList)):
                 raise ValueError('Метод объекта не обнаружен: '+name)
             function=self.resolve_member_call(receiver,name,require_value=require_value,omitted=omitted)
         check=self._import_data_check(owner,prefix)

@@ -539,9 +539,13 @@ class CatalogBoundary:
         if require_value and not function.returns_value:
             raise TypeError('Процедура не возвращает значение: '+name)
         defaults=()
+        trailing_picture=None
         if type(value) is BSLValueList:
             if name.casefold() in ('add','добавить'):defaults=(None,'',False)
             elif name.casefold() in ('insert','вставить'):defaults=(None,None,'',False)
+            # The boxed list does not implement pictures. A syntactically
+            # omitted trailing Picture still means to use the default.
+            if defaults and len(defaults) in omitted:trailing_picture=len(defaults)
         elif type(value) is _CALL_COLUMNS:
             if name.casefold() in ('add','добавить'):defaults=('',None,'',Decimal(0))
             elif name.casefold() in ('insert','вставить'):defaults=(None,'',None,'',Decimal(0))
@@ -551,12 +555,15 @@ class CatalogBoundary:
             elif name.casefold() in ('fillvalues','заполнитьзначения'):defaults=(None,None)
         first=1 if name.casefold() in ('insert','вставить','fillvalues','заполнитьзначения') else 0
         optional=range(first,len(defaults))
-        if any(index not in optional for index in omitted):
+        if any(index not in optional and index!=trailing_picture for index in omitted):
             raise TypeError('Пропуск обязательного аргумента метода таблицы или списка значений')
         def invoke(*arguments):
             self._catalog_owner(value,verify=verify)
             values=list(arguments) if omitted else arguments
-            for index in omitted:values[index]=defaults[index]
+            for index in omitted:
+                if index!=trailing_picture:values[index]=defaults[index]
+            if trailing_picture is not None and len(values)==trailing_picture+1:
+                values.pop()
             try:return function(*values)
             finally:
                 if verify:self._check_effect()

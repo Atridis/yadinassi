@@ -71,6 +71,17 @@ class ValueListRuntimeTests(unittest.TestCase):
         self.vm.execute('values = New ValueList; first = values.Add(10, "first", True); '
                         'values.Добавить(20, "second", False);')
 
+    def test_add_and_insert_omit_trailing_picture_without_shifting_values(self):
+        vm = self.vm
+        vm.execute('Added=Values.Add(30,,True,);')
+        vm.execute_prepared(vm.prepare('Inserted=Values.Вставить(0,,,False,);'))
+        self.assertEqual(vm.execute('Added.Value'), Decimal(30))
+        self.assertEqual(vm.execute('Added.Presentation'), '')
+        self.assertIs(vm.execute('Added.Check'), True)
+        self.assertIsNone(vm.execute('Inserted.Value'))
+        self.assertIs(vm.execute('Inserted.Check'), False)
+        self.assertEqual(vm.execute('Values.Count()'), 4)
+
     def test_types_constructor_aliases_and_presentation(self):
         self.assertTrue(self.vm.execute('(TypeOf(values) = Type("СписокЗначений"))'))
         self.assertTrue(self.vm.execute('(TypeOf(first) = Type("ValueListItem"))'))

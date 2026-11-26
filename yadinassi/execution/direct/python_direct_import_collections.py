@@ -46,19 +46,24 @@ def _ubound(receiver):
     return Decimal(len(receiver)-1)
 
 
+def bind_plain_list(value,name,omitted=(),argument_count=None):
+    if omitted:return bind_optional_list(value,name,omitted,argument_count)
+    key=_NAMES.get(name,name)
+    selected=_METHODS.get(key)
+    if selected is None:raise ValueError('Метод объекта не обнаружен: '+name)
+    method,low,high=selected
+    if argument_count is not None and not low<=argument_count<=high:
+        raise TypeError('Неверное количество аргументов: '+name)
+    _check_list_method(key,method)
+    def invoke(*arguments):
+        _check_list_method(key,method)
+        return method(value,*arguments)
+    return invoke
+
+
 def bind(value,name,argument_count,omitted,require_value):
     if type(value) is PlainValueList:
-        if omitted:return bind_optional_list(value,name,omitted,argument_count)
-        key=_NAMES.get(name,name)
-        selected=_METHODS.get(key)
-        if selected is None:raise ValueError('Метод объекта не обнаружен: '+name)
-        method,low,high=selected
-        if not low<=argument_count<=high:raise TypeError('Неверное количество аргументов: '+name)
-        _check_list_method(key,method)
-        def invoke(*arguments):
-            _check_list_method(key,method)
-            return method(value,*arguments)
-        return invoke
+        return bind_plain_list(value,name,omitted,argument_count)
     if type(value) is not list:return None
     # Array methods already use these exact native operations in ordinary
     # codegen. Do not look up arbitrary Python attributes on export values.
