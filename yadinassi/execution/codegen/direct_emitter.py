@@ -1,30 +1,32 @@
 """Clean-sheet direct emitter: Python owns control flow and scalar arithmetic."""
 import ast as p
 from dataclasses import replace
-from . import direct_goto, direct_call_exceptions
+from . import direct_goto, direct_call_exceptions, direct_call_lowering, direct_reference_lowering, direct_flow_lowering
+from . import direct_routine_lowering, direct_scalar_lowering, direct_object_lowering, direct_constructor_lowering
+from .direct_python_ast import _node, arguments, attr, call, literal, name
+from .direct_reference_lowering import SELF_NAMES
+from .direct_access_runtime import (bsl_iterable, get_field, member, metered, owned_index, owned_iterable,
+                                    owned_set_index, owns_property_output, read_bracket, set_field, write_bracket)
+from .direct_reference_runtime import (bind_index_reference, bind_local_index_reference, cell_actual,
+                                       field_reference, fragment_reference, host_reference, indexed_actual,
+                                       lexical_reference, local_field_reference, member_actual)
 from decimal import Decimal
-from functools import partial
 from types import FunctionType
 
 from yadinassi.syntax import ast as b
-from .direct_collections import Program, UnsupportedNakedSyntax, _argument_count_error, _Cell, _Reference, _bound_ref, _host_omission_error, _host_omission_values, _OMITTED_REF
-from yadinassi.types.array_index import array_offset
+from .direct_collections import Program, _argument_count_error, _Cell, _bound_ref, _host_omission_error, _host_omission_values, _OMITTED_REF
 from yadinassi.execution.direct.python_direct_plain_map import PlainMap, plain_map
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
-from yadinassi.collections.maps import BSLMap, BSLFixedMap
-from yadinassi.collections.structures import BSLKeyAndValue, BSLStructure, BSLFixedStructure
 from .direct_errors import handled_error, reraise_handled
-from .direct_resources import bounded_array, bounded_insert
-from .direct_scalar_semantics import typed_find
+from .direct_resources import bounded_array
 from .direct_structure import _DirectStructure, new_structure
-from .direct_array_address import ArrayElementAddress
 from yadinassi.execution.direct.python_direct_names import CHARS_ALIASES, NAMES as SYSTEM_NAMES
 from yadinassi.types.errors import BSLRuntimeError
-from .direct_live_state import UNSET, source_reference, host_reference as live_host_reference, _SlotReference, _ForwardReference
+from .direct_live_state import UNSET, source_reference, host_reference as live_host_reference, _ForwardReference
 from .direct_boundaries import BoundaryViolation, _MISSING as _SERVICE_MISSING
 from yadinassi.execution.direct.python_direct_eval import bind_eval
 from yadinassi.execution.direct.python_direct_execute import FragmentScope, execute_fragment
-from yadinassi.types.values import BSLArray, BSLFixedArray, BSLObject, HostFunction, NULL, Reference
+from yadinassi.types.values import HostFunction
 from .direct_scalar_semantics import compare_order, concatenate, presentation, truth
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.execution.direct.python_direct_numbers import divide, remainder, sign, public_number
@@ -32,183 +34,9 @@ from yadinassi.execution.direct.python_direct_dynamic_new import construct
 from yadinassi.execution.direct.python_direct_error_info import raise_arity_error, raise_error
 
 
-class Address(_Reference):
-    __slots__ = ('read', 'write', 'name_sink')
-
-    def __init__(self, read, write, *, name_sink=False):
-        self.read = read
-        self.write = write
-        self.name_sink = name_sink
-
-    @property
-    def value(self):
-        return self.read()
-
-    @value.setter
-    def value(self, value):
-        self.write(value)
-
-
-def owned_index(context,receiver):
-    kind=type(receiver)
-    if kind is list or kind is PlainArray:
-        return lambda key: receiver[array_offset(receiver,key)]
-    if kind is PlainMap or kind is _DirectStructure:
-        return receiver.__getitem__
-    return context.resolve_member(receiver,'__getitem__')
-
-
-def read_bracket(context, receiver, key):
-    kind=type(receiver)
-    if kind is list or kind is PlainArray:
-        return receiver[array_offset(receiver,key)]
-    if kind is dict:
-        return receiver.get(key)
-    if kind is not BSLMap and kind is not BSLFixedMap and issubclass(kind,BSLObject):
-        return context.resolve_member(receiver,'__getitem__')(key)
-    return receiver[key]
-
-
-def write_bracket(context, receiver, key, value):
-    kind=type(receiver)
-    if kind is list or kind is PlainArray:
-        key=array_offset(receiver,key)
-    elif kind is not BSLMap and kind is not BSLFixedMap and issubclass(kind,BSLObject):
-        context.resolve_member(receiver,'__setitem__')(key,value)
-        return
-    receiver[key]=value
-
-
-def owned_set_index(context,value,receiver,key):
-    kind=type(receiver)
-    if kind is list or kind is PlainArray:
-        receiver[array_offset(receiver,key)] = value
-    elif kind is PlainMap or kind is _DirectStructure:
-        receiver[key] = value
-    else:
-        context.resolve_member(receiver,'__setitem__')(key,value)
-
-
-def owned_iterable(context, iterable):
-    kind=type(iterable)
-    if kind is list or kind is PlainArray or kind is _DirectStructure:
-        return iter(iterable)
-    if kind is PlainMap:
-        return iterable.bsl_entries()
-    return context.resolve_member(iterable,'__iter__')()
-
-
-def bsl_iterable(context, iterable):
-    # PlainMap implements the Python mapping protocol for host callers. Only
-    # BSL's loop enumerates its logical pairs instead of its keys.
-    kind=type(iterable)
-    if kind is PlainMap:
-        return iterable.bsl_entries()
-    if issubclass(kind,BSLObject):
-        return context.resolve_member(iterable,'__iter__')()
-    return iterable
-
-
 def native_array_expression(value):
     return isinstance(value,p.List) or (
         isinstance(value,p.Call) and isinstance(value.func,p.Name) and value.func.id=='_Array')
-
-
-def metered(context, iterable):
-    iterator=iter(owned_iterable(context,iterable))
-    while True:
-        context.checkpoint()
-        try:
-            value=next(iterator)
-        except StopIteration:
-            return
-        yield value
-
-
-# Only boxed collections arriving through codecs or a host boundary need a
-# stable borrowed backing. Ordinary Python lists/references do not use this.
-_BOX_DICT = vars(BSLObject)['__dict__']
-_BOX_ARRAY_SET = BSLArray.set
-_BOX_STRUCTURE_SET = BSLStructure.set
-
-
-def boxed_storage(context, receiver, attribute, expected_type):
-    context._check_effect()
-    state = _BOX_DICT.__get__(receiver, type(receiver))
-    if any(type(key) is not str for key in state):
-        raise BoundaryViolation('canonical reference storage changed')
-    backing = state.get(attribute)
-    if type(backing) is not expected_type:
-        raise BoundaryViolation('canonical reference storage changed')
-    return backing
-
-
-def boxed_array_reference(context, receiver, key):
-    readonly = type(receiver) is BSLFixedArray
-    storage_type = tuple if readonly else list
-    items = boxed_storage(context, receiver, 'items', storage_type)
-    if type(key) is Decimal:
-        if not key.is_finite() or key != key.to_integral_value():
-            raise ValueError('Ожидается целое число')
-    elif type(key) is not int:
-        raise TypeError('Ожидается число')
-    if not 0 <= key < len(items):
-        raise IndexError(f'Индекс массива вне границ: {key}')
-    offset = int(key)
-
-    def live():
-        if boxed_storage(context, receiver, 'items', storage_type) is not items:
-            raise BoundaryViolation('canonical reference backing changed')
-        if offset >= len(items):
-            raise IndexError(f'Индекс массива вне границ: {offset}')
-
-    def get():
-        live()
-        return items[offset]
-
-    def set_value(value):
-        live()
-        if readonly:
-            raise ValueError('Фиксированный массив недоступен для записи')
-        if vars(BSLArray).get('set') is not _BOX_ARRAY_SET:
-            raise BoundaryViolation('canonical array setter changed')
-        items[offset] = value
-        live()
-
-    return Address(get, set_value)
-
-
-def bind_local_index_reference(context, receiver):
-    kind=type(receiver)
-    if kind is list or kind is PlainArray:
-        return partial(ArrayElementAddress,receiver)
-    if (kind is BSLArray or kind is BSLFixedArray) and context.policy is None:
-        return partial(boxed_array_reference, context, receiver)
-    return bind_index_reference(context, receiver)
-
-
-def bind_index_reference(context, receiver):
-    kind=type(receiver)
-    if kind is list or kind is PlainArray:
-        return partial(ArrayElementAddress,receiver)
-    if kind is not PlainMap and kind is not _DirectStructure:
-        return context.bind_reference_index(receiver)
-    def bind_index(key):
-        def get():
-            return receiver.get(key) if kind is PlainMap else receiver[key]
-        def set_value(value):
-            receiver[key] = value
-        get()
-        return Address(get,set_value)
-    return bind_index
-
-
-def fragment_reference(read,write):
-    try:
-        read()
-    except NameError:
-        return None
-    return Reference(read,write)
 
 
 def source_shapes(bound, named):
@@ -217,86 +45,13 @@ def source_shapes(bound, named):
     return bound
 
 
-def host_reference(address, context=None):
-    kind=type(address)
-    read,write=address.get,address.set
-    forwarded_name=(kind is _ForwardReference and type(address.reference) is Reference
-                    and getattr(address.reference,'_direct_name_sink',False) is True)
-    # BSL name addresses have their own lending checks when an imported or dual
-    # routine uses them. Rechecking the suspended caller would reject the lend.
-    if (kind is _ForwardReference and not forwarded_name
-            and context is not None and context._verify_context):
-        def guarded_get():
-            context._check_effect()
-            try:
-                return read()
-            finally:
-                context._check_effect()
-
-        def guarded_set(value):
-            context._check_effect()
-            try:
-                write(value)
-            finally:
-                context._check_effect()
-
-        result=Reference(guarded_get,guarded_set)
-    else:
-        result=Reference(read,write)
-    result._direct_name_sink=(kind is _SlotReference
-        or kind is Address and address.name_sink
-        or forwarded_name)
-    return result
-
-
-def indexed_actual(context, byref, receiver, owned):
-    if byref:
-        address=bind_index_reference(context,receiver)
-        return lambda key: host_reference(address(key))
-    if owned:
-        return owned_index(context,receiver)
-    return partial(read_bracket,context,receiver)
-
-
-def member_actual(context, byref, receiver, key):
-    if byref:
-        address=field_reference(context,receiver,key)
-        # A module reference was already bound by its owner. Preserve the exact
-        # reference so a synchronous dual call can lend that one address.
-        if type(address) is _ForwardReference:
-            return address.reference
-        return host_reference(address)
-    return get_field(context,receiver,key)
-
-
-def cell_actual(value):
-    return host_reference(_Cell(value))
-
-
 def unchanged(value):
     return value
-
-
-def lexical_reference(get, set_value):
-    if get() is UNSET:raise NameError("Uninitialized reference")
-    return Address(get,set_value,name_sink=True)
 
 
 _BINARY = {'+': p.Add, '-': p.Sub, '*': p.Mult}
 _COMPARE = {'=': p.Eq, '<>': p.NotEq, '<': p.Lt, '<=': p.LtE, '>': p.Gt, '>=': p.GtE}
 _MISSING = object()
-_SELF_NAMES = frozenset(('thisobject','этотобъект'))
-_NATIVE_CONSTRUCTORS = frozenset(('array','массив','map','соответствие','structure','структура'))
-_VALUE_TYPE_NAMES = frozenset(('date','дата','sortdirection','направлениесортировки','promise','обещание'))
-_CALLBACK_MODULE_SLOTS = {'readjson':5,'прочитатьjson':5,'writejson':4,'записатьjson':4,
-                          'new:callbackdescription':1,'new:описаниеоповещения':1}
-_NONCONSTRUCTIBLE = frozenset(('formdatacollection','данныеформыколлекция',
-    'formdatacollectionitem','данныеформыэлементколлекции','formtable','таблицаформы',
-    'collectionindex','индексколлекции','collectionindexes','индексыколлекции'))
-
-
-ARRAY_ALIASES={'количество':'count','вграница':'ubound','добавить':'add','очистить':'clear',
-          'получить':'get','установить':'set','вставить':'insert','удалить':'delete','найти':'find'}
 
 
 def self_read(context,state,key):
@@ -332,244 +87,13 @@ _OP = dict(_Truth=truth, _PublicNumber=public_number, _Divide=divide, _Remainder
 _OP.update(direct_call_exceptions.HELPERS)
 
 
-def boxed_field_reference(context, receiver, name):
-    from yadinassi.collections.structures import _key
-    key = _key(name)
-    items = boxed_storage(context, receiver, '_items', dict)
-
-    def selected():
-        if boxed_storage(context, receiver, '_items', dict) is not items:
-            raise BoundaryViolation('canonical reference backing changed')
-        if any(type(field) is not str for field in items):
-            raise BoundaryViolation('canonical reference storage changed')
-        if key not in items:
-            raise ValueError(f'Свойство структуры не найдено: {name}')
-        entry = items[key]
-        if type(entry) is not tuple or len(entry) != 2 or type(entry[0]) is not str:
-            raise BoundaryViolation('canonical reference storage changed')
-        return entry
-
-    def get():
-        return selected()[1]
-
-    def set_value(value):
-        if type(receiver) is BSLFixedStructure:
-            raise ValueError(f'Свойство фиксированной структуры недоступно для записи: {name}')
-        if vars(BSLStructure).get('set') is not _BOX_STRUCTURE_SET:
-            raise BoundaryViolation('canonical structure setter changed')
-        items[key] = (selected()[0], value)
-        context._check_effect()
-
-    selected()
-    return Address(get, set_value)
-
-
-def local_field_reference(context, receiver, key):
-    kind=type(receiver)
-    if (kind is BSLStructure or kind is BSLFixedStructure) and context.policy is None:
-        return boxed_field_reference(context, receiver, key)
-    return field_reference(context, receiver, key)
-
-
-def field_reference(context, receiver, key):
-    if type(receiver) is _DirectStructure:
-        receiver[key]
-        return Address(lambda: receiver[key],lambda value: receiver.__setitem__(key,value))
-    reference=context.reference_member(receiver,key)
-    return _ForwardReference(reference) if type(reference) is Reference else reference
-
-
-def get_field(context, receiver, key):
-    kind = type(receiver)
-    if kind is list or kind is PlainArray:
-        operation = ARRAY_ALIASES.get(key.casefold(), key.casefold())
-        if operation in _ARRAY_ARITY:
-            from yadinassi.execution.direct.python_direct_captured_values import register
-
-            def invoke(*args):
-                return array_method(receiver, key, len(args), False, ())(*args)
-
-            return register(HostFunction(key, invoke, returns_value=operation not in _ARRAY_PROCEDURES))
-    if kind is _DirectStructure:
-        return receiver[key]
-    if kind is PlainMap:
-        raise ValueError('Свойство соответствия не найдено: '+key)
-    if kind is BSLKeyAndValue:
-        return receiver.get_member(key)
-    return context.get_member(receiver,key)
-
-
-def owns_property_output(receiver):
-    kind=type(receiver)
-    return kind is _DirectStructure or kind is BSLStructure or kind is BSLFixedStructure
-
-
-def set_field(context, receiver, key):
-    kind=type(receiver)
-    if kind is _DirectStructure:
-        return lambda value: receiver.__setitem__(key,value)
-    if kind is PlainMap:
-        raise ValueError('Свойство соответствия недоступно для записи: '+key)
-    return context.resolve_set_member(receiver,key)
-
-
-_ARRAY_ARITY = {'ubound':(0,0),'count':(0,0),'add':(0,1),'clear':(0,0),
-                'get':(1,1),'set':(2,2),'insert':(1,2),'delete':(1,1),'find':(1,1)}
-_ARRAY_PROCEDURES = frozenset(('add','clear','set','insert','delete'))
-
-
-def array_get(receiver,index):
-    return receiver[array_offset(receiver,index,method=True)]
-
-
-def array_set(receiver,index,value):
-    receiver[array_offset(receiver,index,method=True)] = value
-
-
-def array_add(receiver,value=None):
-    receiver.append(value)
-
-
-def array_ubound(receiver):
-    return len(receiver)-1
-
-
-def array_delete(receiver,index):
-    if type(index) is Decimal and (not index.is_finite() or index!=index.to_integral_value()):
-        raise ValueError('Ожидается целое число')
-    del receiver[array_offset(receiver,index)]
-
-
-def array_find(receiver,value):
-    if type(value) in (int,Decimal):
-        for index,item in enumerate(receiver):
-            if type(item) in (int,Decimal) and item==value:
-                return index
-        return None
-    return typed_find(receiver,value)
-
-
-_ARRAY_CALLS = {'ubound':array_ubound,'add':array_add,'get':array_get,'set':array_set,
-                'insert':bounded_insert,'delete':array_delete,'find':array_find}
-_MAP_ALIASES = {'вставить':'insert','удалить':'delete','очистить':'clear',
-                'получить':'get','количество':'count'}
-_MAP_ARITY = {'insert':(1,2),'delete':(1,1),'clear':(0,0),'get':(1,1),'count':(0,0)}
-
-
-def reject_runtime_arity(key,count,arity):
-    # A resolved collection method evaluates ordinary actuals before reporting
-    # invalid arity, and drops temporaries before entering the BSL handler.
-    expected=str(arity[0]) if arity[0]==arity[1] else f'{arity[0]}–{arity[1]}'
-    def wrong_arity(*actuals):
-        del actuals
-        raise TypeError(f'{key} ожидает {expected} аргументов, получено {count}')
-    return wrong_arity
-
-
-def array_method(receiver,key,count,want_value,omitted):
-    folded=key.casefold()
-    operation=ARRAY_ALIASES.get(folded,folded)
-    arity=_ARRAY_ARITY.get(operation)
-    if arity is None:
-        raise ValueError('Метод или свойство не найдено: '+key)
-    if omitted:
-        raise TypeError('Неверное количество аргументов: '+key)
-    if not arity[0]<=count<=arity[1]:
-        return reject_runtime_arity(key,count,arity)
-    if want_value and operation in _ARRAY_PROCEDURES:
-        raise TypeError('Процедура не возвращает значение: '+key)
-    if operation=='count':return receiver.__len__
-    if operation=='add' and count:return receiver.append
-    if operation=='clear':return receiver.clear
-    return partial(_ARRAY_CALLS[operation],receiver)
-
-
 def requires_reference(bound,index):
     test=getattr(bound,'requires_reference',None)
     return test is not None and test(index)
 
 
-def member(context, receiver, key, count, want_value, omitted=(), source_dispatch=False,configuration_dispatch=False):
-    kind=type(receiver)
-    if kind is list or kind is PlainArray:return array_method(receiver,key,count,want_value,omitted)
-    folded=key.casefold()
-    if not omitted and kind is _DirectStructure:
-        # Bind known methods even with the wrong count. Let Python report
-        # their arity after evaluating actuals, not the unrelated DB resolver.
-        if folded in ('property','свойство'):return receiver.property
-        if folded in ('insert','вставить'):
-            if want_value and count in (1,2):raise TypeError('Процедура не возвращает значение: '+key)
-            return receiver.insert
-        if folded in ('delete','удалить'):
-            if want_value and count==1:raise TypeError('Процедура не возвращает значение: '+key)
-            return receiver.__delitem__
-        if folded in ('clear','очистить'):
-            if want_value and not count:raise TypeError('Процедура не возвращает значение: '+key)
-            return receiver.clear
-        if folded in ('count','количество'):return receiver.__len__
-        raise ValueError('Метод структуры не найден: '+key)
-    if kind is PlainMap:
-        operation=_MAP_ALIASES.get(folded,folded)
-        arity=_MAP_ARITY.get(operation)
-        if arity is None:
-            raise ValueError('Метод соответствия не найден: '+key)
-        if omitted:
-            raise TypeError('Неверное количество аргументов: '+key)
-        if not arity[0]<=count<=arity[1]:
-            return reject_runtime_arity(key,count,arity)
-        if operation=='get':return receiver.get
-        if operation=='count':return receiver.__len__
-        if want_value:raise TypeError('Процедура не возвращает значение: '+key)
-        if operation=='insert':
-            if count==2:return receiver.__setitem__
-            return lambda item:receiver.__setitem__(item,None)
-        if operation=='delete':return receiver.__delitem__
-        return receiver.clear
-    if (omitted and not (configuration_dispatch or source_dispatch)
-            and folded in ('openfile','открытьфайл')):
-        return context.resolve_optional_open_file(receiver,key,require_value=want_value,
-                                                  omitted=omitted,argument_count=count)
-    if configuration_dispatch:
-        return context.resolve_configuration_member_call(receiver,key,require_value=want_value,omitted=omitted,argument_count=count)
-    if source_dispatch:
-        return context.resolve_source_member(receiver,key,require_value=want_value,argument_count=count,allow_references=True)
-    return context.resolve_member_call(receiver,key,require_value=want_value,omitted=omitted)
-
-
 _OP.update(_RequiresReference=requires_reference,_OwnedIndex=owned_index,_OwnedSetIndex=owned_set_index,_Metered=metered,_OwnedIterable=owned_iterable,_BSLIterable=bsl_iterable,_Member=member,_GetField=get_field,_SetField=set_field,_FieldRef=field_reference,_LocalFieldRef=local_field_reference,_OwnsPropertyOutput=owns_property_output)
 _OP.update(_WriteBracket=write_bracket,_ReadBracket=read_bracket)
-
-
-def _node(n, token):
-    if 'lineno' in n._attributes:
-        n.lineno=n.end_lineno=token.line
-        n.col_offset=max(0,token.column-1)
-        n.end_col_offset=n.col_offset+1
-    return n
-
-
-def name(value, store=False):
-    return p.Name(id=value, ctx=p.Store() if store else p.Load())
-
-
-def call(target, *args, **kwargs):
-    if isinstance(target,str):
-        target=name(target)
-    return p.Call(func=target, args=list(args),
-                  keywords=[p.keyword(arg=k,value=v) for k,v in kwargs.items()])
-
-
-def attr(target,key):
-    return p.Attribute(value=target, attr=key, ctx=p.Load())
-
-
-def literal(value):
-    return p.Constant(value=value)
-
-
-def arguments(names):
-    return p.arguments(posonlyargs=[],args=[p.arg(arg=k) for k in names],vararg=None,
-                       kwonlyargs=[],kw_defaults=[],kwarg=None,defaults=[])
 
 
 def bind(template,state):
@@ -587,6 +111,26 @@ def bind(template,state):
 
 
 class Emit:
+    # The emitter selects direct Python constructs. BSL-specific behavior is
+    # attached here by operation, not by running a second generator.
+    omissions=staticmethod(direct_call_lowering.omissions)
+    local_call=direct_call_lowering.local_call
+    service_call=direct_call_lowering.service_call
+    bound_call=direct_call_lowering.bound_call
+    actual_address=direct_call_lowering.actual_address
+    reference=direct_reference_lowering.reference
+    address=direct_reference_lowering.address
+    fragment_arguments=direct_reference_lowering.fragment_arguments
+    address_definitions=direct_reference_lowering.address_definitions
+    index=direct_object_lowering.index
+    routine=direct_routine_lowering.routine
+    condition=direct_scalar_lowering.condition
+    block=direct_flow_lowering.block
+    loop_condition=direct_flow_lowering.loop_condition
+    jump=direct_flow_lowering.jump
+    loop_control=direct_flow_lowering.loop_control
+    goto_block=direct_flow_lowering.goto_block
+
     def __init__(self, filename):
         self.filename=filename
         self.number=0
@@ -681,7 +225,7 @@ class Emit:
         return key in self.externals and key not in self.locals and key not in self.module_declarations
 
     def implicit_self(self,key):
-        return (self.current_module and key in _SELF_NAMES
+        return (self.current_module and key in SELF_NAMES
                 and key not in self.locals and key not in self.module_declarations)
 
     def write_self(self,key,value):
@@ -724,7 +268,7 @@ class Emit:
                 return p.IfExp(test=p.Compare(left=value,ops=[p.Is()],comparators=[name('_Unset')]),
                     body=call(attr(name('_C'),'external_get'),literal(key)),orelse=self.var(key))
             if key not in self.locals and key not in self.module_declarations:
-                if self.current_module and key in _SELF_NAMES:
+                if self.current_module and key in SELF_NAMES:
                     return call('_SelfRead',name('_C'),name('_S'),literal(key))
                 if key in self.externals:
                     return self.read_external(key)
@@ -742,61 +286,26 @@ class Emit:
             return p.IfExp(test=self.condition(x.condition),
                            body=self.expr(x.when_true),orelse=self.expr(x.when_false))
         if type(x) is b.Unary:
-            if x.operator=='NOT':return p.UnaryOp(op=p.Not(),operand=self.condition(x.operand))
-            if type(x.operand) is b.Literal and type(x.operand.value) is Decimal:
-                val=x.operand.value
-                return self.literal(val.copy_negate() if x.operator=='-' else val)
-            return call('_Sign',self.expr(x.operand),literal(x.operator))
+            return direct_scalar_lowering.unary(self, x)
         if type(x) is b.Binary:
             op=x.operator
             if op in ('AND','OR'):
                 return p.BoolOp(op=p.And() if op=='AND' else p.Or(),
                                 values=[self.condition(x.left),self.condition(x.right)])
             l,r=self.expr(x.left),self.expr(x.right)
+            adapted=direct_scalar_lowering.binary(op,l,r)
+            if adapted is not None:
+                return adapted
             if op in _BINARY:
-                if op=='+' and (type(l) is p.Constant and type(l.value) is str
-                                or type(l) is p.Call and type(l.func) is p.Name and l.func.id=='_String'):
-                    return call('_String',l,r)
                 return p.BinOp(left=l,op=_BINARY[op](),right=r)
             if op in _COMPARE:
-                # If a literal excludes a pair of strings, Python already
-                # has the intended ordering. Equality never uses collation.
-                if op not in ('=', '<>') and not any(
-                        type(value) is p.Constant and type(value.value) is not str
-                        for value in (l, r)):
-                    return call('_CompareOrder', l, r, literal(op))
                 return p.Compare(left=l,ops=[_COMPARE[op]()],comparators=[r])
-            if op=='/':return call('_Divide',l,r)
-            if op=='%':return call('_Remainder',l,r)
         if type(x) is b.Index:
             return self.index(x)
         if type(x) is b.Attribute:
             return call('_GetField',name('_C'),self.expr(x.object),literal(x.name))
-        if type(x) is b.DynamicNew:
-            params=literal(None) if x.parameters is None else self.expr(x.parameters)
-            return call('_Construct',name('_C'),self.expr(x.type_expression),params)
-        if type(x) is b.New:
-            key=x.name.casefold()
-            if key in ('date','дата') and not x.arguments:
-                return call('_Nonconstructible',literal(x.name),literal(True))
-            if key in _NONCONSTRUCTIBLE or key in _VALUE_TYPE_NAMES and not x.arguments:
-                return call('_Nonconstructible',literal(x.name))
-            if (self.constructor_profile is not None and key not in _NATIVE_CONSTRUCTORS
-                    and key not in self.constructor_profile and key not in self.ordinary_constructors
-                    and key not in self.tree_constructors):
-                raise PythonDirectUnsupported(f'constructor {x.name}; unavailable in this execution profile')
-            if key in self.bound_constructors:return self.service_call('new:'+key,x.arguments,want_value)
-            if key in ('array','массив','map','соответствие'):
-                if self.omissions(x.arguments):
-                    return call('_InvalidOmissions')
-                if not x.arguments:
-                    return p.List(elts=[],ctx=p.Load()) if key in ('array','массив') else call('_Map')
-                return call('_Array' if key in ('array','массив') else '_MapFrom',
-                            *(self.expr(arg) for arg in x.arguments))
-            if key in ('structure','структура'):
-                if self.omissions(x.arguments):return call('_InvalidOmissions')
-                return call('_Structure',*(self.expr(arg) for arg in x.arguments))
-            return self.service_call('new:'+key,x.arguments,want_value)
+        if type(x) is b.DynamicNew or type(x) is b.New:
+            return direct_constructor_lowering.lower(self, x, want_value)
         if type(x) is b.Call:
             c=x.callee
             while type(c) is b.Group:c=c.expression
@@ -826,414 +335,9 @@ class Emit:
                              for arg in x.arguments)
                     return call(slot,*actuals)
                 return self.service_call(c.name,x.arguments,want_value)
-            omitted=self.omissions(x.arguments)
-            root=c.object
-            while type(root) is b.Group:root=root.expression
-            if (self.current_module and not self.owned and type(root) is b.Name
-                    and root.name.casefold() in _SELF_NAMES
-                    and root.name.casefold() not in self.locals
-                    and root.name.casefold() not in self.module_declarations):
-                options={'require_value':literal(want_value),'argument_count':literal(len(x.arguments))}
-                if omitted:options['local_omissions']=literal(True)
-                bound=call(attr(name('_C'),'resolve_public_module_call'),self.expr(root),literal(c.name),**options)
-                return self.bound_call(bound,x.arguments,omitted,references=True)
-            qualifier=root
-            while type(qualifier) in (b.Group,b.Attribute):
-                qualifier=qualifier.expression if type(qualifier) is b.Group else qualifier.object
-            if self.source_dispatch and type(qualifier) is b.Name and self.external(qualifier.name.casefold()):
-                bound=call('_Member',name('_C'),self.expr(c.object),literal(c.name),
-                           literal(len(x.arguments)),literal(want_value),literal(omitted),source_dispatch=literal(True))
-                return self.bound_call(bound,x.arguments,omitted,references=True,crossing=True,shapes=True)
-            if omitted:
-                target=root
-                while type(target) in (b.Group,b.Attribute):
-                    target=target.expression if type(target) is b.Group else target.object
-                if type(target) is not b.Name:return call('_InvalidOmissions')
-            binding=[] if not omitted else [literal(omitted)]
-            receiver=self.expr(c.object)
-            property_output=not omitted and len(x.arguments)==2 and c.name.casefold() in ('property','свойство')
-            if property_output:
-                slot=self.temp()
-                receiver=p.NamedExpr(target=name(slot,True),value=receiver)
-            bound=call('_Member',name('_C'),receiver,literal(c.name),
-                       literal(len(x.arguments)),literal(want_value),*binding,
-                       **({'source_dispatch':literal(True)} if self.source_dispatch else
-                          {'configuration_dispatch':literal(True)} if self.configuration_dispatch else {}))
-            if self.source_dispatch and not omitted and not property_output:
-                return self.bound_call(bound,x.arguments,omitted,references=True,crossing=True,shapes=True)
-            if property_output:
-                native=call('_OwnsPropertyOutput',name(slot))
-                return call(bound,self.expr(x.arguments[0]),self.actual_address(x.arguments[1],native))
-            return call(bound,*(literal(None) if i in omitted else self.expr(arg)
-                                for i,arg in enumerate(x.arguments)))
+            return direct_object_lowering.member_call(self, x, c, want_value)
         raise PythonDirectUnsupported(f'clean emitter: {type(x).__name__}')
 
-    @staticmethod
-    def omissions(args):
-        return tuple(i for i,arg in enumerate(args) if type(arg) is b.OmittedArgument)
-
-    def local_call(self,key,args,want_value,token):
-        bound=self.routines[key]
-        params=self.parameters[key]
-        minimum=max((i+1 for i,param in enumerate(params) if param.default is None),default=0)
-        if not minimum<=len(args)<=len(params):
-            return _node(call('_InvalidCallArity',literal(key),literal(len(params)),literal(len(args))),token)
-        if want_value and key in self.procedures:
-            return _node(call('_ProcedureValue',literal(key)),token)
-        omitted=self.omissions(args)
-        def actual(i):
-            if i in omitted:
-                return literal(None) if params[i].by_value else call('_Cell',literal(None))
-            return self.expr(args[i]) if params[i].by_value else self.reference(args[i],known_local=True)
-        defaults=tuple(i for i in omitted if params[i].default is not None)
-        if not defaults:
-            return call(bound,*(actual(i) for i in range(len(args))))
-        # Skip a defaulted hole; an explicitly skipped required slot is Undefined.
-        prefix=defaults[0]
-        return call(bound,*(actual(i) for i in range(prefix)),
-                    **{params[i].name.casefold():actual(i)
-                       for i in range(prefix,len(args)) if i not in defaults})
-
-    def reference(self,arg,known_local=False):
-        while type(arg) is b.Group:
-            arg=arg.expression
-        path=self.import_path(arg)
-        if path is not None:
-            return call('_ImportedRef',call(attr(name('_C'),'import_reference'),literal(path)))
-        if type(arg) is b.Name:
-            key=arg.name.casefold()
-            if key in self.references:
-                return call('_BoundRef',name(key))
-            if self.external(key):
-                return call(attr(name('_C'),'external_reference'),literal(key))
-            if self.current_module and key in _SELF_NAMES and key not in self.locals and key not in self.module_declarations:
-                return call('_SelfRef',name('_C'),name('_S'),literal(key))
-            if key not in self.locals:
-                if not self.owned and key in CHARS_ALIASES and key not in self.module_declarations:
-                    return call(attr(name('_C'),'character_namespace_reference'),literal(key))
-                return call('_VarRef',name('_S'),literal(key))
-            # Python lifts only explicitly borrowed locals into closure cells.
-            getter,setter=self.address(key)
-            return call('_LexicalRef',name(getter),name(setter))
-        if type(arg) is b.Index:
-            return call(call('_BindLocalIndexRef' if known_local else '_BindIndexRef',name('_C'),self.expr(arg.object)),self.expr(arg.index))
-        if type(arg) is b.Attribute:
-            return call('_LocalFieldRef' if known_local else '_FieldRef',name('_C'),self.expr(arg.object),literal(arg.name))
-        return call('_Cell',self.expr(arg))
-
-    def address(self,key):
-        if key not in self.addresses:
-            self.addresses[key]=self.temp(),self.temp()
-        return self.addresses[key]
-
-    def fragment_arguments(self):
-        pairs=[]
-        if self.in_routine:
-            for key in sorted(self.locals):
-                if key in self.references:
-                    value=call('_HostRef',name(key))
-                else:
-                    getter,setter=self.address(key)
-                    value=call('_FragmentRef',name(getter),name(setter))
-                pairs.append((literal(key),value))
-        bindings=p.Dict(keys=[k for k,_ in pairs],values=[v for _,v in pairs])
-        visible=literal(tuple(sorted(self.module_declarations)) if self.in_routine else None)
-        return name('_C'),name('_S'),bindings,visible
-
-    def address_definitions(self):
-        for key,(getter,setter) in self.addresses.items():
-            yield p.FunctionDef(name=getter,args=arguments(()),
-                                body=[p.Return(value=name(key))],decorator_list=[])
-            yield p.FunctionDef(name=setter,args=arguments(('_Value',)),
-                                body=[p.Nonlocal(names=[key]),p.Assign(targets=[name(key,True)],
-                                      value=name('_Value'))],decorator_list=[])
-
-    def service_call(self,key,args,want_value):
-        omitted=self.omissions(args)
-        resolver='resolve_optional_service' if omitted else 'resolve_service'
-        folded=key.casefold()
-        host_capture=self.host_extensions and not self.owned and not self.source_dispatch
-        if host_capture and folded in self.locals:
-            bound=call(attr(name('_C'),'resolve_extension_value'),self.var(folded),
-                       require_value=literal(want_value),allow_references=literal(True))
-            return self.bound_call(bound,args,omitted,references=True,captured_host=True)
-        crossing=folded in self.server_services
-        dynamic_host_call=(host_capture
-                           and not folded.startswith('new:') and not self.external(folded)
-                           and folded not in self.named_services and folded not in self.reference_services
-                           and not crossing)
-        references=(folded in self.reference_services or dynamic_host_call or
-                    self.source_dispatch and not folded.startswith('new:') and folded not in self.value_services)
-        target=[literal(key)]
-        if self.source_dispatch and not folded.startswith('new:') and not self.external(folded):
-            if folded in self.locals:
-                target.append(self.var(folded))
-            elif folded not in self.value_services:
-                target.append(call(attr(name('_S'),'get'),literal(folded),name('_ServiceMissing')))
-        contract={'require_value':literal(want_value),'argument_count':literal(len(args))}
-        if references:
-            contract['allow_references']=literal(True)
-        # Prepared calls bind the current routine, which may now cross from
-        # client to server. Pass only static shape metadata; the resolver
-        # rejects it at the actual crossing, before evaluating arguments.
-        if (crossing and references) or folded in self.persistent_services:
-            non_names=[]
-            for i,arg in enumerate(args):
-                while type(arg) is b.Group:arg=arg.expression
-                if type(arg) not in (b.Name,b.OmittedArgument):
-                    non_names.append(i)
-            if non_names:
-                contract['_non_name_actuals']=literal(tuple(non_names))
-        bound=call(attr(name('_C'),resolver),*target,**contract)
-        if key.casefold() in ('eval','вычислить'):
-            bound=call('_Eval',bound,*self.fragment_arguments())
-        callback_slot=_CALLBACK_MODULE_SLOTS.get(folded) if self.import_roots else None
-        callback = self.import_path(args[callback_slot]) if (callback_slot is not None
-                                                             and callback_slot < len(args)) else None
-        return self.bound_call(bound,args,omitted,references=references,crossing=crossing,
-                               callback=(callback_slot,callback) if callback is not None else None,
-                               captured_host=dynamic_host_call)
-
-    def bound_call(self,bound,args,omitted,*,references=False,crossing=False,shapes=False,callback=None,captured_host=False):
-        if shapes:
-            named=[]
-            for arg in args:
-                while type(arg) is b.Group:arg=arg.expression
-                named.append(type(arg) in (b.Name,b.OmittedArgument))
-            bound=call('_SourceShapes',bound,literal(tuple(named)))
-        if not omitted and not references and not crossing and callback is None:
-            return call(bound,*(self.expr(arg) for arg in args))
-        slot=self.temp()
-        prepared=p.NamedExpr(target=name(slot,True),value=bound)
-        def item(obj,index):
-            return p.Subscript(value=obj,slice=literal(index),ctx=p.Load())
-        if omitted:
-            prepared.value=call('_Omissions',bound,literal(omitted),literal(len(args)))
-            bound=item(prepared,0)
-        else:
-            bound=prepared
-        def actual(i,arg):
-            if i in omitted:
-                return item(item(name(slot),1),i)
-            function=item(name(slot),0) if omitted else name(slot)
-            if callback is not None and i==callback[0]:
-                allowed=call('_GetAttr',function,literal('accepts_callback_module'),literal(False))
-                return p.IfExp(test=p.Compare(left=allowed,ops=[p.Is()],comparators=[literal(True)]),
-                    body=call(attr(name('_C'),'import_callback_module'),literal(callback[1])),
-                    orelse=self.expr(arg))
-            plain=arg
-            while type(plain) is b.Group:plain=plain.expression
-            named=crossing and type(plain) is b.Name
-            is_reference=call('_RequiresReference',function,literal(i))
-            if not named:
-                return self.actual_address(arg,is_reference,captured_host=captured_host) if references else self.expr(arg)
-            value=self.expr(arg)
-            reference=call('_HostRef',self.reference(arg),name('_C'))
-            late=self.temp()
-            factory=p.NamedExpr(target=name(late,True),
-                value=call('_GetAttr',function,literal('prepare_named_value'),literal(None)))
-            value=p.IfExp(test=p.Compare(left=factory,ops=[p.IsNot()],comparators=[literal(None)]),
-                          body=call(late,reference),orelse=value)
-            if not references:return value
-            return p.IfExp(test=is_reference,body=reference,orelse=value)
-        return call(bound,*(actual(i,arg) for i,arg in enumerate(args)))
-
-    def actual_address(self,arg,test,*,captured_host=False):
-        plain=arg
-        while type(plain) is b.Group:plain=plain.expression
-        if type(plain) is b.Name:
-            key=plain.name.casefold()
-            if (captured_host and not self.fragment and key not in self.locals and key not in self.references
-                    and not self.external(key) and self.import_path(plain) is None
-                    and not (self.current_module and key in _SELF_NAMES)
-                    and not (key in CHARS_ALIASES and key not in self.module_declarations)):
-                # A Python caller can supply an existing Reference in its module slot.
-                address=call('_LiveHostRef',name('_S'),literal(key))
-            else:
-                address=call('_HostRef',self.reference(arg),name('_C'))
-            return p.IfExp(test=test,body=address,orelse=self.expr(arg))
-        if type(plain) is b.Index:
-            owned=self.meter_loops or self.source_dispatch or self.configuration_dispatch
-            bind=call('_IndexedActual',name('_C'),test,self.expr(plain.object),literal(owned))
-            return call(bind,self.expr(plain.index))
-        if type(plain) is b.Attribute:
-            return call('_MemberActual',name('_C'),test,self.expr(plain.object),literal(plain.name))
-        if captured_host:return self.expr(arg)
-        convert=p.IfExp(test=test,body=name('_CellActual'),orelse=name('_Unchanged'))
-        return call(convert,self.expr(arg))
-
-
-    def index(self,x):
-        receiver,key=self.expr(x.object),self.expr(x.index)
-        target=x.object
-        while type(target) is b.Group:target=target.expression
-        null_literal=type(target) is b.Literal and target.value is NULL
-        if null_literal or self.meter_loops or self.source_dispatch or self.configuration_dispatch:
-            return _node(call(call('_OwnedIndex',name('_C'),receiver),key),x.token)
-        return _node(call('_ReadBracket',name('_C'),receiver,key),x.token)
-
-    def routine(self,routine):
-        from dataclasses import fields
-        args=arguments(tuple(param.name.casefold() for param in routine.parameters))
-        optional=False
-        defaults=[]
-        for param in routine.parameters:
-            if param.default is not None:
-                optional=True
-                default=self.expr(param.default)
-                key=param.name.casefold()
-                if param.by_value:
-                    deferred = type(param.default) is not b.Literal
-                    args.defaults.append(name('_OmittedRef') if deferred else default)
-                    if deferred or self.source_dispatch:
-                        defaults.append(p.If(test=p.Compare(left=name(key),ops=[p.Is()],comparators=[name('_OmittedRef')]),
-                            body=[p.Assign(targets=[name(key,True)],value=default)],orelse=[]))
-                else:
-                    args.defaults.append(name('_Missing'))
-                    probe=p.Compare(left=name(key),ops=[p.Is()],comparators=[name('_Missing')])
-                    if self.source_dispatch:
-                        probe=p.BoolOp(op=p.Or(),values=[probe,p.Compare(left=name(key),ops=[p.Is()],comparators=[name('_OmittedRef')])])
-                    defaults.append(p.If(test=probe,
-                        body=[p.Assign(targets=[name(key,True)],value=call('_Cell',default))],orelse=[]))
-            elif optional:
-                raise PythonDirectUnsupported('clean emitter: parameter after default')
-        local={param.name.casefold() for param in routine.parameters}
-        declared=set()
-        writes=set()
-        direct_vars=({id(statement) for statement in routine.body if type(statement) is b.Var}
-                     if self.externals else ())
-        queue=[routine.body]
-        has_fragments=False
-        has_await=False
-        while queue:
-            item=queue.pop()
-            if type(item) is b.Await:has_await=True
-            if type(item) is b.Execute or (type(item) is b.Call and type(item.callee) is b.Name
-                    and item.callee.name.casefold() in ('eval','вычислить')):
-                has_fragments=True
-            if isinstance(item,b.Var):
-                keys={key.casefold() for key in item.names}
-                if keys & self.externals and id(item) not in direct_vars:
-                    raise PythonDirectUnsupported('conditional local Var shadowing external storage')
-                declared.update(keys)
-            elif isinstance(item,b.Assign) and type(item.target) is b.Name:writes.add(item.target.name.casefold())
-            elif isinstance(item,(b.For,b.ForEach)):writes.add(item.name.casefold())
-            if isinstance(item,b.Node) and not isinstance(item,b.Literal):
-                queue.extend(getattr(item,f.name) for f in fields(item) if f.name!='token')
-            elif type(item) in (list,tuple):queue.extend(item)
-        old=self.locals,self.globals,self.references,self.addresses,self.in_routine,self.shadows,self.in_async
-        self.in_routine=True
-        self.in_async=routine.is_async
-        implicit=_SELF_NAMES if self.current_module else frozenset()
-        shadows=(writes & self.shadowable & self.externals)-self.module_declarations-declared-local
-        if shadows and has_fragments:
-            raise UnsupportedNakedSyntax('source implicit namespace shadow with Execute/Eval is not integrated')
-        self.implicit_shadows.update(shadows)
-        self.shadows=frozenset(shadows)
-        self.locals=local|declared|shadows|(writes-self.module_declarations-self.externals-implicit)
-        self.globals=set()
-        self.references={param.name.casefold() for param in routine.parameters if not param.by_value}
-        self.addresses={}
-        try:
-            body=self.block(routine.body)
-            if self.scalar_routines:
-                actuals=p.Tuple(elts=[call('_PublicNumber',name(param.name.casefold())) for param in routine.parameters],ctx=p.Load())
-                body.insert(0,p.Expr(value=call(attr(name('_C'),'scalar_values'),actuals)))
-            shadow_slots=[p.Assign(targets=[name(key,True)],value=name('_Unset')) for key in sorted(shadows)]
-            body=[*self.address_definitions(),*defaults,*shadow_slots,*body]
-            if self.globals and not self.fragment:body.insert(0,p.Global(names=sorted(self.globals)))
-            if routine.is_async and not has_await:
-                # A no-Await async routine is still started eagerly as a task.
-                body.append(_node(p.If(test=literal(False),
-                    body=[p.Expr(value=p.Yield(value=None))],orelse=[]),routine.token))
-        finally:self.locals,self.globals,self.references,self.addresses,self.in_routine,self.shadows,self.in_async=old
-        body=body or [p.Pass()]
-        if self.source_scopes:
-            manager=call(attr(name('_C'),'routine_scope'))
-            body=[p.With(items=[p.withitem(context_expr=manager,optional_vars=None)],body=body)]
-        return p.FunctionDef(name=self.routines[routine.name.casefold()],args=args,
-                             body=body,decorator_list=[])
-
-    def condition(self,x):
-        root=x
-        while type(root) is b.Group:root=root.expression
-        value=self.expr(x)
-        if (type(root) is b.Binary and root.operator in (*_COMPARE,'AND','OR')
-                or type(root) is b.Unary and root.operator=='NOT'
-                or type(root) is b.Literal and type(root.value) in (bool,Decimal)):
-            return value
-        return call('_Truth',value)
-
-    def block(self,nodes):
-        if self.goto_labels and any(id(n) in self.goto_labels for n in nodes):
-            return self.goto_block(nodes)
-        if self.has_jumps and any(type(n) is b.Goto for n in nodes):
-            prefix,cycle=direct_goto.linear_path(nodes)
-            result=[stmt for n in prefix for stmt in self.stmt(n)]
-            if cycle is not None:
-                direct_goto.check_cycle(cycle,self.routines,PythonDirectUnsupported)
-                loop=p.While(test=self.loop_condition(literal(True)),
-                             body=[stmt for n in cycle for stmt in self.stmt(n)] or [p.Pass()],
-                             orelse=[])
-                result.append(_node(loop,nodes[0].token))
-            return result
-        return [stmt for n in nodes for stmt in self.stmt(n)]
-
-    def loop_condition(self,test):
-        if self.meter_loops:
-            boundary=call(attr(name('_C'),'checkpoint'))
-            return p.Subscript(value=p.Tuple(elts=[boundary,test],ctx=p.Load()),slice=literal(1),ctx=p.Load())
-        return test
-
-    def jump(self,target):
-        return p.Raise(exc=call('_GotoTransfer',literal(target)),cause=literal(None))
-
-    def loop_control(self,continuing):
-        if not self.loop:
-            raise PythonDirectUnsupported(('Continue' if continuing else 'Break')+' outside a loop')
-        if self.dispatch and self.dispatch[-1][0]==len(self.loop):
-            target=-2 if continuing else -3
-            self.dispatch[-1][1].add(target)
-            return [self.jump(target)]
-        if continuing:
-            from copy import deepcopy
-            prefix=[] if self.loop[-1] is None else [deepcopy(self.loop[-1])]
-            return [*prefix,p.Continue()]
-        return [p.Break()]
-
-    def goto_block(self,nodes):
-        pc,caught=self.temp(),self.temp()
-        segments=[(-1,[])]
-        for node in nodes:
-            destination=self.goto_labels.get(id(node))
-            if destination is not None:segments.append((destination,[]))
-            else:segments[-1][1].append(node)
-        def assign(value):
-            return p.Assign(targets=[name(pc,True)],value=value)
-        def is_at(target):
-            return p.Compare(left=name(pc),ops=[p.Eq()],comparators=[literal(target)])
-        controls=set()
-        self.dispatch.append((len(self.loop),controls))
-        try:
-            cases=[]
-            for i,(target,body) in enumerate(segments):
-                following=segments[i+1][0] if i+1<len(segments) else -4
-                cases.append(p.match_case(pattern=p.MatchValue(value=literal(target)),guard=None,
-                                          body=[assign(literal(following)),*[s for n in body for s in self.stmt(n)]]))
-        finally:
-            self.dispatch.pop()
-        accepted=tuple(k for k,_ in segments[1:])+tuple(sorted(controls))
-        destination=attr(name(caught),'target')
-        handler=p.If(test=p.Compare(left=destination,ops=[p.In()],comparators=[literal(accepted)]),
-                     body=[assign(destination)],orelse=[p.Raise(exc=None,cause=None)])
-        attempt=p.Try(body=[p.Match(subject=name(pc),cases=cases)],
-                      handlers=[p.ExceptHandler(type=name('_GotoTransfer'),name=caught,body=[handler])],
-                      orelse=[],finalbody=[])
-        active=p.Compare(left=name(pc),ops=[p.GtE()],comparators=[literal(-1)])
-        result=[assign(literal(-1)),p.While(test=self.loop_condition(active),body=[attempt],orelse=[])]
-        for target in sorted(controls):
-            result.append(p.If(test=is_at(target),body=self.loop_control(target==-2),orelse=[]))
-        return [_node(stmt,nodes[0].token) for stmt in result]
 
     def stmt(self,n):
         statements=self.statement(n)
