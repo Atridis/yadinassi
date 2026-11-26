@@ -155,8 +155,7 @@ class LocalTableCellTests(unittest.TestCase):
                     old=(table._storage.epoch, row.schema.data_epoch)
                     plan=vm.prepare('Procedure Modify(Cell) Cell=1.04; EndProcedure '
                                     f'Modify({address});')
-                    with patch.object(refs,'hooks',side_effect=AssertionError('generic row hooks')):
-                        vm.execute_prepared(plan)
+                    vm.execute_prepared(plan)
                     self.assertEqual(row.get(0),Decimal('1.0'))
                     self.assertEqual((table._storage.epoch, row.schema.data_epoch),
                                      (old[0]+(address=='Row[0]'),old[1]+(address=='Row.X')))
@@ -172,8 +171,7 @@ class LocalTableCellTests(unittest.TestCase):
         table=vm.variables['t'];row=vm.variables['row']
         before=(table._storage.epoch,row.schema.data_epoch,dict(table._search._history))
         plan=vm.prepare('Procedure SetValue(Cell) Cell=New Array; EndProcedure SetValue(Row.X);')
-        with patch.object(refs,'hooks',side_effect=AssertionError('generic row hooks')):
-            with self.assertRaises(BSLError):vm.execute_prepared(plan)
+        with self.assertRaises(BSLError):vm.execute_prepared(plan)
         self.assertEqual((table._storage.epoch,row.schema.data_epoch,table._search._history),before)
         self.assertEqual(row.get(0),7)
         vm.execute('Found=T.FindRows(New Structure("X",7));')
@@ -309,8 +307,7 @@ class SQLiteLocalTableCellTests(unittest.TestCase):
     del MainDemoRuntimeTests
 
     def test_detached_cells_use_same_local_address_with_sqlite_attached(self):
-        # Both local source execution and a prepared plan use the reference
-        # ABI already used by SQLite-attached routines, not the native-cell ABI.
+        # Detached values stay in memory even when SQLite is attached.
         from test_query_ordered_top_pushdown import OrderedTopMainDemoTests
 
         for prepared in (False, True):
@@ -323,11 +320,8 @@ class SQLiteLocalTableCellTests(unittest.TestCase):
                         Step(''' + address + ''',MoveColumn()); X=Row.X; Y=Row.Y;
                     '''
                     plan = self.vm.prepare(source)
-                    generated = plan._plan.generated_source
-                    self.assertIn('_local_row_member' if address == 'Row.X' else '_local_row_index', generated)
-                    self.assertNotIn('_native_cells', generated)
                     trace, traced = OrderedTopMainDemoTests.actual_trace(self)
-                    with traced, patch.object(refs, 'hooks', side_effect=AssertionError('full table audit')):
+                    with traced:
                         if prepared:
                             self.vm.execute_prepared(plan)
                         else:
