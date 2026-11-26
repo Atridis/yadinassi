@@ -17,6 +17,7 @@ from .direct_errors import handled_error, reraise_handled
 from .direct_resources import bounded_array, bounded_insert
 from .direct_scalar_semantics import typed_find
 from .direct_structure import _DirectStructure, new_structure
+from .direct_array_address import ArrayElementAddress
 from yadinassi.execution.direct.python_direct_names import CHARS_ALIASES, NAMES as SYSTEM_NAMES
 from yadinassi.types.errors import BSLRuntimeError
 from .direct_live_state import UNSET, source_reference, host_reference as live_host_reference, _SlotReference, _ForwardReference
@@ -179,6 +180,8 @@ def boxed_array_reference(context, receiver, key):
 
 def bind_local_index_reference(context, receiver):
     kind=type(receiver)
+    if kind is list or kind is PlainArray:
+        return partial(ArrayElementAddress,receiver)
     if (kind is BSLArray or kind is BSLFixedArray) and context.policy is None:
         return partial(boxed_array_reference, context, receiver)
     return bind_index_reference(context, receiver)
@@ -186,17 +189,15 @@ def bind_local_index_reference(context, receiver):
 
 def bind_index_reference(context, receiver):
     kind=type(receiver)
-    if not (kind is list or kind is PlainArray or kind is PlainMap or kind is _DirectStructure):
+    if kind is list or kind is PlainArray:
+        return partial(ArrayElementAddress,receiver)
+    if kind is not PlainMap and kind is not _DirectStructure:
         return context.bind_reference_index(receiver)
     def bind_index(key):
-        def index():
-            return array_offset(receiver,key) if kind is list or kind is PlainArray else key
         def get():
-            if kind is PlainMap:
-                return receiver.get(key)
-            return receiver[index()]
+            return receiver.get(key) if kind is PlainMap else receiver[key]
         def set_value(value):
-            receiver[index()] = value
+            receiver[key] = value
         get()
         return Address(get,set_value)
     return bind_index
