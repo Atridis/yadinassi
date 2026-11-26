@@ -2,7 +2,7 @@
 import ast as p
 from dataclasses import replace
 from . import direct_goto, direct_call_exceptions, direct_call_lowering, direct_reference_lowering, direct_flow_lowering
-from . import direct_routine_lowering, direct_scalar_lowering, direct_object_lowering, direct_constructor_lowering
+from . import direct_named_routine_call, direct_routine_lowering, direct_scalar_lowering, direct_object_lowering, direct_constructor_lowering
 from .direct_python_ast import _node, arguments, attr, call, literal, name
 from .direct_reference_lowering import SELF_NAMES
 from .direct_access_runtime import (bsl_iterable, get_field, member, metered, owned_index, owned_iterable,
@@ -85,6 +85,7 @@ _OP = dict(_Truth=truth, _PublicNumber=public_number, _Divide=divide, _Remainder
            _BindIndexRef=bind_index_reference, _BindLocalIndexRef=bind_local_index_reference, _HostRef=host_reference, _IndexedActual=indexed_actual, _MemberActual=member_actual, _CellActual=cell_actual, _Unchanged=unchanged, _ImportedRef=_ForwardReference,
            _Construct=construct, _Array=bounded_array, _Structure=new_structure, _MapFrom=plain_map, _Omissions=_host_omission_values, _InvalidOmissions=_host_omission_error)
 _OP.update(direct_call_exceptions.HELPERS)
+_OP.update(direct_named_routine_call.HELPERS)
 
 
 def requires_reference(bound,index):
@@ -326,6 +327,8 @@ class Emit:
                 if key in self.routines:
                     return self.local_call(key,x.arguments,want_value,x.token)
                 if self.plain_calls:
+                    routine=direct_named_routine_call.lower(self,key,x.arguments,want_value)
+                    if routine is not None:return routine
                     exceptional=direct_call_exceptions.lower(self,key,x.arguments)
                     if exceptional is not None:return exceptional
                     slot=self.call_slots.get(key)
