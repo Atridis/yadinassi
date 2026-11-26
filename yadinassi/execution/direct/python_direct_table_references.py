@@ -47,9 +47,19 @@ def bind(context,value,key,*,index=False):
             if index:context.resolve_member(value,'__setitem__')(key,new)
             else:context.resolve_set_member(value,key)(new)
         finally:check()
-    # Reference binding reads once, but does not require write authority until
-    # the callee writes. Every later access resolves the live public protocol.
-    read()
+    # Admit the selector before evaluating the following actuals, but do not
+    # fetch a detached row's payload unless the callee uses it.
+    if type(value) is _ROW and not verify and context.policy is None:
+        fields=raw(value)
+        named=not index or type(key) is str
+        if fields['_deleted']:
+            if named:raise storage.StorageError('row is detached')
+            raise ValueError('row is deleted')
+        schema=fields['schema']
+        if named:schema.offset(key)
+        else:model._index(key,len(schema._keys))
+    else:
+        read()
     return _ForwardReference(Reference(read,write))
 
 

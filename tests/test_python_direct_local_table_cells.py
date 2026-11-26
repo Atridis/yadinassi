@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
 from yadinassi.collections.value_tables import BSLValueTable, BSLValueTableRow
+from yadinassi.collections.plain_table_storage import RowStorage
 from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.direct import python_direct_table_references as refs
 
@@ -28,10 +29,10 @@ class LocalTableCellTests(unittest.TestCase):
         # Watch the actually lowered address; a no-op also prevents a
         # vacuous success where the call or address binding was eliminated.
         hits = []
-        bind = refs._RowAddress.__init__.__code__
-        getter = refs._RowAddress.value.fget.__code__
+        bind = refs.bind.__code__
+        reads = (RowStorage.get_value.__code__, BSLValueTableRow._positional_value.__code__)
         def profile(frame, event, _arg):
-            if event == 'call' and frame.f_code in (bind, getter):
+            if event == 'call' and frame.f_code in (bind, *reads):
                 hits.append(frame.f_code)
         old = sys.getprofile()
         try:
@@ -76,13 +77,15 @@ class LocalTableCellTests(unittest.TestCase):
                     self.assertIsNone(table.columns.find('X'))
                     self.assertEqual(row.get_member('Y'),10)
 
-        vm = self.vm()
-        with self.assertRaises(BSLError):
-            vm.execute(_SETUP+_STEP+'''
-                Function Effect() T.Add(); Return 0; EndFunction
-                Step(Row.Missing,Effect());
-            ''')
-        self.assertEqual(len(vm.variables['t'].rows),1)
+        for invalid in ('Row.Missing', 'Row["Missing"]', 'Row[2]', 'Row[True]'):
+            with self.subTest(invalid=invalid):
+                vm = self.vm()
+                with self.assertRaises(BSLError):
+                    vm.execute(_SETUP+_STEP+'''
+                        Function Effect() T.Add(); Return 0; EndFunction
+                        Step('''+invalid+''',Effect());
+                    ''')
+                self.assertEqual(len(vm.variables['t'].rows),1)
 
     def test_deleted_and_reinserted_name_is_live(self):
         vm=self.vm()
