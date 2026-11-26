@@ -22,9 +22,9 @@ class MissingRoutineNameTests(unittest.TestCase):
                 with self.subTest(route=route, directive=directive):
                     vm = Interpreter()
                     source = directive+'\nFunction ReadHidden()\nReturn Secret;\nEndFunction\nReadHidden();'
-                    with self.assertRaisesRegex(BSLRuntimeError, 'не определена: Secret') as caught:
+                    with self.assertRaisesRegex(BSLRuntimeError, 'не определена: (?i:Secret)\\b') as caught:
                         self.run_source(vm, source, route)
-                    self.assertIn('scope.bsl:3:', str(caught.exception))
+                    self.assertIn('scope.bsl:3:8', str(caught.exception))
                     self.assertNotIn('v0', str(caught.exception))
                     self.assertEqual(vm.execution_context, 'client')
 
@@ -42,7 +42,7 @@ Result=ReadHidden();''')
     def test_unrelated_routine_binding_does_not_make_name_visible(self):
         vm = Interpreter()
         vm.execute('Function One() Hidden=42; Return Hidden; EndFunction Function Two() Return Hidden; EndFunction Result=One();')
-        with self.assertRaisesRegex(BSLRuntimeError, 'не определена: Hidden'):
+        with self.assertRaisesRegex(BSLRuntimeError, 'не определена: (?i:Hidden)\\b'):
             vm.execute('Two();')
         self.assertEqual(vm.variables['result'], Decimal(42))
 
