@@ -293,13 +293,14 @@ def resolve_server(parent,module,name,*,require_value,allow_references,allow_omi
         # Ordered independent copy-out intentionally gives the rightmost alias.
         for (_,reference),value in zip(outputs,outgoing[1:]):reference.set(value)
         return outgoing[0]
+    crossing=not getattr(parent,'_server_side',False)
+    # Copy-out accepts only names. Reject using the current signature before
+    # the caller evaluates actuals, even after a prepared call is rebound.
+    if crossing and non_name_actuals and not references.isdisjoint(non_name_actuals):
+        raise TypeError('Межконтекстные параметры без Знач пока требуют имя переменной')
     function=HostFunction(name,invoke,reference_parameters=references,returns_value=module.signatures[name][0])
     bound=parent.resolve_callable(function,require_value=require_value,allow_references=allow_references)
-    if not getattr(parent,'_server_side',False):
-        # Copy-out accepts only names. Reject the shape while binding, before
-        # even an earlier by-value actual can run.
-        if references and non_name_actuals and not references.isdisjoint(non_name_actuals):
-            raise TypeError('Межконтекстные параметры без Знач пока требуют имя переменной')
+    if crossing:
         def prepare_named_value(reference):
             parent._check()
             if type(reference) is not Reference:raise TypeError('named server value requires a source reference')

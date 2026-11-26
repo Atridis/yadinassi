@@ -129,15 +129,25 @@ class NullIntegrationTests(unittest.TestCase):
 
     def test_member_and_index_errors_are_catchable_before_arguments(self):
         program = parse("""
-            Var Called;
+            Var Calls;
             Function Argument()
-                Called = True;
+                Calls = Calls + 1;
                 Return 0;
             EndFunction
-            Called = False;
-            MemberCaught = False; IndexCaught = False;
+            Calls = 0;
+            MemberCaught = False; IndexCaught = False; GroupCaught = False;
             Try Null.Missing(Argument()); Except MemberCaught = True; EndTry;
+            MemberCalls = Calls;
+            Calls = 0;
             Try Item = Null[Argument()]; Except IndexCaught = True; EndTry;
+            IndexCalls = Calls;
+            Calls = 0;
+            Try Item = (Null)[Argument()]; Except GroupCaught = True; EndTry;
+            GroupCalls = Calls;
+            Calls = 0;
+            ArrayValue = New Array; ArrayValue.Add(7);
+            MapValue = New Map; MapValue.Insert(0, 8);
+            Item = ArrayValue[Argument()] + MapValue[Argument()];
         """)
         for prepared in (False, True):
             with self.subTest(prepared=prepared):
@@ -149,7 +159,12 @@ class NullIntegrationTests(unittest.TestCase):
                     vm.execute_program(program)
                 self.assertIs(vm.variables['membercaught'], True)
                 self.assertIs(vm.variables['indexcaught'], True)
-                self.assertIs(vm.variables['called'], False)
+                self.assertIs(vm.variables['groupcaught'], True)
+                self.assertEqual(vm.variables['membercalls'], 0)
+                self.assertEqual(vm.variables['indexcalls'], 0)
+                self.assertEqual(vm.variables['groupcalls'], 0)
+                self.assertEqual(vm.variables['item'], 15)
+                self.assertEqual(vm.variables['calls'], 2)
 
     def test_default_parameters_and_dynamic_evaluation(self):
         self.vm.execute('''

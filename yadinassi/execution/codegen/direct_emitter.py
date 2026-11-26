@@ -23,7 +23,7 @@ from .direct_live_state import UNSET, source_reference, host_reference as live_h
 from .direct_boundaries import BoundaryViolation, _MISSING as _SERVICE_MISSING
 from yadinassi.execution.direct.python_direct_eval import bind_eval
 from yadinassi.execution.direct.python_direct_execute import FragmentScope, execute_fragment
-from yadinassi.types.values import BSLArray, BSLFixedArray, BSLObject, HostFunction, Reference
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLObject, HostFunction, NULL, Reference
 from .direct_scalar_semantics import compare_order, concatenate, presentation, truth
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.execution.direct.python_direct_numbers import divide, remainder, sign, public_number
@@ -385,6 +385,8 @@ def get_field(context, receiver, key):
             return register(HostFunction(key, invoke, returns_value=operation not in _ARRAY_PROCEDURES))
     if kind is _DirectStructure:
         return receiver[key]
+    if kind is PlainMap:
+        raise ValueError('Свойство соответствия не найдено: '+key)
     if kind is BSLKeyAndValue:
         return receiver.get_member(key)
     return context.get_member(receiver,key)
@@ -396,8 +398,11 @@ def owns_property_output(receiver):
 
 
 def set_field(context, receiver, key):
-    if type(receiver) is _DirectStructure:
+    kind=type(receiver)
+    if kind is _DirectStructure:
         return lambda value: receiver.__setitem__(key,value)
+    if kind is PlainMap:
+        raise ValueError('Свойство соответствия недоступно для записи: '+key)
     return context.resolve_set_member(receiver,key)
 
 
@@ -481,19 +486,22 @@ def member(context, receiver, key, count, want_value, omitted=(), source_dispatc
     kind=type(receiver)
     if kind is list or kind is PlainArray:return array_method(receiver,key,count,want_value,omitted)
     folded=key.casefold()
-    if not omitted and type(receiver) is _DirectStructure:
-        if folded in ('property','свойство') and count in (1,2):return receiver.property
-        if folded in ('insert','вставить') and count in (1,2):
-            if want_value:raise TypeError('Процедура не возвращает значение: '+key)
+    if not omitted and kind is _DirectStructure:
+        # Bind known methods even with the wrong count. Let Python report
+        # their arity after evaluating actuals, not the unrelated DB resolver.
+        if folded in ('property','свойство'):return receiver.property
+        if folded in ('insert','вставить'):
+            if want_value and count in (1,2):raise TypeError('Процедура не возвращает значение: '+key)
             return receiver.insert
-        if folded in ('delete','удалить') and count==1:
-            if want_value:raise TypeError('Процедура не возвращает значение: '+key)
+        if folded in ('delete','удалить'):
+            if want_value and count==1:raise TypeError('Процедура не возвращает значение: '+key)
             return receiver.__delitem__
-        if folded in ('clear','очистить') and not count:
-            if want_value:raise TypeError('Процедура не возвращает значение: '+key)
+        if folded in ('clear','очистить'):
+            if want_value and not count:raise TypeError('Процедура не возвращает значение: '+key)
             return receiver.clear
-        if folded in ('count','количество') and not count:return receiver.__len__
-    if type(receiver) is PlainMap:
+        if folded in ('count','количество'):return receiver.__len__
+        raise ValueError('Метод структуры не найден: '+key)
+    if kind is PlainMap:
         operation=_MAP_ALIASES.get(folded,folded)
         arity=_MAP_ARITY.get(operation)
         if arity is None:
@@ -602,6 +610,7 @@ class Emit:
         self.meter_loops=False
         self.source_scopes=False
         self.server_services=set()
+        self.persistent_services=frozenset()
         self.import_roots=frozenset()
         self.source_dispatch=False
         self.scalar_routines=False
@@ -938,7 +947,10 @@ class Emit:
         contract={'require_value':literal(want_value),'argument_count':literal(len(args))}
         if references:
             contract['allow_references']=literal(True)
-        if crossing and references:
+        # Prepared calls bind the current routine, which may now cross from
+        # client to server. Pass only static shape metadata; the resolver
+        # rejects it at the actual crossing, before evaluating arguments.
+        if (crossing and references) or folded in self.persistent_services:
             non_names=[]
             for i,arg in enumerate(args):
                 while type(arg) is b.Group:arg=arg.expression
@@ -1027,7 +1039,10 @@ class Emit:
 
     def index(self,x):
         receiver,key=self.expr(x.object),self.expr(x.index)
-        if self.meter_loops or self.source_dispatch or self.configuration_dispatch:
+        target=x.object
+        while type(target) is b.Group:target=target.expression
+        null_literal=type(target) is b.Literal and target.value is NULL
+        if null_literal or self.meter_loops or self.source_dispatch or self.configuration_dispatch:
             return _node(call(call('_OwnedIndex',name('_C'),receiver),key),x.token)
         return _node(call('_ReadBracket',name('_C'),receiver,key),x.token)
 
@@ -1370,6 +1385,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,fra
                                        if type(value) is HostFunction and value.reference_parameters)
     declarations=[node for node in program if type(node) is b.Routine]
     if not owned:
+        compiler.persistent_services=frozenset(getattr(vm,'_direct_routine_modules',()))
         compiler.server_services={node.name.casefold() for node in declarations
                                   if node.execution_context=='server'}
         compiler.server_services.update(key for key,module in getattr(vm,'_direct_routine_modules',{}).items()
