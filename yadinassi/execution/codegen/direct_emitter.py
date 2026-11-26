@@ -144,6 +144,7 @@ class Emit:
         self.module_declarations=set()
         self.routines={}
         self.parameters={}
+        self.routine_bodies={}
         self.procedures=frozenset()
         self.in_async=False
         self.references=set()
@@ -400,17 +401,17 @@ class Emit:
                     prefix.append(self.write_external(key,first))
                     counter=self.read_external(key)
                     advance=direct_flow_lowering.for_counter(
-                        n,key,read=counter,assign=lambda value:self.write_external(key,value))
+                        self,n,key,read=counter,assign=lambda value:self.write_external(key,value))
                 elif self.implicit_self(key):
                     prefix.append(self.write_self(key,first))
                     counter=call('_SelfRead',name('_C'),name('_S'),literal(key))
                     advance=direct_flow_lowering.for_counter(
-                        n,key,read=counter,assign=lambda value:self.write_self(key,value))
+                        self,n,key,read=counter,assign=lambda value:self.write_self(key,value))
                 else:
                     prefix.append(p.Assign(targets=[self.var(key,True)],value=first))
                     counter=self.var(key)
                     advance=direct_flow_lowering.for_counter(
-                        n,key,read=counter,target=self.var(key,True),
+                        self,n,key,read=counter,target=self.var(key,True),
                         assign=lambda value:p.Assign(targets=[self.var(key,True)],value=value))
                 test=p.Compare(left=counter,ops=[p.LtE()],comparators=[last])
             elif kind is b.While:
@@ -530,6 +531,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,fra
     routines=[replace(node,parameters=[replace(param,by_value=True) for param in node.parameters])
               if node.is_async else node for node in routines]
     compiler.parameters={node.name.casefold():node.parameters for node in routines}
+    compiler.routine_bodies={node.name.casefold():node.body for node in routines}
     compiler.procedures=frozenset(node.name.casefold() for node in routines if not node.is_function)
     defs=[]
     async_bodies={}

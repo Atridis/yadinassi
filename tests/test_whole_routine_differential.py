@@ -164,7 +164,8 @@ class WholeRoutineBehaviorTests(unittest.TestCase):
         self.execute('Function F(Val n) Return '+expression+';EndFunction r=F(10);',{'r':34})
 
     def test_declared_local_retains_prior_value(self):
-        self.execute('Function F() x=3;Var x;Return x;EndFunction r=F();',{'r':3})
+        self.execute('Function F() x=3;Var x,y;Return x;EndFunction r=F();', {'r': 3})
+        self.execute('Function F() Var x;Return x;EndFunction r=F();', {'r': None})
 
     def test_routine_loop_local_var_is_a_source_error_before_execution(self):
         # Linux 1C 8.3.27.1508 refuses this exact module at 1:37
@@ -219,6 +220,38 @@ class WholeRoutineBehaviorTests(unittest.TestCase):
                     self.assertEqual(messages,['body'])
         # Break does not advance a counter, so its value can remain Boolean.
         self.execute('Function F() For i=1 To 1 Do i=True;Break;EndDo;Return i;EndFunction r=F();kind=TypeOf(r)=Type("Boolean");',{'r':True,'kind':True})
+
+    def test_byref_boolean_counter_errors_at_next_step_only(self):
+        helpers = ('Procedure Change(Arg) Arg=True; EndProcedure '
+                   'Procedure Forward(Arg) Change(Arg); EndProcedure ')
+        for prepared in (False, True):
+            for call in ('Change(i);', 'Forward((i)); Continue;'):
+                with self.subTest(prepared=prepared, call=call):
+                    output = []
+                    vm = Interpreter(output=output.append)
+                    self.addCleanup(vm.close)
+                    source = (helpers + 'For i=1 To 1 Do Message("body"); ' + call +
+                              'EndDo; Message("after");')
+                    with self.assertRaisesRegex(BSLError, 'Ожидается число'):
+                        if prepared:
+                            vm.execute_prepared(vm.prepare(source))
+                        else:
+                            vm.execute(source)
+                    self.assertIs(vm.variables['i'], True)
+                    self.assertEqual(output, ['body'])
+
+    def test_for_calls_that_cannot_write_boolean_need_no_step_adapter(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        for declaration in ('Procedure Change(Val Arg) Arg=True; EndProcedure ',
+                            'Procedure Change(Arg) Other=Arg; EndProcedure ',
+                            'Procedure Change(Arg) Arg=Arg+0; EndProcedure '):
+            with self.subTest(declaration=declaration):
+                plan = vm.prepare(declaration + 'For i=1 To 1 Do Change(i); EndDo;')
+                self.assertIn('i += 1', plan._plan.generated_source)
+                self.assertNotIn('_AdvanceFor', plan._plan.generated_source)
+                vm.execute_prepared(plan)
+                self.assertEqual(vm.variables['i'], 2)
 
     def test_ordinary_for_counter_stays_python_arithmetic(self):
         vm = Interpreter()

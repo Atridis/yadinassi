@@ -120,15 +120,45 @@ def _counter_value_can_be_boolean(value):
     return True
 
 
-def for_counter(loop, key, *, read, assign, target=None):
-    # Normal induction does not need an adapter. Only an explicit assignment
-    # in this loop can trigger this rule; handling ByRef/host mutation belongs
-    # to those separate operations, not to every loop's increment.
-    for item in _nodes(loop.body):
+def _ungroup(value):
+    while type(value) is b.Group:
+        value = value.expression
+    return value
+
+
+def _changes_counter(emit, body, key, visited):
+    for item in _nodes(body):
         if (type(item) is b.Assign and type(item.target) is b.Name
                 and item.target.name.casefold() == key
                 and _counter_value_can_be_boolean(item.value)):
-            return assign(call('_AdvanceFor', read))
+            return True
+        if type(item) is not b.Call:
+            continue
+        callee = _ungroup(item.callee)
+        if type(callee) is not b.Name:
+            continue
+        routine = callee.name.casefold()
+        for parameter, actual in zip(emit.parameters.get(routine, ()), item.arguments):
+            if parameter.by_value:
+                continue
+            actual = _ungroup(actual)
+            if type(actual) is not b.Name or actual.name.casefold() != key:
+                continue
+            formal = parameter.name.casefold()
+            if (routine, formal) in visited:
+                continue
+            visited.add((routine, formal))
+            if _changes_counter(emit, emit.routine_bodies[routine], formal, visited):
+                return True
+    return False
+
+
+def for_counter(emit, loop, key, *, read, assign, target=None):
+    # The step remains Python arithmetic unless this body can overwrite the
+    # counter with Boolean, directly or through a local by-reference formal.
+    # A Break bypasses the step entirely (test_whole_routine_differential).
+    if _changes_counter(emit, loop.body, key, set()):
+        return assign(call('_AdvanceFor', read))
     if target is not None:
         return p.AugAssign(target=target, op=p.Add(), value=literal(1))
     return assign(p.BinOp(left=read, op=p.Add(), right=literal(1)))

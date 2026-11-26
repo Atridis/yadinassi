@@ -38,14 +38,15 @@ def routine(self,routine):
     local={param.name.casefold() for param in routine.parameters}
     declared=set()
     writes=set()
-    direct_vars=({id(statement) for statement in routine.body if type(statement) is b.Var}
-                 if self.externals else ())
+    direct_vars={id(statement) for statement in routine.body if type(statement) is b.Var}
     queue=[routine.body]
     has_fragments=False
     has_await=False
+    has_goto=False
     while queue:
         item=queue.pop()
         if type(item) is b.Await:has_await=True
+        if type(item) is b.Goto:has_goto=True
         if type(item) is b.Execute or (type(item) is b.Call and type(item.callee) is b.Name
                 and item.callee.name.casefold() in ('eval','вычислить')):
             has_fragments=True
@@ -73,12 +74,23 @@ def routine(self,routine):
     self.references={param.name.casefold() for param in routine.parameters if not param.by_value}
     self.addresses={}
     try:
-        body=self.block(routine.body)
+        # Var declares storage, not a new assignment at its source position.
+        # A preceding write must survive it (test_declared_local_retains_prior_value).
+        initial=[]
+        statements=routine.body
+        # Keep declarations visible to the existing Goto cycle planner.
+        if direct_vars and not has_goto:
+            entry_locals=dict.fromkeys(key.casefold() for statement in statements
+                                       if id(statement) in direct_vars for key in statement.names
+                                       if key.casefold() not in local)
+            initial=[p.Assign(targets=[name(key,True)],value=literal(None)) for key in entry_locals]
+            statements=[statement for statement in statements if id(statement) not in direct_vars]
+        body=self.block(statements)
         if self.scalar_routines:
             actuals=p.Tuple(elts=[call('_PublicNumber',name(param.name.casefold())) for param in routine.parameters],ctx=p.Load())
             body.insert(0,p.Expr(value=call(attr(name('_C'),'scalar_values'),actuals)))
         shadow_slots=[p.Assign(targets=[name(key,True)],value=name('_Unset')) for key in sorted(shadows)]
-        body=[*self.address_definitions(),*defaults,*shadow_slots,*body]
+        body=[*self.address_definitions(),*defaults,*shadow_slots,*initial,*body]
         if self.globals and not self.fragment:body.insert(0,p.Global(names=sorted(self.globals)))
         if routine.is_async and not has_await:
             # A no-Await async routine is still started eagerly as a task.
