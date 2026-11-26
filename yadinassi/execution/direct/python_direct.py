@@ -386,10 +386,11 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None,_async_guard=N
             from .python_direct_type_calls import implementation
             from .python_direct_numeric_calls import bit_implementation
             from .python_direct_codec_calls import implementation as codec_implementation
+            from .python_direct_text_calls import implementation as text_implementation
             entries=vm._builtin_functions
             missing=(None,None)
-            return tuple(codec_implementation(bit_implementation(implementation(
-                plain_diagnostic_implementation(self,key,entries.get(key,missing)))))
+            return tuple(text_implementation(codec_implementation(bit_implementation(implementation(
+                plain_diagnostic_implementation(self,key,entries.get(key,missing))))))
                 for key in names)
 
         def current_module(self):

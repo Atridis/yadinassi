@@ -50,6 +50,7 @@ from .python_direct_names import VALUE_LIST_CONSTRUCTOR_ALIASES
 from yadinassi.application.direct_callbacks import CallbackDescription as _CallbackDescription, construct as _new_callback, read as _callback_read
 
 from .python_direct_numeric_calls import BIT_IMPLEMENTATIONS as _BIT_IMPLEMENTATIONS
+from .python_direct_text_calls import native_presentation
 from .python_direct_numbers import public_number
 
 _FILE_EFFECTS = frozenset(map(id, (
@@ -158,13 +159,9 @@ def _string_callable(context,function,*,name=None,require_value=False,allow_refe
         try:
             if function.function is not _DIRECT_TO_STRING_ABI:
                 raise BoundaryViolation('String implementation changed during argument evaluation')
+            native=native_presentation(value)
+            if native is not None:return native
             kind=type(value)
-            if kind is fixed.PlainFixedMap:return 'ФиксированноеСоответствие'
-            if kind is _CallbackDescription:return 'ОписаниеОповещения'
-            if kind is list:return 'Массив'
-            if kind is _DirectStructureType:return 'Структура'
-            if kind is PlainMap or kind is _DirectMapType:return 'Соответствие'
-            if kind is _CanonicalMapEntry:return 'КлючИЗначение'
             # Preserve the existing canonical service for all other values.
             # Non-scalar presentation may invoke an embedding value's __str__.
             foreign_presentation=id(kind) not in _SCALAR_TYPE_IDS
