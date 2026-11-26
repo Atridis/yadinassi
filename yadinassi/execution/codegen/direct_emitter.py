@@ -2,7 +2,7 @@
 import ast as p
 from dataclasses import replace
 from . import direct_goto, direct_call_exceptions, direct_call_lowering, direct_reference_lowering, direct_flow_lowering
-from . import direct_named_routine_call, direct_routine_lowering, direct_scalar_lowering, direct_object_lowering, direct_constructor_lowering
+from . import direct_named_routine_call, direct_optional_builtin_calls, direct_routine_lowering, direct_scalar_lowering, direct_object_lowering, direct_constructor_lowering
 from .direct_python_ast import _node, arguments, attr, call, literal, name
 from .direct_reference_lowering import SELF_NAMES
 from .direct_access_runtime import (bsl_iterable, get_field, member, metered, owned_index, owned_iterable,
@@ -86,6 +86,7 @@ _OP = dict(_Truth=truth, _PublicNumber=public_number, _Divide=divide, _Remainder
            _Construct=construct, _Array=bounded_array, _Structure=new_structure, _MapFrom=plain_map, _Omissions=_host_omission_values, _InvalidOmissions=_host_omission_error)
 _OP.update(direct_call_exceptions.HELPERS)
 _OP.update(direct_named_routine_call.HELPERS)
+_OP.update(direct_optional_builtin_calls.HELPERS)
 
 
 def requires_reference(bound,index):
@@ -181,6 +182,12 @@ class Emit:
         self.catalog_budget=False
         self.bound_constructors=frozenset()
         self.configuration_dispatch=False
+
+    def plain_target(self, key):
+        slot=self.call_slots.get(key)
+        if slot is None:
+            slot=self.call_slots[key]=self.temp()
+        return name(slot)
 
     def temp(self):
         self.number+=1
@@ -332,12 +339,11 @@ class Emit:
                     if routine is not None:return routine
                     exceptional=direct_call_exceptions.lower(self,key,x.arguments)
                     if exceptional is not None:return exceptional
-                    slot=self.call_slots.get(key)
-                    if slot is None:
-                        slot=self.call_slots[key]=self.temp()
+                    optional=direct_optional_builtin_calls.lower(self,key,x.arguments)
+                    if optional is not None:return optional
                     actuals=(literal(None) if type(arg) is b.OmittedArgument else self.expr(arg)
                              for arg in x.arguments)
-                    return call(slot,*actuals)
+                    return call(self.plain_target(key),*actuals)
                 return self.service_call(c.name,x.arguments,want_value)
             return direct_object_lowering.member_call(self, x, c, want_value)
         raise PythonDirectUnsupported(f'clean emitter: {type(x).__name__}')
