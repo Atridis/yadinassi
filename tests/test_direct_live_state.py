@@ -163,6 +163,36 @@ class LiveModuleStateTests(unittest.TestCase):
         with self.assertRaisesRegex(BSLRuntimeError, 'только для чтения'):
             self.run_live('a=New Array;a.Add(1);For Each ThisObject In a Do r=1;EndDo;')
 
+    def test_loop_targets_follow_the_same_readonly_binding_as_assignment(self):
+        for loop, effects in (
+            ('For ThisObject=First() To Last() Do Body(); EndDo;', ['first', 'last']),
+            ('For Each ЭтотОбъект In Values() Do Body(); EndDo;', ['values']),
+        ):
+            with self.subTest(loop=loop):
+                seen = []
+                def mark(label, value):
+                    return lambda: (seen.append(label), value)[1]
+                services = {'First': mark('first', 1), 'Last': mark('last', 2),
+                            'Values': mark('values', [1]), 'Body': mark('body', None)}
+                with self.assertRaisesRegex(BSLRuntimeError, 'только для чтения'):
+                    self.run_live(loop, services=services)
+                self.assertEqual(seen, effects)
+        for extensions in (False, True):
+            vm = Interpreter(allow_extensions=extensions)
+            self.addCleanup(vm.close)
+            with self.subTest(extensions=extensions):
+                for loop in ('For ThisObject=1 To 1 Do EndDo;',
+                             'A=New Array; A.Add(1); For Each ЭтотОбъект In A Do EndDo;'):
+                    with self.assertRaisesRegex(BSLRuntimeError, 'только для чтения'):
+                        vm.execute_prepared(vm.prepare(loop))
+        state = self.run_live('For Each ThisObject In New Array Do R=1; EndDo;')
+        self.assertNotIn('thisobject', state)
+        state = self.run_live('Var ThisObject; For ThisObject=1 To 2 Do EndDo; R=ThisObject;')
+        self.assertEqual(state['r'], 3)
+        state = self.run_live('Var ЭтотОбъект; A=New Array; A.Add(7); '
+                              'For Each ЭтотОбъект In A Do R=ЭтотОбъект; EndDo;')
+        self.assertEqual(state['r'], 7)
+
     def test_partial_writes_before_error(self):
         state = {}
         with self.assertRaises(BSLRuntimeError):

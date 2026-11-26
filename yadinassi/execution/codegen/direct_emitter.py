@@ -657,6 +657,13 @@ class Emit:
     def external(self,key):
         return key in self.externals and key not in self.locals and key not in self.module_declarations
 
+    def implicit_self(self,key):
+        return (self.current_module and key in _SELF_NAMES
+                and key not in self.locals and key not in self.module_declarations)
+
+    def write_self(self,key,value):
+        return p.Expr(value=call('_SelfWrite',name('_S'),literal(key),value))
+
     def read_external(self,key):
         return call(attr(name('_C'),'external_get'),literal(key))
 
@@ -1206,8 +1213,8 @@ class Emit:
                 key=t.name.casefold()
                 if self.external(key):
                     return [self.write_external(key,value)]
-                if self.current_module and key in _SELF_NAMES and key not in self.locals and key not in self.module_declarations:
-                    return [p.Expr(value=call('_SelfWrite',name('_S'),literal(key),value))]
+                if self.implicit_self(key):
+                    return [self.write_self(key,value)]
                 target=self.var(t.name,True)
             elif type(t) is b.Index:
                 if self.meter_loops or self.source_dispatch or self.configuration_dispatch:
@@ -1255,6 +1262,10 @@ class Emit:
                     prefix.append(self.write_external(key,first))
                     advance=self.write_external(key,p.BinOp(left=self.read_external(key),op=p.Add(),right=literal(1)))
                     counter=self.read_external(key)
+                elif self.implicit_self(key):
+                    prefix.append(self.write_self(key,first))
+                    counter=call('_SelfRead',name('_C'),name('_S'),literal(key))
+                    advance=self.write_self(key,p.BinOp(left=counter,op=p.Add(),right=literal(1)))
                 else:
                     prefix.append(p.Assign(targets=[self.var(key,True)],value=first))
                     advance=p.AugAssign(target=self.var(key,True),op=p.Add(),value=literal(1))
@@ -1273,10 +1284,12 @@ class Emit:
                 elif not native_array_expression(iterable):
                     iterable=call('_OwnedIterable' if self.source_dispatch else '_BSLIterable',name('_C'),iterable)
                 key=n.name.casefold()
-                if self.external(key):
+                external=self.external(key)
+                if external or self.implicit_self(key):
                     item=self.temp()
                     target=name(item,True)
-                    body.insert(0,self.write_external(key,name(item)))
+                    write=self.write_external if external else self.write_self
+                    body.insert(0,write(key,name(item)))
                 else:
                     target=self.var(key,True)
                 return [p.For(target=target,iter=iterable,body=body or [p.Pass()],orelse=[])]
