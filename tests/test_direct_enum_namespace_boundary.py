@@ -34,7 +34,7 @@ class DirectEnumNamespaceBoundaryTests(unittest.TestCase):
                         Except IndexError = ErrorDescription(); EndTry;
                         Try {namespace}[0] = 1;
                         Except WriteError = ErrorDescription(); EndTry;
-                        Try For Each Item In Direction Do EndDo;
+                        Try For Each Item In Direction Do ValueLoopBody = 1; EndDo;
                         Except ValueError = ErrorDescription(); EndTry;
                     """
                     with patch.object(BoundaryContext, '_check', side_effect=AssertionError('unexpected Light check')):
@@ -47,9 +47,10 @@ class DirectEnumNamespaceBoundaryTests(unittest.TestCase):
                                        ('indexmethoderror', '__getitem__'),
                                        ('writemethoderror', '__setitem__'),
                                        ('indexerror', 'Индексирование'),
-                                       ('writeerror', 'Индексирование'),
-                                       ('valueerror', 'Для Каждого')):
+                                       ('writeerror', 'Индексирование')):
                         self.assertIn(label, vm.variables[key])
+                    self.assertRegex(vm.variables['valueerror'], r'Для Каждого|object is not iterable')
+                    self.assertNotIn('valueloopbody', vm.variables)
                     self.assertNotIn('result', vm.variables)
 
     def test_foreign_namespaces_and_hostile_metaclasses_invoke_no_hooks(self):

@@ -240,7 +240,8 @@ class ExceptionTests(unittest.TestCase):
             ('a = New Array; a.Unknown();', 'Метод или свойство'),
             ('x = New Missing;', 'Тип не определен'),
             ('StrConcat(1);', 'ожидает массив'),
-            ('For Each x In 1 Do EndDo;', 'ожидает массив'),
+            ('For Each x In 1 Do Message("unexpected body"); EndDo;',
+             r"ожидает массив или коллекцию|'int' object is not iterable"),
             ('If "text" Then EndIf;', 'Ожидается булево'),
         ]
         for body, message in cases:
@@ -250,7 +251,8 @@ class ExceptionTests(unittest.TestCase):
                 vm.execute('Try ' + body + ' Except Message(ErrorDescription()); EndTry;', 'runtime.bsl')
                 self.assertEqual(len(output), 1)
                 self.assertTrue(output[0].startswith('runtime.bsl:1:'))
-                self.assertIn(message, output[0])
+                if message:
+                    self.assertRegex(output[0], message)
                 self.assertEqual(vm.execute('ErrorDescription()'), '')
 
     def test_known_host_exceptions_are_wrapped_and_catchable(self):

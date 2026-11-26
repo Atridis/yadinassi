@@ -667,7 +667,11 @@ class Emit:
             step=call(attr(name('_C'),'preparation_step'))
             sequenced=p.Subscript(value=p.Tuple(elts=[step,value],ctx=p.Load()),slice=literal(1),ctx=p.Load())
             value=call(attr(name('_C'),'preparation_value'),sequenced)
-        return _node(value,x.token)
+        token=x.token
+        if type(x) is b.Call and type(x.callee) is b.Name:
+            # A bare call starts at its callee, not at the opening parenthesis.
+            token=x.callee.token
+        return _node(value,token)
 
     def external(self,key):
         return key in self.externals and key not in self.locals and key not in self.module_declarations
