@@ -628,6 +628,8 @@ class Emit:
         self.tree_constructors=()
         self.host_extensions=False
         self.named_services=frozenset()
+        self.plain_calls=False
+        self.call_slots={}
         self.catalog_budget=False
         self.bound_constructors=frozenset()
         self.configuration_dispatch=False
@@ -812,6 +814,13 @@ class Emit:
                 key=c.name.casefold()
                 if key in self.routines:
                     return self.local_call(key,x.arguments,want_value,x.token)
+                if self.plain_calls:
+                    slot=self.call_slots.get(key)
+                    if slot is None:
+                        slot=self.call_slots[key]=self.temp()
+                    actuals=(literal(None) if type(arg) is b.OmittedArgument else self.expr(arg)
+                             for arg in x.arguments)
+                    return call(slot,*actuals)
                 return self.service_call(c.name,x.arguments,want_value)
             omitted=self.omissions(x.arguments)
             root=c.object
@@ -1382,6 +1391,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,fra
         from yadinassi.execution.direct.python_direct_imports import import_names
         compiler.import_roots=frozenset(import_names(vm,program))
         compiler.host_extensions=vm.allow_extensions
+        compiler.plain_calls=not fragment and not vm.allow_extensions and vm.database_context is None
         if compiler.host_extensions:
             compiler.named_services=frozenset(vm.functions) | frozenset(getattr(vm,'_direct_routine_modules',()))
         # Runtime-recognized types include read-only types and bindings with
@@ -1457,6 +1467,10 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,fra
             initialize=[p.Expr(value=call(attr(name('_S'),'setdefault'),literal(key),literal(None)))
                         for key in sorted(compiler.module_declarations)]
         body[:0]=[*initialize,*defs,p.If(test=name('_Bind'),body=[p.Return(value=exports)],orelse=[])]
+    if compiler.call_slots:
+        slots=p.Tuple(elts=[name(slot,True) for slot in compiler.call_slots.values()],ctx=p.Store())
+        body.insert(0,p.Assign(targets=[slots],value=call(
+            attr(name('_C'),'plain_callables'),literal(tuple(compiler.call_slots)))))
     entry=p.FunctionDef(name='naked_module',args=arguments(('_S','_K','_C','_Bind')),
                         body=body,decorator_list=[])
     helpers={**_OP,'_Source':source_text or ''}
