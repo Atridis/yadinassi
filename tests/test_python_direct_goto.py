@@ -172,7 +172,7 @@ class DirectGotoTests(unittest.TestCase):
             self.run_code('Function F() ~again: x=F; F=1; Goto ~again; EndFunction')
 
     def test_ordinary_program_has_no_extra_loop(self):
-        with patch('yadinassi.execution.codegen.direct_goto.plan',side_effect=AssertionError('unexpected Goto preflight')):
+        with patch('yadinassi.execution.codegen.rules.direct_goto.plan',side_effect=AssertionError('unexpected Goto preflight')):
             source=self.run_code('x=1; x=x+2;')[3]
         self.assertFalse(any(isinstance(n,(ast.While,ast.Match)) for n in ast.walk(ast.parse(source))))
         self.assertNotIn('_GotoTransfer',source)

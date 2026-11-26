@@ -1,7 +1,7 @@
 """Names owned by a compiled BSL routine module, not the builtin resolver."""
 from yadinassi.execution.direct.python_direct_routines import bind_omissions, resolve
 from yadinassi.syntax import ast as b
-from .direct_python_ast import call, literal, name
+from ..direct_python_ast import call, literal, name
 
 
 def _bind(context, key, want_value, count, omissions, non_names, references):

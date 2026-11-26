@@ -1,7 +1,7 @@
 """Index behavior outside the ordinary Python value lane."""
 from yadinassi.syntax import ast as b
 from yadinassi.types.values import NULL
-from .direct_python_ast import _node, attr, call, literal, name
+from ..direct_python_ast import _node, attr, call, literal, name
 from .direct_reference_lowering import SELF_NAMES
 import ast as p
 
@@ -14,6 +14,14 @@ def index(self,x):
     if null_literal or self.meter_loops or self.source_dispatch or self.configuration_dispatch:
         return _node(call(call('_OwnedIndex',name('_C'),receiver),key),x.token)
     return _node(call('_ReadBracket',name('_C'),receiver,key),x.token)
+
+
+def index_assignment(emit, target, value):
+    receiver, key = emit.expr(target.object), emit.expr(target.index)
+    if emit.meter_loops or emit.source_dispatch or emit.configuration_dispatch:
+        return [p.Expr(value=call('_OwnedSetIndex',name('_C'),value,receiver,key))]
+    # Evaluate receiver, key and RHS before validating the target.
+    return [p.Expr(value=call('_WriteBracket',name('_C'),receiver,key,value))]
 
 
 def member_call(self, x, c, want_value):

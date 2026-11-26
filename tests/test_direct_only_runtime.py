@@ -17,6 +17,8 @@ class DirectOnlyRuntimeTests(unittest.TestCase):
         for name in ("visit_For", "visit_Binary", "visit_Await", "iteration",
                      "_async_body", "_invoke_bound_routine", "_routine_activation"):
             self.assertNotIn(name, vars(Interpreter))
+        from yadinassi.configuration.configuration_source_runtime import _SourceInterpreter
+        self.assertFalse(hasattr(_SourceInterpreter, 'argument'))
 
     def test_old_backend_choices_rejected(self):
         for backend in ('interpreter', 'hybrid', 'compiled-strict'):

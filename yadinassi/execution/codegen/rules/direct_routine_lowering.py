@@ -3,8 +3,8 @@ import ast as p
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.syntax import ast as b
 from .direct_reference_lowering import SELF_NAMES
-from .direct_collections import UnsupportedNakedSyntax
-from .direct_python_ast import _node, arguments, attr, call, literal, name
+from ..direct_collections import UnsupportedNakedSyntax
+from ..direct_python_ast import _node, arguments, attr, call, literal, name
 
 
 def routine(self,routine):

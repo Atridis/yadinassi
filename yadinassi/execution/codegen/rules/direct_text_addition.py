@@ -1,7 +1,7 @@
 """BSL string-left + in straight-line assignments, not a generic + fallback."""
 import ast as p
 
-from .direct_python_ast import call
+from ..direct_python_ast import call
 
 
 def apply(statements, strings):

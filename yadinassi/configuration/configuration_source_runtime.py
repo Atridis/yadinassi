@@ -106,11 +106,9 @@ class _SourceInterpreter(Interpreter):
         with execution(self.application), self.application.safe_mode.execution():
             from yadinassi.execution.direct.python_direct_source import execute
             return execute(self, program)
-            return super().execute_program(program)
 
     def execute(self, text, source='<строка>'):
         return self.execute_program(parse(text, source, compilation_profile=self.compilation_profile))
-        return super().execute(text, source)
 
 
     def _new_query(self, text=""):
@@ -118,7 +116,7 @@ class _SourceInterpreter(Interpreter):
         return SourceConstantQuery(self, self.application, text)
 
 
-    # Legacy extension point keeps superclass visitor instrumentation.
+    # Configuration exports can hold live references to the variable.
     def set_variable(self, name, value):
         from yadinassi.execution.source_application_exports import variable
         reference = variable(self, name)
@@ -126,15 +124,6 @@ class _SourceInterpreter(Interpreter):
             reference.set(value)
             return
         return super().set_variable(name, value)
-
-    def argument(self, node, *, _evaluation=None):
-        ungrouped = self.ungroup(node)
-        if isinstance(ungrouped, ast.Name):
-            from yadinassi.execution.source_application_exports import variable
-            reference = variable(self, ungrouped.name)
-            if reference is not None:
-                return reference
-        return (yield from super().argument(node, _evaluation=_evaluation))
 
 
 # Exact supported source-host hooks. Subclasses and per-instance replacements
@@ -407,8 +396,6 @@ class SourceApplication:
             raise ValueError('Параметр обработчика должен передаваться по ссылке: ' + routine.name)
         from yadinassi.execution.direct.python_direct_source import event
         return event(owner, routine, arguments)
-        call = ast.Call(routine.token, ast.Name(routine.token, routine.name), list(arguments))
-        owner.execute_program([ast.ExpressionStatement(routine.token, call)])
 
     def start(self):
         if self.state != 'prepared':

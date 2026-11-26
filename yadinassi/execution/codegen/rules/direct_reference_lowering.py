@@ -2,7 +2,7 @@
 import ast as p
 from yadinassi.execution.direct.python_direct_names import CHARS_ALIASES
 from yadinassi.syntax import ast as b
-from .direct_python_ast import arguments, attr, call, literal, name
+from ..direct_python_ast import arguments, attr, call, literal, name
 
 
 SELF_NAMES = frozenset(('thisobject', 'этотобъект'))

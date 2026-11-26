@@ -2,7 +2,7 @@
 import ast as p
 from decimal import Decimal
 from yadinassi.syntax import ast as b
-from .direct_python_ast import call, literal
+from ..direct_python_ast import call, literal
 
 _COMPARISONS = ('=', '<>', '<', '<=', '>', '>=')
 

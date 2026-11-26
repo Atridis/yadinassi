@@ -1,7 +1,7 @@
 """Non-native BSL control-flow rules: named transfers and controlled loops."""
 import ast as p
 from . import direct_goto, direct_text_addition
-from .direct_python_ast import _node, attr, call, literal, name
+from ..direct_python_ast import _node, attr, call, literal, name
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported, _nodes
 from yadinassi.syntax import ast as b
 
@@ -29,6 +29,17 @@ def block(self,nodes):
             strings.clear()
         result.extend(emitted)
     return result
+
+
+def loop_iterable(emit, value):
+    if emit.meter_loops:
+        return call('_Metered',name('_C'),value)
+    # An inline native Array needs no admission or iterable conversion.
+    if isinstance(value,p.List) or (isinstance(value,p.Call)
+            and isinstance(value.func,p.Name) and value.func.id=='_Array'):
+        return value
+    helper = '_OwnedIterable' if emit.source_dispatch else '_BSLIterable'
+    return call(helper,name('_C'),value)
 
 
 def loop_condition(self,test):

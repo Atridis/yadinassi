@@ -4,7 +4,7 @@ from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.formats.json.json_processing import read_json, write_json
 from yadinassi.syntax import ast as b
 from yadinassi.types.values import HostFunction
-from .direct_python_ast import attr, call, literal, name
+from ..direct_python_ast import attr, call, literal, name
 
 
 _JSON_CALLBACKS = {

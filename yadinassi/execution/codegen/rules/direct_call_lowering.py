@@ -3,7 +3,7 @@ import ast as p
 from yadinassi.execution.direct.python_direct_names import CHARS_ALIASES
 from yadinassi.syntax import ast as b
 from .direct_reference_lowering import SELF_NAMES
-from .direct_python_ast import _node, attr, call, literal, name
+from ..direct_python_ast import _node, attr, call, literal, name
 
 _CALLBACK_MODULE_SLOTS = {'readjson':5,'прочитатьjson':5,'writejson':4,'записатьjson':4,
                           'new:callbackdescription':1,'new:описаниеоповещения':1}

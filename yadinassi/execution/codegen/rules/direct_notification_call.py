@@ -1,6 +1,6 @@
 """An explicit notification invocation, not a generic builtin fallback."""
 from yadinassi.execution.direct.python_direct_callback import NAMES, bind
-from .direct_python_ast import call, literal, name
+from ..direct_python_ast import call, literal, name
 
 
 def _bind(context, key, count):

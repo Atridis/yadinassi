@@ -55,9 +55,37 @@ class DirectForEachLoweringTests(unittest.TestCase):
             def __iter__(self):
                 effects.append(True)
                 return iter(())
+        class SequenceProtocol:
+            def __getitem__(self, index):
+                effects.append(index)
+                raise IndexError(index)
+
+        source = 'For Each X In A Do EndDo; After=True;'
+        for prepared in (False, True):
+            for value in (Foreign(), SequenceProtocol()):
+                with self.subTest(prepared=prepared, protocol=type(value).__name__):
+                    effects.clear()
+                    vm = self.vm()
+                    vm.variables['a'] = value
+                    with self.assertRaises(BoundaryViolation):
+                        if prepared:
+                            vm.execute_prepared(vm.prepare(source))
+                        else:
+                            vm.execute(source)
+                    self.assertEqual(effects, [])
+                    self.assertNotIn('after', vm.variables)
+
+    def test_iterates_native_fixed_map_snapshot(self):
         vm = self.vm()
-        vm.variables['a'] = Foreign()
-        with self.assertRaises(BoundaryViolation):
-            vm.execute('For Each X In A Do EndDo; After=True;')
-        self.assertEqual(effects, [])
-        self.assertNotIn('after', vm.variables)
+        vm.execute('M=New Map; M.Insert("a",3); F=New FixedMap(M);'
+                   'N=0; For Each Pair In F Do N=N+Pair.Value; EndDo;')
+        self.assertEqual(vm.variables['n'], 3)
+
+    def test_inline_native_array_needs_no_iteration_adapter(self):
+        vm = self.vm()
+        plan = vm.prepare('N=0; For Each X In New Array(2) Do N=N+1; EndDo;')
+        tree = ast.parse(plan._plan.generated_source)
+        loop = next(node for node in ast.walk(tree) if isinstance(node, ast.For))
+        self.assertEqual(loop.iter.func.id, '_Array')
+        vm.execute_prepared(plan)
+        self.assertEqual(vm.variables['n'], 2)

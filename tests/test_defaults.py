@@ -125,6 +125,27 @@ class DefaultParameterTests(unittest.TestCase):
                 self.vm.execute(code)
         self.assertEqual(self.output, [])
 
+    def test_message_holes_fail_before_actuals_in_both_routes(self):
+        for prepared in (False, True):
+            for name in ('Message', 'Сообщить'):
+                with self.subTest(prepared=prepared, name=name):
+                    self.output.clear()
+                    code = (f'Try {name}({name}("bad"),,1); '
+                            f'Except {name}("caught"); EndTry; {name}(Undefined);')
+                    if prepared:
+                        self.vm.execute_prepared(self.vm.prepare(code))
+                    else:
+                        self.vm.execute(code)
+                    self.assertEqual(self.output, ['caught', ''])
+
+    def test_same_module_message_can_define_its_own_defaults(self):
+        for name in ('Message', 'Сообщить'):
+            with self.subTest(name=name):
+                code = (f'Function {name}(Val a, Val b=2, Val c=3) '
+                        f'Return a+b+c; EndFunction R={name}(1,,4);')
+                self.vm.execute_prepared(self.vm.prepare(code))
+                self.assertEqual(self.vm.variables['r'], 7)
+
     def test_incomplete_defaults_and_calls(self):
         for code in ['Function F(x =', 'Function F(x = -', 'Function F(x = 1',
                      'Function F(x = 1,', 'F(,', 'F(1,,']:

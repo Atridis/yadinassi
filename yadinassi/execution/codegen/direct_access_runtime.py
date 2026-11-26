@@ -5,7 +5,7 @@ from functools import partial
 from yadinassi.collections.maps import BSLMap, BSLFixedMap
 from yadinassi.collections.structures import BSLKeyAndValue, BSLStructure, BSLFixedStructure
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
-from yadinassi.execution.direct.python_direct_plain_map import PlainMap
+from yadinassi.execution.direct.python_direct_plain_map import PlainFixedMap, PlainMap
 from yadinassi.types.array_index import array_offset
 from yadinassi.types.values import BSLObject, HostFunction
 from .direct_boundaries import BoundaryViolation
@@ -13,6 +13,10 @@ from .direct_collections import _host_omission_error
 from .direct_resources import bounded_insert
 from .direct_scalar_semantics import typed_find
 from .direct_structure import _DirectStructure
+
+
+_TYPE_MRO = vars(type)["__mro__"]
+_TYPE_DICT = vars(type)["__dict__"]
 
 
 def owned_index(context,receiver):
@@ -68,10 +72,27 @@ def bsl_iterable(context, iterable):
     # PlainMap implements the Python mapping protocol for host callers. Only
     # BSL's loop enumerates its logical pairs instead of its keys.
     kind=type(iterable)
+    if kind is list or kind is _DirectStructure:
+        return iterable
+    if kind is PlainArray:
+        return list.__iter__(iterable)
     if kind is PlainMap:
         return iterable.bsl_entries()
+    if kind is PlainFixedMap:
+        return PlainFixedMap.__iter__(iterable)
     if issubclass(kind,BSLObject):
         return context.resolve_member(iterable,'__iter__')()
+    # Exact Python values retain their existing data/error behavior. A
+    # foreign object must not run __iter__ or the sequence-protocol fallback.
+    if any(kind is native for native in (tuple,dict,str,bytes,bytearray,range,
+                                         set,frozenset,type(None),bool,int,Decimal,float)):
+        return iterable
+    # Inspect slots without invoking user metaclass attributes. For passive
+    # values, preserve Python's catchable non-iterable error.
+    for cls in _TYPE_MRO.__get__(kind):
+        namespace = _TYPE_DICT.__get__(cls)
+        if '__iter__' in namespace or '__getitem__' in namespace:
+            raise BoundaryViolation('For Each requires an admitted BSL iterator')
     return iterable
 
 

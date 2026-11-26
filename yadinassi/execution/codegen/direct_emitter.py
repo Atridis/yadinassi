@@ -1,10 +1,11 @@
 """Clean-sheet direct emitter: Python owns control flow and scalar arithmetic."""
 import ast as p
 from dataclasses import replace
-from . import direct_goto, direct_call_rules, direct_call_lowering, direct_reference_lowering, direct_flow_lowering
-from . import direct_routine_lowering, direct_scalar_lowering, direct_object_lowering, direct_constructor_lowering
+from .rules import direct_goto, direct_call_rules, direct_call_lowering, direct_reference_lowering, direct_flow_lowering
+from .rules import direct_routine_lowering, direct_scalar_lowering, direct_object_lowering, direct_constructor_lowering
+from .rules import direct_catalog_budget
 from .direct_python_ast import _node, arguments, attr, call, literal, name
-from .direct_reference_lowering import SELF_NAMES
+from .rules.direct_reference_lowering import SELF_NAMES
 from .direct_access_runtime import (bsl_iterable, get_field, member, metered, owned_index, owned_iterable,
                                     owned_set_index, owns_property_output, read_bracket, set_field, write_bracket)
 from .direct_reference_runtime import (bind_index_reference, bind_local_index_reference, cell_actual,
@@ -32,11 +33,6 @@ from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.execution.direct.python_direct_numbers import divide, remainder, sign, public_number
 from yadinassi.execution.direct.python_direct_dynamic_new import construct
 from yadinassi.execution.direct.python_direct_error_info import raise_arity_error, raise_error
-
-
-def native_array_expression(value):
-    return isinstance(value,p.List) or (
-        isinstance(value,p.Call) and isinstance(value.func,p.Name) and value.func.id=='_Array')
 
 
 def source_shapes(bound, named):
@@ -219,9 +215,7 @@ class Emit:
     def expr(self,x,want_value=True):
         value=self.expression(x,want_value)
         if self.catalog_budget:
-            step=call(attr(name('_C'),'preparation_step'))
-            sequenced=p.Subscript(value=p.Tuple(elts=[step,value],ctx=p.Load()),slice=literal(1),ctx=p.Load())
-            value=call(attr(name('_C'),'preparation_value'),sequenced)
+            value=direct_catalog_budget.expression(value)
         token=x.token
         if type(x) is b.Call and type(x.callee) is b.Name:
             # A bare call starts at its callee, not at the opening parenthesis.
@@ -346,7 +340,7 @@ class Emit:
     def stmt(self,n):
         statements=self.statement(n)
         if self.catalog_budget:
-            statements.insert(0,p.Expr(value=call(attr(name('_C'),'preparation_step'))))
+            statements=direct_catalog_budget.statements(statements)
         return [_node(stmt,n.token) for stmt in statements]
 
     def statement(self,n):
@@ -366,12 +360,7 @@ class Emit:
                     return [self.write_self(key,value)]
                 target=self.var(t.name,True)
             elif type(t) is b.Index:
-                if self.meter_loops or self.source_dispatch or self.configuration_dispatch:
-                    return [p.Expr(value=call('_OwnedSetIndex',name('_C'),value,
-                                              self.expr(t.object),self.expr(t.index)))]
-                # Evaluate receiver, key and RHS before validating the target.
-                return [p.Expr(value=call('_WriteBracket',name('_C'),
-                                          self.expr(t.object),self.expr(t.index),value))]
+                return direct_object_lowering.index_assignment(self,t,value)
             elif type(t) is b.Attribute:
                 write=call('_SetField',name('_C'),self.expr(t.object),literal(t.name))
                 if self.meter_loops:value=call('_PublicNumber',value)
@@ -432,10 +421,7 @@ class Emit:
             if advance is not None:
                 body.append(advance)
             if kind is b.ForEach:
-                iterable=self.expr(n.collection)
-                if self.meter_loops:iterable=call('_Metered',name('_C'),iterable)
-                elif not native_array_expression(iterable):
-                    iterable=call('_OwnedIterable' if self.source_dispatch else '_BSLIterable',name('_C'),iterable)
+                iterable=direct_flow_lowering.loop_iterable(self,self.expr(n.collection))
                 key=n.name.casefold()
                 external=self.external(key)
                 if external or self.implicit_self(key):

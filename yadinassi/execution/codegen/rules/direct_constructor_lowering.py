@@ -3,7 +3,7 @@ import ast as p
 
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.syntax import ast as b
-from .direct_python_ast import call, literal, name
+from ..direct_python_ast import call, literal, name
 
 
 _NATIVE_CONSTRUCTORS = frozenset(('array','массив','map','соответствие','structure','структура'))
