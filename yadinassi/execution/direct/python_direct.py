@@ -188,7 +188,7 @@ def _extension_source_audit(vm):
     return type(vm) is Interpreter and vm.allow_extensions
 
 
-def _snapshot(value):
+def _snapshot(value, *, supplied=False):
     """Copy parser-owned structure without invoking host deepcopy hooks."""
     from yadinassi.syntax.lexer import Token
     from yadinassi.temporal.dates import BSLDate
@@ -202,6 +202,7 @@ def _snapshot(value):
              if isinstance(cls, type) and issubclass(cls, base)}
     nodes[id(Token)] = Token
     scalars = {id(cls): cls for cls in (str, int, float, bool, Decimal, type(None), BSLDate)}
+    transfers = set() if supplied else None
 
     def copy_node(item):
         kind = type(item)
@@ -213,6 +214,11 @@ def _snapshot(value):
         if kind is tuple:
             return tuple(copy_node(part) for part in item)
         if identity in nodes:
+            if transfers is not None and (kind is ast.Goto or kind is ast.Label):
+                # Cloning a shared transfer would silently give it two owners.
+                if id(item) in transfers:
+                    _reject('control-flow statements require distinct AST nodes')
+                transfers.add(id(item))
             if kind is literal and not (item.value is NULL or id(type(item.value)) in scalars):
                 _reject('prepared AST literals require immutable parser values')
             return kind(**{field.name: copy_node(getattr(item, field.name)) for field in fields(item)})
@@ -230,8 +236,11 @@ def prepare_module(vm,program,*,source_text=None,source_name=None):
     from yadinassi.runtime import Interpreter
     Interpreter._require_family(vm)
     # The caller may edit/reuse its AST after this call. Never retain that AST.
-    owned=_snapshot(program)
+    owned=_snapshot(program,supplied=source_text is None)
     nodes,routines,constructors,calls=_source_facts(owned,allow_async=mode)
+    if source_text is None:
+        from yadinassi.syntax.parser import validate_supplied_loop_declarations
+        validate_supplied_loop_declarations(owned)
     plan=_compile(vm,owned,nodes,source_text,source_name)
     declared=frozenset(name.casefold() for node in owned if type(node) is ast.Var and node.execution_context=='client' for name in node.names)
     from .python_direct_routines import prepare as prepare_routines
@@ -257,6 +266,9 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
     mode=entry_mode(vm,program if _prepared is None else _prepared._snapshot)
     if _prepared is None:
         nodes,routines,calls=admit(vm,program,_async_entry=mode)
+        if source_text is None:
+            from yadinassi.syntax.parser import validate_supplied_loop_declarations
+            validate_supplied_loop_declarations(program)
         declared=frozenset(name.casefold() for node in program if type(node) is ast.Var and node.execution_context=='client' for name in node.names)
         returns_expression=bool(program and type(program[-1]) is ast.ExpressionStatement)
     else:

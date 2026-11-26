@@ -724,7 +724,7 @@ class Interpreter:
     def execute_program(self, program: list[ast.Node]) -> object:
         """Compile and execute the supplied AST through the direct compiler only."""
         from .execution.direct.python_direct import execute, _snapshot
-        return execute(self, _snapshot(program))
+        return execute(self, _snapshot(program, supplied=True))
 
 
     def _resolve_routine(self, name: str) -> ast.Routine | None:

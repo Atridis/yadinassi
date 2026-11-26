@@ -115,3 +115,26 @@ class CompiledForSlotTests(unittest.TestCase):
                 self.assertEqual((error.source, error.line, error.column),
                                  ('moved-declaration.bsl', 2, 1))
                 self.assertFalse(vm.variables)
+
+    def test_loop_var_rule_applies_to_nested_blocks_but_not_module_loops(self):
+        for beginning in ('For i=1 To 2 Do', 'For Each i In A Do', 'While True Do'):
+            source = ('R=1;Procedure F()\nVar local;\n' + beginning +
+                      ' If True Then Try Except EndTry; EndIf; EndDo; EndProcedure')
+            for entry in ('execute_program', 'prepare_program'):
+                with self.subTest(loop=beginning, entry=entry):
+                    program = parse(source, 'nested-var.bsl')
+                    routine = program[1]
+                    declaration = routine.body.pop(0)
+                    routine.body[0].body[0].branches[0][1][0].handler.append(declaration)
+                    vm = Interpreter()
+                    self.addCleanup(vm.close)
+                    with self.assertRaises(BSLError) as caught:
+                        getattr(vm, entry)(program)
+                    self.assertEqual((caught.exception.source, caught.exception.line,
+                                      caught.exception.column), ('nested-var.bsl', 2, 1))
+                    self.assertFalse(vm.variables)
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        program = parse('For i=1 To 1 Do Var value; value=7; EndDo;')
+        vm.execute_prepared(vm.prepare_program(program))
+        self.assertEqual(vm.variables['value'], Decimal(7))

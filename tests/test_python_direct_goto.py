@@ -146,16 +146,19 @@ class DirectGotoTests(unittest.TestCase):
         self.assertEqual(output,[])
 
     def test_aliased_host_ast_jump_cannot_cross_routine_ownership(self):
-        program=parse('Procedure P() If True Then Goto ~out; EndIf; ~out: EndProcedure '
-                      'Procedure Q() If True Then Goto ~out; EndIf; ~out: EndProcedure '
-                      'Message("before"); P();')
-        first=program[0].body[0].branches[0][1]
-        program[1].body[0].branches[0][1][0]=first[0]
-        output=[]
-        with closing(Interpreter(output=output.append)) as vm:
-            with self.assertRaisesRegex(PythonDirectUnsupported,'distinct AST nodes'):
-                vm.execute_program(program)
-        self.assertEqual(output,[])
+        for entry in ('execute_program', 'prepare_program'):
+            with self.subTest(entry=entry):
+                program=parse('Procedure P() If True Then Goto ~out; EndIf; ~out: EndProcedure '
+                              'Procedure Q() If True Then Goto ~out; EndIf; ~out: EndProcedure '
+                              'Message("before"); P();')
+                first=program[0].body[0].branches[0][1]
+                program[1].body[0].branches[0][1][0]=first[0]
+                output=[]
+                with closing(Interpreter(output=output.append)) as vm:
+                    with self.assertRaisesRegex(PythonDirectUnsupported,'distinct AST nodes'):
+                        getattr(vm, entry)(program)
+                    self.assertFalse(vm.variables)
+                self.assertEqual(output,[])
 
     def test_self_jump_compiles_without_recursion(self):
         with closing(Interpreter()) as vm:

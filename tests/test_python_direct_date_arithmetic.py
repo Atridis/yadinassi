@@ -50,7 +50,9 @@ class DirectDateArithmeticTests(unittest.TestCase):
         class Foreign:
             def __radd__(self,other):raise AssertionError('host callback')
             def __rsub__(self,other):raise AssertionError('host callback')
-        for operand in (True,1,'1',Foreign()):
+        self.assertEqual(BSLDate(10000) + 1, BSLDate(20000))
+        self.assertEqual(BSLDate(10000) - 1, BSLDate(0))
+        for operand in (True, 1.0, '1', Foreign()):
             with self.assertRaisesRegex(TypeError,'число секунд'):BSLDate(10000)+operand
             with self.assertRaisesRegex(TypeError,'число секунд'):BSLDate(10000)-operand
     def test_range_markers_and_decimal_context_remain_exact(self):
@@ -92,5 +94,5 @@ class DirectDateArithmeticTests(unittest.TestCase):
                     vm.execute(comparison)
         for comparison in ('Low<1', '1<=High', 'Low>"date"', 'True>=High'):
             with self.subTest(comparison=comparison):
-                with self.assertRaisesRegex(BSLRuntimeError, 'несовместимы'):
+                with self.assertRaisesRegex(BSLRuntimeError, 'несовместимы|Ожидается дата'):
                     vm.execute(comparison)

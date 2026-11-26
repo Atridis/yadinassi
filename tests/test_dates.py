@@ -188,13 +188,15 @@ class DateConstructorTests(unittest.TestCase):
                 date(text)
 
     def test_wrong_arity_and_non_native_component_types_are_rejected(self):
-        for arguments in ((), (Decimal(2024),), (Decimal(2024), Decimal(2)),
+        for arguments in ((), (2024,), (Decimal(2024),), (Decimal(2024), Decimal(2)),
                           tuple(Decimal(1) for _ in range(4)),
                           tuple(Decimal(1) for _ in range(5)),
                           tuple(Decimal(1) for _ in range(7))):
             with self.subTest(arguments=arguments), self.assertRaises((TypeError, ValueError)):
                 date(*arguments)
-        for value in (None, True, False, 2024, 2024.0, [], {}, object(), date(BASE_TEXT)):
+        self.assertEqual(date(2024, Decimal(2), Decimal(29)), date('20240229'))
+        self.assertEqual(date(2024, 2, 29), date('20240229'))
+        for value in (None, True, False, 2024.0, [], {}, object(), date(BASE_TEXT)):
             for arguments in ((value,), (value, Decimal(2), Decimal(29))):
                 with self.subTest(kind=type(value)), self.assertRaises((TypeError, ValueError)):
                     date(*arguments)
@@ -424,7 +426,7 @@ class DateRuntimeTests(unittest.TestCase):
         class ForeignDate(BSLDate):
             pass
         self.vm.variables['foreign'] = ForeignDate(0)
-        for expression in ('Foreign.Year', 'Foreign[0]', 'Foreign.isoformat()'):
+        for expression in ('Foreign.Year', 'Foreign[0]', 'Foreign[0]=1;', 'Foreign.isoformat()'):
             with self.subTest(expression=expression), self.assertRaises(BoundaryViolation):
                 self.vm.execute(expression)
 

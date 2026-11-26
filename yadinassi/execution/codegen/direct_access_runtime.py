@@ -6,6 +6,7 @@ from yadinassi.collections.maps import BSLMap, BSLFixedMap
 from yadinassi.collections.structures import BSLKeyAndValue, BSLStructure, BSLFixedStructure
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 from yadinassi.execution.direct.python_direct_plain_map import PlainFixedMap, PlainMap
+from yadinassi.temporal.dates import BSLDate
 from yadinassi.types.array_index import array_offset
 from yadinassi.types.values import BSLObject, HostFunction
 from .direct_boundaries import BoundaryViolation
@@ -17,6 +18,8 @@ from .direct_structure import _DirectStructure
 
 _TYPE_MRO = vars(type)["__mro__"]
 _TYPE_DICT = vars(type)["__dict__"]
+# Dates use the existing member policy even though they are not BSLObjects.
+_BRACKET_RECEIVER_TYPES = (BSLObject, BSLDate)
 
 
 def owned_index(context,receiver):
@@ -34,7 +37,7 @@ def read_bracket(context, receiver, key):
         return receiver[array_offset(receiver,key)]
     if kind is dict:
         return receiver.get(key)
-    if kind is not BSLMap and kind is not BSLFixedMap and issubclass(kind,BSLObject):
+    if kind is not BSLMap and kind is not BSLFixedMap and issubclass(kind,_BRACKET_RECEIVER_TYPES):
         return context.resolve_member(receiver,'__getitem__')(key)
     return receiver[key]
 
@@ -43,7 +46,7 @@ def write_bracket(context, receiver, key, value):
     kind=type(receiver)
     if kind is list or kind is PlainArray:
         key=array_offset(receiver,key)
-    elif kind is not BSLMap and kind is not BSLFixedMap and issubclass(kind,BSLObject):
+    elif kind is not BSLMap and kind is not BSLFixedMap and issubclass(kind,_BRACKET_RECEIVER_TYPES):
         context.resolve_member(receiver,'__setitem__')(key,value)
         return
     receiver[key]=value
