@@ -1,4 +1,4 @@
-"""Optional pure algorithms for the isolated naked translator experiment.
+"""Scalar operations used by the direct BSL generator.
 
 No VM dispatch, ownership scan, or per-node guard. Exact supported values only:
 host callbacks require an explicit boundary rather than accidental str/equality.
@@ -18,26 +18,15 @@ from yadinassi.collections.sort_directions import BSLSortDirection
 from yadinassi.numeric.round_modes import BSLRoundMode
 from yadinassi.collections.maps import _DIRECT_FIXED_MAP_SNAPSHOT
 from .direct_boundaries import BoundaryViolation
-from .direct_collections import _NakedMap, _TypedMap
+from .direct_collections import _TypedMap
 from .direct_structure import _DirectStructure
-
-
-class TextAddend:
-    """Only string-left addition differs from Python's native operation."""
-    __slots__ = ('text',)
-
-    def __init__(self, text):
-        self.text = text
-
-    def __add__(self, right):
-        return concatenate(self.text, right)
 
 
 class UnsupportedScalarSemantics(BoundaryViolation):
     pass
 
 
-_COLLECTION_TYPES = (list, dict, _NakedMap, _TypedMap, _DirectStructure)
+_COLLECTION_TYPES = (list, dict, _TypedMap, _DirectStructure)
 _SCALAR_TYPES = (bool, Decimal, str, type(None))
 _FIND_IDENTITY_TYPES = (_DIRECT_FIXED_ARRAY_TYPE, _DIRECT_FIXED_STRUCTURE_SNAPSHOT[0],
                         _DIRECT_FIXED_MAP_SNAPSHOT[0], BSLSearchDirection, BSLSortDirection,
@@ -48,7 +37,7 @@ _SCALAR_TYPE_IDS=tuple(map(id,_SCALAR_TYPES))
 _COLLECTION_TYPE_IDS=tuple(map(id,_COLLECTION_TYPES))
 _SUPPORTED_TYPE_IDS=_SCALAR_TYPE_IDS+_COLLECTION_TYPE_IDS
 _FIND_DIRECT_COLLECTION_IDS = frozenset(map(id, (
-    _PlainArray, _NakedMap, _TypedMap, _DirectStructure,
+    _PlainArray, _TypedMap, _DirectStructure,
 )))
 _FIND_IDENTITY_TYPE_IDS=frozenset(_COLLECTION_TYPE_IDS+tuple(map(id,_FIND_IDENTITY_TYPES))) | _FIND_DIRECT_COLLECTION_IDS
 
@@ -147,7 +136,7 @@ def presentation(value):
     kind = type(value)
     if kind is list or any(base is _DIRECT_ARRAY_TYPE for base in _TYPE_MRO.__get__(kind)):
         return 'Массив'
-    if (kind is _NakedMap or kind is _TypedMap):
+    if kind is _TypedMap:
         return 'Соответствие'
     if (kind is dict or kind is _DirectStructure):
         return 'Структура'
@@ -170,30 +159,6 @@ def compare_order(left, right, operator):
     if type(left) is str and type(right) is str:
         left, right = _DIRECT_STRING_KEY_ABI(left), _DIRECT_STRING_KEY_ABI(right)
     return _ORDER_OPERATORS[operator](left, right)
-
-
-def order(left, right, operator):
-    """Native Python string ordering by explicit experiment policy, not UCA.
-
-    Retain scalar type admission: unknown host comparison callbacks are not
-    implicitly invoked. Equality, Map keys and typed Find remain independent.
-    """
-    left_type, right_type = type(left), type(right)
-    if left_type is bool and right_type is Decimal:
-        left = Decimal(int(left)); left_type = Decimal
-    elif left_type is Decimal and right_type is bool:
-        right = Decimal(int(right)); right_type = Decimal
-    if left_type is not right_type:
-        raise TypeError('Значения несовместимы для сравнения')
-    if not (left_type is Decimal or left_type is bool or left_type is str):
-        if left_type is not _DATE_TYPE:
-            raise TypeError('Значения несовместимы для сравнения')
-        left, right = _date_order_ticks(left), _date_order_ticks(right)
-    if operator == '<': return left < right
-    if operator == '<=': return left <= right
-    if operator == '>': return left > right
-    if operator == '>=': return left >= right
-    raise ValueError('ordering operator required')
 
 
 _DATE_TYPE, _DATE_BOUNDARY_SLOT = _DIRECT_EQUALITY_DATE_STATE

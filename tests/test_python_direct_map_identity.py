@@ -1,5 +1,5 @@
 """Exact direct Map identity, separately evidenced from Array/Structure."""
-from yadinassi.execution.codegen.direct_collections import _TypedMap, _NakedMap
+from yadinassi.execution.codegen.direct_collections import _TypedMap
 from pathlib import Path
 import unittest
 from yadinassi import Interpreter

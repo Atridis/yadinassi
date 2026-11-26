@@ -1,10 +1,9 @@
 """Values and execution container shared by the direct BSL generator."""
 from dataclasses import dataclass, field
 from decimal import Decimal
-from .direct_boundaries import _HostMemberReference, _HostIndexReference, BoundaryViolation
+from .direct_boundaries import BoundaryViolation
 
-from yadinassi.types.array_index import array_offset
-from yadinassi.types.values import Reference as _CanonicalReference, BSLFixedArray as _CanonicalFixedArray
+from yadinassi.types.values import Reference as _CanonicalReference
 from yadinassi.collections.maps import _DIRECT_FIXED_MAP_SNAPSHOT
 from yadinassi.collections.plain_value_list import _normalize_presentation, _normalize_check
 from yadinassi.temporal.dates import _DIRECT_EQUALITY_DATE_STATE, UnsupportedDateRange
@@ -34,13 +33,6 @@ def _host_omission_values(function, positions, count):
 
 class UnsupportedNakedSyntax(Exception):pass
 
-def _native_property_missing(name):
-    raise ValueError('Метод или свойство не найдено: '+name)
-
-def _native_property_write_missing(name):
-    raise ValueError('Свойство недоступно для записи: '+name)
-
-
 def _argument_count_error(name,expected,actual):
     raise TypeError(f"{name} ожидает {expected} аргументов, получено {actual}")
 
@@ -59,13 +51,6 @@ class _MapEntry:
 _DIRECT_MAP_ENTRY_TYPE = _MapEntry
 _DIRECT_MAP_ENTRY_STORAGE = vars(_MapEntry)["__dict__"]
 
-
-_ALIASES={'добавить':'add','вставить':'insert','получить':'get','установить':'set',
-          'удалить':'delete','очистить':'clear','количество':'count','найти':'find',
-          'вграница':'ubound','свойство':'property'}
-
-class _NakedMap(dict):
-    """Map kind only, needed for valid missing-key reference outputs."""
 
 def _reject_opaque_date_key(key):
     if type(key) is not _MAP_DATE_TYPE:
@@ -130,15 +115,6 @@ class _TypedMap(dict):
     def get(self,key,default=None):
         entry=dict.get(self,self.token(key));return default if entry is None else entry[1]
     def items(self):return iter(dict.values(self))
-
-_MAP_TYPE_IDS=(id(_NakedMap),id(_TypedMap))
-
-def _checked_array_index(obj,key):
-    if type(key) is not Decimal:raise TypeError('Ожидается число')
-    if key!=key.to_integral_value():raise ValueError('Ожидается целое число')
-    if key<0 or key>=len(obj):raise IndexError(f'Индекс массива вне границ: {key}')
-    return int(key)
-
 
 class _Reference:
     def get(self):return self.value

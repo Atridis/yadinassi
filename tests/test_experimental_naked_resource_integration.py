@@ -1,17 +1,20 @@
-import os
 import unittest
 from unittest.mock import patch
 from yadinassi.types import values
-from yadinassi.execution.codegen.direct_boundaries import BoundaryContext
 
 class ResourceIntegrationTests(unittest.TestCase):
 
     def test_huge_bad_index_diagnostic_does_not_expand_integer(self):
         from decimal import Decimal
-        from yadinassi.execution.codegen import direct_collections as module
+        from yadinassi.types import array_index as module
+        from yadinassi import BSLError, Interpreter
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.variables['huge'] = Decimal('1e1000000')
         with patch.object(module, 'int', side_effect=AssertionError('integer expansion'), create=True):
-            with self.assertRaises(IndexError):
-                module._checked_array_index([], Decimal('1e1000000'))
+            with self.assertRaisesRegex(BSLError, 'Индекс массива вне границ'):
+                vm.execute('A=New Array(1); R=A[Huge];')
+
     def test_trusted_local_constructor_does_not_adopt_artificial_cap(self):
         from yadinassi import Interpreter
         vm = Interpreter();self.addCleanup(vm.close)

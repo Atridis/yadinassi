@@ -3,7 +3,7 @@ import unittest
 from decimal import Decimal
 from unittest.mock import patch
 
-from yadinassi import Interpreter
+from yadinassi import BSLError, Interpreter
 from yadinassi.types.values import BSLArray, BSLFixedArray, equal
 from yadinassi.collections.structures import BSLStructure, BSLFixedStructure
 from yadinassi.collections.maps import BSLMap, BSLFixedMap
@@ -28,6 +28,10 @@ class FixedIdentitySecurityTests(unittest.TestCase):
         with self.assertRaises(BoundaryViolation):boundary.get_member(value,'items')
         with self.assertRaises(BoundaryViolation):scalar.presentation(value)
         with self.assertRaises(BoundaryViolation):scalar._supported(value)
-        with self.assertRaises(TypeError):scalar.order(value,value,'<')
+        vm=Interpreter();self.addCleanup(vm.close)
+        vm.variables['fixed']=value
+        with self.assertRaises(BSLError):
+            vm.execute('R=(Fixed<Fixed);')
+        self.assertNotIn('r',vm.variables)
         boundary.revoke()
         with self.assertRaises(BoundaryViolation):boundary.get_member(value,'items')
