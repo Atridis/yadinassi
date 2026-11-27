@@ -325,6 +325,7 @@ class BSLValueTableRow(RowStorage,BSLObject):
         if search is not None and type(search) is not SearchIndexes:raise ValueError('noncanonical index declarations')
         _write_cell(self,table._storage,_STORAGE_EPOCH,position,value,search)
     _bsl_value_get = _bsl_proc_get = get
+    _bsl_proc_set = set
     def get_index(self,index):return self.get_member(index) if type(index) is str else self.get(index)
     def set_index(self,index,value):return self.set_member(index,value) if type(index) is str else self.set(index,value)
     def __getitem__(self,index):
@@ -596,6 +597,7 @@ class BSLValueTable(BSLObject):
         _writable(self)
         removed=self._storage.delete(self._row_index(row))
         if self._search.declarations:self._search.deleted(removed)
+    _bsl_proc_delete = delete
     def clear(self):
         _writable(self);self._storage.clear()
         if self._search.declarations:self._search.reordered()
@@ -606,6 +608,7 @@ class BSLValueTable(BSLObject):
         else:raise TypeError('row offset must be a finite number')
         self._storage.move(self._row_index(row),distance)
         if self._search.declarations:self._search.reordered()
+    _bsl_proc_move = move
     def _selection(self,names):
         if names is None:return tuple(self._storage.schema._names)
         if type(names) is not str:raise TypeError('column selection must be str')
@@ -700,6 +703,7 @@ class BSLValueTable(BSLObject):
         if not terms:raise ValueError('invalid sort order')
         self._storage.sort(terms)
         if self._search.declarations:self._search.reordered()
+    _bsl_proc_sort = sort
     def copy_columns(self,columns=None):
         _writable(self)
         result=BSLValueTable()

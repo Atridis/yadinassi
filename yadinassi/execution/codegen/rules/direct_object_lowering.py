@@ -54,7 +54,7 @@ _ALIASES = {
     'загрузитьзначения': 'loadvalues', 'сдвинуть': 'move',
     'заполнитьпометки': 'fillchecks', 'сортироватьпозначению': 'sortbyvalue',
     'сортироватьпопредставлению': 'sortbypresentation', 'владелец': 'owner', 'типы': 'types',
-    'вставить': 'insert', 'удалить': 'delete', 'найти': 'find', 'найтистроки': 'findrows', 'выгрузитьколонку': 'unloadcolumn', 'итог': 'total', 'свойство': 'property',
+    'вставить': 'insert', 'удалить': 'delete', 'найти': 'find', 'найтистроки': 'findrows', 'выгрузитьколонку': 'unloadcolumn', 'итог': 'total', 'сортировать': 'sort', 'свойство': 'property',
 }
 
 
