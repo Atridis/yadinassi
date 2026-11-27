@@ -19,16 +19,13 @@ class DirectMethodDefaultTests(unittest.TestCase):
         call_names = [node.func.id for node in ast.walk(tree)
                       if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)]
         self.assertNotIn('_Member', call_names)
+        self.assertNotIn('_MethodReceiver', call_names)
         method_calls = [node.func for node in ast.walk(tree)
                         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)]
-        receiver_calls = [node for node in method_calls
-                          if isinstance(node.value, ast.Call)
-                          and isinstance(node.value.func, ast.Name)
-                          and node.value.func.id == '_MethodReceiver']
+        receiver_calls = [node for node in method_calls if node.attr.startswith('_bsl_')]
         self.assertEqual({node.attr for node in receiver_calls},
                          {'_bsl_proc_insert', '_bsl_proc_add', '_bsl_value_get'})
-        self.assertTrue(all(len(node.value.args) == 1 and not node.value.keywords
-                            for node in receiver_calls))
+        self.assertTrue(all(isinstance(node.value, ast.Name) for node in receiver_calls))
         vm.execute_prepared(plan)
         self.assertEqual(vm.variables['r'], Decimal(2))
 

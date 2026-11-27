@@ -9,7 +9,6 @@ from .rules.direct_reference_lowering import SELF_NAMES
 from .direct_access_runtime import (bsl_iterable, metered, owned_index, owned_iterable,
                                     owned_set_index, owns_property_output, read_bracket, write_bracket)
 from .direct_property_receiver import property_receiver
-from .direct_method_receiver import method_receiver
 from .direct_reference_runtime import (bind_index_reference, cell_actual,
                                        field_reference, fragment_reference, host_reference, indexed_actual,
                                        lexical_reference, member_actual)
@@ -100,7 +99,7 @@ def requires_reference(bound,index):
     return test is not None and test(index)
 
 
-_OP.update(_RequiresReference=requires_reference,_OwnedIndex=owned_index,_OwnedSetIndex=owned_set_index,_Metered=metered,_OwnedIterable=owned_iterable,_BSLIterable=bsl_iterable,_MethodReceiver=method_receiver,_PropertyReceiver=property_receiver,_FieldRef=field_reference,_OwnsPropertyOutput=owns_property_output)
+_OP.update(_RequiresReference=requires_reference,_OwnedIndex=owned_index,_OwnedSetIndex=owned_set_index,_Metered=metered,_OwnedIterable=owned_iterable,_BSLIterable=bsl_iterable,_PropertyReceiver=property_receiver,_FieldRef=field_reference,_OwnsPropertyOutput=owns_property_output)
 _OP.update(_WriteBracket=write_bracket,_ReadBracket=read_bracket)
 
 

@@ -85,7 +85,7 @@ def member_call(self, x, c, want_value):
     if property_output:
         slot = self.temp()
         receiver = p.NamedExpr(target=name(slot, True), value=receiver)
-    bound = attr(call('_MethodReceiver', receiver), prefix + operation)
+    bound = attr(receiver, prefix + operation)
     if property_output:
         native = call('_OwnsPropertyOutput', name(slot))
         return call(bound, self.expr(x.arguments[0]), self.actual_address(x.arguments[1], native))
