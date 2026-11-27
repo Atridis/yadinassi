@@ -342,12 +342,16 @@ class BSLXMLReader(_FileMethods):
         for k in ('context', 'depth', 'space', 'lang'): self._current[k] = parent[k]
         return True
     def _attribute_at(self, index):
-        if type(index) is not Decimal or not index.is_finite() or index != index.to_integral_value(): raise TypeError('XML: индекс должен быть Число')
+        kind = type(index)
+        if kind is not int and (kind is not Decimal or not index.is_finite()
+                                or index != index.to_integral_value()):
+            raise TypeError('XML: индекс должен быть целым Числом')
         attrs = self._attributes()
         if index < 0 or index >= len(attrs): raise ValueError('XML: индекс атрибута вне границ')
         return attrs[int(index)]
     def get_attribute(self, name, uri=None):
-        if type(name) is Decimal:
+        kind = type(name)
+        if kind is int or kind is Decimal:
             if uri is not None: raise TypeError('XML: лишний параметр')
             return self._attribute_at(name)['value']
         name = _text(name)

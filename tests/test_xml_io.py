@@ -39,6 +39,26 @@ class XMLReaderTests(unittest.TestCase):
         self.assertEqual(r.get_member('NodeType'),x.T.NONE)
         self.assertEqual(context.lookup_prefix('urn:p'),'p')
 
+    def test_attribute_indices_accept_direct_integers_in_all_accessors(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('R = New XMLReader; R.SetString("<r xmlns:p=""urn:p"" p:a=""я""/>"); R.Read();')
+        for prepared in (False, True):
+            run = (lambda source: vm.execute_prepared(vm.prepare(source))) if prepared else vm.execute
+            for expression, expected in (
+                ('AttributeName(0)', 'p:a'), ('AttributeLocalName(0)', 'a'),
+                ('AttributePrefix(0)', 'p'), ('AttributeNamespaceURI(0)', 'urn:p'),
+                ('AttributeValue(0)', 'я'), ('GetAttribute(0)', 'я'),
+                ('GetAttribute("a", "urn:p")', 'я'),
+            ):
+                with self.subTest(prepared=prepared, expression=expression):
+                    self.assertEqual(run('R.' + expression), expected)
+            for index in ('True', '0.5', '-1', '1'):
+                with self.subTest(prepared=prepared, index=index), self.assertRaises(BSLError):
+                    run('R.AttributeName(' + index + ')')
+                with self.subTest(prepared=prepared, index=index), self.assertRaises(BSLError):
+                    run('R.AttributeValue(' + index + ')')
+
     def test_skip_content_and_attribute_cursor(self):
         r=self.reader('<!--a--><?p v?><r><skip a="1"><deep/></skip><keep/></r>')
         self.assertEqual(r.move_to_content(),x.T.START)
