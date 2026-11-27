@@ -15,7 +15,7 @@ def _intrinsic(node, name):
 def _field_is_text(node, facts):
     if type(node) is not p.Subscript or not _intrinsic(node.value, '_PropertyReceiver'):
         return False
-    receiver = node.value.args[0]
+    receiver = node.value.args[1]
     if type(receiver) is not p.Name:
         return False
     fields = facts.get(receiver.id)

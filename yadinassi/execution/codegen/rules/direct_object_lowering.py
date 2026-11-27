@@ -32,14 +32,14 @@ def index_assignment(emit, target, value):
 
 
 def field(emit, node):
-    receiver = call('_PropertyReceiver', emit.expr(node.object))
+    receiver = call('_PropertyReceiver', name('_C'), emit.expr(node.object))
     return p.Subscript(value=receiver, slice=literal(node.name), ctx=p.Load())
 
 
 def field_assignment(emit, node, value):
     # Bind the receiver before evaluating RHS, as for other BSL lvalues.
     slot = emit.temp()
-    receiver = call('_PropertyReceiver', emit.expr(node.object), write=literal(True))
+    receiver = call('_PropertyReceiver', name('_C'), emit.expr(node.object), write=literal(True))
     target = p.Subscript(value=name(slot), slice=literal(node.name), ctx=p.Store())
     return [p.Assign(targets=[name(slot, True)], value=receiver),
             p.Assign(targets=[target], value=value)]

@@ -1,8 +1,9 @@
 from contextlib import closing
+from decimal import Decimal
 import ast
 import unittest
 
-from yadinassi import Interpreter
+from yadinassi import BSLError, Interpreter
 from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 
 
@@ -47,3 +48,23 @@ class DirectPropertyTests(unittest.TestCase):
                 with self.subTest(code=code), self.assertRaises(BoundaryViolation):
                     vm.execute(code)
         self.assertEqual(calls, [])
+
+    def test_table_property_uses_row_qualification_and_index_updates(self):
+        with closing(Interpreter()) as vm:
+            vm.execute('T=New ValueTable;'
+                       'C=T.Columns.Add("Amount",New TypeDescription("Number",New NumberQualifiers(5,1)));'
+                       'R=T.Add();R.Amount=1.23;C.Title="Amount header";'
+                       'T.Indexes.Add("Amount");'
+                       'Old=T.FindRows(New Structure("Amount",1.2));'
+                       'R.Amount=5.67;'
+                       'Result=R.AMOUNT;Caption=C.Title;'
+                       'NewMatch=T.FindRows(New Structure("Amount",5.7));')
+            self.assertEqual(vm.variables['result'], Decimal('5.7'))
+            self.assertEqual(vm.variables['caption'], 'Amount header')
+            self.assertEqual(vm.variables['old'].items, [vm.variables['r']])
+            self.assertEqual(vm.variables['newmatch'].items, [vm.variables['r']])
+            self.assertEqual(vm.execute('T.FindRows(New Structure("Amount",1.2)).Count()'), 0)
+            vm.variables['t']._bounded_slice_read = True
+            with self.assertRaises(BSLError):
+                vm.execute('R.Amount=9;')
+            self.assertEqual(vm.variables['r'].get_member('Amount'), Decimal('5.7'))

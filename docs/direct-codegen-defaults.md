@@ -112,3 +112,9 @@ context-wide fallback from that operation. Other property receivers fail
 closed until they have an explicit property surface that preserves their
 boundary contract. Import writes, references, and method calls are distinct
 operations, not alternate engines for ordinary dot access.
+
+Local detached ValueTable rows and columns reuse their existing named cell and
+column operations, including schema qualification, slice restrictions and
+index updates. A fixed structure reuses its read-only lookup. These admissions
+do not authorize property operations in a verified crossing or Python extension
+context; those require their own boundary contracts.

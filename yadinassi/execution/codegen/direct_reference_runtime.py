@@ -169,7 +169,7 @@ def member_actual(context, byref, receiver, key):
         if type(address) is _ForwardReference:
             return address.reference
         return host_reference(address)
-    return property_receiver(receiver)[key]
+    return property_receiver(context,receiver)[key]
 
 
 def cell_actual(value):

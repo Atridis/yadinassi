@@ -78,9 +78,10 @@ class BSLValueTableColumn(BSLObject):
     def name(self,value):self.table.columns.rename(self,value)
     def get_member(self,name):
         key=name.casefold()
-        if key in ('name','имя'):return self._name
         table=self.table
-        if type(table) is BSLValueTable and table._bounded_slice_read:
+        if type(table) is not BSLValueTable:raise ValueError('noncanonical value table owner')
+        if key in ('name','имя'):return self._name
+        if table._bounded_slice_read:
             columns=table.columns._items
             if key not in ('valuetype','типзначения') or not columns or columns[0] is not self:
                 raise ValueError('slice column schema inspection is not admitted')
@@ -89,6 +90,7 @@ class BSLValueTableColumn(BSLObject):
         if key in ('width','ширина'):return self.width
         return super().get_member(name)
     def set_member(self,name,value):
+        if type(self.table) is not BSLValueTable:raise ValueError('noncanonical value table owner')
         _writable(self.table)
         key=name.casefold()
         if self._deleted:raise ValueError('column is deleted')
@@ -98,6 +100,8 @@ class BSLValueTableColumn(BSLObject):
             self.title=value
         elif key in ('width','ширина'):self.width=_column_width(value)
         else:super().set_member(name,value)
+    __getitem__ = get_member
+    __setitem__ = set_member
     def __str__(self):return 'КолонкаТаблицыЗначений'
 
 
@@ -246,9 +250,12 @@ class BSLValueTableColumnCollection(BSLObject):
         storage.move_column(old,new)
         self._items.insert(new,self._items.pop(old))
         indexes._replace_signatures(bindings)
-    def get_member(self,name):return self.get_index(name)
+    def get_member(self,name):
+        if type(self.table) is not BSLValueTable:raise ValueError('noncanonical value table owner')
+        return self.get_index(name)
     def set_index(self,*args):raise ValueError('columns cannot be replaced')
-    __getitem__=get_index
+    def __getitem__(self,index):
+        return self.get_member(index) if type(index) is str else self.get_index(index)
     __setitem__=set_index
     def get_method(self,name):
         if self.table._bounded_slice_read and name.casefold() not in (
@@ -282,10 +289,12 @@ class BSLValueTableRow(RowStorage,BSLObject):
     def __init__(self,owner,schema,values=None):
         RowStorage.__init__(self,owner,schema,values);self.table=owner
     def get_member(self,name):
+        if type(self.table) is not BSLValueTable:raise ValueError('noncanonical value table owner')
         value = RowStorage.get_value(self,name)
         return Decimal(value) if type(value) is int else value
     def set_member(self,name,value):
         table,schema=self.table,self.schema
+        if type(table) is not BSLValueTable:raise ValueError('noncanonical value table owner')
         _writable(table)
         if self._deleted:raise ValueError("row is deleted")
         position = schema.offset(name)
@@ -812,6 +821,7 @@ class BSLValueTable(BSLObject):
             if self._bounded_slice_read:raise ValueError('slice auxiliary collections are not admitted')
             return self.indexes
         return super().get_member(name)
+    __getitem__ = get_member
     def get_method(self,name):
         if self._bounded_slice_read and name.casefold() not in (
                 'count','количество','get','получить','indexof','индекс','findrows','найтистроки'):
