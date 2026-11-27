@@ -362,7 +362,7 @@ from types import MappingProxyType
 from yadinassi.collections.structures import BSLKeyAndValue
 from yadinassi.types.values import HostFunction
 
-class PlainFixedMap:
+class PlainFixedMap(DirectMethodNames):
     """Read-only shallow snapshot with the source's direct key semantics."""
     __slots__=('_items','_snapshot','_identity_keys')
 
@@ -390,6 +390,12 @@ class PlainFixedMap:
         except KeyError:raise ValueError('Ключ фиксированного соответствия не найден') from None
 
     __getitem__=get_index
+    _bsl_proc_get = _bsl_value_get = get
+
+    def _bsl_value_count(self):
+        return Decimal(len(self._items))
+
+    _bsl_proc_count = _bsl_value_count
 
     def __setitem__(self,key,value):
         raise ValueError('Элементы фиксированного соответствия недоступны для записи')
@@ -402,7 +408,7 @@ class PlainFixedMap:
     def get_method(self,name):
         key=name.casefold()
         if key in ('get','получить'):return HostFunction(name,self.get)
-        if key in ('count','количество'):return HostFunction(name,lambda:Decimal(len(self._items)))
+        if key in ('count','количество'):return HostFunction(name,self._bsl_value_count)
         raise ValueError('Метод соответствия не найден: '+name)
 
     def __str__(self):return 'ФиксированноеСоответствие'

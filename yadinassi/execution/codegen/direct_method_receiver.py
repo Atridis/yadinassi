@@ -6,10 +6,10 @@ and unported BSL objects cannot execute attribute hooks through this path.
 from .direct_boundaries import BoundaryViolation
 from .direct_structure import _DirectStructure
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
-from yadinassi.execution.direct.python_direct_plain_map import PlainMap
+from yadinassi.execution.direct.python_direct_plain_map import PlainFixedMap, PlainMap
 
 
-_NATIVE_RECEIVERS = (PlainArray, PlainMap, _DirectStructure)
+_NATIVE_RECEIVERS = (PlainArray, PlainMap, PlainFixedMap, _DirectStructure)
 _NATIVE_LOOKUP = {id(kind): kind.__getattribute__ for kind in _NATIVE_RECEIVERS}
 
 

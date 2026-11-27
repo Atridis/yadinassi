@@ -48,7 +48,10 @@ def transfer(value, *, standalone_arrays=False, native_numbers=False):
         if id(item) in active:raise ValueError('Межконтекстная передача циклических коллекций пока не поддерживается')
         active.add(id(item))
         try:
-            if direct_array:return [copy(child,depth+1) for child in list.__iter__(item)]
+            if direct_array:
+                kids = (copy(child,depth+1) for child in list.__iter__(item))
+                # The outer list is a Python argument packet, not a BSL Array.
+                return _PlainArray(kids) if standalone_arrays and depth else list(kids)
             if kind is BSLArray:
                 result=BSLArray();result.items=[copy(child,depth+1) for child in item.items]
                 return result

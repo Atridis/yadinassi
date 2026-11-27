@@ -362,11 +362,12 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
                 error=async_scheduler.take_procedure_error()
                 if error is not None:raise error
             if returns_expression:
-                if type(result) is list:
+                from .python_direct_plain_array import PlainArray
+                if type(result) is list or type(result) is PlainArray:
                     # The Python-facing Array keeps its identity. Normalize
                     # numeric leaves of this returned list only, not VM state.
-                    for index,value in enumerate(result):
-                        if type(value) is int:result[index]=Decimal(value)
+                    for index,value in enumerate(list.__iter__(result)):
+                        if type(value) is int:list.__setitem__(result,index,Decimal(value))
                 return result
             return None if result is vm.variables else result
         finally:

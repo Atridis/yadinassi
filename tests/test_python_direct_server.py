@@ -45,6 +45,27 @@ A=New Array; A.Add(1); X=New Structure("A",A); R=S(X); R.A.Add(3);
 ''')
         self.assertEqual(vm.variables['a'],[Decimal(1)])
         self.assertEqual(vm.variables['r'].get('A'),[Decimal(1),Decimal(2),Decimal(3)])
+    def test_array_methods_work_on_both_sides_of_copy(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute("""
+&AtServer
+Function AddOnServer(Val Data)
+    Data.Items.Add(Data.Items.Count());
+    Return Data;
+EndFunction
+Items = New Array;
+Items.Add(10);
+Data = New Structure("Items", Items);
+Returned = AddOnServer(Data);
+Returned.Items.Add(20);
+OriginalCount = Data.Items.Count();
+ReturnedCount = Returned.Items.Count();
+Second = Returned.Items.Get(1);
+""")
+        self.assertEqual(tuple(vm.variables[key] for key in
+                               ('originalcount', 'returnedcount', 'second')), (1, 3, 1))
+
     def test_server_cannot_read_client_state(self):
         vm=Interpreter();vm.execute('Var Secret;Secret=42;\n&AtServer\nFunction S() Return Secret; EndFunction')
         with self.assertRaisesRegex(BSLRuntimeError, "не определена"):vm.execute('S();')
