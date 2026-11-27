@@ -54,6 +54,8 @@ class BSLRegexGroup(BSLObject):
         if key in ('startindex', 'начальнаяпозиция'): return self._position
         if key in ('length', 'длина'): return self._length
         return super().get_member(name)
+    __getitem__ = get_member
+    __setitem__ = BSLObject.set_member
     def __str__(self): return 'ГруппаРезультатаПоискаПоРегулярномуВыражению'
 
 
@@ -64,6 +66,7 @@ class BSLRegexResult(BSLRegexGroup):
     def get_groups(self):
         result = BSLArray(); result.items = list(self._groups)
         return result
+    _bsl_value_getgroups = _bsl_proc_getgroups = get_groups
     def get_method(self, name):
         if name.casefold() in ('getgroups', 'получитьгруппы'):
             return HostFunction(name, self.get_groups)
