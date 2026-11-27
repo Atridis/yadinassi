@@ -8,6 +8,7 @@ from typing import Callable
 
 from yadinassi.temporal.dates import BSLDate
 from .array_index import array_offset
+from .direct_method_names import DirectMethodNames
 
 
 class BSLNull(Enum):
@@ -458,7 +459,7 @@ class BSLFixedCollection:
 _DIRECT_FIXED_COLLECTION_TYPE = BSLFixedCollection
 
 
-class _ArrayBase(BSLObject):
+class _ArrayBase(BSLObject, DirectMethodNames):
     """Shared reads; fixed arrays do not inherit any mutable collection API."""
     # Stable copyreg cache: ordinary copy/deepcopy must not mutate the class ABI.
     __slotnames__ = []
@@ -486,6 +487,15 @@ class _ArrayBase(BSLObject):
             if equal(item, value):
                 return Decimal(index)
         return None
+
+    def _bsl_value_count(self):
+        return Decimal(len(self.items))
+
+    def _bsl_value_ubound(self):
+        return Decimal(len(self.items) - 1)
+
+    _bsl_proc_count = _bsl_value_count
+    _bsl_proc_ubound = _bsl_value_ubound
 
     def get_member(self, name: str) -> object:
         methods = {
@@ -638,6 +648,8 @@ class BSLFixedArray(_ArrayBase, BSLFixedCollection):
                 raise IndexError(f"Индекс массива вне границ: {index}")
             return index
         return super().checked_index(index, inserting=inserting)
+
+    _bsl_value_get = _bsl_proc_get = _ArrayBase.get
 
     __getitem__ = _ArrayBase.get
     __setitem__ = _ArrayBase.set

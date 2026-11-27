@@ -66,6 +66,11 @@ class _MapBase(BSLObject):
     def set(self, key: object, value: object) -> None:
         raise ValueError("Элементы фиксированного соответствия недоступны для записи")
 
+    def _bsl_value_count(self):
+        return Decimal(len(self._items))
+
+    _bsl_proc_count = _bsl_value_count
+
     def get_method(self, name: str) -> object:
         methods = {
             "получить": self.get, "get": self.get,

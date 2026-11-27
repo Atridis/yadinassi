@@ -81,6 +81,13 @@ class _StructureBase(BSLObject):
     def set_member(self, name: str, value: object) -> None:
         self.set(name, value)
 
+    def _bsl_value_count(self):
+        return Decimal(len(self._items))
+
+    _bsl_proc_count = _bsl_value_count
+
+    _bsl_value_property = _bsl_proc_property = property
+
     def get_method(self, name: str) -> object:
         methods = {
             "количество": lambda: Decimal(len(self._items)),

@@ -122,6 +122,7 @@ class BSLValueTableColumnCollection(BSLObject):
         default = _default(value_type) if value_type.types else None
         self.table._storage.add_column(name,column,default);self._items.append(column)
         return column
+    _bsl_value_add = _bsl_proc_add = add
     def _append_materialized(self,column):
         if type(column) is not BSLValueTableColumn or column.table is not self.table:raise ValueError('foreign column')
         description=column.value_type
@@ -559,6 +560,17 @@ class BSLValueTable(BSLObject):
     __setitem__=set_index
     def __iter__(self):return iter(self.rows)
     def count(self):return Decimal(len(self.rows))
+    _bsl_value_add = _bsl_proc_add = add
+    def _bsl_value_count(self):
+        # Test: Python must not replace the row alias while the table's
+        # writer still owns a different list.
+        rows = self.rows
+        if rows is not self._storage.rows:
+            from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+            raise BoundaryViolation('noncanonical value table row storage')
+        return Decimal(len(rows))
+
+    _bsl_proc_count = _bsl_value_count
     def _index_of(self,row):
         for index,item in enumerate(self.rows):
             if item is row:return index
