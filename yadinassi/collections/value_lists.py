@@ -14,6 +14,7 @@ import weakref
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 from yadinassi.execution.codegen.direct_structure import _DirectStructure
 from yadinassi.temporal.dates import BSLDate
+from yadinassi.types.direct_method_names import DirectMethodNames
 from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.types.values import BSLArray, BSLObject, HostFunction, NULL, equal, to_string
 
@@ -133,7 +134,7 @@ def _value(value):
     return value
 
 
-class BSLValueListItem(BSLObject):
+class BSLValueListItem(BSLObject, DirectMethodNames):
     """A live or detached item; an item does not keep its owner alive."""
 
     def __init__(self, owner, identifier, value=None, presentation="", check=False):
@@ -223,6 +224,10 @@ class BSLValueListItem(BSLObject):
         else:
             super().set_member(name, value)
 
+    _bsl_value_getid = _bsl_proc_getid = get_id
+    __getitem__ = get_member
+    __setitem__ = set_member
+
     def _check_reference_member(self, name):
         # Only these six names were measured as routine-reference storage.
         # Keep the weak owner: references must not silently extend its lifetime.
@@ -246,7 +251,7 @@ class BSLValueListItem(BSLObject):
         return super().get_method(name)
 
 
-class BSLValueList(BSLObject):
+class BSLValueList(BSLObject, DirectMethodNames):
     def __init__(self):
         self.items = []
         self._by_id = {}
@@ -449,6 +454,25 @@ class BSLValueList(BSLObject):
             # both sorts. Keep the existing local revision/iteration policy;
             # only carry a valid cache across the successfully completed sort.
             self._text_cache = (self._revision, cached[1])
+
+    _bsl_value_add = _bsl_proc_add = add
+    _bsl_value_insert = _bsl_proc_insert = insert
+    _bsl_value_add_omitted = _bsl_proc_add_omitted = add
+    _bsl_value_insert_omitted = _bsl_proc_insert_omitted = insert
+    _bsl_value_count = _bsl_proc_count = count
+    _bsl_value_get = _bsl_proc_get = get
+    _bsl_value_indexof = _bsl_proc_indexof = index_of
+    _bsl_value_findbyid = _bsl_proc_findbyid = find_by_id
+    _bsl_value_findbyvalue = _bsl_proc_findbyvalue = find_by_value
+    _bsl_value_copy = _bsl_proc_copy = copy
+    _bsl_value_unloadvalues = _bsl_proc_unloadvalues = unload_values
+    _bsl_proc_clear = clear
+    _bsl_proc_delete = delete
+    _bsl_proc_move = move
+    _bsl_proc_loadvalues = load_values
+    _bsl_proc_fillchecks = fill_checks
+    _bsl_proc_sortbyvalue = sort_by_value
+    _bsl_proc_sortbypresentation = sort_by_presentation
 
     def get_member(self, name):
         key = name.casefold()

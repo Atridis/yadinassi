@@ -385,6 +385,8 @@ class BSLTypeDescription(BSLObject):
         result.items = list(self.types)
         return result
 
+    _bsl_value_types = _bsl_proc_types = get_types
+
     def contains_type(self, kind):
         reference = _reference_description_kind(self)
         if _is_reference_type(kind):

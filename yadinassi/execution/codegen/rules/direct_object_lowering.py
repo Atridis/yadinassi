@@ -39,7 +39,7 @@ def field(emit, node):
 def field_assignment(emit, node, value):
     # Bind the receiver before evaluating RHS, as for other BSL lvalues.
     slot = emit.temp()
-    receiver = call('_PropertyReceiver', name('_C'), emit.expr(node.object), write=literal(True))
+    receiver = call('_PropertyReceiver', name('_C'), emit.expr(node.object), write=literal(True), key=literal(node.name))
     target = p.Subscript(value=name(slot), slice=literal(node.name), ctx=p.Store())
     return [p.Assign(targets=[name(slot, True)], value=receiver),
             p.Assign(targets=[target], value=value)]
@@ -48,6 +48,12 @@ def field_assignment(emit, node, value):
 _ALIASES = {
     'количество': 'count', 'вграница': 'ubound', 'добавить': 'add',
     'очистить': 'clear', 'получить': 'get', 'установить': 'set',
+    'индекс': 'indexof', 'найтипоидентификатору': 'findbyid',
+    'найтипозначению': 'findbyvalue', 'получитьидентификатор': 'getid',
+    'скопировать': 'copy', 'выгрузитьзначения': 'unloadvalues',
+    'загрузитьзначения': 'loadvalues', 'сдвинуть': 'move',
+    'заполнитьпометки': 'fillchecks', 'сортироватьпозначению': 'sortbyvalue',
+    'сортироватьпопредставлению': 'sortbypresentation', 'владелец': 'owner', 'типы': 'types',
     'вставить': 'insert', 'удалить': 'delete', 'найти': 'find', 'свойство': 'property',
 }
 
@@ -74,12 +80,12 @@ def member_call(self, x, c, want_value):
                      require_value=literal(want_value), argument_count=literal(len(x.arguments)),
                      allow_references=literal(True))
         return self.bound_call(bound, x.arguments, omitted, references=True, crossing=True, shapes=True)
-    if omitted:
-        return call('_InvalidOmissions')
-
     folded = c.name.casefold()
     operation = _ALIASES.get(folded, folded)
     prefix = '_bsl_value_' if want_value else '_bsl_proc_'
+    if omitted:
+        from .direct_value_list_omissions import lower_omissions
+        return lower_omissions(self, root, x.arguments, omitted, prefix, operation)
     receiver = self.expr(c.object)
     property_output = operation == 'property' and len(x.arguments) == 2
     if property_output:

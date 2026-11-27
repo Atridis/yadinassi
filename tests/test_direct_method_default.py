@@ -29,6 +29,19 @@ class DirectMethodDefaultTests(unittest.TestCase):
         vm.execute_prepared(plan)
         self.assertEqual(vm.variables['r'], Decimal(2))
 
+    def test_value_list_omission_uses_concrete_signature_without_receiver_check(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        plan = vm.prepare('L=New ValueList; Item=L.Add(37,,True,); L.Insert(0);')
+        source = plan._plan.generated_source
+        self.assertIn("l._bsl_value_add_omitted(37, '', True)", source)
+        self.assertIn('l._bsl_proc_insert(0)', source)
+        self.assertNotIn('_MethodReceiver', source)
+        vm.execute_prepared(plan)
+        self.assertEqual(vm.execute('Item.Value'), Decimal(37))
+        self.assertTrue(vm.execute('Item.Check'))
+        self.assertEqual(vm.execute('L.Count()'), Decimal(2))
+
     def test_foreign_objects_do_not_run_method_hooks(self):
         seen = []
 

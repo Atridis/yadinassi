@@ -330,6 +330,7 @@ class BSLValueTableRow(RowStorage,BSLObject):
     def owner(self):
         if self._deleted:raise ValueError('row is deleted')
         return self.table
+    _bsl_value_owner = _bsl_proc_owner = owner
     @property
     def cells(self):
         # Readonly cold snapshot for inspection; not a second authoritative map.

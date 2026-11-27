@@ -316,6 +316,8 @@ class PlainValueList(list):
     def count(self):
         return Decimal(list.__len__(self))
 
+    _bsl_value_count = _bsl_proc_count = count
+
     def _index_of(self, item):
         for index, existing in enumerate(self):
             if existing is item:
