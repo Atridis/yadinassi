@@ -560,6 +560,7 @@ class BSLValueTable(BSLObject):
         _writable(self)
         if self.columns._query_columns:raise ValueError('default row values for query columns are not supported')
         return self._storage.insert(_insertion_position(index,len(self.rows)))
+    _bsl_value_insert = _bsl_proc_insert = insert
     def get(self,index):return self.rows[_index(index,len(self.rows))]
     _bsl_value_get = _bsl_proc_get = get
     get_index=get
@@ -613,6 +614,7 @@ class BSLValueTable(BSLObject):
         for name in result:self._storage.schema.resolve(name)
         return result
     def find(self,value,columns=None):
+        if self._bounded_slice_read:raise ValueError('only bounded slice reads are admitted')
         schema=self._storage.schema
         selected=tuple(schema.offset(name) for name in self._selection(columns))
         rows=self.rows
@@ -623,6 +625,7 @@ class BSLValueTable(BSLObject):
             for position in selected:
                 if scalar_equal(list.__getitem__(row,position),value):return row
         return None
+    _bsl_value_find = _bsl_proc_find = find
     def _find_candidates(self, selected):
         storage=self._storage
         return self._search.candidates(self.rows,selected,
@@ -661,8 +664,10 @@ class BSLValueTable(BSLObject):
             search.filled(self._storage.schema.offset(n) for n in names)
         else:self._storage.fill(value,names)
     def unload_column(self,column):
+        if self._bounded_slice_read:raise ValueError('only bounded slice reads are admitted')
         name=self.columns.resolve(column).name
         return _array(row.get_member(name) for row in self.rows)
+    _bsl_value_unloadcolumn = _bsl_proc_unloadcolumn = unload_column
     def load_column(self,values,column):
         _writable(self)
         if type(values) is BSLArray:values=values.items
@@ -671,10 +676,12 @@ class BSLValueTable(BSLObject):
         name=self.columns.resolve(column).name
         for row,value in zip(self.rows,list.__iter__(values)):row.set_member(name,value)
     def total(self,column):
+        if self._bounded_slice_read:raise ValueError('only bounded slice reads are admitted')
         descriptor=self.columns.resolve(_text(column))
         position=self._storage.schema.offset(descriptor.name)
         rows=self.rows
         return _column_total(descriptor.value_type, lambda: map(list.__getitem__,list.__iter__(rows),repeat(position)))
+    _bsl_value_total = _bsl_proc_total = total
     def sort(self,order,comparator=None):
         _writable(self)
         if comparator is not None:

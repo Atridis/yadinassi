@@ -116,6 +116,19 @@ N=RA.Count()+RS.Count()+RM.Count();
             vm.execute_prepared(plan)
             self.assertEqual(vm.variables[key], Decimal(23))
 
+    def test_table_read_methods_keep_the_bounded_slice_limit(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('T=New ValueTable;T.Columns.Add("Amount");R=T.Add();R.Amount=12;')
+        self.assertIs(vm.execute('T.Find(12,"Amount")'), vm.variables['r'])
+        self.assertEqual(vm.execute('T.ВыгрузитьКолонку("Amount")').items, [Decimal(12)])
+        self.assertEqual(vm.execute('T.Итог("Amount")'), Decimal(12))
+        vm.variables['t']._bounded_slice_read = True
+        self.assertEqual(vm.execute('T.Count()'), Decimal(1))
+        for expr in ('T.Find(12,"Amount")', 'T.ВыгрузитьКолонку("Amount")', 'T.Итог("Amount")'):
+            with self.subTest(expr=expr), self.assertRaises(BSLError):
+                vm.execute(expr)
+
     def test_table_reads_and_column_growth_use_the_same_owner(self):
         vm = Interpreter()
         self.addCleanup(vm.close)
