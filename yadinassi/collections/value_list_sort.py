@@ -18,6 +18,8 @@ import unicodedata
 
 from . import value_table_collation as collation
 from yadinassi.temporal.dates import BSLDate
+from yadinassi.execution.codegen.direct_structure import _DirectStructure
+from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 from .sort_directions import BSLSortDirection, _sort_descending
 from .structures import BSLStructure
 from yadinassi.types.values import BSLArray, BSLType, NULL
@@ -90,6 +92,14 @@ def _value_key(value, budget):
         return "scalar", (5, value.require_known().ticks)
     # Opaque object comparison does not traverse contents, stringify objects,
     # compare identity addresses or invoke their equality/hash methods.
+    if kind is list or kind is PlainArray:
+        if list.__len__(value):
+            _unsupported("сортировка непустого массива")
+        return "object", (0, 0)
+    if kind is _DirectStructure:
+        if dict.__len__(value):
+            _unsupported("сортировка непустой структуры")
+        return "object", (1, 0)
     if kind is BSLArray:
         if type(value.items) is not list or value.items:
             _unsupported("сортировка непустого массива")

@@ -245,6 +245,17 @@ class ValueListRuntimeTests(unittest.TestCase):
                 self.assertEqual(self.vm.execute('values.Count()'), 2)
                 self.assertTrue(self.vm.execute('(foreign.Get(0) = foreignItem)'))
 
+    def test_native_array_values_survive_copy_load_and_find_by_identity(self):
+        vm = self.vm
+        vm.execute('A=New Array; A.Add(7); B=New Array; B.Add(7); '
+                   'L=New ValueList; First=L.Add(A); Second=L.Add(B); '
+                   'Copy=L.Copy(); Loaded=New ValueList; Loaded.LoadValues(L.UnloadValues());')
+        for name, getter in (('first', 'L.FindByValue(A)'), ('second', 'L.FindByValue(B)')):
+            self.assertIs(vm.execute(getter), vm.variables[name])
+        self.assertIs(vm.execute('Copy.Get(0).Value'), vm.variables['a'])
+        self.assertIs(vm.execute('Loaded.Get(1).Value'), vm.variables['b'])
+        self.assertIsNone(vm.execute('L.FindByValue(New Array)'))
+
     def test_copy_load_unload_bilingual_dispatch(self):
         self.vm.execute('copy = values.Скопировать(); a = values.ВыгрузитьЗначения(); '
                         'copy.ЗагрузитьЗначения(a);')

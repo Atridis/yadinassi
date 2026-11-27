@@ -12,6 +12,7 @@ import re
 import weakref
 
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
+from yadinassi.execution.codegen.direct_structure import _DirectStructure
 from yadinassi.temporal.dates import BSLDate
 from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.types.values import BSLArray, BSLObject, HostFunction, NULL, equal, to_string
@@ -103,9 +104,12 @@ def _check(value):
 def _value(value):
     # Stored objects are references, never recursively traversed or copied.
     # Exact built-in types avoid invoking arbitrary extension equality hooks.
+    kind = type(value)
+    if kind is list or kind is PlainArray or kind is _DirectStructure:
+        return value  # Direct collection storage keeps its identity.
     from yadinassi.types.type_values import (_STATIC_VALUE_TYPES, _VALUE_TYPES,
                               _DIRECT_REGION_VALUE_TYPES)
-    if type(value) is int:
+    if kind is int:
         # The existing codec and typed value registry expose canonical BSL numbers.
         value = Decimal(value)
     kind = type(value)
@@ -386,6 +390,8 @@ class BSLValueList(BSLObject):
 
     def find_by_value(self, value):
         value = _value(value)
+        if type(value) is list or type(value) is PlainArray or type(value) is _DirectStructure:
+            return next((item for item in self.items if item.value is value), None)
         return next((item for item in self.items if equal(item.value, value)), None)
 
     def find_by_id(self, identifier):
