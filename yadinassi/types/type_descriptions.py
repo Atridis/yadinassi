@@ -398,6 +398,8 @@ class BSLTypeDescription(BSLObject):
             raise TypeError("СодержитТип: ожидается значение Тип")
         return kind in self.types
 
+    _bsl_value_containstype = _bsl_proc_containstype = contains_type
+
     def _adjust_bsl_value(self, value=_OMITTED):
         # The emitter keeps whole numbers as ints; typed BSL values use Decimal.
         if type(value) is int:

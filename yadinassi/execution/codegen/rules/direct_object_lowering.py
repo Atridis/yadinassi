@@ -50,6 +50,7 @@ _ALIASES = {
     'очистить': 'clear', 'получить': 'get', 'установить': 'set',
     'получитьгруппы': 'getgroups',
     'привестизначение': 'adjustvalue', 'скопироватьколонки': 'copycolumns',
+    'содержиттип': 'containstype',
     'заполнитьзначения': 'fillvalues', 'загрузитьколонку': 'loadcolumn', 'свернуть': 'groupby',
     'установитьстроку': 'setstring', 'закрыть': 'close',
     'записатьначаломассива': 'writestartarray', 'записатьконецмассива': 'writeendarray',

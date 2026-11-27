@@ -408,6 +408,16 @@ class DescriptionAdjustmentTests(unittest.TestCase):
 
 
 class DescriptionRuntimeTests(unittest.TestCase):
+    def test_direct_contains_type_uses_the_descriptor_contract(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('D=New TypeDescription("String,Number"); '
+                   'Present=D.ContainsType(Type("Number")); Missing=D.СодержитТип(Тип("Дата"));')
+        self.assertIs(vm.variables['present'], True)
+        self.assertIs(vm.variables['missing'], False)
+        with self.assertRaises(BSLError):
+            vm.execute('R=D.ContainsType("Number");')
+
     def test_direct_adjust_value_preserves_whole_number_and_omission(self):
         vm = Interpreter()
         vm.execute('D = New TypeDescription("String", , New StringQualifiers(4, AllowedLength.Fixed));')

@@ -594,6 +594,8 @@ class BSLArray(_ArrayBase):
     def add(self, value: object = None) -> None:
         self.items.append(value)
 
+    _bsl_proc_add = add
+
     def _bsl_proc_clear(self) -> None:
         self.items.clear()
 
