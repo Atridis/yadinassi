@@ -102,6 +102,22 @@ class FileIOTests(unittest.TestCase):
         for bad in (D(-1), D('NaN'), D('.5'), True):
             with self.assertRaises(TypeError): r.read(bad)
 
+    def test_reader_bsl_integer_size_and_non_integral_rejection(self):
+        self.path.write_bytes(b'abc')
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.variables['path'] = str(self.path)
+        for prepared in (False, True):
+            vm.execute('R = New TextReader(Path, "UTF-8");')
+            run = (lambda source: vm.execute_prepared(vm.prepare(source))) if prepared else vm.execute
+            self.assertEqual(run('R.Read(0)'), '')
+            for bad in ('True', '-1', '0.5'):
+                with self.subTest(prepared=prepared, size=bad), self.assertRaises(BSLError):
+                    run(f'R.Read({bad})')
+            self.assertEqual(run('R.Read(1)'), 'a')
+            self.assertEqual(run('R.Read(9999999999999999999999999999999)'), 'bc')
+            self.assertIsNone(run('R.Read(1)'))
+
     def test_failed_open_preserves_previous_reader(self):
         self.path.write_bytes(b'abc'); r=f.BSLTextReader(str(self.path),'UTF-8')
         with self.assertRaises(ValueError): r.open(str(self.root/'absent'))

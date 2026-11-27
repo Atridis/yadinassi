@@ -324,9 +324,11 @@ class BSLTextReader(_FileMethods):
         # !todo Native partial reads at a UTF-16 surrogate boundary; current
         # Python slicing preserves scalar characters rather than splitting one.
         self._require_open()
-        if size is not None and (type(size) is not Decimal or not size.is_finite()
-                                or size != size.to_integral_value() or size < 0):
-            raise TypeError("ЧтениеТекста: ожидается целое неотрицательное число")
+        if size is not None:
+            kind = type(size)
+            if ((kind is not int and (kind is not Decimal or not size.is_finite()
+                                      or size != size.to_integral_value())) or size < 0):
+                raise TypeError("ЧтениеТекста: ожидается целое неотрицательное число")
         if self._position == len(self._text): return None
         end = len(self._text) if size is None else self._position + int(min(size, MAX_BYTES))
         value = self._text[self._position:end]; self._position += len(value)

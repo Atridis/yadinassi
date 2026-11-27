@@ -17,9 +17,11 @@ class BSLDeflation(BSLObject):
 
     def __init__(self, degree=None):
         if degree is None:
-            degree = Decimal(-1)
-        if (type(degree) is not Decimal or not degree.is_finite()
-                or degree < -1 or degree > 9 or degree != degree.to_integral_value()):
+            degree = -1
+        kind = type(degree)
+        if ((kind is not int and (kind is not Decimal or not degree.is_finite()
+                                  or degree != degree.to_integral_value()))
+                or not -1 <= degree <= 9):
             raise ValueError('СжатиеДанных: ожидается целая степень от -1 до 9')
         object.__setattr__(self, '_degree', int(degree))
 

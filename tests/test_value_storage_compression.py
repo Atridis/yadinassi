@@ -52,12 +52,16 @@ class ValueStorageCompressionTests(unittest.TestCase):
         self.assertEqual(compression_degree(None), 0)
         for level in range(-1, 10):
             with self.subTest(level=level):
-                settings = BSLDeflation(D(level))
-                self.assertEqual(compression_degree(settings), level)
-                self.assertEqual(BSLValueStorage('text', settings).get(), 'text')
+                for numeric in (level, D(level)):
+                    settings = BSLDeflation(numeric)
+                    self.assertEqual(compression_degree(settings), level)
+                    self.assertEqual(BSLValueStorage('text', settings).get(), 'text')
 
     def test_invalid_settings_and_levels(self):
-        for value in (True, False, 1, '9', D('-2'), D('10'), D('0.5'),
+        class ForeignInt(int):
+            pass
+
+        for value in (True, False, -2, 10, ForeignInt(1), '9', D('-2'), D('10'), D('0.5'),
                       D('NaN'), D('Infinity'), D('1e100000')):
             with self.subTest(kind=type(value).__name__), self.assertRaises(ValueError):
                 BSLDeflation(value)
