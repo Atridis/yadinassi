@@ -151,6 +151,20 @@ def concatenate(left, right):
 
 
 
+def equal_arrays(left, right):
+    # An exact list is the current BSL Array storage. Native Array equality
+    # compares identity, not contents, including arrays with equal elements.
+    if type(left) is list and type(right) is list:
+        return left is right
+    return left == right
+
+
+def unequal_arrays(left, right):
+    if type(left) is list and type(right) is list:
+        return left is not right
+    return left != right
+
+
 # Only the exact string pair changes how Python orders the operands.
 def less(left, right):
     if type(left) is str and type(right) is str:

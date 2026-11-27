@@ -59,6 +59,10 @@ def binary(operator, left, right):
                 getattr(left, 'bsl_utf16_units', False)
                 or type(left.func) is p.Name and left.func.id == '_String')):
         return call('_String', left, right)
+    # test_python_direct_array_equality: a pair of lists only exists when
+    # neither emitted operand is a Python literal. Keep literal sites direct.
+    if operator in ('=', '<>') and not any(type(value) is p.Constant for value in (left, right)):
+        return call('_EqualArrays' if operator == '=' else '_UnequalArrays', left, right)
     if operator in _ORDER and not any(
             type(value) is p.Constant and type(value.value) is not str
             for value in (left, right)):

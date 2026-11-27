@@ -29,8 +29,8 @@ from .direct_boundaries import BoundaryViolation, _MISSING as _SERVICE_MISSING
 from yadinassi.execution.direct.python_direct_eval import bind_eval
 from yadinassi.execution.direct.python_direct_execute import FragmentScope, execute_fragment
 from yadinassi.types.values import HostFunction, Reference
-from .direct_scalar_semantics import (concatenate, decimal_sign, greater, greater_equal,
-                                      less, less_equal, presentation, truth)
+from .direct_scalar_semantics import (concatenate, decimal_sign, equal_arrays, greater, greater_equal,
+                                      less, less_equal, presentation, truth, unequal_arrays)
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.execution.direct.python_direct_numbers import _NEGATIVE_ZERO, divide, remainder, public_number
 from yadinassi.execution.direct.python_direct_dynamic_new import construct
@@ -75,6 +75,7 @@ def nonconstructible(key, missing=False):
     raise TypeError('Тип нельзя создать оператором Новый: '+key)
 _OP = dict(_Truth=truth, _PublicNumber=public_number, _Divide=divide, _Remainder=remainder, _DecimalSign=decimal_sign,
            _IntegerType=int, _NegativeZero=_NEGATIVE_ZERO,
+           _EqualArrays=equal_arrays, _UnequalArrays=unequal_arrays,
            _Less=less, _LessEqual=less_equal, _Greater=greater, _GreaterEqual=greater_equal, _ValueType=type,
            _AdvanceFor=direct_flow_lowering.advance_for_counter, _GotoTransfer=direct_goto.GotoTransfer,_String=concatenate, _Missing=_MISSING, _OmittedRef=_OMITTED_REF, _ServiceMissing=_SERVICE_MISSING, _Unset=UNSET, _Map=PlainMap, _Nonconstructible=nonconstructible, _SelfRead=self_read, _SelfWrite=self_write, _SelfRef=self_reference,
            _Recoverable=(ArithmeticError,TypeError,ValueError,IndexError,NameError,RecursionError,BSLRuntimeError),
