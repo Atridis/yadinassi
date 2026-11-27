@@ -2,7 +2,7 @@ import ast
 from decimal import Decimal
 import unittest
 
-from yadinassi import Interpreter
+from yadinassi import BSLError, Interpreter
 from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.execution.direct.python_direct_plain_map import PlainMap
 
@@ -46,3 +46,50 @@ class DirectMethodDefaultTests(unittest.TestCase):
         with self.assertRaises(BoundaryViolation):
             vm.execute('R=M.Get(1);')
         self.assertEqual(seen, [])
+
+
+    def test_fixed_array_read_methods_do_not_bind_instance_attributes(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('A=New Array;A.Add(9);F=New FixedArray(A);A.Set(0,3);')
+        self.assertEqual(vm.execute('F.Count()+F.UBound()+F.Get(0)'), Decimal(10))
+        with self.assertRaisesRegex(BSLError, 'целое число'):
+            vm.execute('F.Get(0.5);')
+        with self.assertRaises(BSLError):
+            vm.execute('F.Add(7);')
+
+        seen = []
+        vm.variables['f']._bsl_value_count = lambda: seen.append(True)
+        with self.assertRaises(BoundaryViolation):
+            vm.execute('R=F.Count();')
+        self.assertEqual(seen, [])
+
+
+    def test_fixed_structure_property_preserves_output_semantics(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('S=New FixedStructure("Name",9); X=0; Y=99; '
+                   'R=S.Property(" NAME ",X); N=S.Count(); U=S.Property("missing",Y);')
+        self.assertEqual(tuple(vm.variables[k] for k in ('x','r','n','u','y')),
+                         (Decimal(9), True, Decimal(1), False, None))
+
+    def test_codec_collections_keep_boxed_types_and_direct_count(self):
+        from yadinassi.collections.maps import BSLMap
+        from yadinassi.collections.structures import BSLStructure
+        from yadinassi.types.values import BSLArray
+
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute("""
+A=New Array; A.Add(1); A.Add(2);
+S=New Structure("Name",3);
+M=New Map; M.Insert("key",4);
+RA=ValueFromStringInternal(ValueToStringInternal(A));
+RS=ValueFromStringInternal(ValueToStringInternal(S));
+RM=ValueFromStringInternal(ValueToStringInternal(M));
+N=RA.Count()+RS.Count()+RM.Count();
+""")
+        self.assertIs(type(vm.variables['ra']), BSLArray)
+        self.assertIs(type(vm.variables['rs']), BSLStructure)
+        self.assertIs(type(vm.variables['rm']), BSLMap)
+        self.assertEqual(vm.variables['n'], Decimal(4))

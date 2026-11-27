@@ -362,6 +362,25 @@ from types import MappingProxyType
 from yadinassi.collections.structures import BSLKeyAndValue
 from yadinassi.types.values import HostFunction
 
+class BoxedMapMethods(DirectMethodNames):
+    """Count directly on a canonical codec-produced map's dictionary."""
+    __slots__ = ('items',)
+
+    def __init__(self, value, kind):
+        state = _MAP_STATE.__get__(value, kind)
+        if (type(state) is not dict or len(state) != 2
+                or any(type(key) is not str for key in state)
+                or '_version' not in state or type(state.get('_items')) is not dict):
+            raise BoundaryViolation('boxed map method storage changed')
+        self.items = state['_items']
+
+    def _bsl_value_count(self):
+        return Decimal(dict.__len__(self.items))
+
+    _bsl_proc_count = _bsl_value_count
+
+
+
 class PlainFixedMap(DirectMethodNames):
     """Read-only shallow snapshot with the source's direct key semantics."""
     __slots__=('_items','_snapshot','_identity_keys')

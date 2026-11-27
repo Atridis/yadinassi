@@ -3,6 +3,10 @@
 Only spelling/value and composition version are retained. Static dot access can
 use already-folded keys; dynamic key operations validate only their own key.
 """
+from decimal import Decimal
+
+from .direct_boundaries import BoundaryViolation
+from yadinassi.types.values import Reference
 from yadinassi.types.direct_method_names import DirectMethodNames
 from yadinassi.text.strings import _WHITESPACE
 from yadinassi.collections.structures import BSLKeyAndValue, _DIRECT_FIXED_STRUCTURE_SNAPSHOT
@@ -34,6 +38,40 @@ class _DirectStructure(dict, DirectMethodNames):
     _bsl_proc_count = _bsl_value_count = dict.__len__
     _bsl_proc_property = _bsl_value_property = property
 
+
+
+class BoxedStructureMethods(DirectMethodNames):
+    __slots__ = ('items',)
+
+    def __init__(self, value, kind):
+        state = _FIXED_STORAGE.__get__(value, kind)
+        if (type(state) is not dict or len(state) != 2
+                or any(type(key) is not str for key in state)
+                or '_version' not in state or type(state.get('_items')) is not dict):
+            raise BoundaryViolation('boxed structure method storage changed')
+        self.items = state['_items']
+
+    def _bsl_value_count(self):
+        return Decimal(dict.__len__(self.items))
+
+    _bsl_proc_count = _bsl_value_count
+
+    def _bsl_value_property(self, name, output=None):
+        key = structure_key(name.strip(' ') if type(name) is str else name)
+        # Python can supply a boxed structure with arbitrary dictionary keys.
+        # Do not hash against that storage or invoke its equality hooks.
+        for field, entry in dict.items(self.items):
+            if type(field) is str and field == key:
+                if type(entry) is not tuple or len(entry) != 2:
+                    raise BoundaryViolation('boxed structure property storage changed')
+                if type(output) is Reference:
+                    output.set(entry[1])
+                return True
+        if type(output) is Reference:
+            output.set(None)
+        return False
+
+    _bsl_proc_property = _bsl_value_property
 
 def structure_key(name):
     if type(name) is not str:
