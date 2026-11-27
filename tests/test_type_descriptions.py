@@ -408,6 +408,14 @@ class DescriptionAdjustmentTests(unittest.TestCase):
 
 
 class DescriptionRuntimeTests(unittest.TestCase):
+    def test_direct_adjust_value_preserves_whole_number_and_omission(self):
+        vm = Interpreter()
+        vm.execute('D = New TypeDescription("String", , New StringQualifiers(4, AllowedLength.Fixed));')
+        for method in ("AdjustValue", "ПривестиЗначение"):
+            with self.subTest(method=method):
+                self.assertEqual(vm.execute(f'D.{method}(12)'), "12  ")
+                self.assertEqual(vm.execute(f'D.{method}()'), "    ")
+
     def test_bilingual_runtime_methods_and_immutable_properties(self):
         output = []
         vm = Interpreter(output.append)

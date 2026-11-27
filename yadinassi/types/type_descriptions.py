@@ -406,6 +406,8 @@ class BSLTypeDescription(BSLObject):
             value = Decimal(value)
         return self.adjust_value(value)
 
+    _bsl_value_adjustvalue = _bsl_proc_adjustvalue = _adjust_bsl_value
+
     def adjust_value(self, value=_OMITTED):
         if self._query_reference is not None:
             from yadinassi.db.query.query_reference_tables import description_binding
