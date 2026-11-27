@@ -654,6 +654,12 @@ class BSLFixedArray(_ArrayBase, BSLFixedCollection):
             return index
         return super().checked_index(index, inserting=inserting)
 
+    def _bsl_value_find(self, value: object) -> object:
+        from yadinassi.execution.codegen.direct_scalar_semantics import typed_find
+        return typed_find(self.items, value)
+
+    _bsl_proc_find = _bsl_value_find
+
     _bsl_value_get = _bsl_proc_get = _ArrayBase.get
 
     __getitem__ = _ArrayBase.get

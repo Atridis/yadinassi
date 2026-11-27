@@ -89,9 +89,20 @@ def find_date(items, needle):
 
 
 def typed_find(array, value):
-    if type(array) is not list and type(array) is not _PlainArray:
+    kind = type(array)
+    if kind is tuple:
+        iterate = tuple.__iter__
+    elif kind is list or kind is _PlainArray:
+        iterate = list.__iter__
+    else:
         raise UnsupportedScalarSemantics('typed_find requires a native array')
     value_type = type(value)
+    if value_type is int or value_type is Decimal:
+        for index, item in enumerate(iterate(array)):
+            item_type = type(item)
+            if (item_type is int or item_type is Decimal) and item == value:
+                return Decimal(index)
+        return None
     if value_type is _DATE_TYPE:
         return find_date(array, value)
     if value_type is BSLUUID:
@@ -100,7 +111,7 @@ def typed_find(array, value):
         needle = _UUID_TEXT.__get__(value, BSLUUID)
         if type(needle) is not str:
             raise UnsupportedScalarSemantics('invalid UUID text')
-        for index, item in enumerate(list.__iter__(array)):
+        for index, item in enumerate(iterate(array)):
             if type(item) is BSLUUID:
                 text = _UUID_TEXT.__get__(item, BSLUUID)
                 if type(text) is not str:
@@ -120,7 +131,7 @@ def typed_find(array, value):
         if value_type is mutable or value_type is fixed:
             return find_by_identity(array,value)
         _supported(value)
-    for index, item in enumerate(list.__iter__(array)):
+    for index, item in enumerate(iterate(array)):
         # Different exact types cannot compare equal and need no callback.
         if type(item) is value_type and item == value:
             return Decimal(index)

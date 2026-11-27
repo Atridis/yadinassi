@@ -4,6 +4,7 @@ from yadinassi.execution.codegen.direct_collections import _DIRECT_MAP_ENTRY_TYP
 from yadinassi.execution.codegen.direct_structure import _DirectStructure
 from yadinassi.types.values import _DIRECT_TO_STRING_ABI
 from .python_direct_fixed import PlainFixedMap
+from .python_direct_plain_array import PlainArray
 from .python_direct_plain_map import PlainMap
 
 
@@ -11,7 +12,7 @@ def native_presentation(value):
     # Collections oracle internal.array.present describes a BSL Array,
     # not the repr of the native Python storage underneath it.
     kind = type(value)
-    if kind is list:
+    if kind is list or kind is PlainArray:
         return 'Массив'
     if kind is _DirectStructure:
         return 'Структура'

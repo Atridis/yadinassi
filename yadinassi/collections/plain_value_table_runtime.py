@@ -549,6 +549,9 @@ class BSLCollectionIndexes(BSLObject):
         self.table._search.clear()
         self.table._storage.schema._index_search=None
 
+    _bsl_proc_delete = delete
+    _bsl_proc_clear = clear
+
     def get_method(self,name):return _method(self,name,(
         (('count','количество'),'count',True),(('add','добавить'),'add',True),
         (('delete','удалить'),'delete',False),(('clear','очистить'),'clear',False)))

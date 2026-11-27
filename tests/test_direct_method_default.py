@@ -109,6 +109,50 @@ class DirectMethodDefaultTests(unittest.TestCase):
             vm.execute('R=M.Get(1);')
         self.assertEqual(seen, [])
 
+    def test_array_presentation_uses_the_bsl_type_name(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        source = 'A=New Array; A.Add("x"); R=String(A);'
+        vm.execute(source)
+        self.assertEqual(vm.variables['r'], 'Массив')
+
+    def test_fixed_array_find_accepts_both_python_number_representations(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        source = (
+            'A=New Array; A.Add(True); A.Add(1); A.Add("one"); F=New FixedArray(A);'
+            'I=F.Найти(1.0); J=F.Find("one"); K=F.Find(False);'
+        )
+        plan = vm.prepare(source)
+        self.assertIn('f._bsl_value_find(', plan._plan.generated_source)
+        vm.execute_prepared(plan)
+        self.assertEqual((vm.variables['i'], vm.variables['j'], vm.variables['k']), (1, 2, None))
+
+        class Meta(type):
+            def __eq__(self, other):
+                raise AssertionError("host type equality ran")
+
+        class Foreign(metaclass=Meta):
+            def __eq__(self, other):
+                raise AssertionError("host value equality ran")
+
+        fixed = vm.variables['f']
+        fixed.items = (Foreign(),) + fixed.items
+        self.assertEqual(vm.execute('F.Find(1)'), Decimal(2))
+
+    def test_value_table_index_mutations_are_direct(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        source = (
+            'T=New ValueTable; T.Columns.Add("A"); T.Columns.Add("B"); I=T.Indexes;'
+            'A=I.Add("A"); B=I.Add("B"); I.Удалить(0); C=I.Count();'
+            'I.Delete(B); D=I.Count(); I.Add("A"); I.Очистить(); E=I.Count();'
+        )
+        plan = vm.prepare(source)
+        self.assertIn('i._bsl_proc_delete(0)', plan._plan.generated_source)
+        self.assertIn('i._bsl_proc_clear()', plan._plan.generated_source)
+        vm.execute_prepared(plan)
+        self.assertEqual(tuple(vm.variables[k] for k in ('c', 'd', 'e')), (1, 0, 0))
 
     def test_fixed_array_read_methods_do_not_bind_instance_attributes(self):
         vm = Interpreter()
