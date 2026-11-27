@@ -6,9 +6,10 @@ from .rules import direct_routine_lowering, direct_scalar_lowering, direct_objec
 from .rules import direct_catalog_budget
 from .direct_python_ast import _node, arguments, attr, call, literal, name
 from .rules.direct_reference_lowering import SELF_NAMES
-from .direct_access_runtime import (bsl_iterable, member, metered, owned_index, owned_iterable,
+from .direct_access_runtime import (bsl_iterable, metered, owned_index, owned_iterable,
                                     owned_set_index, owns_property_output, read_bracket, write_bracket)
 from .direct_property_receiver import property_receiver
+from .direct_method_receiver import method_receiver
 from .direct_reference_runtime import (bind_index_reference, cell_actual,
                                        field_reference, fragment_reference, host_reference, indexed_actual,
                                        lexical_reference, member_actual)
@@ -78,7 +79,7 @@ _OP = dict(_Truth=truth, _PublicNumber=public_number, _Divide=divide, _Remainder
            _IntegerType=int, _NegativeZero=_NEGATIVE_ZERO,
            _EqualArrays=equal_arrays, _UnequalArrays=unequal_arrays,
            _Less=less, _LessEqual=less_equal, _Greater=greater, _GreaterEqual=greater_equal, _ValueType=type,
-           _AdvanceFor=direct_flow_lowering.advance_for_counter, _GotoTransfer=direct_goto.GotoTransfer,_String=concatenate, _Missing=_MISSING, _OmittedRef=_OMITTED_REF, _ServiceMissing=_SERVICE_MISSING, _Unset=UNSET, _Map=PlainMap, _Nonconstructible=nonconstructible, _SelfRead=self_read, _SelfWrite=self_write, _SelfRef=self_reference,
+           _AdvanceFor=direct_flow_lowering.advance_for_counter, _GotoTransfer=direct_goto.GotoTransfer,_String=concatenate, _Missing=_MISSING, _OmittedRef=_OMITTED_REF, _ServiceMissing=_SERVICE_MISSING, _Unset=UNSET, _Map=PlainMap, _EmptyArray=PlainArray, _Nonconstructible=nonconstructible, _SelfRead=self_read, _SelfWrite=self_write, _SelfRef=self_reference,
            _Recoverable=(ArithmeticError,TypeError,ValueError,IndexError,NameError,RecursionError,BSLRuntimeError),
            _Handled=handled_error, _Reraise=reraise_handled, _Raise=raise_error,
            _RaiseArity=raise_arity_error, _InvalidCallArity=_argument_count_error,
@@ -99,7 +100,7 @@ def requires_reference(bound,index):
     return test is not None and test(index)
 
 
-_OP.update(_RequiresReference=requires_reference,_OwnedIndex=owned_index,_OwnedSetIndex=owned_set_index,_Metered=metered,_OwnedIterable=owned_iterable,_BSLIterable=bsl_iterable,_Member=member,_PropertyReceiver=property_receiver,_FieldRef=field_reference,_OwnsPropertyOutput=owns_property_output)
+_OP.update(_RequiresReference=requires_reference,_OwnedIndex=owned_index,_OwnedSetIndex=owned_set_index,_Metered=metered,_OwnedIterable=owned_iterable,_BSLIterable=bsl_iterable,_MethodReceiver=method_receiver,_PropertyReceiver=property_receiver,_FieldRef=field_reference,_OwnsPropertyOutput=owns_property_output)
 _OP.update(_WriteBracket=write_bracket,_ReadBracket=read_bracket)
 
 

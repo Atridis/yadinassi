@@ -1,5 +1,4 @@
 """Class and built-in construction rules, separate from ordinary calls."""
-import ast as p
 
 from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.syntax import ast as b
@@ -32,7 +31,7 @@ def lower(self, x, want_value):
             if self.omissions(x.arguments):
                 return call('_InvalidOmissions')
             if not x.arguments:
-                return p.List(elts=[],ctx=p.Load()) if key in ('array','массив') else call('_Map')
+                return call('_EmptyArray') if key in ('array','массив') else call('_Map')
             return call('_Array' if key in ('array','массив') else '_MapFrom',
                         *(self.expr(arg) for arg in x.arguments))
         if key in ('structure','структура'):

@@ -41,13 +41,13 @@ def bounded_array(*dimensions, max_slots=None, max_dimensions=None):
         slots=values._MAX_ARRAY_CONSTRUCTION if max_slots is None else max_slots
         dims=values._MAX_ARRAY_DIMENSIONS if max_dimensions is None else max_dimensions
         if slots<0 or dims<1:raise ValueError('Массив: превышен предел ресурсов Yadinassi')
-        return []
+        return PlainArray()
     if len(dimensions)==1 and type(dimensions[0]) is values.BSLFixedArray:
         return _copy_fixed_array(dimensions[0],max_slots,max_dimensions)
     widths=array_widths(dimensions,max_slots=max_slots,max_dimensions=max_dimensions)
     def create(depth):
-        if depth==len(widths)-1:return [None]*widths[depth]
-        return [create(depth+1) for _ in range(widths[depth])]
+        if depth==len(widths)-1:return PlainArray([None]*widths[depth])
+        return PlainArray(create(depth+1) for _ in range(widths[depth]))
     return create(0)
 
 
@@ -92,7 +92,7 @@ def _copy_fixed_array(source,max_slots,max_dimensions):
     try:check(source,1)
     finally:del check
     def copy(array):
-        return [copy(item) if type(item) is values.BSLFixedArray else item
-                for item in object.__getattribute__(array,'items')]
+        return PlainArray(copy(item) if type(item) is values.BSLFixedArray else item
+                          for item in object.__getattribute__(array,'items'))
     try:return copy(source)
     finally:del copy

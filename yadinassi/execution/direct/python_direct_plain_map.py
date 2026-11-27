@@ -13,6 +13,7 @@ from yadinassi.collections.sort_directions import BSLSortDirection
 from yadinassi.numeric.round_modes import BSLRoundMode
 from yadinassi.temporal.dates import BSLDate, MAX_TICKS, _DIRECT_EQUALITY_DATE_STATE
 from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+from yadinassi.types.direct_method_names import DirectMethodNames
 from yadinassi.types.values import BSLFixedArray, BSLNull, BSLObject, BSLType
 from yadinassi.types.unique_identifiers import BSLUUID, _CANONICAL as _UUID_TEXT_PATTERN
 from yadinassi.types.type_descriptions import BSLTypeDescription, _ORDER, _MAX_NUMBER_DIGITS, _MAX_STRING_UNITS
@@ -195,7 +196,7 @@ class _PlainMapItems(ItemsView):
         return stored is not _MISSING and (stored is value or stored == value)
 
 
-class PlainMap(dict):
+class PlainMap(dict, DirectMethodNames):
     """Native storage with a separate Boolean key domain.
 
     Normal mapping iteration/views expose logical keys. Unbound dict methods
@@ -318,6 +319,17 @@ class PlainMap(dict):
         if self:
             dict.clear(self)
             self._removals+=1
+
+    def _bsl_proc_insert(self,key,value=None):
+        self[key] = value
+
+    def _bsl_proc_get(self,key):
+        return self.get(key)
+
+    _bsl_value_get = _bsl_proc_get
+    _bsl_proc_delete = __delitem__
+    _bsl_proc_clear = clear
+    _bsl_proc_count = _bsl_value_count = dict.__len__
 
     def __contains__(self,key):
         if id(type(key)) not in _KEY_TYPE_IDS:key=_admit_extended_key(key)
