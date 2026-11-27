@@ -8,6 +8,32 @@ from yadinassi.execution.direct.python_direct_plain_map import PlainMap
 
 
 class DirectMethodDefaultTests(unittest.TestCase):
+    def test_unsupported_direct_method_is_recoverable_without_running_actuals(self):
+        events = []
+        vm = Interpreter(events.append)
+        self.addCleanup(vm.close)
+        vm.execute('Function SideEffect() Message("argument"); Return 1; EndFunction')
+        source = 'Chars.LF(SideEffect());'
+        with self.assertRaises(BSLError):
+            vm.execute(source)
+        vm.execute('Try '+source+' Except Message("caught"); EndTry;')
+        self.assertEqual(events, ["caught"])
+
+    def test_attribute_error_inside_a_method_is_not_a_missing_direct_method(self):
+        from unittest.mock import patch
+
+        events = []
+        vm = Interpreter(events.append)
+        self.addCleanup(vm.close)
+        fault = AttributeError("implementation bug", name="_bsl_value_fake")
+        with patch("yadinassi.formats.xml.xml_processing.delete_disallowed_xml_characters",
+                   side_effect=fault):
+            with self.assertRaises(AttributeError) as raised:
+                vm.execute('Try X=XMLStringProcessing.DeleteDisallowedXMLCharacters("x"); '
+                           'Except Message("should not recover"); EndTry;')
+        self.assertIs(raised.exception, fault)
+        self.assertEqual(events, [])
+
     def test_ordinary_calls_emit_python_methods_not_a_resolver(self):
         vm = Interpreter()
         self.addCleanup(vm.close)

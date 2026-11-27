@@ -79,7 +79,7 @@ _OP = dict(_Truth=truth, _PublicNumber=public_number, _Divide=divide, _Remainder
            _EqualArrays=equal_arrays, _UnequalArrays=unequal_arrays,
            _Less=less, _LessEqual=less_equal, _Greater=greater, _GreaterEqual=greater_equal, _ValueType=type,
            _AdvanceFor=direct_flow_lowering.advance_for_counter, _GotoTransfer=direct_goto.GotoTransfer,_String=concatenate, _Missing=_MISSING, _OmittedRef=_OMITTED_REF, _ServiceMissing=_SERVICE_MISSING, _Unset=UNSET, _Map=PlainMap, _EmptyArray=PlainArray, _Nonconstructible=nonconstructible, _SelfRead=self_read, _SelfWrite=self_write, _SelfRef=self_reference,
-           _Recoverable=(ArithmeticError,TypeError,ValueError,IndexError,NameError,RecursionError,BSLRuntimeError),
+           _Recoverable=(ArithmeticError,TypeError,AttributeError,ValueError,IndexError,NameError,RecursionError,BSLRuntimeError),
            _Handled=handled_error, _Reraise=reraise_handled, _Raise=raise_error,
            _RaiseArity=raise_arity_error, _InvalidCallArity=_argument_count_error,
            _ProcedureValue=procedure_value_error, _Presentation=presentation,

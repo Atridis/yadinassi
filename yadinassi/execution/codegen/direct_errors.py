@@ -98,12 +98,32 @@ def _unbound_local_name(trace):
     return None
 
 
+def _missing_direct_method(error, filename):
+    # Only a native method lookup in emitted code, not an AttributeError raised
+    # by a method or embedding callback. This runs only after the lookup fails.
+    member = error.name
+    if type(member) is not str or not member.startswith(('_bsl_value_', '_bsl_proc_')):
+        return False
+    trace = error.__traceback__
+    if trace is None:
+        return False
+    while trace.tb_next is not None:
+        trace = trace.tb_next
+    code = trace.tb_frame.f_code
+    if code.co_filename not in (filename, '<Вычислить>', '<Выполнить>'):
+        return False
+    from dis import get_instructions
+    return any(step.offset == trace.tb_lasti and step.opname in ('LOAD_ATTR', 'LOAD_METHOD')
+               and step.argval == member for step in get_instructions(code))
+
+
 def convert_error(error,filename,source,*,_context=None):
     """Convert only recoverable runtime errors, preserving nonrecoverable boundaries."""
     if (getattr(_context,'_async_scheduler',None) is not None
             and _context._async_scheduler.active_context.host_failure is error):
         return error
-    if isinstance(error,BSLError) or not isinstance(error,(ArithmeticError,ValueError,TypeError,IndexError,NameError,RecursionError)):
+    missing_method = type(error) is AttributeError and _missing_direct_method(error,filename)
+    if not missing_method and (isinstance(error,BSLError) or not isinstance(error,(ArithmeticError,ValueError,TypeError,IndexError,NameError,RecursionError))):
         return error
     chosen=_source_frame(error,filename)
     if chosen is None:return error
@@ -133,7 +153,8 @@ def convert_error(error,filename,source,*,_context=None):
         lines=source.splitlines() if locations is None else locations.for_source(source)
         source_line=lines[line-1] if 0<line<=len(lines) else ''
     message=str(error) or type(error).__name__
-    if isinstance(error,(ZeroDivisionError,DivisionByZero)):message='Деление на ноль'
+    if missing_method:message='Метод объекта не обнаружен: '+error.name.split('_',3)[-1]
+    elif isinstance(error,(ZeroDivisionError,DivisionByZero)):message='Деление на ноль'
     elif type(error) is NameError and chosen.tb_next is None and type(error.name) is str:
         message=_missing_message(_context,error.name,source_line,column)
     elif isinstance(error,UnboundLocalError):
@@ -159,6 +180,9 @@ def handled_error(context,error,filename,source):
     """Activation-local diagnostics; nested handlers discard stale outer details."""
     scheduler=getattr(context,'_async_scheduler',None)
     if scheduler is not None and scheduler.active_context.host_failure is error:raise error
+    if isinstance(error, AttributeError) and (type(error) is not AttributeError
+            or not _missing_direct_method(error, filename)):
+        raise error
     if (isinstance(error,UnboundLocalError)
             and _unbound_local_name(_source_frame(error,filename)) is None):
         raise error
