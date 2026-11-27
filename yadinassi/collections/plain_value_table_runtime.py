@@ -174,9 +174,11 @@ class BSLValueTableColumnCollection(BSLObject):
         column._deleted=True
         column._name, column.title, column.width = '', '', Decimal(0)
         column.value_type = BSLTypeDescription()
+    _bsl_proc_delete = delete
     def clear(self):
         for column in tuple(self._items):self.delete(column)
         self.table.clear()
+    _bsl_proc_clear = clear
     def count(self):return Decimal(len(self._items))
     _bsl_value_count = _bsl_proc_count = count
     def _index_of(self,column):return next((i for i,c in enumerate(self._items) if c is column),-1)
@@ -211,6 +213,7 @@ class BSLValueTableColumnCollection(BSLObject):
         self._items.insert(position,column)
         indexes._replace_signatures(bindings)
         return column
+    _bsl_value_insert = _bsl_proc_insert = insert
     def move(self,column,offset):
         table=self.table
         if type(table) is not BSLValueTable:raise ValueError('foreign table')
@@ -254,6 +257,7 @@ class BSLValueTableColumnCollection(BSLObject):
         storage.move_column(old,new)
         self._items.insert(new,self._items.pop(old))
         indexes._replace_signatures(bindings)
+    _bsl_proc_move = move
     def get_member(self,name):
         if type(self.table) is not BSLValueTable:raise ValueError('noncanonical value table owner')
         return self.get_index(name)
@@ -601,6 +605,7 @@ class BSLValueTable(BSLObject):
     def clear(self):
         _writable(self);self._storage.clear()
         if self._search.declarations:self._search.reordered()
+    _bsl_proc_clear = clear
     def move(self,row,offset):
         _writable(self)
         if type(offset) is int:distance=offset
