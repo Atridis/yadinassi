@@ -822,6 +822,7 @@ class BSLValueTable(BSLObject):
             return self.indexes
         return super().get_member(name)
     __getitem__ = get_member
+    __setitem__ = BSLObject.set_member
     def get_method(self,name):
         if self._bounded_slice_read and name.casefold() not in (
                 'count','количество','get','получить','indexof','индекс','findrows','найтистроки'):

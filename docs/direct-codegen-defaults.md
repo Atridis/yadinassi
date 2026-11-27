@@ -118,3 +118,8 @@ column operations, including schema qualification, slice restrictions and
 index updates. A fixed structure reuses its read-only lookup. These admissions
 do not authorize property operations in a verified crossing or Python extension
 context; those require their own boundary contracts.
+
+ValueTree property storage checks the addressed object's provenance and keeps
+its own row, column, and cleared-state semantics; it does not call generic
+member dispatch. For native read-only objects an attempted write uses the
+object's normal catchable error, not a failed access-authority check.

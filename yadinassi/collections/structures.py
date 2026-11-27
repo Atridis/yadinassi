@@ -33,6 +33,7 @@ class BSLKeyAndValue(BSLObject):
         return super().get_member(name)
 
     __getitem__ = get_member
+    __setitem__ = BSLObject.set_member
 
 
 class _StructureBase(BSLObject):

@@ -516,6 +516,47 @@ def _structural_member(boundary,value,kind,key,name):
     return cells[_named_column(root,column_data['items'],name)]
 
 
+def read_tree_property(boundary, value, name):
+    kind=type(value);key=name.casefold()
+    if (kind is _ROW or kind is _TREE and key in ('rows','строки','columns','колонки')
+            or kind is _COLUMN and key in _COLUMN_FIELDS) and _ordinary_read(boundary):
+        result=_structural_member(boundary,value,kind,key,name)
+        if result is not _READ_UNAVAILABLE:return result
+    root=check(boundary,value)
+    structural=(
+        kind is _TREE and key in ('rows','строки','columns','колонки')
+        or kind is _ROW and key in ('rows','строки','parent','родитель')
+        or kind is _ROWS and key in ('parent','родитель')
+    )
+    if not structural:columns(root)
+    try:return value.get_member(name)
+    finally:
+        if getattr(boundary,'_verify_context',True) is not False:boundary._check()
+
+
+class TreeProperties:
+    """Property storage for one admitted ValueTree receiver, not member resolution."""
+    __slots__ = ('boundary', 'receiver', 'epoch')
+
+    def __init__(self, boundary, receiver, *, write):
+        self.boundary = boundary
+        self.receiver = receiver
+        self.epoch = boundary._value_tree_epoch
+        if write:
+            check(boundary, receiver)
+
+    def __getitem__(self, name):
+        return read_tree_property(self.boundary, self.receiver, name)
+
+    def __setitem__(self, name, new_value):
+        boundary, value = self.boundary, self.receiver
+        if boundary._value_tree_epoch is not self.epoch:
+            raise BoundaryViolation('ValueTree activation expired')
+        root = check(boundary, value)
+        columns(root)
+        value.set_member(name, new_value)
+
+
 def _positional_read(boundary,value,kind,key,name):
     boundary._check_effect()
     subscript=key=='__getitem__'
@@ -753,21 +794,7 @@ class ValueTreeBoundary:
 
     def get_member(self,value,name):
         if not owns(value):return super().get_member(value,name)
-        kind=type(value);key=name.casefold()
-        if (kind is _ROW or kind is _TREE and key in ('rows','строки','columns','колонки')
-                or kind is _COLUMN and key in _COLUMN_FIELDS) and _ordinary_read(self):
-            result=_structural_member(self,value,kind,key,name)
-            if result is not _READ_UNAVAILABLE:return result
-        root=check(self,value)
-        structural=(
-            kind is _TREE and key in ('rows','строки','columns','колонки')
-            or kind is _ROW and key in ('rows','строки','parent','родитель')
-            or kind is _ROWS and key in ('parent','родитель')
-        )
-        if not structural:columns(root)
-        try:return value.get_member(name)
-        finally:
-            if getattr(self,'_verify_context',True) is not False:self._check()
+        return read_tree_property(self,value,name)
 
     def resolve_set_member(self,value,name):
         if not owns(value):return super().resolve_set_member(value,name)

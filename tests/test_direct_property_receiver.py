@@ -68,3 +68,31 @@ class DirectPropertyTests(unittest.TestCase):
             with self.assertRaises(BSLError):
                 vm.execute('R.Amount=9;')
             self.assertEqual(vm.variables['r'].get_member('Amount'), Decimal('5.7'))
+
+    def test_readonly_pair_and_fixed_structure_reject_writes_in_except(self):
+        with closing(Interpreter()) as vm:
+            vm.execute('''S=New Structure("Amount",5);F=New FixedStructure(S);
+                          For Each Pair In S Do
+                              Try Pair.Value=8;Except PairRejected=True;EndTry;
+                              PairAmount=Pair.Value;
+                          EndDo;
+                          Try F.Amount=8;Except FixedRejected=True;EndTry;
+                          FixedAmount=F.Amount;''')
+            self.assertTrue(vm.variables['pairrejected'])
+            self.assertTrue(vm.variables['fixedrejected'])
+            self.assertEqual((vm.variables['pairamount'], vm.variables['fixedamount']), (5, 5))
+
+    def test_value_tree_named_properties_preserve_structure_and_cell_types(self):
+        with closing(Interpreter()) as vm:
+            vm.execute('''T=New ValueTree;
+                          T.Columns.Add("Amount",New TypeDescription("Number",New NumberQualifiers(5,1)));
+                          R=T.Rows.Add();C=R.Rows.Add();C.Amount=2.34;
+                          Parent=C.Parent;Amount=C.Amount;Indexed=C[0];
+                          Try C.Parent=Undefined;Except ParentRejected=True;EndTry;
+                          R.Rows.Delete(C);
+                          Try Deleted=C.Amount;Except DeletedRejected=True;EndTry;''')
+            self.assertIs(vm.variables['parent'], vm.variables['r'])
+            self.assertTrue(vm.variables['parentrejected'])
+            self.assertTrue(vm.variables['deletedrejected'])
+            self.assertEqual((vm.variables['amount'], vm.variables['indexed']),
+                             (Decimal('2.3'), Decimal('2.3')))
