@@ -14,6 +14,24 @@ class PlainMapTests(unittest.TestCase):
                 self.assertIs(type(vm.variables['m']),PlainMap)
                 self.assertEqual(vm.variables['r'],Decimal(28));self.assertIsNone(vm.variables['missing'])
             finally:vm.close()
+    def test_bsl_get_preserves_native_integers_until_the_python_boundary(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('M=New Map; For I=0 To 7 Do M.Insert(I,I); EndDo; '
+                   'M.Insert("fraction",1.25); M.Insert(True,"bool");')
+        mapping = vm.variables['m']
+        self.assertIs(type(mapping._bsl_value_get(1)), int)
+        self.assertIs(type(mapping.get(1)), Decimal)
+        plan = vm.prepare('R=0; For I=0 To 7 Do R=R+M.Get(I); EndDo;')
+        self.assertIn('m._bsl_value_get(i)', plan._plan.generated_source)
+        vm.execute_prepared(plan)
+        self.assertIs(type(vm.variables['r']), Decimal)
+        self.assertEqual(vm.variables['r'], 28)
+        self.assertIs(type(vm.execute('M.Get(1)')), Decimal)
+        self.assertEqual(vm.execute('M.Get("fraction")'), Decimal("1.25"))
+        self.assertEqual(vm.execute('M.Get(True)'), "bool")
+        self.assertIsNone(vm.execute('M.Get("absent")'))
+
     def test_iteration_order_and_dynamic_constructor(self):
         vm=Interpreter()
         try:

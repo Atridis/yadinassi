@@ -324,7 +324,10 @@ class PlainMap(dict, DirectMethodNames):
         self[key] = value
 
     def _bsl_proc_get(self,key):
-        return self.get(key)
+        # Generated BSL keeps integers native; Python get() still normalizes.
+        if id(type(key)) not in _KEY_TYPE_IDS:
+            key = _admit_extended_key(key)
+        return dict.get(self,key)
 
     _bsl_value_get = _bsl_proc_get
     _bsl_proc_delete = __delitem__
