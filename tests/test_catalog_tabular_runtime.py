@@ -109,7 +109,8 @@ Message(O.Lines.Count()); Message(O.Lines[0].Text);'''),
         unused, unused_section, row = self.new_row()
         row.set_member('Text', 'keep')
         row.set_member('Amount', Decimal('1.25'))
-        for name, value in [('Text', Decimal(1)), ('Amount', True), ('Amount', 1),
+        class ForeignInteger(int): pass
+        for name, value in [('Text', Decimal(1)), ('Amount', True), ('Amount', ForeignInteger(1)),
                             ('Amount', Decimal('NaN')), ('Amount', Decimal('Infinity')),
                             ('Active', Decimal(1)), ('Stamp', '2024-01-01'),
                             ('Category', None), ('Missing', 'bad')]:

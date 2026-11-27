@@ -143,6 +143,7 @@ class BSLCatalogManager(BSLObject):
         if field.kind=='enum_ref':
             from yadinassi.configuration.demos.inventory_enum_runtime import binding
             return binding(self._catalogs._metadata._root,detached=True).assigned(value,field.target_enum_id,detached=True)
+        if field.kind=='number' and type(value) is int:value=Decimal(value)
         self._stored(field,value)
         return normalize_field(value,field)
     def _defaults(self,ref=None):

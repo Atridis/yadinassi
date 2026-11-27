@@ -238,6 +238,7 @@ class EnumStorageBinding:
         if type(value) is str:
             if len(value)>4096:raise BackendError('invalid_input')
             return target[7][0]
+        if type(value) is int:value=Decimal(value)
         if type(value) is Decimal:
             try:bound_number(value)
             except (ValueError,TypeError):raise BackendError('invalid_input') from None

@@ -64,9 +64,6 @@ from yadinassi.types.type_qualifiers import (BSLNumberQualifiers, BSLStringQuali
 
 DATABASE_ROOT_NAMES=('catalogs','справочники','documents','документы',
                      'informationregisters','регистрысведений')
-_TYPED_DB_WRITERS=frozenset(map(id,(BSLCatalogObject,BSLCatalogSectionRow,BSLDocumentObject,
-    BSLDocumentLine,BSLInformationRegisterRecordManager,BSLInformationRegisterRecord,
-    _RegisterFilterItem,BSLAccumulationRow)))
 METADATA_NAMES=('metadata','метаданные')
 NAMES=(*METADATA_NAMES,*DATABASE_ROOT_NAMES,'enums','перечисления','documentwritemode','режимзаписидокумента','accumulationrecordtype','виддвижениянакопления')
 
@@ -351,10 +348,9 @@ class CatalogBoundary:
             raise ValueError('Свойство недоступно для записи: '+name)
         verify=_verify_collection(self,value)
         self._catalog_owner(value,verify=verify)
-        typed_db_writer=id(type(value)) in _TYPED_DB_WRITERS
         def write(new_value):
             self._catalog_owner(value,verify=verify)
-            try:value.set_member(name,public_number(new_value) if typed_db_writer else new_value)
+            try:value.set_member(name,new_value)
             finally:
                 if verify:self._check_effect()
         return write

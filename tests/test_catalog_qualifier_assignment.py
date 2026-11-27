@@ -178,6 +178,21 @@ class RuntimeQualifierTests(unittest.TestCase):
         self.assertEqual(saved.get_member('Lines').get(Decimal(0)).get_member('Amount'), Decimal('-1.25'))
         self.assertEqual(self.context.backend.export_configuration(), self.files)
 
+    def test_numeric_fields_accept_native_integer_without_dispatcher(self):
+        for receiver, value, expected in ((self.obj, 23, '23.00'),
+                                          (self.row, -1000, '-999.99')):
+            with self.subTest(receiver=type(receiver).__name__):
+                receiver.set_member('Amount', Decimal(value))
+                reference = receiver.get_member('Amount')
+                receiver.set_member('Amount', value)
+                result = receiver.get_member('Amount')
+                self.assertIs(type(result), Decimal)
+                self.assertEqual(result, Decimal(expected))
+                self.assertEqual(result.as_tuple(), reference.as_tuple())
+                with self.assertRaises(TypeError):
+                    receiver.set_member('Amount', True)
+                self.assertEqual(receiver.get_member('Amount'), result)
+
     def test_bad_assignments_preserve_values_bytes_dirty_revision_and_operation(self):
         self.row.set_member('Text', 'old'); self.obj.write()
         for target, name, value in [(self.obj, 'Code', 'ab😀'), (self.obj, 'Description', 'ab😀'),

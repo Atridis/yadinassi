@@ -66,3 +66,39 @@ External member admission, callback effects, database ownership and
 client/server isolation are execution boundaries, not a compiler optimization
 heuristic. Ordinary syntax can still be lowered directly inside those
 profiles without bypassing the boundary at a real effect.
+
+### Typed database field assignments
+
+Keep the generated right-hand side unchanged. The shared database field
+assignment accepts an exact Python `int` for a declared Number field and
+converts it to `Decimal` once, before existing precision and range handling.
+An existing `Decimal` is not converted; Boolean is not an integer here.
+Catalogs, documents, their tabular rows, and register fields use the shared
+assignment path. The measured enum-field adjustment treats native integers
+like other numbers and produces the target enum’s empty value, not a numeric
+field value. Keep that rule inside enum assignment, not storage admission.
+Do not reintroduce a receiver-type table or conversion in
+the emitter or the generic property dispatcher. Persisted data validation
+and owner/access checks are unchanged.
+
+Regression witness:
+`RuntimeQualifierTests.test_numeric_fields_accept_native_integer_without_dispatcher`.
+It exercises catalog header and tabular row setters directly, compares
+qualification and Decimal representation with the existing Decimal path, and
+checks that a rejected Boolean does not mutate the field.
+`InventoryEnumRuntimeBindingTests.test_measured_adjustment_across_catalog_header_line_and_movements`
+checks the separate enum assignment rule.
+
+Local CPython 3.12 measurement: prepared BSL, nine runs of 4,096 assignments
+per case, without database I/O or preparation inside the timed loop.
+Median microseconds per assignment, before → after:
+
+| Field | Catalog header | Tabular row |
+| --- | ---: | ---: |
+| Number from `23` | 15.34 → 15.16 | 20.50 → 19.67 |
+| Number from `23.25` | 15.36 → 15.40 | 20.14 → 19.98 |
+| String from `"abc"` | 12.70 → 12.28 | 15.90 → 16.07 |
+
+Sample ranges overlap. Reversing the two guards did not yield a consistent
+improvement either; the field-local rule is selected for simplicity, not
+a general speedup claim.
