@@ -12,6 +12,7 @@ from yadinassi.execution.direct.python_direct_plain_map import (
     PlainMap, PlainFixedMap, _DIRECT_FIXED_MAP_STORAGE,
 )
 from yadinassi.execution.safe_mode import require_external_access
+from yadinassi.types.direct_method_names import DirectMethodNames
 from yadinassi.types.values import BSLObject, HostFunction, BSLArray, BSLFixedArray
 from yadinassi.collections.structures import BSLStructure, BSLFixedStructure
 from yadinassi.collections.maps import BSLMap, BSLFixedMap
@@ -76,6 +77,9 @@ class BSLJSONValueTypes(BSLObject):
             if name.casefold() in tuple(n.casefold() for n in item.value):
                 return item
         return super().get_member(name)
+
+    __getitem__ = get_member
+    __setitem__ = BSLObject.set_member
 
 
 JSON_VALUE_TYPES = BSLJSONValueTypes()
@@ -147,7 +151,7 @@ def _tokens(value, depth=0):
         yield kind, value
 
 
-class BSLJSONReader(BSLObject):
+class BSLJSONReader(BSLObject, DirectMethodNames):
     # Ordinary XDTO copies its reader. Seed copyreg's cache before the source
     # codec seals this class so that a copy cannot change the class inventory.
     __slotnames__ = []
@@ -233,6 +237,19 @@ class BSLJSONReader(BSLObject):
                 if self._current[0] in (T.START_OBJECT, T.START_ARRAY): depth += 1
                 elif self._current[0] in (T.END_OBJECT, T.END_ARRAY): depth -= 1
         return self.read()
+
+    _bsl_proc_setstring = set_string
+    _bsl_proc_close = close
+    _bsl_value_read = _bsl_proc_read = read
+    _bsl_value_skip = _bsl_proc_skip = skip
+
+    def __getitem__(self, name):
+        if name.casefold() not in ('типтекущегозначения', 'currentvaluetype',
+                                   'текущеезначение', 'currentvalue'):
+            return BSLObject.get_member(self, name)
+        return self.get_member(name)
+
+    __setitem__ = BSLObject.set_member
 
     def get_member(self, name):
         # !todo CurrentLine/CurrentPosition need source-offset tracking; neither
@@ -486,6 +503,9 @@ class BSLJSONLineBreaks(BSLObject):
                 return item
         return super().get_member(name)
 
+    __getitem__ = get_member
+    __setitem__ = BSLObject.set_member
+
 
 JSON_LINE_BREAKS = BSLJSONLineBreaks()
 
@@ -549,7 +569,7 @@ def _layout(text, settings):
     return "".join(result)
 
 
-class BSLJSONWriter(BSLObject):
+class BSLJSONWriter(BSLObject, DirectMethodNames):
     def __init__(self):
         self._active = False
         self._file = None
@@ -718,6 +738,31 @@ class BSLJSONWriter(BSLObject):
         self._active = False
         self._parts = []
         return result
+
+    def _bsl_proc_setstring(self, settings=None):
+        if self._file is not None:
+            raise ValueError("JSON: файловый приёмник требует явного доступа")
+        return self.set_string(settings)
+
+    def _bsl_value_close(self):
+        if self._file is not None:
+            raise ValueError("JSON: файловый приёмник требует явного доступа")
+        return self.close()
+
+    _bsl_proc_close = _bsl_value_close
+    _bsl_proc_writestartarray = write_start_array
+    _bsl_proc_writeendarray = write_end_array
+    _bsl_proc_writestartobject = write_start_object
+    _bsl_proc_writeendobject = write_end_object
+    _bsl_proc_writepropertyname = write_property_name
+    _bsl_proc_writevalue = write_value
+
+    def __getitem__(self, name):
+        if name.casefold() in ("параметры", "settings"):
+            return self._settings
+        return BSLObject.get_member(self, name)
+
+    __setitem__ = BSLObject.set_member
 
     def get_member(self, name):
         if name.casefold() in ("параметры", "settings"):

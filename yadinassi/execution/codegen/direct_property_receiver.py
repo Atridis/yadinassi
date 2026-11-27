@@ -10,6 +10,7 @@ from yadinassi.collections.value_tables import (BSLValueTable, BSLValueTableColu
 
 from yadinassi.collections.search_directions import BSLSearchDirections
 from yadinassi.collections.sort_directions import BSLSortDirections
+from yadinassi.formats.json.json_processing import BSLJSONLineBreaks, BSLJSONValueTypes, BSLJSONReader, BSLJSONWriter
 from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.types.type_qualifiers import (
     BSLAllowedSigns, BSLAllowedLengths, BSLDateFractionsNamespace,
@@ -23,7 +24,8 @@ from .direct_structure import _DirectStructure
 _LOCAL_PROPERTY_TYPES = frozenset(map(id, (
     BSLValueTable, BSLValueTableColumnCollection, BSLValueTableColumn,
     BSLValueTableRow, BSLFixedStructure, BSLStructure, BSLValueListItem,
-    BSLSortDirections, BSLSearchDirections, BSLTypeDescription,
+    BSLSortDirections, BSLSearchDirections, BSLJSONLineBreaks, BSLJSONValueTypes,
+    BSLTypeDescription,
     BSLAllowedSigns, BSLAllowedLengths, BSLDateFractionsNamespace,
     BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers,
 )))
@@ -31,6 +33,12 @@ _LOCAL_PROPERTY_TYPES = frozenset(map(id, (
 def property_receiver(context, value, *, write=False, key=None):
     kind = type(value)
     if kind is _DirectStructure or kind is BSLKeyAndValue:
+        return value
+    if kind is BSLJSONReader or kind is BSLJSONWriter:
+        # The classes expose only passive fields; resource operations and
+        # private Python fields are never part of this property path.
+        if getattr(context, '_verify_context', True):
+            context._check()
         return value
     # These are passive local operations only. Foreign/crossing contexts
     # cannot acquire a new property capability through this admission rule.

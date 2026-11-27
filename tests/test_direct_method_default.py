@@ -42,6 +42,32 @@ class DirectMethodDefaultTests(unittest.TestCase):
         self.assertTrue(vm.execute('Item.Check'))
         self.assertEqual(vm.execute('L.Count()'), Decimal(2))
 
+    def test_json_memory_lifecycle_does_not_open_or_flush_a_file_sink(self):
+        from io import StringIO
+
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        plan = vm.prepare('W=New JSONWriter; W.SetString(New JSONWriterSettings(JSONLineBreak.None)); '
+                          'W.WriteStartArray(); W.WriteValue("ok"); W.WriteEndArray(); '
+                          'Encoded=W.Close(); Reader=New JSONReader; Reader.SetString(Encoded); '
+                          'N=ReadJSON(Reader).Count(); Reader.Close();')
+        self.assertNotIn('_MethodReceiver', plan._plan.generated_source)
+        vm.execute_prepared(plan)
+        self.assertEqual(vm.variables['encoded'], '["ok"]')
+        self.assertEqual(vm.variables['n'], Decimal(1))
+
+        writer = vm.variables['w']
+        writer.set_string()
+        sink = StringIO()
+        writer._file = sink
+        for source in ('W.SetString();', 'Text=W.Close();'):
+            with self.subTest(source=source), self.assertRaises(BSLError):
+                vm.execute(source)
+            self.assertIs(writer._file, sink)
+            self.assertEqual(sink.getvalue(), '')
+        writer._file = None
+        sink.close()
+
     def test_foreign_objects_do_not_run_method_hooks(self):
         seen = []
 

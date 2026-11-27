@@ -48,6 +48,11 @@ def field_assignment(emit, node, value):
 _ALIASES = {
     'количество': 'count', 'вграница': 'ubound', 'добавить': 'add',
     'очистить': 'clear', 'получить': 'get', 'установить': 'set',
+    'установитьстроку': 'setstring', 'закрыть': 'close',
+    'записатьначаломассива': 'writestartarray', 'записатьконецмассива': 'writeendarray',
+    'записатьзначение': 'writevalue', 'прочитать': 'read', 'пропустить': 'skip',
+    'записатьначалообъекта': 'writestartobject', 'записатьконецобъекта': 'writeendobject',
+    'записатьимясвойства': 'writepropertyname',
     'индекс': 'indexof', 'найтипоидентификатору': 'findbyid',
     'найтипозначению': 'findbyvalue', 'получитьидентификатор': 'getid',
     'скопировать': 'copy', 'выгрузитьзначения': 'unloadvalues',

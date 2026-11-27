@@ -63,6 +63,8 @@ class _MapBase(BSLObject):
         item = self._items.get(_key(key))
         return item[1] if item is not None else None
 
+    _bsl_value_get = _bsl_proc_get = get
+
     def set(self, key: object, value: object) -> None:
         raise ValueError("Элементы фиксированного соответствия недоступны для записи")
 
