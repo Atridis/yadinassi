@@ -51,6 +51,7 @@ _ALIASES = {
     'получитьгруппы': 'getgroups',
     'привестизначение': 'adjustvalue', 'скопироватьколонки': 'copycolumns',
     'содержиттип': 'containstype',
+    'удалитьнедопустимыесимволыxml': 'deletedisallowedxmlcharacters',
     'заполнитьзначения': 'fillvalues', 'загрузитьколонку': 'loadcolumn', 'свернуть': 'groupby',
     'установитьстроку': 'setstring', 'закрыть': 'close',
     'записатьначаломассива': 'writestartarray', 'записатьконецмассива': 'writeendarray',

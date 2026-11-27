@@ -63,6 +63,14 @@ class BSLXMLStringProcessingManager(BSLObject):
     def __str__(self) -> str:
         return "МенеджерОбработкиСтрокиXML"
 
+    def _bsl_value_deletedisallowedxmlcharacters(self, text, version="1.0"):
+        if self is not XML_STRING_PROCESSING:
+            from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+            raise BoundaryViolation("unregistered or foreign database receiver")
+        return delete_disallowed_xml_characters(text, version)
+
+    _bsl_proc_deletedisallowedxmlcharacters = _bsl_value_deletedisallowedxmlcharacters
+
     def get_member(self, name: str) -> object:
         if name.casefold() in ("удалитьнедопустимыесимволыxml", "deletedisallowedxmlcharacters"):
             return HostFunction(name, delete_disallowed_xml_characters)
