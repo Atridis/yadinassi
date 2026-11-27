@@ -312,6 +312,35 @@ class NativeIndexTests(unittest.TestCase):
         self.assertEqual(names(copied), [['Renamed', 'Second'], ['Renamed'], ['Amount']])
         self.assertEqual(names(table), [['Key', 'Second'], ['Key'], ['Amount']])
 
+    def test_direct_table_bulk_operations_preserve_groups_and_totals(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('T=New ValueTable; T.Columns.Add("Key"); T.Columns.Add("Amount"); '
+                   'T.Add(); T.Add(); T.ЗаполнитьЗначения("same","Key"); '
+                   'A=New Array; A.Add(2); A.Add(3); T.ЗагрузитьКолонку(A,"Amount"); '
+                   'T.Свернуть("Key","Amount"); N=T.Count(); Result=T[0].Amount;')
+        self.assertEqual(vm.variables['n'], 1)
+        self.assertEqual(vm.variables['result'], 5)
+
+    def test_direct_table_copies_distinguish_schema_from_rows(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('T=New ValueTable; T.Columns.Add("Key"); T.Columns.Add("Amount"); '
+                   'T.Add().Key="first"; T.Indexes.Add("Key"); '
+                   'A=T.CopyColumns(); B=T.СкопироватьКолонки("Amount"); C=T.Скопировать(); N=C.Indexes.Count();')
+        a, b, c = (vm.variables[k] for k in ('a', 'b', 'c'))
+        self.assertEqual([column.name for column in a.columns.items], ['Key', 'Amount'])
+        self.assertEqual([column.name for column in b.columns.items], ['Amount'])
+        self.assertEqual((a.count(), b.count(), c.count()), (0, 0, 1))
+        self.assertEqual((names(a), names(b), names(c)), ([], [], [['Key']]))
+        self.assertEqual(c.get(0).get_member('Key'), 'first')
+        self.assertEqual(vm.variables['n'], 1)
+        vm.variables['t']._bounded_slice_read = True
+        for source in ('R=T.CopyColumns();', 'R=T.Copy();'):
+            with self.subTest(source=source), self.assertRaisesRegex(BSLError, "bounded table slice"):
+                vm.execute(source)
+        self.assertNotIn('r', vm.variables)
+
     def test_bsl_implicit_column_copy_preserves_only_independent_declarations(self):
         vm = Interpreter()
         self.addCleanup(vm.close)

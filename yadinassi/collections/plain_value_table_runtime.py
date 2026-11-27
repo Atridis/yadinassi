@@ -424,6 +424,8 @@ class BSLCollectionIndexes(BSLObject):
     def count(self):
         if type(self._handles) is not list:raise ValueError('invalid index handles')
         return Decimal(len(self._handles))
+    _bsl_value_count = _bsl_proc_count = count
+
     def get_index(self,index):
         handles = self._handles
         if type(handles) is not list:raise ValueError('invalid index handles')
@@ -671,6 +673,8 @@ class BSLValueTable(BSLObject):
             previous=self._storage.fill(value,names,_retain_replaced=True)
             search.filled(self._storage.schema.offset(n) for n in names)
         else:self._storage.fill(value,names)
+    _bsl_proc_fillvalues = fill_values
+
     def unload_column(self,column):
         if self._bounded_slice_read:raise ValueError('only bounded slice reads are admitted')
         name=self.columns.resolve(column).name
@@ -683,6 +687,8 @@ class BSLValueTable(BSLObject):
             raise TypeError('Array required')
         name=self.columns.resolve(column).name
         for row,value in zip(self.rows,list.__iter__(values)):row.set_member(name,value)
+    _bsl_proc_loadcolumn = load_column
+
     def total(self,column):
         if self._bounded_slice_read:raise ValueError('only bounded slice reads are admitted')
         descriptor=self.columns.resolve(_text(column))
@@ -715,6 +721,8 @@ class BSLValueTable(BSLObject):
         for name in self._selection(columns):
             c=self.columns.find(name);result.columns.add(c.name,c.value_type,c.title,c.width)
         return result
+
+    _bsl_value_copycolumns = _bsl_proc_copycolumns = copy_columns
 
     def _validate_foreign_copy_row(self,row):
         from yadinassi.execution.direct.python_direct_plain_tables import column_check, raw, validate
@@ -767,6 +775,8 @@ class BSLValueTable(BSLObject):
             for name in selected:copied.set_member(name,row.get_member(name))
         if columns is None:self.indexes._copy_definitions(result.indexes)
         return result
+    _bsl_value_copy = _bsl_proc_copy = copy
+
     def group_by(self,grouping_columns,totaling_columns=None):
         _writable(self)
         storage=self._storage
@@ -852,6 +862,8 @@ class BSLValueTable(BSLObject):
         self.rows[:]=survivors
         # Detached iteration uses the current owner table, not these cells.
         for row in removed_rows:list.clear(row)
+
+    _bsl_proc_groupby = group_by
 
     def get_member(self,name):
         if name.casefold() in ('columns','колонки'):return self.columns
