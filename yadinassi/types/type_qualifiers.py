@@ -59,6 +59,10 @@ class BSLAllowedSigns(BSLObject):
         member = members.get(name.casefold())
         return super().get_member(name) if member is None else member
 
+    __getitem__ = get_member
+    __iter__ = None
+    __setitem__ = BSLObject.set_member
+
 
 @dataclass(frozen=True, eq=False)
 class BSLAllowedLengths(BSLObject):
@@ -73,6 +77,10 @@ class BSLAllowedLengths(BSLObject):
         member = members.get(name.casefold())
         return super().get_member(name) if member is None else member
 
+    __getitem__ = get_member
+    __iter__ = None
+    __setitem__ = BSLObject.set_member
+
 
 @dataclass(frozen=True, eq=False)
 class BSLDateFractionsNamespace(BSLObject):
@@ -86,6 +94,10 @@ class BSLDateFractionsNamespace(BSLObject):
                    "датавремя": BSLDateFractions.DATE_TIME}
         member = members.get(name.casefold())
         return super().get_member(name) if member is None else member
+
+    __getitem__ = get_member
+    __iter__ = None
+    __setitem__ = BSLObject.set_member
 
 
 ALLOWED_SIGNS = BSLAllowedSigns()
@@ -158,6 +170,10 @@ class BSLNumberQualifiers(BSLObject):
         member = members.get(name.casefold())
         return super().get_member(name) if member is None else member
 
+    __getitem__ = get_member
+    __iter__ = None
+    __setitem__ = BSLObject.set_member
+
 
 @dataclass(frozen=True, eq=False, init=False)
 class _LengthQualifiers(BSLObject):
@@ -179,6 +195,10 @@ class _LengthQualifiers(BSLObject):
                    "допустимаядлина": self.allowed_length}
         member = members.get(name.casefold())
         return super().get_member(name) if member is None else member
+
+    __getitem__ = get_member
+    __iter__ = None
+    __setitem__ = BSLObject.set_member
 
 
 @dataclass(frozen=True, eq=False, init=False)
@@ -211,6 +231,10 @@ class BSLDateQualifiers(BSLObject):
         if name.casefold() in ("datefractions", "частидаты"):
             return self.date_fractions
         return super().get_member(name)
+
+    __getitem__ = get_member
+    __iter__ = None
+    __setitem__ = BSLObject.set_member
 
 
 __all__ = ["BSLAllowedSign", "BSLAllowedLength", "BSLDateFractions",

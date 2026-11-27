@@ -504,6 +504,10 @@ class BSLTypeDescription(BSLObject):
         method = methods.get(key)
         return super().get_member(name) if method is None else HostFunction(name, method)
 
+    __getitem__ = get_member
+    __iter__ = None
+    __setitem__ = BSLObject.set_member
+
 
 def _reference_description(kind):
     """Metadata-only convenience: caller supplies its existing bound ref type."""

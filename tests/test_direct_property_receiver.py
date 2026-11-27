@@ -96,3 +96,14 @@ class DirectPropertyTests(unittest.TestCase):
             self.assertTrue(vm.variables['deletedrejected'])
             self.assertEqual((vm.variables['amount'], vm.variables['indexed']),
                              (Decimal('2.3'), Decimal('2.3')))
+
+    def test_qualifier_namespaces_and_value_metadata_are_readonly(self):
+        with closing(Interpreter()) as vm:
+            vm.execute('''Sign=ДопустимыйЗнак.Неотрицательный;
+                          D=New TypeDescription("Number",New NumberQualifiers(5,2,Sign));
+                          Digits=D.NumberQualifiers.Разрядность;
+                          Named=D.КвалификаторыЧисла.AllowedSign=Sign;
+                          Try D.NumberQualifiers.Дробь=3;Except Rejected=True;EndTry;''')
+            self.assertEqual(vm.variables['digits'], 5)
+            self.assertTrue(vm.variables['named'])
+            self.assertTrue(vm.variables['rejected'])

@@ -93,3 +93,17 @@ N=RA.Count()+RS.Count()+RM.Count();
         self.assertIs(type(vm.variables['rs']), BSLStructure)
         self.assertIs(type(vm.variables['rm']), BSLMap)
         self.assertEqual(vm.variables['n'], Decimal(4))
+
+    def test_table_reads_and_column_growth_use_the_same_owner(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('T=New ValueTable; Columns=T.Columns; N=T.Count(); '
+                   'C=Columns.Add("Named"); R=C.Name; Row=T.Add(); Row.Named=7; M=T.Count();')
+        self.assertEqual(vm.variables['n'], Decimal(0))
+        self.assertEqual(vm.variables['r'], 'Named')
+        self.assertEqual(vm.variables['m'], Decimal(1))
+        self.assertEqual(vm.execute('Row.Named'), Decimal(7))
+        vm.variables['t'].rows = []
+        with self.assertRaises(BoundaryViolation):
+            vm.execute('N=T.Count();')
+        self.assertEqual(vm.variables['n'], Decimal(0))

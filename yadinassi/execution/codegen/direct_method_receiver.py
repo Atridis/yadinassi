@@ -5,6 +5,7 @@ and unported BSL objects cannot execute attribute hooks through this path.
 """
 from yadinassi.collections.maps import BSLFixedMap, BSLMap
 from yadinassi.collections.structures import BSLStructure
+from yadinassi.collections.plain_value_table_runtime import BSLValueTable, BSLValueTableColumnCollection
 from yadinassi.types.values import BSLArray, BSLFixedArray
 from yadinassi.execution.direct.python_direct_boxed_array_methods import ArrayMethods, FixedArrayMethods
 from .direct_boundaries import BoundaryViolation
@@ -22,6 +23,12 @@ def method_receiver(value):
     expected = _NATIVE_LOOKUP.get(id(kind))
     if expected is not None and kind.__getattribute__ is expected:
         return value
+    if kind is BSLValueTable:
+        from yadinassi.execution.direct.python_direct_table_methods import TableMethods
+        return TableMethods(value)
+    if kind is BSLValueTableColumnCollection:
+        from yadinassi.execution.direct.python_direct_table_methods import ColumnMethods
+        return ColumnMethods(value)
     if kind is BSLArray:
         return ArrayMethods(value)
     if kind is BSLFixedArray:

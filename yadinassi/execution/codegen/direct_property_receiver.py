@@ -7,6 +7,13 @@ from yadinassi.collections.structures import BSLFixedStructure, BSLKeyAndValue, 
 from yadinassi.collections.value_tables import (BSLValueTable, BSLValueTableColumn,
     BSLValueTableColumnCollection, BSLValueTableRow)
 
+from yadinassi.collections.sort_directions import BSLSortDirections
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.type_qualifiers import (
+    BSLAllowedSigns, BSLAllowedLengths, BSLDateFractionsNamespace,
+    BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers,
+)
+
 from .direct_boundaries import BoundaryViolation
 from .direct_structure import _DirectStructure
 
@@ -14,6 +21,9 @@ from .direct_structure import _DirectStructure
 _LOCAL_PROPERTY_TYPES = frozenset(map(id, (
     BSLValueTable, BSLValueTableColumnCollection, BSLValueTableColumn,
     BSLValueTableRow, BSLFixedStructure, BSLStructure,
+    BSLSortDirections, BSLTypeDescription,
+    BSLAllowedSigns, BSLAllowedLengths, BSLDateFractionsNamespace,
+    BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers,
 )))
 
 def property_receiver(context, value, *, write=False):
@@ -29,4 +39,7 @@ def property_receiver(context, value, *, write=False):
         from yadinassi.execution.direct import python_direct_value_tree as tree
         if tree.owns(value) and tree._ordinary_read(context):
             return tree.TreeProperties(context, value, write=write)
+    from yadinassi.execution.direct.python_direct_names import OPAQUE_ENUM_IDS
+    if id(value) in OPAQUE_ENUM_IDS and getattr(context, '_verify_context', True) is False:
+        raise ValueError('У значения перечисления нет свойств')
     raise BoundaryViolation('direct property receiver is not integrated')
