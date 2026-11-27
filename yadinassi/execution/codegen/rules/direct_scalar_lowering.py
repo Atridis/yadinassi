@@ -52,9 +52,21 @@ def unary(emit, node):
                    orelse=call('_DecimalSign', name(operand), literal(node.operator)))
 
 
+def _text_literal(node):
+    return type(node) is p.Constant and type(node.value) is str
+
+
+def _text_suffix(node):
+    # In the native DOM captures (DM-19/DM-31), the ordinary prefix
+    # S(value) + ":" is text. Only the following addition needs BSL
+    # presentation of a missing attribute, not another field rule.
+    return type(node) is p.BinOp and type(node.op) is p.Add and _text_literal(node.right)
+
+
 def binary(operator, left, right):
     if operator == '+' and (
-            type(left) is p.Constant and type(left.value) is str
+            _text_literal(left)
+            or _text_suffix(left) and not _text_literal(right)
             or type(left) is p.Call and (
                 getattr(left, 'bsl_utf16_units', False)
                 or type(left.func) is p.Name and left.func.id == '_String')):

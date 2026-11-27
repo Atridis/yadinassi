@@ -65,6 +65,24 @@ class DirectStringJoinTests(unittest.TestCase):
         with self.assertRaises(BoundaryViolation):vm.execute('R=StrConcat(A,Close());')
         self.assertNotIn('r',vm.variables)
 
+    def test_string_separator_chain_presents_undefined_after_dynamic_text(self):
+        setup = 'Function F() Return "a"; EndFunction '
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                source = (setup + 'A=F(); R=F()+":"+Undefined; S=A+":"+Undefined; '
+                          'I=20; J=22; N=I+J;')
+                plan = vm.prepare(source)
+                if prepared:
+                    vm.execute_prepared(plan)
+                else:
+                    vm.execute(source)
+                self.assertEqual((vm.variables['r'], vm.variables['s']), ('a:', 'a:'))
+                self.assertEqual(vm.variables['n'], 42)
+                self.assertIn("n = i + j", plan._plan.generated_source)
+                self.assertIn("s = _String(a + ':', None)", plan._plan.generated_source)
+
     def test_original_strings_completes(self):
         source=Path(__file__).resolve().parents[1]/'integrational_tests/tests/strings.bsl'
         rows=[];vm=Interpreter(rows.append,compilation_profile='managed-thick-file',native_target='linux-8.3.27.1508')
