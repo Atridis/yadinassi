@@ -8,6 +8,7 @@ from yadinassi.collections.structures import BSLFixedStructure, BSLKeyAndValue, 
 from yadinassi.collections.value_tables import (BSLValueTable, BSLValueTableColumn,
     BSLValueTableColumnCollection, BSLValueTableRow)
 
+from yadinassi.collections.search_directions import BSLSearchDirections
 from yadinassi.collections.sort_directions import BSLSortDirections
 from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.types.type_qualifiers import (
@@ -22,7 +23,7 @@ from .direct_structure import _DirectStructure
 _LOCAL_PROPERTY_TYPES = frozenset(map(id, (
     BSLValueTable, BSLValueTableColumnCollection, BSLValueTableColumn,
     BSLValueTableRow, BSLFixedStructure, BSLStructure, BSLValueListItem,
-    BSLSortDirections, BSLTypeDescription,
+    BSLSortDirections, BSLSearchDirections, BSLTypeDescription,
     BSLAllowedSigns, BSLAllowedLengths, BSLDateFractionsNamespace,
     BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers,
 )))

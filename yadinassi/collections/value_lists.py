@@ -123,7 +123,11 @@ def _value(value):
     else:
         supported = any(kind is known for known, _, _ in _VALUE_TYPES)
     if not supported:
-        _unsupported("этот тип значения")
+        # A direct Map is stored by reference, just like the boxed Map.
+        # Sorting retains its own unsupported-value boundary.
+        from yadinassi.execution.direct.python_direct_plain_map import PlainMap
+        if kind is not PlainMap:
+            _unsupported("этот тип значения")
     if type(value) is Decimal:
         if not value.is_finite():
             raise ValueError("СписокЗначений: ожидается конечное число")

@@ -40,6 +40,9 @@ class BSLSearchDirections(BSLObject):
         member = _MEMBERS.get(name.casefold())
         return super().get_member(name) if member is None else member
 
+    __getitem__ = get_member
+    __setitem__ = BSLObject.set_member
+
 
 SEARCH_DIRECTIONS = BSLSearchDirections()
 

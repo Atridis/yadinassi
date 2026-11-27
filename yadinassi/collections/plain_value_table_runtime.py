@@ -141,6 +141,7 @@ class BSLValueTableColumnCollection(BSLObject):
         pos=offsets.get(name.casefold())
         if pos is not None and type(pos) is not int:raise ValueError('noncanonical schema offset')
         return None if pos is None else self._items[pos]
+    _bsl_value_find = _bsl_proc_find = find
     def get(self,index):return self._items[_index(index,len(self._items))]
     _bsl_value_get = _bsl_proc_get = get
     def get_index(self,index):
@@ -177,6 +178,7 @@ class BSLValueTableColumnCollection(BSLObject):
         for column in tuple(self._items):self.delete(column)
         self.table.clear()
     def count(self):return Decimal(len(self._items))
+    _bsl_value_count = _bsl_proc_count = count
     def _index_of(self,column):return next((i for i,c in enumerate(self._items) if c is column),-1)
     def index_of(self,column):
         if (type(column) is BSLValueTableColumn and column.table is self.table
@@ -259,6 +261,7 @@ class BSLValueTableColumnCollection(BSLObject):
     def __getitem__(self,index):
         return self.get_member(index) if type(index) is str else self.get_index(index)
     __setitem__=set_index
+    _bsl_value_indexof = _bsl_proc_indexof = index_of
     def get_method(self,name):
         if self.table._bounded_slice_read and name.casefold() not in (
                 'count','количество','get','получить','find','найти','indexof','индекс'):
@@ -581,6 +584,7 @@ class BSLValueTable(BSLObject):
             if item is row:return index
         return -1
     def index_of(self,row):return Decimal(self._index_of(row))
+    _bsl_value_indexof = _bsl_proc_indexof = index_of
     def _row_index(self,row):
         if type(row) is BSLValueTableRow:
             index=self._index_of(row)
