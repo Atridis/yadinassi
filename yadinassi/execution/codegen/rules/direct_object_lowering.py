@@ -31,6 +31,20 @@ def index_assignment(emit, target, value):
     return [p.Expr(value=call('_WriteBracket',name('_C'),receiver,key,value))]
 
 
+def field(emit, node):
+    receiver = call('_PropertyReceiver', emit.expr(node.object))
+    return p.Subscript(value=receiver, slice=literal(node.name), ctx=p.Load())
+
+
+def field_assignment(emit, node, value):
+    # Bind the receiver before evaluating RHS, as for other BSL lvalues.
+    slot = emit.temp()
+    receiver = call('_PropertyReceiver', emit.expr(node.object), write=literal(True))
+    target = p.Subscript(value=name(slot), slice=literal(node.name), ctx=p.Store())
+    return [p.Assign(targets=[name(slot, True)], value=receiver),
+            p.Assign(targets=[target], value=value)]
+
+
 def member_call(self, x, c, want_value):
     omitted=self.omissions(x.arguments)
     root=c.object

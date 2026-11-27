@@ -32,6 +32,8 @@ class BSLKeyAndValue(BSLObject):
             return self.value
         return super().get_member(name)
 
+    __getitem__ = get_member
+
 
 class _StructureBase(BSLObject):
     def __iter__(self):

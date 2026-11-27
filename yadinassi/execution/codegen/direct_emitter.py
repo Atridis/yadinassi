@@ -6,8 +6,9 @@ from .rules import direct_routine_lowering, direct_scalar_lowering, direct_objec
 from .rules import direct_catalog_budget
 from .direct_python_ast import _node, arguments, attr, call, literal, name
 from .rules.direct_reference_lowering import SELF_NAMES
-from .direct_access_runtime import (bsl_iterable, get_field, member, metered, owned_index, owned_iterable,
-                                    owned_set_index, owns_property_output, read_bracket, set_field, write_bracket)
+from .direct_access_runtime import (bsl_iterable, member, metered, owned_index, owned_iterable,
+                                    owned_set_index, owns_property_output, read_bracket, write_bracket)
+from .direct_property_receiver import property_receiver
 from .direct_reference_runtime import (bind_index_reference, cell_actual,
                                        field_reference, fragment_reference, host_reference, indexed_actual,
                                        lexical_reference, member_actual)
@@ -98,7 +99,7 @@ def requires_reference(bound,index):
     return test is not None and test(index)
 
 
-_OP.update(_RequiresReference=requires_reference,_OwnedIndex=owned_index,_OwnedSetIndex=owned_set_index,_Metered=metered,_OwnedIterable=owned_iterable,_BSLIterable=bsl_iterable,_Member=member,_GetField=get_field,_SetField=set_field,_FieldRef=field_reference,_OwnsPropertyOutput=owns_property_output)
+_OP.update(_RequiresReference=requires_reference,_OwnedIndex=owned_index,_OwnedSetIndex=owned_set_index,_Metered=metered,_OwnedIterable=owned_iterable,_BSLIterable=bsl_iterable,_Member=member,_PropertyReceiver=property_receiver,_FieldRef=field_reference,_OwnsPropertyOutput=owns_property_output)
 _OP.update(_WriteBracket=write_bracket,_ReadBracket=read_bracket)
 
 
@@ -325,7 +326,7 @@ class Emit:
         if type(x) is b.Index:
             return self.index(x)
         if type(x) is b.Attribute:
-            return call('_GetField',name('_C'),self.expr(x.object),literal(x.name))
+            return direct_object_lowering.field(self,x)
         if type(x) is b.DynamicNew or type(x) is b.New:
             return direct_constructor_lowering.lower(self, x, want_value)
         if type(x) is b.Call:
@@ -383,9 +384,8 @@ class Emit:
             elif type(t) is b.Index:
                 return direct_object_lowering.index_assignment(self,t,value)
             elif type(t) is b.Attribute:
-                write=call('_SetField',name('_C'),self.expr(t.object),literal(t.name))
                 if self.meter_loops:value=call('_PublicNumber',value)
-                return [p.Expr(value=call(write,value))]
+                return direct_object_lowering.field_assignment(self,t,value)
             else:raise PythonDirectUnsupported('clean emitter: assignment target')
             return [p.Assign(targets=[target],value=value)]
         if kind in (b.Import,b.Label):return []

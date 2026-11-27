@@ -102,3 +102,13 @@ Median microseconds per assignment, before → after:
 Sample ranges overlap. Reversing the two guards did not yield a consistent
 improvement either; the field-local rule is selected for simplicity, not
 a general speedup claim.
+
+### Direct property read and write
+
+The emitter uses Python subscription for property storage, with an admission
+step for the receiver. Structure owns case-invariant field lookup, missing
+fields, and writes; KeyAndValue owns the read-only aliases. There is no
+context-wide fallback from that operation. Other property receivers fail
+closed until they have an explicit property surface that preserves their
+boundary contract. Import writes, references, and method calls are distinct
+operations, not alternate engines for ordinary dot access.

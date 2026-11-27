@@ -3,7 +3,7 @@ from decimal import Decimal
 from functools import partial
 
 from yadinassi.collections.maps import BSLMap, BSLFixedMap
-from yadinassi.collections.structures import BSLKeyAndValue, BSLStructure, BSLFixedStructure
+from yadinassi.collections.structures import BSLStructure, BSLFixedStructure
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 from yadinassi.execution.direct.python_direct_plain_map import PlainFixedMap, PlainMap
 from yadinassi.temporal.dates import BSLDate
@@ -114,38 +114,9 @@ ARRAY_ALIASES={'количество':'count','вграница':'ubound','до�
           'получить':'get','установить':'set','вставить':'insert','удалить':'delete','найти':'find'}
 
 
-def get_field(context, receiver, key):
-    kind = type(receiver)
-    if kind is list or kind is PlainArray:
-        operation = ARRAY_ALIASES.get(key.casefold(), key.casefold())
-        if operation in _ARRAY_ARITY:
-            from yadinassi.execution.direct.python_direct_captured_values import register
-
-            def invoke(*args):
-                return array_method(receiver, key, len(args), False, ())(*args)
-
-            return register(HostFunction(key, invoke, returns_value=operation not in _ARRAY_PROCEDURES))
-    if kind is _DirectStructure:
-        return receiver[key]
-    if kind is PlainMap:
-        raise ValueError('Свойство соответствия не найдено: '+key)
-    if kind is BSLKeyAndValue:
-        return receiver.get_member(key)
-    return context.get_member(receiver,key)
-
-
 def owns_property_output(receiver):
     kind=type(receiver)
     return kind is _DirectStructure or kind is BSLStructure or kind is BSLFixedStructure
-
-
-def set_field(context, receiver, key):
-    kind=type(receiver)
-    if kind is _DirectStructure:
-        return lambda value: receiver.__setitem__(key,value)
-    if kind is PlainMap:
-        raise ValueError('Свойство соответствия недоступно для записи: '+key)
-    return context.resolve_set_member(receiver,key)
 
 
 _ARRAY_ARITY = {'ubound':(0,0),'count':(0,0),'add':(0,1),'clear':(0,0),

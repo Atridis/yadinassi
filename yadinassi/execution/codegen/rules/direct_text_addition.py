@@ -13,10 +13,13 @@ def _intrinsic(node, name):
 
 
 def _field_is_text(node, facts):
-    if not _intrinsic(node, '_GetField') or type(node.args[1]) is not p.Name:
+    if type(node) is not p.Subscript or not _intrinsic(node.value, '_PropertyReceiver'):
         return False
-    fields = facts.get(node.args[1].id)
-    return type(fields) is frozenset and node.args[2].value.casefold() in fields
+    receiver = node.value.args[0]
+    if type(receiver) is not p.Name:
+        return False
+    fields = facts.get(receiver.id)
+    return type(fields) is frozenset and node.slice.value.casefold() in fields
 
 
 def apply(statements, facts):

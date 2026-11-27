@@ -6,7 +6,8 @@ from yadinassi.collections.structures import BSLStructure, BSLFixedStructure
 from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 from yadinassi.execution.direct.python_direct_plain_map import PlainMap
 from yadinassi.types.values import BSLArray, BSLFixedArray, BSLObject, Reference
-from .direct_access_runtime import get_field, owned_index, read_bracket
+from .direct_access_runtime import owned_index, read_bracket
+from .direct_property_receiver import property_receiver
 from .direct_array_address import ArrayElementAddress
 from .direct_boundaries import BoundaryViolation
 from .direct_collections import _Cell, _Reference
@@ -168,7 +169,7 @@ def member_actual(context, byref, receiver, key):
         if type(address) is _ForwardReference:
             return address.reference
         return host_reference(address)
-    return get_field(context,receiver,key)
+    return property_receiver(receiver)[key]
 
 
 def cell_actual(value):
