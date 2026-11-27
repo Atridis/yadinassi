@@ -42,6 +42,13 @@ Message(СтрЗаменитьПоРегулярномуВыражению("a1b2
         missing = api.str_find('b', '(a)?b').get_groups().items[0]
         self.assertEqual((missing._value, missing._position, missing._length), ('', 0, 0))
 
+    def test_direct_clear_of_boxed_group_array_does_not_modify_result(self):
+        self.assertEqual(self.output('''
+R=StrFindByRegularExpression("ab", "(a)(b)"); G=R.GetGroups();
+G.Clear(); Message(G.Count()); Message(R.GetGroups().Count());
+G=R.GetGroups(); G.Очистить(); Message(G.Count()); Message(R.GetGroups().Count());
+'''), ['0', '2', '0', '2'])
+
     def test_results_readonly_and_type_guards(self):
         self.assertEqual(self.output('''R=StrFindByRegularExpression("a", "(a)");
 G=R.GetGroups()[0];

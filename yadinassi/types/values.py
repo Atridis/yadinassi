@@ -594,6 +594,9 @@ class BSLArray(_ArrayBase):
     def add(self, value: object = None) -> None:
         self.items.append(value)
 
+    def _bsl_proc_clear(self) -> None:
+        self.items.clear()
+
     def insert(self, index: object, value: object = None) -> None:
         position = require_number(index)
         if not position.is_finite() or position != position.to_integral_value():
