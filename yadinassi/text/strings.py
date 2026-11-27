@@ -47,18 +47,20 @@ def _text(units: str) -> str:
         "utf-16-le", errors="surrogatepass")
 
 
+def normalize_utf16_pairs(text: str) -> str:
+    """Combine adjacent surrogate code units for Python text consumers."""
+    if str.isascii(text):
+        return text
+    try:
+        str.encode(text, "utf-16-le")
+    except UnicodeEncodeError:
+        return _text(text)
+    return text
+
+
 def concatenate(left: str, right: str) -> str:
     """Rejoin surrogate halves as well as ordinary strings (also used by +)."""
-    joined = left + right
-    if str.isascii(joined):
-        return joined
-    try:
-        # Strict encoding detects real surrogate code points. Ordinary BMP
-        # and supplementary characters need no decode and no second string.
-        str.encode(joined, "utf-16-le")
-    except UnicodeEncodeError:
-        return _text(joined)
-    return joined
+    return normalize_utf16_pairs(left + right)
 
 
 def _index(value: object, minimum: int, maximum: int) -> int:

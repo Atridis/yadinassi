@@ -64,6 +64,16 @@ class CharacterTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('КодСимвола("😀", 2)'), Decimal(56832))
         self.assertEqual(self.vm.execute('СтрДлина(Char(55357) + Char(56832))'), Decimal(2))
 
+    def test_message_outputs_adjacent_utf16_units_as_one_character(self):
+        output = []
+        vm = Interpreter(output.append)
+        self.addCleanup(vm.close)
+        vm.execute('Halves=New Array; Halves.Add(Left("🙂",1)); '
+                   'Halves.Add(Right("🙂",1)); Message(Halves[0]+Halves[1]);')
+        self.assertEqual(output, ['🙂'])
+        vm.execute('Message(Halves[0]);')
+        self.assertEqual(output[-1], chr(55357))
+
     def test_concat_joins_utf16_across_runtime_and_static_values(self):
         for prepared in (False, True):
             for expression in (

@@ -649,7 +649,7 @@ class Interpreter:
     def _message(self, value: object) -> None:
         if self._configuration_runtime is not None and self._configuration_runtime.state == "exiting":
             raise ValueError("Messages are unavailable during application OnExit")
-        self.output(to_string(value))
+        self.output(strings.normalize_utf16_pairs(to_string(value)))
 
     def _error_description(self) -> str:
         return (str(self._handled_errors[-1])

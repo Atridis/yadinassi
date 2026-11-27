@@ -29,7 +29,7 @@ _PRESENT_ARRAY = dict(values._DIRECT_COLLECTION_HELPER_ABI)['BSLArray']
 
 
 def _literal_message(context, message):
-    context.vm.output(message)
+    context.vm.output(strings.normalize_utf16_pairs(message))
 
 
 def _literal_message_binding(vm, service):
