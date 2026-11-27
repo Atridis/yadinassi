@@ -146,6 +146,8 @@ class BSLStructure(_StructureBase):
             self._items.clear()
             self._version += 1
 
+    _bsl_proc_insert = insert
+
     def get_method(self, name: str) -> object:
         methods = {
             "вставить": self.insert, "insert": self.insert,

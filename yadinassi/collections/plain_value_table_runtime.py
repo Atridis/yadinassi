@@ -142,6 +142,7 @@ class BSLValueTableColumnCollection(BSLObject):
         if pos is not None and type(pos) is not int:raise ValueError('noncanonical schema offset')
         return None if pos is None else self._items[pos]
     def get(self,index):return self._items[_index(index,len(self._items))]
+    _bsl_value_get = _bsl_proc_get = get
     def get_index(self,index):
         if type(index) is str:
             column=self.find(index)
@@ -320,6 +321,7 @@ class BSLValueTableRow(RowStorage,BSLObject):
         search=schema._index_search
         if search is not None and type(search) is not SearchIndexes:raise ValueError('noncanonical index declarations')
         _write_cell(self,table._storage,_STORAGE_EPOCH,position,value,search)
+    _bsl_value_get = _bsl_proc_get = get
     def get_index(self,index):return self.get_member(index) if type(index) is str else self.get(index)
     def set_index(self,index,value):return self.set_member(index,value) if type(index) is str else self.set(index,value)
     def __getitem__(self,index):
@@ -443,6 +445,7 @@ class BSLCollectionIndexes(BSLObject):
         return self._add_positions(tuple(schema.offset(name) for part in names.split(',')
                                          if (name := part.strip())))
 
+    _bsl_value_add = _bsl_proc_add = add
     def _positions(self, columns, positions):
         if type(columns) is not tuple:
             raise ValueError('invalid index columns')
@@ -555,6 +558,7 @@ class BSLValueTable(BSLObject):
         if self.columns._query_columns:raise ValueError('default row values for query columns are not supported')
         return self._storage.insert(_insertion_position(index,len(self.rows)))
     def get(self,index):return self.rows[_index(index,len(self.rows))]
+    _bsl_value_get = _bsl_proc_get = get
     get_index=get
     def set_index(self,*args):raise ValueError('rows cannot be replaced')
     __getitem__=get_index
@@ -641,6 +645,7 @@ class BSLValueTable(BSLObject):
                 else:
                     result.append(row)
         return _array(result)
+    _bsl_value_findrows = _bsl_proc_findrows = find_rows
     def fill_values(self,value,columns=None):
         _writable(self)
         names=self._selection(columns)

@@ -104,6 +104,18 @@ N=RA.Count()+RS.Count()+RM.Count();
         self.assertIs(type(vm.variables['rm']), BSLMap)
         self.assertEqual(vm.variables['n'], Decimal(4))
 
+    def test_codec_collections_keep_mutation_on_the_native_objects(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        for code, key in (('S=New Structure; R=ValueFromStringInternal(ValueToStringInternal(S)); '
+                           'R.Вставить("a",23); V=R.A;', 'v'),
+                          ('M=New Map; R=ValueFromStringInternal(ValueToStringInternal(M)); '
+                           'R.Вставить("a",23); V=R.Count()*23;', 'v')):
+            plan = vm.prepare(code)
+            self.assertIn("r._bsl_proc_insert('a', 23)", plan._plan.generated_source)
+            vm.execute_prepared(plan)
+            self.assertEqual(vm.variables[key], Decimal(23))
+
     def test_table_reads_and_column_growth_use_the_same_owner(self):
         vm = Interpreter()
         self.addCleanup(vm.close)

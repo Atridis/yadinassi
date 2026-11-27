@@ -381,6 +381,8 @@ class BSLValueTreeColumnCollection(BSLObject):
     def add(self, name="", value_type=None, title="", width=Decimal(0)):
         return self.insert(len(self.items), name, value_type, title, width)
 
+    _bsl_value_add = _bsl_proc_add = add
+
     def insert(self, index, name="", value_type=None, title="", width=Decimal(0)):
         position = _position(index, len(self.items), True)
         self._validate_name(name)
@@ -807,6 +809,8 @@ class BSLValueTreeRowCollection(BSLObject):
             BSLValueTreeRowCollection._clear_defaults(self)
             return BSLValueTreeRowCollection.add(target)
         return self.insert(len(self.items))
+
+    _bsl_value_add = _bsl_proc_add = add
 
     def insert(self, index):
         target = BSLValueTreeRowCollection._clear_target(self)
@@ -1341,6 +1345,8 @@ class BSLValueTreeRowCollection(BSLObject):
             raise ValueError("Строка не принадлежит коллекции")
         self.items.remove(row)
         self._remove_subtrees([row])
+
+    _bsl_proc_delete = delete
 
     def clear(self):
         target = BSLValueTreeRowCollection._clear_target(self)
