@@ -52,6 +52,8 @@ _ALIASES = {
     'привестизначение': 'adjustvalue', 'скопироватьколонки': 'copycolumns',
     'содержиттип': 'containstype',
     'удалитьнедопустимыесимволыxml': 'deletedisallowedxmlcharacters',
+    'получитьтекст': 'gettext', 'количествострок': 'linecount',
+    'установитьтекст': 'settext', 'добавитьстроку': 'addline',
     'заполнитьзначения': 'fillvalues', 'загрузитьколонку': 'loadcolumn', 'свернуть': 'groupby',
     'установитьстроку': 'setstring', 'закрыть': 'close',
     'записатьначаломассива': 'writestartarray', 'записатьконецмассива': 'writeendarray',
@@ -94,8 +96,8 @@ def member_call(self, x, c, want_value):
     operation = _ALIASES.get(folded, folded)
     prefix = '_bsl_value_' if want_value else '_bsl_proc_'
     if omitted:
-        from .direct_value_list_omissions import lower_omissions
-        return lower_omissions(self, root, x.arguments, omitted, prefix, operation)
+        from .direct_member_omissions import lower_omissions
+        return lower_omissions(self, c.object, x.arguments, omitted, prefix, operation)
     receiver = self.expr(c.object)
     property_output = operation == 'property' and len(x.arguments) == 2
     if property_output:

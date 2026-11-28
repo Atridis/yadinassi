@@ -382,6 +382,7 @@ class BSLValueTreeColumnCollection(BSLObject):
         return self.insert(len(self.items), name, value_type, title, width)
 
     _bsl_value_add = _bsl_proc_add = add
+    _bsl_value_add_column_defaults = _bsl_proc_add_column_defaults = add
 
     def insert(self, index, name="", value_type=None, title="", width=Decimal(0)):
         position = _position(index, len(self.items), True)

@@ -10,6 +10,7 @@ from xml.parsers import expat
 
 from yadinassi.types.values import BSLObject, BSLArray, HostFunction
 from yadinassi.collections.maps import BSLMap
+from yadinassi.execution.direct.python_direct_xml_ownership import reject_source_owned
 from yadinassi.streams.file_io import _FileMethods, _methods, _read_bytes, _decode, _text, _bool
 
 MAX_XML_BYTES = 16 * 1024 * 1024
@@ -17,6 +18,13 @@ MAX_XML_DEPTH = 256
 MAX_XML_NODES = 100_000
 MAX_NAMESPACE_BINDINGS = 1_000_000
 _XML_URI = 'http://www.w3.org/XML/1998/namespace'
+
+
+def _detached_reader_method(method):
+    def invoke(reader, *args):
+        reject_source_owned(reader)
+        return method(reader, *args)
+    return invoke
 
 
 class BSLXMLNodeType(Enum):
@@ -365,6 +373,19 @@ class BSLXMLReader(_FileMethods):
     def attribute_prefix(self, index): return self._attribute_at(index)['prefix']
     def attribute_namespace_uri(self, index): return self._attribute_at(index)['uri']
     def attribute_value(self, name, uri=None): return self.get_attribute(name, uri)
+
+    # These methods operate on the reader's in-memory snapshot only.
+    _bsl_proc_setstring = _detached_reader_method(set_string)
+    _bsl_proc_close = _detached_reader_method(close)
+    _bsl_value_read = _bsl_proc_read = _detached_reader_method(read)
+    _bsl_value_getattribute = _bsl_proc_getattribute = _detached_reader_method(get_attribute)
+    _bsl_value_attributename = _bsl_proc_attributename = _detached_reader_method(attribute_name)
+    _bsl_value_attributelocalname = _bsl_proc_attributelocalname = _detached_reader_method(attribute_local_name)
+    _bsl_value_attributeprefix = _bsl_proc_attributeprefix = _detached_reader_method(attribute_prefix)
+    _bsl_value_attributenamespaceuri = _bsl_proc_attributenamespaceuri = _detached_reader_method(attribute_namespace_uri)
+    _bsl_value_attributevalue = _bsl_proc_attributevalue = _detached_reader_method(attribute_value)
+
+
     def _writer_current(self):
         e = self._current
         kinds = {T.START:'start', T.END:'end', T.TEXT:'text', T.WHITESPACE:'text', T.CDATA:'cdata',

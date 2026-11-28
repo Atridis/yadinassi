@@ -576,9 +576,13 @@ class BSLArray(_ArrayBase):
         items = self.items
         return list.__getitem__(items, array_offset(items, index, method=True))
 
+    _bsl_value_get = _bsl_proc_get = get
+
     def set(self, index: object, value: object) -> None:
         items = self.items
         list.__setitem__(items, array_offset(items, index, method=True), value)
+
+    _bsl_proc_set = set
 
     def get_index(self, index: object) -> object:
         items = self.items

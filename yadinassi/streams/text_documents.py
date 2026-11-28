@@ -182,6 +182,13 @@ class BSLTextDocument(BSLObject):
     def clear(self):
         self._text, self._spans, self._units = "", [], 0
 
+    # Only edits and reads of the in-memory document are ordinary methods.
+    _bsl_value_gettext = _bsl_proc_gettext = get_text
+    _bsl_value_linecount = _bsl_proc_linecount = line_count
+    _bsl_proc_settext = set_text
+    _bsl_proc_addline = add_line
+    _bsl_proc_clear = clear
+
     def get_method(self, name):
         key = name.casefold()
         functions = {

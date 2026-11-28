@@ -123,6 +123,7 @@ class BSLValueTableColumnCollection(BSLObject):
         self.table._storage.add_column(name,column,default);self._items.append(column)
         return column
     _bsl_value_add = _bsl_proc_add = add
+    _bsl_value_add_column_defaults = _bsl_proc_add_column_defaults = add
     def _append_materialized(self,column):
         if type(column) is not BSLValueTableColumn or column.table is not self.table:raise ValueError('foreign column')
         description=column.value_type
@@ -779,6 +780,7 @@ class BSLValueTable(BSLObject):
         if columns is None:self.indexes._copy_definitions(result.indexes)
         return result
     _bsl_value_copy = _bsl_proc_copy = copy
+    _bsl_value_copy_columns_only = _bsl_proc_copy_columns_only = copy
 
     def group_by(self,grouping_columns,totaling_columns=None):
         _writable(self)

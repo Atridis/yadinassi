@@ -70,6 +70,22 @@ class XMLReaderTests(unittest.TestCase):
         r.skip(); r.read(); self.assertEqual(r.get_member('Name'),'r')
         self.assertEqual(r.get_member('NodeType'),x.T.END)
 
+    def test_prepared_string_reader_uses_concrete_methods_through_close(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        plan = vm.prepare('R=Новый ЧтениеXML; R.УстановитьСтроку("<a v=""7""/>"); '
+                          'Ok=R.Прочитать(); V=R.GetAttribute(0); R.Закрыть();')
+        self.assertIsNone(vm.execute_prepared(plan))
+        self.assertIs(vm.variables['ok'], True)
+        self.assertEqual(vm.variables['v'], '7')
+        self.assertIs(vm.variables['r'].get_member('NodeType'), x.T.NONE)
+        code = plan._plan.generated_source
+        for method in ('_bsl_proc_setstring', '_bsl_value_read',
+                       '_bsl_value_getattribute', '_bsl_proc_close'):
+            self.assertIn('r.' + method + '(', code)
+        self.assertFalse(hasattr(x.BSLXMLReader, '_bsl_proc_openfile'))
+        self.assertFalse(hasattr(x.BSLXMLReader, '_bsl_proc_openstream'))
+
     def test_settings_declaration_cdata_whitespace(self):
         settings=x.BSLXMLReaderSettings(ignore_declaration=False,ignore_whitespace=False,use_whitespace=True)
         r=self.reader('<?xml version="1.0" encoding="UTF-8"?><a> <![CDATA[x<y]]><!--c--><?p v?></a>',settings)
@@ -82,6 +98,22 @@ class XMLReaderTests(unittest.TestCase):
         r=self.reader('<a><![CDATA[x]]><!--c--><?p v?></a>',settings)
         self.assertTrue(r.read()); self.assertTrue(r.read()); self.assertEqual(r.get_member('NodeType'),x.T.TEXT)
         self.assertTrue(r.read()); self.assertEqual(r.get_member('NodeType'),x.T.END)
+
+    def test_standalone_xml_surface_does_not_take_source_owned_reader(self):
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+        from yadinassi.execution.direct.python_direct_xml_ownership import mark_source_owned
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        reader = self.reader('<r a="1"/>')
+        reader.read()
+        mark_source_owned(reader)
+        vm.variables['r'] = reader
+        before = dict(vars(reader))
+        for source in ('R.Read();', 'R.GetAttribute(0);',
+                       'R.SetString("<other/>");', 'R.Close();'):
+            with self.subTest(source=source), self.assertRaises(BoundaryViolation):
+                vm.execute(source)
+            self.assertEqual(vars(reader), before)
 
     def test_preserved_space_language_and_scopes(self):
         r=self.reader('<r xml:space="preserve" xml:lang="ru" xmlns:p="one"> <a xmlns:p="two"/> </r>')

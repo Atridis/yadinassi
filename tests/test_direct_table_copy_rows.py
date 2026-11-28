@@ -10,6 +10,22 @@ class DirectTableCopyRowsTests(unittest.TestCase):
         self.addCleanup(vm.close)
         return vm
 
+    def test_projection_omits_rows_and_copies_all_rows(self):
+        vm = self.vm()
+        vm.execute('T=New ValueTable; T.Columns.Add("Name"); T.Columns.Add("Amount"); '
+                   'A=T.Add(); A.Name="one"; A.Amount=2; '
+                   'B=T.Add(); B.Name="two"; B.Amount=3; T.Indexes.Add("Amount");')
+        plan = vm.prepare('Full=T.Copy(); Projected=T.Скопировать(, "Amount");')
+        vm.execute_prepared(plan)
+        code = plan._plan.generated_source
+        self.assertIn("t._bsl_value_copy()", code)
+        self.assertIn("t._bsl_value_copy_columns_only(columns='Amount')", code)
+        full = vm.variables['full']
+        projected = vm.variables['projected']
+        self.assertEqual([tuple(row) for row in projected.rows], [(Decimal(2),), (Decimal(3),)])
+        self.assertEqual(list(full.indexes.items), [(1,)])
+        self.assertEqual(list(projected.indexes.items), [])
+
     def test_explicit_native_array_copies_compatible_rows_in_order(self):
         source = '''
             T=New ValueTable; T.Columns.Add("Name");

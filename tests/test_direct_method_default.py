@@ -55,6 +55,24 @@ class DirectMethodDefaultTests(unittest.TestCase):
         vm.execute_prepared(plan)
         self.assertEqual(vm.variables['r'], Decimal(2))
 
+    def test_column_add_omits_type_without_shifting_title_and_width(self):
+        for constructor in ('ValueTable', 'ValueTree'):
+            with self.subTest(constructor=constructor):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                plan = vm.prepare(
+                    f'T=New {constructor}; C=T.Columns; A=C.Add("Code",,"Label",12); '
+                    'B=T.Columns.Добавить("Other",,"Other label",8); '
+                    'C.Add("Normal");'
+                )
+                code = plan._plan.generated_source
+                self.assertIn('c._bsl_value_add_column_defaults', code)
+                self.assertIn("c._bsl_proc_add('Normal')", code)
+                vm.execute_prepared(plan)
+                self.assertEqual((vm.execute('A.Title'), vm.execute('A.Width')), ('Label', 12))
+                self.assertEqual((vm.execute('B.Title'), vm.execute('B.Width')), ('Other label', 8))
+                self.assertEqual(vm.execute('A.ValueType.Types().Count()'), 0)
+
     def test_value_list_omission_uses_concrete_signature_without_receiver_check(self):
         vm = Interpreter()
         self.addCleanup(vm.close)
