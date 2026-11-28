@@ -55,6 +55,12 @@ def _index(value):
     return value
 
 
+def _bsl_line_index(value):
+    # Direct translation uses int for whole BSL numbers; the Python API
+    # deliberately continues to accept Decimal indices only.
+    return Decimal(value) if type(value) is int else value
+
+
 def _separator(value):
     if value is None:
         return "\r\n"
@@ -188,6 +194,20 @@ class BSLTextDocument(BSLObject):
     _bsl_proc_settext = set_text
     _bsl_proc_addline = add_line
     _bsl_proc_clear = clear
+
+    def _bsl_value_getline(self, index):
+        return self.get_line(_bsl_line_index(index))
+
+    _bsl_proc_getline = _bsl_value_getline
+
+    def _bsl_proc_insertline(self, index, value):
+        self.insert_line(_bsl_line_index(index), value)
+
+    def _bsl_proc_replaceline(self, index, value):
+        self.replace_line(_bsl_line_index(index), value)
+
+    def _bsl_proc_deleteline(self, index):
+        self.delete_line(_bsl_line_index(index))
 
     def get_method(self, name):
         key = name.casefold()

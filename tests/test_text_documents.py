@@ -183,5 +183,17 @@ class TextDocumentLocalPolicyTests(unittest.TestCase):
         vm.execute('d.Clear(); d.AddLine("again");')
         self.assertEqual(vm.execute('a.GetLine(1)'), 'again')
 
+    def test_direct_line_indices_do_not_coerce_boolean_or_fraction(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('d=New TextDocument; d.SetText("A");')
+        for index in ('True', '0.5', '-1'):
+            for operation in ('GetLine({})', 'InsertLine({}, "B")',
+                              'ReplaceLine({}, "B")', 'DeleteLine({})'):
+                with self.subTest(index=index, operation=operation), self.assertRaises(BSLError):
+                    vm.execute('d.' + operation.format(index) + ';')
+                self.assertEqual(vm.execute('d.GetText()'), 'A')
+        self.assertEqual(vm.execute('d.GetLine(1)'), 'A')
+
 
 if __name__ == '__main__': unittest.main()

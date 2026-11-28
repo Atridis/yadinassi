@@ -433,6 +433,16 @@ class FixedCollectionTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('m.Count()'), Decimal(0))
         self.assertEqual(self.vm.execute('fm.Count()'), Decimal(0))
 
+    def test_missing_fixed_collection_dot_properties_are_catchable(self):
+        self.make_collections()
+        self.vm.execute("""
+            Try fa.items; Except Message("array"); EndTry;
+            Try fm.Known; Except Message("map"); EndTry;
+            Try fm.Known = 8; Except Message("write"); EndTry;
+            Message(fa[0]); Message(fm["Known"]);
+        """)
+        self.assertEqual(self.output, ["array", "map", "write", "7", "7"])
+
     def test_map_keys_are_not_dot_properties_even_when_named_like_methods(self):
         self.vm.execute('''
             m = New Map; m["Get"] = 7; m["Count"] = 8; m["__class__"] = 9;

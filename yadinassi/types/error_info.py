@@ -39,6 +39,9 @@ class BSLErrorCategories(BSLObject):
         value = _MEMBERS.get(name.casefold())
         return super().get_member(name) if value is None else value
 
+    def __getitem__(self, name):
+        return _MEMBERS[name.casefold()]
+
 
 ERROR_CATEGORIES = BSLErrorCategories()
 
@@ -55,6 +58,10 @@ class BSLErrorInfo(BSLObject):
     line_number: int = 0
     initial_string: str = ""
     _empty: bool = False
+
+    def __getitem__(self, name):
+        from yadinassi.execution.direct.python_direct_error_info import read_field
+        return read_field(self, name)
 
     def get_member(self, name: str) -> object:
         key = name.casefold()
@@ -89,6 +96,13 @@ class BSLErrorInfo(BSLObject):
                 return True
             current = current.cause
         return False
+
+    def _bsl_value_iserrorofcategory(self, category):
+        from yadinassi.execution.direct.python_direct_error_info import query_category
+        return query_category(self, category)
+
+    _bsl_proc_iserrorofcategory = _bsl_value_iserrorofcategory
+    _bsl_value_являетсяошибкойкатегории = _bsl_proc_являетсяошибкойкатегории = _bsl_value_iserrorofcategory
 
 
 def empty_error_info() -> BSLErrorInfo:

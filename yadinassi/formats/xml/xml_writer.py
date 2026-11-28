@@ -1,6 +1,8 @@
 """Bounded XML 1.0 writer; no DTD, entities or external resources."""
 from xml.parsers import expat
 from yadinassi.execution.safe_mode import require_external_access
+from yadinassi.execution.direct.python_direct_xml_ownership import reject_source_owned
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.types.values import BSLObject, HostFunction
 from yadinassi.streams import file_io
 
@@ -65,6 +67,15 @@ class BSLXMLWriterSettings(BSLObject):
                  'отступатрибутов': 'indent_attributes', 'indentchars': 'indent_chars', 'символыотступа': 'indent_chars'}
         if name.casefold() in names: return getattr(self, names[name.casefold()])
         return super().get_member(name)
+
+
+def _detached_writer_method(method):
+    def invoke(writer, *args):
+        reject_source_owned(writer)
+        if writer._stream is not None:
+            raise BoundaryViolation('XML writer sink requires its owning I/O boundary')
+        return method(writer, *args)
+    return invoke
 
 
 class BSLXMLWriter(BSLObject):
@@ -360,6 +371,13 @@ class BSLXMLWriter(BSLObject):
             # File Close is terminal even when rendering, encoding or writing
             # fails. String assembly remains repairable after incomplete Close.
             if is_file:self._dispose()
+    _bsl_proc_setstring = _detached_writer_method(set_string)
+    _bsl_proc_writestartelement = _detached_writer_method(write_start_element)
+    _bsl_proc_writeendelement = _detached_writer_method(write_end_element)
+    _bsl_proc_writeattribute = _detached_writer_method(write_attribute)
+    _bsl_proc_writetext = _detached_writer_method(write_text)
+    _bsl_value_close = _bsl_proc_close = _detached_writer_method(close)
+
     # !todo Native calibration of exact pretty-print bytes, implicit closing of
     # incomplete documents, repeated Close and advanced XML 1.1 settings.
     # Fragment output (including multiple roots) is not document validation.

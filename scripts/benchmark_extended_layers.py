@@ -29,6 +29,7 @@ from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.syntax.parser import parse
 from yadinassi.collections.structures import BSLStructure
 from yadinassi.types.values import BSLArray
+from yadinassi.execution.direct.python_direct_plain_array import PlainArray
 from yadinassi.collections.value_tables import BSLValueTable
 from yadinassi.collections.value_lists import BSLValueList
 from yadinassi.formats.json.json_processing import BSLJSONWriter, BSLJSONReader, BSLJSONWriterSettings, BSLJSONLineBreak, read_json, write_json
@@ -459,6 +460,7 @@ def make_case(name, n, route, stack, *, catalog_rows=32):
             verify_xml(ET.fromstring(vm.variables['encoded']))
             values = vm.variables['readvalues']
             if type(values) is BSLArray: values = values.items
+            elif type(values) is PlainArray: values = list(values)
             exact(values, [D(i) for i in range(n)])
         case.checks['bsl'] = check_bsl_xml
     return case

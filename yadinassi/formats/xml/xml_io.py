@@ -6,6 +6,7 @@ remain outside this ordinary document workflow; never enable entity resolution.
 """
 from decimal import Decimal
 from enum import Enum
+from types import MappingProxyType
 from xml.parsers import expat
 
 from yadinassi.types.values import BSLObject, BSLArray, HostFunction
@@ -18,6 +19,11 @@ MAX_XML_DEPTH = 256
 MAX_XML_NODES = 100_000
 MAX_NAMESPACE_BINDINGS = 1_000_000
 _XML_URI = 'http://www.w3.org/XML/1998/namespace'
+_DIRECT_CURSOR_FIELDS = MappingProxyType({
+    'name':'name', 'имя':'name', 'localname':'local', 'локальноеимя':'local',
+    'prefix':'prefix', 'префикс':'prefix', 'namespaceuri':'uri', 'uriпространстваимен':'uri',
+    'nodetype':'kind', 'типузла':'kind', 'value':'value', 'значение':'value',
+})
 
 
 def _detached_reader_method(method):
@@ -59,6 +65,9 @@ class _EnumNamespace(BSLObject):
         for value in self._enum:
             if name.casefold() in (alias.casefold() for alias in value.value): return value
         return super().get_member(name)
+
+
+    __getitem__ = get_member
 
 
 XML_NODE_TYPES = _EnumNamespace(BSLXMLNodeType)
@@ -385,6 +394,12 @@ class BSLXMLReader(_FileMethods):
     _bsl_value_attributenamespaceuri = _bsl_proc_attributenamespaceuri = _detached_reader_method(attribute_namespace_uri)
     _bsl_value_attributevalue = _bsl_proc_attributevalue = _detached_reader_method(attribute_value)
 
+    def __getitem__(self, name):
+        reject_source_owned(self)
+        field = _DIRECT_CURSOR_FIELDS.get(name.casefold())
+        if field is None:
+            raise ValueError('Поле объекта не обнаружено: ' + name)
+        return self._current[field]
 
     def _writer_current(self):
         e = self._current
@@ -396,10 +411,7 @@ class BSLXMLReader(_FileMethods):
                           [(a['name'],a['value']) for a in e['attrs']])
     def get_member(self, name):
         key = name.casefold(); e = self._current
-        props = {'nodetype':'kind','типузла':'kind','name':'name','имя':'name','localname':'local',
-                 'локальноеимя':'local','prefix':'prefix','префикс':'prefix','namespaceuri':'uri',
-                 'uriпространстваимен':'uri','value':'value','значение':'value'}
-        if key in props: return e[props[key]]
+        if key in _DIRECT_CURSOR_FIELDS: return e[_DIRECT_CURSOR_FIELDS[key]]
         if key in ('hasname','имеетимя'): return bool(e['name'])
         if key in ('hasvalue','имеетзначение'): return e['kind'] in (T.TEXT,T.CDATA,T.WHITESPACE,T.ATTRIBUTE,T.COMMENT,T.PI,T.DECLARATION)
         if key in ('ischaracters','этосимвольныеданные'): return e['kind'] in (T.TEXT,T.CDATA,T.WHITESPACE)

@@ -99,6 +99,20 @@ class XMLReaderTests(unittest.TestCase):
         self.assertTrue(r.read()); self.assertTrue(r.read()); self.assertEqual(r.get_member('NodeType'),x.T.TEXT)
         self.assertTrue(r.read()); self.assertEqual(r.get_member('NodeType'),x.T.END)
 
+    def test_standalone_cursor_names_match_archived_xml33(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        # Native XML33 XF-04 and XF-05.
+        self.assertEqual(vm.execute('R=New XMLReader; R.SetString("<p:r xmlns:p=""urn:p""/>"); '
+                                    'R.Read(); R.Name+":"+R.LocalName+":"+R.Prefix+":"+R.NamespaceURI;'),
+                         'p:r:r:p:urn:p')
+        self.assertEqual(vm.execute('R.SetString("<r xmlns=""urn:d""><x/></r>"); R.Read(); R.Read(); '
+                                    'R.Имя+":"+R.Префикс+":"+R.URIПространстваИмен;'),
+                         'x::urn:d')
+        with self.assertRaises(BSLError):
+            vm.execute('R.Name="changed";')
+        self.assertEqual(vm.execute('R.Name'), 'x')
+
     def test_standalone_xml_surface_does_not_take_source_owned_reader(self):
         from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         from yadinassi.execution.direct.python_direct_xml_ownership import mark_source_owned
@@ -109,7 +123,7 @@ class XMLReaderTests(unittest.TestCase):
         mark_source_owned(reader)
         vm.variables['r'] = reader
         before = dict(vars(reader))
-        for source in ('R.Read();', 'R.GetAttribute(0);',
+        for source in ('R.Name;', 'R.Read();', 'R.GetAttribute(0);',
                        'R.SetString("<other/>");', 'R.Close();'):
             with self.subTest(source=source), self.assertRaises(BoundaryViolation):
                 vm.execute(source)

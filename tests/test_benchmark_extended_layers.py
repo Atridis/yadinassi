@@ -229,6 +229,19 @@ class ExtendedReferenceTests(unittest.TestCase):
             self.assertEqual(result, case.expected)
             with self.assertRaises(AssertionError): bench.validate(case, 'python_classes', result)
 
+    def test_bsl_xml_reader_checks_attribute_order_on_both_routes(self):
+        for route in ('default', 'prepared'):
+            with self.subTest(route=route), ExitStack() as stack:
+                case = bench.make_case('xml.roundtrip', 3, route, stack)
+                bench.validate(case, 'bsl', case.runs['bsl']())
+                values = iter(('2', '1', '0'))
+                with patch.object(bench.BSLXMLReader, '_bsl_value_getattribute',
+                                  lambda reader, name: next(values)):
+                    result = case.runs['bsl']()
+                self.assertEqual(result, case.expected)
+                with self.assertRaises(AssertionError):
+                    bench.validate(case, 'bsl', result)
+
     def test_shared_prepared_api_once_without_losing_special_notes_or_json(self):
         base = render_case('structure.fields', 'prepared')
         cases = [dict(copy.deepcopy(base), case=name) for name in

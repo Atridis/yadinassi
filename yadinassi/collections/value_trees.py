@@ -366,6 +366,13 @@ class BSLValueTreeColumnCollection(BSLObject):
     def get(self, index):
         return self.items[_position(index, len(self.items))]
 
+    _bsl_value_get = _bsl_proc_get = get
+
+    def count(self):
+        return Decimal(len(self.items))
+
+    _bsl_value_count = _bsl_proc_count = count
+
     def resolve(self, column):
         if type(column) is BSLValueTreeColumn:
             if column.table is not self.table or column._deleted or column not in self.items:
@@ -588,7 +595,7 @@ class BSLValueTreeColumnCollection(BSLObject):
             return HostFunction(name, function, returns_value=not linux)
         if name.casefold() in ("move", "сдвинуть"):
             return HostFunction(name, self.move, returns_value=False)
-        return _method(name, {"count": lambda: Decimal(len(self.items)), "количество": lambda: Decimal(len(self.items)),
+        return _method(name, {"count": self.count, "количество": self.count,
             "get": self.get, "получить": self.get, "find": self.find, "найти": self.find,
             "indexof": self.index_of, "индекс": self.index_of, "add": self.add, "добавить": self.add,
             "insert": self.insert, "вставить": self.insert, "delete": self.delete, "удалить": self.delete,
@@ -629,9 +636,23 @@ class BSLValueTreeRow(BSLObject):
         self._live()
         return Decimal(self.depth)
 
+    _bsl_value_owner = _bsl_proc_owner = owner
+    _bsl_value_level = _bsl_proc_level = _bsl_value_уровень = _bsl_proc_уровень = level
+
     def get(self, index):
         self._live()
         return self.cells[self.tree.columns.get(index)]
+
+    def _bsl_value_get(self, index):
+        # Python can inject a colliding key; indexing the dict would run its
+        # equality hook. Inspect only this row before looking up the cell.
+        cells = self.cells
+        if type(cells) is not dict or any(type(key) is not BSLValueTreeColumn for key in cells):
+            from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+            raise BoundaryViolation("foreign ValueTree cell key")
+        return self.get(index)
+
+    _bsl_proc_get = _bsl_value_get
 
     def set(self, index, value):
         self._live()
@@ -799,6 +820,8 @@ class BSLValueTreeRowCollection(BSLObject):
         self._live()
         return self.items[_position(index, len(self.items))]
 
+    _bsl_value_count = _bsl_proc_count = count
+    _bsl_value_get = _bsl_proc_get = get
     get_index = get
 
     def set_index(self, index, value):

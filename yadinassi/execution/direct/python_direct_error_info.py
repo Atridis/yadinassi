@@ -24,6 +24,9 @@ def owns(value):return type(value) is BSLErrorInfo
 
 def read(context,value,name):
     if context._verify_context:context._check()
+    return read_field(value,name)
+
+def read_field(value,name):
     if name.casefold() in _QUERY_NAMES:
         from .python_direct_captured_values import register
         return register(_HostFunction(name,_CategoryQuery(value)))
@@ -86,11 +89,15 @@ class _CategoryQuery:
     __slots__=('value','__weakref__')
     def __init__(self,value):self.value=value
     def __call__(self,category):
-        category=_category(category)
-        result=False
-        for state in _chain(self.value):
-            result=result or any(member is category for member in dict.get(state,'categories'))
-        return result
+        return query_category(self.value,category)
+
+
+def query_category(value,category):
+    category=_category(category)
+    result=False
+    for state in _chain(value):
+        result=result or any(member is category for member in dict.get(state,'categories'))
+    return result
 
 
 def resolve_query(context,value,name,*,require_value=False,omitted=()):
