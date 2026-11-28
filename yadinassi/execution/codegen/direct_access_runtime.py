@@ -30,6 +30,11 @@ def owned_index(context,receiver):
 def read_bracket(context, receiver, key):
     kind=type(receiver)
     if kind is list or kind is PlainArray:
+        if type(key) is int and key >= 0:
+            try:
+                return list.__getitem__(receiver, key)
+            except IndexError:
+                raise IndexError(f'Индекс массива вне границ: {key}') from None
         return receiver[array_offset(receiver,key)]
     if kind is dict:
         return receiver.get(key)

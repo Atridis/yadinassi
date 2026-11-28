@@ -21,6 +21,15 @@ def run(vm, source, prepared):
 
 
 class MutableArrayIndexTests(unittest.TestCase):
+    def test_upper_bound_bracket_keeps_bsl_catch_and_diagnostic(self):
+        source = ('A=New Array; A.Add(7); I=A.Count(); '
+                  'Try V=A[I]; Except E=ErrorDescription(); EndTry;')
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared), closing(Interpreter()) as vm:
+                run(vm, source, prepared)
+                self.assertIn('Индекс массива вне границ: 1', vm.variables['e'])
+                self.assertEqual(vm.execute('A[0]'), 7)
+
     def test_measured_mutable_indices_across_public_representations(self):
         constructors = (
             'A=New Array;A.Add(7);A.Add(9);',
